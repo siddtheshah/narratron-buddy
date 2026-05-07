@@ -1,0 +1,8 @@
+client_secret.json
+ngrok_policy.yaml
+*.wav
+__pycache__/
+.venv/
+.agent/
+output/
+.env

@@ -1,0 +1,8 @@
+gcloud:
+    project_id: "narratron"
+
+agent:
+    model_id: "gemini-3.1-pro"
+
+image_generation:
+    output_folder: "output/images"
