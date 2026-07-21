@@ -25,15 +25,32 @@ To get started with GCloud, complete the following steps:
 
 ## Running the App
 
-### Start the Skeleton ADK Agent
+### Start the Combined Web Canvas & Bidi Agent (Recommended)
+This runs both the web viewer and the bidi agent WebSocket server on port 8000:
+```powershell
+python combined_app.py
+```
+- Open http://localhost:8000 to view the **Narratron Canvas**.
+- Open http://localhost:8000/tester to access the **Bidi Agent Tester UI**.
+
+### Legacy Running (Separate Servers)
+If you wish to run them separately on different ports:
+
+#### Start the Skeleton ADK Agent
 ```powershell
 python agent.py
 ```
 
-### Start the Web Viewer
+#### Start the Web Viewer
 ```powershell
 python web_viewer_app.py
 ```
+
+#### Start the Bidi Agent Tester UI
+```powershell
+uvicorn bidi_app:app --reload
+```
+
 
 ## Exporting the Frontend
 

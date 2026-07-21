@@ -107,6 +107,22 @@
             animation: pulse 2s infinite;
         }
 
+        .status-dot.disconnected {
+            background-color: #ef4444 !important;
+            box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444 !important;
+            animation: none !important;
+        }
+
+        @keyframes micPulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        
+        .recording-active {
+            animation: micPulse 1.5s infinite !important;
+        }
+
         @keyframes pulse {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
             70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
@@ -145,60 +161,74 @@
 
         #prompt-toggle-btn {
             position: absolute;
-            bottom: 1rem;
-            left: 1rem;
+            bottom: 1.5rem;
+            left: 1.5rem;
             z-index: 15;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
+            height: 44px;
+            width: 44px;
+            border-radius: 22px;
             background: var(--glass-bg);
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
             border: 1px solid var(--glass-border);
             display: flex;
-            justify-content: center;
             align-items: center;
+            justify-content: flex-start;
+            padding: 0 11px;
+            box-sizing: border-box;
             cursor: pointer;
-            font-size: 1.2rem;
-            transition: all 0.2s ease;
-            display: none;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            max-width: 44px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            display: none; /* Controlled by JS when prompt is available */
+        }
+
+        #prompt-toggle-btn svg {
+            flex-shrink: 0;
+            margin-right: 0px;
+            transition: margin-right 0.3s ease;
+            color: #a5b4fc;
         }
 
         #prompt-toggle-btn:hover {
-            transform: scale(1.1);
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.25);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         }
 
-        #prompt-overlay {
-            position: absolute;
-            bottom: 4rem;
-            left: 1rem;
+        #prompt-toggle-btn.expanded {
             width: auto;
-            max-width: 60%;
-            padding: 1rem 1.5rem;
-            background: var(--glass-bg);
-            backdrop-filter: blur(15px);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            border-bottom-left-radius: 0px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
-            color: #e2e8f0;
-            font-size: 1rem;
-            text-align: left;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-            transform: translateY(10px);
-            z-index: 15;
-            pointer-events: none;
-            /* Nice subtle glow text */
-            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-            font-weight: 300;
+            max-width: 80%; /* Don't overflow the container */
+            border-radius: 22px;
+            padding: 0 16px 0 12px;
+            background: rgba(15, 17, 21, 0.85);
+            border-color: rgba(99, 102, 241, 0.4);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
         }
 
-        #prompt-overlay.visible {
+        #prompt-toggle-btn.expanded svg {
+            margin-right: 10px;
+            color: #6366f1; /* Accent color on expand */
+        }
+
+        #prompt-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            opacity: 0;
+            max-width: 0;
+            transition: opacity 0.2s ease, max-width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            color: #e2e8f0;
+            font-size: 0.9rem;
+            font-weight: 300;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            display: inline-block;
+        }
+
+        #prompt-toggle-btn.expanded #prompt-text {
             opacity: 1;
-            visibility: visible;
-            transform: translateY(0);
+            max-width: 500px; /* Expands to show the prompt */
         }
 
         #chat-sidebar {
@@ -354,6 +384,22 @@
             accent-color: var(--accent-color);
             cursor: pointer;
         }
+
+        #music-volume-slider {
+            width: 70px;
+            accent-color: var(--accent-color);
+            cursor: pointer;
+            height: 4px;
+            border-radius: 2px;
+            outline: none;
+            background: rgba(255, 255, 255, 0.2);
+            transition: all 0.2s ease;
+            vertical-align: middle;
+        }
+
+        #music-volume-slider:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
         
         #clear-doodle-btn {
             background: rgba(255, 255, 255, 0.1);
@@ -380,6 +426,29 @@
     <header>
         <div class="status-dot" id="status-indicator"></div>
         <h1>Narratron Canvas</h1>
+        <!-- Role Indicator & Toggle -->
+        <div id="role-container" style="margin-left: 2rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+            <span id="role-badge" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.4);">Viewer</span>
+            <button id="role-toggle-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit;">Switch to Orator</button>
+        </div>
+        <!-- Music controls (visible to both roles) -->
+        <div id="music-controls" style="margin-left: 1.5rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+            <span id="music-status" style="font-size: 0.8rem; color: #a5b4fc; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">🎵 Silent</span>
+            <button id="music-mute-btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 5px;">🔇 Unmute</button>
+            <div id="volume-container" style="display: flex; align-items: center; gap: 8px;">
+                <input type="range" id="music-volume-slider" min="0" max="1" step="0.01" value="0.5" title="Volume">
+                <span id="volume-percent" style="font-size: 0.75rem; color: #a5b4fc; min-width: 32px;">50%</span>
+            </div>
+        </div>
+        <!-- Orator Audio controls (hidden by default) -->
+        <div id="orator-controls" style="display: none; align-items: center; gap: 10px; margin-left: 1.5rem; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+            <button id="agent-connect-btn" style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                🔌 Connect Agent
+            </button>
+            <button id="agent-mic-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #94a3b8; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;" disabled>
+                🎤 Mic Off
+            </button>
+        </div>
     </header>
 
     <div id="image-container">
@@ -406,8 +475,8 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/>
             </svg>
+            <span id="prompt-text"></span>
         </div>
-        <div id="prompt-overlay"></div>
     </div>
 
     <div id="chat-sidebar">
@@ -418,38 +487,127 @@
         </form>
     </div>
 
-    <script>
+    <script type="module">
+        import { startAudioRecorderWorklet, stopMicrophone } from "/static/js/audio-recorder.js";
+
         let lastTime = 0;
         const currentImage = document.getElementById('current-image');
         const bgLayer = document.getElementById('bg-layer');
         const loader = document.getElementById('loader');
-        const promptOverlay = document.getElementById('prompt-overlay');
+        const promptTextSpan = document.getElementById('prompt-text');
         const chatMessages = document.getElementById('chat-messages');
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
         
         // Generate anonymous user ID
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
+        const sessionId = "session-" + Math.random().toString(36).substring(7);
+
+        // Music player controls and state
+        let currentPlaylistTracks = [];
+        let currentTrackIndex = 0;
+        let bgMusic = new Audio();
+        let isMuted = true;
+        let lastPlaylistTime = 0;
+        let activePlaylistName = null;
+
+        const musicMuteBtn = document.getElementById('music-mute-btn');
+        const musicStatusSpan = document.getElementById('music-status');
+        const musicVolumeSlider = document.getElementById('music-volume-slider');
+        const volumePercentSpan = document.getElementById('volume-percent');
+
+        // Set initial volume and mute state
+        bgMusic.volume = parseFloat(musicVolumeSlider.value);
+        bgMusic.muted = isMuted;
+
+        bgMusic.addEventListener('ended', () => {
+            playNextTrack();
+        });
+
+        function playPlaylist(tracks) {
+            console.log("Playing playlist tracks:", tracks);
+            currentPlaylistTracks = tracks;
+            currentTrackIndex = 0;
+            if (currentPlaylistTracks.length > 0) {
+                playTrack(currentPlaylistTracks[currentTrackIndex]);
+            }
+        }
+
+        function playTrack(src) {
+            console.log("Playing track:", src);
+            bgMusic.src = src;
+            bgMusic.muted = isMuted;
+            bgMusic.volume = parseFloat(musicVolumeSlider.value);
+            bgMusic.play().catch(err => {
+                console.warn("Audio autoplay blocked/failed. User interaction may be required. Error:", err);
+            });
+        }
+
+        function playNextTrack() {
+            if (currentPlaylistTracks.length === 0) return;
+            currentTrackIndex = (currentTrackIndex + 1) % currentPlaylistTracks.length;
+            playTrack(currentPlaylistTracks[currentTrackIndex]);
+        }
+
+        function stopPlaylist() {
+            console.log("Stopping playlist");
+            bgMusic.pause();
+            bgMusic.src = "";
+            currentPlaylistTracks = [];
+            currentTrackIndex = 0;
+        }
+
+        musicMuteBtn.addEventListener('click', () => {
+            isMuted = !isMuted;
+            bgMusic.muted = isMuted;
+            if (isMuted) {
+                musicMuteBtn.textContent = '🔇 Unmute';
+                musicMuteBtn.style.background = 'rgba(239, 68, 68, 0.2)';
+                musicMuteBtn.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+            } else {
+                musicMuteBtn.textContent = '🔊 Mute';
+                musicMuteBtn.style.background = 'rgba(255,255,255,0.08)';
+                musicMuteBtn.style.borderColor = 'var(--glass-border)';
+                // Try to play if it was blocked or paused
+                if (bgMusic.paused && currentPlaylistTracks.length > 0) {
+                    bgMusic.play().catch(() => {});
+                }
+            }
+        });
+
+        musicVolumeSlider.addEventListener('input', (e) => {
+            const volume = parseFloat(e.target.value);
+            bgMusic.volume = volume;
+            volumePercentSpan.textContent = Math.round(volume * 100) + '%';
+            
+            if (volume > 0 && isMuted) {
+                isMuted = false;
+                bgMusic.muted = false;
+                musicMuteBtn.textContent = '🔊 Mute';
+                musicMuteBtn.style.background = 'rgba(255,255,255,0.08)';
+                musicMuteBtn.style.borderColor = 'var(--glass-border)';
+            }
+        });
         
         const promptBtn = document.getElementById('prompt-toggle-btn');
         let promptPinned = false;
 
         promptBtn.addEventListener('mouseenter', () => {
-            promptOverlay.classList.add('visible');
+            promptBtn.classList.add('expanded');
         });
 
         promptBtn.addEventListener('mouseleave', () => {
             if (!promptPinned) {
-                promptOverlay.classList.remove('visible');
+                promptBtn.classList.remove('expanded');
             }
         });
 
         promptBtn.addEventListener('click', () => {
             promptPinned = !promptPinned;
             if (!promptPinned) {
-                promptOverlay.classList.remove('visible');
+                promptBtn.classList.remove('expanded');
             } else {
-                promptOverlay.classList.add('visible');
+                promptBtn.classList.add('expanded');
             }
         });
 
@@ -457,6 +615,35 @@
             try {
                 const response = await fetch('/api/latest');
                 const data = await response.json();
+                
+                // Process music payload
+                if (data.music && data.music.time > lastPlaylistTime) {
+                    lastPlaylistTime = data.music.time;
+                    if (data.music.playlist) {
+                        // Check if it's a new playlist
+                        if (activePlaylistName !== data.music.playlist) {
+                            activePlaylistName = data.music.playlist;
+                            musicStatusSpan.textContent = '🎵 ' + data.music.playlist;
+                            playPlaylist(data.music.tracks);
+                        }
+                        
+                        // Process pause/resume state
+                        if (data.music.paused) {
+                            musicStatusSpan.textContent = '🎵 ' + data.music.playlist + ' (Paused)';
+                            bgMusic.pause();
+                        } else {
+                            musicStatusSpan.textContent = '🎵 ' + data.music.playlist;
+                            // If it was paused, resume it
+                            if (bgMusic.paused && currentPlaylistTracks.length > 0) {
+                                bgMusic.play().catch(err => console.warn(err));
+                            }
+                        }
+                    } else {
+                        activePlaylistName = null;
+                        musicStatusSpan.textContent = '🎵 Silent';
+                        stopPlaylist();
+                    }
+                }
                 
                 if (data.latest && data.time > lastTime) {
                     lastTime = data.time;
@@ -467,7 +654,7 @@
                     tempImage.onload = () => {
                         loader.style.display = 'none';
                         currentImage.classList.remove('loaded');
-                        promptOverlay.classList.remove('visible');
+                        promptBtn.classList.remove('expanded');
                         promptBtn.style.display = 'none';
                         promptPinned = false;
                         
@@ -477,7 +664,7 @@
                             currentImage.classList.add('loaded');
                             
                             if (data.prompt) {
-                                promptOverlay.textContent = data.prompt;
+                                promptTextSpan.textContent = data.prompt;
                                 promptBtn.style.display = 'flex';
                             }
                         }, 500);
@@ -510,24 +697,6 @@
                 console.error("Failed to fetch chat:", err);
             }
         }
-
-        chatForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const text = chatInput.value.trim();
-            if (!text) return;
-            
-            chatInput.value = '';
-            try {
-                await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ author: myUserId, text: text })
-                });
-                fetchChat();
-            } catch (err) {
-                console.error("Failed to send message:", err);
-            }
-        });
 
         // Doodle Logic
         const canvas = document.getElementById('doodle-canvas');
@@ -633,9 +802,6 @@
             }
         });
 
-        const originalTempImageOnload = fetchLatestImage.toString(); // We'll just hook logic inside the interval loop.
-        
-        // Let's hook the image clearance when `lastTime` shifts explicitly.
         let previousImgTime = lastTime;
 
         setInterval(() => {
@@ -648,6 +814,190 @@
         setInterval(fetchChat, 1000);
         fetchLatestImage();
         fetchChat();
+
+        // ========================================
+        // Orator vs Viewer Logic
+        // ========================================
+        const urlParams = new URLSearchParams(window.location.search);
+        const isOrator = urlParams.get('role') === 'orator';
+
+        const roleBadge = document.getElementById('role-badge');
+        const roleToggleBtn = document.getElementById('role-toggle-btn');
+        const oratorControls = document.getElementById('orator-controls');
+        const agentConnectBtn = document.getElementById('agent-connect-btn');
+        const agentMicBtn = document.getElementById('agent-mic-btn');
+        const statusIndicator = document.getElementById('status-indicator');
+
+        // State variables
+        let agentWs = null;
+        let audioRecorderNode = null;
+        let audioRecorderContext = null;
+        let micStream = null;
+        let isRecording = false;
+
+        // Initialize UI based on role
+        if (isOrator) {
+            roleBadge.textContent = 'Orator';
+            roleBadge.style.color = '#f97316';
+            roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
+            roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
+            roleToggleBtn.textContent = 'Switch to Viewer';
+            oratorControls.style.display = 'flex';
+            statusIndicator.classList.add('disconnected'); // Start red
+        } else {
+            roleBadge.textContent = 'Viewer';
+            roleToggleBtn.textContent = 'Switch to Orator';
+            oratorControls.style.display = 'none';
+            statusIndicator.classList.remove('disconnected'); // Viewer always green/default
+        }
+
+        roleToggleBtn.addEventListener('click', () => {
+            if (isOrator) {
+                window.location.search = '';
+            } else {
+                window.location.search = '?role=orator';
+            }
+        });
+
+        // Chat submit forwarding to agent
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+            
+            chatInput.value = '';
+            try {
+                // Post to chat_manager first
+                await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ author: myUserId, text: text })
+                });
+                fetchChat();
+
+                // Send to agent if connected
+                if (isOrator && agentWs && agentWs.readyState === WebSocket.OPEN) {
+                    agentWs.send(JSON.stringify({
+                        type: "text",
+                        text: text
+                    }));
+                }
+            } catch (err) {
+                console.error("Failed to send message:", err);
+            }
+        });
+
+        // Audio Recorder Callback
+        function audioRecorderHandler(pcmData) {
+            if (agentWs && agentWs.readyState === WebSocket.OPEN && isRecording) {
+                agentWs.send(pcmData);
+            }
+        }
+
+        // Connect Agent WebSocket
+        function connectAgent() {
+            if (agentWs) return;
+
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/orator-${myUserId}/${sessionId}`;
+            
+            agentConnectBtn.textContent = 'Connecting...';
+            agentConnectBtn.style.background = '#eab308'; // Amber
+
+            agentWs = new WebSocket(agentWsUrl);
+
+            agentWs.onopen = () => {
+                console.log("Agent WebSocket connected.");
+                agentConnectBtn.textContent = '🔌 Disconnect';
+                agentConnectBtn.style.background = '#ef4444'; // Red
+                agentMicBtn.disabled = false;
+                agentMicBtn.style.color = '#fff';
+                agentMicBtn.style.background = 'rgba(255,255,255,0.15)';
+                statusIndicator.classList.remove('disconnected'); // Set back to green
+            };
+
+            agentWs.onclose = () => {
+                console.log("Agent WebSocket disconnected.");
+                cleanupAgentConnection();
+            };
+
+            agentWs.onerror = (err) => {
+                console.error("Agent WebSocket error:", err);
+                cleanupAgentConnection();
+            };
+        }
+
+        // Disconnect and cleanup
+        function cleanupAgentConnection() {
+            if (isRecording) {
+                stopMicStream();
+            }
+            if (agentWs) {
+                try { agentWs.close(); } catch(e) {}
+                agentWs = null;
+            }
+            agentConnectBtn.textContent = '🔌 Connect Agent';
+            agentConnectBtn.style.background = '#3b82f6'; // Blue
+            agentMicBtn.disabled = true;
+            agentMicBtn.innerHTML = '🎤 Mic Off';
+            agentMicBtn.style.color = '#94a3b8';
+            agentMicBtn.style.background = 'rgba(255,255,255,0.08)';
+            statusIndicator.classList.add('disconnected'); // Set back to red
+        }
+
+        // Start mic recording
+        async function startMicStream() {
+            try {
+                const [node, context, stream] = await startAudioRecorderWorklet(audioRecorderHandler);
+                audioRecorderNode = node;
+                audioRecorderContext = context;
+                micStream = stream;
+                isRecording = true;
+                
+                agentMicBtn.innerHTML = '<span class="icon">🎙️</span> Mic Active';
+                agentMicBtn.style.background = '#ef4444'; // Red
+                agentMicBtn.style.color = '#fff';
+                agentMicBtn.classList.add('recording-active');
+            } catch (err) {
+                console.error("Failed to start mic recording:", err);
+                alert("Could not access microphone: " + err.message);
+            }
+        }
+
+        // Stop mic recording
+        function stopMicStream() {
+            if (micStream) {
+                stopMicrophone(micStream);
+                micStream = null;
+            }
+            if (audioRecorderContext) {
+                try { audioRecorderContext.close(); } catch(e) {}
+                audioRecorderContext = null;
+            }
+            audioRecorderNode = null;
+            isRecording = false;
+            
+            agentMicBtn.innerHTML = '<span class="icon">🎤</span> Mic Off';
+            agentMicBtn.style.background = 'rgba(255,255,255,0.15)';
+            agentMicBtn.style.color = '#fff';
+            agentMicBtn.classList.remove('recording-active');
+        }
+
+        agentConnectBtn.addEventListener('click', () => {
+            if (agentWs) {
+                cleanupAgentConnection();
+            } else {
+                connectAgent();
+            }
+        });
+
+        agentMicBtn.addEventListener('click', () => {
+            if (isRecording) {
+                stopMicStream();
+            } else {
+                startMicStream();
+            }
+        });
     </script>
 </body>
 </html>

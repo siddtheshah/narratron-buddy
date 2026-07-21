@@ -2,7 +2,14 @@ gcloud:
     project_id: "narratron"
 
 agent:
-    model_id: "gemini-3.1-pro"
+    model_id: "gemini-3.1-flash-live-preview"
+    compaction:
+        trigger_tokens: 20000
+        target_tokens: 10000
 
 image_generation:
-    output_folder: "output/images"
+    output_folder: "output/artifacts/images"
+    cooldown_duration: 60
+
+music:
+    playlists_folder: "playlists"

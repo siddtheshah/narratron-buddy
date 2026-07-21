@@ -1,25 +1,111 @@
+from ast import Load
 import os
 import asyncio
 from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
+import yaml
+from tools.image_tool import ImageTools
+from tools.chat_tool import ChatTools
+from tools.notes_tool import NotesTools
+from tools.music_tool import MusicTools
+from services.disk_artifact_service import DiskArtifactService
 
-# Skeleton ADK agent that uses Gemini Live.
-# The user opted for Gemini 3.1 Pro (High) for the agent's logic.
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+image_tools = ImageTools(config)
+chat_tools = ChatTools(config)
+notes_tools = NotesTools(config)
+music_tools = MusicTools(config)
+
+
+INSTRUCTIONS = """
+# Objective
+
+You are a narrative agent (narratron) that has been given the special ability to use image generation and management tools. 
+You are given full liberty to use tools to help craft a beautiful narrative experience for the orator based on their spoken words. 
+
+Important: You must only respond via text/tools. Do not attempt to output any voice/audio response. You should only listen to the user's voice inputs and call tools or write text responses.
+
+# Strategy
+
+## Listening
+
+The user (or orator) may not directly address you, and instead allow you to listen into their story, which is told for the benefit of the
+viewers/listeners. You must take initiative and use tools even when not addressed directly.
+
+YOU MUST obey commands that are directed toward you (which generally will contain your name 'Narratron' at the start of the message).
+However, the story may be told second-person or interactively, and so phrases like "you throw a ball" may come up. IGNORE such phrases
+as they are not directed at you, but are simply part of the storytelling.
+
+## Note Taking
+The storytelling session may be long and therefore by difficult to keep track of everything. You are given access to a note taking tool
+which can be accessed using the `load_artifacts_tool` tool.  This tool will enable you to consolidate details and perform better
+image generation. 
+
+Good topics for note taking include the description of high level locations and characters, such that prompts can be more coherently
+constructed. You can also list the previous images created in the notes and re-use them.
+
+# Tools
+
+## Images
+The create_image and show_image tools have cooldowns to prevent overuse. Review context and consider strategy while this is the case.
+
+* create_image <image_prompt> <metadata_description>: creates an image based on a description, saves it to a file path which is returned to you.
+* show_image <file_path>: shows an image from the given file path to the user and viewers (you will not see it). Has a cooldown period.
+* browse_images: Returns a list of all available generated image file paths.
+* search_image_by_metadata <metadata_query>: Returns a list of image file paths whose metadata description matches the query.
+
+## Chat
+* send_chat_message <text>: sends a text message/response to the user chat window.
+
+## Context Management
+* edit_notes <note_name> <content>: Create or edit a note file under artifacts/notes.
+* delete_notes <note_name>: Delete a note file under artifacts/notes.
+* LoadArtifactsTool: For directly viewing the images or notes yourself (not shown to user/viewers).
+
+## Music Management
+* list_playlists: List all available music playlists, their descriptions, and the tracks inside them.
+* play_playlist <playlist_name>: Choose a playlist to play. This sends a signal to play the music on the canvas. Use list_playlists first to check available playlists.
+* pause_playlist: Pause the current music playlist playing on the canvas.
+* resume_playlist: Resume the paused music playlist on the canvas.
+
+"""
+
+from google.adk.tools import FunctionTool
+
 narratron_agent = Agent(
     name="narratron_agent",
-    model="gemini-3.1-pro",
-    tools=[],  # Tools will be built later
+    model=config.get("agent", {}).get("model_id", "gemini-3.1-flash-live-preview"),
+    instruction=INSTRUCTIONS,
+    tools=[
+        FunctionTool(image_tools.create_image),
+        FunctionTool(image_tools.show_image),
+        FunctionTool(image_tools.browse_images),
+        FunctionTool(image_tools.search_image_by_metadata),
+        FunctionTool(chat_tools.send_chat_message),
+        FunctionTool(notes_tools.edit_notes),
+        FunctionTool(notes_tools.delete_notes),
+        FunctionTool(music_tools.list_playlists),
+        FunctionTool(music_tools.play_playlist),
+        FunctionTool(music_tools.pause_playlist),
+        FunctionTool(music_tools.resume_playlist),
+        LoadArtifactsTool(),
+    ],
 )
 
 async def main():
     print("Initializing ADK Agent...")
     session_service = InMemorySessionService()
+    artifact_service = DiskArtifactService("output/images")
     # The runner manages the execution context and stream connections.
     runner = Runner(
         app_name="narratron_app",
         agent=narratron_agent, 
-        session_service=session_service
+        session_service=session_service,
+        artifact_service=artifact_service
     )
     
     # We will hook this runner up to the websocket or live interactions later.
