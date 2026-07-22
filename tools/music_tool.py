@@ -1,11 +1,14 @@
 import os
 import glob
 from typing import List, Callable, Optional
+from pathlib import Path
 
 class MusicTools:
     def __init__(self, config: dict):
         self.config = config
-        self.playlists_folder = config.get("music", {}).get("playlists_folder", "playlists")
+        root_dir = Path(__file__).parent.parent.resolve()
+        relative_playlists_folder = config.get("music", {}).get("playlists_folder", "playlists")
+        self.playlists_folder = str((root_dir / relative_playlists_folder).resolve())
         os.makedirs(self.playlists_folder, exist_ok=True)
         self.on_play_playlist: Optional[Callable[[str, List[str]], None]] = None
         self.on_pause_playlist: Optional[Callable[[], None]] = None

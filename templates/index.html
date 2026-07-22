@@ -17,16 +17,15 @@
         body, html {
             margin: 0;
             padding: 0;
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
             font-family: 'Outfit', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             overflow: hidden;
             display: flex;
-            justify-content: flex-start;
-            align-items: center;
-            padding-left: 2rem;
+            padding: 1.5rem;
+            gap: 1.5rem;
             box-sizing: border-box;
         }
 
@@ -44,12 +43,42 @@
             transition: background-image 1s ease-in-out;
         }
 
+        #main-container {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            height: 100%;
+            gap: 1rem;
+            min-width: 0;
+        }
+
+        /* Glassmorphism Header */
+        header {
+            position: relative;
+            z-index: 2;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 0.75rem 1.75rem;
+            border-radius: 50px;
+            border: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            align-self: center;
+            max-width: 100%;
+        }
+
         /* The main image container */
         #image-container {
             position: relative;
             z-index: 1;
-            width: calc(100vw - 380px); /* Leave room for sidebar and padding */
-            height: 85vh;
+            width: 100%;
+            flex: 1;
             border-radius: 20px;
             overflow: hidden;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
@@ -59,6 +88,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            min-height: 0;
         }
 
         #current-image {
@@ -71,31 +101,6 @@
 
         #current-image.loaded {
             opacity: 1;
-        }
-
-        /* Glassmorphism Header */
-        header {
-            position: absolute;
-            top: 2rem;
-            left: calc((100vw - 380px) / 2 + 2rem);
-            transform: translateX(-50%);
-            z-index: 2;
-            background: var(--glass-bg);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            border: 1px solid var(--glass-border);
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            animation: slideDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        @keyframes slideDown {
-            from { top: -5rem; opacity: 0; }
-            to { top: 2rem; opacity: 1; }
         }
 
         .status-dot {
@@ -161,9 +166,10 @@
 
         #prompt-toggle-btn {
             position: absolute;
-            bottom: 1.5rem;
+            top: 1.5rem;
             left: 1.5rem;
             z-index: 15;
+            min-height: 44px;
             height: 44px;
             width: 44px;
             border-radius: 22px;
@@ -189,6 +195,7 @@
             margin-right: 0px;
             transition: margin-right 0.3s ease;
             color: #a5b4fc;
+            margin-top: 2px;
         }
 
         #prompt-toggle-btn:hover {
@@ -199,17 +206,29 @@
 
         #prompt-toggle-btn.expanded {
             width: auto;
-            max-width: 80%; /* Don't overflow the container */
-            border-radius: 22px;
-            padding: 0 16px 0 12px;
-            background: rgba(15, 17, 21, 0.85);
-            border-color: rgba(99, 102, 241, 0.4);
+            height: auto;
+            max-width: 70%;
+            max-height: 300px;
+            border-radius: 16px;
+            padding: 12px 16px 12px 12px;
+            background: rgba(15, 17, 21, 0.9);
+            border-color: rgba(99, 102, 241, 0.5);
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+            align-items: flex-start;
+            overflow-y: auto;
+        }
+
+        #prompt-toggle-btn.expanded::-webkit-scrollbar {
+            width: 4px;
+        }
+        #prompt-toggle-btn.expanded::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
         }
 
         #prompt-toggle-btn.expanded svg {
             margin-right: 10px;
-            color: #6366f1; /* Accent color on expand */
+            color: #6366f1;
         }
 
         #prompt-text {
@@ -228,15 +247,16 @@
 
         #prompt-toggle-btn.expanded #prompt-text {
             opacity: 1;
-            max-width: 500px; /* Expands to show the prompt */
+            max-width: 100%;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.45;
         }
 
         #chat-sidebar {
-            position: absolute;
-            right: 2rem;
-            top: 2rem;
-            bottom: 2rem;
+            position: relative;
             width: 320px;
+            height: 100%;
             background: var(--glass-bg);
             backdrop-filter: blur(15px);
             border: 1px solid var(--glass-border);
@@ -246,6 +266,7 @@
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             z-index: 10;
+            flex-shrink: 0;
         }
 
         #chat-messages {
@@ -339,17 +360,18 @@
 
         #doodle-toolbar {
             position: absolute;
-            top: 1rem;
-            left: 1rem;
+            bottom: 1.5rem;
+            right: 1.5rem;
             z-index: 10;
             display: flex;
             gap: 0.5rem;
             background: var(--glass-bg);
             backdrop-filter: blur(10px);
-            padding: 0.5rem;
+            padding: 0.5rem 0.75rem;
             border-radius: 15px;
             border: 1px solid var(--glass-border);
             align-items: center;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
         }
         
         .color-btn {
@@ -423,59 +445,61 @@
 
     <div id="bg-layer"></div>
 
-    <header>
-        <div class="status-dot" id="status-indicator"></div>
-        <h1>Narratron Canvas</h1>
-        <!-- Role Indicator & Toggle -->
-        <div id="role-container" style="margin-left: 2rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
-            <span id="role-badge" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.4);">Viewer</span>
-            <button id="role-toggle-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit;">Switch to Orator</button>
-        </div>
-        <!-- Music controls (visible to both roles) -->
-        <div id="music-controls" style="margin-left: 1.5rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
-            <span id="music-status" style="font-size: 0.8rem; color: #a5b4fc; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">🎵 Silent</span>
-            <button id="music-mute-btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 5px;">🔇 Unmute</button>
-            <div id="volume-container" style="display: flex; align-items: center; gap: 8px;">
-                <input type="range" id="music-volume-slider" min="0" max="1" step="0.01" value="0.5" title="Volume">
-                <span id="volume-percent" style="font-size: 0.75rem; color: #a5b4fc; min-width: 32px;">50%</span>
+    <div id="main-container">
+        <header>
+            <div class="status-dot" id="status-indicator"></div>
+            <h1>Narratron Canvas</h1>
+            <!-- Role Indicator & Toggle -->
+            <div id="role-container" style="margin-left: 2rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                <span id="role-badge" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.4);">Viewer</span>
+                <button id="role-toggle-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit;">Switch to Orator</button>
             </div>
-        </div>
-        <!-- Orator Audio controls (hidden by default) -->
-        <div id="orator-controls" style="display: none; align-items: center; gap: 10px; margin-left: 1.5rem; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
-            <button id="agent-connect-btn" style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                🔌 Connect Agent
-            </button>
-            <button id="agent-mic-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #94a3b8; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;" disabled>
-                🎤 Mic Off
-            </button>
-        </div>
-    </header>
+            <!-- Music controls (visible to both roles) -->
+            <div id="music-controls" style="margin-left: 1.5rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+                <span id="music-status" style="font-size: 0.8rem; color: #a5b4fc; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">🎵 Silent</span>
+                <button id="music-mute-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 5px;">🔊 Mute</button>
+                <div id="volume-container" style="display: flex; align-items: center; gap: 8px;">
+                    <input type="range" id="music-volume-slider" min="0" max="1" step="0.01" value="0.5" title="Volume">
+                    <span id="volume-percent" style="font-size: 0.75rem; color: #a5b4fc; min-width: 32px;">50%</span>
+                </div>
+            </div>
+            <!-- Orator Audio controls (hidden by default) -->
+            <div id="orator-controls" style="display: none; align-items: center; gap: 10px; margin-left: 1.5rem; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+                <button id="agent-connect-btn" style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                    🔌 Connect Agent
+                </button>
+                <button id="agent-mic-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #94a3b8; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;" disabled>
+                    🎤 Mic Off
+                </button>
+            </div>
+        </header>
 
-    <div id="image-container">
-        <div class="loader" id="loader"></div>
-        <img id="current-image" src="" alt="Narratron Generation">
-        <canvas id="doodle-canvas"></canvas>
-        <div id="doodle-toolbar">
-            <div class="color-btn" style="background: #ef4444;" data-color="#ef4444"></div>
-            <div class="color-btn" style="background: #22c55e;" data-color="#22c55e"></div>
-            <div class="color-btn active" style="background: #ffffff;" data-color="#ffffff"></div>
-            <div class="color-btn" style="background: #3b82f6;" data-color="#3b82f6"></div>
-            <div class="color-btn" style="background: #eab308;" data-color="#eab308"></div>
-            <div class="color-btn eraser-btn" data-color="erase" title="Eraser">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path>
-                    <path d="M22 21H7"></path>
-                    <path d="m5 11 9 9"></path>
-                </svg>
+        <div id="image-container">
+            <div class="loader" id="loader"></div>
+            <img id="current-image" src="" alt="Narratron Generation">
+            <canvas id="doodle-canvas"></canvas>
+            <div id="doodle-toolbar">
+                <div class="color-btn" style="background: #ef4444;" data-color="#ef4444"></div>
+                <div class="color-btn" style="background: #22c55e;" data-color="#22c55e"></div>
+                <div class="color-btn active" style="background: #ffffff;" data-color="#ffffff"></div>
+                <div class="color-btn" style="background: #3b82f6;" data-color="#3b82f6"></div>
+                <div class="color-btn" style="background: #eab308;" data-color="#eab308"></div>
+                <div class="color-btn eraser-btn" data-color="erase" title="Eraser">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path>
+                        <path d="M22 21H7"></path>
+                        <path d="m5 11 9 9"></path>
+                    </svg>
+                </div>
+                <input type="range" id="brush-size" min="1" max="40" value="3" title="Brush Size">
+                <button id="clear-doodle-btn">Clear</button>
             </div>
-            <input type="range" id="brush-size" min="1" max="40" value="3" title="Brush Size">
-            <button id="clear-doodle-btn">Clear</button>
-        </div>
-        <div id="prompt-toggle-btn" title="View Prompt">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/>
-            </svg>
-            <span id="prompt-text"></span>
+            <div id="prompt-toggle-btn" title="View Prompt">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/>
+                </svg>
+                <span id="prompt-text"></span>
+            </div>
         </div>
     </div>
 
@@ -507,7 +531,7 @@
         let currentPlaylistTracks = [];
         let currentTrackIndex = 0;
         let bgMusic = new Audio();
-        let isMuted = true;
+        let isMuted = false;
         let lastPlaylistTime = 0;
         let activePlaylistName = null;
 
@@ -905,6 +929,7 @@
             agentConnectBtn.style.background = '#eab308'; // Amber
 
             agentWs = new WebSocket(agentWsUrl);
+            window.agentWs = agentWs; // Expose globally for testing/automation
 
             agentWs.onopen = () => {
                 console.log("Agent WebSocket connected.");
@@ -925,6 +950,17 @@
                 console.error("Agent WebSocket error:", err);
                 cleanupAgentConnection();
             };
+
+            window.isSetupComplete = false;
+            agentWs.onmessage = (e) => {
+                console.log("WS_MSG:" + e.data);
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.setupComplete) {
+                        window.isSetupComplete = true;
+                    }
+                } catch (err) {}
+            };
         }
 
         // Disconnect and cleanup
@@ -935,6 +971,8 @@
             if (agentWs) {
                 try { agentWs.close(); } catch(e) {}
                 agentWs = null;
+                window.agentWs = null; // Clear globally
+                window.isSetupComplete = false;
             }
             agentConnectBtn.textContent = '🔌 Connect Agent';
             agentConnectBtn.style.background = '#3b82f6'; // Blue
@@ -998,6 +1036,35 @@
                 startMicStream();
             }
         });
+
+        // Expose helper functions on window for automated evaluation
+        window.enableAudioInput = () => {
+            isRecording = true;
+            agentMicBtn.innerHTML = '<span class="icon">🎙️</span> Mic Active';
+            agentMicBtn.style.background = '#ef4444';
+            agentMicBtn.classList.add('recording-active');
+        };
+
+        window.connectAgentAndMic = () => {
+            connectAgent();
+            const checkConnect = setInterval(() => {
+                if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                    window.enableAudioInput();
+                    clearInterval(checkConnect);
+                }
+            }, 100);
+        };
+
+        window.sendOratorAudio = (base64Data) => {
+            if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                const binary = atob(base64Data);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                agentWs.send(bytes.buffer);
+            }
+        };
     </script>
 </body>
 </html>

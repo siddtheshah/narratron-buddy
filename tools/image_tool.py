@@ -7,9 +7,13 @@ from google import genai
 from google.genai import types
 
 
+from pathlib import Path
+
 class ImageTools:
     def __init__(self, config: dict):
-        self.output_dir = config.get("image_generation", {}).get("output_folder", "output/images")
+        root_dir = Path(__file__).parent.parent.resolve()
+        relative_output_folder = config.get("image_generation", {}).get("output_folder", "output/images")
+        self.output_dir = str((root_dir / relative_output_folder).resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
         project_id = config.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))

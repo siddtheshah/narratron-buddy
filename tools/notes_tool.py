@@ -1,10 +1,13 @@
 import os
+from pathlib import Path
 
 class NotesTools:
     def __init__(self, config: dict):
         # Save notes in "output/artifacts/notes"
-        self.notes_dir = os.path.join("output", "artifacts", "notes")
+        root_dir = Path(__file__).parent.parent.resolve()
+        self.notes_dir = str(root_dir / "output" / "artifacts" / "notes")
         os.makedirs(self.notes_dir, exist_ok=True)
+
 
     def edit_notes(self, note_name: str, content: str) -> str:
         """Create or edit a note file with the given content under artifacts/notes.

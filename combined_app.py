@@ -4,49 +4,68 @@ import asyncio
 import base64
 import json
 import logging
-import warnings
-from pathlib import Path
-
 import os
-import uvicorn
+from pathlib import Path
+import sys
+import warnings
+
+from absl import flags
 from dotenv import load_dotenv
 from fastapi import WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+import uvicorn
+import yaml
+
+from agent import chat_tools, image_tools, music_tools, narratron_agent as agent
+from services.disk_artifact_service import DiskArtifactService
+from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
+from web_viewer_app import (
+    add_chat_message,
+    app,
+    pause_current_playlist,
+    resume_current_playlist,
+    update_current_playlist,
+    update_shown_image,
+)
 
 # Load environment variables
 load_dotenv()
 
-import yaml
+# Define absl flags
+flags.DEFINE_boolean(
+    "use_in_memory_artifacts",
+    False,
+    "Use PreloadedInMemoryArtifactService pre-loaded with test artifacts",
+    module_name="combined_app",
+)
 
-with open("config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-
-# Import modularized canvas app and callbacks
-from web_viewer_app import app, update_shown_image, add_chat_message, update_current_playlist, pause_current_playlist, resume_current_playlist
-
-# Import agent and tools
-from agent import narratron_agent as agent, image_tools, chat_tools, music_tools
-from services.disk_artifact_service import DiskArtifactService
+FLAGS = flags.FLAGS
+if not FLAGS.is_parsed():
+    FLAGS(sys.argv, known_only=True)
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 # Suppress PIL debug clutter
 logging.getLogger("PIL").setLevel(logging.INFO)
 
 # Suppress Pydantic serialization warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+config_path = Path(__file__).parent / "config.yaml"
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f)
 
 APP_NAME = "narratron-combined"
 
@@ -56,7 +75,19 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Define services
 session_service = InMemorySessionService()
-artifact_service = DiskArtifactService("output/artifacts")
+
+use_in_memory_artifacts = FLAGS.use_in_memory_artifacts or (
+    os.getenv("USE_IN_MEMORY_ARTIFACTS", "0").lower() in ("1", "true", "yes")
+)
+
+if use_in_memory_artifacts:
+    in_mem_svc = PreloadedInMemoryArtifactService()
+    test_artifacts_dir = Path(__file__).parent / "testing" / "test_artifacts"
+    loaded_count = in_mem_svc.preload_directory(test_artifacts_dir, app_name=APP_NAME)
+    logger.info(f"Initialized PreloadedInMemoryArtifactService with {loaded_count} artifacts from {test_artifacts_dir}")
+    artifact_service = in_mem_svc
+else:
+    artifact_service = DiskArtifactService("output/artifacts")
 
 # Define runner
 runner = Runner(
@@ -231,7 +262,6 @@ async def agent_websocket_endpoint(
                             file_path = call.args.get("file_path")
                             if file_path and os.path.exists(file_path):
                                 try:
-                                    import base64
                                     with open(file_path, "rb") as f:
                                         img_b64 = base64.b64encode(f.read()).decode("utf-8")
                                     mime_type = "image/png"

@@ -1,18 +1,22 @@
-from ast import Load
-import os
 import asyncio
+import os
+from pathlib import Path
+
 from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools import FunctionTool
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 import yaml
-from tools.image_tool import ImageTools
-from tools.chat_tool import ChatTools
-from tools.notes_tool import NotesTools
-from tools.music_tool import MusicTools
-from services.disk_artifact_service import DiskArtifactService
 
-with open("config.yaml", "r") as f:
+from services.disk_artifact_service import DiskArtifactService
+from tools.chat_tool import ChatTools
+from tools.image_tool import ImageTools
+from tools.music_tool import MusicTools
+from tools.notes_tool import NotesTools
+
+config_path = Path(__file__).parent / "config.yaml"
+with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
 image_tools = ImageTools(config)

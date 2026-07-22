@@ -2,6 +2,22 @@
 
 import asyncio
 import base64
+import json
+import logging
+import os
+from pathlib import Path
+import warnings
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from google.adk.agents.live_request_queue import LiveRequestQueue
+from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+import yaml
 
 # Monkeypatch OpenTelemetry contextvars context to suppress ValueError on detach in different context
 try:
@@ -15,38 +31,19 @@ try:
     otel_ctx_vars.ContextVarsRuntimeContext.detach = _safe_detach
 except Exception:
     pass
-import json
-import logging
-import warnings
-from pathlib import Path
-
-from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from google.adk.agents.live_request_queue import LiveRequestQueue
-from google.adk.agents.run_config import RunConfig, StreamingMode
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
 
 # Load environment variables
 load_dotenv()
 
-import yaml
-
-with open("config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-
-# Import agent
-from agent import narratron_agent as agent, chat_tools
+from agent import chat_tools, narratron_agent as agent
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 # Suppress PIL debug clutter
 logging.getLogger("PIL").setLevel(logging.INFO)

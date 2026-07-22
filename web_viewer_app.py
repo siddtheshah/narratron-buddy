@@ -1,29 +1,35 @@
-import os
 import glob
+import logging
+import os
+from pathlib import Path
 import time
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-import uvicorn
 from typing import List
-from pydantic import BaseModel
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
+from pydantic import BaseModel
+import uvicorn
+import yaml
+
 from components.chat_manager import ChatManager
 
-import yaml
+logger = logging.getLogger(__name__)
+
+config_path = Path(__file__).parent / "config.yaml"
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f)
 
 app = FastAPI()
 
-with open("config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-
-# Default folder from config
-folder = config.get("image_generation", {}).get("output_folder", "output/images")
+# Default folder from config (absolute path resolution)
+folder = str((Path(__file__).parent / config.get("image_generation", {}).get("output_folder", "output/images")).resolve())
 os.makedirs(folder, exist_ok=True)
 app.mount("/images", StaticFiles(directory=folder), name="images")
 
-# Playlists folder from config
-playlists_folder = config.get("music", {}).get("playlists_folder", "playlists")
+# Playlists folder from config (absolute path resolution)
+playlists_folder = str((Path(__file__).parent / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
 os.makedirs(playlists_folder, exist_ok=True)
 app.mount("/playlists", StaticFiles(directory=playlists_folder), name="playlists")
 
@@ -148,9 +154,9 @@ def get_latest_image():
     if not files:
         return {"latest": None, "time": 0, "music": music_state}
         
-    # Get the newest file by creation time
-    latest_file = max(files, key=os.path.getctime)
-    latest_file_time = os.path.getctime(latest_file)
+    # Get the newest file by modification time
+    latest_file = max(files, key=os.path.getmtime)
+    latest_file_time = os.path.getmtime(latest_file)
     
     global shown_image_path, shown_image_time, shown_image_prompt, current_image_basename
     
@@ -172,12 +178,14 @@ def get_latest_image():
         
     current_image_basename = basename
     
-    return {
+    res = {
         "latest": f"/images/{basename}",
         "time": selected_time,
         "prompt": prompt_text,
         "music": music_state
     }
+    logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, playlist={music_state['playlist']}")
+    return res
 
 @app.get("/api/chat")
 def get_chat():
