@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Narratron Buddy - Session Deployer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0d12;
+            --card-bg: rgba(22, 27, 38, 0.65);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --card-hover-border: rgba(99, 102, 241, 0.4);
+            --accent-primary: #6366f1;
+            --accent-secondary: #a855f7;
+            --accent-cyan: #06b6d4;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --danger-color: #ef4444;
+            --success-color: #10b981;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.12) 0%, transparent 40%);
+            background-attachment: fixed;
+            overflow-x: hidden;
+        }
+
+        /* Top Header */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.25rem 2.5rem;
+            background: rgba(11, 13, 18, 0.7);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--card-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 700;
+            font-size: 1.35rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #a855f7, #6366f1, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+            color: white;
+            font-size: 1.1rem;
+        }
+
+        .nav-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        /* Main Container */
+        main {
+            max-width: 1200px;
+            width: 100%;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        /* Hero Header */
+        .hero {
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.03em;
+        }
+
+        .hero p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Grid Layout */
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 900px) {
+            .grid-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Cards & Panels */
+        .panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: border-color 0.3s ease;
+        }
+
+        .panel:hover {
+            border-color: var(--card-hover-border);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 0.75rem;
+        }
+
+        .panel-title {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .panel-title svg {
+            width: 20px;
+            height: 20px;
+            color: var(--accent-primary);
+        }
+
+        /* Form Controls */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        input[type="text"] {
+            background: rgba(15, 18, 25, 0.8);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 1rem;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+
+        /* Dropzones */
+        .dropzone {
+            border: 2px dashed var(--card-border);
+            border-radius: var(--radius-md);
+            padding: 2rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: rgba(15, 18, 25, 0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--accent-primary);
+            background: rgba(99, 102, 241, 0.08);
+        }
+
+        .dropzone svg {
+            width: 36px;
+            height: 36px;
+            color: var(--accent-primary);
+        }
+
+        .dropzone p {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+        }
+
+        .dropzone span {
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+
+        .file-input-hidden {
+            display: none;
+        }
+
+        /* File Asset Previews */
+        .asset-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            gap: 0.75rem;
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 0.25rem;
+        }
+
+        .asset-card {
+            background: rgba(15, 18, 25, 0.9);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-sm);
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.4rem;
+            position: relative;
+        }
+
+        .asset-card img {
+            width: 100%;
+            height: 70px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+
+        .asset-card .asset-name {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            overflow: hidden;
+            width: 100%;
+            text-align: center;
+        }
+
+        .asset-card .remove-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(239, 68, 68, 0.85);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Playlist Builder */
+        .playlist-builder {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .playlist-input-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .playlist-group {
+            background: rgba(15, 18, 25, 0.7);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .playlist-group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--accent-cyan);
+        }
+
+        .track-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.03);
+            padding: 0.35rem 0.6rem;
+            border-radius: 4px;
+        }
+
+        /* Primary Deploy Button */
+        .btn-deploy {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+            transition: all 0.25 ease;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        .btn-deploy:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px rgba(99, 102, 241, 0.55);
+        }
+
+        .btn-deploy:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .btn-sm:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .btn-success {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: #6ee7b7;
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+        }
+
+        /* Sessions Dashboard Table */
+        .sessions-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+        }
+
+        .sessions-table th, .sessions-table td {
+            padding: 0.85rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .sessions-table th {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        .badge {
+            padding: 0.25rem 0.65rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-deployed {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-created {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .badge-stopped {
+            background: rgba(148, 163, 184, 0.2);
+            color: #cbd5e1;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 2rem;
+            font-size: 0.95rem;
+        }
+
+        /* Spinner */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <div class="brand-icon">🎨</div>
+            <span>Narratron App Deployer</span>
+        </div>
+        <div class="nav-actions">
+            <button class="btn-sm" onclick="scrollToSessions()">Active Sessions</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h1>Deploy a Narratron Canvas Session</h1>
+            <p>Mount custom reference libraries and music playlists, then deploy isolated canvas instances instantly.</p>
+        </section>
+
+        <div class="grid-container">
+            <!-- Left Panel: Session Setup & Reference Library -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 002-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        <span>1. Session & Reference Assets</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="sessionName">Session Name</label>
+                    <input type="text" id="sessionName" placeholder="e.g. Cyberpunk Campaign - Episode 1" value="Narratron Adventure">
+                </div>
+
+                <div class="form-group">
+                    <label>Reference Library Upload (Images)</label>
+                    <div class="dropzone" id="refDropzone" onclick="document.getElementById('refInput').click()">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                        <p>Drag & drop reference images here, or <span>browse</span></p>
+                    </div>
+                    <input type="file" id="refInput" class="file-input-hidden" multiple accept="image/*">
+                </div>
+
+                <div class="asset-list" id="refPreviewList">
+                    <!-- Loaded reference thumbnails dynamically inserted here -->
+                </div>
+            </div>
+
+            <!-- Right Panel: Playlists & Deploy Controls -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 .895-2 3-2 3 .895 3 2zm12 0c0 1.105-1.343 2-3 2s-3-.895-3-2 .895-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                        <span>2. Playlists & Configuration</span>
+                    </div>
+                </div>
+
+                <div class="playlist-builder">
+                    <div class="form-group">
+                        <label>Create Music Playlist</label>
+                        <div class="playlist-input-row">
+                            <input type="text" id="playlistNameInput" placeholder="Playlist Name (e.g. Ambient, Combat)" style="flex:1;">
+                            <button type="button" class="btn-sm btn-success" onclick="addPlaylistGroup()">+ Add</button>
+                        </div>
+                    </div>
+
+                    <div id="playlistsContainer" style="display:flex; flex-direction:column; gap:0.75rem; max-height:220px; overflow-y:auto;">
+                        <!-- Playlist groups rendered here -->
+                    </div>
+                </div>
+
+                <button class="btn-deploy" id="deployBtn" onclick="deployNewSession()">
+                    <div class="spinner" id="deploySpinner"></div>
+                    <span id="deployBtnText">🚀 Deploy Canvas Instance</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Active Sessions Panel -->
+        <div class="panel" id="activeSessionsPanel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                    <span>Deployed Session Instances</span>
+                </div>
+                <button class="btn-sm" onclick="loadSessions()">🔄 Refresh</button>
+            </div>
+
+            <table class="sessions-table">
+                <thead>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Mounted Assets</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="sessionsTableBody">
+                    <tr><td colspan="5" class="empty-state">Loading active session instances...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        const refFiles = [];
+        const playlistsData = {}; // { "playlist_name": [File, File...] }
+
+        // Setup Drag & Drop for Reference Library
+        const refDropzone = document.getElementById('refDropzone');
+        const refInput = document.getElementById('refInput');
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            refDropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                refDropzone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            refDropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                refDropzone.classList.remove('dragover');
+            }, false);
+        });
+
+        refDropzone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            handleRefFiles(dt.files);
+        });
+
+        refInput.addEventListener('change', (e) => {
+            handleRefFiles(e.target.files);
+        });
+
+        function handleRefFiles(files) {
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (file.type.startsWith('image/')) {
+                    refFiles.push(file);
+                }
+            }
+            renderRefPreviews();
+        }
+
+        function renderRefPreviews() {
+            const list = document.getElementById('refPreviewList');
+            list.innerHTML = '';
+            refFiles.forEach((file, index) => {
+                const card = document.createElement('div');
+                card.className = 'asset-card';
+                
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                
+                const name = document.createElement('div');
+                name.className = 'asset-name';
+                name.innerText = file.name;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-btn';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    refFiles.splice(index, 1);
+                    renderRefPreviews();
+                };
+
+                card.appendChild(img);
+                card.appendChild(name);
+                card.appendChild(removeBtn);
+                list.appendChild(card);
+            });
+        }
+
+        // Playlist Builder Logic
+        function addPlaylistGroup() {
+            const nameInput = document.getElementById('playlistNameInput');
+            const plName = nameInput.value.trim();
+            if (!plName) return;
+
+            if (!playlistsData[plName]) {
+                playlistsData[plName] = [];
+            }
+            nameInput.value = '';
+            renderPlaylists();
+        }
+
+        function renderPlaylists() {
+            const container = document.getElementById('playlistsContainer');
+            container.innerHTML = '';
+
+            Object.keys(playlistsData).forEach(plName => {
+                const group = document.createElement('div');
+                group.className = 'playlist-group';
+
+                const header = document.createElement('div');
+                header.className = 'playlist-group-header';
+                header.innerHTML = `<span>🎵 ${plName}</span>`;
+
+                const addTrackBtn = document.createElement('button');
+                addTrackBtn.className = 'btn-sm btn-success';
+                addTrackBtn.innerText = '+ Track';
+                
+                const trackInput = document.createElement('input');
+                trackInput.type = 'file';
+                trackInput.accept = 'audio/*';
+                trackInput.multiple = true;
+                trackInput.style.display = 'none';
+
+                trackInput.onchange = (e) => {
+                    for (let f of e.target.files) {
+                        playlistsData[plName].push(f);
+                    }
+                    renderPlaylists();
+                };
+
+                addTrackBtn.onclick = () => trackInput.click();
+                header.appendChild(addTrackBtn);
+                group.appendChild(header);
+                group.appendChild(trackInput);
+
+                playlistsData[plName].forEach((trackFile, index) => {
+                    const trackRow = document.createElement('div');
+                    trackRow.className = 'track-item';
+                    trackRow.innerHTML = `<span>${trackFile.name}</span>`;
+                    
+                    const remTrack = document.createElement('button');
+                    remTrack.className = 'remove-btn';
+                    remTrack.style.position = 'static';
+                    remTrack.innerHTML = '&times;';
+                    remTrack.onclick = () => {
+                        playlistsData[plName].splice(index, 1);
+                        renderPlaylists();
+                    };
+                    trackRow.appendChild(remTrack);
+                    group.appendChild(trackRow);
+                });
+
+                container.appendChild(group);
+            });
+        }
+
+        // Deploy Session
+        async function deployNewSession() {
+            const name = document.getElementById('sessionName').value.trim() || 'Narratron Canvas';
+            const deployBtn = document.getElementById('deployBtn');
+            const deploySpinner = document.getElementById('deploySpinner');
+            const deployBtnText = document.getElementById('deployBtnText');
+
+            deployBtn.disabled = true;
+            deploySpinner.style.display = 'inline-block';
+            deployBtnText.innerText = 'Deploying Session...';
+
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+
+                // Append reference files
+                refFiles.forEach(file => {
+                    formData.append('reference_files', file);
+                });
+
+                // Append playlists
+                Object.keys(playlistsData).forEach(plName => {
+                    playlistsData[plName].forEach(file => {
+                        formData.append(`playlist_${plName}`, file);
+                    });
+                });
+
+                const response = await fetch('/api/sessions/create-and-deploy', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = await response.json();
+                if (response.ok && result.session_id) {
+                    // Redirect to deployed canvas instance
+                    window.location.href = `/canvas?session_id=${result.session_id}`;
+                } else {
+                    alert('Error deploying session: ' + (result.detail || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Failed to deploy session: ' + err.message);
+            } finally {
+                deployBtn.disabled = false;
+                deploySpinner.style.display = 'none';
+                deployBtnText.innerText = '🚀 Deploy Canvas Instance';
+            }
+        }
+
+        // Active Sessions List
+        async function loadSessions() {
+            const body = document.getElementById('sessionsTableBody');
+            try {
+                const res = await fetch('/api/sessions');
+                const sessions = await res.json();
+                
+                if (!sessions || sessions.length === 0) {
+                    body.innerHTML = `<tr><td colspan="5" class="empty-state">No sessions deployed yet. Create your first session above!</td></tr>`;
+                    return;
+                }
+
+                body.innerHTML = '';
+                sessions.forEach(s => {
+                    const tr = document.createElement('tr');
+                    const badgeClass = s.status === 'deployed' ? 'badge-deployed' : (s.status === 'created' ? 'badge-created' : 'badge-stopped');
+                    
+                    const refCount = s.mounted_references ? s.mounted_references.length : 0;
+                    const plCount = s.mounted_playlists ? Object.keys(s.mounted_playlists).length : 0;
+
+                    tr.innerHTML = `
+                        <td><code>${s.session_id}</code></td>
+                        <td><strong>${s.name}</strong></td>
+                        <td><span class="badge ${badgeClass}">${s.status}</span></td>
+                        <td>${refCount} refs, ${plCount} playlists</td>
+                        <td style="display:flex; gap:0.5rem;">
+                            <button class="btn-sm btn-success" onclick="openCanvas('${s.session_id}')">Launch Canvas</button>
+                            <button class="btn-sm btn-danger" onclick="destroySession('${s.session_id}')">Destroy</button>
+                        </td>
+                    `;
+                    body.appendChild(tr);
+                });
+            } catch (err) {
+                console.error('Error loading sessions:', err);
+                body.innerHTML = `<tr><td colspan="5" class="empty-state">Error loading active sessions.</td></tr>`;
+            }
+        }
+
+        function openCanvas(sessionId) {
+            window.location.href = `/canvas?session_id=${sessionId}`;
+        }
+
+        async function destroySession(sessionId) {
+            if (!confirm(`Are you sure you want to destroy session ${sessionId}?`)) return;
+            try {
+                await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+                loadSessions();
+            } catch (err) {
+                alert('Error destroying session: ' + err.message);
+            }
+        }
+
+        function scrollToSessions() {
+            document.getElementById('activeSessionsPanel').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Initialize default playlists & sessions list on load
+        playlistsData['default'] = [];
+        playlistsData['ambient'] = [];
+        renderPlaylists();
+        loadSessions();
+    </script>
+</body>
+</html>

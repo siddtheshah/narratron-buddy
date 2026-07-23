@@ -517,7 +517,7 @@
     <script type="module">
         import { startAudioRecorderWorklet, stopMicrophone } from "/static/js/audio-recorder.js";
 
-        let lastTime = 0;
+        let lastTime = -1;
         const currentImage = document.getElementById('current-image');
         const bgLayer = document.getElementById('bg-layer');
         const loader = document.getElementById('loader');
@@ -716,9 +716,12 @@
             }
         });
 
+        const currentSessionId = new URLSearchParams(window.location.search).get('session_id');
+
         async function fetchLatestImage() {
             try {
-                const response = await fetch('/api/latest');
+                const apiUrl = currentSessionId ? `/api/latest?session_id=${encodeURIComponent(currentSessionId)}` : '/api/latest';
+                const response = await fetch(apiUrl);
                 const data = await response.json();
                 
                 // Process music payload

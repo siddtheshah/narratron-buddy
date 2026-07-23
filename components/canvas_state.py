@@ -77,7 +77,7 @@ class CanvasStateManager:
         else:
             self.doodles_state.append(doodle)
 
-    def get_latest_state(self, image_folder: str) -> Dict[str, Any]:
+    def get_latest_state(self, image_folder: str, session_id: Optional[str] = None) -> Dict[str, Any]:
         music_state = {
             "playlist": self.current_playlist,
             "tracks": self.current_playlist_tracks,
@@ -85,14 +85,34 @@ class CanvasStateManager:
             "time": self.current_playlist_time
         }
 
-        if not os.path.exists(image_folder):
-            return {"latest": None, "time": 0, "music": music_state}
-        
-        files = glob.glob(os.path.join(image_folder, "*.png"))
-        files.extend(glob.glob(os.path.join(image_folder, "*.jpg")))
-        files.extend(glob.glob(os.path.join(image_folder, "*.jpeg")))
+        files = []
+        if os.path.exists(image_folder):
+            files.extend(glob.glob(os.path.join(image_folder, "*.png")))
+            files.extend(glob.glob(os.path.join(image_folder, "*.jpg")))
+            files.extend(glob.glob(os.path.join(image_folder, "*.jpeg")))
             
         if not files:
+            from pathlib import Path
+            if session_id:
+                session_ref_dir = (Path(__file__).parent.parent / "sessions" / session_id / "reference_library").resolve()
+                if session_ref_dir.exists():
+                    ref_images = [f for f in session_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
+                    if ref_images:
+                        return {
+                            "latest": f"/sessions/{session_id}/references/{ref_images[0].name}",
+                            "time": 0,
+                            "prompt": f"Mounted Reference: {ref_images[0].stem}",
+                            "music": music_state
+                        }
+
+            global_avatar = (Path(__file__).parent.parent / "reference_library" / "narratron_avatar.jpg").resolve()
+            if global_avatar.exists():
+                return {
+                    "latest": "/reference_library/narratron_avatar.jpg",
+                    "time": 0,
+                    "prompt": "Narratron Buddy Initialized",
+                    "music": music_state
+                }
             return {"latest": None, "time": 0, "music": music_state}
             
         # Get the newest file by modification time
@@ -117,8 +137,10 @@ class CanvasStateManager:
             
         self.current_image_basename = basename
         
+        image_url = f"/sessions/{session_id}/output/{basename}" if session_id else f"/images/{basename}"
+
         res = {
-            "latest": f"/images/{basename}",
+            "latest": image_url,
             "time": selected_time,
             "prompt": prompt_text,
             "music": music_state
