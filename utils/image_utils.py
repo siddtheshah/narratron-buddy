@@ -86,8 +86,8 @@ def resolve_image_path(path_str: str, candidate_dirs: Optional[List[str]] = None
         str(root_dir / "output" / "artifacts" / "images"),
         str(root_dir / "output" / "artifacts" / "reference_library"),
         str(root_dir / "output" / "images"),
-        str(root_dir / "testing" / "test_artifacts" / "images"),
-        str(root_dir / "testing" / "test_artifacts"),
+        str(root_dir / "testing" / "testdata" / "images"),
+        str(root_dir / "testing" / "testdata"),
     ]
 
     search_dirs = candidate_dirs or []

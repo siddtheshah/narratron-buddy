@@ -283,7 +283,7 @@ class ImageTools:
             search_dirs = [
                 self.output_dir,
                 self.reference_library_dir,
-                str(Path(__file__).parent.parent / "testing" / "test_artifacts" / "images"),
+                str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
                 str(Path(__file__).parent.parent / "output" / "artifacts" / "images"),
             ]
             for d in search_dirs:
@@ -327,7 +327,7 @@ class ImageTools:
             search_dirs = [
                 self.output_dir,
                 self.reference_library_dir,
-                str(Path(__file__).parent.parent / "testing" / "test_artifacts" / "images"),
+                str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
                 str(Path(__file__).parent.parent / "output" / "artifacts" / "images"),
             ]
             for d in search_dirs:

@@ -9,7 +9,7 @@ from google.genai import types
 
 class PreloadedInMemoryArtifactService(InMemoryArtifactService):
     """An in-memory implementation of the artifact service that supports preloading
-    artifacts from a local directory (e.g. testing/test_artifacts).
+    artifacts from a local directory (e.g. testing/testdata).
     """
 
     def preload_directory(self, directory: Union[str, Path], app_name: str = "narratron-combined") -> int:

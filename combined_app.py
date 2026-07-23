@@ -74,9 +74,9 @@ use_in_memory_artifacts = FLAGS.use_in_memory_artifacts or (
 
 if use_in_memory_artifacts:
     in_mem_svc = PreloadedInMemoryArtifactService()
-    test_artifacts_dir = Path(__file__).parent / "testing" / "test_artifacts"
-    loaded_count = in_mem_svc.preload_directory(test_artifacts_dir, app_name=APP_NAME)
-    logger.info(f"Initialized PreloadedInMemoryArtifactService with {loaded_count} artifacts from {test_artifacts_dir}")
+    test_data_dir = Path(__file__).parent / "testing" / "testdata"
+    loaded_count = in_mem_svc.preload_directory(test_data_dir, app_name=APP_NAME)
+    logger.info(f"Initialized PreloadedInMemoryArtifactService with {loaded_count} artifacts from {test_data_dir}")
     artifact_service = in_mem_svc
 else:
     artifact_service = DiskArtifactService("output/artifacts")
