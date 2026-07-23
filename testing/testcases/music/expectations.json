@@ -1,0 +1,30 @@
+{
+    "testcase": "music",
+    "narration_audio": "music_test.mp3",
+    "expectations": [
+        {
+            "id": "exp_music_ui_status",
+            "category": "visual",
+            "element": "music_status_bar",
+            "description": "The top music status bar element (#music-status) must update from 'Silent' to display the active playlist name.",
+            "criteria": "Visually inspect the #music-status text in the top header bar of the video. The text must change from '🎵 Silent' to display an active playlist name (e.g. '🎵 default' or '🎵 desert adventure').",
+            "success_condition": "The top header status bar displays the active playlist name on screen."
+        },
+        {
+            "id": "exp_music_playback",
+            "category": "audio",
+            "element": "background_music_audio",
+            "description": "Background music audio track must be audible during playback.",
+            "criteria": "Listen to the audio track of the video. Background music corresponding to the active playlist must be clearly audible.",
+            "success_condition": "Background music track is audible in the video."
+        },
+        {
+            "id": "exp_music_fade_in",
+            "category": "audio",
+            "element": "background_music_fade",
+            "description": "Background music must start with a smooth volume fade-in transition rather than an abrupt volume jump.",
+            "criteria": "Evaluate the volume transition when background music begins playing. The music volume should progressively swell from silence to full volume over approximately 1.5 to 2 seconds.",
+            "success_condition": "Music playback exhibits a smooth volume fade-in transition at start."
+        }
+    ]
+}

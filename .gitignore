@@ -13,5 +13,6 @@ reference_library/*
 
 playlists/*
 !playlists/**/
+!playlists/default/
+!playlists/default/new story.mp3
 !playlists/**/new story.mp3
-!playlists/new story.mp3

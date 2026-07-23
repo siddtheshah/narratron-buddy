@@ -269,21 +269,21 @@ def evaluate_video_expectations(video_path, expectations_path):
     prompt = f"""
 You are an expert automated AI video evaluator grading the performance of a story-assistant agent (Narratron) based on a recorded video of its browser UI canvas.
 
-The video has both visual elements (the canvas showing generated images, sidebar chat, a mic active button, and loading animation) and audio elements (the orator's narration voice and background music playlists).
+The video has visual elements (the canvas showing generated images, header controls, sidebar chat, loading animations) and audio elements.
 
-Analyze the attached video and score the following expectations.
+Analyze the attached video and score the following expectations strictly based on the criteria specified in each expectation. Do not hallucinate or assume success without clear, empirical evidence in the video.
 
 Expectations to check:
 {json.dumps(expectations_list, indent=2)}
 
-For each expectation, determine whether it passed or failed based on the visual and audio evidence in the video.
+For each expectation, determine whether it passed or failed based strictly on the criteria and evidence in the video.
 Provide your evaluation as a JSON object matching this schema:
 {{
   "evaluation_results": [
     {{
       "id": "expectation_id",
       "passed": true,
-      "reasoning": "Detailed visual and audio evidence from the video supporting the pass/fail grade."
+      "reasoning": "Detailed evidence from the video supporting the pass/fail grade."
     }}
   ],
   "overall_summary": "A high-level summary of the agent's performance and any grading notes."

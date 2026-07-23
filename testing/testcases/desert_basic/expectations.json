@@ -9,14 +9,6 @@
             "description": "An image matching the prompt description must be generated and rendered on the canvas.",
             "criteria": "The canvas should show a group of adventurers in a tent.",
             "success_condition": "The image of adventurers in a tent is visible on the canvas."
-        },
-        {
-            "id": "exp_music_playback",
-            "category": "audio",
-            "element": "background_music",
-            "description": "Music from the 'desert adventure' playlist should start playing.",
-            "criteria": "The background audio should transition from silent to playing atmospheric/desert adventure style music. The music status bar at the top of the screen should display the active playlist name 'desert adventure'.",
-            "success_condition": "Desert adventure music is audible in the final output video, and the music status indicator updates to display 'desert adventure'."
-        },
+        }
     ]
 }

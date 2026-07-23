@@ -537,6 +537,7 @@
         let isMuted = false;
         let lastPlaylistTime = 0;
         let activePlaylistName = null;
+        let fadeInterval = null;
 
         const musicMuteBtn = document.getElementById('music-mute-btn');
         const musicStatusSpan = document.getElementById('music-status');
@@ -551,6 +552,59 @@
             playNextTrack();
         });
 
+        function cancelFade() {
+            if (fadeInterval) {
+                clearInterval(fadeInterval);
+                fadeInterval = null;
+            }
+        }
+
+        function fadeIn(durationMs = 2000) {
+            cancelFade();
+            const targetVolume = parseFloat(musicVolumeSlider.value);
+            if (isMuted || targetVolume === 0) {
+                bgMusic.volume = targetVolume;
+                return;
+            }
+
+            bgMusic.volume = 0;
+            const startTime = Date.now();
+
+            fadeInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(1, elapsed / durationMs);
+                const currentTarget = parseFloat(musicVolumeSlider.value);
+                bgMusic.volume = progress * currentTarget;
+
+                if (progress >= 1) {
+                    cancelFade();
+                    bgMusic.volume = currentTarget;
+                }
+            }, 30);
+        }
+
+        function fadeOut(onComplete, durationMs = 800) {
+            cancelFade();
+            if (bgMusic.paused || bgMusic.volume === 0 || isMuted) {
+                if (onComplete) onComplete();
+                return;
+            }
+
+            const startVolume = bgMusic.volume;
+            const startTime = Date.now();
+
+            fadeInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(1, elapsed / durationMs);
+                bgMusic.volume = Math.max(0, startVolume * (1 - progress));
+
+                if (progress >= 1) {
+                    cancelFade();
+                    if (onComplete) onComplete();
+                }
+            }, 30);
+        }
+
         function playPlaylist(tracks) {
             console.log("Playing playlist tracks:", tracks);
             currentPlaylistTracks = tracks;
@@ -562,10 +616,27 @@
 
         function playTrack(src) {
             console.log("Playing track:", src);
+            if (!bgMusic.paused && bgMusic.src) {
+                fadeOut(() => {
+                    startTrack(src);
+                }, 500);
+            } else {
+                startTrack(src);
+            }
+        }
+
+        function startTrack(src) {
             bgMusic.src = src;
             bgMusic.muted = isMuted;
-            bgMusic.volume = parseFloat(musicVolumeSlider.value);
-            bgMusic.play().catch(err => {
+            const targetVol = parseFloat(musicVolumeSlider.value);
+            if (!isMuted && targetVol > 0) {
+                bgMusic.volume = 0;
+            } else {
+                bgMusic.volume = targetVol;
+            }
+            bgMusic.play().then(() => {
+                fadeIn(2000);
+            }).catch(err => {
                 console.warn("Audio autoplay blocked/failed. User interaction may be required. Error:", err);
             });
         }
@@ -578,16 +649,19 @@
 
         function stopPlaylist() {
             console.log("Stopping playlist");
-            bgMusic.pause();
-            bgMusic.src = "";
-            currentPlaylistTracks = [];
-            currentTrackIndex = 0;
+            fadeOut(() => {
+                bgMusic.pause();
+                bgMusic.src = "";
+                currentPlaylistTracks = [];
+                currentTrackIndex = 0;
+            }, 500);
         }
 
         musicMuteBtn.addEventListener('click', () => {
             isMuted = !isMuted;
             bgMusic.muted = isMuted;
             if (isMuted) {
+                cancelFade();
                 musicMuteBtn.textContent = '🔇 Unmute';
                 musicMuteBtn.style.background = 'rgba(239, 68, 68, 0.2)';
                 musicMuteBtn.style.borderColor = 'rgba(239, 68, 68, 0.4)';
@@ -597,12 +671,16 @@
                 musicMuteBtn.style.borderColor = 'var(--glass-border)';
                 // Try to play if it was blocked or paused
                 if (bgMusic.paused && currentPlaylistTracks.length > 0) {
-                    bgMusic.play().catch(() => {});
+                    bgMusic.volume = 0;
+                    bgMusic.play().then(() => fadeIn(1500)).catch(() => {});
+                } else {
+                    fadeIn(1000);
                 }
             }
         });
 
         musicVolumeSlider.addEventListener('input', (e) => {
+            cancelFade();
             const volume = parseFloat(e.target.value);
             bgMusic.volume = volume;
             volumePercentSpan.textContent = Math.round(volume * 100) + '%';
@@ -657,12 +735,15 @@
                         // Process pause/resume state
                         if (data.music.paused) {
                             musicStatusSpan.textContent = '🎵 ' + data.music.playlist + ' (Paused)';
-                            bgMusic.pause();
+                            if (!bgMusic.paused) {
+                                fadeOut(() => bgMusic.pause(), 500);
+                            }
                         } else {
                             musicStatusSpan.textContent = '🎵 ' + data.music.playlist;
                             // If it was paused, resume it
                             if (bgMusic.paused && currentPlaylistTracks.length > 0) {
-                                bgMusic.play().catch(err => console.warn(err));
+                                bgMusic.volume = 0;
+                                bgMusic.play().then(() => fadeIn(1500)).catch(err => console.warn(err));
                             }
                         }
                     } else {

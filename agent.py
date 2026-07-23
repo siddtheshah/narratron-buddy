@@ -80,10 +80,10 @@ The create_image and show_image tools have cooldowns to prevent overuse. Review 
 * LoadArtifactsTool: For directly viewing the images or notes yourself (not shown to user/viewers).
 
 ## Music Management
-Before starting a music playlist, consider the mood and tone of the scene or story being conveyed. SILENCE IS A VALID CHOICE if there isn't a good option available.
+When a story begins or a scene/mood is described, invoke `play_playlist` immediately with an appropriate playlist (e.g., 'default', 'desert adventure', 'desert combat'). You can call `play_playlist` directly without listing playlists first.
 
 * list_playlists: List all available music playlists, their descriptions, and the tracks inside them.
-* play_playlist <playlist_name>: Choose a playlist to play. This sends a signal to play the music on the canvas. Use list_playlists first to check available playlists.
+* play_playlist <playlist_name>: Choose a playlist to play (e.g. 'default', 'desert adventure', 'desert combat'). This sends a signal to play the music on the canvas.
 * pause_playlist: Pause the current music playlist playing on the canvas.
 * resume_playlist: Resume the paused music playlist on the canvas.
 
