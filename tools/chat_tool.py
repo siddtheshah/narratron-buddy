@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 class ChatTools:
     def __init__(self, config: dict = None):
         self.on_send_chat_message = None
@@ -12,10 +16,10 @@ class ChatTools:
             A status message indicating success or failure.
         """
         try:
-            print(f"[chat_tool] Sending chat message: {text}")
+            logger.info(f"[chat_tool] Sending chat message: {text}")
             if self.on_send_chat_message:
                 self.on_send_chat_message(text)
             return f"Successfully sent chat message to the user: {text}"
         except Exception as e:
-            print(f"[chat_tool] Error sending chat message: {e}")
+            logger.error(f"[chat_tool] Error sending chat message: {e}")
             return f"Error sending chat message: {e}"

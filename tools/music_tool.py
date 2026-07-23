@@ -1,7 +1,10 @@
-import os
 import glob
-from typing import List, Callable, Optional
+import logging
+import os
 from pathlib import Path
+from typing import Callable, List, Optional
+
+logger = logging.getLogger(__name__)
 
 class MusicTools:
     def __init__(self, config: dict):
@@ -50,6 +53,7 @@ class MusicTools:
 
             return "\n\n".join(result)
         except Exception as e:
+            logger.error(f"Error listing playlists: {e}")
             return f"Error listing playlists: {e}"
 
     def play_playlist(self, playlist_name: str) -> str:
@@ -80,8 +84,10 @@ class MusicTools:
             if self.on_play_playlist:
                 self.on_play_playlist(playlist_name, tracks)
 
+            logger.info(f"Playing playlist '{playlist_name}' ({len(tracks)} tracks)")
             return f"Successfully started playing playlist '{playlist_name}' containing {len(tracks)} tracks."
         except Exception as e:
+            logger.error(f"Error playing playlist: {e}")
             return f"Error playing playlist: {e}"
 
     def pause_playlist(self) -> str:
@@ -93,8 +99,10 @@ class MusicTools:
         try:
             if self.on_pause_playlist:
                 self.on_pause_playlist()
+            logger.info("Paused playlist")
             return "Successfully paused the playlist."
         except Exception as e:
+            logger.error(f"Error pausing playlist: {e}")
             return f"Error pausing playlist: {e}"
 
     def resume_playlist(self) -> str:
@@ -106,6 +114,8 @@ class MusicTools:
         try:
             if self.on_resume_playlist:
                 self.on_resume_playlist()
+            logger.info("Resumed playlist")
             return "Successfully resumed the playlist."
         except Exception as e:
+            logger.error(f"Error resuming playlist: {e}")
             return f"Error resuming playlist: {e}"

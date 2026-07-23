@@ -1,5 +1,8 @@
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 class NotesTools:
     def __init__(self, config: dict):
@@ -7,7 +10,6 @@ class NotesTools:
         root_dir = Path(__file__).parent.parent.resolve()
         self.notes_dir = str(root_dir / "output" / "artifacts" / "notes")
         os.makedirs(self.notes_dir, exist_ok=True)
-
 
     def edit_notes(self, note_name: str, content: str) -> str:
         """Create or edit a note file with the given content under artifacts/notes.
@@ -32,8 +34,10 @@ class NotesTools:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
             
+            logger.info(f"Saved note '{filename}' under artifacts/notes.")
             return f"Successfully saved note '{filename}' under artifacts/notes."
         except Exception as e:
+            logger.error(f"Error editing note: {e}")
             return f"Error editing note: {e}"
 
     def delete_notes(self, note_name: str) -> str:
@@ -55,8 +59,10 @@ class NotesTools:
             
             if os.path.exists(filepath):
                 os.remove(filepath)
+                logger.info(f"Deleted note '{filename}'.")
                 return f"Successfully deleted note '{filename}'."
             else:
                 return f"Error: Note '{filename}' not found."
         except Exception as e:
+            logger.error(f"Error deleting note: {e}")
             return f"Error deleting note: {e}"

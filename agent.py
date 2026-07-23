@@ -2,25 +2,23 @@ import asyncio
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools import FunctionTool
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
-import yaml
 
 from services.disk_artifact_service import DiskArtifactService
 from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.music_tool import MusicTools
 from tools.notes_tool import NotesTools
+from utils.config_loader import get_config
 
-from dotenv import load_dotenv
 load_dotenv()
 
-config_path = Path(__file__).parent / "config.yaml"
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
+config = get_config()
 
 image_tools = ImageTools(config)
 chat_tools = ChatTools(config)
@@ -91,8 +89,6 @@ Before starting a music playlist, consider the mood and tone of the scene or sto
 
 """
 
-from google.adk.tools import FunctionTool
-    
 narratron_agent = Agent(
     name="narratron_agent",
     model=config.get("agent", {}).get("model_id", "gemini-3.1-flash-live-preview"),

@@ -5,25 +5,17 @@ and triggers the Narratron backend API to toggle the microphone on all active Or
 """
 
 import json
-import os
+import logging
 from pathlib import Path
 import sys
 import time
 import urllib.request
-import yaml
 
-# Locate root config.yaml
-root_dir = Path(__file__).parent.parent.resolve()
-config_path = root_dir / "config.yaml"
+from utils.config_loader import get_config
 
-config = {}
-if config_path.exists():
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f) or {}
-    except Exception as e:
-        print(f"Warning: Failed to load config.yaml: {e}")
+logger = logging.getLogger(__name__)
 
+config = get_config()
 orator_cfg = config.get("orator", {})
 SERVER_URL = orator_cfg.get("server_url", "http://127.0.0.1:8000/api/orator/toggle_mic")
 HOTKEY_COMBO = orator_cfg.get("hotkey", "<ctrl>+<shift>+[")
@@ -35,13 +27,12 @@ def trigger_mic_toggle():
             data = json.loads(resp.read().decode("utf-8"))
             print(f"[{time.strftime('%H:%M:%S')}] 🎙️ Global Hotkey Triggered! Response: {data}")
     except Exception as e:
-        print(f"[{time.strftime('%H:%M:%S')}] Failed to send mic toggle signal: {e}")
+        logger.error(f"Failed to send mic toggle signal: {e}")
 
 def main():
     display_hotkey = HOTKEY_COMBO.replace("<ctrl>", "Ctrl").replace("<shift>", "Shift").replace("<alt>", "Alt").replace("+", " + ")
     print("=" * 60)
     print(" Narratron Global OS Hotkey Listener")
-    print(" Config File:", config_path)
     print(" Target API:", SERVER_URL)
     print(" Hotkey:", display_hotkey)
     print("=" * 60)
@@ -67,7 +58,7 @@ def main():
             print(f"\nListening for {display_hotkey} globally... (Press Ctrl+C to exit)")
             h.join()
     except Exception as e:
-        print(f"\nError initializing hotkey '{HOTKEY_COMBO}': {e}")
+        logger.error(f"Error initializing hotkey '{HOTKEY_COMBO}': {e}")
         print("Please check the 'orator.hotkey' setting in config.yaml.")
 
 if __name__ == "__main__":
