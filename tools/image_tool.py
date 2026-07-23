@@ -27,7 +27,7 @@ class ImageTools:
         self.output_dir = str((root_dir / relative_output_folder).resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
-        relative_ref_folder = config.get("image_generation", {}).get("reference_library_folder", "output/artifacts/reference_library")
+        relative_ref_folder = config.get("image_generation", {}).get("reference_library_folder", "reference_library")
         self.reference_library_dir = str((root_dir / relative_ref_folder).resolve())
         os.makedirs(self.reference_library_dir, exist_ok=True)
         

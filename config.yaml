@@ -9,8 +9,8 @@ agent:
 
 image_generation:
     output_folder: "output/artifacts/images"
-    reference_library_folder: "output/artifacts/reference_library"
-    cooldown_duration: 60
+    reference_library_folder: "reference_library"
+    cooldown_duration: 45
 
 music:
     playlists_folder: "playlists"

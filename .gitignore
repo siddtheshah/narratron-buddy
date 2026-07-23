@@ -5,6 +5,13 @@ __pycache__/
 .venv/
 .agent/
 output/
-playlists/
 scratch/
 .env
+
+reference_library/*
+!reference_library/narratron_avatar.*
+
+playlists/*
+!playlists/**/
+!playlists/**/new story.mp3
+!playlists/new story.mp3
