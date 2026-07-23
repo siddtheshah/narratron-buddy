@@ -225,6 +225,7 @@ async def agent_websocket_endpoint(
 
                 if "bytes" in message:
                     audio_data = message["bytes"]
+                    logger.debug(f"[Upstream Audio] Received chunk: {len(audio_data)} bytes")
                     audio_blob = types.Blob(
                         mime_type="audio/pcm;rate=16000", data=audio_data
                     )
@@ -250,6 +251,13 @@ async def agent_websocket_endpoint(
 
         async def downstream_task() -> None:
             """Receives Events from run_live() and sends to WebSocket."""
+            async def send_setup_signal():
+                await asyncio.sleep(1.0)
+                logger.info("Gemini Live session initialized. Sending setupComplete to client.")
+                await safe_send_text(json.dumps({"setupComplete": True}))
+
+            loop.create_task(send_setup_signal())
+
             async for event in runner.run_live(
                 user_id=user_id,
                 session_id=session_id,
@@ -258,14 +266,30 @@ async def agent_websocket_endpoint(
             ):
                 if hasattr(event, "get_function_calls") and event.get_function_calls():
                     for call in event.get_function_calls():
-                        if call.name == "show_image":
+                        logger.info(f"[Agent Tool Call] Function: {call.name}, Args: {call.args}")
+                        if call.name in ("show_image", "create_image"):
                             file_path = call.args.get("file_path")
-                            if file_path and os.path.exists(file_path):
+                            resolved_path = None
+                            if file_path:
+                                if os.path.exists(file_path):
+                                    resolved_path = file_path
+                                else:
+                                    # Fallback resolution
+                                    for candidate in [
+                                        os.path.join(image_tools.output_dir, file_path),
+                                        os.path.join(image_tools.output_dir, os.path.basename(file_path)),
+                                        str(Path(__file__).parent / "testing" / "test_artifacts" / "images" / os.path.basename(file_path)),
+                                        str(Path(__file__).parent / "testing" / "test_artifacts" / os.path.basename(file_path)),
+                                    ]:
+                                        if os.path.exists(candidate):
+                                            resolved_path = candidate
+                                            break
+                            if resolved_path:
                                 try:
-                                    with open(file_path, "rb") as f:
+                                    with open(resolved_path, "rb") as f:
                                         img_b64 = base64.b64encode(f.read()).decode("utf-8")
                                     mime_type = "image/png"
-                                    if file_path.lower().endswith(".jpg") or file_path.lower().endswith(".jpeg"):
+                                    if resolved_path.lower().endswith(".jpg") or resolved_path.lower().endswith(".jpeg"):
                                         mime_type = "image/jpeg"
                                     custom_event = {
                                         "custom_image": {

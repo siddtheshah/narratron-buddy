@@ -135,6 +135,24 @@ async def websocket_endpoint(websocket: WebSocket):
         if websocket in active_ws_connections:
             active_ws_connections.remove(websocket)
 
+@app.api_route("/api/orator/toggle_mic", methods=["GET", "POST"])
+async def trigger_orator_mic_toggle():
+    count = 0
+    for ws in list(active_ws_connections):
+        try:
+            await ws.send_json({"type": "toggle_mic"})
+            count += 1
+        except Exception:
+            pass
+    return {"status": "ok", "broadcasted_to": count}
+
+@app.get("/api/orator/config")
+def get_orator_config():
+    return config.get("orator", {
+        "hotkey": "<ctrl>+<shift>+[",
+        "server_url": "http://127.0.0.1:8000/api/orator/toggle_mic"
+    })
+
 @app.get("/api/latest")
 def get_latest_image():
     music_state = {

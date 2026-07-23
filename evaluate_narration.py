@@ -121,8 +121,14 @@ async def stream_audio_task(page, wav_path, buffer_time):
     """Streams mono WAV file chunks into the browser's agent WebSocket via page.evaluate()."""
     print("[Evaluator] Connecting agent and enabling audio input visually in browser...")
     
+    # Latency measurement state
+    streaming_start_time = 0.0
+    streaming_active = False
+    first_tool_time = None
+    
     # Setup console listener to catch server events and debugging logs
     def handle_console(msg):
+        nonlocal first_tool_time
         text = msg.text
         if text.startswith("WS_MSG:"):
             try:
@@ -140,6 +146,13 @@ async def stream_audio_task(page, wav_path, buffer_time):
                         if "text" in part:
                             print(f"[Agent Text] {part['text']}")
                 elif "custom_image" in data:
+                    tool_now = time.time()
+                    if streaming_start_time > 0 and first_tool_time is None:
+                        first_tool_time = tool_now
+                        lag = first_tool_time - streaming_start_time
+                        is_while_talking = streaming_active
+                        status_str = "⚡ WHILE NARRATOR TALKING" if is_while_talking else "⚠️ AFTER PAUSE/STREAM END"
+                        print(f"\n[Evaluator Latency] ⏱️ IMAGE TOOL CALL COMPLETED: {lag:.2f}s after narration start ({status_str})\n")
                     print("[Agent Action] Show Image payload received.")
             except Exception:
                 pass
@@ -187,38 +200,23 @@ async def stream_audio_task(page, wav_path, buffer_time):
         n_channels = wav_file.getnchannels()
         sampwidth = wav_file.getsampwidth()
         framerate = wav_file.getframerate()
+        n_frames = wav_file.getnframes()
         
         if n_channels != 1 or sampwidth != 2 or framerate != 16000:
             raise ValueError(f"WAV must be mono, 16-bit, 16kHz. Got channels={n_channels}, width={sampwidth}, rate={framerate}")
         
-        chunk_samples = 1024
-        delay = chunk_samples / 16000.0  # 64ms per chunk
+        all_pcm_data = wav_file.readframes(n_frames)
+        full_b64 = base64.b64encode(all_pcm_data).decode('utf-8')
         
-        print("[Evaluator] Streaming audio chunks via browser WebSocket...")
-        start_time = time.time()
-        chunk_count = 0
+        print(f"[Evaluator] Streaming {n_frames} frames ({n_frames/16000:.2f}s) via in-browser audio loop...")
+        streaming_start_time = time.time()
+        streaming_active = True
         
-        while True:
-            data = wav_file.readframes(chunk_samples)
-            if not data:
-                break
-            
-            # Encode and send
-            b64_data = base64.b64encode(data).decode('utf-8')
-            await page.evaluate(f"window.sendOratorAudio('{b64_data}')")
-            chunk_count += 1
-            
-            # Real-time sync sleep
-            elapsed = time.time() - start_time
-            target_time = chunk_count * delay
-            sleep_time = target_time - elapsed
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
-            else:
-                await asyncio.sleep(0.001)
-                
-        actual_duration = time.time() - start_time
-        print(f"[Evaluator] Finished streaming {chunk_count} chunks ({actual_duration:.2f}s).")
+        await page.evaluate(f"window.streamFullAudio('{full_b64}', 2048, 64)")
+        
+        actual_duration = time.time() - streaming_start_time
+        streaming_active = False
+        print(f"[Evaluator] Audio streaming completed in {actual_duration:.2f}s.")
         
     print(f"[Evaluator] Keeping WebSocket open for {buffer_time}s buffer for agent to settle...")
     await asyncio.sleep(buffer_time)

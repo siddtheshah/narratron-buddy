@@ -34,6 +34,7 @@ except Exception:
 
 # Load environment variables
 load_dotenv()
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "false"
 
 from agent import chat_tools, narratron_agent as agent
 
@@ -116,6 +117,8 @@ async def websocket_endpoint(
     async def safe_send_text(text: str) -> None:
         async with websocket_write_lock:
             await websocket.send_text(text)
+
+    await safe_send_text(json.dumps({"setupComplete": True}))
 
     # ========================================
     # Phase 2: Session Initialization (once per streaming session)

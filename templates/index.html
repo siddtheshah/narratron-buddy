@@ -471,6 +471,9 @@
                 <button id="agent-mic-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #94a3b8; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;" disabled>
                     🎤 Mic Off
                 </button>
+                <button id="mic-hotkey-btn" title="Click to change mic hotkey" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #a5b4fc; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                    ⌨️ <span id="hotkey-display">Hotkey: M</span>
+                </button>
             </div>
         </header>
 
@@ -766,6 +769,10 @@
                 drawLine(data.x0 * canvas.width, data.y0 * canvas.height, 
                          data.x1 * canvas.width, data.y1 * canvas.height, 
                          data.color, bSize, false);
+            } else if (data.type === 'toggle_mic') {
+                if (isOrator && agentWs && agentWs.readyState === WebSocket.OPEN && !agentMicBtn.disabled) {
+                    agentMicBtn.click();
+                }
             }
         };
 
@@ -1037,6 +1044,192 @@
             }
         });
 
+        // ========================================
+        // Configurable Mic Hotkey Logic
+        // ========================================
+        const micHotkeyBtn = document.getElementById('mic-hotkey-btn');
+        const hotkeyDisplay = document.getElementById('hotkey-display');
+        let isRebindingHotkey = false;
+
+        // Default hotkey: Ctrl + Shift + [
+        let currentHotkey = {
+            code: 'BracketLeft',
+            key: '[',
+            altKey: false,
+            ctrlKey: true,
+            shiftKey: true
+        };
+
+        // Load saved hotkey from localStorage or fetch server config
+        try {
+            const saved = localStorage.getItem('narratron_mic_hotkey');
+            if (saved) {
+                currentHotkey = JSON.parse(saved);
+            } else {
+                fetch('/api/orator/config')
+                    .then(r => r.json())
+                    .then(cfg => {
+                        if (cfg && cfg.hotkey) {
+                            const str = cfg.hotkey;
+                            const ctrl = str.includes('<ctrl>') || str.toLowerCase().includes('ctrl');
+                            const alt = str.includes('<alt>') || str.toLowerCase().includes('alt');
+                            const shift = str.includes('<shift>') || str.toLowerCase().includes('shift');
+                            let clean = str.replace(/<ctrl>|<shift>|<alt>|\+| /gi, '');
+                            let code = clean;
+                            let key = clean;
+                            if (clean === '[') { code = 'BracketLeft'; key = '['; }
+                            else if (clean === ']') { code = 'BracketRight'; key = ']'; }
+                            else if (clean.length === 1 && clean.match(/[a-z]/i)) { code = 'Key' + clean.toUpperCase(); key = clean.toLowerCase(); }
+                            else if (clean.length === 1 && clean.match(/[0-9]/)) { code = 'Digit' + clean; key = clean; }
+                            currentHotkey = { code, key, altKey: alt, ctrlKey: ctrl, shiftKey: shift };
+                            updateHotkeyUI();
+                        }
+                    }).catch(() => {});
+            }
+        } catch(e) {}
+
+        function formatHotkeyLabel(hk) {
+            let parts = [];
+            if (hk.ctrlKey) parts.push('Ctrl');
+            if (hk.altKey) parts.push('Alt');
+            if (hk.shiftKey) parts.push('Shift');
+
+            let codeLabel = hk.code || hk.key || '[';
+            if (codeLabel.startsWith('Key')) {
+                codeLabel = codeLabel.replace('Key', '');
+            } else if (codeLabel.startsWith('Digit')) {
+                codeLabel = codeLabel.replace('Digit', '');
+            } else if (codeLabel === 'BracketLeft') {
+                codeLabel = '[';
+            } else if (codeLabel === 'BracketRight') {
+                codeLabel = ']';
+            } else if (codeLabel === 'Backquote') {
+                codeLabel = '`';
+            } else if (codeLabel === 'Semicolon') {
+                codeLabel = ';';
+            } else if (codeLabel === 'Quote') {
+                codeLabel = "'";
+            } else if (codeLabel === 'Comma') {
+                codeLabel = ',';
+            } else if (codeLabel === 'Period') {
+                codeLabel = '.';
+            } else if (codeLabel === 'Slash') {
+                codeLabel = '/';
+            } else if (codeLabel === 'Backslash') {
+                codeLabel = '\\';
+            } else if (codeLabel === 'Minus') {
+                codeLabel = '-';
+            } else if (codeLabel === 'Equal') {
+                codeLabel = '=';
+            } else if (codeLabel === 'Space') {
+                codeLabel = 'Space';
+            }
+            parts.push(codeLabel.toUpperCase());
+            return parts.join(' + ');
+        }
+
+        function updateHotkeyUI() {
+            if (hotkeyDisplay) {
+                hotkeyDisplay.textContent = `Hotkey: ${formatHotkeyLabel(currentHotkey)}`;
+            }
+        }
+
+        updateHotkeyUI();
+
+        // Rebind hotkey click handler
+        if (micHotkeyBtn) {
+            micHotkeyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (isRebindingHotkey) return;
+                
+                isRebindingHotkey = true;
+                micHotkeyBtn.style.background = '#eab308';
+                micHotkeyBtn.style.color = '#000';
+                hotkeyDisplay.textContent = 'Press any key...';
+            });
+        }
+
+        // Global Keydown Listener for Hotkey
+        window.addEventListener('keydown', (e) => {
+            if (!isOrator) return;
+
+            // Rebinding hotkey state
+            if (isRebindingHotkey) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // If user presses Escape, cancel rebinding
+                if (e.code === 'Escape') {
+                    isRebindingHotkey = false;
+                    micHotkeyBtn.style.background = 'rgba(255,255,255,0.08)';
+                    micHotkeyBtn.style.color = '#a5b4fc';
+                    updateHotkeyUI();
+                    return;
+                }
+
+                // Ignore standalone modifier keypresses
+                if (['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight'].includes(e.code)) {
+                    return;
+                }
+
+                currentHotkey = {
+                    code: e.code,
+                    key: e.key,
+                    altKey: e.altKey,
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey
+                };
+
+                try {
+                    localStorage.setItem('narratron_mic_hotkey', JSON.stringify(currentHotkey));
+                } catch(err) {}
+
+                isRebindingHotkey = false;
+                micHotkeyBtn.style.background = '#10b981';
+                micHotkeyBtn.style.color = '#fff';
+                updateHotkeyUI();
+
+                setTimeout(() => {
+                    micHotkeyBtn.style.background = 'rgba(255,255,255,0.08)';
+                    micHotkeyBtn.style.color = '#a5b4fc';
+                }, 600);
+                return;
+            }
+
+            // Normal hotkey listening for toggling mic
+            if (e.repeat) return;
+
+            // Do not trigger hotkey if typing in input or textarea
+            const activeEl = document.activeElement;
+            if (activeEl && (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) || activeEl.isContentEditable)) {
+                return;
+            }
+
+            // Match current hotkey
+            const matchCode = e.code === currentHotkey.code;
+            const matchAlt = !!e.altKey === !!currentHotkey.altKey;
+            const matchCtrl = !!e.ctrlKey === !!currentHotkey.ctrlKey;
+            const matchShift = !!e.shiftKey === !!currentHotkey.shiftKey;
+
+            if (matchCode && matchAlt && matchCtrl && matchShift) {
+                e.preventDefault();
+                
+                if (agentWs && agentWs.readyState === WebSocket.OPEN && !agentMicBtn.disabled) {
+                    agentMicBtn.click();
+                } else if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                    console.log("[Hotkey] Cannot toggle mic: Agent not connected.");
+                    agentConnectBtn.style.transform = 'scale(1.05)';
+                    setTimeout(() => agentConnectBtn.style.transform = 'none', 200);
+                }
+            }
+        });
+
+        window.setMicHotkey = (code) => {
+            currentHotkey = { code: code, key: code, altKey: false, ctrlKey: false, shiftKey: false };
+            try { localStorage.setItem('narratron_mic_hotkey', JSON.stringify(currentHotkey)); } catch(e) {}
+            updateHotkeyUI();
+        };
+
         // Expose helper functions on window for automated evaluation
         window.enableAudioInput = () => {
             isRecording = true;
@@ -1056,14 +1249,43 @@
         };
 
         window.sendOratorAudio = (base64Data) => {
-            if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+            const ws = window.agentWs || agentWs;
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 const binary = atob(base64Data);
                 const bytes = new Uint8Array(binary.length);
                 for (let i = 0; i < binary.length; i++) {
                     bytes[i] = binary.charCodeAt(i);
                 }
-                agentWs.send(bytes.buffer);
+                ws.send(bytes.buffer);
+            } else {
+                console.warn("[OratorAudio] WebSocket not ready. State:", ws ? ws.readyState : "null");
             }
+        };
+
+        window.streamFullAudio = async (fullBase64Data, chunkSize = 2048, delayMs = 64) => {
+            const binary = atob(fullBase64Data);
+            const totalBytes = binary.length;
+            let offset = 0;
+            const ws = window.agentWs || agentWs;
+            
+            return new Promise((resolve) => {
+                const interval = setInterval(() => {
+                    if (offset >= totalBytes) {
+                        clearInterval(interval);
+                        resolve();
+                        return;
+                    }
+                    const end = Math.min(offset + chunkSize, totalBytes);
+                    const chunk = new Uint8Array(end - offset);
+                    for (let i = offset; i < end; i++) {
+                        chunk[i - offset] = binary.charCodeAt(i);
+                    }
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(chunk.buffer);
+                    }
+                    offset = end;
+                }, delayMs);
+            });
         };
     </script>
 </body>
