@@ -124,6 +124,32 @@ async def handle_live_websocket_connection(
         chat_tools.on_send_chat_message = handle_session_chat_message
         live_request_queue = LiveRequestQueue()
 
+        def handle_cooldown_expired(tool_name: str):
+            msg = f"[System Notification] The cooldown for '{tool_name}' has expired. You may now call {tool_name} again."
+            logger.info(f"[LiveStreamService] Cooldown expired notification: {msg}")
+            try:
+                content = types.Content(parts=[types.Part(text=msg)])
+                live_request_queue.send_content(content)
+            except Exception as e:
+                logger.error(f"[LiveStreamService] Failed to send cooldown expired notification: {e}")
+
+        def handle_after_image_tool(tool_name: str, canvas_info: dict):
+            if canvas_info.get("path"):
+                desc = canvas_info.get("metadata_description") or "N/A"
+                prompt = canvas_info.get("prompt") or "N/A"
+                trans = canvas_info.get("transition") or "crossfade"
+                msg = f"[Canvas Observability] Active image on canvas: path='{canvas_info['path']}', prompt='{prompt}', description='{desc}', transition='{trans}'"
+                logger.info(f"[LiveStreamService] After tool canvas update: {msg}")
+                try:
+                    content = types.Content(parts=[types.Part(text=msg)])
+                    live_request_queue.send_content(content)
+                except Exception as e:
+                    logger.error(f"[LiveStreamService] Failed to send canvas observability update: {e}")
+
+        if image_tools:
+            image_tools.on_cooldown_expired = handle_cooldown_expired
+            image_tools.on_after_tool_call = handle_after_image_tool
+
         async def upstream_task() -> None:
             """Receives messages from WebSocket and sends to LiveRequestQueue."""
             while True:

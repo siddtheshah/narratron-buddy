@@ -108,6 +108,33 @@ class TestImageTools(BaseTestCase):
         self.assertIn("sunset_01", tools.image_aliases)
         self.assertTrue(os.path.exists(tools.image_aliases["sunset_01"]))
 
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_display_false(self, mock_genai_client):
+        mock_part = MagicMock()
+        mock_part.inline_data.data = create_fake_image_bytes()
+
+        mock_response = MagicMock()
+        mock_response.candidates = [
+            MagicMock(content=MagicMock(parts=[mock_part]))
+        ]
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_genai_client.return_value = mock_client_instance
+
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        callback = MagicMock()
+        tools.on_show_image = callback
+
+        res = tools.create_image("sunset scene", "golden hours sunset", image_name="sunset_02", display=False)
+        self.assertIn("Successfully generated image", res)
+        self.assertNotIn("and displayed", res)
+        callback.assert_not_called()
+        self.assertIn("sunset_02", tools.image_aliases)
+
     @patch("tools.image_tool.types.Part")
     @patch("tools.image_tool.genai.Client")
     def test_create_image_with_reference_images(self, mock_genai_client, mock_part_cls):
@@ -243,25 +270,272 @@ class TestImageTools(BaseTestCase):
         self.assertIn("Failed to generate image", res1)
         self.assertIn("SAFETY", res1)
 
-        # Reset cooldown for next call
-        tools.last_create_time = 0.0
-
         # Test Case 2
         mock_client_instance.models.generate_content.return_value = mock_response_none_parts
+        tools.last_create_time = 0.0
         res2 = tools.create_image("prompt 2", "desc 2")
         self.assertIn("Failed to generate image", res2)
 
-        # Reset cooldown for next call
-        tools.last_create_time = 0.0
-
         # Test Case 3
         mock_client_instance.models.generate_content.return_value = mock_response_text_part
+        tools.last_create_time = 0.0
         res3 = tools.create_image("prompt 3", "desc 3")
         self.assertIn("Failed to generate image", res3)
         self.assertIn("Model refusal message", res3)
 
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_success_and_alias(self, mock_genai_client):
+        mock_part = MagicMock()
+        mock_part.inline_data.data = create_fake_image_bytes()
+
+        mock_response = MagicMock()
+        mock_response.candidates = [
+            MagicMock(content=MagicMock(parts=[mock_part]))
+        ]
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_genai_client.return_value = mock_client_instance
+
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        callback = MagicMock()
+        tools.on_show_image = callback
+
+        res = tools.create_image("sunset scene", "golden hours sunset", image_name="sunset_01")
+        self.assertIn("Successfully generated and displayed image", res)
+        self.assertIn("sunset_01", res)
+        callback.assert_called_once()
+        self.assertIn("sunset_01", tools.image_aliases)
+        self.assertTrue(os.path.exists(tools.image_aliases["sunset_01"]))
+
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_display_false(self, mock_genai_client):
+        mock_part = MagicMock()
+        mock_part.inline_data.data = create_fake_image_bytes()
+
+        mock_response = MagicMock()
+        mock_response.candidates = [
+            MagicMock(content=MagicMock(parts=[mock_part]))
+        ]
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_genai_client.return_value = mock_client_instance
+
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        callback = MagicMock()
+        tools.on_show_image = callback
+
+        res = tools.create_image("sunset scene", "golden hours sunset", image_name="sunset_02", display=False)
+        self.assertIn("Successfully generated image", res)
+        self.assertNotIn("and displayed", res)
+        callback.assert_not_called()
+        self.assertIn("sunset_02", tools.image_aliases)
+
+    @patch("tools.image_tool.types.Part")
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_with_reference_images(self, mock_genai_client, mock_part_cls):
+        mock_part_data = MagicMock()
+        mock_part_data.inline_data.data = create_fake_image_bytes()
+        mock_response = MagicMock()
+        mock_response.candidates = [MagicMock(content=MagicMock(parts=[mock_part_data]))]
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_genai_client.return_value = mock_client_instance
+
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        tools.reference_dir = os.path.join(self.temp_dir, "refs")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        os.makedirs(tools.reference_dir, exist_ok=True)
+
+        ref_file = os.path.join(tools.reference_dir, "style_ref.png")
+        Image.new("RGB", (10, 10), color="blue").save(ref_file)
+        tools._load_references()
+
+        res = tools.create_image("a fantasy castle", "castle description", reference_images="style_ref")
+        self.assertIn("Successfully generated and displayed image", res)
+        mock_part_cls.from_bytes.assert_called_once()
+
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_with_missing_reference_fails(self, mock_genai_client):
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        tools.reference_dir = os.path.join(self.temp_dir, "refs")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        os.makedirs(tools.reference_dir, exist_ok=True)
+
+        res = tools.create_image("a fantasy castle", "castle description", reference_images="nonexistent_ref")
+        self.assertIn("Error: Reference image 'nonexistent_ref' not found.", res)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_independent_cooldowns(self, mock_genai_client):
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        callback = MagicMock()
+        tools.on_show_image = callback
+
+        file_path = os.path.join(tools.output_dir, "test.jpg")
+        img = Image.new("RGB", (10, 10), color="green")
+        img.save(file_path)
+
+        tools.last_create_time = time.time()
+        self.assertIn("create_image is on cooldown", tools.create_image("prompt", "desc"))
+
+        res = tools.show_image(file_path)
+        self.assertIn("Successfully displayed", res)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_show_image_and_cooldown(self, mock_genai_client):
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        callback = MagicMock()
+        tools.on_show_image = callback
+
+        file_path = os.path.join(tools.output_dir, "test.jpg")
+        img = Image.new("RGB", (10, 10), color="green")
+        img.save(file_path)
+
+        res = tools.show_image(file_path)
+        self.assertIn("Successfully displayed", res)
+        callback.assert_called_once_with(file_path, transition="crossfade")
+
+        res2 = tools.show_image(file_path)
+        self.assertIn("show_image is on cooldown", res2)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_show_image_transition(self, mock_genai_client):
+        """Test that show_image forwards the transition parameter to the callback."""
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        callback = MagicMock()
+        tools.on_show_image = callback
+
+        file_path = os.path.join(tools.output_dir, "trans_test.jpg")
+        img = Image.new("RGB", (10, 10), color="blue")
+        img.save(file_path)
+
+        res = tools.show_image(file_path, transition="zoom")
+        self.assertIn("Successfully displayed", res)
+        callback.assert_called_once_with(file_path, transition="zoom")
+
+    @patch("tools.image_tool.genai.Client")
+    def test_search_and_browse_images(self, mock_genai_client):
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        img_path = os.path.join(tools.output_dir, "oasis_view.jpg")
+        img = Image.new("RGB", (10, 10), color="yellow")
+        img.save(img_path)
+
+        all_imgs = tools.browse_images()
+        self.assertIn(img_path, all_imgs)
+
+        matches = tools.search_image_by_metadata("oasis")
+        self.assertIn(img_path, matches)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_handles_none_content_or_parts(self, mock_genai_client):
+        # Case 1: Candidate with content=None
+        mock_response_none_content = MagicMock()
+        mock_response_none_content.candidates = [MagicMock(content=None, finish_reason="SAFETY")]
+
+        # Case 2: Candidate with content.parts=None
+        mock_response_none_parts = MagicMock()
+        mock_response_none_parts.candidates = [MagicMock(content=MagicMock(parts=None), finish_reason="SAFETY")]
+
+        # Case 3: Candidate with text part instead of image data
+        text_part = MagicMock(spec=["text"], text="Model refusal message")
+        mock_response_text_part = MagicMock()
+        mock_response_text_part.candidates = [MagicMock(content=MagicMock(parts=[text_part]))]
+
+        mock_client_instance = MagicMock()
+        mock_genai_client.return_value = mock_client_instance
+
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        # Test Case 1
+        mock_client_instance.models.generate_content.return_value = mock_response_none_content
+        res1 = tools.create_image("prompt 1", "desc 1")
+        self.assertIn("Failed to generate image", res1)
+        self.assertIn("SAFETY", res1)
+
+        # Test Case 2
+        mock_client_instance.models.generate_content.return_value = mock_response_none_parts
+        tools.last_create_time = 0.0
+        res2 = tools.create_image("prompt 2", "desc 2")
+        self.assertIn("Failed to generate image", res2)
+
+        # Test Case 3
+        mock_client_instance.models.generate_content.return_value = mock_response_text_part
+        tools.last_create_time = 0.0
+        res3 = tools.create_image("prompt 3", "desc 3")
+        self.assertIn("Failed to generate image", res3)
+        self.assertIn("Model refusal message", res3)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_cooldown_expired_callbacks(self, mock_genai_client):
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        tools.cooldown_duration = 0.1
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        on_cooldown_expired = MagicMock()
+        on_show_expired = MagicMock()
+        tools.on_cooldown_expired = on_cooldown_expired
+        tools.on_show_cooldown_expired = on_show_expired
+
+        file_path = os.path.join(tools.output_dir, "test.jpg")
+        img = Image.new("RGB", (10, 10), color="purple")
+        img.save(file_path)
+
+        res1 = tools.show_image(file_path)
+        self.assertIn("Successfully displayed", res1)
+
+        # Do NOT call show_image again. Verify callback fires automatically after cooldown duration.
+        time.sleep(0.25)
+        on_cooldown_expired.assert_called_with("show_image")
+        on_show_expired.assert_called_once()
+
+    @patch("tools.image_tool.genai.Client")
+    def test_on_after_tool_call_and_canvas_info(self, mock_genai_client):
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        after_tool_cb = MagicMock()
+        tools.on_after_tool_call = after_tool_cb
+
+        file_path = os.path.join(tools.output_dir, "view_test.jpg")
+        img = Image.new("RGB", (10, 10), color="blue")
+        img.save(file_path)
+
+        res = tools.show_image(file_path, transition="fade")
+        self.assertIn("Successfully displayed", res)
+
+        after_tool_cb.assert_called_once()
+        tool_name, canvas_info = after_tool_cb.call_args[0]
+        self.assertEqual(tool_name, "show_image")
+        self.assertEqual(canvas_info["path"], file_path)
+        self.assertEqual(canvas_info["transition"], "fade")
+
+        info = tools.get_current_canvas_image_info()
+        self.assertEqual(info["path"], file_path)
+        self.assertEqual(info["transition"], "fade")
+
 
 if __name__ == "__main__":
     unittest.main()
-
-

@@ -5,9 +5,10 @@ import mimetypes
 import os
 from pathlib import Path
 import re
+import threading
 import time
 from io import BytesIO
-from typing import Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from google import genai
 from google.genai import types
@@ -46,6 +47,17 @@ class ImageTools:
         self.client = ImageTools._client_cache
 
         self.on_show_image = None
+        self.on_cooldown_expired: Optional[Callable[[str], None]] = None
+        self.on_create_cooldown_expired: Optional[Callable[[], None]] = None
+        self.on_show_cooldown_expired: Optional[Callable[[], None]] = None
+        self.on_after_tool_call: Optional[Callable[[str, Dict[str, Any]], None]] = None
+
+        self.currently_displayed_image_path: Optional[str] = None
+        self.currently_displayed_image_transition: str = "crossfade"
+
+        self._create_cooldown_timer: Optional[threading.Timer] = None
+        self._show_cooldown_timer: Optional[threading.Timer] = None
+
         self.last_create_time = 0.0
         self.last_show_time = 0.0
         self.cooldown_duration = float(config.get("image_generation", {}).get("cooldown_duration", 60.0))
@@ -65,6 +77,81 @@ class ImageTools:
     def get_effective_output_dir(self) -> str:
         """Return active session output directory."""
         return self.output_dir
+
+    def _schedule_cooldown_timer(self, tool_name: str, remaining_seconds: float):
+        """Schedules a background timer to invoke callbacks when a tool's cooldown expires."""
+        def _timer_callback():
+            logger.info(f"[ImageTools] Cooldown for '{tool_name}' has expired.")
+            cb_expired = getattr(self, "on_cooldown_expired", None)
+            if cb_expired:
+                try:
+                    cb_expired(tool_name)
+                except Exception as e:
+                    logger.error(f"[ImageTools] Exception in on_cooldown_expired callback: {e}")
+            
+            cb_create = getattr(self, "on_create_cooldown_expired", None)
+            cb_show = getattr(self, "on_show_cooldown_expired", None)
+            if tool_name == "create_image" and cb_create:
+                try:
+                    cb_create()
+                except Exception as e:
+                    logger.error(f"[ImageTools] Exception in on_create_cooldown_expired callback: {e}")
+            elif tool_name == "show_image" and cb_show:
+                try:
+                    cb_show()
+                except Exception as e:
+                    logger.error(f"[ImageTools] Exception in on_show_cooldown_expired callback: {e}")
+
+        delay = max(0.01, remaining_seconds + 0.05)
+
+        if tool_name == "create_image":
+            timer_attr = getattr(self, "_create_cooldown_timer", None)
+            if timer_attr:
+                timer_attr.cancel()
+            timer = threading.Timer(delay, _timer_callback)
+            timer.daemon = True
+            self._create_cooldown_timer = timer
+            timer.start()
+        elif tool_name == "show_image":
+            timer_attr = getattr(self, "_show_cooldown_timer", None)
+            if timer_attr:
+                timer_attr.cancel()
+            timer = threading.Timer(delay, _timer_callback)
+            timer.daemon = True
+            self._show_cooldown_timer = timer
+            timer.start()
+
+    def get_current_canvas_image_info(self) -> Dict[str, Any]:
+        """Returns details about the image currently displayed on the canvas (path, prompt, metadata description, transition)."""
+        path = getattr(self, "currently_displayed_image_path", None)
+        transition = getattr(self, "currently_displayed_image_transition", "crossfade")
+        if not path or not os.path.exists(path):
+            return {
+                "path": None,
+                "prompt": None,
+                "metadata_description": None,
+                "transition": None,
+            }
+
+        prompt = extract_image_prompt(path)
+        metadata_desc = extract_image_metadata_description(path)
+        return {
+            "path": path,
+            "prompt": prompt,
+            "metadata_description": metadata_desc,
+            "transition": transition,
+        }
+
+    def _trigger_after_tool_call(self, tool_name: str):
+        """Triggers the on_after_tool_call callback with current canvas image info."""
+        cb = getattr(self, "on_after_tool_call", None)
+        if cb:
+            try:
+                canvas_info = self.get_current_canvas_image_info()
+                logger.debug(f"[ImageTools] Invoking on_after_tool_call for '{tool_name}' with canvas_info={canvas_info}")
+                cb(tool_name, canvas_info)
+            except Exception as e:
+                logger.error(f"[ImageTools] Exception in on_after_tool_call callback for '{tool_name}': {e}")
 
     def _load_references(self):
         """Scans the references folder once at startup and builds a read-only manifest."""
@@ -110,6 +197,7 @@ class ImageTools:
                     "path": item["path"],
                     "description": item["description"]
                 })
+        self._trigger_after_tool_call("list_references")
         return results
 
     def _find_image_path(self, path_str: str) -> Optional[str]:
@@ -141,7 +229,8 @@ class ImageTools:
         image_prompt: str,
         metadata_description: str,
         image_name: Optional[str] = None,
-        reference_images: Union[list[str], str, None] = None
+        reference_images: Union[list[str], str, None] = None,
+        display: bool = True
     ) -> str:
         """Generates an image from a prompt, supporting custom image naming and reference image adaptation.
 
@@ -150,6 +239,7 @@ class ImageTools:
             metadata_description: A description to embed as metadata in the image.
             image_name: Optional friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
+            display: Whether to automatically display the image on the canvas upon creation (default True).
 
         Returns:
             A string indicating the file path of the saved generated image, or an error message.
@@ -158,8 +248,12 @@ class ImageTools:
             now = time.time()
             elapsed = now - self.last_create_time
             if elapsed < self.cooldown_duration:
-                remaining = int(self.cooldown_duration - elapsed)
-                return f"Error: create_image is on cooldown. Please wait {remaining} more seconds before generating another image."
+                remaining_sec = float(self.cooldown_duration - elapsed)
+                remaining = int(remaining_sec)
+                self._schedule_cooldown_timer("create_image", remaining_sec)
+                res = f"Error: create_image is on cooldown. Please wait {remaining} more seconds before generating another image."
+                self._trigger_after_tool_call("create_image")
+                return res
 
             resolved_refs = []
             if reference_images:
@@ -174,7 +268,9 @@ class ImageTools:
                         resolved_refs.append((ref, ref_path))
                     else:
                         logger.error(f"[create_image tool] Reference image '{ref}' not found.")
-                        return f"Error: Reference image '{ref}' not found."
+                        res = f"Error: Reference image '{ref}' not found."
+                        self._trigger_after_tool_call("create_image")
+                        return res
 
             prompt_parts = []
             if resolved_refs:
@@ -186,7 +282,9 @@ class ImageTools:
                         prompt_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
                     except Exception as e:
                         logger.error(f"[create_image tool] Error loading reference image {ref_path}: {e}")
-                        return f"Error loading reference image '{ref_key}': {e}"
+                        res = f"Error loading reference image '{ref_key}': {e}"
+                        self._trigger_after_tool_call("create_image")
+                        return res
                 
                 logger.info(f"[create_image tool] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
 
@@ -271,18 +369,29 @@ class ImageTools:
                     block_reason = pf.get("block_reason") if isinstance(pf, dict) else getattr(pf, "block_reason", None)
                     if block_reason:
                         details = f" Prompt block reason: {block_reason}"
-                return f"Failed to generate image: Model didn't return binary image data.{details}"
+                res = f"Failed to generate image: Model didn't return binary image data.{details}"
+                self._trigger_after_tool_call("create_image")
+                return res
 
             self.last_create_time = time.time()
-            if self.on_show_image:
-                self.on_show_image(saved_paths[0])
+            self._schedule_cooldown_timer("create_image", float(self.cooldown_duration))
+            show_msg = ""
+            if display:
+                show_res = self.show_image(saved_paths[0])
+                if show_res.startswith("Error:"):
+                    show_msg = f", but could not display: {show_res}"
+                else:
+                    show_msg = " and displayed"
             
             name_msg = f" with alias '{image_name}'" if image_name else ""
             ref_msg = f" using references {[r[0] for r in resolved_refs]}" if resolved_refs else ""
-            return f"Successfully generated and displayed image{name_msg}{ref_msg} at {saved_paths[0]}"
+            res = f"Successfully generated{show_msg} image{name_msg}{ref_msg} at {saved_paths[0]}"
+            self._trigger_after_tool_call("create_image")
+            return res
         except Exception as e:
             error_msg = f"Error generating image: {e}"
             logger.error(f"[create_image tool] {error_msg}")
+            self._trigger_after_tool_call("create_image")
             return error_msg
 
     def show_image(self, file_path: str, transition: str = "crossfade") -> str:
@@ -301,12 +410,16 @@ class ImageTools:
             now = time.time()
             elapsed = now - self.last_show_time
             if elapsed < self.cooldown_duration:
-                remaining = int(self.cooldown_duration - elapsed)
+                remaining_sec = float(self.cooldown_duration - elapsed)
+                remaining = int(remaining_sec)
+                self._schedule_cooldown_timer("show_image", remaining_sec)
                 logger.warning(
                     f"[show_image tool] On cooldown. Elapsed: {elapsed:.2f}s, "
                     f"Cooldown: {self.cooldown_duration}s, Remaining: {remaining}s"
                 )
-                return f"Error: show_image is on cooldown. Please wait {remaining} more seconds before displaying another image."
+                res = f"Error: show_image is on cooldown. Please wait {remaining} more seconds before displaying another image."
+                self._trigger_after_tool_call("show_image")
+                return res
 
             resolved_path = self._find_image_path(file_path)
             logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}', transition: '{transition}')")
@@ -316,14 +429,21 @@ class ImageTools:
                     self.on_show_image(resolved_path, transition=transition)
                 else:
                     logger.warning("[show_image tool] on_show_image callback is not set")
+                self.currently_displayed_image_path = resolved_path
+                self.currently_displayed_image_transition = transition
                 self.last_show_time = time.time()
-                return f"Successfully displayed {resolved_path} to the user with transition '{transition}'."
+                self._schedule_cooldown_timer("show_image", float(self.cooldown_duration))
+                res = f"Successfully displayed {resolved_path} to the user with transition '{transition}'."
             else:
                 logger.warning(f"[show_image tool] Image path or alias '{file_path}' could not be resolved.")
-                return f"Error: Image '{file_path}' not found."
+                res = f"Error: Image '{file_path}' not found."
+            self._trigger_after_tool_call("show_image")
+            return res
         except Exception as e:
             logger.error(f"[show_image tool] Exception occurred while showing image '{file_path}': {e}", exc_info=True)
-            return f"Error showing image: {e}"
+            res = f"Error showing image: {e}"
+            self._trigger_after_tool_call("show_image")
+            return res
 
     def browse_images(self) -> list[str]:
         """Browse all available images, including preloaded reference assets and generated outputs.
@@ -356,8 +476,10 @@ class ImageTools:
                             if full_p not in seen:
                                 seen.add(full_p)
                                 images.append(full_p)
+            self._trigger_after_tool_call("browse_images")
             return images
         except Exception as e:
+            self._trigger_after_tool_call("browse_images")
             return [f"Error browsing images: {e}"]
 
     def search_image_by_metadata(self, metadata_query: str) -> list[str]:
@@ -409,6 +531,8 @@ class ImageTools:
                                 matches.append(filepath)
                         except Exception:
                             pass
+            self._trigger_after_tool_call("search_image_by_metadata")
             return matches
         except Exception as e:
+            self._trigger_after_tool_call("search_image_by_metadata")
             return [f"Error searching images: {e}"]
