@@ -5,12 +5,14 @@ import shutil
 import tempfile
 import unittest
 
+from testing.base_test import BaseTestCase
 from deployer.deployer import LocalDeployer, SessionMetadata
 
 
-class TestLocalDeployer(unittest.TestCase):
+class TestLocalDeployer(BaseTestCase):
 
     def setUp(self):
+        super().setUp()
         self.test_dir = tempfile.mkdtemp()
         self.deployer = LocalDeployer(base_sessions_dir=self.test_dir)
 

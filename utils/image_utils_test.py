@@ -1,8 +1,9 @@
 import unittest
 
+from testing.base_test import BaseTestCase
 from utils.image_utils import resolve_image_path
 
-class TestImageUtils(unittest.TestCase):
+class TestImageUtils(BaseTestCase):
     def test_image_utils_path_resolution(self):
         path = resolve_image_path("non_existent_file.png")
         self.assertIsNone(path)

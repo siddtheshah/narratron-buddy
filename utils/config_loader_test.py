@@ -1,8 +1,9 @@
 import unittest
 
+from testing.base_test import BaseTestCase
 from utils.config_loader import get_config
 
-class TestConfigLoader(unittest.TestCase):
+class TestConfigLoader(BaseTestCase):
     def test_config_loader(self):
         config = get_config()
         self.assertIsInstance(config, dict)

@@ -22,6 +22,9 @@ from unittest.mock import MagicMock, patch
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import tempfile
+import unittest
+from testing.base_test import BaseTestCase
 from components.canvas_state import CanvasStateManager
 from components.chat_manager import ChatManager
 
@@ -212,9 +215,28 @@ def test_html_template_crossfade():
 # Runner
 # ---------------------------------------------------------------------------
 
-def main():
-    import tempfile
+class TestCrossfade(BaseTestCase):
+    def test_transition_stored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            failures = test_transition_stored(Path(tmp))
+            self.assertEqual(failures, [])
 
+    def test_show_image_callback_transition(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            failures = test_show_image_callback_transition(Path(tmp))
+            self.assertEqual(failures, [])
+
+    def test_get_latest_state_transition(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            failures = test_get_latest_state_transition(Path(tmp))
+            self.assertEqual(failures, [])
+
+    def test_html_template_crossfade(self):
+        failures = test_html_template_crossfade()
+        self.assertEqual(failures, [])
+
+
+def main():
     print("=" * 60)
     print("Crossfade Transition Test Suite")
     print("=" * 60)
@@ -257,4 +279,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    unittest.main()

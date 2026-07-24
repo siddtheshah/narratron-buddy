@@ -1,10 +1,14 @@
 import os
+import shutil
 import tempfile
 import unittest
+from pathlib import Path
 
+from testing.base_test import BaseTestCase
 from components.canvas_state import CanvasStateManager
 
-class TestCanvasStateManager(unittest.TestCase):
+class TestCanvasStateManager(BaseTestCase):
+
     def test_canvas_state_manager(self):
         manager = CanvasStateManager(session_id="test_session")
         manager.update_current_playlist("test_playlist", ["/playlists/test/1.mp3"])

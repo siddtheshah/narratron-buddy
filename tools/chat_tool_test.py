@@ -1,10 +1,12 @@
 import unittest
 from unittest.mock import MagicMock
 
+from testing.base_test import BaseTestCase
 from tools.chat_tool import ChatTools
 
-class TestChatTools(unittest.TestCase):
+class TestChatTools(BaseTestCase):
     def setUp(self):
+        super().setUp()
         self.chat_tools = ChatTools(config={}, session_id="test_session")
 
     def test_send_chat_message_success(self):

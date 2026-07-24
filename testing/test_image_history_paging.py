@@ -12,10 +12,12 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from testing.base_test import BaseTestCase
 from components.canvas_state import CanvasStateManager
 
 
-class TestImageHistoryPaging(unittest.TestCase):
+class TestImageHistoryPaging(BaseTestCase):
+
     def test_image_history_capping_to_100(self):
         """Test that canvas state retains at most 100 recent images."""
         manager = CanvasStateManager(session_id="test_history_cap_session")

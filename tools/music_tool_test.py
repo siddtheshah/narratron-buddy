@@ -4,10 +4,12 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
+from testing.base_test import BaseTestCase
 from tools.music_tool import MusicTools
 
-class TestMusicTools(unittest.TestCase):
+class TestMusicTools(BaseTestCase):
     def setUp(self):
+        super().setUp()
         self.temp_dir = tempfile.mkdtemp()
         self.config = {
             "music": {

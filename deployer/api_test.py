@@ -8,19 +8,20 @@ import unittest
 
 from fastapi.testclient import TestClient
 
+from testing.base_test import BaseTestCase
 from web_viewer_app import app, local_deployer, db
 
 
-class TestSessionAPI(unittest.TestCase):
+class TestSessionAPI(BaseTestCase):
 
     def setUp(self):
+        super().setUp()
         self.test_dir = tempfile.mkdtemp()
         local_deployer.base_dir = Path(self.test_dir).resolve()
         local_deployer.base_dir.mkdir(parents=True, exist_ok=True)
         db.db_path = Path(self.test_dir) / "test_api_deployer.db"
         db._init_db()
         self.client = TestClient(app)
-
 
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)

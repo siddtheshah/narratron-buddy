@@ -3,11 +3,13 @@ import shutil
 import tempfile
 import unittest
 
+from testing.base_test import BaseTestCase
 from tools.notes_tool import NotesTools
 
 
-class TestNotesTools(unittest.TestCase):
+class TestNotesTools(BaseTestCase):
     def setUp(self):
+        super().setUp()
         self.temp_dir = tempfile.mkdtemp()
         self.config = {}
         self.session_id = "test_session_123"

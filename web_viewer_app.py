@@ -70,7 +70,7 @@ def get_canvas_state(session_id: Optional[str] = None) -> CanvasStateManager:
 
     sid = session_id or "default"
     if sid not in _canvas_states:
-        _canvas_states[sid] = CanvasStateManager(session_id=sid)
+        _canvas_states[sid] = CanvasStateManager(session_id=sid, base_sessions_dir=local_deployer.base_dir)
     return _canvas_states[sid]
 
 def get_current_user(request: Request) -> Optional[dict]:

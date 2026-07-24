@@ -1,10 +1,11 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from testing.base_test import BaseTestCase
 from agent import create_agent
 
 
-class TestAgentInit(unittest.TestCase):
+class TestAgentInit(BaseTestCase):
     @patch("agent.ImageTools")
     @patch("agent.ChatTools")
     @patch("agent.NotesTools")

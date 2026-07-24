@@ -16,11 +16,21 @@ class CanvasStateManager:
     """Encapsulates state for the web canvas UI including music playback, shown images,
     chat manager history, WebSocket connections, and doodle drawings.
     """
-    def __init__(self, session_id: str):
+    @property
+    def sessions_dir(self) -> Path:
+        if getattr(self, "base_sessions_dir", None) is not None:
+            return self.base_sessions_dir
+        return (Path(__file__).parent.parent / "sessions").resolve()
+
+    def __init__(self, session_id: str, base_sessions_dir: Optional[Path] = None):
         self.session_id = session_id
-        chat_output_dir = str(Path(__file__).parent.parent / "sessions" / session_id / "output" / "chats")
+        if base_sessions_dir is not None:
+            self.base_sessions_dir = Path(base_sessions_dir).resolve()
+        else:
+            self.base_sessions_dir = (Path(__file__).parent.parent / "sessions").resolve()
+        chat_output_dir = str(self.sessions_dir / session_id / "output" / "chats")
         self.chat_manager = ChatManager(output_dir=chat_output_dir)
-        self.current_image_basename: Optional[str] = None
+        self.current_image_basename: Optional[str] = None  
         
         # Shared state for music
         self.current_playlist: Optional[str] = None
@@ -45,7 +55,7 @@ class CanvasStateManager:
     def load_state_from_disk(self):
         """Restore canvas state from local session.json if available."""
         import json
-        sess_dir = (Path(__file__).parent.parent / "sessions" / self.session_id).resolve()
+        sess_dir = (self.sessions_dir / self.session_id).resolve()
         session_file = sess_dir / "session.json"
         legacy_state_file = sess_dir / "session_state.json"
         
@@ -128,7 +138,7 @@ class CanvasStateManager:
         # Automatically copy shown image into session output directory if outside session output dir
         target_session = session_id or self.session_id
         if target_session and file_path and os.path.exists(file_path):
-            sess_out_dir = (Path(__file__).parent.parent / "sessions" / target_session / "output").resolve()
+            sess_out_dir = (self.sessions_dir / target_session / "output").resolve()
             sess_out_dir.mkdir(parents=True, exist_ok=True)
             file_path_obj = Path(file_path).resolve()
             try:
@@ -167,18 +177,18 @@ class CanvasStateManager:
             self.doodles_state.clear()
         else:
             self.doodles_state.append(doodle)
-        sess_dir = (Path(__file__).parent.parent / "sessions" / self.session_id).resolve()
+        sess_dir = (self.sessions_dir / self.session_id).resolve()
         sess_dir.mkdir(parents=True, exist_ok=True)
         self.export_session_data(session_dir=sess_dir)
 
     def set_doodles_enabled(self, enabled: bool):
         self.doodles_enabled = bool(enabled)
-        sess_dir = (Path(__file__).parent.parent / "sessions" / self.session_id).resolve()
+        sess_dir = (self.sessions_dir / self.session_id).resolve()
         if sess_dir.exists():
             self.export_session_data(session_dir=sess_dir)
 
     def get_latest_state(self) -> Dict[str, Any]:
-        image_folder = str(Path(__file__).parent.parent / "sessions" / self.session_id / "output")
+        image_folder = str(self.sessions_dir / self.session_id / "output")
 
         music_state = {
             "playlist": self.current_playlist,
@@ -224,7 +234,7 @@ class CanvasStateManager:
         # 2. If no image selected, fallback to session references
         if not selected_file:
             if self.session_id:
-                session_ref_dir = (Path(__file__).parent.parent / "sessions" / self.session_id / "references").resolve()
+                session_ref_dir = (self.sessions_dir / self.session_id / "references").resolve()
                 if session_ref_dir.exists():
                     ref_images = [f for f in session_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
                     if ref_images:

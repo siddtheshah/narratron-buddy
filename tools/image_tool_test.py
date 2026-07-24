@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
+from testing.base_test import BaseTestCase
 from tools.image_tool import ImageTools
 
 
@@ -18,8 +19,9 @@ def create_fake_image_bytes() -> bytes:
     return buf.getvalue()
 
 
-class TestImageTools(unittest.TestCase):
+class TestImageTools(BaseTestCase):
     def setUp(self):
+        super().setUp()
         ImageTools._client_cache = None
         ImageTools._references_cache = {}
         ImageTools._reference_dir_cached = None

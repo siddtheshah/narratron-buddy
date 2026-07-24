@@ -3,12 +3,14 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from testing.base_test import BaseTestCase
 from deployer.database import DatabaseManager
 
 
-class TestDatabaseManager(unittest.TestCase):
+class TestDatabaseManager(BaseTestCase):
 
     def setUp(self):
+        super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_deployer.db"
         self.db = DatabaseManager(db_path=str(self.db_file))
