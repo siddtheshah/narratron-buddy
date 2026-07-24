@@ -86,13 +86,29 @@ class CanvasStateManager:
             "time": self.current_playlist_time
         }
 
-        files = []
-        if os.path.exists(image_folder):
-            files.extend(glob.glob(os.path.join(image_folder, "*.png")))
-            files.extend(glob.glob(os.path.join(image_folder, "*.jpg")))
-            files.extend(glob.glob(os.path.join(image_folder, "*.jpeg")))
-            
-        if not files:
+        # 1. Decide which image file to select: prioritize explicit show_image call if set & valid
+        selected_file = None
+        selected_time = 0.0
+        prompt_text = ""
+
+        if self.shown_image_path and os.path.exists(self.shown_image_path):
+            selected_file = self.shown_image_path
+            selected_time = self.shown_image_time
+            prompt_text = self.shown_image_prompt
+        else:
+            files = []
+            if os.path.exists(image_folder):
+                files.extend(glob.glob(os.path.join(image_folder, "*.png")))
+                files.extend(glob.glob(os.path.join(image_folder, "*.jpg")))
+                files.extend(glob.glob(os.path.join(image_folder, "*.jpeg")))
+                
+            if files:
+                selected_file = max(files, key=os.path.getmtime)
+                selected_time = os.path.getmtime(selected_file)
+                prompt_text = extract_image_prompt(selected_file)
+
+        # 2. If no image selected, fallback to session references or global avatar
+        if not selected_file:
             if session_id:
                 session_ref_dir = (Path(__file__).parent.parent / "sessions" / session_id / "reference_library").resolve()
                 if session_ref_dir.exists():
@@ -115,20 +131,6 @@ class CanvasStateManager:
                 }
             return {"latest": None, "time": 0, "music": music_state}
             
-        # Get the newest file by modification time
-        latest_file = max(files, key=os.path.getmtime)
-        latest_file_time = os.path.getmtime(latest_file)
-        
-        # Decide which image to show: prioritize explicit show_image call if set, otherwise fallback to latest modified file
-        if self.shown_image_path and os.path.exists(self.shown_image_path):
-            selected_file = self.shown_image_path
-            selected_time = self.shown_image_time
-            prompt_text = self.shown_image_prompt
-        else:
-            selected_file = latest_file
-            selected_time = latest_file_time
-            prompt_text = extract_image_prompt(selected_file)
-            
         basename = os.path.basename(selected_file)
         
         if self.current_image_basename is not None and self.current_image_basename != basename:
@@ -137,10 +139,13 @@ class CanvasStateManager:
             
         self.current_image_basename = basename
         
-        sel_path_obj = Path(selected_file)
+        sel_path_obj = Path(selected_file).resolve()
         if "reference_library" in sel_path_obj.parts:
-            image_url = f"/sessions/{session_id}/references/{basename}" if session_id else f"/reference_library/{basename}"
-        elif session_id:
+            if session_id and (Path(__file__).parent.parent / "sessions" / session_id / "reference_library" / basename).exists():
+                image_url = f"/sessions/{session_id}/references/{basename}"
+            else:
+                image_url = f"/reference_library/{basename}"
+        elif session_id and (Path(__file__).parent.parent / "sessions" / session_id / "output" / basename).exists():
             image_url = f"/sessions/{session_id}/output/{basename}"
         else:
             image_url = f"/images/{basename}"
