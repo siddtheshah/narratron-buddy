@@ -151,6 +151,58 @@ class TestSessionAPI(BaseTestCase):
             # Ensure no image basename is duplicated in the ZIP export
             self.assertEqual(len(base_names), len(set(base_names)), f"Duplicate image entries found in ZIP: {base_names}")
 
+    def test_password_reset_api_flow(self):
+        # 1. Register user
+        reg_res = self.client.post("/api/auth/register", json={
+            "username": "pw_reset_user",
+            "email": "pwreset@example.com",
+            "password": "OldPassword123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        # 2. Request forgot password
+        forgot_res = self.client.post("/api/auth/forgot-password", json={
+            "username_or_email": "pwreset@example.com"
+        })
+        self.assertEqual(forgot_res.status_code, 200)
+        data = forgot_res.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertIn("reset_link", data)
+
+        # Extract token from reset link
+        reset_link = data["reset_link"]
+        token = reset_link.split("reset_token=")[-1]
+        self.assertTrue(len(token) > 10)
+
+        # 3. Validate token
+        val_res = self.client.get(f"/api/auth/reset-password/validate?token={token}")
+        self.assertEqual(val_res.status_code, 200)
+        self.assertTrue(val_res.json()["valid"])
+        self.assertEqual(val_res.json()["username"], "pw_reset_user")
+
+        # 4. Reset password
+        reset_res = self.client.post("/api/auth/reset-password", json={
+            "token": token,
+            "new_password": "BrandNewPassword123"
+        })
+        self.assertEqual(reset_res.status_code, 200)
+        self.assertEqual(reset_res.json()["status"], "ok")
+
+        # 5. Try login with old password -> 401
+        old_login = self.client.post("/api/auth/login", json={
+            "username_or_email": "pw_reset_user",
+            "password": "OldPassword123"
+        })
+        self.assertEqual(old_login.status_code, 401)
+
+        # 6. Try login with new password -> 200
+        new_login = self.client.post("/api/auth/login", json={
+            "username_or_email": "pw_reset_user",
+            "password": "BrandNewPassword123"
+        })
+        self.assertEqual(new_login.status_code, 200)
+        self.assertEqual(new_login.json()["user"]["username"], "pw_reset_user")
+
 
 if __name__ == "__main__":
     unittest.main()

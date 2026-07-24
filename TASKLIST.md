@@ -10,7 +10,7 @@
 - [x] Stats page (number of accounts, active users in the last 7 days, session views)
 
 ## 3. Auth, Security & Monetization   
-- [ ] Password reset flow
+- [x] Password reset flow
 - [ ] Improve auth: ensure access tokens are invalidated when a user logs out
 - [ ] Payments setup (buy credits)
 
@@ -20,5 +20,5 @@
 - [x] Share link: easy link to share sessions
 - [x] Disable doodling option: let orator/session owner control whether doodles will be displayed on canvas (persisted to session state)
 - [x] Session export: gather all created images and download as a ZIP file
-- [ ] Look back: pop-up arrows to navigate previous and next images
-- [ ] Stream plugin: whenever mic is active in canvas, focus shifts to stream and returns when mic is off
+- [x] Look back: pop-up arrows to navigate previous and next images
+- [ ] Stream plugin: whenever mic is active in canvas, focus shifts in stream and returns when mic is off

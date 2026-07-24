@@ -17,3 +17,13 @@ music:
 orator:
     hotkey: "<ctrl>+<shift>+["
     server_url: "http://127.0.0.1:8000/api/orator/toggle_mic"
+
+email:
+    enabled: false
+
+smtp:
+    from_email: "noreply@narratron.io"
+    host: "smtp.gmail.com"
+    port: 587
+
+

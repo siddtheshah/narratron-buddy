@@ -29,6 +29,13 @@ from web_viewer_app import (
     update_shown_image,
 )
 
+# Immediately error if sys.argv contains CLI arguments
+if len(sys.argv) > 1:
+    raise RuntimeError(
+        f"CLI arguments (sys.argv) are not allowed when starting the app: {sys.argv[1:]}. "
+        "Use config.yaml or environment variables instead."
+    )
+
 # Load environment variables
 load_dotenv()
 config = get_config()
@@ -38,12 +45,11 @@ flags.DEFINE_boolean(
     "use_in_memory_artifacts",
     False,
     "Use PreloadedInMemoryArtifactService pre-loaded with test artifacts",
-    module_name="combined_app",
 )
 
 FLAGS = flags.FLAGS
 if not FLAGS.is_parsed():
-    FLAGS(sys.argv, known_only=True)
+    FLAGS(sys.argv[:1])
 
 # Configure logging
 logging.basicConfig(

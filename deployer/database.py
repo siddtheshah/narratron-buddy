@@ -8,8 +8,8 @@ import sqlite3
 import secrets
 from typing import Any, Dict, List, Optional
 
-logger = None
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -116,6 +116,17 @@ class DatabaseManager:
                     viewed_at TEXT NOT NULL,
                     ip_address TEXT,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    used INTEGER DEFAULT 0,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             """)
             conn.commit()
@@ -360,6 +371,84 @@ class DatabaseManager:
             cursor.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def create_password_reset_token(self, email_or_username: str, minutes_valid: int = 30) -> Optional[tuple[str, Dict]]:
+        """Create a single-use password reset token for a user identified by email or username."""
+        query_val = email_or_username.strip()
+        if not query_val:
+            return None
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, username, email FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
+                (query_val, query_val)
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            user_dict = dict(row)
+
+        token = secrets.token_urlsafe(32)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expires = now + datetime.timedelta(minutes=minutes_valid)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO password_reset_tokens (token, user_id, created_at, expires_at, used) VALUES (?, ?, ?, ?, 0)",
+                (token, user_dict["id"], now.isoformat(), expires.isoformat())
+            )
+            conn.commit()
+        return token, user_dict
+
+    def validate_password_reset_token(self, token: str) -> Optional[Dict]:
+        """Validate password reset token and return associated user profile if valid, unused, and not expired."""
+        if not token:
+            return None
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT u.id, u.username, u.email, t.expires_at
+                FROM password_reset_tokens t
+                JOIN users u ON t.user_id = u.id
+                WHERE t.token = ? AND t.used = 0 AND t.expires_at > ?
+            """, (token, now_iso))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def reset_password_with_token(self, token: str, new_password: str) -> bool:
+        """Reset user's password using token, mark token used, and invalidate active sessions."""
+        if not new_password or len(new_password.strip()) == 0:
+            raise ValueError("New password cannot be empty.")
+
+        user = self.validate_password_reset_token(token)
+        if not user:
+            return False
+
+        user_id = user["id"]
+        pwd_hash, salt_hex = self._hash_password(new_password)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+                (pwd_hash, salt_hex, user_id)
+            )
+            cursor.execute(
+                "UPDATE password_reset_tokens SET used = 1 WHERE token = ?",
+                (token,)
+            )
+            cursor.execute(
+                "DELETE FROM auth_sessions WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
+            return True
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         with self._get_connection() as conn:

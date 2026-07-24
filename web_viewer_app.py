@@ -14,6 +14,7 @@ from deployer.database import DatabaseManager
 from deployer.deployer import LocalDeployer, SessionMetadata
 from deployer.session_manager import SessionManager
 from utils.config_loader import get_config
+from utils.email_service import send_password_reset_email
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,13 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username_or_email: str
     password: str
+
+class ForgotPasswordRequest(BaseModel):
+    username_or_email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
 
 class ResolveJoinKeyRequest(BaseModel):
     join_key: str
@@ -131,6 +139,43 @@ def get_auth_me(request: Request):
     if not user:
         return {"authenticated": False, "user": None}
     return {"authenticated": True, "user": user}
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(req: ForgotPasswordRequest, request: Request):
+    token_user = db.create_password_reset_token(req.username_or_email)
+    if not token_user:
+        return {
+            "status": "ok",
+            "message": "If an account with that email or username exists, a password reset link has been sent."
+        }
+
+    token, user = token_user
+    base_url = str(request.base_url).rstrip("/")
+    reset_link = f"{base_url}/deploy?reset_token={token}"
+
+    res = send_password_reset_email(user["email"], user["username"], reset_link)
+
+    return {
+        "status": "ok",
+        "message": "If an account with that email or username exists, a password reset link has been sent.",
+        "reset_link": res.get("reset_link")
+    }
+
+@app.get("/api/auth/reset-password/validate")
+def validate_reset_token(token: str):
+    user = db.validate_password_reset_token(token)
+    if not user:
+        return {"valid": False, "detail": "Invalid or expired password reset link."}
+    return {"valid": True, "username": user["username"]}
+
+@app.post("/api/auth/reset-password")
+def reset_password(req: ResetPasswordRequest):
+    if not req.new_password or not req.new_password.strip():
+        raise HTTPException(status_code=400, detail="New password cannot be empty.")
+    success = db.reset_password_with_token(req.token, req.new_password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+    return {"status": "ok", "message": "Password updated successfully! You can now log in with your new password."}
 
 # ========================================
 # Session Asset Dynamic Routes
@@ -541,7 +586,5 @@ def read_canvas(request: Request, session_id: Optional[str] = None):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
-        folder = sys.argv[1]
-        
-    os.makedirs(folder, exist_ok=True)
+        raise RuntimeError("CLI arguments (sys.argv) are not allowed when starting the app. Use config.yaml or environment variables instead.")
     uvicorn.run(app, host="0.0.0.0", port=8000)

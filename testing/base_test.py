@@ -10,6 +10,8 @@ class BaseTestCase(unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.addCleanup(self.cleanup_session_directories)
+        from utils.email_service import FLAGS
+        FLAGS.send_emails = False
 
     def cleanup_session_directories(self):
         # 1. Clear web_viewer_app canvas states cache if loaded

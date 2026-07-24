@@ -558,7 +558,7 @@
     <!-- Auth Modal -->
     <div class="modal-overlay" id="authModal">
         <div class="modal-card">
-            <div class="modal-tabs">
+            <div class="modal-tabs" id="authModalTabs">
                 <div class="modal-tab active" id="tabLogin" onclick="switchAuthTab('login')">Log In</div>
                 <div class="modal-tab" id="tabRegister" onclick="switchAuthTab('register')">Sign Up</div>
             </div>
@@ -567,11 +567,14 @@
             <div id="formLogin">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label>Username or Email</label>
-                    <input type="text" id="loginUserEmail" placeholder="username or email">
+                    <input type="text" id="loginUserEmail" placeholder="username or email" onkeypress="if(event.key==='Enter') submitLogin()">
                 </div>
-                <div class="form-group" style="margin-bottom: 1.5rem;">
+                <div class="form-group" style="margin-bottom: 0.5rem;">
                     <label>Password</label>
-                    <input type="password" id="loginPassword" placeholder="••••••••">
+                    <input type="password" id="loginPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') submitLogin()">
+                </div>
+                <div style="text-align: right; margin-bottom: 1.25rem;">
+                    <a href="javascript:void(0)" onclick="switchAuthTab('forgot')" style="font-size: 0.85rem; color: var(--accent-primary, #38bdf8); text-decoration: none;">Forgot password?</a>
                 </div>
                 <button class="btn btn-primary" style="width: 100%;" onclick="submitLogin()">Log In</button>
             </div>
@@ -588,12 +591,43 @@
                 </div>
                 <div class="form-group" style="margin-bottom: 1.5rem;">
                     <label>Password</label>
-                    <input type="password" id="regPassword" placeholder="••••••••">
+                    <input type="password" id="regPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') submitRegister()">
                 </div>
                 <button class="btn btn-primary" style="width: 100%;" onclick="submitRegister()">Sign Up (Get 100 Credits)</button>
             </div>
 
+            <!-- Forgot Password Form -->
+            <div id="formForgotPassword" style="display: none;">
+                <h4 style="margin-bottom: 0.5rem;">Reset Your Password</h4>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">Enter your email address or username and we'll send you a password reset link.</p>
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label>Username or Email</label>
+                    <input type="text" id="forgotUserEmail" placeholder="username or email" onkeypress="if(event.key==='Enter') submitForgotPassword()">
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitForgotPassword()">Send Reset Link</button>
+                <div style="text-align: center; margin-top: 1rem;">
+                    <a href="javascript:void(0)" onclick="switchAuthTab('login')" style="font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;">← Back to Log In</a>
+                </div>
+            </div>
+
+            <!-- Reset Password Form -->
+            <div id="formResetPassword" style="display: none;">
+                <h4 style="margin-bottom: 0.5rem;">Set New Password</h4>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;" id="resetPasswordSubtext">Enter a new password for your account.</p>
+                <input type="hidden" id="resetTokenInput">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>New Password</label>
+                    <input type="password" id="resetNewPassword" placeholder="••••••••">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label>Confirm New Password</label>
+                    <input type="password" id="resetConfirmPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') submitResetPassword()">
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitResetPassword()">Update Password</button>
+            </div>
+
             <div class="modal-error" id="modalError"></div>
+            <div class="modal-success" id="modalSuccess" style="display:none; color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; word-break: break-all;"></div>
             <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;" onclick="closeAuthModal()">Cancel</button>
         </div>
     </div>
@@ -654,15 +688,133 @@
         function closeAuthModal() {
             document.getElementById('authModal').classList.remove('active');
             document.getElementById('modalError').style.display = 'none';
+            document.getElementById('modalSuccess').style.display = 'none';
         }
 
         function switchAuthTab(tab) {
-            const isLogin = tab === 'login';
-            document.getElementById('tabLogin').classList.toggle('active', isLogin);
-            document.getElementById('tabRegister').classList.toggle('active', !isLogin);
-            document.getElementById('formLogin').style.display = isLogin ? 'block' : 'none';
-            document.getElementById('formRegister').style.display = isLogin ? 'none' : 'block';
-            document.getElementById('modalError').style.display = 'none';
+            const tabsContainer = document.getElementById('authModalTabs');
+            const formLogin = document.getElementById('formLogin');
+            const formRegister = document.getElementById('formRegister');
+            const formForgot = document.getElementById('formForgotPassword');
+            const formReset = document.getElementById('formResetPassword');
+            const err = document.getElementById('modalError');
+            const success = document.getElementById('modalSuccess');
+
+            err.style.display = 'none';
+            success.style.display = 'none';
+
+            tabsContainer.style.display = (tab === 'login' || tab === 'register') ? 'flex' : 'none';
+            
+            document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+            document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+
+            formLogin.style.display = tab === 'login' ? 'block' : 'none';
+            formRegister.style.display = tab === 'register' ? 'block' : 'none';
+            formForgot.style.display = tab === 'forgot' ? 'block' : 'none';
+            formReset.style.display = tab === 'reset' ? 'block' : 'none';
+        }
+
+        async function submitForgotPassword() {
+            const input = document.getElementById('forgotUserEmail').value.trim();
+            const err = document.getElementById('modalError');
+            const success = document.getElementById('modalSuccess');
+            err.style.display = 'none';
+            success.style.display = 'none';
+
+            if (!input) {
+                err.textContent = 'Please enter your username or email address.';
+                err.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/forgot-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username_or_email: input })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    let msg = data.message || 'Password reset link sent!';
+                    if (data.reset_link) {
+                        msg += `<br><br><strong>Dev Mode Reset Link:</strong><br><a href="${data.reset_link}" style="color: #38bdf8; word-break: break-all;">${data.reset_link}</a>`;
+                    }
+                    success.innerHTML = msg;
+                    success.style.display = 'block';
+                } else {
+                    err.textContent = data.detail || 'Failed to request password reset.';
+                    err.style.display = 'block';
+                }
+            } catch (e) {
+                err.textContent = 'Network error.';
+                err.style.display = 'block';
+            }
+        }
+
+        async function submitResetPassword() {
+            const token = document.getElementById('resetTokenInput').value;
+            const newPassword = document.getElementById('resetNewPassword').value;
+            const confirmPassword = document.getElementById('resetConfirmPassword').value;
+            const err = document.getElementById('modalError');
+            const success = document.getElementById('modalSuccess');
+            err.style.display = 'none';
+            success.style.display = 'none';
+
+            if (!newPassword || !confirmPassword) {
+                err.textContent = 'Please enter and confirm your new password.';
+                err.style.display = 'block';
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                err.textContent = 'Passwords do not match.';
+                err.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token, new_password: newPassword })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    switchAuthTab('login');
+                    const loginSuccess = document.getElementById('modalSuccess');
+                    loginSuccess.textContent = data.message || 'Password updated successfully! Please log in.';
+                    loginSuccess.style.display = 'block';
+                } else {
+                    err.textContent = data.detail || 'Failed to reset password.';
+                    err.style.display = 'block';
+                }
+            } catch (e) {
+                err.textContent = 'Network error.';
+                err.style.display = 'block';
+            }
+        }
+
+        async function checkResetTokenInURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const resetToken = urlParams.get('reset_token');
+            if (resetToken) {
+                try {
+                    const res = await fetch(`/api/auth/reset-password/validate?token=${encodeURIComponent(resetToken)}`);
+                    const data = await res.json();
+                    if (data.valid) {
+                        document.getElementById('resetTokenInput').value = resetToken;
+                        document.getElementById('resetPasswordSubtext').textContent = `Set a new password for ${data.username}.`;
+                        openAuthModal('reset');
+                    } else {
+                        openAuthModal('forgot');
+                        const err = document.getElementById('modalError');
+                        err.textContent = data.detail || 'The reset link is invalid or expired. Please request a new link.';
+                        err.style.display = 'block';
+                    }
+                } catch (e) {
+                    console.error('Error validating reset token:', e);
+                }
+            }
         }
 
         async function submitLogin() {
@@ -1054,6 +1206,7 @@
         renderPlaylists();
         checkAuthStatus();
         loadSessions();
+        checkResetTokenInURL();
     </script>
 </body>
 </html>

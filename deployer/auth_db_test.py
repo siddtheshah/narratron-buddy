@@ -120,6 +120,42 @@ class TestDatabaseManager(BaseTestCase):
         self.assertEqual(stats["session_views_7d"], 3)
         self.assertTrue(any(s["session_id"] == "session_alpha" and s["views"] == 2 for s in stats["top_viewed_sessions"]))
 
+    def test_password_reset_flow(self):
+        user = self.db.register_user("resetuser", "reset@example.com", "OldPassword123")
+        
+        # Create active session token
+        session_token = self.db.create_auth_session(user["id"])
+        self.assertIsNotNone(self.db.validate_session_token(session_token))
+
+        # Request reset token by email
+        res = self.db.create_password_reset_token("reset@example.com")
+        self.assertIsNotNone(res)
+        token, u_info = res
+        self.assertEqual(u_info["username"], "resetuser")
+
+        # Validate reset token
+        val_user = self.db.validate_password_reset_token(token)
+        self.assertIsNotNone(val_user)
+        self.assertEqual(val_user["username"], "resetuser")
+
+        # Reset password
+        success = self.db.reset_password_with_token(token, "NewPassword456")
+        self.assertTrue(success)
+
+        # Old password authentication fails
+        self.assertIsNone(self.db.authenticate_user("resetuser", "OldPassword123"))
+
+        # New password authentication succeeds
+        auth_new = self.db.authenticate_user("resetuser", "NewPassword456")
+        self.assertIsNotNone(auth_new)
+
+        # Reusing token fails
+        self.assertIsNone(self.db.validate_password_reset_token(token))
+        self.assertFalse(self.db.reset_password_with_token(token, "AnotherPassword789"))
+
+        # Old session token invalidated
+        self.assertIsNone(self.db.validate_session_token(session_token))
+
 
 if __name__ == "__main__":
     unittest.main()
