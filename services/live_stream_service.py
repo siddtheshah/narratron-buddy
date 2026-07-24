@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -173,27 +172,6 @@ async def handle_live_websocket_connection(
                 if hasattr(event, "get_function_calls") and event.get_function_calls():
                     for call in event.get_function_calls():
                         logger.info(f"[Agent Tool Call] Function: {call.name}, Args: {call.args}")
-                        if call.name in ("show_image", "create_image"):
-                            file_path = call.args.get("file_path") or call.args.get("image_name")
-                            resolved_path = image_tools._find_image_path(file_path) if file_path else None
-                            if resolved_path:
-                                if image_tools.on_show_image:
-                                    image_tools.on_show_image(resolved_path)
-                                try:
-                                    with open(resolved_path, "rb") as f:
-                                        img_b64 = base64.b64encode(f.read()).decode("utf-8")
-                                    mime_type = "image/png"
-                                    if resolved_path.lower().endswith(".jpg") or resolved_path.lower().endswith(".jpeg"):
-                                        mime_type = "image/jpeg"
-                                    custom_event = {
-                                        "custom_image": {
-                                            "mimeType": mime_type,
-                                            "data": img_b64,
-                                        }
-                                    }
-                                    await safe_send_text(json.dumps(custom_event))
-                                except Exception as e:
-                                    logger.error(f"Error reading image for UI: {e}")
 
                 event_dict = json.loads(event.model_dump_json(exclude_none=True, by_alias=True))
                 # Strip raw audio data (inlineData) from the event before sending to client

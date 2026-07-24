@@ -580,7 +580,7 @@ class DatabaseManager:
             if "canvas_state" not in metadata and "canvas_state" in state_data:
                 metadata["canvas_state"] = state_data["canvas_state"]
             elif "canvas_state" not in metadata:
-                c_fields = ["current_image_basename", "shown_image_path", "shown_image_prompt", "shown_images_history", "current_playlist", "current_playlist_tracks", "music_paused", "doodles", "doodles_enabled", "chat_messages"]
+                c_fields = ["current_image_basename", "shown_image_path", "shown_image_prompt", "shown_images_history", "shown_image_transition", "current_playlist", "current_playlist_tracks", "music_paused", "doodles", "doodles_enabled", "chat_messages"]
                 c_dict = {k: state_data[k] for k in c_fields if k in state_data}
                 if c_dict:
                     metadata["canvas_state"] = c_dict

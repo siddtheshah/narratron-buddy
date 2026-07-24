@@ -62,7 +62,7 @@ The create_image and show_image tools have cooldowns to prevent overuse. Review 
 
 * list_references: List preloaded reference images from the session references directory. Note: Reference items are already preloaded into your initial context upon agent initialization, so you do not need to call this tool on every turn.
 * create_image <image_prompt> <metadata_description> [image_name] [reference_images]: Creates an image based on a prompt. You can specify a custom `image_name` (e.g. 'hero_portrait') for easy tracking and recall, and pass `reference_images` (names or paths of stock art or previously created images) to adapt visual style and maintain consistency across scenes.
-* show_image <file_path_or_name>: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period.
+* show_image <file_path_or_name> [transition]: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period. Optionally specify `transition`: `crossfade` (default — old image dissolves into new), `fade` (new image fades in from black), or `none` (instant cut). Use `crossfade` for smooth scene changes; use `fade` for fresh first reveals.
 * browse_images: Returns a list of all available generated image file paths.
 * search_image_by_metadata <metadata_query>: Returns a list of image file paths whose metadata description matches the query by keywords.
 

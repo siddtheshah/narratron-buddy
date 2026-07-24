@@ -33,6 +33,7 @@ class CanvasStateManager:
         self.shown_image_time: float = 0.0
         self.shown_image_prompt: str = ""
         self.shown_images_history: List[str] = []
+        self.shown_image_transition: str = "crossfade"
         
         # WebSocket and doodles
         self.active_ws_connections: List[WebSocket] = []
@@ -59,6 +60,7 @@ class CanvasStateManager:
                     self.shown_image_path = c_state.get("shown_image_path")
                     self.shown_image_prompt = c_state.get("shown_image_prompt", "")
                     self.shown_images_history = c_state.get("shown_images_history", [])
+                    self.shown_image_transition = c_state.get("shown_image_transition", "fade")
                     self.current_playlist = c_state.get("current_playlist")
                     self.current_playlist_tracks = c_state.get("current_playlist_tracks", [])
                     self.music_paused = c_state.get("music_paused", False)
@@ -85,10 +87,11 @@ class CanvasStateManager:
         self.music_paused = False
         self.current_playlist_time = time.time()
 
-    def update_shown_image(self, file_path: str, session_id: Optional[str] = None):
+    def update_shown_image(self, file_path: str, session_id: Optional[str] = None, transition: str = "crossfade"):
         self.shown_image_path = file_path
         self.shown_image_time = time.time()
         self.shown_image_prompt = extract_image_prompt(file_path)
+        self.shown_image_transition = transition or "crossfade"
         if file_path and file_path not in self.shown_images_history:
             self.shown_images_history.append(file_path)
 
@@ -184,9 +187,10 @@ class CanvasStateManager:
                             "time": 0,
                             "prompt": f"Mounted Reference: {ref_images[0].stem}",
                             "music": music_state,
-                            "doodles_enabled": self.doodles_enabled
+                            "doodles_enabled": self.doodles_enabled,
+                            "transition": getattr(self, "shown_image_transition", "fade") or "fade"
                         }
-            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled}
+            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade"}
             
         basename = os.path.basename(selected_file)
         
@@ -207,7 +211,8 @@ class CanvasStateManager:
             "time": selected_time,
             "prompt": prompt_text,
             "music": music_state,
-            "doodles_enabled": self.doodles_enabled
+            "doodles_enabled": self.doodles_enabled,
+            "transition": getattr(self, "shown_image_transition", "fade") or "fade"
         }
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, playlist={music_state['playlist']}")
         return res
@@ -216,13 +221,14 @@ class CanvasStateManager:
         """Ensure current displayed image is saved and gather session metadata, canvas data and files."""
         import json
         if self.shown_image_path and session_dir:
-            self.update_shown_image(self.shown_image_path, session_id=session_dir.name)
+            self.update_shown_image(self.shown_image_path, session_id=session_dir.name, transition=getattr(self, "shown_image_transition", "fade"))
 
         canvas_state = {
             "current_image_basename": self.current_image_basename,
             "shown_image_path": self.shown_image_path,
             "shown_image_prompt": self.shown_image_prompt,
             "shown_images_history": self.shown_images_history,
+            "shown_image_transition": getattr(self, "shown_image_transition", "fade"),
             "current_playlist": self.current_playlist,
             "current_playlist_tracks": self.current_playlist_tracks,
             "music_paused": self.music_paused,

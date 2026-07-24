@@ -175,10 +175,27 @@ class TestImageTools(unittest.TestCase):
 
         res = tools.show_image(file_path)
         self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path)
+        callback.assert_called_once_with(file_path, transition="crossfade")
 
         res2 = tools.show_image(file_path)
         self.assertIn("show_image is on cooldown", res2)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_show_image_transition(self, mock_genai_client):
+        """Test that show_image forwards the transition parameter to the callback."""
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        callback = MagicMock()
+        tools.on_show_image = callback
+
+        file_path = os.path.join(tools.output_dir, "trans_test.jpg")
+        img = Image.new("RGB", (10, 10), color="blue")
+        img.save(file_path)
+
+        res = tools.show_image(file_path, transition="zoom")
+        self.assertIn("Successfully displayed", res)
+        callback.assert_called_once_with(file_path, transition="zoom")
 
     @patch("tools.image_tool.genai.Client")
     def test_search_and_browse_images(self, mock_genai_client):

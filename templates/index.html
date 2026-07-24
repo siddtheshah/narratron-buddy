@@ -114,12 +114,38 @@
             max-height: 100%;
             object-fit: contain;
             opacity: 0;
-            transition: opacity 1s ease-in-out;
+            transition: opacity 2.5s ease-in-out;
         }
 
         #current-image.loaded {
             opacity: 1;
         }
+
+        /* Ghost image used for crossfade: sits on top and fades out as current-image fades in */
+        #ghost-image {
+            position: absolute;
+            inset: 0;
+            max-width: 100%;
+            max-height: 100%;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 3;
+            transition: opacity 2.5s ease-in-out;
+        }
+
+        #ghost-image.fading-out {
+            opacity: 1;
+            animation: ghost-fade-out 2.5s ease-in-out forwards;
+        }
+
+        @keyframes ghost-fade-out {
+            from { opacity: 1; }
+            to   { opacity: 0; }
+        }
+
 
         #doodle-canvas {
             position: absolute;
@@ -857,24 +883,33 @@
                     lastTime = data.time;
                     
                     const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                    const transition = (data.transition || 'fade').toLowerCase().trim();
                     const tempImage = new Image();
                     
                     tempImage.onload = () => {
-                        currentImage.classList.remove('loaded');
                         promptBtn.classList.remove('expanded');
                         promptBtn.style.display = 'none';
                         promptPinned = false;
-                        
-                        setTimeout(() => {
-                            currentImage.src = newImgUrl;
-                            bgLayer.style.backgroundImage = `url(${newImgUrl})`;
-                            currentImage.classList.add('loaded');
-                            
-                            if (data.prompt) {
-                                promptTextSpan.textContent = data.prompt;
-                                promptBtn.style.display = 'flex';
-                            }
-                        }, 500);
+
+                        // Strip all previous transition classes
+                        const transClasses = ['loaded', 'transition-active',
+                            't-fade', 't-zoom', 't-slide-left', 't-slide-right',
+                            't-slide-up', 't-slide-down', 't-flip', 't-wipe'];
+                        currentImage.classList.remove(...transClasses);
+                        void currentImage.offsetWidth; // reflow to restart animation
+
+                        currentImage.src = newImgUrl;
+                        bgLayer.style.backgroundImage = `url(${newImgUrl})`;
+
+                        if (transition !== 'none') {
+                            currentImage.classList.add('transition-active', `t-${transition}`);
+                        }
+                        currentImage.classList.add('loaded');
+
+                        if (data.prompt) {
+                            promptTextSpan.textContent = data.prompt;
+                            promptBtn.style.display = 'flex';
+                        }
                     };
                     
                     tempImage.src = newImgUrl;

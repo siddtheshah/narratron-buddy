@@ -109,7 +109,7 @@ async def agent_websocket_endpoint(
     s_notes_tools = session_tools["notes_tools"]
     s_music_tools = session_tools["music_tools"]
 
-    s_image_tools.on_show_image = lambda path: update_shown_image(path, session_id=session_id)
+    s_image_tools.on_show_image = lambda path, transition="crossfade": update_shown_image(path, session_id=session_id, transition=transition)
     s_music_tools.on_play_playlist = lambda name, tracks: update_current_playlist(name, tracks, session_id=session_id)
     s_music_tools.on_pause_playlist = lambda: pause_current_playlist(session_id=session_id)
     s_music_tools.on_resume_playlist = lambda: resume_current_playlist(session_id=session_id)

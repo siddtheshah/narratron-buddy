@@ -285,17 +285,19 @@ class ImageTools:
             logger.error(f"[create_image tool] {error_msg}")
             return error_msg
 
-    def show_image(self, file_path: str) -> str:
-        """Shows an image from a file path or friendly name to the user.
+    def show_image(self, file_path: str, transition: str = "crossfade") -> str:
+        """Shows an image from a file path or friendly name to the user with a specified canvas transition effect.
 
         Args:
             file_path: The file path or friendly name/alias of the image to show.
+            transition: The transition effect to apply when displaying the image on the canvas.
+                        Supported values: 'crossfade' (default, old image dissolves into new), 'fade' (fades in from black), 'none' (instant).
 
         Returns:
             A status message indicating success or failure.
         """
         try:
-            logger.debug(f"[show_image tool] Called with file_path='{file_path}'")
+            logger.info(f"[show_image tool] Called — file_path='{file_path}', transition='{transition}'")
             now = time.time()
             elapsed = now - self.last_show_time
             if elapsed < self.cooldown_duration:
@@ -307,15 +309,15 @@ class ImageTools:
                 return f"Error: show_image is on cooldown. Please wait {remaining} more seconds before displaying another image."
 
             resolved_path = self._find_image_path(file_path)
-            logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}')")
+            logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}', transition: '{transition}')")
             if resolved_path:
                 if self.on_show_image:
-                    logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}'")
-                    self.on_show_image(resolved_path)
+                    logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}', transition='{transition}'")
+                    self.on_show_image(resolved_path, transition=transition)
                 else:
                     logger.warning("[show_image tool] on_show_image callback is not set")
                 self.last_show_time = time.time()
-                return f"Successfully displayed {resolved_path} to the user."
+                return f"Successfully displayed {resolved_path} to the user with transition '{transition}'."
             else:
                 logger.warning(f"[show_image tool] Image path or alias '{file_path}' could not be resolved.")
                 return f"Error: Image '{file_path}' not found."
