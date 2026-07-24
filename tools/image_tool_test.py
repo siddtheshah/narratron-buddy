@@ -21,8 +21,8 @@ def create_fake_image_bytes() -> bytes:
 class TestImageTools(unittest.TestCase):
     def setUp(self):
         ImageTools._client_cache = None
-        ImageTools._ref_library_cache = {}
-        ImageTools._ref_library_dir_cached = None
+        ImageTools._references_cache = {}
+        ImageTools._reference_dir_cached = None
 
         self.temp_dir = tempfile.mkdtemp()
         self.config = {
@@ -36,8 +36,8 @@ class TestImageTools(unittest.TestCase):
 
     def tearDown(self):
         ImageTools._client_cache = None
-        ImageTools._ref_library_cache = {}
-        ImageTools._ref_library_dir_cached = None
+        ImageTools._references_cache = {}
+        ImageTools._reference_dir_cached = None
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @patch("tools.image_tool.genai.Client")
@@ -45,8 +45,8 @@ class TestImageTools(unittest.TestCase):
         session_id = "test_session_abc"
         tools = ImageTools(self.config, session_id=session_id)
         self.assertEqual(tools.active_session_id, session_id)
-        self.assertTrue(tools.output_dir.endswith(os.path.join("sessions", session_id, "output", "images")))
-        self.assertTrue(tools.reference_library_dir.endswith(os.path.join("sessions", session_id, "references")))
+        self.assertTrue(tools.output_dir.endswith(os.path.join("sessions", session_id, "output", "artifacts", "images")))
+        self.assertTrue(tools.reference_dir.endswith(os.path.join("sessions", session_id, "references")))
         self.assertEqual(tools.get_effective_output_dir(), tools.output_dir)
 
     @patch("tools.image_tool.genai.Client")
@@ -61,22 +61,22 @@ class TestImageTools(unittest.TestCase):
         self.assertIs(tools1.client, tools2.client)
 
     @patch("tools.image_tool.genai.Client")
-    def test_reference_library_loading_and_caching(self, mock_genai_client):
+    def test_references_loading_and_caching(self, mock_genai_client):
         session_id = "session_ref_test"
         tools = ImageTools(self.config, session_id=session_id)
 
-        ref_path = os.path.join(tools.reference_library_dir, "hero_character.png")
+        ref_path = os.path.join(tools.reference_dir, "hero_character.png")
         img = Image.new("RGB", (10, 10), color="red")
         img.save(ref_path)
 
-        tools._load_reference_library()
-        manifest = tools.list_reference_library()
+        tools._load_references()
+        manifest = tools.list_references()
         self.assertEqual(len(manifest), 1)
         self.assertEqual(manifest[0]["name"], "hero_character")
         self.assertEqual(manifest[0]["alias"], "hero_character")
 
         tools2 = ImageTools(self.config, session_id=session_id)
-        self.assertEqual(len(tools2.list_reference_library()), 1)
+        self.assertEqual(len(tools2.list_references()), 1)
 
     @patch("tools.image_tool.genai.Client")
     def test_create_image_success_and_alias(self, mock_genai_client):
@@ -120,17 +120,28 @@ class TestImageTools(unittest.TestCase):
 
         tools = ImageTools(self.config, session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
-        tools.reference_library_dir = os.path.join(self.temp_dir, "refs")
+        tools.reference_dir = os.path.join(self.temp_dir, "refs")
         os.makedirs(tools.output_dir, exist_ok=True)
-        os.makedirs(tools.reference_library_dir, exist_ok=True)
+        os.makedirs(tools.reference_dir, exist_ok=True)
 
-        ref_file = os.path.join(tools.reference_library_dir, "style_ref.png")
+        ref_file = os.path.join(tools.reference_dir, "style_ref.png")
         Image.new("RGB", (10, 10), color="blue").save(ref_file)
-        tools._load_reference_library()
+        tools._load_references()
 
         res = tools.create_image("a fantasy castle", "castle description", reference_images="style_ref")
         self.assertIn("Successfully generated and displayed image", res)
         mock_part_cls.from_bytes.assert_called_once()
+
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_with_missing_reference_fails(self, mock_genai_client):
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        tools.reference_dir = os.path.join(self.temp_dir, "refs")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        os.makedirs(tools.reference_dir, exist_ok=True)
+
+        res = tools.create_image("a fantasy castle", "castle description", reference_images="nonexistent_ref")
+        self.assertIn("Error: Reference image 'nonexistent_ref' not found.", res)
 
     @patch("tools.image_tool.genai.Client")
     def test_independent_cooldowns(self, mock_genai_client):

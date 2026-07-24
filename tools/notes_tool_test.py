@@ -22,7 +22,7 @@ class TestNotesTools(unittest.TestCase):
     def test_init_session_paths(self):
         notes_tools = NotesTools(self.config, session_id="sess_abc")
         self.assertEqual(notes_tools.active_session_id, "sess_abc")
-        self.assertTrue(notes_tools.notes_dir.endswith(os.path.join("sessions", "sess_abc", "output", "notes")))
+        self.assertTrue(notes_tools.notes_dir.endswith(os.path.join("sessions", "sess_abc", "output", "artifacts", "notes")))
         self.assertEqual(notes_tools.get_effective_notes_dir(), notes_tools.notes_dir)
 
     def test_edit_notes_create_and_overwrite(self):

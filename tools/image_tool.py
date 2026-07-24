@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 class ImageTools:
     _client_cache = None
-    _ref_library_cache: Dict[str, dict] = {}
-    _ref_library_dir_cached: Optional[str] = None
+    _references_cache: Dict[str, dict] = {}
+    _reference_dir_cached: Optional[str] = None
 
     def __init__(self, config: dict, session_id: str):
         root_dir = Path(__file__).parent.parent.resolve()
@@ -34,8 +34,8 @@ class ImageTools:
         self.output_dir = str((root_dir / "sessions" / self.active_session_id / "output" / "artifacts" / "images").resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
-        self.reference_library_dir = str((root_dir / "sessions" / self.active_session_id / "references").resolve())
-        os.makedirs(self.reference_library_dir, exist_ok=True)
+        self.reference_dir = str((root_dir / "sessions" / self.active_session_id / "references").resolve())
+        os.makedirs(self.reference_dir, exist_ok=True)
         
         # Reuse shared genai Client instance across session re-initializations
         if ImageTools._client_cache is None:
@@ -53,26 +53,26 @@ class ImageTools:
         # In-memory mapping of custom image names/aliases to file paths
         self.image_aliases: Dict[str, str] = {}
         
-        # Reuse cached reference library manifest if directory hasn't changed
-        if ImageTools._ref_library_dir_cached == self.reference_library_dir and ImageTools._ref_library_cache:
-            self.reference_library_manifest = ImageTools._ref_library_cache
+        # Reuse cached references manifest if directory hasn't changed
+        if ImageTools._reference_dir_cached == self.reference_dir and ImageTools._references_cache:
+            self.references_manifest = ImageTools._references_cache
         else:
-            self.reference_library_manifest = {}
-            self._load_reference_library()
-            ImageTools._ref_library_cache = self.reference_library_manifest
-            ImageTools._ref_library_dir_cached = self.reference_library_dir
+            self.references_manifest = {}
+            self._load_references()
+            ImageTools._references_cache = self.references_manifest
+            ImageTools._reference_dir_cached = self.reference_dir
 
     def get_effective_output_dir(self) -> str:
         """Return active session output directory."""
         return self.output_dir
 
-    def _load_reference_library(self):
-        """Scans the reference library folder once at startup and builds a read-only manifest."""
+    def _load_references(self):
+        """Scans the references folder once at startup and builds a read-only manifest."""
         try:
-            if os.path.exists(self.reference_library_dir):
-                for filename in os.listdir(self.reference_library_dir):
+            if os.path.exists(self.reference_dir):
+                for filename in os.listdir(self.reference_dir):
                     if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                        filepath = os.path.join(self.reference_library_dir, filename)
+                        filepath = os.path.join(self.reference_dir, filename)
                         stem = Path(filename).stem
                         clean_stem = re.sub(r'[^a-zA-Z0-9_-]', '_', stem)
                         
@@ -82,26 +82,26 @@ class ImageTools:
                             "name": stem,
                             "alias": clean_stem,
                             "path": filepath,
-                            "description": metadata_desc or f"Reference library image {filename}"
+                            "description": metadata_desc or f"Reference image {filename}"
                         }
-                        self.reference_library_manifest[stem] = entry
-                        self.reference_library_manifest[clean_stem] = entry
-                        self.reference_library_manifest[stem.lower()] = entry
-                        self.reference_library_manifest[clean_stem.lower()] = entry
-            unique_count = len(set(item['path'] for item in self.reference_library_manifest.values())) if self.reference_library_manifest else 0
-            logger.info(f"[ImageTools] Loaded {unique_count} reference images into read-only library.")
+                        self.references_manifest[stem] = entry
+                        self.references_manifest[clean_stem] = entry
+                        self.references_manifest[stem.lower()] = entry
+                        self.references_manifest[clean_stem.lower()] = entry
+            unique_count = len(set(item['path'] for item in self.references_manifest.values())) if self.references_manifest else 0
+            logger.info(f"[ImageTools] Loaded {unique_count} reference images into references manifest.")
         except Exception as e:
-            logger.warning(f"[ImageTools] Failed to load reference library: {e}")
+            logger.warning(f"[ImageTools] Failed to load references: {e}")
 
-    def list_reference_library(self) -> list[dict]:
-        """List all available pre-loaded reference images in the reference library.
+    def list_references(self) -> list[dict]:
+        """List all available pre-loaded reference images in the references directory.
 
         Returns:
             A list of dictionaries with image names, file paths, and metadata descriptions.
         """
         seen_paths = set()
         results = []
-        for item in self.reference_library_manifest.values():
+        for item in self.references_manifest.values():
             if item["path"] not in seen_paths:
                 seen_paths.add(item["path"])
                 results.append({
@@ -123,18 +123,18 @@ class ImageTools:
         if clean_input in self.image_aliases:
             return self.image_aliases[clean_input]
 
-        # Check reference library manifest
-        if path_str in self.reference_library_manifest:
-            return self.reference_library_manifest[path_str]["path"]
-        if path_str.lower() in self.reference_library_manifest:
-            return self.reference_library_manifest[path_str.lower()]["path"]
-        if clean_input in self.reference_library_manifest:
-            return self.reference_library_manifest[clean_input]["path"]
-        if clean_input.lower() in self.reference_library_manifest:
-            return self.reference_library_manifest[clean_input.lower()]["path"]
+        # Check references manifest
+        if path_str in self.references_manifest:
+            return self.references_manifest[path_str]["path"]
+        if path_str.lower() in self.references_manifest:
+            return self.references_manifest[path_str.lower()]["path"]
+        if clean_input in self.references_manifest:
+            return self.references_manifest[clean_input]["path"]
+        if clean_input.lower() in self.references_manifest:
+            return self.references_manifest[clean_input.lower()]["path"]
 
         # General path resolution
-        return resolve_image_path(path_str, [self.get_effective_output_dir(), self.output_dir, self.reference_library_dir])
+        return resolve_image_path(path_str, [self.get_effective_output_dir(), self.output_dir, self.reference_dir])
 
     def create_image(
         self,
@@ -173,7 +173,8 @@ class ImageTools:
                     if ref_path:
                         resolved_refs.append((ref, ref_path))
                     else:
-                        logger.warning(f"[create_image tool] Reference image '{ref}' not found.")
+                        logger.error(f"[create_image tool] Reference image '{ref}' not found.")
+                        return f"Error: Reference image '{ref}' not found."
 
             prompt_parts = []
             if resolved_refs:
@@ -185,6 +186,7 @@ class ImageTools:
                         prompt_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
                     except Exception as e:
                         logger.error(f"[create_image tool] Error loading reference image {ref_path}: {e}")
+                        return f"Error loading reference image '{ref_key}': {e}"
                 
                 logger.info(f"[create_image tool] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
 
@@ -322,7 +324,7 @@ class ImageTools:
             return f"Error showing image: {e}"
 
     def browse_images(self) -> list[str]:
-        """Browse all available images, including preloaded reference library assets and generated outputs.
+        """Browse all available images, including preloaded reference assets and generated outputs.
 
         Returns:
             A list of file paths to all available images.
@@ -331,8 +333,8 @@ class ImageTools:
             images = []
             seen = set()
             
-            # Include items from preloaded reference library manifest first
-            for item in self.reference_library_manifest.values():
+            # Include items from preloaded references manifest first
+            for item in self.references_manifest.values():
                 full_p = item["path"]
                 if full_p not in seen and os.path.exists(full_p):
                     seen.add(full_p)
@@ -341,7 +343,7 @@ class ImageTools:
             search_dirs = [
                 self.get_effective_output_dir(),
                 self.output_dir,
-                self.reference_library_dir,
+                self.reference_dir,
                 str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
             ]
             for d in search_dirs:
@@ -357,7 +359,7 @@ class ImageTools:
             return [f"Error browsing images: {e}"]
 
     def search_image_by_metadata(self, metadata_query: str) -> list[str]:
-        """Search for images that match a given metadata description across generated images and the reference library.
+        """Search for images that match a given metadata description across generated images and references.
 
         Args:
             metadata_query: A string to search for in image metadata descriptions, names, or EXIF data.
@@ -370,8 +372,8 @@ class ImageTools:
             seen = set()
             query_lower = metadata_query.lower()
 
-            # Search in-memory reference library manifest
-            for item in self.reference_library_manifest.values():
+            # Search in-memory references manifest
+            for item in self.references_manifest.values():
                 full_p = item["path"]
                 if full_p not in seen and os.path.exists(full_p):
                     desc = item.get("description", "")
@@ -385,7 +387,7 @@ class ImageTools:
             search_dirs = [
                 self.get_effective_output_dir(),
                 self.output_dir,
-                self.reference_library_dir,
+                self.reference_dir,
                 str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
             ]
             for d in search_dirs:

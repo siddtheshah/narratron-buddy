@@ -83,7 +83,6 @@ def resolve_image_path(path_str: str, candidate_dirs: Optional[List[str]] = None
     root_dir = Path(__file__).parent.parent.resolve()
 
     default_dirs = [
-        str(root_dir / "reference_library"),
         str(root_dir / "testing" / "testdata" / "images"),
         str(root_dir / "testing" / "testdata"),
     ]
