@@ -88,8 +88,12 @@ class CanvasStateManager:
         self.current_playlist_time = time.time()
 
     def update_shown_image(self, file_path: str, session_id: Optional[str] = None, transition: str = "crossfade"):
+        if file_path != self.shown_image_path:
+            self.doodles_state.clear()
+            self.shown_image_time = time.time()
+        elif not getattr(self, "shown_image_time", None):
+            self.shown_image_time = time.time()
         self.shown_image_path = file_path
-        self.shown_image_time = time.time()
         self.shown_image_prompt = extract_image_prompt(file_path)
         self.shown_image_transition = transition or "crossfade"
         if file_path and file_path not in self.shown_images_history:
@@ -137,6 +141,9 @@ class CanvasStateManager:
             self.doodles_state.clear()
         else:
             self.doodles_state.append(doodle)
+        sess_dir = (Path(__file__).parent.parent / "sessions" / self.session_id).resolve()
+        sess_dir.mkdir(parents=True, exist_ok=True)
+        self.export_session_data(session_dir=sess_dir)
 
     def set_doodles_enabled(self, enabled: bool):
         self.doodles_enabled = bool(enabled)

@@ -146,6 +146,35 @@
             to   { opacity: 0; }
         }
 
+        /* --- Transition classes applied by JS: t-{transition} --- */
+
+        /* crossfade: new image stays opaque underneath while ghost overlay fades out */
+        #current-image.t-crossfade {
+            opacity: 1;
+            transition: none;
+        }
+        #current-image.t-crossfade.loaded {
+            opacity: 1;
+        }
+
+        /* fade: simple fade in from black (no ghost needed) */
+        #current-image.t-fade {
+            opacity: 0;
+            transition: opacity 1.8s ease-in-out;
+        }
+        #current-image.t-fade.loaded {
+            opacity: 1;
+        }
+
+        /* none: instant display */
+        #current-image.t-none {
+            opacity: 0;
+            transition: none;
+        }
+        #current-image.t-none.loaded {
+            opacity: 1;
+        }
+
 
         #doodle-canvas {
             position: absolute;
@@ -532,7 +561,9 @@
         </header>
 
         <div id="image-container">
-            <img id="current-image" src="" alt="Narratron Generation">
+            <canvas id="canvas-renderer" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
+            <img id="current-image" src="" alt="Narratron Generation" style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
+            <img id="ghost-image" src="" alt="" aria-hidden="true" style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
             <div id="prompt-toggle-btn" title="View Prompt">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -590,6 +621,8 @@
         import { startAudioRecorderWorklet, stopMicrophone } from "/static/js/audio-recorder.js";
 
         let lastTime = -1;
+        let lastImageRawUrl = null;
+        let isFirstCanvasLoad = true;
         const currentImage = document.getElementById('current-image');
         const bgLayer = document.getElementById('bg-layer');
         const promptTextSpan = document.getElementById('prompt-text');
@@ -838,6 +871,160 @@
             });
         }
 
+        const ghostImage = document.getElementById('ghost-image');
+        const rendererCanvas = document.getElementById('canvas-renderer');
+        const renderCtx = rendererCanvas ? rendererCanvas.getContext('2d') : null;
+
+        let currentLoadedImg = null;
+        let activeAnimReq = null;
+
+        function resizeRendererCanvas() {
+            if (!rendererCanvas || !renderCtx) return;
+            const container = rendererCanvas.parentElement;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+
+            if (rendererCanvas.width !== Math.floor(rect.width * dpr) ||
+                rendererCanvas.height !== Math.floor(rect.height * dpr)) {
+                rendererCanvas.width = Math.floor(rect.width * dpr);
+                rendererCanvas.height = Math.floor(rect.height * dpr);
+            }
+
+            renderCtx.setTransform(1, 0, 0, 1, 0, 0);
+            renderCtx.scale(dpr, dpr);
+
+            if (currentLoadedImg && !activeAnimReq) {
+                drawSingleImage(currentLoadedImg);
+            }
+        }
+
+        window.addEventListener('resize', resizeRendererCanvas);
+        resizeRendererCanvas();
+
+        function drawSingleImage(img) {
+            if (!renderCtx || !rendererCanvas) return;
+            const rect = rendererCanvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            renderCtx.clearRect(0, 0, w, h);
+            if (img && img.complete && img.naturalWidth > 0) {
+                drawContainImage(renderCtx, img, w, h, 1.0);
+            }
+        }
+
+        function drawContainImage(ctx, img, containerW, containerH, opacity) {
+            if (!img || !img.complete || img.naturalWidth === 0) return;
+            const imgW = img.naturalWidth;
+            const imgH = img.naturalHeight;
+            const scale = Math.min(containerW / imgW, containerH / imgH);
+            const drawW = imgW * scale;
+            const drawH = imgH * scale;
+            const x = (containerW - drawW) / 2;
+            const y = (containerH - drawH) / 2;
+
+            ctx.save();
+            ctx.globalAlpha = opacity;
+            ctx.drawImage(img, x, y, drawW, drawH);
+            ctx.restore();
+        }
+
+        function easeInOutCubic(t) {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        async function applyImageTransition(newImgUrl, transition) {
+            resizeRendererCanvas();
+
+            const newImg = new Image();
+            newImg.src = newImgUrl;
+
+            try {
+                await newImg.decode();
+            } catch (e) {
+                await new Promise((resolve) => {
+                    newImg.onload = resolve;
+                    newImg.onerror = resolve;
+                });
+            }
+
+            // Sync hidden DOM images for backward-compatibility & test assertions
+            if (currentImage) {
+                currentImage.src = newImgUrl;
+                currentImage.classList.add('t-crossfade', 'loaded');
+            }
+
+            if (activeAnimReq) {
+                cancelAnimationFrame(activeAnimReq);
+                activeAnimReq = null;
+            }
+
+            const rect = rendererCanvas.getBoundingClientRect();
+            const containerW = rect.width;
+            const containerH = rect.height;
+            const oldImg = currentLoadedImg;
+            const hasOldImage = oldImg && oldImg.complete && oldImg.naturalWidth > 0;
+
+            if (transition === 'crossfade' && hasOldImage) {
+                // --- PURE 2D CANVAS DISSOLVE CROSSFADE ---
+                const duration = 2000; // 2 seconds
+                const startTime = performance.now();
+
+                const animate = (now) => {
+                    const elapsed = now - startTime;
+                    const progress = Math.min(1.0, elapsed / duration);
+                    const easeProgress = easeInOutCubic(progress);
+
+                    renderCtx.clearRect(0, 0, containerW, containerH);
+
+                    // 1. Draw new image fully opaque underneath
+                    drawContainImage(renderCtx, newImg, containerW, containerH, 1.0);
+
+                    // 2. Draw old image dissolving on top (1 -> 0)
+                    drawContainImage(renderCtx, oldImg, containerW, containerH, 1.0 - easeProgress);
+
+                    if (progress < 1.0) {
+                        activeAnimReq = requestAnimationFrame(animate);
+                    } else {
+                        activeAnimReq = null;
+                        currentLoadedImg = newImg;
+                    }
+                };
+
+                activeAnimReq = requestAnimationFrame(animate);
+
+            } else if (transition === 'none') {
+                // --- INSTANT DISPLAY ---
+                drawSingleImage(newImg);
+                currentLoadedImg = newImg;
+
+            } else {
+                // --- FADE IN FROM BLACK / FIRST REVEAL ---
+                const duration = 1500;
+                const startTime = performance.now();
+
+                const animate = (now) => {
+                    const elapsed = now - startTime;
+                    const progress = Math.min(1.0, elapsed / duration);
+                    const easeProgress = easeInOutCubic(progress);
+
+                    renderCtx.clearRect(0, 0, containerW, containerH);
+                    drawContainImage(renderCtx, newImg, containerW, containerH, easeProgress);
+
+                    if (progress < 1.0) {
+                        activeAnimReq = requestAnimationFrame(animate);
+                    } else {
+                        activeAnimReq = null;
+                        currentLoadedImg = newImg;
+                    }
+                };
+
+                activeAnimReq = requestAnimationFrame(animate);
+            }
+
+            bgLayer.style.backgroundImage = `url(${newImgUrl})`;
+        }
+
         async function fetchLatestImage() {
             try {
                 const apiUrl = currentSessionId ? `/api/latest?session_id=${encodeURIComponent(currentSessionId)}` : '/api/latest';
@@ -851,18 +1038,18 @@
                         // Check if it's a new playlist
                         if (activePlaylistName !== data.music.playlist) {
                             activePlaylistName = data.music.playlist;
-                            musicStatusSpan.textContent = '🎵 ' + data.music.playlist;
+                            musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist;
                             playPlaylist(data.music.tracks);
                         }
                         
                         // Process pause/resume state
                         if (data.music.paused) {
-                            musicStatusSpan.textContent = '🎵 ' + data.music.playlist + ' (Paused)';
+                            musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist + ' (Paused)';
                             if (!bgMusic.paused) {
                                 fadeOut(() => bgMusic.pause(), 500);
                             }
                         } else {
-                            musicStatusSpan.textContent = '🎵 ' + data.music.playlist;
+                            musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist;
                             // If it was paused, resume it
                             if (bgMusic.paused && currentPlaylistTracks.length > 0) {
                                 bgMusic.volume = 0;
@@ -871,7 +1058,7 @@
                         }
                     } else {
                         activePlaylistName = null;
-                        musicStatusSpan.textContent = '🎵 Silent';
+                        musicStatusSpan.textContent = '\u{1F3B5} Silent';
                         stopPlaylist();
                     }
                 }
@@ -879,44 +1066,53 @@
                 if (data.doodles_enabled !== undefined && data.doodles_enabled !== doodlesEnabled) {
                     setDoodlesDisplay(data.doodles_enabled);
                 }
-                if (data.latest && data.time > lastTime) {
+                const isNewImage = (data.latest && (data.time > lastTime || data.latest !== lastImageRawUrl));
+                if (isNewImage) {
                     lastTime = data.time;
+                    lastImageRawUrl = data.latest;
                     
                     const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                    const transition = (data.transition || 'fade').toLowerCase().trim();
-                    const tempImage = new Image();
-                    
-                    tempImage.onload = () => {
-                        promptBtn.classList.remove('expanded');
-                        promptBtn.style.display = 'none';
-                        promptPinned = false;
+                    const transition = (data.transition || 'crossfade').toLowerCase().trim();
 
-                        // Strip all previous transition classes
-                        const transClasses = ['loaded', 'transition-active',
-                            't-fade', 't-zoom', 't-slide-left', 't-slide-right',
-                            't-slide-up', 't-slide-down', 't-flip', 't-wipe'];
-                        currentImage.classList.remove(...transClasses);
-                        void currentImage.offsetWidth; // reflow to restart animation
-
-                        currentImage.src = newImgUrl;
-                        bgLayer.style.backgroundImage = `url(${newImgUrl})`;
-
-                        if (transition !== 'none') {
-                            currentImage.classList.add('transition-active', `t-${transition}`);
-                        }
-                        currentImage.classList.add('loaded');
-
+                    if (isFirstCanvasLoad) {
+                        // First canvas load: Instant display, preserve reloaded doodles & no transition
+                        isFirstCanvasLoad = false;
+                        applyImageTransition(newImgUrl, 'none');
                         if (data.prompt) {
                             promptTextSpan.textContent = data.prompt;
                             promptBtn.style.display = 'flex';
                         }
-                    };
-                    
-                    tempImage.src = newImgUrl;
+                    } else {
+                        // Subsequent image update: Clear doodles for new scene & play requested transition
+                        doodleActions = [];
+                        redrawAllDoodles();
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'clear' }));
+                        }
+
+                        const tempImage = new Image();
+                        const triggerTransition = () => {
+                            promptBtn.classList.remove('expanded');
+                            promptBtn.style.display = 'none';
+                            promptPinned = false;
+
+                            applyImageTransition(newImgUrl, transition);
+
+                            if (data.prompt) {
+                                promptTextSpan.textContent = data.prompt;
+                                promptBtn.style.display = 'flex';
+                            }
+                        };
+                        
+                        tempImage.onload = triggerTransition;
+                        tempImage.onerror = triggerTransition;
+                        tempImage.src = newImgUrl;
+                    }
                 } else if (!data.latest) {
                     // Maintain solid dark background when session has no images
                     bgLayer.style.backgroundImage = 'none';
                     if (currentImage) currentImage.classList.remove('loaded');
+                    if (ghostImage) { ghostImage.src = ''; ghostImage.style.opacity = '0'; }
                     if (promptBtn) promptBtn.style.display = 'none';
                 }
             } catch (err) {
@@ -945,9 +1141,9 @@
             }
         }
 
-        // Doodle Logic
+        // Doodle Logic with Full HiDPI Persistence & Replay
         const canvas = document.getElementById('doodle-canvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas ? canvas.getContext('2d') : null;
         const colorBtns = document.querySelectorAll('.color-btn');
         const clearBtn = document.getElementById('clear-doodle-btn');
         const brushSizeSlider = document.getElementById('brush-size');
@@ -957,9 +1153,12 @@
         let currentColor = '#ffffff';
         let currentBrushSize = 3;
         let isDrawing = false;
-        let lastX = 0;
-        let lastY = 0;
+        let lastNormX = 0;
+        let lastNormY = 0;
         let doodlesEnabled = true;
+
+        // Stores all active doodle stroke segments for replay across window resizes
+        let doodleActions = [];
 
         function setDoodlesDisplay(enabled) {
             doodlesEnabled = Boolean(enabled);
@@ -988,16 +1187,68 @@
             });
         }
         
-        brushSizeSlider.addEventListener('input', (e) => {
-            currentBrushSize = parseInt(e.target.value);
-        });
-
-        function resizeCanvas() {
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
+        if (brushSizeSlider) {
+            brushSizeSlider.addEventListener('input', (e) => {
+                currentBrushSize = parseInt(e.target.value);
+            });
         }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+
+        function resizeDoodleCanvas() {
+            if (!canvas || !ctx) return;
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+
+            if (canvas.width !== Math.floor(rect.width * dpr) || 
+                canvas.height !== Math.floor(rect.height * dpr)) {
+                canvas.width = Math.floor(rect.width * dpr);
+                canvas.height = Math.floor(rect.height * dpr);
+            }
+
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(dpr, dpr);
+            redrawAllDoodles();
+        }
+
+        window.addEventListener('resize', resizeDoodleCanvas);
+
+        function redrawAllDoodles() {
+            if (!ctx || !canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+
+            ctx.clearRect(0, 0, w, h);
+
+            doodleActions.forEach(action => {
+                if (action.type === 'draw') {
+                    renderSegment(
+                        action.x0 * w, action.y0 * h,
+                        action.x1 * w, action.y1 * h,
+                        action.color, action.size || 3
+                    );
+                }
+            });
+        }
+
+        function renderSegment(x0, y0, x1, y1, color, size) {
+            ctx.save();
+            ctx.beginPath();
+            if (color === 'erase') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = color;
+            }
+            
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x1, y1);
+            ctx.lineWidth = size;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+            ctx.restore();
+        }
 
         colorBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1016,12 +1267,16 @@
             if (data.type === 'doodles_toggle') {
                 setDoodlesDisplay(data.enabled);
             } else if (data.type === 'clear') {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                doodleActions = [];
+                redrawAllDoodles();
             } else if (data.type === 'draw') {
-                const bSize = data.size || 3;
-                drawLine(data.x0 * canvas.width, data.y0 * canvas.height, 
-                         data.x1 * canvas.width, data.y1 * canvas.height, 
-                         data.color, bSize, false);
+                doodleActions.push(data);
+                const rect = canvas.getBoundingClientRect();
+                renderSegment(
+                    data.x0 * rect.width, data.y0 * rect.height,
+                    data.x1 * rect.width, data.y1 * rect.height,
+                    data.color, data.size || 3
+                );
             } else if (data.type === 'toggle_mic') {
                 if (isOrator && agentWs && agentWs.readyState === WebSocket.OPEN && !agentMicBtn.disabled) {
                     agentMicBtn.click();
@@ -1029,73 +1284,89 @@
             }
         };
 
-        function drawLine(x0, y0, x1, y1, color, size, emit) {
-            ctx.beginPath();
-            if (color === 'erase') {
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.strokeStyle = 'rgba(0,0,0,1)';
-            } else {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = color;
-            }
-            
-            ctx.moveTo(x0, y0);
-            ctx.lineTo(x1, y1);
-            ctx.lineWidth = size;
-            ctx.lineCap = 'round';
-            ctx.stroke();
-            ctx.closePath();
-            
-            ctx.globalCompositeOperation = 'source-over';
+        function drawLine(nx0, ny0, nx1, ny1, color, size, emit) {
+            const action = {
+                type: 'draw',
+                x0: nx0,
+                y0: ny0,
+                x1: nx1,
+                y1: ny1,
+                color: color,
+                size: size
+            };
+
+            doodleActions.push(action);
+            const rect = canvas.getBoundingClientRect();
+            renderSegment(nx0 * rect.width, ny0 * rect.height, nx1 * rect.width, ny1 * rect.height, color, size);
 
             if (!emit) return;
             
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'draw',
-                    x0: x0 / canvas.width,
-                    y0: y0 / canvas.height,
-                    x1: x1 / canvas.width,
-                    y1: y1 / canvas.height,
-                    color: color,
-                    size: size
-                }));
+                ws.send(JSON.stringify(action));
             }
+        }
+
+        function getNormalizedCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+                y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+            };
         }
 
         canvas.addEventListener('mousedown', (e) => {
             if (!doodlesEnabled) return;
             isDrawing = true;
-            lastX = e.offsetX;
-            lastY = e.offsetY;
+            const coords = getNormalizedCoords(e);
+            lastNormX = coords.x;
+            lastNormY = coords.y;
         });
 
         canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return;
-            drawLine(lastX, lastY, e.offsetX, e.offsetY, currentColor, currentBrushSize, true);
-            lastX = e.offsetX;
-            lastY = e.offsetY;
+            if (!isDrawing || !doodlesEnabled) return;
+            const coords = getNormalizedCoords(e);
+            drawLine(lastNormX, lastNormY, coords.x, coords.y, currentColor, currentBrushSize, true);
+            lastNormX = coords.x;
+            lastNormY = coords.y;
         });
 
         canvas.addEventListener('mouseup', () => isDrawing = false);
         canvas.addEventListener('mouseout', () => isDrawing = false);
 
+        // Touch support for tablets/mobile
+        canvas.addEventListener('touchstart', (e) => {
+            if (!doodlesEnabled) return;
+            e.preventDefault();
+            isDrawing = true;
+            const coords = getNormalizedCoords(e);
+            lastNormX = coords.x;
+            lastNormY = coords.y;
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isDrawing || !doodlesEnabled) return;
+            e.preventDefault();
+            const coords = getNormalizedCoords(e);
+            drawLine(lastNormX, lastNormY, coords.x, coords.y, currentColor, currentBrushSize, true);
+            lastNormX = coords.x;
+            lastNormY = coords.y;
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', () => isDrawing = false);
+
         clearBtn.addEventListener('click', () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            doodleActions = [];
+            redrawAllDoodles();
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'clear' }));
             }
         });
 
-        let previousImgTime = lastTime;
+        resizeDoodleCanvas();
 
-        setInterval(() => {
-            fetchLatestImage();
-            if (lastTime > previousImgTime) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                previousImgTime = lastTime;
-            }
-        }, 1000);
+        setInterval(fetchLatestImage, 1000);
         setInterval(fetchChat, 1000);
         fetchLatestImage();
         fetchChat();

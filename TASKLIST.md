@@ -9,14 +9,14 @@
 - [ ] Pricing page (`pricing.txt` / pricing page content)
 - [x] Stats page (number of accounts, active users in the last 7 days, session views)
 
-## 3. Auth, Security & Monetization
+## 3. Auth, Security & Monetization   
 - [ ] Password reset flow
 - [ ] Improve auth: ensure access tokens are invalidated when a user logs out
 - [ ] Payments setup (buy credits)
 
 ## 4. Narratron UI & Canvas Features
 - [ ] Cinematic mode: exterior panel that only shows UI on mouseover
-- [ ] Show image with transition (enhanced agent control)
+- [x] Show image with transition (enhanced agent control)
 - [ ] Autofade: let images decay to dark unless model sets `persist` to true
 - [x] Share link: easy link to share sessions
 - [x] Disable doodling option: let orator/session owner control whether doodles will be displayed on canvas (persisted to session state)
