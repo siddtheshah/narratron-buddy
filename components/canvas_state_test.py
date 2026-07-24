@@ -53,6 +53,31 @@ class TestCanvasStateManager(unittest.TestCase):
         exported_state, _ = manager.export_session_data()
         self.assertFalse(exported_state["canvas_state"]["doodles_enabled"])
 
+    def test_shown_images_history_capping(self):
+        manager = CanvasStateManager(session_id="test_history_session")
+        # Add 120 images
+        for i in range(120):
+            fake_path = f"/path/to/image_{i}.png"
+            manager.update_shown_image(fake_path)
+
+        self.assertEqual(len(manager.shown_images_history), 100)
+        # Verify the oldest entries (0-19) rolled off, and items 20-119 remain
+        last_entry = manager.shown_images_history[-1]
+        first_entry = manager.shown_images_history[0]
+        self.assertIn("image_119.png", last_entry["path"])
+        self.assertIn("image_20.png", first_entry["path"])
+
+    def test_get_latest_state_returns_history(self):
+        manager = CanvasStateManager(session_id="test_history_payload")
+        manager.update_shown_image("/path/to/scene1.png")
+        manager.update_shown_image("/path/to/scene2.png")
+
+        state = manager.get_latest_state()
+        self.assertIn("history", state)
+        self.assertEqual(len(state["history"]), 2)
+        self.assertEqual(state["history"][0]["path"], "/path/to/scene1.png")
+        self.assertEqual(state["history"][1]["path"], "/path/to/scene2.png")
+
 if __name__ == "__main__":
     unittest.main()
 

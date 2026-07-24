@@ -17,9 +17,8 @@
 ## 4. Narratron UI & Canvas Features
 - [x] Cinematic mode: exterior panel that only shows UI on mouseover
 - [x] Show image with transition (enhanced agent control)
-- [ ] Autofade: let images decay to dark unless model sets `persist` to true
 - [x] Share link: easy link to share sessions
 - [x] Disable doodling option: let orator/session owner control whether doodles will be displayed on canvas (persisted to session state)
-- [ ] Session export: gather all created images and download as a ZIP file
+- [x] Session export: gather all created images and download as a ZIP file
 - [ ] Look back: pop-up arrows to navigate previous and next images
 - [ ] Stream plugin: whenever mic is active in canvas, focus shifts to stream and returns when mic is off
