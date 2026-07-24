@@ -1,7 +1,7 @@
 # Narratron Task List
 
 ## 1. App Deployment & Infrastructure
-- [ ] Database support for session artifacts (for scalability and interoperability)
+- [ ] Database support for session artifacts (for scalability and interoperability). Export session to database on save.
 - [ ] Cleanup daemon (triggers on session creation, removes sessions not marked durable and older than 7 days)
 
 ## 2. Additional Pages

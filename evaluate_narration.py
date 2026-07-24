@@ -403,6 +403,24 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
         wait_for_server(port)
         print("[Evaluator] Server is online and responsive.")
         
+        # Step 2.5: Create & Deploy a Session
+        session_id = None
+        join_key = ""
+        try:
+            req_data = json.dumps({"name": "Evaluation Session"}).encode("utf-8")
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/sessions/create-and-deploy",
+                data=req_data,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req) as resp:
+                created_session = json.loads(resp.read().decode("utf-8"))
+                session_id = created_session.get("session_id")
+                join_key = created_session.get("join_key", "")
+                print(f"[Evaluator] Created session '{session_id}' (Join Key: '{join_key}')")
+        except Exception as e:
+            print(f"[Evaluator] Warning: Failed to create session via API: {e}")
+
         # Step 3: Launch Playwright & start video recording
         async with async_playwright() as p:
             print("[Evaluator] Launching browser...")
@@ -426,9 +444,15 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             record_start_time = time.time()
             
             page = await context.new_page()
-            # Open as orator so audio input controls are active
-            print(f"[Evaluator] Opening Narratron Orator Canvas at http://127.0.0.1:{port}/canvas?role=orator ...")
-            await page.goto(f"http://127.0.0.1:{port}/canvas?role=orator")
+            
+            # Build target canvas URL
+            if session_id:
+                canvas_url = f"http://127.0.0.1:{port}/canvas?session_id={session_id}&join_key={join_key}&role=orator"
+            else:
+                canvas_url = f"http://127.0.0.1:{port}/canvas?role=orator"
+
+            print(f"[Evaluator] Opening Narratron Orator Canvas at {canvas_url} ...")
+            await page.goto(canvas_url)
             await page.wait_for_selector("#image-container")
             
             # Measure delay from recording start to audio stream start

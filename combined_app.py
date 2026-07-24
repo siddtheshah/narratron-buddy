@@ -79,7 +79,7 @@ if use_in_memory_artifacts:
     logger.info(f"Initialized PreloadedInMemoryArtifactService with {loaded_count} artifacts from {test_data_dir}")
     artifact_service = in_mem_svc
 else:
-    artifact_service = DiskArtifactService("output/artifacts")
+    artifact_service = DiskArtifactService("sessions/artifacts")
 
 # Define runner
 runner = Runner(

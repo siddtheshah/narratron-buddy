@@ -17,16 +17,22 @@ class DiskArtifactService(BaseArtifactService):
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
 
-    def _get_path(self, filename: str) -> Path:
+    def _get_path(self, filename: str, session_id: Optional[str] = None) -> Path:
         # Strip user: prefix if present
         clean_name = filename[5:] if filename.startswith("user:") else filename
         # Clean leading/trailing spaces/slashes
         clean_name = clean_name.strip().lstrip("/\\")
         
+        base_dir = self.directory
+        if session_id:
+            root_dir = Path(__file__).parent.parent.resolve()
+            base_dir = root_dir / "sessions" / session_id / "output" / "artifacts"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            
         # Guard against traversal
-        resolved = (self.directory / clean_name).resolve()
+        resolved = (base_dir / clean_name).resolve()
         try:
-            resolved.relative_to(self.directory)
+            resolved.relative_to(base_dir)
         except ValueError as e:
             raise InputValidationError(f"Invalid artifact filename {filename!r}: escapes storage directory") from e
         return resolved
@@ -42,7 +48,7 @@ class DiskArtifactService(BaseArtifactService):
         custom_metadata: Optional[dict[str, Any]] = None,
     ) -> int:
         artifact = ensure_part(artifact)
-        filepath = self._get_path(filename)
+        filepath = self._get_path(filename, session_id=session_id)
         filepath.parent.mkdir(parents=True, exist_ok=True)
         
         if artifact.inline_data:
@@ -63,7 +69,7 @@ class DiskArtifactService(BaseArtifactService):
         session_id: Optional[str] = None,
         version: Optional[int] = None,
     ) -> Optional[types.Part]:
-        filepath = self._get_path(filename)
+        filepath = self._get_path(filename, session_id=session_id)
         if not filepath.is_file():
             return None
             
@@ -86,13 +92,18 @@ class DiskArtifactService(BaseArtifactService):
         self, *, app_name: str, user_id: str, session_id: Optional[str] = None
     ) -> list[str]:
         filenames = []
-        if not self.directory.exists():
+        target_dir = self.directory
+        if session_id:
+            root_dir = Path(__file__).parent.parent.resolve()
+            target_dir = root_dir / "sessions" / session_id / "output" / "artifacts"
+
+        if not target_dir.exists():
             return filenames
             
-        for root, dirs, files in os.walk(self.directory):
+        for root, dirs, files in os.walk(target_dir):
             for file in files:
                 filepath = Path(root) / file
-                rel_path = filepath.relative_to(self.directory)
+                rel_path = filepath.relative_to(target_dir)
                 filenames.append(rel_path.as_posix())
                 
         return sorted(filenames)
@@ -105,7 +116,7 @@ class DiskArtifactService(BaseArtifactService):
         filename: str,
         session_id: Optional[str] = None,
     ) -> None:
-        filepath = self._get_path(filename)
+        filepath = self._get_path(filename, session_id=session_id)
         if filepath.is_file():
             filepath.unlink()
 
@@ -117,7 +128,7 @@ class DiskArtifactService(BaseArtifactService):
         filename: str,
         session_id: Optional[str] = None,
     ) -> list[int]:
-        filepath = self._get_path(filename)
+        filepath = self._get_path(filename, session_id=session_id)
         if filepath.is_file():
             return [0]
         return []
@@ -130,7 +141,7 @@ class DiskArtifactService(BaseArtifactService):
         filename: str,
         session_id: Optional[str] = None,
     ) -> list[ArtifactVersion]:
-        filepath = self._get_path(filename)
+        filepath = self._get_path(filename, session_id=session_id)
         if not filepath.is_file():
             return []
             

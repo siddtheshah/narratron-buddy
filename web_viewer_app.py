@@ -26,10 +26,9 @@ local_deployer = LocalDeployer()
 session_manager = SessionManager(deployer=local_deployer)
 db = DatabaseManager()
 
-# Default folder from config (absolute path resolution)
-folder = str((Path(__file__).parent / config.get("image_generation", {}).get("output_folder", "output/images")).resolve())
-os.makedirs(folder, exist_ok=True)
-app.mount("/images", StaticFiles(directory=folder), name="images")
+# Sessions folder (absolute path resolution)
+sessions_folder = str((Path(__file__).parent / "sessions").resolve())
+os.makedirs(sessions_folder, exist_ok=True)
 
 # Playlists folder from config (absolute path resolution)
 playlists_folder = str((Path(__file__).parent / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
@@ -286,8 +285,9 @@ def destroy_session(session_id: str, request: Request):
 # ========================================
 
 @app.websocket("/ws/doodle")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = None):
     await websocket.accept()
+    websocket.state.session_id = session_id
     canvas_state.register_websocket(websocket)
     
     # Send existing doodle actions to newly connected client
@@ -301,6 +301,87 @@ async def websocket_endpoint(websocket: WebSocket):
             await canvas_state.broadcast_ws_message(data, sender=websocket)
     except WebSocketDisconnect:
         canvas_state.unregister_websocket(websocket)
+
+@app.post("/api/sessions/{session_id}/save")
+def save_session_to_db(session_id: str, request: Request):
+    """Save canvas session state and image assets to SQLite database on user demand."""
+    session_dir = local_deployer._get_session_dir(session_id)
+    meta = local_deployer.get_session(session_id)
+    dep = db.get_deployment(session_id)
+    user_id = dep["user_id"] if dep else None
+    name = meta.name if meta else session_id
+
+    state_data, image_files = canvas_state.export_session_data(session_dir=session_dir)
+    db.export_session_to_db(
+        session_id=session_id,
+        state_data=state_data,
+        image_files=image_files,
+        user_id=user_id,
+        name=name
+    )
+    logger.info(f"Session '{session_id}' saved to database on user demand.")
+    return {"status": "ok", "session_id": session_id}
+
+@app.get("/api/sessions/{session_id}/export-assets")
+def export_session_assets(session_id: str, request: Request):
+    """Package and export all generated and reference image assets for a session into a ZIP file."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    session_dir = local_deployer._get_session_dir(session_id)
+    if not session_dir.exists():
+        db.reconstruct_session_from_db(session_id, session_dir)
+
+    import io
+    import zipfile
+    from fastapi.responses import Response
+
+    zip_buffer = io.BytesIO()
+    has_output_files = False
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        # 1. Add files from session directory recursively
+        if session_dir.exists():
+            out_dir = session_dir / "output"
+            ref_dir = session_dir / "reference_library"
+
+            if out_dir.exists():
+                for file_path in out_dir.rglob("*"):
+                    if file_path.is_file() and file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
+                        arc_name = f"output/{file_path.relative_to(out_dir)}"
+                        zip_file.write(file_path, arcname=arc_name.replace("\\", "/"))
+                        has_output_files = True
+
+            if ref_dir.exists():
+                for file_path in ref_dir.rglob("*"):
+                    if file_path.is_file() and file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
+                        arc_name = f"reference_library/{file_path.relative_to(ref_dir)}"
+                        zip_file.write(file_path, arcname=arc_name.replace("\\", "/"))
+
+        # 2. Add images stored in SQLite database export if present
+        db_exp = db.get_exported_session(session_id)
+        if db_exp and "images" in db_exp:
+            with db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT filename, category, image_data FROM exported_session_images WHERE session_id = ?", (session_id,))
+                for row in cursor.fetchall():
+                    cat = row["category"]
+                    fn = row["filename"]
+                    arc_path = f"{'reference_library' if cat == 'reference' else 'output'}/{fn}"
+        # 3. Add all historical shown images from canvas state
+        for img_path in canvas_state.shown_images_history:
+            if img_path and os.path.exists(img_path):
+                fn = os.path.basename(img_path)
+                arc_path = f"output/{fn}"
+                if arc_path not in zip_file.namelist():
+                    zip_file.write(img_path, arcname=arc_path)
+
+    zip_buffer.seek(0)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{session_id}_assets.zip"'
+    }
+    return Response(content=zip_buffer.getvalue(), media_type="application/zip", headers=headers)
 
 @app.api_route("/api/orator/toggle_mic", methods=["GET", "POST"])
 async def trigger_orator_mic_toggle(request: Request, session_id: Optional[str] = None):
@@ -333,6 +414,9 @@ def get_orator_config():
 @app.get("/api/latest")
 def get_latest_image(session_id: Optional[str] = None):
     if session_id:
+        session_dir = local_deployer._get_session_dir(session_id)
+        if not session_dir.exists():
+            db.reconstruct_session_from_db(session_id, session_dir)
         img_folder = str(session_manager.get_session_output_dir(session_id))
     else:
         img_folder = folder
@@ -369,6 +453,12 @@ def read_deployer():
 @app.get("/canvas", response_class=HTMLResponse)
 def read_canvas(session_id: Optional[str] = None):
     """Serve the Canvas interface for a specific session."""
+    if session_id:
+        session_dir = local_deployer._get_session_dir(session_id)
+        if not session_dir.exists():
+            db.reconstruct_session_from_db(session_id, session_dir)
+        artifacts_dir = session_dir / "output" / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
     template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()

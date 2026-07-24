@@ -71,5 +71,38 @@ class TestDatabaseManager(unittest.TestCase):
         self.assertEqual(dep["session_id"], "session_test123")
 
 
+    def test_export_session_and_reconstruction(self):
+        user = self.db.register_user("exportuser", "export@example.com", "Password123")
+        session_id = "session_export_test"
+        state_data = {
+            "shown_image_prompt": "Test Prompt",
+            "doodles": [{"type": "draw", "x0": 0.1, "y0": 0.2}],
+            "chat_messages": [{"author": "agent", "text": "Hello!"}]
+        }
+        image_files = [
+            {"filename": "test_out.png", "category": "output", "data": b"PNG_DATA"},
+            {"filename": "test_ref.jpg", "category": "reference", "data": b"JPG_DATA"}
+        ]
+
+        res = self.db.export_session_to_db(session_id, state_data, image_files, user_id=user["id"], name="Export Test")
+        self.assertTrue(res)
+
+        exported = self.db.get_exported_session(session_id)
+        self.assertIsNotNone(exported)
+        self.assertEqual(exported["name"], "Export Test")
+        self.assertEqual(len(exported["images"]), 2)
+
+        # Test reconstruction into target directory
+        recon_dir = Path(self.temp_dir.name) / "reconstructed_session"
+        recon_success = self.db.reconstruct_session_from_db(session_id, recon_dir)
+        self.assertTrue(recon_success)
+
+        self.assertTrue((recon_dir / "output" / "test_out.png").exists())
+        self.assertEqual((recon_dir / "output" / "test_out.png").read_bytes(), b"PNG_DATA")
+        self.assertTrue((recon_dir / "reference_library" / "test_ref.jpg").exists())
+        self.assertEqual((recon_dir / "reference_library" / "test_ref.jpg").read_bytes(), b"JPG_DATA")
+
+
 if __name__ == "__main__":
     unittest.main()
+

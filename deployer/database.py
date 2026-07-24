@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import sqlite3
 import secrets
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = None
 import logging
@@ -73,6 +73,29 @@ class DatabaseManager:
                     cost REAL DEFAULT 5.0,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS exported_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    user_id INTEGER,
+                    name TEXT,
+                    exported_at TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS exported_session_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    image_data BLOB NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES exported_sessions(session_id) ON DELETE CASCADE
                 )
             """)
             conn.commit()
@@ -226,3 +249,92 @@ class DatabaseManager:
             cursor.execute("SELECT * FROM canvas_deployments WHERE UPPER(join_key) = ?", (clean_key,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    def export_session_to_db(
+        self,
+        session_id: str,
+        state_data: Dict,
+        image_files: List[Dict[str, Any]],
+        user_id: Optional[int] = None,
+        name: Optional[str] = None
+    ) -> bool:
+        """Export session metadata, state, and image blobs into SQLite database."""
+        import json
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        state_json = json.dumps(state_data)
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO exported_sessions (session_id, user_id, name, exported_at, state_json)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    user_id = coalesce(excluded.user_id, exported_sessions.user_id),
+                    name = coalesce(excluded.name, exported_sessions.name),
+                    exported_at = excluded.exported_at,
+                    state_json = excluded.state_json
+                """,
+                (session_id, user_id, name or session_id, now_iso, state_json)
+            )
+
+            # Clear previous images for this session
+            cursor.execute("DELETE FROM exported_session_images WHERE session_id = ?", (session_id,))
+
+            for img in image_files:
+                cursor.execute(
+                    """
+                    INSERT INTO exported_session_images (session_id, filename, category, image_data, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (session_id, img["filename"], img.get("category", "output"), img["data"], now_iso)
+                )
+            conn.commit()
+            return True
+
+    def get_exported_session(self, session_id: str) -> Optional[Dict]:
+        """Fetch exported session record and list of image files."""
+        import json
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM exported_sessions WHERE session_id = ?", (session_id,))
+            session_row = cursor.fetchone()
+            if not session_row:
+                return None
+            
+            res = dict(session_row)
+            res["state"] = json.loads(res["state_json"])
+            
+            cursor.execute("SELECT id, filename, category, created_at FROM exported_session_images WHERE session_id = ?", (session_id,))
+            res["images"] = [dict(r) for r in cursor.fetchall()]
+            return res
+
+    def reconstruct_session_from_db(self, session_id: str, target_dir: Path) -> bool:
+        """Reconstruct session folder and images from database if missing."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM exported_sessions WHERE session_id = ?", (session_id,))
+            session_row = cursor.fetchone()
+            if not session_row:
+                return False
+
+            cursor.execute("SELECT filename, category, image_data FROM exported_session_images WHERE session_id = ?", (session_id,))
+            image_rows = cursor.fetchall()
+
+            target_dir = Path(target_dir).resolve()
+            out_dir = target_dir / "output"
+            ref_dir = target_dir / "reference_library"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            ref_dir.mkdir(parents=True, exist_ok=True)
+
+            for row in image_rows:
+                cat = row["category"]
+                fn = row["filename"]
+                data = row["image_data"]
+                dest_dir = ref_dir if cat == "reference" else out_dir
+                file_path = dest_dir / fn
+                with open(file_path, "wb") as f:
+                    f.write(data)
+
+            return True
+

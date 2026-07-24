@@ -1,3 +1,4 @@
+import json
 import logging
 import mimetypes
 import os
@@ -23,8 +24,13 @@ logger = logging.getLogger(__name__)
 class ImageTools:
     def __init__(self, config: dict):
         root_dir = Path(__file__).parent.parent.resolve()
-        relative_output_folder = config.get("image_generation", {}).get("output_folder", "output/artifacts/images")
-        self.output_dir = str((root_dir / relative_output_folder).resolve())
+        output_folder_arg = config.get("image_generation", {}).get("output_folder")
+        if output_folder_arg:
+            self.output_dir = str(Path(output_folder_arg).resolve())
+            self._has_custom_folder = True
+        else:
+            self.output_dir = str((root_dir / "sessions").resolve())
+            self._has_custom_folder = False
         os.makedirs(self.output_dir, exist_ok=True)
         
         relative_ref_folder = config.get("image_generation", {}).get("reference_library_folder", "reference_library")
@@ -47,6 +53,27 @@ class ImageTools:
         # Scan reference library once at startup (read-only manifest)
         self.reference_library_manifest: Dict[str, dict] = {}
         self._load_reference_library()
+
+    def get_effective_output_dir(self) -> str:
+        """Return active deployed session output directory if present, preventing workspace output pollution."""
+        if getattr(self, "_has_custom_folder", False):
+            return self.output_dir
+        sessions_dir = Path(__file__).parent.parent / "sessions"
+        if sessions_dir.exists():
+            for entry in sessions_dir.iterdir():
+                if entry.is_dir():
+                    meta_path = entry / "session.json"
+                    if meta_path.exists():
+                        try:
+                            with open(meta_path, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                                if data.get("status") == "deployed":
+                                    out_dir = entry / "output"
+                                    out_dir.mkdir(parents=True, exist_ok=True)
+                                    return str(out_dir.resolve())
+                        except Exception:
+                            pass
+        return self.output_dir
 
     def _load_reference_library(self):
         """Scans the reference library folder once at startup and builds a read-only manifest."""
@@ -200,7 +227,8 @@ class ImageTools:
                 else:
                     filename = f"image_{timestamp}_0.jpg"
                 
-                filepath = os.path.join(self.output_dir, filename)
+                out_folder = self.get_effective_output_dir()
+                filepath = os.path.join(out_folder, filename)
                  
                 exif = image.getexif()
                 embed_image_metadata(exif, image_prompt, metadata_description)
@@ -289,10 +317,10 @@ class ImageTools:
                     images.append(full_p)
 
             search_dirs = [
+                self.get_effective_output_dir(),
                 self.output_dir,
                 self.reference_library_dir,
                 str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
-                str(Path(__file__).parent.parent / "output" / "artifacts" / "images"),
             ]
             for d in search_dirs:
                 if os.path.exists(d):
@@ -333,10 +361,10 @@ class ImageTools:
 
             # Search directories for EXIF / PNG metadata
             search_dirs = [
+                self.get_effective_output_dir(),
                 self.output_dir,
                 self.reference_library_dir,
                 str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
-                str(Path(__file__).parent.parent / "output" / "artifacts" / "images"),
             ]
             for d in search_dirs:
                 if not os.path.exists(d):

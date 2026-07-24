@@ -7,10 +7,9 @@ from tools.notes_tool import NotesTools
 
 class TestNotesTools(unittest.TestCase):
     def setUp(self):
-        self.config = {}
-        self.notes_tools = NotesTools(self.config)
         self.temp_notes_dir = tempfile.mkdtemp()
-        self.notes_tools.notes_dir = self.temp_notes_dir
+        self.config = {"notes_folder": self.temp_notes_dir}
+        self.notes_tools = NotesTools(self.config)
 
     def tearDown(self):
         shutil.rmtree(self.temp_notes_dir, ignore_errors=True)

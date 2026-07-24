@@ -113,7 +113,7 @@ narratron_agent = Agent(
 async def main():
     print("Initializing ADK Agent...")
     session_service = InMemorySessionService()
-    artifact_service = DiskArtifactService("output/images")
+    artifact_service = DiskArtifactService("sessions/artifacts")
     # The runner manages the execution context and stream connections.
     runner = Runner(
         app_name="narratron_app",

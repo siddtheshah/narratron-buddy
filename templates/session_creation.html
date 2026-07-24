@@ -975,7 +975,8 @@
                         joinKeyHtml += `<button class="copy-key-btn" onclick="copyJoinKey('${s.join_key}', this)">📋 Copy</button>`;
                     }
 
-                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.session_id}')">Launch Canvas</button>`;
+                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.session_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')">Launch Canvas</button>`;
+                    actionsHtml += ` <a href="/api/sessions/${s.session_id}/export-assets" class="btn-sm btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; font-size:1.1rem;" title="Export Assets" download>📦</a>`;
                     if (s.is_owner) {
                         actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroySession('${s.session_id}')">Destroy</button>`;
                     }
@@ -1006,7 +1007,11 @@
 
         let pendingCanvasSessionId = null;
 
-        function openCanvas(sessionId) {
+        function openCanvas(sessionId, isOwner = false, joinKey = '') {
+            if (isOwner) {
+                window.location.href = `/canvas?session_id=${encodeURIComponent(sessionId)}${joinKey ? '&join_key=' + encodeURIComponent(joinKey) : ''}&role=orator`;
+                return;
+            }
             pendingCanvasSessionId = sessionId;
             document.getElementById('promptSessionIdDisplay').textContent = sessionId;
             document.getElementById('canvasJoinKeyInput').value = '';

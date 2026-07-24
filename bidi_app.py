@@ -57,7 +57,7 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 session_service = InMemorySessionService()
-artifact_service = DiskArtifactService("output/artifacts")
+artifact_service = DiskArtifactService("sessions/artifacts")
 
 runner = Runner(
     app_name=APP_NAME,

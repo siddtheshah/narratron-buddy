@@ -2,6 +2,7 @@ import glob
 import logging
 import os
 from pathlib import Path
+import shutil
 import time
 from typing import Any, Dict, List, Optional
 from fastapi import WebSocket
@@ -29,6 +30,7 @@ class CanvasStateManager:
         self.shown_image_path: Optional[str] = None
         self.shown_image_time: float = 0.0
         self.shown_image_prompt: str = ""
+        self.shown_images_history: List[str] = []
         
         # WebSocket and doodles
         self.active_ws_connections: List[WebSocket] = []
@@ -48,10 +50,33 @@ class CanvasStateManager:
         self.music_paused = False
         self.current_playlist_time = time.time()
 
-    def update_shown_image(self, file_path: str):
+    def update_shown_image(self, file_path: str, session_id: Optional[str] = None):
         self.shown_image_path = file_path
         self.shown_image_time = time.time()
         self.shown_image_prompt = extract_image_prompt(file_path)
+        if file_path and file_path not in self.shown_images_history:
+            self.shown_images_history.append(file_path)
+
+        # Automatically copy shown image into session output directory if applicable
+        if file_path and os.path.exists(file_path):
+            try:
+                src_path = Path(file_path).resolve()
+                sessions_dir = Path(__file__).parent.parent / "sessions"
+                if session_id:
+                    target_sids = [session_id]
+                elif sessions_dir.exists():
+                    target_sids = [d.name for d in sessions_dir.iterdir() if d.is_dir()]
+                else:
+                    target_sids = []
+
+                for sid in target_sids:
+                    dest_dir = sessions_dir / sid / "output"
+                    if dest_dir.exists():
+                        dest_file = dest_dir / src_path.name
+                        if not dest_file.exists() or dest_file.resolve() != src_path:
+                            shutil.copy2(src_path, dest_file)
+            except Exception as e:
+                logger.error(f"Error copying shown image to session output folder: {e}")
 
     def add_chat_message(self, text: str, author: str = "agent"):
         self.chat_manager.add_message({"author": author, "text": text})
@@ -158,3 +183,56 @@ class CanvasStateManager:
         }
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, playlist={music_state['playlist']}")
         return res
+
+    def export_session_data(self, session_dir: Optional[Path] = None) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """Gather current canvas state data and binary images for database export."""
+        state_data = {
+            "current_image_basename": self.current_image_basename,
+            "shown_image_path": self.shown_image_path,
+            "shown_image_prompt": self.shown_image_prompt,
+            "current_playlist": self.current_playlist,
+            "current_playlist_tracks": self.current_playlist_tracks,
+            "music_paused": self.music_paused,
+            "doodles": list(self.doodles_state),
+            "chat_messages": self.chat_manager.get_messages(),
+        }
+
+        image_files = []
+        if session_dir and session_dir.exists():
+            out_dir = session_dir / "output"
+            ref_dir = session_dir / "reference_library"
+            if out_dir.exists():
+                for f in out_dir.rglob("*"):
+                    if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
+                        with open(f, "rb") as fp:
+                            image_files.append({
+                                "filename": f.name,
+                                "category": "output",
+                                "data": fp.read()
+                            })
+            if ref_dir.exists():
+                for f in ref_dir.rglob("*"):
+                    if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
+                        with open(f, "rb") as fp:
+                            image_files.append({
+                                "filename": f.name,
+                                "category": "reference",
+                                "data": fp.read()
+                            })
+
+        for img_path in self.shown_images_history:
+            if img_path and os.path.exists(img_path):
+                fn = os.path.basename(img_path)
+                if not any(img["filename"] == fn for img in image_files):
+                    try:
+                        with open(img_path, "rb") as fp:
+                            image_files.append({
+                                "filename": fn,
+                                "category": "output",
+                                "data": fp.read()
+                            })
+                    except Exception:
+                        pass
+
+        return state_data, image_files
+

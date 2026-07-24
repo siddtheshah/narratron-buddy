@@ -8,7 +8,6 @@ agent:
         target_tokens: 10000
 
 image_generation:
-    output_folder: "output/artifacts/images"
     reference_library_folder: "reference_library"
     cooldown_duration: 45
 
