@@ -15,7 +15,7 @@
 - [ ] Payments setup (buy credits)
 
 ## 4. Narratron UI & Canvas Features
-- [ ] Cinematic mode: exterior panel that only shows UI on mouseover
+- [x] Cinematic mode: exterior panel that only shows UI on mouseover
 - [x] Show image with transition (enhanced agent control)
 - [ ] Autofade: let images decay to dark unless model sets `persist` to true
 - [x] Share link: easy link to share sessions

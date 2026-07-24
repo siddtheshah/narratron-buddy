@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Narratron - Pop-out Chat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --text-color: #ffffff;
+            --accent-color: #6366f1;
+            --glass-bg: rgba(15, 17, 21, 0.85);
+            --glass-border: rgba(255, 255, 255, 0.12);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        header {
+            padding: 0.8rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        header h2 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, #fff, #a5b4fc);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .icon-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--glass-border);
+            color: #a5b4fc;
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .icon-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        .tab-bar {
+            display: flex;
+            border-bottom: 1px solid var(--glass-border);
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 0.6rem 0.5rem;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #94a3b8;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .tab-btn.active {
+            color: #a5b4fc;
+            border-bottom-color: var(--accent-color);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .tab-content {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        /* Chat Tab */
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        #chat-messages::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        #chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        .chat-message {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.75rem;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.9rem;
+            line-height: 1.4;
+            color: #cbd5e1;
+            word-wrap: break-word;
+        }
+
+        #chat-form {
+            display: flex;
+            padding: 0.8rem;
+            border-top: 1px solid var(--glass-border);
+            background: rgba(0, 0, 0, 0.2);
+            gap: 0.5rem;
+        }
+
+        #chat-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 0.5rem 1rem;
+            color: #fff;
+            font-family: inherit;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        #chat-input:focus {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--accent-color);
+        }
+
+        #chat-form button {
+            background: var(--accent-color);
+            color: #fff;
+            border: none;
+            border-radius: 20px;
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        /* Controls Tab */
+        .controls-container {
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .card h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #a5b4fc;
+        }
+
+        .card p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #e2e8f0;
+            line-height: 1.4;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>Narratron Pop-out Chat</h2>
+        <div class="header-actions">
+            <button class="icon-btn" id="dock-back-btn" title="Dock back to main canvas">
+                📥 Dock Back
+            </button>
+        </div>
+    </header>
+
+    <div class="tab-bar">
+        <button class="tab-btn active" data-tab="chat-tab">💬 Live Chat</button>
+        <button class="tab-btn" data-tab="controls-tab">🎛️ Session Info</button>
+    </div>
+
+    <div id="chat-tab" class="tab-content active">
+        <div id="chat-messages"></div>
+        <form id="chat-form">
+            <input type="text" id="chat-input" placeholder="Type an idea..." autocomplete="off" required>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <div id="controls-tab" class="tab-content">
+        <div class="controls-container">
+            <div class="card">
+                <h3>Current Scene Prompt</h3>
+                <p id="popout-prompt-text">No prompt available yet.</p>
+            </div>
+            <div class="card">
+                <h3>Music & Audio</h3>
+                <p id="popout-music-status">🎵 Silent</p>
+            </div>
+            <div class="card">
+                <h3>Session Details</h3>
+                <p>Status: <span class="status-badge">Active</span></p>
+                <p style="margin-top: 6px; font-size: 0.8rem; color: #94a3b8;" id="popout-session-id">Session: Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id') || 'default';
+        document.getElementById('popout-session-id').textContent = `Session: ${sessionId}`;
+
+        const myUserId = "Popout_" + Math.floor(Math.random() * 10000);
+        const broadcast = new BroadcastChannel('narratron_popout_channel');
+
+        // Tab Switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Dock Back handler
+        document.getElementById('dock-back-btn').addEventListener('click', () => {
+            broadcast.postMessage({ type: 'dock_panel' });
+            window.close();
+        });
+
+        // Chat fetch & submit
+        const chatMessages = document.getElementById('chat-messages');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        let lastMsgCount = 0;
+
+        async function fetchChat() {
+            try {
+                const res = await fetch('/api/chat' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''));
+                const messages = await res.json();
+                if (messages.length !== lastMsgCount) {
+                    chatMessages.innerHTML = '';
+                    messages.forEach(msg => {
+                        const div = document.createElement('div');
+                        div.className = 'chat-message';
+                        div.textContent = msg.text;
+                        chatMessages.appendChild(div);
+                    });
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    lastMsgCount = messages.length;
+                }
+            } catch (err) {}
+        }
+
+        async function fetchLatestState() {
+            try {
+                const res = await fetch('/api/latest' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''));
+                const data = await res.json();
+                if (data.prompt) {
+                    document.getElementById('popout-prompt-text').textContent = data.prompt;
+                }
+                if (data.music && data.music.playlist) {
+                    document.getElementById('popout-music-status').textContent = '🎵 ' + data.music.playlist + (data.music.paused ? ' (Paused)' : '');
+                } else {
+                    document.getElementById('popout-music-status').textContent = '🎵 Silent';
+                }
+            } catch(e) {}
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+            chatInput.value = '';
+            try {
+                await fetch('/api/chat' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ author: myUserId, text: text })
+                });
+                fetchChat();
+                broadcast.postMessage({ type: 'chat_sent', text: text });
+            } catch(e) {}
+        });
+
+        setInterval(fetchChat, 1000);
+        setInterval(fetchLatestState, 1000);
+        fetchChat();
+        fetchLatestState();
+
+        // Notify parent window on unload
+        window.addEventListener('beforeunload', () => {
+            broadcast.postMessage({ type: 'popout_closed' });
+        });
+    </script>
+</body>
+</html>

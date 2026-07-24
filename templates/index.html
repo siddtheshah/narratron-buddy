@@ -332,6 +332,144 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             z-index: 10;
             flex-shrink: 0;
+            transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #chat-sidebar.collapsed {
+            transform: translateX(120%);
+            opacity: 0;
+            margin-right: -320px;
+            pointer-events: none;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--glass-border);
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .panel-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #a5b4fc;
+        }
+
+        .panel-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .panel-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--glass-border);
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-family: inherit;
+        }
+
+        .panel-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        /* --- Cinematic Fullscreen Mode --- */
+        body.fullscreen-cinematic {
+            padding: 0 !important;
+            gap: 0 !important;
+            background-color: #000000 !important;
+        }
+
+        body.fullscreen-cinematic #bg-layer {
+            filter: blur(35px) brightness(0.2) !important;
+        }
+
+        body.fullscreen-cinematic #main-container {
+            width: 100vw !important;
+            height: 100vh !important;
+            padding: 0 !important;
+            gap: 0 !important;
+            position: relative !important;
+        }
+
+        body.fullscreen-cinematic #image-container {
+            border-radius: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            backdrop-filter: none !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 1 !important;
+        }
+
+        /* Floating UI overlay elements in cinematic fullscreen */
+        body.fullscreen-cinematic header {
+            position: absolute !important;
+            top: 1.5rem !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            z-index: 100 !important;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        body.fullscreen-cinematic #bottom-bar {
+            position: absolute !important;
+            bottom: 1.5rem !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            z-index: 100 !important;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        body.fullscreen-cinematic #chat-sidebar {
+            position: absolute !important;
+            top: 1.5rem !important;
+            right: 1.5rem !important;
+            height: calc(100vh - 3rem) !important;
+            z-index: 100 !important;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        body.fullscreen-cinematic #popout-expand-btn {
+            z-index: 101 !important;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        /* Reveal UI on mouseover / mouse move in cinematic fullscreen */
+        body.fullscreen-cinematic.ui-visible header,
+        body.fullscreen-cinematic.ui-visible #bottom-bar,
+        body.fullscreen-cinematic.ui-visible #chat-sidebar:not(.collapsed),
+        body.fullscreen-cinematic.ui-visible #popout-expand-btn {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+
+        body.fullscreen-cinematic.ui-visible #chat-sidebar.collapsed {
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
 
         #chat-messages {
@@ -540,6 +678,21 @@
                 💾
             </button>
 
+            <!-- Full Screen & Pop-out Panel buttons -->
+            <button id="fullscreen-btn" title="Full Screen (F11)" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
+                <svg id="fullscreen-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+            </button>
+            <button id="popout-toggle-btn" title="Toggle Chat Sidebar" style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                    <line x1="15" x2="15" y1="3" y2="21"/>
+                    <path d="m10 9 3 3-3 3"/>
+                </svg>
+                <span>Chat</span>
+            </button>
+
             <!-- Orator Audio controls (Connect & Mic) -->
             <div id="orator-controls" style="display: none; align-items: center; gap: 10px; margin-left: 1rem; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
                 <button id="agent-connect-btn" style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
@@ -609,12 +762,49 @@
         </div>
     </div>
 
+    <!-- Floating Expand button when Chat Panel is collapsed -->
+    <button id="popout-expand-btn" title="Expand Chat Panel" style="display: none; position: absolute; right: 1.5rem; top: 1.5rem; z-index: 20; background: var(--glass-bg); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid var(--glass-border); color: #a5b4fc; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; align-items: center; gap: 6px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3); transition: all 0.3s ease; font-family: inherit;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+            <line x1="9" x2="9" y1="3" y2="21"/>
+            <path d="m14 9-3 3 3 3"/>
+        </svg>
+        <span>Chat</span>
+    </button>
+
     <div id="chat-sidebar">
-        <div id="chat-messages"></div>
-        <form id="chat-form">
-            <input type="text" id="chat-input" placeholder="Type an idea..." autocomplete="off" required>
-            <button type="submit">Send</button>
-        </form>
+        <div class="panel-header">
+            <span class="panel-title">Chat</span>
+            <div class="panel-actions">
+                <button class="panel-btn" id="popout-window-btn" title="Pop out into separate window">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" x2="21" y1="14" y2="3"/>
+                    </svg>
+                    Pop Out
+                </button>
+                <button class="panel-btn" id="popout-collapse-btn" title="Collapse Panel">
+                    ✕
+                </button>
+            </div>
+        </div>
+
+        <div id="popped-out-placeholder" style="display: none; padding: 2rem 1rem; text-align: center; color: #94a3b8; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
+            <div style="font-size: 2rem;">🗗</div>
+            <p style="font-size: 0.9rem; margin: 0; color: #cbd5e1;">Chat is currently popped out in a separate window.</p>
+            <button id="dock-panel-btn" class="panel-btn" style="padding: 6px 14px; background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc;">
+                📥 Dock Back Here
+            </button>
+        </div>
+
+        <div id="panel-body" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+            <div id="chat-messages"></div>
+            <form id="chat-form">
+                <input type="text" id="chat-input" placeholder="Type an idea..." autocomplete="off" required>
+                <button type="submit">Send</button>
+            </form>
+        </div>
     </div>
 
     <script type="module">
@@ -1880,6 +2070,168 @@
                 }, delayMs);
             });
         };
+
+        // ========================================
+        // Full Screen & Pop-out Panel Controls
+        // ========================================
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const fullscreenIcon = document.getElementById('fullscreen-icon');
+
+        function isFullscreenActive() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+        }
+
+        let mouseInactivityTimer = null;
+
+        function showCinematicUI() {
+            if (!document.body.classList.contains('fullscreen-cinematic')) return;
+            document.body.classList.add('ui-visible');
+            if (mouseInactivityTimer) clearTimeout(mouseInactivityTimer);
+            mouseInactivityTimer = setTimeout(() => {
+                document.body.classList.remove('ui-visible');
+            }, 2500);
+        }
+
+        function handleCinematicMouseMove() {
+            showCinematicUI();
+        }
+
+        function updateFullscreenUI() {
+            const active = isFullscreenActive();
+            if (fullscreenBtn) {
+                fullscreenBtn.title = active ? "Exit Full Screen (Esc)" : "Full Screen (F11)";
+            }
+            if (fullscreenIcon) {
+                if (active) {
+                    fullscreenIcon.innerHTML = `<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>`;
+                } else {
+                    fullscreenIcon.innerHTML = `<path d="M8 3H5a2 2 0 0 1-2 2v3m18 0V5a2 2 0 0 1-2-2h-3m0 18h3a2 2 0 0 1 2-2v-3M3 16v3a2 2 0 0 1 2 2h3"/>`;
+                }
+            }
+
+            if (active) {
+                document.body.classList.add('fullscreen-cinematic');
+                window.addEventListener('mousemove', handleCinematicMouseMove);
+                showCinematicUI();
+            } else {
+                document.body.classList.remove('fullscreen-cinematic', 'ui-visible');
+                window.removeEventListener('mousemove', handleCinematicMouseMove);
+                if (mouseInactivityTimer) {
+                    clearTimeout(mouseInactivityTimer);
+                    mouseInactivityTimer = null;
+                }
+            }
+
+            setTimeout(() => {
+                resizeRendererCanvas();
+                resizeDoodleCanvas();
+            }, 100);
+        }
+
+        function toggleFullScreen() {
+            if (!isFullscreenActive()) {
+                const docEl = document.documentElement;
+                if (docEl.requestFullscreen) docEl.requestFullscreen();
+                else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
+                else if (docEl.mozRequestFullScreen) docEl.mozRequestFullScreen();
+                else if (docEl.msRequestFullscreen) docEl.msRequestFullscreen();
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+                else if (document.msExitFullscreen) document.msExitFullscreen();
+            }
+        }
+
+        if (fullscreenBtn) {
+            fullscreenBtn.addEventListener('click', toggleFullScreen);
+        }
+
+        ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evt => {
+            document.addEventListener(evt, updateFullscreenUI);
+        });
+
+        // Pop-out Panel drawer & standalone window logic
+        const popoutToggleBtn = document.getElementById('popout-toggle-btn');
+        const popoutCollapseBtn = document.getElementById('popout-collapse-btn');
+        const popoutExpandBtn = document.getElementById('popout-expand-btn');
+        const popoutWindowBtn = document.getElementById('popout-window-btn');
+        const poppedOutPlaceholder = document.getElementById('popped-out-placeholder');
+        const panelBody = document.getElementById('panel-body');
+        const dockPanelBtn = document.getElementById('dock-panel-btn');
+
+        let isPanelCollapsed = false;
+        let popoutWindowRef = null;
+        const popoutBroadcast = new BroadcastChannel('narratron_popout_channel');
+
+        function setPanelCollapsed(collapsed) {
+            isPanelCollapsed = collapsed;
+            const sidebar = document.getElementById('chat-sidebar');
+            if (sidebar) {
+                if (collapsed) {
+                    sidebar.classList.add('collapsed');
+                } else {
+                    sidebar.classList.remove('collapsed');
+                }
+            }
+            if (popoutExpandBtn) {
+                popoutExpandBtn.style.display = collapsed ? 'flex' : 'none';
+            }
+            setTimeout(() => {
+                resizeRendererCanvas();
+                resizeDoodleCanvas();
+            }, 360);
+        }
+
+        if (popoutToggleBtn) {
+            popoutToggleBtn.addEventListener('click', () => setPanelCollapsed(!isPanelCollapsed));
+        }
+        if (popoutCollapseBtn) {
+            popoutCollapseBtn.addEventListener('click', () => setPanelCollapsed(true));
+        }
+        if (popoutExpandBtn) {
+            popoutExpandBtn.addEventListener('click', () => setPanelCollapsed(false));
+        }
+
+        function openPopoutWindow() {
+            const width = 400;
+            const height = 680;
+            const left = window.screen.width - width - 50;
+            const top = 100;
+            
+            const url = `/popout?session_id=${encodeURIComponent(sessionId)}&role=${isOrator ? 'orator' : 'viewer'}`;
+            popoutWindowRef = window.open(url, 'NarratronPopoutPanel', `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+            
+            if (popoutWindowRef) {
+                if (panelBody) panelBody.style.display = 'none';
+                if (poppedOutPlaceholder) poppedOutPlaceholder.style.display = 'flex';
+            }
+        }
+
+        function dockPanelBack() {
+            if (popoutWindowRef && !popoutWindowRef.closed) {
+                popoutWindowRef.close();
+            }
+            popoutWindowRef = null;
+            if (panelBody) panelBody.style.display = 'flex';
+            if (poppedOutPlaceholder) poppedOutPlaceholder.style.display = 'none';
+        }
+
+        if (popoutWindowBtn) popoutWindowBtn.addEventListener('click', openPopoutWindow);
+        if (dockPanelBtn) dockPanelBtn.addEventListener('click', dockPanelBack);
+
+        popoutBroadcast.onmessage = (event) => {
+            if (event.data.type === 'dock_panel' || event.data.type === 'popout_closed') {
+                dockPanelBack();
+            } else if (event.data.type === 'chat_sent') {
+                fetchChat();
+            }
+        };
+
+        window.toggleFullScreen = toggleFullScreen;
+        window.togglePopoutPanel = () => setPanelCollapsed(!isPanelCollapsed);
+        window.openPopoutWindow = openPopoutWindow;
+        window.dockPanelBack = dockPanelBack;
     </script>
 </body>
 </html>

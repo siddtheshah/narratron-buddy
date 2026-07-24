@@ -512,6 +512,13 @@ def read_stats():
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
+@app.get("/popout", response_class=HTMLResponse)
+def read_popout(request: Request, session_id: Optional[str] = None):
+    """Serve the standalone Pop-out Panel interface for a session."""
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "popout.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        return f.read()
+
 @app.get("/canvas", response_class=HTMLResponse)
 def read_canvas(request: Request, session_id: Optional[str] = None):
     """Serve the Canvas interface for a specific session."""
