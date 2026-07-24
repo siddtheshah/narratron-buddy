@@ -7,7 +7,7 @@
 ## 2. Additional Pages
 - [ ] How-To page
 - [ ] Pricing page (`pricing.txt` / pricing page content)
-- [ ] Stats page (number of accounts, active users in the last 7 days, session views)
+- [x] Stats page (number of accounts, active users in the last 7 days, session views)
 
 ## 3. Auth, Security & Monetization
 - [ ] Password reset flow

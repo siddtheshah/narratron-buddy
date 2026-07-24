@@ -102,6 +102,22 @@ class TestDatabaseManager(unittest.TestCase):
         self.assertTrue((recon_dir / "references" / "test_ref.jpg").exists())
         self.assertEqual((recon_dir / "references" / "test_ref.jpg").read_bytes(), b"JPG_DATA")
 
+    def test_stats_tracking(self):
+        user1 = self.db.register_user("statsuser1", "stats1@example.com", "Password123")
+        user2 = self.db.register_user("statsuser2", "stats2@example.com", "Password123")
+
+        # Record session views
+        self.db.record_session_view("session_alpha", user_id=user1["id"], ip_address="127.0.0.1")
+        self.db.record_session_view("session_alpha", user_id=user2["id"], ip_address="127.0.0.1")
+        self.db.record_session_view("session_beta", user_id=None, ip_address="192.168.1.1")
+
+        stats = self.db.get_stats_summary()
+        self.assertGreaterEqual(stats["total_accounts"], 2)
+        self.assertGreaterEqual(stats["active_users_7d"], 2)
+        self.assertEqual(stats["total_session_views"], 3)
+        self.assertEqual(stats["session_views_7d"], 3)
+        self.assertTrue(any(s["session_id"] == "session_alpha" and s["views"] == 2 for s in stats["top_viewed_sessions"]))
+
 
 if __name__ == "__main__":
     unittest.main()

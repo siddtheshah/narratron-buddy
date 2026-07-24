@@ -153,14 +153,8 @@
         /* Grid Layout */
         .grid-container {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 1.5rem;
-        }
-
-        @media (max-width: 900px) {
-            .grid-container {
-                grid-template-columns: 1fr;
-            }
         }
 
         /* Cards & Panels */
@@ -476,6 +470,7 @@
         </a>
         <div class="nav-actions">
             <a href="/join" class="btn btn-secondary btn-sm">← Back to /join</a>
+            <a href="/stats" class="btn btn-secondary btn-sm">📊 Stats</a>
             <div id="userAccountBar" class="user-account-bar">
                 <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Log In</button>
                 <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Sign Up</button>
@@ -526,30 +521,6 @@
                     <span id="deploySpinner" style="display: none;">⏳</span>
                     <span id="deployBtnText">🚀 Deploy Canvas Instance</span>
                 </button>
-            </div>
-
-            <!-- Right Panel: Overview & Instructions -->
-            <div class="panel">
-                <div class="panel-header">
-                    <div class="panel-title">
-                        <span>📚</span> Deployment Architecture
-                    </div>
-                </div>
-
-                <div style="color: var(--text-secondary); line-height: 1.6; font-size: 0.95rem;">
-                    <p style="margin-bottom: 1rem;">
-                        Each deployment creates an isolated workspace under <code>sessions/&lt;session_id&gt;/</code> containing:
-                    </p>
-                    <ul style="padding-left: 1.25rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                        <li><code>session.json</code>: Workspace metadata & settings</li>
-                        <li><code>reference_library/</code>: Reference files for Gemini image generation</li>
-                        <li><code>playlists/</code>: Multi-folder audio playlists</li>
-                        <li><code>output/</code>: Generated images and narrative logs</li>
-                    </ul>
-                    <p>
-                        🔑 Each session automatically receives a unique <strong>Join Key</strong>. Owners can copy and share the key to allow viewers to join from the <code>/join</code> splash screen.
-                    </p>
-                </div>
             </div>
         </div>
 

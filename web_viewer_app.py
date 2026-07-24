@@ -231,6 +231,10 @@ def get_session(session_id: str, request: Request):
     owner_id = dep["user_id"] if dep else None
     is_owner = (current_user is not None and owner_id == current_user["id"])
 
+    # Record session view in database
+    client_ip = request.client.host if request.client else None
+    db.record_session_view(session_id, user_id=current_user["id"] if current_user else None, ip_address=client_ip)
+
     meta_dict = meta.model_dump()
     meta_dict["is_owner"] = is_owner
     if not is_owner:
@@ -470,6 +474,11 @@ def post_chat(msg: ChatMessage, session_id: Optional[str] = None):
     cs.add_chat_message(msg.text, author=msg.author)
     return {"status": "ok"}
 
+@app.get("/api/stats")
+def get_stats_api():
+    """Retrieve system stats summary (accounts, 7-day active users, session views)."""
+    return db.get_stats_summary()
+
 # ========================================
 # Application Root Pages & Navigation
 # ========================================
@@ -489,8 +498,15 @@ def read_deployer():
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
+@app.get("/stats", response_class=HTMLResponse)
+def read_stats():
+    """Serve the System Stats Dashboard Page."""
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "stats.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        return f.read()
+
 @app.get("/canvas", response_class=HTMLResponse)
-def read_canvas(session_id: Optional[str] = None):
+def read_canvas(request: Request, session_id: Optional[str] = None):
     """Serve the Canvas interface for a specific session."""
     if session_id:
         session_dir = local_deployer._get_session_dir(session_id)
@@ -498,6 +514,12 @@ def read_canvas(session_id: Optional[str] = None):
             db.reconstruct_session_from_db(session_id, session_dir)
         artifacts_dir = session_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Record session view in database
+        current_user = get_current_user(request)
+        client_ip = request.client.host if request.client else None
+        db.record_session_view(session_id, user_id=current_user["id"] if current_user else None, ip_address=client_ip)
+
     template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()

@@ -51,9 +51,18 @@ class DatabaseManager:
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     credits REAL DEFAULT 100.0,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    last_active_at TEXT
                 )
             """)
+
+            cursor.execute("PRAGMA table_info(users)")
+            user_cols = [row["name"] for row in cursor.fetchall()]
+            if "last_active_at" not in user_cols:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN last_active_at TEXT")
+                except Exception:
+                    pass
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -98,6 +107,17 @@ class DatabaseManager:
                     FOREIGN KEY (session_id) REFERENCES exported_sessions(session_id) ON DELETE CASCADE
                 )
             """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS session_views (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER,
+                    viewed_at TEXT NOT NULL,
+                    ip_address TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                )
+            """)
             conn.commit()
 
 
@@ -128,8 +148,8 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (username, email, pwd_hash, salt_hex, now_iso)
+                    "INSERT INTO users (username, email, password_hash, salt, created_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (username, email, pwd_hash, salt_hex, now_iso, now_iso)
                 )
                 user_id = cursor.lastrowid
                 conn.commit()
@@ -155,13 +175,15 @@ class DatabaseManager:
             computed_hash, _ = self._hash_password(password, salt_bytes)
 
             if secrets.compare_digest(computed_hash, user_dict["password_hash"]):
-                return {
+                user_res = {
                     "id": user_dict["id"],
                     "username": user_dict["username"],
                     "email": user_dict["email"],
                     "credits": user_dict["credits"],
                     "created_at": user_dict["created_at"]
                 }
+                self.record_user_activity(user_dict["id"])
+                return user_res
             return None
 
     def create_auth_session(self, user_id: int, days_valid: int = 7) -> str:
@@ -177,6 +199,7 @@ class DatabaseManager:
                 (token, user_id, now.isoformat(), expires.isoformat())
             )
             conn.commit()
+        self.record_user_activity(user_id)
         return token
 
     def validate_session_token(self, token: str) -> Optional[Dict]:
@@ -195,8 +218,140 @@ class DatabaseManager:
             """, (token, now_iso))
             row = cursor.fetchone()
             if row:
-                return dict(row)
+                res = dict(row)
+                self.record_user_activity(res["id"])
+                return res
             return None
+
+    def record_user_activity(self, user_id: int) -> bool:
+        """Update last_active_at timestamp for user."""
+        if not user_id:
+            return False
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE users SET last_active_at = ? WHERE id = ?", (now_iso, user_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error recording user activity: {e}")
+            return False
+
+    def record_session_view(self, session_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> bool:
+        """Record a session view event in database."""
+        if not session_id:
+            return False
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO session_views (session_id, user_id, viewed_at, ip_address) VALUES (?, ?, ?, ?)",
+                    (session_id, user_id, now_iso, ip_address)
+                )
+                conn.commit()
+                if user_id:
+                    self.record_user_activity(user_id)
+                return True
+        except Exception as e:
+            logger.error(f"Error recording session view: {e}")
+            return False
+
+    def get_stats_summary(self) -> Dict[str, Any]:
+        """Fetch stats summary including account counts, active users (7d), and session views."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        seven_days_ago = (now - datetime.timedelta(days=7)).isoformat()
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 1. Number of accounts
+            cursor.execute("SELECT COUNT(*) as count FROM users")
+            total_accounts = cursor.fetchone()["count"]
+
+            # 2. Active users in the last 7 days
+            cursor.execute("""
+                SELECT COUNT(DISTINCT user_id) as count FROM (
+                    SELECT id as user_id FROM users WHERE (last_active_at IS NOT NULL AND last_active_at >= ?) OR created_at >= ?
+                    UNION
+                    SELECT user_id FROM auth_sessions WHERE created_at >= ?
+                    UNION
+                    SELECT user_id FROM canvas_deployments WHERE created_at >= ?
+                    UNION
+                    SELECT user_id FROM session_views WHERE user_id IS NOT NULL AND viewed_at >= ?
+                )
+            """, (seven_days_ago, seven_days_ago, seven_days_ago, seven_days_ago, seven_days_ago))
+            active_users_7d = cursor.fetchone()["count"]
+
+            # 3. Session views
+            cursor.execute("SELECT COUNT(*) as count FROM session_views")
+            total_session_views = cursor.fetchone()["count"]
+
+            cursor.execute("SELECT COUNT(*) as count FROM session_views WHERE viewed_at >= ?", (seven_days_ago,))
+            session_views_7d = cursor.fetchone()["count"]
+
+            # 4. Top viewed sessions
+            cursor.execute("""
+                SELECT v.session_id, COUNT(*) as views,
+                       COALESCE(es.name, cd.session_id, v.session_id) as name
+                FROM session_views v
+                LEFT JOIN exported_sessions es ON v.session_id = es.session_id
+                LEFT JOIN canvas_deployments cd ON v.session_id = cd.session_id
+                GROUP BY v.session_id
+                ORDER BY views DESC
+                LIMIT 10
+            """)
+            top_viewed_sessions = [dict(row) for row in cursor.fetchall()]
+
+            # 5. Daily session views for past 7 days
+            daily_views_7d = []
+            for i in range(6, -1, -1):
+                day_start = (now - datetime.timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+                day_end = day_start + datetime.timedelta(days=1)
+                day_str = day_start.strftime("%Y-%m-%d")
+                cursor.execute(
+                    "SELECT COUNT(*) as count FROM session_views WHERE viewed_at >= ? AND viewed_at < ?",
+                    (day_start.isoformat(), day_end.isoformat())
+                )
+                cnt = cursor.fetchone()["count"]
+                daily_views_7d.append({"date": day_str, "views": cnt})
+
+            # 6. Daily active users for past 7 days
+            daily_active_users_7d = []
+            for i in range(6, -1, -1):
+                day_start = (now - datetime.timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+                day_end = day_start + datetime.timedelta(days=1)
+                day_str = day_start.strftime("%Y-%m-%d")
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT user_id) as count FROM (
+                        SELECT id as user_id FROM users WHERE (last_active_at IS NOT NULL AND last_active_at >= ? AND last_active_at < ?) OR (created_at >= ? AND created_at < ?)
+                        UNION
+                        SELECT user_id FROM auth_sessions WHERE created_at >= ? AND created_at < ?
+                        UNION
+                        SELECT user_id FROM canvas_deployments WHERE created_at >= ? AND created_at < ?
+                        UNION
+                        SELECT user_id FROM session_views WHERE user_id IS NOT NULL AND viewed_at >= ? AND viewed_at < ?
+                    )
+                """, (
+                    day_start.isoformat(), day_end.isoformat(),
+                    day_start.isoformat(), day_end.isoformat(),
+                    day_start.isoformat(), day_end.isoformat(),
+                    day_start.isoformat(), day_end.isoformat(),
+                    day_start.isoformat(), day_end.isoformat()
+                ))
+                cnt = cursor.fetchone()["count"]
+                daily_active_users_7d.append({"date": day_str, "active_users": cnt})
+
+            return {
+                "total_accounts": total_accounts,
+                "active_users_7d": active_users_7d,
+                "total_session_views": total_session_views,
+                "session_views_7d": session_views_7d,
+                "top_viewed_sessions": top_viewed_sessions,
+                "daily_views_7d": daily_views_7d,
+                "daily_active_users_7d": daily_active_users_7d
+            }
 
     def invalidate_session_token(self, token: str) -> bool:
         """Delete an auth session token on logout."""
