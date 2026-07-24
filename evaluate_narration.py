@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import asyncio
 import base64
+import http.cookiejar
 import json
 import os
 import socket
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import wave
 from pathlib import Path
@@ -31,7 +33,7 @@ flags.DEFINE_string(
 )
 flags.DEFINE_string(
     "output",
-    "output/evaluation/eval_result1.mp4",
+    "evaluation_results/eval_result1.mp4",
     "Path to the output video file",
     short_name="o",
 )
@@ -161,6 +163,8 @@ async def stream_audio_task(page, wav_path, buffer_time):
                 
     page.on("console", handle_console)
     
+    # Wait for helper functions to be exposed on window
+    await page.wait_for_function("typeof window.connectAgentAndMic === 'function'", timeout=10000)
     # Trigger connection and microphone status visually
     await page.evaluate("window.connectAgentAndMic()")
     
@@ -403,23 +407,55 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
         wait_for_server(port)
         print("[Evaluator] Server is online and responsive.")
         
-        # Step 2.5: Create & Deploy a Session
+        # Step 2.5: Create & Deploy a Session with Authentication
         session_id = None
         join_key = ""
+        cj = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+
+        auth_user = "eval_user"
+        auth_email = "eval@example.com"
+        auth_pass = "EvalPassword123!"
+
+        # Register or login evaluation user
+        reg_url = f"http://127.0.0.1:{port}/api/auth/register"
+        reg_body = json.dumps({
+            "username": auth_user,
+            "email": auth_email,
+            "password": auth_pass
+        }).encode("utf-8")
+        reg_req = urllib.request.Request(reg_url, data=reg_body, headers={"Content-Type": "application/json"})
+
         try:
-            req_data = json.dumps({"name": "Evaluation Session"}).encode("utf-8")
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{port}/api/sessions/create-and-deploy",
-                data=req_data,
-                headers={"Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req) as resp:
-                created_session = json.loads(resp.read().decode("utf-8"))
-                session_id = created_session.get("session_id")
-                join_key = created_session.get("join_key", "")
-                print(f"[Evaluator] Created session '{session_id}' (Join Key: '{join_key}')")
-        except Exception as e:
-            print(f"[Evaluator] Warning: Failed to create session via API: {e}")
+            with opener.open(reg_req) as resp:
+                print("[Evaluator] Registered eval_user successfully.")
+        except Exception:
+            login_url = f"http://127.0.0.1:{port}/api/auth/login"
+            login_body = json.dumps({
+                "username_or_email": auth_user,
+                "password": auth_pass
+            }).encode("utf-8")
+            login_req = urllib.request.Request(login_url, data=login_body, headers={"Content-Type": "application/json"})
+            with opener.open(login_req) as resp:
+                print("[Evaluator] Logged in eval_user successfully.")
+
+        # Create & deploy session via form data
+        create_url = f"http://127.0.0.1:{port}/api/sessions/create-and-deploy"
+        form_data = urllib.parse.urlencode({"name": "Evaluation Session"}).encode("utf-8")
+        create_req = urllib.request.Request(
+            create_url,
+            data=form_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+        with opener.open(create_req) as resp:
+            created_session = json.loads(resp.read().decode("utf-8"))
+            session_id = created_session.get("session_id")
+            session_info = created_session.get("session", {})
+            join_key = session_info.get("join_key", "")
+            print(f"[Evaluator] Created session '{session_id}' (Join Key: '{join_key}')")
+
+        if not session_id:
+            raise RuntimeError("Failed to create session via API: session_id is empty.")
 
         # Step 3: Launch Playwright & start video recording
         async with async_playwright() as p:
@@ -439,6 +475,18 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
                 viewport={"width": 1280, "height": 720},
                 permissions=["microphone"]
             )
+
+            # Pass auth cookies to Playwright context
+            cookies_to_add = []
+            for cookie in cj:
+                cookies_to_add.append({
+                    "name": cookie.name,
+                    "value": cookie.value,
+                    "domain": "127.0.0.1",
+                    "path": cookie.path or "/",
+                })
+            if cookies_to_add:
+                await context.add_cookies(cookies_to_add)
             
             # Measure time of recording start
             record_start_time = time.time()
@@ -446,10 +494,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             page = await context.new_page()
             
             # Build target canvas URL
-            if session_id:
-                canvas_url = f"http://127.0.0.1:{port}/canvas?session_id={session_id}&join_key={join_key}&role=orator"
-            else:
-                canvas_url = f"http://127.0.0.1:{port}/canvas?role=orator"
+            canvas_url = f"http://127.0.0.1:{port}/canvas?session_id={session_id}&join_key={join_key}&role=orator"
 
             print(f"[Evaluator] Opening Narratron Orator Canvas at {canvas_url} ...")
             await page.goto(canvas_url)
