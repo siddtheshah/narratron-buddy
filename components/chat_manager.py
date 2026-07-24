@@ -3,10 +3,9 @@ import json
 from datetime import datetime
 
 class ChatManager:
-    def __init__(self, output_dir: str = "output/chats"):
+    def __init__(self, output_dir: str):
         self.output_dir = output_dir
         self.messages = []
-        os.makedirs(self.output_dir, exist_ok=True)
 
     def add_message(self, message: dict):
         self.messages.append(message)
@@ -19,6 +18,8 @@ class ChatManager:
     def export_and_reset(self, image_id: str):
         if not self.messages:
             return  # Nothing to export
+
+        os.makedirs(self.output_dir, exist_ok=True)
 
         # Only alphanumeric + dots/dashes
         safe_id = "".join([c for c in str(image_id) if c.isalnum() or c in ('_', '-', '.')]) if image_id else "unknown_image"

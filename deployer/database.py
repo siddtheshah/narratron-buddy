@@ -258,6 +258,55 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_all_exported_session_ids(self) -> List[str]:
+        """Get all distinct session IDs stored in exported_sessions or canvas_deployments."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT session_id FROM exported_sessions
+                UNION
+                SELECT session_id FROM canvas_deployments
+            """)
+            return [row["session_id"] for row in cursor.fetchall() if row["session_id"]]
+
+    def get_session_metadata_from_db(self, session_id: str) -> Optional[Dict]:
+        """Extract metadata dictionary for a session stored in database without reconstructing disk files."""
+        import json
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM exported_sessions WHERE session_id = ?", (session_id,))
+            session_row = cursor.fetchone()
+            
+            cursor.execute("SELECT * FROM canvas_deployments WHERE session_id = ?", (session_id,))
+            dep_row = cursor.fetchone()
+
+            if not session_row and not dep_row:
+                return None
+
+            metadata = None
+            if session_row:
+                try:
+                    state_data = json.loads(session_row["state_json"])
+                    metadata = state_data.get("metadata")
+                except Exception:
+                    pass
+
+            if not metadata:
+                name = session_row["name"] if session_row else session_id
+                join_key = dep_row["join_key"] if dep_row else "KEY-DEFAULT"
+                created_at = session_row["exported_at"] if session_row else (dep_row["created_at"] if dep_row else "")
+                metadata = {
+                    "session_id": session_id,
+                    "name": name,
+                    "status": "deployed",
+                    "join_key": join_key,
+                    "created_at": created_at,
+                    "mounted_references": [],
+                    "mounted_playlists": {},
+                    "config": {}
+                }
+            return metadata
+
     def export_session_to_db(
         self,
         session_id: str,
@@ -318,30 +367,103 @@ class DatabaseManager:
             return res
 
     def reconstruct_session_from_db(self, session_id: str, target_dir: Path) -> bool:
-        """Reconstruct session folder and images from database if missing."""
+        """Reconstruct session folder, session metadata, state, and files from database if missing."""
+        import json
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM exported_sessions WHERE session_id = ?", (session_id,))
             session_row = cursor.fetchone()
             if not session_row:
-                return False
-
-            cursor.execute("SELECT filename, category, image_data FROM exported_session_images WHERE session_id = ?", (session_id,))
-            image_rows = cursor.fetchall()
+                # Check if deployment exists even if not exported yet
+                cursor.execute("SELECT * FROM canvas_deployments WHERE session_id = ?", (session_id,))
+                dep_row = cursor.fetchone()
+                if not dep_row:
+                    return False
+                session_row = None
 
             target_dir = Path(target_dir).resolve()
+            target_dir.mkdir(parents=True, exist_ok=True)
             out_dir = target_dir / "output"
             ref_dir = target_dir / "references"
+            pl_dir = target_dir / "playlists"
             out_dir.mkdir(parents=True, exist_ok=True)
             ref_dir.mkdir(parents=True, exist_ok=True)
+            pl_dir.mkdir(parents=True, exist_ok=True)
+
+            state_data = {}
+            user_id = None
+            name = session_id
+
+            if session_row:
+                session_dict = dict(session_row)
+                user_id = session_dict.get("user_id")
+                name = session_dict.get("name") or session_id
+                state_json_str = session_dict.get("state_json", "{}")
+                try:
+                    state_data = json.loads(state_json_str)
+                except Exception:
+                    state_data = {}
+
+            # Restore or write single session.json containing metadata and canvas_state
+            metadata = state_data.get("metadata") or dict(state_data)
+            if "session_id" not in metadata:
+                metadata["session_id"] = session_id
+            if "name" not in metadata:
+                metadata["name"] = name
+            if "status" not in metadata:
+                metadata["status"] = "deployed"
+            if "join_key" not in metadata:
+                metadata["join_key"] = "KEY-DEFAULT"
+                cursor.execute("SELECT join_key FROM canvas_deployments WHERE session_id = ?", (session_id,))
+                dep_row = cursor.fetchone()
+                if dep_row and dep_row["join_key"]:
+                    metadata["join_key"] = dep_row["join_key"]
+            if "created_at" not in metadata:
+                metadata["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            # Ensure canvas_state is included if state_data has canvas_state or UI properties
+            if "canvas_state" not in metadata and "canvas_state" in state_data:
+                metadata["canvas_state"] = state_data["canvas_state"]
+            elif "canvas_state" not in metadata:
+                c_fields = ["current_image_basename", "shown_image_path", "shown_image_prompt", "shown_images_history", "current_playlist", "current_playlist_tracks", "music_paused", "doodles", "chat_messages"]
+                c_dict = {k: state_data[k] for k in c_fields if k in state_data}
+                if c_dict:
+                    metadata["canvas_state"] = c_dict
+
+            meta_file = target_dir / "session.json"
+            with open(meta_file, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2)
+
+            # Clean up legacy session_state.json if it exists
+            legacy_file = target_dir / "session_state.json"
+            if legacy_file.exists():
+                try:
+                    legacy_file.unlink()
+                except Exception:
+                    pass
+
+            # Restore exported images/files
+            cursor.execute("SELECT filename, category, image_data FROM exported_session_images WHERE session_id = ?", (session_id,))
+            image_rows = cursor.fetchall()
 
             for row in image_rows:
                 cat = row["category"]
                 fn = row["filename"]
                 data = row["image_data"]
-                dest_dir = ref_dir if cat == "reference" else out_dir
-                file_path = dest_dir / fn
-                with open(file_path, "wb") as f:
+                
+                if cat == "reference" or cat == "references":
+                    dest_file = ref_dir / fn
+                elif cat == "output":
+                    dest_file = out_dir / fn
+                elif cat.startswith("references/"):
+                    dest_file = target_dir / cat if cat.endswith(fn) else target_dir / cat / fn
+                elif cat.startswith("output/") or cat.startswith("playlists/") or cat.startswith("chats/"):
+                    dest_file = target_dir / cat if cat.endswith(fn) else target_dir / cat / fn
+                else:
+                    dest_file = target_dir / cat / fn
+
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(dest_file, "wb") as f:
                     f.write(data)
 
             return True

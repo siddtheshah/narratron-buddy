@@ -60,6 +60,14 @@ _canvas_states: dict[str, CanvasStateManager] = {}
 
 def get_canvas_state(session_id: Optional[str] = None) -> CanvasStateManager:
     """Retrieve or dynamically instantiate a session-scoped CanvasStateManager instance."""
+    if not session_id:
+        deployed = [s for s in local_deployer.list_sessions() if s.status == "deployed"]
+        if deployed:
+            session_id = deployed[0].session_id
+        elif _canvas_states:
+            non_default = [k for k in _canvas_states.keys() if k != "default"]
+            session_id = non_default[0] if non_default else list(_canvas_states.keys())[0]
+
     sid = session_id or "default"
     if sid not in _canvas_states:
         _canvas_states[sid] = CanvasStateManager(session_id=sid)
@@ -174,19 +182,27 @@ def resolve_join_key(req: ResolveJoinKeyRequest):
 
 @app.get("/api/sessions")
 def list_sessions(request: Request):
-    """List all deployed sessions. Hide join_key for non-owners, prioritize user's sessions."""
+    """List all deployed sessions from disk and database without eagerly reconstructing files."""
     current_user = get_current_user(request)
     current_user_id = current_user["id"] if current_user else None
 
-    sessions = local_deployer.list_sessions()
-    result = []
+    # Get sessions currently on disk
+    disk_sessions = local_deployer.list_sessions()
+    all_sessions_dict = {s.session_id: s.model_dump() for s in disk_sessions}
 
-    for s in sessions:
-        dep = db.get_deployment(s.session_id)
+    # Add DB sessions that are not on disk yet (without writing files to disk!)
+    for sid in db.get_all_exported_session_ids():
+        if sid not in all_sessions_dict:
+            db_meta = db.get_session_metadata_from_db(sid)
+            if db_meta:
+                all_sessions_dict[sid] = db_meta
+
+    result = []
+    for sid, s_dict in all_sessions_dict.items():
+        dep = db.get_deployment(sid)
         owner_id = dep["user_id"] if dep else None
         is_owner = (current_user_id is not None and owner_id == current_user_id)
 
-        s_dict = s.model_dump()
         s_dict["is_owner"] = is_owner
         
         # Hide join_key if not owner
@@ -202,6 +218,10 @@ def list_sessions(request: Request):
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific session."""
+    session_dir = local_deployer._get_session_dir(session_id)
+    if not session_dir.exists() or not (session_dir / "session.json").exists():
+        db.reconstruct_session_from_db(session_id, session_dir)
+
     meta = local_deployer.get_session(session_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -261,6 +281,18 @@ async def create_and_deploy_session(request: Request):
     # Record deployment & deduct credits
     db.record_deployment(deployed_meta.session_id, user["id"], deployed_meta.join_key, cost=5.0)
 
+    # Export & persist session immediately to DB
+    session_dir = local_deployer._get_session_dir(deployed_meta.session_id)
+    cs = get_canvas_state(deployed_meta.session_id)
+    state_data, image_files = cs.export_session_data(session_dir=session_dir)
+    db.export_session_to_db(
+        session_id=deployed_meta.session_id,
+        state_data=state_data,
+        image_files=image_files,
+        user_id=user["id"],
+        name=deployed_meta.name
+    )
+
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
 
@@ -272,6 +304,10 @@ def deploy_existing_session(session_id: str, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
+
+    session_dir = local_deployer._get_session_dir(session_id)
+    if not session_dir.exists() or not (session_dir / "session.json").exists():
+        db.reconstruct_session_from_db(session_id, session_dir)
     
     dep = db.get_deployment(session_id)
     if dep and dep["user_id"] != user["id"]:

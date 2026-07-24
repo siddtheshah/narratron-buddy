@@ -24,6 +24,7 @@ class SessionMetadata(BaseModel):
     mounted_references: List[str] = Field(default_factory=list)
     mounted_playlists: Dict[str, List[str]] = Field(default_factory=dict)
     config: Dict = Field(default_factory=dict)
+    canvas_state: Dict = Field(default_factory=dict)
 
 
 
