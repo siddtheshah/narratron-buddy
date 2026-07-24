@@ -74,12 +74,22 @@ class TestImageTools(unittest.TestCase):
         self.assertIn("sunset_01", tools.image_aliases)
 
     @patch("tools.image_tool.genai.Client")
-    def test_create_image_cooldown(self, mock_genai_client):
+    def test_independent_cooldowns(self, mock_genai_client):
         tools = ImageTools(self.config)
-        tools.last_create_time = time.time()
+        callback = MagicMock()
+        tools.on_show_image = callback
 
-        res = tools.create_image("prompt", "desc")
-        self.assertIn("create_image is on cooldown", res)
+        file_path = os.path.join(self.output_dir, "test.jpg")
+        img = Image.new("RGB", (10, 10), color="green")
+        img.save(file_path)
+
+        # Trigger create_image cooldown
+        tools.last_create_time = time.time()
+        self.assertIn("create_image is on cooldown", tools.create_image("prompt", "desc"))
+
+        # show_image should still succeed as its cooldown is separate
+        res = tools.show_image("test.jpg")
+        self.assertIn("Successfully displayed", res)
 
     @patch("tools.image_tool.genai.Client")
     def test_show_image(self, mock_genai_client):

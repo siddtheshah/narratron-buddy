@@ -224,7 +224,6 @@ class ImageTools:
             self.last_create_time = time.time()
             if self.on_show_image:
                 self.on_show_image(saved_paths[0])
-                self.last_show_time = time.time()
             
             name_msg = f" with alias '{image_name}'" if image_name else ""
             ref_msg = f" using references {[r[0] for r in resolved_refs]}" if resolved_refs else ""
@@ -244,23 +243,32 @@ class ImageTools:
             A status message indicating success or failure.
         """
         try:
+            logger.debug(f"[show_image tool] Called with file_path='{file_path}'")
             now = time.time()
             elapsed = now - self.last_show_time
             if elapsed < self.cooldown_duration:
                 remaining = int(self.cooldown_duration - elapsed)
+                logger.warning(
+                    f"[show_image tool] On cooldown. Elapsed: {elapsed:.2f}s, "
+                    f"Cooldown: {self.cooldown_duration}s, Remaining: {remaining}s"
+                )
                 return f"Error: show_image is on cooldown. Please wait {remaining} more seconds before displaying another image."
 
             resolved_path = self._find_image_path(file_path)
-            logger.info(f"[load_image tool] Showing image from {file_path} (resolved: {resolved_path})")
+            logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}')")
             if resolved_path:
                 if self.on_show_image:
+                    logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}'")
                     self.on_show_image(resolved_path)
+                else:
+                    logger.warning("[show_image tool] on_show_image callback is not set")
                 self.last_show_time = time.time()
                 return f"Successfully displayed {resolved_path} to the user."
             else:
+                logger.warning(f"[show_image tool] Image path or alias '{file_path}' could not be resolved.")
                 return f"Error: Image '{file_path}' not found."
         except Exception as e:
-            logger.error(f"[load_image tool] Error showing image: {e}")
+            logger.error(f"[show_image tool] Exception occurred while showing image '{file_path}': {e}", exc_info=True)
             return f"Error showing image: {e}"
 
     def browse_images(self) -> list[str]:

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Narratron Buddy - Live Canvas Experience</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+      --glass-bg: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.12);
+      --primary: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --accent: #ec4899;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 48px;
+      backdrop-filter: blur(10px);
+      background: rgba(15, 23, 42, 0.6);
+      border-bottom: 1px solid var(--glass-border);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 1.5rem;
+      background: linear-gradient(90deg, #a78bfa, #f472b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .deploy-nav-btn {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      color: var(--text-main);
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .deploy-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: translateY(-1px);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c084fc;
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: 3.2rem;
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 650px;
+      margin-bottom: 40px;
+      line-height: 1.6;
+    }
+
+    .join-card {
+      background: rgba(30, 27, 75, 0.5);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: 36px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      margin-bottom: 48px;
+    }
+
+    .join-card h2 {
+      font-size: 1.4rem;
+      margin-bottom: 8px;
+    }
+
+    .join-card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    .join-input {
+      flex: 1;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: #ffffff;
+      font-family: inherit;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .join-input:focus {
+      border-color: var(--primary);
+    }
+
+    .join-btn {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      border: none;
+      color: #ffffff;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .join-btn:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .error-msg {
+      color: #f87171;
+      font-size: 0.9rem;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 24px;
+      width: 100%;
+    }
+
+    .feature-item {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: left;
+    }
+
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+    }
+
+    .feature-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+    }
+
+    .feature-desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    footer {
+      padding: 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--glass-border);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <span>🎨</span> Narratron Buddy
+    </div>
+    <a href="/deploy" class="deploy-nav-btn">Host / Deploy Session →</a>
+  </header>
+
+  <main>
+    <div class="hero-badge">✨ Interactive AI Narration Canvas</div>
+    <h1>Join a Live Story Session</h1>
+    <p class="subtitle">Experience AI-powered dynamic narration, real-time doodling, ambient soundscapes, and synchronized visual story updates.</p>
+
+    <div class="join-card">
+      <h2>Enter Session Join Key</h2>
+      <p>Ask the session host for their 8-character join key</p>
+      <div class="input-group">
+        <input type="text" id="joinKeyInput" class="join-input" placeholder="KEY-XXXXXX" maxlength="12">
+        <button class="join-btn" onclick="submitJoinKey()">Join</button>
+      </div>
+      <div id="errorMessage" class="error-msg"></div>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-item">
+        <div class="feature-icon">🎙️</div>
+        <div class="feature-title">Real-Time Voice Orator</div>
+        <div class="feature-desc">Interactive voice streaming that responds to audience questions and story progression.</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🖼️</div>
+        <div class="feature-title">Dynamic Visuals</div>
+        <div class="feature-desc">AI-generated scene illustrations updated in real-time as the narrative unfolds.</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🎵</div>
+        <div class="feature-title">Ambient Soundscapes</div>
+        <div class="feature-desc">Synchronized music playlists and adaptive sound effects matching the mood.</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Narratron Buddy &copy; 2026. Built with Gemini AI.
+  </footer>
+
+  <script>
+    async function submitJoinKey() {
+      const input = document.getElementById('joinKeyInput');
+      const err = document.getElementById('errorMessage');
+      const key = input.value.trim();
+
+      err.style.display = 'none';
+      err.textContent = '';
+
+      if (!key) {
+        err.textContent = 'Please enter a valid Join Key.';
+        err.style.display = 'block';
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/sessions/resolve-join-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ join_key: key })
+        });
+
+        const data = await resp.json();
+        if (resp.ok && data.session_id) {
+          window.location.href = `/canvas?session_id=${data.session_id}`;
+        } else {
+          err.textContent = data.detail || 'Invalid or expired Join Key.';
+          err.style.display = 'block';
+        }
+      } catch (e) {
+        err.textContent = 'Failed to connect to server. Please try again.';
+        err.style.display = 'block';
+      }
+    }
+
+    document.getElementById('joinKeyInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        submitJoinKey();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -8,6 +8,9 @@ output/
 scratch/
 sessions/
 .env
+*.db
+deployer.db
+
 
 reference_library/*
 !reference_library/narratron_avatar.*

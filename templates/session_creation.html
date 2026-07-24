@@ -68,6 +68,7 @@
             background: linear-gradient(135deg, #a855f7, #6366f1, #06b6d4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            text-decoration: none;
         }
 
         .brand-icon {
@@ -85,7 +86,37 @@
 
         .nav-actions {
             display: flex;
+            align-items: center;
             gap: 1rem;
+        }
+
+        .user-account-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .credit-badge {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #34d399;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .user-pill {
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #c084fc;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.9rem;
         }
 
         /* Main Container */
@@ -155,24 +186,18 @@
             align-items: center;
             justify-content: space-between;
             border-bottom: 1px solid var(--card-border);
-            padding-bottom: 0.75rem;
+            padding-bottom: 1rem;
         }
 
         .panel-title {
+            font-size: 1.25rem;
+            font-weight: 600;
             display: flex;
             align-items: center;
-            gap: 0.6rem;
-            font-size: 1.2rem;
-            font-weight: 600;
+            gap: 0.5rem;
         }
 
-        .panel-title svg {
-            width: 20px;
-            height: 20px;
-            color: var(--accent-primary);
-        }
-
-        /* Form Controls */
+        /* Form Elements */
         .form-group {
             display: flex;
             flex-direction: column;
@@ -185,467 +210,619 @@
             color: var(--text-secondary);
         }
 
-        input[type="text"] {
-            background: rgba(15, 18, 25, 0.8);
+        input[type="text"], input[type="password"], input[type="email"], select {
+            background: rgba(11, 13, 18, 0.6);
             border: 1px solid var(--card-border);
-            border-radius: var(--radius-sm);
+            border-radius: var(--radius-md);
             padding: 0.75rem 1rem;
             color: var(--text-primary);
             font-family: inherit;
-            font-size: 1rem;
+            font-size: 0.95rem;
             outline: none;
             transition: all 0.2s ease;
         }
 
-        input[type="text"]:focus {
+        input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus {
             border-color: var(--accent-primary);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
         }
 
-        /* Dropzones */
+        /* Dropzone */
         .dropzone {
             border: 2px dashed var(--card-border);
             border-radius: var(--radius-md);
-            padding: 2rem 1.5rem;
+            padding: 1.5rem;
             text-align: center;
             cursor: pointer;
             transition: all 0.2s ease;
-            background: rgba(15, 18, 25, 0.4);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.75rem;
+            background: rgba(11, 13, 18, 0.3);
         }
 
         .dropzone:hover, .dropzone.dragover {
             border-color: var(--accent-primary);
-            background: rgba(99, 102, 241, 0.08);
-        }
-
-        .dropzone svg {
-            width: 36px;
-            height: 36px;
-            color: var(--accent-primary);
+            background: rgba(99, 102, 241, 0.05);
         }
 
         .dropzone p {
-            font-size: 0.95rem;
             color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
         }
 
-        .dropzone span {
-            color: var(--accent-primary);
-            font-weight: 600;
+        /* File Item Pills */
+        .file-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
         }
 
-        .file-input-hidden {
-            display: none;
-        }
-
-        /* File Asset Previews */
-        .asset-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-            gap: 0.75rem;
-            max-height: 220px;
-            overflow-y: auto;
-            padding-right: 0.25rem;
-        }
-
-        .asset-card {
-            background: rgba(15, 18, 25, 0.9);
+        .file-pill {
+            background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--card-border);
             border-radius: var(--radius-sm);
-            padding: 0.5rem;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.85rem;
             display: flex;
-            flex-direction: column;
             align-items: center;
-            gap: 0.4rem;
-            position: relative;
+            gap: 0.5rem;
         }
 
-        .asset-card img {
-            width: 100%;
-            height: 70px;
-            object-fit: cover;
-            border-radius: 4px;
-        }
-
-        .asset-card .asset-name {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            overflow: hidden;
-            width: 100%;
-            text-align: center;
-        }
-
-        .asset-card .remove-btn {
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            background: rgba(239, 68, 68, 0.85);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            font-size: 10px;
+        .remove-btn {
+            color: var(--text-muted);
             cursor: pointer;
-            display: flex;
+            border: none;
+            background: none;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .remove-btn:hover {
+            color: var(--danger-color);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-        }
-
-        /* Playlist Builder */
-        .playlist-builder {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .playlist-input-row {
-            display: flex;
             gap: 0.5rem;
+            transition: all 0.2s ease;
+            text-decoration: none;
         }
 
-        .playlist-group {
-            background: rgba(15, 18, 25, 0.7);
-            border: 1px solid var(--card-border);
-            border-radius: var(--radius-sm);
-            padding: 0.75rem 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .playlist-group-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-weight: 600;
-            font-size: 0.95rem;
-            color: var(--accent-cyan);
-        }
-
-        .track-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            background: rgba(255, 255, 255, 0.03);
-            padding: 0.35rem 0.6rem;
-            border-radius: 4px;
-        }
-
-        /* Primary Deploy Button */
-        .btn-deploy {
+        .btn-primary {
             background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
             color: white;
-            border: none;
-            border-radius: var(--radius-md);
-            padding: 1rem 2rem;
-            font-size: 1.1rem;
-            font-weight: 600;
-            font-family: inherit;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
-            transition: all 0.25 ease;
-            width: 100%;
-            margin-top: 1rem;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
         }
 
-        .btn-deploy:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 14px 30px rgba(99, 102, 241, 0.55);
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
         }
 
-        .btn-deploy:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            border: 1px solid var(--card-border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
         }
 
         .btn-sm {
-            padding: 0.5rem 1rem;
+            padding: 0.4rem 0.8rem;
             font-size: 0.85rem;
             border-radius: var(--radius-sm);
-            border: 1px solid var(--card-border);
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-
-        .btn-sm:hover {
-            background: rgba(255, 255, 255, 0.12);
-        }
-
-        .btn-success {
-            background: rgba(16, 185, 129, 0.2);
-            border-color: rgba(16, 185, 129, 0.4);
-            color: #6ee7b7;
         }
 
         .btn-danger {
-            background: rgba(239, 68, 68, 0.2);
-            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.15);
             color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
-        /* Sessions Dashboard Table */
-        .sessions-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.95rem;
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.25);
         }
 
-        .sessions-table th, .sessions-table td {
-            padding: 0.85rem 1rem;
-            text-align: left;
-            border-bottom: 1px solid var(--card-border);
-        }
-
-        .sessions-table th {
-            color: var(--text-muted);
-            font-weight: 500;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-        }
-
-        .badge {
-            padding: 0.25rem 0.65rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .badge-deployed {
-            background: rgba(16, 185, 129, 0.2);
-            color: #34d399;
+        .btn-success {
+            background: rgba(16, 185, 129, 0.15);
+            color: #6ee7b7;
             border: 1px solid rgba(16, 185, 129, 0.3);
         }
 
-        .badge-created {
-            background: rgba(99, 102, 241, 0.2);
-            color: #818cf8;
-            border: 1px solid rgba(99, 102, 241, 0.3);
+        .btn-success:hover {
+            background: rgba(16, 185, 129, 0.25);
         }
 
-        .badge-stopped {
-            background: rgba(148, 163, 184, 0.2);
-            color: #cbd5e1;
-            border: 1px solid rgba(148, 163, 184, 0.3);
+        .copy-key-btn {
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            color: #a5b4fc;
+            cursor: pointer;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            margin-left: 6px;
+            transition: all 0.2s ease;
         }
+
+        .copy-key-btn:hover {
+            background: rgba(99, 102, 241, 0.4);
+            color: white;
+        }
+
+        /* Sessions Table */
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        th {
+            padding: 0.75rem 1rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .badge {
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .badge-deployed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .badge-created { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
+        .badge-stopped { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+        .join-key-badge { background: rgba(168, 85, 247, 0.15); color: #e9d5ff; border: 1px solid rgba(168, 85, 247, 0.3); font-family: monospace; font-size: 0.85rem; letter-spacing: 1px; }
 
         .empty-state {
             text-align: center;
+            padding: 3rem 1rem;
             color: var(--text-muted);
+        }
+
+        /* Modal overlay */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-card {
+            background: rgba(22, 27, 38, 0.95);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 420px;
             padding: 2rem;
-            font-size: 0.95rem;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
         }
 
-        /* Spinner */
-        .spinner {
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 0.8s linear infinite;
+        .modal-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--card-border);
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-tab {
+            flex: 1;
+            padding: 0.75rem;
+            text-align: center;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+
+        .modal-tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+
+        .modal-error {
+            color: #f87171;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
             display: none;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
 
     <header>
-        <div class="brand">
+        <a href="/join" class="brand">
             <div class="brand-icon">🎨</div>
-            <span>Narratron App Deployer</span>
-        </div>
+            Narratron Deployer
+        </a>
         <div class="nav-actions">
-            <button class="btn-sm" onclick="scrollToSessions()">Active Sessions</button>
+            <a href="/join" class="btn btn-secondary btn-sm">← Back to /join</a>
+            <div id="userAccountBar" class="user-account-bar">
+                <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Log In</button>
+                <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Sign Up</button>
+            </div>
         </div>
     </header>
 
     <main>
-        <section class="hero">
-            <h1>Deploy a Narratron Canvas Session</h1>
-            <p>Mount custom reference libraries and music playlists, then deploy isolated canvas instances instantly.</p>
-        </section>
+        <div class="hero">
+            <h1>Session & Asset Deployer</h1>
+            <p>Deploy persistent canvas instances, mount reference image assets, and configure multi-channel music playlists.</p>
+        </div>
 
         <div class="grid-container">
-            <!-- Left Panel: Session Setup & Reference Library -->
+            <!-- Left Panel: Create Session -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-title">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 002-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                        <span>1. Session & Reference Assets</span>
+                        <span>✨</span> Create New Session
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label for="sessionName">Session Name</label>
-                    <input type="text" id="sessionName" placeholder="e.g. Cyberpunk Campaign - Episode 1" value="Narratron Adventure">
+                    <input type="text" id="sessionName" placeholder="e.g. Desert Mystery Adventure" value="Narratron Adventure">
                 </div>
 
                 <div class="form-group">
-                    <label>Reference Library Upload (Images)</label>
-                    <div class="dropzone" id="refDropzone" onclick="document.getElementById('refInput').click()">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-                        <p>Drag & drop reference images here, or <span>browse</span></p>
+                    <label>Reference Images (Mount to /reference_library)</label>
+                    <div class="dropzone" id="refDropzone">
+                        <input type="file" id="refFileInput" accept="image/*" multiple style="display: none;">
+                        <span style="font-size: 1.5rem;">🖼️</span>
+                        <p>Click or drag & drop reference images here</p>
                     </div>
-                    <input type="file" id="refInput" class="file-input-hidden" multiple accept="image/*">
+                    <div class="file-list" id="refFileList"></div>
                 </div>
 
-                <div class="asset-list" id="refPreviewList">
-                    <!-- Loaded reference thumbnails dynamically inserted here -->
-                </div>
-            </div>
-
-            <!-- Right Panel: Playlists & Deploy Controls -->
-            <div class="panel">
-                <div class="panel-header">
-                    <div class="panel-title">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 .895-2 3-2 3 .895 3 2zm12 0c0 1.105-1.343 2-3 2s-3-.895-3-2 .895-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
-                        <span>2. Playlists & Configuration</span>
+                <div class="form-group">
+                    <label>Playlists & Tracks</label>
+                    <div id="playlistsContainer"></div>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                        <input type="text" id="newPlaylistName" placeholder="New Playlist Name" style="flex: 1;">
+                        <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add Playlist</button>
                     </div>
                 </div>
 
-                <div class="playlist-builder">
-                    <div class="form-group">
-                        <label>Create Music Playlist</label>
-                        <div class="playlist-input-row">
-                            <input type="text" id="playlistNameInput" placeholder="Playlist Name (e.g. Ambient, Combat)" style="flex:1;">
-                            <button type="button" class="btn-sm btn-success" onclick="addPlaylistGroup()">+ Add</button>
-                        </div>
-                    </div>
-
-                    <div id="playlistsContainer" style="display:flex; flex-direction:column; gap:0.75rem; max-height:220px; overflow-y:auto;">
-                        <!-- Playlist groups rendered here -->
-                    </div>
-                </div>
-
-                <button class="btn-deploy" id="deployBtn" onclick="deployNewSession()">
-                    <div class="spinner" id="deploySpinner"></div>
+                <button class="btn btn-primary" id="deployBtn" onclick="deployNewSession()">
+                    <span id="deploySpinner" style="display: none;">⏳</span>
                     <span id="deployBtnText">🚀 Deploy Canvas Instance</span>
                 </button>
             </div>
+
+            <!-- Right Panel: Overview & Instructions -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span>📚</span> Deployment Architecture
+                    </div>
+                </div>
+
+                <div style="color: var(--text-secondary); line-height: 1.6; font-size: 0.95rem;">
+                    <p style="margin-bottom: 1rem;">
+                        Each deployment creates an isolated workspace under <code>sessions/&lt;session_id&gt;/</code> containing:
+                    </p>
+                    <ul style="padding-left: 1.25rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                        <li><code>session.json</code>: Workspace metadata & settings</li>
+                        <li><code>reference_library/</code>: Reference files for Gemini image generation</li>
+                        <li><code>playlists/</code>: Multi-folder audio playlists</li>
+                        <li><code>output/</code>: Generated images and narrative logs</li>
+                    </ul>
+                    <p>
+                        🔑 Each session automatically receives a unique <strong>Join Key</strong>. Owners can copy and share the key to allow viewers to join from the <code>/join</code> splash screen.
+                    </p>
+                </div>
+            </div>
         </div>
 
-        <!-- Active Sessions Panel -->
+        <!-- Bottom Panel: Active Deployed Sessions -->
         <div class="panel" id="activeSessionsPanel">
             <div class="panel-header">
                 <div class="panel-title">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-                    <span>Deployed Session Instances</span>
+                    <span>🌐</span> Deployed Canvas Instances
                 </div>
-                <button class="btn-sm" onclick="loadSessions()">🔄 Refresh</button>
+                <button class="btn btn-secondary btn-sm" onclick="loadSessions()">🔄 Refresh</button>
             </div>
 
-            <table class="sessions-table">
-                <thead>
-                    <tr>
-                        <th>Session ID</th>
-                        <th>Name</th>
-                        <th>Status</th>
-                        <th>Mounted Assets</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="sessionsTableBody">
-                    <tr><td colspan="5" class="empty-state">Loading active session instances...</td></tr>
-                </tbody>
-            </table>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Join Key</th>
+                            <th>Mounted Assets</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionsTableBody">
+                        <tr>
+                            <td colspan="6" class="empty-state">Loading active sessions...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </main>
 
+    <!-- Auth Modal -->
+    <div class="modal-overlay" id="authModal">
+        <div class="modal-card">
+            <div class="modal-tabs">
+                <div class="modal-tab active" id="tabLogin" onclick="switchAuthTab('login')">Log In</div>
+                <div class="modal-tab" id="tabRegister" onclick="switchAuthTab('register')">Sign Up</div>
+            </div>
+
+            <!-- Login Form -->
+            <div id="formLogin">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>Username or Email</label>
+                    <input type="text" id="loginUserEmail" placeholder="username or email">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" placeholder="••••••••">
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitLogin()">Log In</button>
+            </div>
+
+            <!-- Register Form -->
+            <div id="formRegister" style="display: none;">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>Username</label>
+                    <input type="text" id="regUsername" placeholder="e.g. narrator1">
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>Email</label>
+                    <input type="email" id="regEmail" placeholder="you@example.com">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label>Password</label>
+                    <input type="password" id="regPassword" placeholder="••••••••">
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitRegister()">Sign Up (Get 100 Credits)</button>
+            </div>
+
+            <div class="modal-error" id="modalError"></div>
+            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;" onclick="closeAuthModal()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Join Key Modal -->
+    <div class="modal-overlay" id="joinKeyModal">
+        <div class="modal-card">
+            <h3 style="margin-bottom: 0.5rem;">🔑 Enter Session Join Key</h3>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.25rem;">
+                Please enter the Join Key to launch canvas for session <code id="promptSessionIdDisplay"></code>.
+            </p>
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <input type="text" id="canvasJoinKeyInput" placeholder="KEY-XXXXXX" style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 1.1rem;" onkeypress="if(event.key==='Enter') submitCanvasJoinKey()">
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="submitCanvasJoinKey()">Launch Canvas →</button>
+            <div class="modal-error" id="joinKeyModalError"></div>
+            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;" onclick="closeJoinKeyModal()">Cancel</button>
+        </div>
+    </div>
+
+
     <script>
-        const refFiles = [];
-        const playlistsData = {}; // { "playlist_name": [File, File...] }
+        let currentUser = null;
+        let refFiles = [];
+        let playlistsData = {};
 
-        // Setup Drag & Drop for Reference Library
-        const refDropzone = document.getElementById('refDropzone');
-        const refInput = document.getElementById('refInput');
-
-        ['dragenter', 'dragover'].forEach(eventName => {
-            refDropzone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                refDropzone.classList.add('dragover');
-            }, false);
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            refDropzone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                refDropzone.classList.remove('dragover');
-            }, false);
-        });
-
-        refDropzone.addEventListener('drop', (e) => {
-            const dt = e.dataTransfer;
-            handleRefFiles(dt.files);
-        });
-
-        refInput.addEventListener('change', (e) => {
-            handleRefFiles(e.target.files);
-        });
-
-        function handleRefFiles(files) {
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                if (file.type.startsWith('image/')) {
-                    refFiles.push(file);
+        // Auth status checking
+        async function checkAuthStatus() {
+            try {
+                const res = await fetch('/api/auth/me');
+                const data = await res.json();
+                const bar = document.getElementById('userAccountBar');
+                
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                    bar.innerHTML = `
+                        <div class="credit-badge">⚡ ${data.user.credits.toFixed(1)} Credits</div>
+                        <div class="user-pill">👤 ${data.user.username}</div>
+                        <button class="btn btn-secondary btn-sm" onclick="submitLogout()">Logout</button>
+                    `;
+                } else {
+                    currentUser = null;
+                    bar.innerHTML = `
+                        <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Log In</button>
+                        <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Sign Up</button>
+                    `;
                 }
+            } catch (e) {
+                console.error(e);
             }
-            renderRefPreviews();
         }
 
-        function renderRefPreviews() {
-            const list = document.getElementById('refPreviewList');
-            list.innerHTML = '';
+        function openAuthModal(tab = 'login') {
+            document.getElementById('authModal').classList.add('active');
+            switchAuthTab(tab);
+        }
+
+        function closeAuthModal() {
+            document.getElementById('authModal').classList.remove('active');
+            document.getElementById('modalError').style.display = 'none';
+        }
+
+        function switchAuthTab(tab) {
+            const isLogin = tab === 'login';
+            document.getElementById('tabLogin').classList.toggle('active', isLogin);
+            document.getElementById('tabRegister').classList.toggle('active', !isLogin);
+            document.getElementById('formLogin').style.display = isLogin ? 'block' : 'none';
+            document.getElementById('formRegister').style.display = isLogin ? 'none' : 'block';
+            document.getElementById('modalError').style.display = 'none';
+        }
+
+        async function submitLogin() {
+            const val = document.getElementById('loginUserEmail').value.trim();
+            const pwd = document.getElementById('loginPassword').value;
+            const err = document.getElementById('modalError');
+            err.style.display = 'none';
+
+            if (!val || !pwd) {
+                err.textContent = 'Please enter username/email and password.';
+                err.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username_or_email: val, password: pwd })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    closeAuthModal();
+                    await checkAuthStatus();
+                    await loadSessions();
+                } else {
+                    err.textContent = data.detail || 'Login failed.';
+                    err.style.display = 'block';
+                }
+            } catch (e) {
+                err.textContent = 'Network error.';
+                err.style.display = 'block';
+            }
+        }
+
+        async function submitRegister() {
+            const username = document.getElementById('regUsername').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const err = document.getElementById('modalError');
+            err.style.display = 'none';
+
+            if (!username || !email || !password) {
+                err.textContent = 'Please fill out all fields.';
+                err.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    closeAuthModal();
+                    await checkAuthStatus();
+                    await loadSessions();
+                } else {
+                    err.textContent = data.detail || 'Registration failed.';
+                    err.style.display = 'block';
+                }
+            } catch (e) {
+                err.textContent = 'Network error.';
+                err.style.display = 'block';
+            }
+        }
+
+        async function submitLogout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            await checkAuthStatus();
+            await loadSessions();
+        }
+
+        // Dropzone Reference Files Handling
+        const refDropzone = document.getElementById('refDropzone');
+        const refFileInput = document.getElementById('refFileInput');
+
+        refDropzone.onclick = () => refFileInput.click();
+
+        refFileInput.onchange = (e) => {
+            handleRefFiles(e.target.files);
+        };
+
+        refDropzone.ondragover = (e) => {
+            e.preventDefault();
+            refDropzone.classList.add('dragover');
+        };
+
+        refDropzone.ondragleave = () => {
+            refDropzone.classList.remove('dragover');
+        };
+
+        refDropzone.ondrop = (e) => {
+            e.preventDefault();
+            refDropzone.classList.remove('dragover');
+            handleRefFiles(e.dataTransfer.files);
+        };
+
+        function handleRefFiles(files) {
+            for (let f of files) {
+                if (f.type.startsWith('image/')) {
+                    refFiles.push(f);
+                }
+            }
+            renderRefFileList();
+        }
+
+        function renderRefFileList() {
+            const container = document.getElementById('refFileList');
+            container.innerHTML = '';
             refFiles.forEach((file, index) => {
-                const card = document.createElement('div');
-                card.className = 'asset-card';
-                
-                const img = document.createElement('img');
-                img.src = URL.createObjectURL(file);
-                
-                const name = document.createElement('div');
-                name.className = 'asset-name';
-                name.innerText = file.name;
-
-                const removeBtn = document.createElement('button');
-                removeBtn.className = 'remove-btn';
-                removeBtn.innerHTML = '&times;';
-                removeBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    refFiles.splice(index, 1);
-                    renderRefPreviews();
-                };
-
-                card.appendChild(img);
-                card.appendChild(name);
-                card.appendChild(removeBtn);
-                list.appendChild(card);
+                const pill = document.createElement('div');
+                pill.className = 'file-pill';
+                pill.innerHTML = `
+                    <span>🖼️ ${file.name}</span>
+                    <button class="remove-btn" onclick="removeRefFile(${index})">&times;</button>
+                `;
+                container.appendChild(pill);
             });
         }
 
-        // Playlist Builder Logic
-        function addPlaylistGroup() {
-            const nameInput = document.getElementById('playlistNameInput');
+        function removeRefFile(index) {
+            refFiles.splice(index, 1);
+            renderRefFileList();
+        }
+
+        // Playlists Management
+        function addNewPlaylistGroup() {
+            const nameInput = document.getElementById('newPlaylistName');
             const plName = nameInput.value.trim();
             if (!plName) return;
 
@@ -663,14 +840,19 @@
             Object.keys(playlistsData).forEach(plName => {
                 const group = document.createElement('div');
                 group.className = 'playlist-group';
+                group.style.marginBottom = '0.75rem';
 
                 const header = document.createElement('div');
-                header.className = 'playlist-group-header';
-                header.innerHTML = `<span>🎵 ${plName}</span>`;
+                header.style.display = 'flex';
+                header.style.alignItems = 'center';
+                header.style.justifySpaceBetween = 'space-between';
+                header.style.marginBottom = '0.4rem';
+                header.innerHTML = `<span>🎵 <strong>${plName}</strong></span>`;
 
                 const addTrackBtn = document.createElement('button');
                 addTrackBtn.className = 'btn-sm btn-success';
                 addTrackBtn.innerText = '+ Track';
+                addTrackBtn.style.marginLeft = 'auto';
                 
                 const trackInput = document.createElement('input');
                 trackInput.type = 'file';
@@ -692,12 +874,12 @@
 
                 playlistsData[plName].forEach((trackFile, index) => {
                     const trackRow = document.createElement('div');
-                    trackRow.className = 'track-item';
+                    trackRow.className = 'file-pill';
+                    trackRow.style.marginTop = '0.25rem';
                     trackRow.innerHTML = `<span>${trackFile.name}</span>`;
                     
                     const remTrack = document.createElement('button');
                     remTrack.className = 'remove-btn';
-                    remTrack.style.position = 'static';
                     remTrack.innerHTML = '&times;';
                     remTrack.onclick = () => {
                         playlistsData[plName].splice(index, 1);
@@ -713,6 +895,16 @@
 
         // Deploy Session
         async function deployNewSession() {
+            if (!currentUser) {
+                openAuthModal('login');
+                return;
+            }
+
+            if (currentUser.credits < 5.0) {
+                alert('Insufficient credits (5.0 credits required to deploy a canvas session).');
+                return;
+            }
+
             const name = document.getElementById('sessionName').value.trim() || 'Narratron Canvas';
             const deployBtn = document.getElementById('deployBtn');
             const deploySpinner = document.getElementById('deploySpinner');
@@ -726,12 +918,10 @@
                 const formData = new FormData();
                 formData.append('name', name);
 
-                // Append reference files
                 refFiles.forEach(file => {
                     formData.append('reference_files', file);
                 });
 
-                // Append playlists
                 Object.keys(playlistsData).forEach(plName => {
                     playlistsData[plName].forEach(file => {
                         formData.append(`playlist_${plName}`, file);
@@ -745,7 +935,7 @@
 
                 const result = await response.json();
                 if (response.ok && result.session_id) {
-                    // Redirect to deployed canvas instance
+                    await checkAuthStatus();
                     window.location.href = `/canvas?session_id=${result.session_id}`;
                 } else {
                     alert('Error deploying session: ' + (result.detail || 'Unknown error'));
@@ -768,7 +958,7 @@
                 const sessions = await res.json();
                 
                 if (!sessions || sessions.length === 0) {
-                    body.innerHTML = `<tr><td colspan="5" class="empty-state">No sessions deployed yet. Create your first session above!</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="6" class="empty-state">No sessions deployed yet. Create your first session above!</td></tr>`;
                     return;
                 }
 
@@ -780,46 +970,112 @@
                     const refCount = s.mounted_references ? s.mounted_references.length : 0;
                     const plCount = s.mounted_playlists ? Object.keys(s.mounted_playlists).length : 0;
 
+                    let joinKeyHtml = `<span class="badge join-key-badge">${s.join_key}</span>`;
+                    if (s.is_owner && s.join_key && !s.join_key.includes('Owner')) {
+                        joinKeyHtml += `<button class="copy-key-btn" onclick="copyJoinKey('${s.join_key}', this)">📋 Copy</button>`;
+                    }
+
+                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.session_id}')">Launch Canvas</button>`;
+                    if (s.is_owner) {
+                        actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroySession('${s.session_id}')">Destroy</button>`;
+                    }
+
                     tr.innerHTML = `
                         <td><code>${s.session_id}</code></td>
-                        <td><strong>${s.name}</strong></td>
+                        <td><strong>${s.name}</strong> ${s.is_owner ? '<span style="color:#a78bfa; font-size:0.75rem;">(Owner)</span>' : ''}</td>
                         <td><span class="badge ${badgeClass}">${s.status}</span></td>
+                        <td>${joinKeyHtml}</td>
                         <td>${refCount} refs, ${plCount} playlists</td>
-                        <td style="display:flex; gap:0.5rem;">
-                            <button class="btn-sm btn-success" onclick="openCanvas('${s.session_id}')">Launch Canvas</button>
-                            <button class="btn-sm btn-danger" onclick="destroySession('${s.session_id}')">Destroy</button>
-                        </td>
+                        <td>${actionsHtml}</td>
                     `;
                     body.appendChild(tr);
                 });
             } catch (err) {
                 console.error('Error loading sessions:', err);
-                body.innerHTML = `<tr><td colspan="5" class="empty-state">Error loading active sessions.</td></tr>`;
+                body.innerHTML = `<tr><td colspan="6" class="empty-state">Error loading active sessions.</td></tr>`;
             }
         }
 
-        function openCanvas(sessionId) {
-            window.location.href = `/canvas?session_id=${sessionId}`;
+        function copyJoinKey(key, btn) {
+            navigator.clipboard.writeText(key).then(() => {
+                const orig = btn.innerText;
+                btn.innerText = '✓ Copied';
+                setTimeout(() => { btn.innerText = orig; }, 2000);
+            });
         }
+
+        let pendingCanvasSessionId = null;
+
+        function openCanvas(sessionId) {
+            pendingCanvasSessionId = sessionId;
+            document.getElementById('promptSessionIdDisplay').textContent = sessionId;
+            document.getElementById('canvasJoinKeyInput').value = '';
+            document.getElementById('joinKeyModalError').style.display = 'none';
+            document.getElementById('joinKeyModal').classList.add('active');
+        }
+
+        function closeJoinKeyModal() {
+            document.getElementById('joinKeyModal').classList.remove('active');
+            pendingCanvasSessionId = null;
+        }
+
+        async function submitCanvasJoinKey() {
+            const key = document.getElementById('canvasJoinKeyInput').value.trim();
+            const err = document.getElementById('joinKeyModalError');
+            err.style.display = 'none';
+
+            if (!key) {
+                err.textContent = 'Please enter a valid Join Key.';
+                err.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/sessions/resolve-join-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ join_key: key })
+                });
+                const data = await res.json();
+                if (res.ok && data.session_id) {
+                    if (data.session_id !== pendingCanvasSessionId) {
+                        err.textContent = `This Join Key belongs to a different session (${data.name || data.session_id}).`;
+                        err.style.display = 'block';
+                        return;
+                    }
+                    closeJoinKeyModal();
+                    window.location.href = `/canvas?session_id=${data.session_id}&join_key=${encodeURIComponent(key)}`;
+                } else {
+                    err.textContent = data.detail || 'Invalid Join Key.';
+                    err.style.display = 'block';
+                }
+            } catch (e) {
+                err.textContent = 'Error validating Join Key: ' + e.message;
+                err.style.display = 'block';
+            }
+        }
+
 
         async function destroySession(sessionId) {
             if (!confirm(`Are you sure you want to destroy session ${sessionId}?`)) return;
             try {
-                await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+                const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+                if (!res.ok) {
+                    const data = await res.json();
+                    alert(data.detail || 'Failed to destroy session.');
+                    return;
+                }
                 loadSessions();
             } catch (err) {
                 alert('Error destroying session: ' + err.message);
             }
         }
 
-        function scrollToSessions() {
-            document.getElementById('activeSessionsPanel').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        // Initialize default playlists & sessions list on load
+        // Initialize on load
         playlistsData['default'] = [];
         playlistsData['ambient'] = [];
         renderPlaylists();
+        checkAuthStatus();
         loadSessions();
     </script>
 </body>

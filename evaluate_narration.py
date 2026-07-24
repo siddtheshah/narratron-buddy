@@ -427,8 +427,8 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             
             page = await context.new_page()
             # Open as orator so audio input controls are active
-            print(f"[Evaluator] Opening Narratron Orator Canvas at http://127.0.0.1:{port}/?role=orator ...")
-            await page.goto(f"http://127.0.0.1:{port}/?role=orator")
+            print(f"[Evaluator] Opening Narratron Orator Canvas at http://127.0.0.1:{port}/canvas?role=orator ...")
+            await page.goto(f"http://127.0.0.1:{port}/canvas?role=orator")
             await page.wait_for_selector("#image-container")
             
             # Measure delay from recording start to audio stream start

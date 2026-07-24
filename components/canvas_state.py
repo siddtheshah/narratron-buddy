@@ -1,6 +1,7 @@
 import glob
 import logging
 import os
+from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 from fastapi import WebSocket
@@ -92,7 +93,6 @@ class CanvasStateManager:
             files.extend(glob.glob(os.path.join(image_folder, "*.jpeg")))
             
         if not files:
-            from pathlib import Path
             if session_id:
                 session_ref_dir = (Path(__file__).parent.parent / "sessions" / session_id / "reference_library").resolve()
                 if session_ref_dir.exists():
@@ -119,8 +119,8 @@ class CanvasStateManager:
         latest_file = max(files, key=os.path.getmtime)
         latest_file_time = os.path.getmtime(latest_file)
         
-        # Decide which image to show
-        if self.shown_image_path and os.path.exists(self.shown_image_path) and self.shown_image_time >= latest_file_time:
+        # Decide which image to show: prioritize explicit show_image call if set, otherwise fallback to latest modified file
+        if self.shown_image_path and os.path.exists(self.shown_image_path):
             selected_file = self.shown_image_path
             selected_time = self.shown_image_time
             prompt_text = self.shown_image_prompt
@@ -137,7 +137,13 @@ class CanvasStateManager:
             
         self.current_image_basename = basename
         
-        image_url = f"/sessions/{session_id}/output/{basename}" if session_id else f"/images/{basename}"
+        sel_path_obj = Path(selected_file)
+        if "reference_library" in sel_path_obj.parts:
+            image_url = f"/sessions/{session_id}/references/{basename}" if session_id else f"/reference_library/{basename}"
+        elif session_id:
+            image_url = f"/sessions/{session_id}/output/{basename}"
+        else:
+            image_url = f"/images/{basename}"
 
         res = {
             "latest": image_url,

@@ -167,9 +167,11 @@ async def handle_live_websocket_connection(
                     for call in event.get_function_calls():
                         logger.info(f"[Agent Tool Call] Function: {call.name}, Args: {call.args}")
                         if call.name in ("show_image", "create_image"):
-                            file_path = call.args.get("file_path")
-                            resolved_path = resolve_image_path(file_path, [image_tools.output_dir]) if file_path else None
+                            file_path = call.args.get("file_path") or call.args.get("image_name")
+                            resolved_path = image_tools._find_image_path(file_path) if file_path else None
                             if resolved_path:
+                                if image_tools.on_show_image:
+                                    image_tools.on_show_image(resolved_path)
                                 try:
                                     with open(resolved_path, "rb") as f:
                                         img_b64 = base64.b64encode(f.read()).decode("utf-8")

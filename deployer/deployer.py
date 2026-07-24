@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 import shutil
+import secrets
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -18,10 +19,12 @@ class SessionMetadata(BaseModel):
     session_id: str
     name: str
     status: str = "created"  # created, deployed, stopped
+    join_key: str = Field(default_factory=lambda: f"KEY-{''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(6))}")
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     mounted_references: List[str] = Field(default_factory=list)
     mounted_playlists: Dict[str, List[str]] = Field(default_factory=dict)
     config: Dict = Field(default_factory=dict)
+
 
 
 class BaseDeployer(ABC):
