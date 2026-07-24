@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Narratron OBS Canvas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000000;
+            font-family: 'Outfit', sans-serif;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* Ambient blurred background layer */
+        #bg-layer {
+            position: absolute;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+            filter: blur(40px) brightness(0.3);
+            opacity: 0.8;
+            transition: background-image 1s ease-in-out;
+            z-index: 0;
+        }
+
+        /* Main OBS Viewport Container */
+        #image-container {
+            position: absolute;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        /* High Performance Renderer Canvas */
+        #canvas-renderer {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* Doodle Drawing Overlay Canvas */
+        #doodle-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* Hidden DOM elements for compatibility & image preloading */
+        #current-image, #ghost-image {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="bg-layer"></div>
+
+    <div id="image-container">
+        <canvas id="canvas-renderer"></canvas>
+        <img id="current-image" src="" alt="Narratron Generation">
+        <img id="ghost-image" src="" alt="" aria-hidden="true">
+        <canvas id="doodle-canvas"></canvas>
+    </div>
+
+    <script>
+        // Extract Session ID from URL parameters or Path
+        const urlParams = new URLSearchParams(window.location.search);
+        let currentSessionId = urlParams.get('session_id') || '';
+        if (!currentSessionId) {
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts.length > 2 && pathParts[1] === 'obs') {
+                currentSessionId = decodeURIComponent(pathParts[2]);
+            }
+        }
+
+        const bgLayer = document.getElementById('bg-layer');
+        const rendererCanvas = document.getElementById('canvas-renderer');
+        const renderCtx = rendererCanvas ? rendererCanvas.getContext('2d') : null;
+        const doodleCanvas = document.getElementById('doodle-canvas');
+        const doodleCtx = doodleCanvas ? doodleCanvas.getContext('2d') : null;
+        const currentImage = document.getElementById('current-image');
+        const ghostImage = document.getElementById('ghost-image');
+
+        let currentLoadedImg = null;
+        let activeAnimReq = null;
+        let lastTime = 0;
+        let lastImageRawUrl = "";
+        let isFirstCanvasLoad = true;
+        let doodleActions = [];
+        let doodlesEnabled = true;
+
+        function resizeRendererCanvas() {
+            if (!rendererCanvas || !renderCtx) return;
+            const rect = rendererCanvas.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+            const dpr = window.devicePixelRatio || 1;
+
+            if (rendererCanvas.width !== Math.floor(rect.width * dpr) ||
+                rendererCanvas.height !== Math.floor(rect.height * dpr)) {
+                rendererCanvas.width = Math.floor(rect.width * dpr);
+                rendererCanvas.height = Math.floor(rect.height * dpr);
+            }
+
+            renderCtx.setTransform(1, 0, 0, 1, 0, 0);
+            renderCtx.scale(dpr, dpr);
+
+            if (currentLoadedImg && !activeAnimReq) {
+                drawSingleImage(currentLoadedImg);
+            }
+        }
+
+        function resizeDoodleCanvas() {
+            if (!doodleCanvas || !doodleCtx) return;
+            const rect = doodleCanvas.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+            const dpr = window.devicePixelRatio || 1;
+
+            if (doodleCanvas.width !== Math.floor(rect.width * dpr) ||
+                doodleCanvas.height !== Math.floor(rect.height * dpr)) {
+                doodleCanvas.width = Math.floor(rect.width * dpr);
+                doodleCanvas.height = Math.floor(rect.height * dpr);
+            }
+
+            doodleCtx.setTransform(1, 0, 0, 1, 0, 0);
+            doodleCtx.scale(dpr, dpr);
+            redrawAllDoodles();
+        }
+
+        window.addEventListener('resize', () => {
+            resizeRendererCanvas();
+            resizeDoodleCanvas();
+        });
+
+        function redrawAllDoodles() {
+            if (!doodleCanvas || !doodleCtx) return;
+            const rect = doodleCanvas.getBoundingClientRect();
+            doodleCtx.clearRect(0, 0, rect.width, rect.height);
+            if (!doodlesEnabled) return;
+
+            doodleActions.forEach(action => {
+                if (action.type === 'draw') {
+                    renderSegment(
+                        action.x0 * rect.width, action.y0 * rect.height,
+                        action.x1 * rect.width, action.y1 * rect.height,
+                        action.color, action.size || 3
+                    );
+                }
+            });
+        }
+
+        function renderSegment(x0, y0, x1, y1, color, size) {
+            if (!doodleCtx) return;
+            doodleCtx.save();
+            doodleCtx.beginPath();
+            if (color === 'erase') {
+                doodleCtx.globalCompositeOperation = 'destination-out';
+                doodleCtx.strokeStyle = 'rgba(0,0,0,1)';
+            } else {
+                doodleCtx.globalCompositeOperation = 'source-over';
+                doodleCtx.strokeStyle = color;
+            }
+            doodleCtx.moveTo(x0, y0);
+            doodleCtx.lineTo(x1, y1);
+            doodleCtx.lineWidth = size;
+            doodleCtx.lineCap = 'round';
+            doodleCtx.lineJoin = 'round';
+            doodleCtx.stroke();
+            doodleCtx.restore();
+        }
+
+        function drawSingleImage(img) {
+            if (!renderCtx || !rendererCanvas) return;
+            const rect = rendererCanvas.getBoundingClientRect();
+            renderCtx.clearRect(0, 0, rect.width, rect.height);
+            if (img && img.complete && img.naturalWidth > 0) {
+                drawContainImage(renderCtx, img, rect.width, rect.height, 1.0);
+            }
+        }
+
+        function drawContainImage(ctx, img, containerW, containerH, opacity = 1.0) {
+            if (!img || !img.complete || img.naturalWidth === 0) return;
+            const imgW = img.naturalWidth;
+            const imgH = img.naturalHeight;
+            const scale = Math.min(containerW / imgW, containerH / imgH);
+            const drawW = imgW * scale;
+            const drawH = imgH * scale;
+            const x = (containerW - drawW) / 2;
+            const y = (containerH - drawH) / 2;
+
+            ctx.save();
+            ctx.globalAlpha = opacity;
+            ctx.drawImage(img, x, y, drawW, drawH);
+            ctx.restore();
+        }
+
+        function easeInOutCubic(t) {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        async function applyImageTransition(newImgUrl, transition = 'crossfade') {
+            resizeRendererCanvas();
+
+            const newImg = new Image();
+            newImg.crossOrigin = "anonymous";
+            newImg.src = newImgUrl;
+
+            try {
+                await newImg.decode();
+            } catch (e) {
+                await new Promise((resolve) => {
+                    newImg.onload = resolve;
+                    newImg.onerror = resolve;
+                });
+            }
+
+            if (currentImage) {
+                currentImage.src = newImgUrl;
+                currentImage.classList.add('loaded');
+            }
+
+            if (activeAnimReq) {
+                cancelAnimationFrame(activeAnimReq);
+                activeAnimReq = null;
+            }
+
+            const rect = rendererCanvas.getBoundingClientRect();
+            const containerW = rect.width;
+            const containerH = rect.height;
+            const oldImg = currentLoadedImg;
+            const hasOldImage = oldImg && oldImg.complete && oldImg.naturalWidth > 0;
+
+            if (transition === 'crossfade' && hasOldImage) {
+                const duration = 2000;
+                const startTime = performance.now();
+
+                const animate = (now) => {
+                    const elapsed = now - startTime;
+                    const progress = Math.min(1.0, elapsed / duration);
+                    const easeProgress = easeInOutCubic(progress);
+
+                    renderCtx.clearRect(0, 0, containerW, containerH);
+                    drawContainImage(renderCtx, newImg, containerW, containerH, 1.0);
+                    drawContainImage(renderCtx, oldImg, containerW, containerH, 1.0 - easeProgress);
+
+                    if (progress < 1.0) {
+                        activeAnimReq = requestAnimationFrame(animate);
+                    } else {
+                        activeAnimReq = null;
+                        currentLoadedImg = newImg;
+                    }
+                };
+
+                activeAnimReq = requestAnimationFrame(animate);
+
+            } else if (transition === 'none') {
+                drawSingleImage(newImg);
+                currentLoadedImg = newImg;
+
+            } else {
+                const duration = 1200;
+                const startTime = performance.now();
+
+                const animate = (now) => {
+                    const elapsed = now - startTime;
+                    const progress = Math.min(1.0, elapsed / duration);
+                    const easeProgress = easeInOutCubic(progress);
+
+                    renderCtx.clearRect(0, 0, containerW, containerH);
+                    drawContainImage(renderCtx, newImg, containerW, containerH, easeProgress);
+
+                    if (progress < 1.0) {
+                        activeAnimReq = requestAnimationFrame(animate);
+                    } else {
+                        activeAnimReq = null;
+                        currentLoadedImg = newImg;
+                    }
+                };
+
+                activeAnimReq = requestAnimationFrame(animate);
+            }
+
+            bgLayer.style.backgroundImage = `url(${newImgUrl})`;
+        }
+
+        async function fetchLatestImage() {
+            try {
+                const apiUrl = currentSessionId ? `/api/latest?session_id=${encodeURIComponent(currentSessionId)}` : '/api/latest';
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+
+                if (data.doodles_enabled !== undefined && data.doodles_enabled !== doodlesEnabled) {
+                    doodlesEnabled = Boolean(data.doodles_enabled);
+                    redrawAllDoodles();
+                }
+
+                const isNewImage = (data.latest && (data.time > lastTime || data.latest !== lastImageRawUrl));
+
+                if (isFirstCanvasLoad) {
+                    isFirstCanvasLoad = false;
+                    if (data.latest) {
+                        lastTime = data.time;
+                        lastImageRawUrl = data.latest;
+                        const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                        applyImageTransition(newImgUrl, 'none');
+                    }
+                } else if (isNewImage) {
+                    lastTime = data.time;
+                    lastImageRawUrl = data.latest;
+                    const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                    const transition = (data.transition || 'crossfade').toLowerCase().trim();
+
+                    doodleActions = [];
+                    redrawAllDoodles();
+
+                    applyImageTransition(newImgUrl, transition);
+                }
+            } catch (err) {
+                console.error("OBS Canvas fetch error:", err);
+            }
+        }
+
+        // Connect WebSocket for Doodles Sync
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currentSessionId ? `?session_id=${encodeURIComponent(currentSessionId)}` : '');
+        const ws = new WebSocket(wsUrl);
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'doodles_toggle') {
+                doodlesEnabled = Boolean(data.enabled);
+                redrawAllDoodles();
+            } else if (data.type === 'clear') {
+                doodleActions = [];
+                redrawAllDoodles();
+            } else if (data.type === 'draw') {
+                doodleActions.push(data);
+                if (doodleCanvas) {
+                    const rect = doodleCanvas.getBoundingClientRect();
+                    renderSegment(
+                        data.x0 * rect.width, data.y0 * rect.height,
+                        data.x1 * rect.width, data.y1 * rect.height,
+                        data.color, data.size || 3
+                    );
+                }
+            }
+        };
+
+        // Initialize Canvas & Start Sync
+        resizeRendererCanvas();
+        resizeDoodleCanvas();
+        fetchLatestImage();
+        setInterval(fetchLatestImage, 1000);
+    </script>
+</body>
+</html>

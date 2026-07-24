@@ -564,6 +564,25 @@ def read_popout(request: Request, session_id: Optional[str] = None):
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
+@app.get("/obs", response_class=HTMLResponse)
+@app.get("/obs/{session_id}", response_class=HTMLResponse)
+def read_obs_canvas(request: Request, session_id: Optional[str] = None):
+    """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source."""
+    if session_id:
+        session_dir = local_deployer._get_session_dir(session_id)
+        if not session_dir.exists():
+            db.reconstruct_session_from_db(session_id, session_dir)
+        artifacts_dir = session_dir / "output" / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        current_user = get_current_user(request)
+        client_ip = request.client.host if request.client else None
+        db.record_session_view(session_id, user_id=current_user["id"] if current_user else None, ip_address=client_ip)
+
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "obs.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        return f.read()
+
 @app.get("/canvas", response_class=HTMLResponse)
 def read_canvas(request: Request, session_id: Optional[str] = None):
     """Serve the Canvas interface for a specific session."""
@@ -579,7 +598,9 @@ def read_canvas(request: Request, session_id: Optional[str] = None):
         client_ip = request.client.host if request.client else None
         db.record_session_view(session_id, user_id=current_user["id"] if current_user else None, ip_address=client_ip)
 
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    is_obs = request.query_params.get("obs") == "1" or request.query_params.get("obs") == "true"
+    template_name = "obs.html" if is_obs else "index.html"
+    template_path = os.path.join(os.path.dirname(__file__), "templates", template_name)
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 

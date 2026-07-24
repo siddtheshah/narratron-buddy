@@ -682,6 +682,9 @@
             <button id="share-session-btn" title="Copy session share link" style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 🔗
             </button>
+            <button id="obs-session-btn" title="Copy OBS Browser Source link" style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
+                📹
+            </button>
             <button id="save-session-btn" title="Save session to database" style="background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 💾
             </button>
@@ -1146,6 +1149,7 @@
             resizeRendererCanvas();
 
             const newImg = new Image();
+            newImg.crossOrigin = "anonymous";
             newImg.src = newImgUrl;
 
             try {
@@ -1157,7 +1161,6 @@
                 });
             }
 
-            // Sync hidden DOM images for backward-compatibility & test assertions
             if (currentImage) {
                 currentImage.src = newImgUrl;
                 currentImage.classList.add('t-crossfade', 'loaded');
@@ -1175,8 +1178,7 @@
             const hasOldImage = oldImg && oldImg.complete && oldImg.naturalWidth > 0;
 
             if (transition === 'crossfade' && hasOldImage) {
-                // --- PURE 2D CANVAS DISSOLVE CROSSFADE ---
-                const duration = 2000; // 2 seconds
+                const duration = 2000;
                 const startTime = performance.now();
 
                 const animate = (now) => {
@@ -1185,11 +1187,7 @@
                     const easeProgress = easeInOutCubic(progress);
 
                     renderCtx.clearRect(0, 0, containerW, containerH);
-
-                    // 1. Draw new image fully opaque underneath
                     drawContainImage(renderCtx, newImg, containerW, containerH, 1.0);
-
-                    // 2. Draw old image dissolving on top (1 -> 0)
                     drawContainImage(renderCtx, oldImg, containerW, containerH, 1.0 - easeProgress);
 
                     if (progress < 1.0) {
@@ -1203,12 +1201,10 @@
                 activeAnimReq = requestAnimationFrame(animate);
 
             } else if (transition === 'none') {
-                // --- INSTANT DISPLAY ---
                 drawSingleImage(newImg);
                 currentLoadedImg = newImg;
 
             } else {
-                // --- FADE IN FROM BLACK / FIRST REVEAL ---
                 const duration = 1500;
                 const startTime = performance.now();
 
@@ -1328,14 +1324,12 @@
                 if (data.music && data.music.time > lastPlaylistTime) {
                     lastPlaylistTime = data.music.time;
                     if (data.music.playlist) {
-                        // Check if it's a new playlist
                         if (activePlaylistName !== data.music.playlist) {
                             activePlaylistName = data.music.playlist;
                             musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist;
                             playPlaylist(data.music.tracks);
                         }
                         
-                        // Process pause/resume state
                         if (data.music.paused) {
                             musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist + ' (Paused)';
                             if (!bgMusic.paused) {
@@ -1343,7 +1337,6 @@
                             }
                         } else {
                             musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist;
-                            // If it was paused, resume it
                             if (bgMusic.paused && currentPlaylistTracks.length > 0) {
                                 bgMusic.volume = 0;
                                 bgMusic.play().then(() => fadeIn(1500)).catch(err => console.warn(err));
@@ -1400,7 +1393,6 @@
                         isPagedBack = false;
                         hasNewHeadWhilePagedBack = false;
 
-                        // Clear doodles for new scene & play requested transition
                         doodleActions = [];
                         redrawAllDoodles();
                         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1425,12 +1417,10 @@
                         tempImage.onerror = triggerTransition;
                         tempImage.src = newImgUrl;
                     } else {
-                        // User is paged back: Do not disrupt canvas view!
                         hasNewHeadWhilePagedBack = true;
                     }
                     updatePagingControlsUI();
                 } else if (!data.latest && imageHistory.length === 0) {
-                    // Maintain solid dark background when session has no images
                     bgLayer.style.backgroundImage = 'none';
                     if (currentImage) currentImage.classList.remove('loaded');
                     if (ghostImage) { ghostImage.src = ''; ghostImage.style.opacity = '0'; }
@@ -1443,6 +1433,8 @@
                 console.error("Failed to fetch image data:", err);
             }
         }
+
+        setInterval(fetchLatestImage, 1000);
 
         document.getElementById('page-prev-btn')?.addEventListener('click', () => {
             if (currentViewIndex > 0) {
@@ -1837,6 +1829,29 @@
                     });
                 } else {
                     showShareToast("🔗 Link ready to share!");
+                }
+            });
+        }
+
+        const obsSessionBtn = document.getElementById('obs-session-btn');
+        if (obsSessionBtn) {
+            obsSessionBtn.addEventListener('click', () => {
+                const currentUrl = new URL(window.location.href);
+                const obsUrl = new URL('/obs', window.location.origin);
+                // Copy all search params (session_id, join_key, role)
+                currentUrl.searchParams.forEach((val, key) => {
+                    obsUrl.searchParams.set(key, val);
+                });
+                const obsLink = obsUrl.toString();
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(obsLink).then(() => {
+                        showShareToast("📹 OBS Browser Source link copied!");
+                    }).catch(() => {
+                        showShareToast("📹 OBS link ready!");
+                    });
+                } else {
+                    showShareToast("📹 OBS link ready!");
                 }
             });
         }

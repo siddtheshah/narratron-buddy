@@ -27,6 +27,7 @@ class TestFullscreenPopout(BaseTestCase):
 
         # Fullscreen & Cinematic mode elements check
         self.assertIn('id="fullscreen-btn"', html)
+        self.assertIn('id="obs-session-btn"', html)
         self.assertIn('id="fullscreen-icon"', html)
         self.assertIn('toggleFullScreen', html)
         self.assertIn('fullscreen-cinematic', html)
