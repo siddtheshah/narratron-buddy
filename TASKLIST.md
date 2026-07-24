@@ -1,7 +1,7 @@
 # Narratron Task List
 
 ## 1. App Deployment & Infrastructure
-- [ ] Database support for session artifacts (for scalability and interoperability). Export session to database on save.
+- [x] Database support for session artifacts (for scalability and interoperability). Export session to database on save.
 - [ ] Cleanup daemon (triggers on session creation, removes sessions not marked durable and older than 7 days)
 
 ## 2. Additional Pages
@@ -18,8 +18,8 @@
 - [ ] Cinematic mode: exterior panel that only shows UI on mouseover
 - [ ] Show image with transition (enhanced agent control)
 - [ ] Autofade: let images decay to dark unless model sets `persist` to true
-- [ ] Share link: easy link to share sessions
-- [ ] Disable doodling option: let session owner choose at session initialization
+- [x] Share link: easy link to share sessions
+- [x] Disable doodling option: let orator/session owner control whether doodles will be displayed on canvas (persisted to session state)
 - [ ] Session export: gather all created images and download as a ZIP file
 - [ ] Look back: pop-up arrows to navigate previous and next images
 - [ ] Stream plugin: whenever mic is active in canvas, focus shifts to stream and returns when mic is off

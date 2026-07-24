@@ -37,6 +37,7 @@ class CanvasStateManager:
         # WebSocket and doodles
         self.active_ws_connections: List[WebSocket] = []
         self.doodles_state: List[Dict[str, Any]] = []
+        self.doodles_enabled: bool = True
 
         self.load_state_from_disk()
 
@@ -62,6 +63,7 @@ class CanvasStateManager:
                     self.current_playlist_tracks = c_state.get("current_playlist_tracks", [])
                     self.music_paused = c_state.get("music_paused", False)
                     self.doodles_state = c_state.get("doodles", [])
+                    self.doodles_enabled = c_state.get("doodles_enabled", True)
                     chat_msgs = c_state.get("chat_messages", [])
                     if chat_msgs:
                         self.chat_manager.messages = chat_msgs
@@ -133,6 +135,12 @@ class CanvasStateManager:
         else:
             self.doodles_state.append(doodle)
 
+    def set_doodles_enabled(self, enabled: bool):
+        self.doodles_enabled = bool(enabled)
+        sess_dir = (Path(__file__).parent.parent / "sessions" / self.session_id).resolve()
+        if sess_dir.exists():
+            self.export_session_data(session_dir=sess_dir)
+
     def get_latest_state(self) -> Dict[str, Any]:
         image_folder = str(Path(__file__).parent.parent / "sessions" / self.session_id / "output")
 
@@ -175,9 +183,10 @@ class CanvasStateManager:
                             "latest": f"/sessions/{self.session_id}/references/{ref_images[0].name}",
                             "time": 0,
                             "prompt": f"Mounted Reference: {ref_images[0].stem}",
-                            "music": music_state
+                            "music": music_state,
+                            "doodles_enabled": self.doodles_enabled
                         }
-            return {"latest": None, "time": 0, "music": music_state}
+            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled}
             
         basename = os.path.basename(selected_file)
         
@@ -197,7 +206,8 @@ class CanvasStateManager:
             "latest": image_url,
             "time": selected_time,
             "prompt": prompt_text,
-            "music": music_state
+            "music": music_state,
+            "doodles_enabled": self.doodles_enabled
         }
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, playlist={music_state['playlist']}")
         return res
@@ -217,6 +227,7 @@ class CanvasStateManager:
             "current_playlist_tracks": self.current_playlist_tracks,
             "music_paused": self.music_paused,
             "doodles": list(self.doodles_state),
+            "doodles_enabled": self.doodles_enabled,
             "chat_messages": self.chat_manager.get_messages(),
         }
 

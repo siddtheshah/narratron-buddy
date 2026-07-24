@@ -357,6 +357,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = N
     cs = get_canvas_state(session_id)
     cs.register_websocket(websocket)
     
+    # Send current doodle display state to newly connected client
+    await websocket.send_json({"type": "doodles_toggle", "enabled": cs.doodles_enabled})
+
     # Send existing doodle actions to newly connected client
     for action in cs.doodles_state:
         await websocket.send_json(action)
@@ -364,8 +367,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = N
     try:
         while True:
             data = await websocket.receive_json()
-            cs.add_doodle(data)
-            await cs.broadcast_ws_message(data, sender=websocket)
+            if data.get("type") == "toggle_doodles":
+                cs.set_doodles_enabled(bool(data.get("enabled", True)))
+                await cs.broadcast_ws_message({"type": "doodles_toggle", "enabled": cs.doodles_enabled}, sender=None)
+            else:
+                cs.add_doodle(data)
+                await cs.broadcast_ws_message(data, sender=websocket)
     except WebSocketDisconnect:
         cs.unregister_websocket(websocket)
 
