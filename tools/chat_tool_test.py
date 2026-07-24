@@ -5,7 +5,7 @@ from tools.chat_tool import ChatTools
 
 class TestChatTools(unittest.TestCase):
     def setUp(self):
-        self.chat_tools = ChatTools()
+        self.chat_tools = ChatTools(config={}, session_id="test_session")
 
     def test_send_chat_message_success(self):
         mock_cb = MagicMock()

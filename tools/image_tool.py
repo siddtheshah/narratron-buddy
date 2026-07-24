@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import mimetypes
@@ -22,25 +23,27 @@ from utils.image_utils import (
 logger = logging.getLogger(__name__)
 
 class ImageTools:
-    def __init__(self, config: dict):
+    _client_cache = None
+    _ref_library_cache: Dict[str, dict] = {}
+    _ref_library_dir_cached: Optional[str] = None
+
+    def __init__(self, config: dict, session_id: str):
         root_dir = Path(__file__).parent.parent.resolve()
-        output_folder_arg = config.get("image_generation", {}).get("output_folder")
-        if output_folder_arg:
-            self.output_dir = str(Path(output_folder_arg).resolve())
-            self._has_custom_folder = True
-        else:
-            self.output_dir = str((root_dir / "sessions").resolve())
-            self._has_custom_folder = False
+        self.active_session_id: str = session_id
+        
+        self.output_dir = str((root_dir / "sessions" / self.active_session_id / "output" / "artifacts" / "images").resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
-        relative_ref_folder = config.get("image_generation", {}).get("reference_library_folder", "reference_library")
-        self.reference_library_dir = str((root_dir / relative_ref_folder).resolve())
+        self.reference_library_dir = str((root_dir / "sessions" / self.active_session_id / "references").resolve())
         os.makedirs(self.reference_library_dir, exist_ok=True)
         
-        project_id = config.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))
-        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        # Reuse shared genai Client instance across session re-initializations
+        if ImageTools._client_cache is None:
+            project_id = config.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))
+            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+            ImageTools._client_cache = genai.Client(vertexai=True, project=project_id, location=location)
         
-        self.client = genai.Client(vertexai=True, project=project_id, location=location)
+        self.client = ImageTools._client_cache
 
         self.on_show_image = None
         self.last_create_time = 0.0
@@ -50,29 +53,17 @@ class ImageTools:
         # In-memory mapping of custom image names/aliases to file paths
         self.image_aliases: Dict[str, str] = {}
         
-        # Scan reference library once at startup (read-only manifest)
-        self.reference_library_manifest: Dict[str, dict] = {}
-        self._load_reference_library()
+        # Reuse cached reference library manifest if directory hasn't changed
+        if ImageTools._ref_library_dir_cached == self.reference_library_dir and ImageTools._ref_library_cache:
+            self.reference_library_manifest = ImageTools._ref_library_cache
+        else:
+            self.reference_library_manifest = {}
+            self._load_reference_library()
+            ImageTools._ref_library_cache = self.reference_library_manifest
+            ImageTools._ref_library_dir_cached = self.reference_library_dir
 
     def get_effective_output_dir(self) -> str:
-        """Return active deployed session output directory if present, preventing workspace output pollution."""
-        if getattr(self, "_has_custom_folder", False):
-            return self.output_dir
-        sessions_dir = Path(__file__).parent.parent / "sessions"
-        if sessions_dir.exists():
-            for entry in sessions_dir.iterdir():
-                if entry.is_dir():
-                    meta_path = entry / "session.json"
-                    if meta_path.exists():
-                        try:
-                            with open(meta_path, "r", encoding="utf-8") as f:
-                                data = json.load(f)
-                                if data.get("status") == "deployed":
-                                    out_dir = entry / "output"
-                                    out_dir.mkdir(parents=True, exist_ok=True)
-                                    return str(out_dir.resolve())
-                        except Exception:
-                            pass
+        """Return active session output directory."""
         return self.output_dir
 
     def _load_reference_library(self):
@@ -143,7 +134,7 @@ class ImageTools:
             return self.reference_library_manifest[clean_input.lower()]["path"]
 
         # General path resolution
-        return resolve_image_path(path_str, [self.output_dir, self.reference_library_dir])
+        return resolve_image_path(path_str, [self.get_effective_output_dir(), self.output_dir, self.reference_library_dir])
 
     def create_image(
         self,
@@ -208,12 +199,30 @@ class ImageTools:
             
             saved_paths = []
             image_bytes = None
+            text_feedback = []
             
             if getattr(response, "candidates", None) and response.candidates:
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, "inline_data") and part.inline_data:
-                        image_bytes = part.inline_data.data
-                        break
+                candidate = response.candidates[0]
+                content = candidate.get("content") if isinstance(candidate, dict) else getattr(candidate, "content", None)
+                parts = content.get("parts") if isinstance(content, dict) else (getattr(content, "parts", None) if content else None)
+                if parts:
+                    for part in parts:
+                        inline_data = part.get("inline_data") if isinstance(part, dict) else getattr(part, "inline_data", None)
+                        text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
+                        
+                        if inline_data:
+                            raw_data = inline_data.get("data") if isinstance(inline_data, dict) else getattr(inline_data, "data", None)
+                            if raw_data:
+                                if isinstance(raw_data, str):
+                                    try:
+                                        image_bytes = base64.b64decode(raw_data)
+                                    except Exception:
+                                        image_bytes = raw_data.encode("utf-8")
+                                else:
+                                    image_bytes = raw_data
+                                break
+                        elif text:
+                            text_feedback.append(str(text))
                         
             if image_bytes is not None:
                 image = Image.open(BytesIO(image_bytes))
@@ -247,7 +256,20 @@ class ImageTools:
                 logger.info(f"[create_image tool] Saved image to {filepath} (Name alias: {image_name})")
             
             if not saved_paths:
-                return "Failed to generate image: Model didn't return binary image data."
+                details = ""
+                if text_feedback:
+                    details = f" Details: {' '.join(text_feedback)}"
+                elif getattr(response, "candidates", None) and response.candidates:
+                    cand = response.candidates[0]
+                    finish_reason = cand.get("finish_reason") if isinstance(cand, dict) else getattr(cand, "finish_reason", None)
+                    if finish_reason:
+                        details = f" Finish reason: {finish_reason}"
+                elif getattr(response, "prompt_feedback", None):
+                    pf = getattr(response, "prompt_feedback")
+                    block_reason = pf.get("block_reason") if isinstance(pf, dict) else getattr(pf, "block_reason", None)
+                    if block_reason:
+                        details = f" Prompt block reason: {block_reason}"
+                return f"Failed to generate image: Model didn't return binary image data.{details}"
 
             self.last_create_time = time.time()
             if self.on_show_image:

@@ -18,7 +18,7 @@ class SessionManager:
         return self.deployer._get_session_dir(session_id)
 
     def get_session_reference_dir(self, session_id: str) -> Path:
-        ref_dir = self.get_session_dir(session_id) / "reference_library"
+        ref_dir = self.get_session_dir(session_id) / "references"
         ref_dir.mkdir(parents=True, exist_ok=True)
         return ref_dir
 

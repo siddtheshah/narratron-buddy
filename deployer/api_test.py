@@ -101,6 +101,56 @@ class TestSessionAPI(unittest.TestCase):
         self.assertEqual(del_res.status_code, 200)
         self.assertEqual(del_res.json()["status"], "ok")
 
+    def test_export_assets_no_duplication(self):
+        import zipfile
+        from web_viewer_app import get_canvas_state
+
+        # Register and log in
+        reg_res = self.client.post("/api/auth/register", json={
+            "username": "export_tester",
+            "email": "export_tester@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        # Create session
+        response = self.client.post(
+            "/api/sessions/create-and-deploy",
+            data={"name": "Export Test Session"}
+        )
+        self.assertEqual(response.status_code, 200)
+        session_id = response.json()["session_id"]
+
+        session_dir = local_deployer._get_session_dir(session_id)
+        out_dir = session_dir / "output"
+        images_dir = out_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create image inside output/images/
+        img_path = images_dir / "scene_01.jpg"
+        img_path.write_bytes(b"fake_jpeg_data")
+
+        # Simulate update_shown_image and history addition
+        cs = get_canvas_state(session_id)
+        cs.update_shown_image(str(img_path), session_id=session_id)
+
+        # Also save session to DB
+        self.client.post(f"/api/sessions/{session_id}/save")
+
+        # Export assets
+        export_res = self.client.get(f"/api/sessions/{session_id}/export-assets")
+        self.assertEqual(export_res.status_code, 200)
+
+        zip_bytes = export_res.content
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            filenames = zf.namelist()
+            # Extract image filenames (ignoring folder prefix)
+            base_names = [Path(f).name for f in filenames if f.endswith((".jpg", ".png", ".jpeg", ".webp"))]
+            self.assertIn("scene_01.jpg", base_names)
+            # Ensure no image basename is duplicated in the ZIP export
+            self.assertEqual(len(base_names), len(set(base_names)), f"Duplicate image entries found in ZIP: {base_names}")
+
 
 if __name__ == "__main__":
     unittest.main()
+

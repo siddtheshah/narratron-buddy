@@ -6,7 +6,7 @@ from components.canvas_state import CanvasStateManager
 
 class TestCanvasStateManager(unittest.TestCase):
     def test_canvas_state_manager(self):
-        manager = CanvasStateManager()
+        manager = CanvasStateManager(session_id="test_session")
         manager.update_current_playlist("test_playlist", ["/playlists/test/1.mp3"])
         self.assertEqual(manager.current_playlist, "test_playlist")
         self.assertFalse(manager.music_paused)
@@ -17,6 +17,7 @@ class TestCanvasStateManager(unittest.TestCase):
         manager.resume_current_playlist()
         self.assertFalse(manager.music_paused)
 
+        manager.current_image_basename = "test.jpg"
         manager.add_chat_message("Hello from test", author="user")
         msgs = manager.chat_manager.get_messages()
         self.assertEqual(msgs[-1]["text"], "Hello from test")
@@ -28,10 +29,10 @@ class TestCanvasStateManager(unittest.TestCase):
                 tmp_path = tmp_file.name
 
             try:
-                manager = CanvasStateManager()
+                manager = CanvasStateManager(session_id="test_session")
                 manager.update_shown_image(tmp_path)
 
-                state = manager.get_latest_state(image_folder=empty_dir)
+                state = manager.get_latest_state()
                 self.assertIsNotNone(state["latest"])
                 self.assertIn(os.path.basename(tmp_path), state["latest"])
                 self.assertGreater(state["time"], 0)
@@ -41,4 +42,5 @@ class TestCanvasStateManager(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

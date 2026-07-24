@@ -56,7 +56,14 @@ class LoginRequest(BaseModel):
 class ResolveJoinKeyRequest(BaseModel):
     join_key: str
 
-canvas_state = CanvasStateManager(chat_output_dir="output/chats")
+_canvas_states: dict[str, CanvasStateManager] = {}
+
+def get_canvas_state(session_id: Optional[str] = None) -> CanvasStateManager:
+    """Retrieve or dynamically instantiate a session-scoped CanvasStateManager instance."""
+    sid = session_id or "default"
+    if sid not in _canvas_states:
+        _canvas_states[sid] = CanvasStateManager(session_id=sid)
+    return _canvas_states[sid]
 
 def get_current_user(request: Request) -> Optional[dict]:
     token = request.cookies.get("auth_token")
@@ -64,20 +71,20 @@ def get_current_user(request: Request) -> Optional[dict]:
         return None
     return db.validate_session_token(token)
 
-def update_current_playlist(playlist_name: str, tracks: list[str]):
-    canvas_state.update_current_playlist(playlist_name, tracks)
+def update_current_playlist(playlist_name: str, tracks: list[str], session_id: Optional[str] = None):
+    get_canvas_state(session_id).update_current_playlist(playlist_name, tracks)
 
-def pause_current_playlist():
-    canvas_state.pause_current_playlist()
+def pause_current_playlist(session_id: Optional[str] = None):
+    get_canvas_state(session_id).pause_current_playlist()
 
-def resume_current_playlist():
-    canvas_state.resume_current_playlist()
+def resume_current_playlist(session_id: Optional[str] = None):
+    get_canvas_state(session_id).resume_current_playlist()
 
-def update_shown_image(file_path: str):
-    canvas_state.update_shown_image(file_path)
+def update_shown_image(file_path: str, session_id: Optional[str] = None):
+    get_canvas_state(session_id).update_shown_image(file_path, session_id=session_id)
 
-def add_chat_message(text: str, author: str = "agent"):
-    canvas_state.add_chat_message(text, author=author)
+def add_chat_message(text: str, author: str = "agent", session_id: Optional[str] = None):
+    get_canvas_state(session_id).add_chat_message(text, author=author)
 
 # ========================================
 # Authentication API Endpoints
@@ -139,7 +146,16 @@ async def serve_session_playlist_track(session_id: str, playlist_name: str, file
 async def serve_session_output(session_id: str, filename: str):
     file_path = session_manager.get_session_output_dir(session_id) / filename
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Session output file not found")
+        # Check subdirectories of output directory (e.g. output/images/filename)
+        sub_path = session_manager.get_session_output_dir(session_id) / "images" / filename
+        if sub_path.exists():
+            file_path = sub_path
+        else:
+            found = list(session_manager.get_session_output_dir(session_id).rglob(filename))
+            if found:
+                file_path = found[0]
+            else:
+                raise HTTPException(status_code=404, detail="Session output file not found")
     return FileResponse(file_path)
 
 # ========================================
@@ -154,7 +170,7 @@ def resolve_join_key(req: ResolveJoinKeyRequest):
     meta = local_deployer.get_session(dep["session_id"])
     if not meta:
         raise HTTPException(status_code=404, detail="Session files no longer exist.")
-    return {"status": "ok", "session_id": meta.session_id, "name": meta.name}
+    return {"status": "ok", "session_id": meta.session_id, "name": meta.name, "user_id": dep.get("user_id")}
 
 @app.get("/api/sessions")
 def list_sessions(request: Request):
@@ -261,6 +277,15 @@ def deploy_existing_session(session_id: str, request: Request):
     if dep and dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only the session owner can deploy this session.")
 
+    # Stop any other currently deployed sessions
+    existing_sessions = local_deployer.list_sessions()
+    for s in existing_sessions:
+        if s.session_id != session_id and s.status == "deployed":
+            try:
+                local_deployer.stop_session(s.session_id)
+            except Exception:
+                pass
+
     meta = local_deployer.deploy_session(session_id)
     return {"status": "ok", "session": meta}
 
@@ -278,6 +303,7 @@ def destroy_session(session_id: str, request: Request):
     success = local_deployer.destroy_session(session_id)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found or could not be removed")
+    db.delete_deployment(session_id)
     return {"status": "ok", "session_id": session_id}
 
 # ========================================
@@ -288,19 +314,20 @@ def destroy_session(session_id: str, request: Request):
 async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = None):
     await websocket.accept()
     websocket.state.session_id = session_id
-    canvas_state.register_websocket(websocket)
+    cs = get_canvas_state(session_id)
+    cs.register_websocket(websocket)
     
     # Send existing doodle actions to newly connected client
-    for action in canvas_state.doodles_state:
+    for action in cs.doodles_state:
         await websocket.send_json(action)
         
     try:
         while True:
             data = await websocket.receive_json()
-            canvas_state.add_doodle(data)
-            await canvas_state.broadcast_ws_message(data, sender=websocket)
+            cs.add_doodle(data)
+            await cs.broadcast_ws_message(data, sender=websocket)
     except WebSocketDisconnect:
-        canvas_state.unregister_websocket(websocket)
+        cs.unregister_websocket(websocket)
 
 @app.post("/api/sessions/{session_id}/save")
 def save_session_to_db(session_id: str, request: Request):
@@ -311,7 +338,8 @@ def save_session_to_db(session_id: str, request: Request):
     user_id = dep["user_id"] if dep else None
     name = meta.name if meta else session_id
 
-    state_data, image_files = canvas_state.export_session_data(session_dir=session_dir)
+    cs = get_canvas_state(session_id)
+    state_data, image_files = cs.export_session_data(session_dir=session_dir)
     db.export_session_to_db(
         session_id=session_id,
         state_data=state_data,
@@ -324,7 +352,7 @@ def save_session_to_db(session_id: str, request: Request):
 
 @app.get("/api/sessions/{session_id}/export-assets")
 def export_session_assets(session_id: str, request: Request):
-    """Package and export all generated and reference image assets for a session into a ZIP file."""
+    """Package and export all session assets into a ZIP file."""
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -333,49 +361,22 @@ def export_session_assets(session_id: str, request: Request):
     if not session_dir.exists():
         db.reconstruct_session_from_db(session_id, session_dir)
 
+    # Ensure current displayed image is saved into the session directory
+    cs = get_canvas_state(session_id)
+    cs.export_session_data(session_dir=session_dir)
+
     import io
     import zipfile
     from fastapi.responses import Response
 
     zip_buffer = io.BytesIO()
-    has_output_files = False
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        # 1. Add files from session directory recursively
         if session_dir.exists():
-            out_dir = session_dir / "output"
-            ref_dir = session_dir / "reference_library"
-
-            if out_dir.exists():
-                for file_path in out_dir.rglob("*"):
-                    if file_path.is_file() and file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
-                        arc_name = f"output/{file_path.relative_to(out_dir)}"
-                        zip_file.write(file_path, arcname=arc_name.replace("\\", "/"))
-                        has_output_files = True
-
-            if ref_dir.exists():
-                for file_path in ref_dir.rglob("*"):
-                    if file_path.is_file() and file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
-                        arc_name = f"reference_library/{file_path.relative_to(ref_dir)}"
-                        zip_file.write(file_path, arcname=arc_name.replace("\\", "/"))
-
-        # 2. Add images stored in SQLite database export if present
-        db_exp = db.get_exported_session(session_id)
-        if db_exp and "images" in db_exp:
-            with db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT filename, category, image_data FROM exported_session_images WHERE session_id = ?", (session_id,))
-                for row in cursor.fetchall():
-                    cat = row["category"]
-                    fn = row["filename"]
-                    arc_path = f"{'reference_library' if cat == 'reference' else 'output'}/{fn}"
-        # 3. Add all historical shown images from canvas state
-        for img_path in canvas_state.shown_images_history:
-            if img_path and os.path.exists(img_path):
-                fn = os.path.basename(img_path)
-                arc_path = f"output/{fn}"
-                if arc_path not in zip_file.namelist():
-                    zip_file.write(img_path, arcname=arc_path)
+            for file_path in session_dir.rglob("*"):
+                if file_path.is_file():
+                    arc_name = file_path.relative_to(session_dir)
+                    zip_file.write(file_path, arcname=str(arc_name).replace("\\", "/"))
 
     zip_buffer.seek(0)
     headers = {
@@ -395,12 +396,14 @@ async def trigger_orator_mic_toggle(request: Request, session_id: Optional[str] 
             raise HTTPException(status_code=403, detail="Permission denied. Only the session owner can control the Orator microphone.")
 
     count = 0
-    for ws in list(canvas_state.active_ws_connections):
-        try:
-            await ws.send_json({"type": "toggle_mic"})
-            count += 1
-        except Exception:
-            pass
+    target_states = [get_canvas_state(session_id)] if session_id else list(_canvas_states.values())
+    for cs in target_states:
+        for ws in list(cs.active_ws_connections):
+            try:
+                await ws.send_json({"type": "toggle_mic"})
+                count += 1
+            except Exception:
+                pass
     return {"status": "ok", "broadcasted_to": count}
 
 
@@ -417,18 +420,18 @@ def get_latest_image(session_id: Optional[str] = None):
         session_dir = local_deployer._get_session_dir(session_id)
         if not session_dir.exists():
             db.reconstruct_session_from_db(session_id, session_dir)
-        img_folder = str(session_manager.get_session_output_dir(session_id))
-    else:
-        img_folder = folder
-    return canvas_state.get_latest_state(image_folder=img_folder, session_id=session_id)
+    cs = get_canvas_state(session_id)
+    return cs.get_latest_state()
 
 @app.get("/api/chat")
-def get_chat():
-    return canvas_state.chat_manager.get_messages()
+def get_chat(session_id: Optional[str] = None):
+    cs = get_canvas_state(session_id)
+    return cs.chat_manager.get_messages()
 
 @app.post("/api/chat")
-def post_chat(msg: ChatMessage):
-    canvas_state.add_chat_message(msg.text, author=msg.author)
+def post_chat(msg: ChatMessage, session_id: Optional[str] = None):
+    cs = get_canvas_state(session_id)
+    cs.add_chat_message(msg.text, author=msg.author)
     return {"status": "ok"}
 
 # ========================================

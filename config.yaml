@@ -9,7 +9,7 @@ agent:
 
 image_generation:
     reference_library_folder: "reference_library"
-    cooldown_duration: 45
+    cooldown_duration: 25
 
 music:
     playlists_folder: "playlists"

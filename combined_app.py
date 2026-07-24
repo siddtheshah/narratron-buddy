@@ -15,7 +15,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 import uvicorn
 
-from agent import chat_tools, image_tools, music_tools, narratron_agent as agent
+from agent import create_agent
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import handle_live_websocket_connection
 from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
@@ -72,34 +72,11 @@ use_in_memory_artifacts = FLAGS.use_in_memory_artifacts or (
     os.getenv("USE_IN_MEMORY_ARTIFACTS", "0").lower() in ("1", "true", "yes")
 )
 
-if use_in_memory_artifacts:
-    in_mem_svc = PreloadedInMemoryArtifactService()
-    test_data_dir = Path(__file__).parent / "testing" / "testdata"
-    loaded_count = in_mem_svc.preload_directory(test_data_dir, app_name=APP_NAME)
-    logger.info(f"Initialized PreloadedInMemoryArtifactService with {loaded_count} artifacts from {test_data_dir}")
-    artifact_service = in_mem_svc
-else:
-    artifact_service = DiskArtifactService("sessions/artifacts")
 
-# Define runner
-runner = Runner(
-    app_name=APP_NAME,
-    agent=agent,
-    session_service=session_service,
-    artifact_service=artifact_service,
-)
-
-# Set global callbacks
-image_tools.on_show_image = update_shown_image
-music_tools.on_play_playlist = update_current_playlist
-music_tools.on_pause_playlist = pause_current_playlist
-music_tools.on_resume_playlist = resume_current_playlist
-
-def handle_global_chat_message(text: str):
+def handle_global_chat_message(text: str, session_id: str = None):
     logger.info(f"Chat message tool triggered: {text}")
-    add_chat_message(text, "agent")
+    add_chat_message(text, "agent", session_id=session_id)
 
-chat_tools.on_send_chat_message = handle_global_chat_message
 
 # ========================================
 # Additional Combined App Endpoints
@@ -122,17 +99,53 @@ async def agent_websocket_endpoint(
     proactivity: bool = False,
     affective_dialog: bool = False,
 ) -> None:
-    """WebSocket endpoint for bidirectional streaming with ADK."""
+    """WebSocket endpoint for bidirectional streaming with ADK.
+    Constructs a Runner instance concurrent with the lifespan of the session connection.
+    """
+    # Create agent and tools bound to this session's lifetime
+    session_agent, session_tools = create_agent(session_id=session_id, config=config)
+    s_image_tools = session_tools["image_tools"]
+    s_chat_tools = session_tools["chat_tools"]
+    s_notes_tools = session_tools["notes_tools"]
+    s_music_tools = session_tools["music_tools"]
+
+    s_image_tools.on_show_image = lambda path: update_shown_image(path, session_id=session_id)
+    s_music_tools.on_play_playlist = lambda name, tracks: update_current_playlist(name, tracks, session_id=session_id)
+    s_music_tools.on_pause_playlist = lambda: pause_current_playlist(session_id=session_id)
+    s_music_tools.on_resume_playlist = lambda: resume_current_playlist(session_id=session_id)
+    s_chat_tools.on_send_chat_message = lambda text: handle_global_chat_message(text, session_id=session_id)
+
+    # Construct session-scoped artifact service if using disk-based storage
+    disk_service_path = f"sessions/{session_id}/output/artifacts"
+
+    if use_in_memory_artifacts:
+        in_mem_svc = PreloadedInMemoryArtifactService()
+        test_data_dir = Path(__file__).parent / "testing" / "testdata"
+        loaded_count = in_mem_svc.preload_directory(test_data_dir, app_name=APP_NAME)
+        logger.info(f"Initialized PreloadedInMemoryArtifactService with {loaded_count} artifacts from {test_data_dir}")
+        artifact_service = in_mem_svc
+    else:
+        artifact_service = DiskArtifactService(disk_service_path)
+
+
+    session_runner = Runner(
+        app_name=APP_NAME,
+        agent=session_agent,
+        session_service=session_service,
+        artifact_service=artifact_service,
+    )
+    
     await handle_live_websocket_connection(
         websocket=websocket,
         user_id=user_id,
         session_id=session_id,
-        agent=agent,
-        runner=runner,
+        agent=session_agent,
+        runner=session_runner,
         session_service=session_service,
         config=config,
-        image_tools=image_tools,
-        chat_tools=chat_tools,
+        image_tools=s_image_tools,
+        chat_tools=s_chat_tools,
+        notes_tools=s_notes_tools,
         proactivity=proactivity,
         affective_dialog=affective_dialog,
         on_global_chat_message=handle_global_chat_message,

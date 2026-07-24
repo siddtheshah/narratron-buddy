@@ -16,7 +16,9 @@ class CanvasStateManager:
     """Encapsulates state for the web canvas UI including music playback, shown images,
     chat manager history, WebSocket connections, and doodle drawings.
     """
-    def __init__(self, chat_output_dir: str = "output/chats"):
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        chat_output_dir = str(Path(__file__).parent.parent / "sessions" / session_id / "chats")
         self.chat_manager = ChatManager(output_dir=chat_output_dir)
         self.current_image_basename: Optional[str] = None
         
@@ -57,26 +59,23 @@ class CanvasStateManager:
         if file_path and file_path not in self.shown_images_history:
             self.shown_images_history.append(file_path)
 
-        # Automatically copy shown image into session output directory if applicable
-        if file_path and os.path.exists(file_path):
+        # Automatically copy shown image into session output directory if outside session output dir
+        target_session = session_id or self.session_id
+        if target_session and file_path and os.path.exists(file_path):
+            sess_out_dir = (Path(__file__).parent.parent / "sessions" / target_session / "output").resolve()
+            sess_out_dir.mkdir(parents=True, exist_ok=True)
+            file_path_obj = Path(file_path).resolve()
             try:
-                src_path = Path(file_path).resolve()
-                sessions_dir = Path(__file__).parent.parent / "sessions"
-                if session_id:
-                    target_sids = [session_id]
-                elif sessions_dir.exists():
-                    target_sids = [d.name for d in sessions_dir.iterdir() if d.is_dir()]
-                else:
-                    target_sids = []
-
-                for sid in target_sids:
-                    dest_dir = sessions_dir / sid / "output"
-                    if dest_dir.exists():
-                        dest_file = dest_dir / src_path.name
-                        if not dest_file.exists() or dest_file.resolve() != src_path:
-                            shutil.copy2(src_path, dest_file)
-            except Exception as e:
-                logger.error(f"Error copying shown image to session output folder: {e}")
+                # Check if file is already inside sess_out_dir
+                file_path_obj.relative_to(sess_out_dir)
+            except ValueError:
+                # File is outside session output directory: copy to session output dir
+                target_path = sess_out_dir / os.path.basename(file_path)
+                if not target_path.exists():
+                    try:
+                        shutil.copy2(file_path, target_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to copy shown image to session output dir: {e}")
 
     def add_chat_message(self, text: str, author: str = "agent"):
         self.chat_manager.add_message({"author": author, "text": text})
@@ -103,7 +102,9 @@ class CanvasStateManager:
         else:
             self.doodles_state.append(doodle)
 
-    def get_latest_state(self, image_folder: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_latest_state(self) -> Dict[str, Any]:
+        image_folder = str(Path(__file__).parent.parent / "sessions" / self.session_id / "output")
+
         music_state = {
             "playlist": self.current_playlist,
             "tracks": self.current_playlist_tracks,
@@ -132,28 +133,19 @@ class CanvasStateManager:
                 selected_time = os.path.getmtime(selected_file)
                 prompt_text = extract_image_prompt(selected_file)
 
-        # 2. If no image selected, fallback to session references or global avatar
+        # 2. If no image selected, fallback to session references
         if not selected_file:
-            if session_id:
-                session_ref_dir = (Path(__file__).parent.parent / "sessions" / session_id / "reference_library").resolve()
+            if self.session_id:
+                session_ref_dir = (Path(__file__).parent.parent / "sessions" / self.session_id / "references").resolve()
                 if session_ref_dir.exists():
                     ref_images = [f for f in session_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
                     if ref_images:
                         return {
-                            "latest": f"/sessions/{session_id}/references/{ref_images[0].name}",
+                            "latest": f"/sessions/{self.session_id}/references/{ref_images[0].name}",
                             "time": 0,
                             "prompt": f"Mounted Reference: {ref_images[0].stem}",
                             "music": music_state
                         }
-
-            global_avatar = (Path(__file__).parent.parent / "reference_library" / "narratron_avatar.jpg").resolve()
-            if global_avatar.exists():
-                return {
-                    "latest": "/reference_library/narratron_avatar.jpg",
-                    "time": 0,
-                    "prompt": "Narratron Buddy Initialized",
-                    "music": music_state
-                }
             return {"latest": None, "time": 0, "music": music_state}
             
         basename = os.path.basename(selected_file)
@@ -165,15 +157,10 @@ class CanvasStateManager:
         self.current_image_basename = basename
         
         sel_path_obj = Path(selected_file).resolve()
-        if "reference_library" in sel_path_obj.parts:
-            if session_id and (Path(__file__).parent.parent / "sessions" / session_id / "reference_library" / basename).exists():
-                image_url = f"/sessions/{session_id}/references/{basename}"
-            else:
-                image_url = f"/reference_library/{basename}"
-        elif session_id and (Path(__file__).parent.parent / "sessions" / session_id / "output" / basename).exists():
-            image_url = f"/sessions/{session_id}/output/{basename}"
+        if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
+            image_url = f"/sessions/{self.session_id}/references/{basename}"
         else:
-            image_url = f"/images/{basename}"
+            image_url = f"/sessions/{self.session_id}/output/{basename}"
 
         res = {
             "latest": image_url,
@@ -185,7 +172,10 @@ class CanvasStateManager:
         return res
 
     def export_session_data(self, session_dir: Optional[Path] = None) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        """Gather current canvas state data and binary images for database export."""
+        """Ensure current displayed image is saved and gather session canvas data and image files."""
+        if self.shown_image_path and session_dir:
+            self.update_shown_image(self.shown_image_path, session_id=session_dir.name)
+
         state_data = {
             "current_image_basename": self.current_image_basename,
             "shown_image_path": self.shown_image_path,
@@ -198,41 +188,22 @@ class CanvasStateManager:
         }
 
         image_files = []
+        seen_filenames = set()
         if session_dir and session_dir.exists():
-            out_dir = session_dir / "output"
-            ref_dir = session_dir / "reference_library"
-            if out_dir.exists():
-                for f in out_dir.rglob("*"):
-                    if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
-                        with open(f, "rb") as fp:
-                            image_files.append({
-                                "filename": f.name,
-                                "category": "output",
-                                "data": fp.read()
-                            })
-            if ref_dir.exists():
-                for f in ref_dir.rglob("*"):
-                    if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
-                        with open(f, "rb") as fp:
-                            image_files.append({
-                                "filename": f.name,
-                                "category": "reference",
-                                "data": fp.read()
-                            })
-
-        for img_path in self.shown_images_history:
-            if img_path and os.path.exists(img_path):
-                fn = os.path.basename(img_path)
-                if not any(img["filename"] == fn for img in image_files):
-                    try:
-                        with open(img_path, "rb") as fp:
-                            image_files.append({
-                                "filename": fn,
-                                "category": "output",
-                                "data": fp.read()
-                            })
-                    except Exception:
-                        pass
+            for f in session_dir.rglob("*"):
+                if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
+                    if f.name not in seen_filenames:
+                        seen_filenames.add(f.name)
+                        category = "reference" if "references" in f.parts else "output"
+                        try:
+                            with open(f, "rb") as fp:
+                                image_files.append({
+                                    "filename": f.name,
+                                    "category": category,
+                                    "data": fp.read()
+                                })
+                        except Exception:
+                            pass
 
         return state_data, image_files
 

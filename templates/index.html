@@ -121,6 +121,16 @@
             opacity: 1;
         }
 
+        #doodle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: auto;
+        }
+
         .status-dot {
             width: 12px;
             height: 12px;
@@ -162,24 +172,6 @@
             background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-        }
-        
-        .loader {
-            position: absolute;
-            width: 48px;
-            height: 48px;
-            border: 5px solid #FFF;
-            border-bottom-color: var(--accent-color);
-            border-radius: 50%;
-            display: inline-block;
-            box-sizing: border-box;
-            animation: rotation 1s linear infinite;
-            z-index: 0;
-        }
-
-        @keyframes rotation {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
         }
 
         #prompt-toggle-btn {
@@ -514,7 +506,6 @@
         </header>
 
         <div id="image-container">
-            <div class="loader" id="loader"></div>
             <img id="current-image" src="" alt="Narratron Generation">
             <canvas id="doodle-canvas"></canvas>
             <div id="prompt-toggle-btn" title="View Prompt">
@@ -570,7 +561,6 @@
         let lastTime = -1;
         const currentImage = document.getElementById('current-image');
         const bgLayer = document.getElementById('bg-layer');
-        const loader = document.getElementById('loader');
         const promptTextSpan = document.getElementById('prompt-text');
         const chatMessages = document.getElementById('chat-messages');
         const chatForm = document.getElementById('chat-form');
@@ -578,7 +568,22 @@
         
         // Generate anonymous user ID
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
-        const sessionId = "session-" + Math.random().toString(36).substring(7);
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        if (!sessionId) {
+            console.error("Session ID missing from URL parameters.");
+            const container = document.getElementById('image-container');
+            if (container) {
+                container.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #f87171; text-align: center; padding: 2rem;">
+                        <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; font-weight: 600;">⚠️ No Active Session</h2>
+                        <p style="color: #94a3b8; max-width: 400px; margin-bottom: 1.5rem; font-size: 0.95rem;">No session ID was specified in the URL. Please launch or join a session from the deployer page.</p>
+                        <a href="/deploy" style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; padding: 0.6rem 1.2rem; border-radius: 20px; text-decoration: none; font-size: 0.9rem; transition: all 0.2s;">Go to Deployer Dashboard →</a>
+                    </div>
+                `;
+            }
+            throw new Error("Missing required session_id parameter in URL");
+        }
 
         // Music player controls and state
         let currentPlaylistTracks = [];
@@ -766,7 +771,7 @@
             }
         });
 
-        const currentSessionId = new URLSearchParams(window.location.search).get('session_id');
+        const currentSessionId = sessionId;
 
         const saveSessionBtn = document.getElementById('save-session-btn');
         if (saveSessionBtn) {
@@ -847,7 +852,6 @@
                     const tempImage = new Image();
                     
                     tempImage.onload = () => {
-                        loader.style.display = 'none';
                         currentImage.classList.remove('loaded');
                         promptBtn.classList.remove('expanded');
                         promptBtn.style.display = 'none';
@@ -866,6 +870,11 @@
                     };
                     
                     tempImage.src = newImgUrl;
+                } else if (!data.latest) {
+                    // Maintain solid dark background when session has no images
+                    bgLayer.style.backgroundImage = 'none';
+                    if (currentImage) currentImage.classList.remove('loaded');
+                    if (promptBtn) promptBtn.style.display = 'none';
                 }
             } catch (err) {
                 console.error("Failed to fetch image data:", err);
@@ -1018,7 +1027,6 @@
         // ========================================
         // Orator vs Viewer Logic
         // ========================================
-        const urlParams = new URLSearchParams(window.location.search);
         const isOrator = urlParams.get('role') === 'orator';
 
         const roleBadge = document.getElementById('role-badge');

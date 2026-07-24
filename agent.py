@@ -20,11 +20,6 @@ load_dotenv()
 
 config = get_config()
 
-image_tools = ImageTools(config)
-chat_tools = ChatTools(config)
-notes_tools = NotesTools(config)
-music_tools = MusicTools(config)
-
 
 INSTRUCTIONS = """
 # Objective
@@ -48,8 +43,8 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 - Do NOT require the orator to say "Narratron" or explicitly address you. Actively assist the storytelling experience in real time.
 
 ## Reference Info
-If the user mentions named characters or places, use the image browsing tools to find useful references, which will help create even more
-recognizable and poignant scenes. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.
+If the user mentions named characters or places, check the preloaded reference library context provided in your initial instructions or use image browsing tools to find useful references, which will help create even more recognizable and poignant scenes. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.
+Note: The reference library is loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_reference_library` on every turn.
 
 ## Note Taking
 The storytelling session may be long and therefore by difficult to keep track of everything. You are given access to a note taking tool
@@ -65,7 +60,7 @@ constructed. You can also list the previous images created in the notes and re-u
 
 The create_image and show_image tools have cooldowns to prevent overuse. Review context and consider strategy while this is the case.
 
-* list_reference_library: List stock reference images preloaded at startup (read-only reference library).
+* list_reference_library: List stock reference images preloaded at startup (read-only reference library). Note: Reference library items are already preloaded into your initial context upon agent initialization, so you do not need to call this tool on every turn.
 * create_image <image_prompt> <metadata_description> [image_name] [reference_images]: Creates an image based on a prompt. You can specify a custom `image_name` (e.g. 'hero_portrait') for easy tracking and recall, and pass `reference_images` (names or paths of stock art or previously created images) to adapt visual style and maintain consistency across scenes.
 * show_image <file_path_or_name>: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period.
 * browse_images: Returns a list of all available generated image file paths.
@@ -89,29 +84,59 @@ When a story begins or a scene/mood is described, invoke `play_playlist` immedia
 
 """
 
-narratron_agent = Agent(
-    name="narratron_agent",
-    model=config.get("agent", {}).get("model_id", "gemini-3.1-flash-live-preview"),
-    instruction=INSTRUCTIONS,
-    tools=[
-        FunctionTool(image_tools.list_reference_library),
-        FunctionTool(image_tools.create_image),
-        FunctionTool(image_tools.show_image),
-        FunctionTool(image_tools.browse_images),
-        FunctionTool(image_tools.search_image_by_metadata),
-        FunctionTool(chat_tools.send_chat_message),
-        FunctionTool(notes_tools.edit_notes),
-        FunctionTool(notes_tools.delete_notes),
-        FunctionTool(music_tools.list_playlists),
-        FunctionTool(music_tools.play_playlist),
-        FunctionTool(music_tools.pause_playlist),
-        FunctionTool(music_tools.resume_playlist),
-        LoadArtifactsTool(),
-    ],
-)
+def create_agent(session_id: str, config: dict = None):
+    if config is None:
+        config = get_config()
+
+    image_tools = ImageTools(config, session_id=session_id)
+    chat_tools = ChatTools(config, session_id=session_id)
+    notes_tools = NotesTools(config, session_id=session_id)
+    music_tools = MusicTools(config, session_id=session_id)
+
+    # Call list_reference_library immediately on agent init for initial context
+    ref_library = image_tools.list_reference_library()
+    if ref_library:
+        ref_lines = [
+            f"- {item['name']} (alias: {item['alias']}): {item['description']} [path: {item['path']}]"
+            for item in ref_library
+        ]
+        ref_context = "\n\n## Preloaded Reference Library Context (Loaded at Agent Init)\n" + "\n".join(ref_lines)
+    else:
+        ref_context = "\n\n## Preloaded Reference Library Context (Loaded at Agent Init)\nNo preloaded reference images found."
+
+    instruction_with_context = INSTRUCTIONS + ref_context
+
+    agent = Agent(
+        name="narratron_agent",
+        model=config.get("agent", {}).get("model_id", "gemini-3.1-flash-live-preview"),
+        instruction=instruction_with_context,
+        tools=[
+            FunctionTool(image_tools.list_reference_library),
+            FunctionTool(image_tools.create_image),
+            FunctionTool(image_tools.show_image),
+            FunctionTool(image_tools.browse_images),
+            FunctionTool(image_tools.search_image_by_metadata),
+            FunctionTool(chat_tools.send_chat_message),
+            FunctionTool(notes_tools.edit_notes),
+            FunctionTool(notes_tools.delete_notes),
+            FunctionTool(music_tools.list_playlists),
+            FunctionTool(music_tools.play_playlist),
+            FunctionTool(music_tools.pause_playlist),
+            FunctionTool(music_tools.resume_playlist),
+            LoadArtifactsTool(),
+        ],
+    )
+
+    return agent, {
+        "image_tools": image_tools,
+        "chat_tools": chat_tools,
+        "notes_tools": notes_tools,
+        "music_tools": music_tools,
+    }
 
 async def main():
     print("Initializing ADK Agent...")
+    narratron_agent, _ = create_agent(session_id="default_session", config=config)
     session_service = InMemorySessionService()
     artifact_service = DiskArtifactService("sessions/artifacts")
     # The runner manages the execution context and stream connections.
@@ -127,3 +152,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

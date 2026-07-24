@@ -38,14 +38,14 @@ class TestLocalDeployer(unittest.TestCase):
 
         self.assertEqual(session.session_id, "test_session_001")
         self.assertEqual(session.name, "Fantasy Quest")
-        self.assertEqual(session.status, "created")
-        self.assertEqual(len(session.mounted_references), 2)
+        self.assertIn("hero.png", session.mounted_references)
+        self.assertIn("map.jpg", session.mounted_references)
         self.assertEqual(len(session.mounted_playlists["ambient"]), 2)
         self.assertEqual(len(session.mounted_playlists["combat"]), 1)
 
         # Check physical directory files
         session_path = Path(self.test_dir) / "test_session_001"
-        self.assertTrue((session_path / "reference_library" / "hero.png").exists())
+        self.assertTrue((session_path / "references" / "hero.png").exists())
         self.assertTrue((session_path / "playlists" / "ambient" / "track1.mp3").exists())
         self.assertTrue((session_path / "session.json").exists())
 

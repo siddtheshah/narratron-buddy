@@ -242,6 +242,14 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def delete_deployment(self, session_id: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM canvas_deployments WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM exported_sessions WHERE session_id = ?", (session_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
     def get_session_by_join_key(self, join_key: str) -> Optional[Dict]:
         clean_key = join_key.strip().upper()
         with self._get_connection() as conn:
@@ -323,7 +331,7 @@ class DatabaseManager:
 
             target_dir = Path(target_dir).resolve()
             out_dir = target_dir / "output"
-            ref_dir = target_dir / "reference_library"
+            ref_dir = target_dir / "references"
             out_dir.mkdir(parents=True, exist_ok=True)
             ref_dir.mkdir(parents=True, exist_ok=True)
 

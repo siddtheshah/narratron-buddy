@@ -936,7 +936,7 @@
                 const result = await response.json();
                 if (response.ok && result.session_id) {
                     await checkAuthStatus();
-                    window.location.href = `/canvas?session_id=${result.session_id}`;
+                    window.location.href = `/canvas?session_id=${result.session_id}&role=orator`;
                 } else {
                     alert('Error deploying session: ' + (result.detail || 'Unknown error'));
                 }
@@ -1049,7 +1049,8 @@
                         return;
                     }
                     closeJoinKeyModal();
-                    window.location.href = `/canvas?session_id=${data.session_id}&join_key=${encodeURIComponent(key)}`;
+                    const isOwnerSession = (data.user_id && currentUser && data.user_id === currentUser.id);
+                    window.location.href = `/canvas?session_id=${data.session_id}&join_key=${encodeURIComponent(key)}${isOwnerSession ? '&role=orator' : ''}`;
                 } else {
                     err.textContent = data.detail || 'Invalid Join Key.';
                     err.style.display = 'block';

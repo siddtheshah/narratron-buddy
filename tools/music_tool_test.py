@@ -30,7 +30,8 @@ class TestMusicTools(unittest.TestCase):
         with open(os.path.join(self.combat_dir, "battle.mp3"), "w") as f:
             f.write("dummy audio")
 
-        self.music_tools = MusicTools(self.config)
+        self.music_tools = MusicTools(self.config, session_id="test_session")
+        self.music_tools.playlists_folder = self.temp_dir
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)

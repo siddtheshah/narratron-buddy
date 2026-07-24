@@ -23,6 +23,7 @@ async def handle_live_websocket_connection(
     config: dict,
     image_tools: any,
     chat_tools: any,
+    notes_tools: any = None,
     proactivity: bool = False,
     affective_dialog: bool = False,
     on_global_chat_message: any = None,
@@ -37,6 +38,12 @@ async def handle_live_websocket_connection(
     )
     await websocket.accept()
     logger.debug("WebSocket connection accepted")
+
+    if hasattr(image_tools, "active_session_id"):
+        image_tools.active_session_id = session_id
+
+    if notes_tools and hasattr(notes_tools, "active_session_id"):
+        notes_tools.active_session_id = session_id
 
     websocket_write_lock = asyncio.Lock()
 

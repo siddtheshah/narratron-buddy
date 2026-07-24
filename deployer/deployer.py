@@ -109,7 +109,7 @@ class LocalDeployer(BaseDeployer):
         if session_dir.exists():
             raise ValueError(f"Session with ID '{sid}' already exists.")
 
-        ref_dir = session_dir / "reference_library"
+        ref_dir = session_dir / "references"
         playlists_dir = session_dir / "playlists"
         output_dir = session_dir / "output"
 
@@ -125,6 +125,18 @@ class LocalDeployer(BaseDeployer):
                 with open(file_path, "wb") as f:
                     f.write(content)
                 mounted_refs.append(clean_name)
+
+        # Copy default reference images from top-level reference_library if present
+        import shutil
+        top_level_ref_dir = (Path(__file__).parent.parent / "reference_library").resolve()
+        if top_level_ref_dir.exists():
+            for ref_file in top_level_ref_dir.iterdir():
+                if ref_file.is_file() and ref_file.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
+                    dest_file = ref_dir / ref_file.name
+                    if not dest_file.exists():
+                        shutil.copy2(ref_file, dest_file)
+                        if ref_file.name not in mounted_refs:
+                            mounted_refs.append(ref_file.name)
 
         mounted_playlists: Dict[str, List[str]] = {}
         if playlists_data:

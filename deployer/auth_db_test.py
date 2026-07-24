@@ -99,8 +99,8 @@ class TestDatabaseManager(unittest.TestCase):
 
         self.assertTrue((recon_dir / "output" / "test_out.png").exists())
         self.assertEqual((recon_dir / "output" / "test_out.png").read_bytes(), b"PNG_DATA")
-        self.assertTrue((recon_dir / "reference_library" / "test_ref.jpg").exists())
-        self.assertEqual((recon_dir / "reference_library" / "test_ref.jpg").read_bytes(), b"JPG_DATA")
+        self.assertTrue((recon_dir / "references" / "test_ref.jpg").exists())
+        self.assertEqual((recon_dir / "references" / "test_ref.jpg").read_bytes(), b"JPG_DATA")
 
 
 if __name__ == "__main__":

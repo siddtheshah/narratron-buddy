@@ -3,7 +3,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ChatTools:
-    def __init__(self, config: dict = None):
+    def __init__(self, config: dict, session_id: str):
+        self.config = config
+        self.session_id = session_id
         self.on_send_chat_message = None
 
     def send_chat_message(self, text: str) -> str:

@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
-from agent import chat_tools, image_tools, narratron_agent as agent
+from agent import create_agent
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import handle_live_websocket_connection
 from utils.config_loader import get_config
@@ -57,14 +57,6 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 session_service = InMemorySessionService()
-artifact_service = DiskArtifactService("sessions/artifacts")
-
-runner = Runner(
-    app_name=APP_NAME,
-    agent=agent,
-    session_service=session_service,
-    artifact_service=artifact_service,
-)
 
 @app.get("/")
 async def root():
@@ -80,16 +72,26 @@ async def websocket_endpoint(
     affective_dialog: bool = False,
 ) -> None:
     """WebSocket endpoint for bidirectional streaming with ADK."""
+    session_agent, session_tools = create_agent(session_id=session_id, config=config)
+    session_artifact_service = DiskArtifactService("sessions/test_session")
+    session_runner = Runner(
+        app_name=APP_NAME,
+        agent=session_agent,
+        session_service=session_service,
+        artifact_service=session_artifact_service,
+    )
+
     await handle_live_websocket_connection(
         websocket=websocket,
         user_id=user_id,
         session_id=session_id,
-        agent=agent,
-        runner=runner,
+        agent=session_agent,
+        runner=session_runner,
         session_service=session_service,
         config=config,
-        image_tools=image_tools,
-        chat_tools=chat_tools,
+        image_tools=session_tools["image_tools"],
+        chat_tools=session_tools["chat_tools"],
+        notes_tools=session_tools["notes_tools"],
         proactivity=proactivity,
         affective_dialog=affective_dialog,
         on_global_chat_message=None,
