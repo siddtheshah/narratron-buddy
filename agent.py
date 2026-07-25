@@ -82,7 +82,6 @@ When a story begins or a scene/mood is described, invoke `play_playlist` immedia
 * play_playlist <playlist_name>: Choose a playlist to play (e.g. 'default', 'desert adventure', 'desert combat'). This sends a signal to play the music on the canvas.
 * pause_playlist: Pause the current music playlist playing on the canvas.
 * resume_playlist: Resume the paused music playlist on the canvas.
-
 """
 
 def create_agent(session_id: str, config: dict = None):
@@ -105,7 +104,7 @@ def create_agent(session_id: str, config: dict = None):
     else:
         ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\nNo preloaded reference images found."
 
-    instruction_with_context = INSTRUCTIONS + ref_context
+    instruction_with_context = INSTRUCTIONS + ref_context + "\n\n## Cooldowns Lifted. GO!"
 
     agent = Agent(
         name="narratron_agent",

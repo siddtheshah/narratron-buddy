@@ -10,6 +10,8 @@ agent:
 image_generation:
     reference_library_folder: "reference_library"
     cooldown_duration: 15
+    simple_model: "gemini-3.1-flash-lite-image"
+    reference_model: "gemini-3.1-flash-image"
 
 music:
     playlists_folder: "playlists"
