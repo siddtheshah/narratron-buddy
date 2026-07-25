@@ -12,6 +12,8 @@ class BaseTestCase(unittest.TestCase):
         self.addCleanup(self.cleanup_session_directories)
         from utils.email_service import FLAGS
         FLAGS.send_emails = False
+        from web_viewer_app import FLAGS as WEB_FLAGS
+        WEB_FLAGS.allow_mock_payments = False
 
     def cleanup_session_directories(self):
         # 1. Clear web_viewer_app canvas states cache if loaded

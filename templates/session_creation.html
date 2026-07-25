@@ -991,14 +991,47 @@
             const methodEl = document.querySelector('input[name="paymentMethod"]:checked');
             const paymentMethod = methodEl ? methodEl.value : 'card_mock';
 
+            const bodyPayload = {
+                payment_method: paymentMethod
+            };
+
+            if (paymentMethod.startsWith('card')) {
+                const cardName = document.getElementById('cardHolderName').value.trim();
+                const cardNumber = document.getElementById('cardNumber').value.replace(/[\s\-]/g, '');
+                const cardExp = document.getElementById('cardExp').value.trim();
+                const cardCvc = document.getElementById('cardCvc').value.trim();
+
+                if (!cardName) {
+                    err.innerText = 'Please enter Cardholder Name.';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (!cardNumber || !/^\d{13,19}$/.test(cardNumber.replace(/•/g, ''))) {
+                    err.innerText = 'Please enter a valid credit card number (13-19 digits).';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (!cardExp || !/^(0[1-9]|1[0-2])\/?([0-9]{2})$/.test(cardExp.replace(/\s/g, ''))) {
+                    err.innerText = 'Please enter a valid expiration date (MM/YY).';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (!cardCvc || !/^\d{3,4}$/.test(cardCvc)) {
+                    err.innerText = 'Please enter a valid 3 or 4-digit CVV / CVC code.';
+                    err.style.display = 'block';
+                    return;
+                }
+
+                bodyPayload.card_name = cardName;
+                bodyPayload.card_number = cardNumber;
+                bodyPayload.card_exp = cardExp;
+                bodyPayload.card_cvc = cardCvc;
+            }
+
             payBtn.disabled = true;
             payBtn.innerText = 'Processing One-Off Payment...';
 
             try {
-                const bodyPayload = {
-                    payment_method: paymentMethod
-                };
-
                 if (selectedPackage.id === 'custom') {
                     bodyPayload.custom_credits = selectedPackage.credits;
                     bodyPayload.custom_usd = selectedPackage.usd;

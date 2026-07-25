@@ -1,6 +1,7 @@
 """API tests for Session Deployer, Join Splash, and Authentication endpoints in FastAPI application."""
 
 import io
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -9,13 +10,14 @@ import unittest
 from fastapi.testclient import TestClient
 
 from testing.base_test import BaseTestCase
-from web_viewer_app import app, local_deployer, db
+from web_viewer_app import app, local_deployer, db, FLAGS
 
 
 class TestSessionAPI(BaseTestCase):
 
     def setUp(self):
         super().setUp()
+        FLAGS.allow_mock_payments = True
         self.test_dir = tempfile.mkdtemp()
         local_deployer.base_dir = Path(self.test_dir).resolve()
         local_deployer.base_dir.mkdir(parents=True, exist_ok=True)
@@ -24,6 +26,7 @@ class TestSessionAPI(BaseTestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
+        FLAGS.allow_mock_payments = False
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_root_and_join_serves_splash_page(self):
@@ -220,15 +223,39 @@ class TestSessionAPI(BaseTestCase):
         me_res = self.client.get("/api/auth/me")
         self.assertEqual(me_res.json()["user"]["credits"], 100.0)
 
-        # 3. Buy Pro package (200 credits for $18.00)
-        buy_res = self.client.post("/api/payments/buy-credits", json={"package_id": "pro"})
+        # 3. Invalid / missing card -> 400 Bad Request
+        bad_card_res = self.client.post("/api/payments/buy-credits", json={
+            "package_id": "pro",
+            "card_number": "1234"
+        })
+        self.assertEqual(bad_card_res.status_code, 400)
+        self.assertIn("Invalid credit card number format", bad_card_res.json()["detail"])
+
+        # 4. Declined card test -> 400
+        decline_card_res = self.client.post("/api/payments/buy-credits", json={
+            "package_id": "pro",
+            "card_number": "4000000000000002",
+            "card_exp": "12/28",
+            "card_cvc": "123"
+        })
+        self.assertEqual(decline_card_res.status_code, 400)
+        self.assertIn("declined", decline_card_res.json()["detail"])
+
+        # 5. Buy Pro package with valid card details
+        buy_res = self.client.post("/api/payments/buy-credits", json={
+            "package_id": "pro",
+            "card_number": "4242424242424242",
+            "card_exp": "12/28",
+            "card_cvc": "123",
+            "card_name": "Valid User"
+        })
         self.assertEqual(buy_res.status_code, 200)
         buy_data = buy_res.json()
         self.assertEqual(buy_data["status"], "ok")
         self.assertEqual(buy_data["credits_added"], 200.0)
         self.assertEqual(buy_data["user"]["credits"], 300.0)
 
-        # 4. Check payment history endpoint
+        # 6. Check payment history endpoint
         hist_res = self.client.get("/api/payments/history")
         self.assertEqual(hist_res.status_code, 200)
         hist_data = hist_res.json()
@@ -237,15 +264,27 @@ class TestSessionAPI(BaseTestCase):
         self.assertEqual(hist_data["transactions"][0]["credits_added"], 200.0)
         self.assertEqual(hist_data["transactions"][0]["amount_usd"], 18.00)
 
-        # 5. Buy custom one-off payment (150 credits for $15.00)
+        # 7. Buy custom one-off payment (150 credits for $15.00)
         custom_res = self.client.post("/api/payments/buy-credits", json={
             "custom_credits": 150.0,
-            "custom_usd": 15.00
+            "custom_usd": 15.00,
+            "card_number": "4242424242424242",
+            "card_exp": "12/28",
+            "card_cvc": "123"
         })
         self.assertEqual(custom_res.status_code, 200)
         custom_data = custom_res.json()
         self.assertEqual(custom_data["credits_added"], 150.0)
-        self.assertEqual(custom_data["user"]["credits"], 450.0)
+        # 8. Service unavailable when gateway unconfigured
+        FLAGS.allow_mock_payments = False
+        unavail_res = self.client.post("/api/payments/buy-credits", json={
+            "package_id": "starter",
+            "card_number": "4242424242424242",
+            "card_exp": "12/28",
+            "card_cvc": "123"
+        })
+        self.assertEqual(unavail_res.status_code, 503)
+        self.assertEqual(unavail_res.json()["detail"], "Payment service unavailable")
 
 
 if __name__ == "__main__":

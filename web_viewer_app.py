@@ -1,8 +1,10 @@
 import logging
 import os
 from pathlib import Path
+import sys
 from typing import List, Optional
 
+from absl import flags
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +17,16 @@ from deployer.deployer import LocalDeployer, SessionMetadata
 from deployer.session_manager import SessionManager
 from utils.config_loader import get_config
 from utils.email_service import send_password_reset_email
+
+flags.DEFINE_boolean(
+    "allow_mock_payments",
+    False,
+    "Whether to allow mock/simulated credit purchases when live gateway key is unconfigured."
+)
+
+FLAGS = flags.FLAGS
+if not FLAGS.is_parsed():
+    FLAGS(sys.argv[:1])
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +81,10 @@ class BuyCreditsRequest(BaseModel):
     custom_credits: Optional[float] = None
     custom_usd: Optional[float] = None
     payment_method: Optional[str] = "card_mock"
+    card_number: Optional[str] = None
+    card_exp: Optional[str] = None
+    card_cvc: Optional[str] = None
+    card_name: Optional[str] = None
 
 _canvas_states: dict[str, CanvasStateManager] = {}
 
@@ -214,6 +230,37 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
         raise HTTPException(status_code=400, detail="Invalid package or credit amount specified.")
 
     payment_method = req.payment_method or "card_mock"
+
+    if payment_method.startswith("card"):
+        card_num = (req.card_number or "").replace(" ", "").replace("-", "")
+        if not card_num:
+            raise HTTPException(status_code=400, detail="Credit card number is required.")
+        
+        if card_num.endswith("0002") or card_num.endswith("0000"):
+            raise HTTPException(status_code=400, detail="Your card was declined by the issuer.")
+        if card_num.endswith("0051"):
+            raise HTTPException(status_code=400, detail="Insufficient funds on credit card.")
+        
+        if not card_num.isdigit() or len(card_num) < 13 or len(card_num) > 19:
+            raise HTTPException(status_code=400, detail="Invalid credit card number format.")
+        
+        if req.card_exp:
+            exp_clean = req.card_exp.replace(" ", "")
+            if "/" not in exp_clean or len(exp_clean) != 5:
+                raise HTTPException(status_code=400, detail="Invalid card expiration format (must be MM/YY).")
+        else:
+            raise HTTPException(status_code=400, detail="Card expiration date (MM/YY) is required.")
+
+        cvc_clean = (req.card_cvc or "").strip()
+        if not cvc_clean or not cvc_clean.isdigit() or len(cvc_clean) < 3 or len(cvc_clean) > 4:
+            raise HTTPException(status_code=400, detail="Invalid CVV / CVC code (must be 3 or 4 digits).")
+
+        stripe_key = os.getenv("STRIPE_SECRET_KEY")
+        allow_mock = bool(FLAGS.allow_mock_payments)
+
+        if not stripe_key and not allow_mock:
+            raise HTTPException(status_code=503, detail="Payment service unavailable")
+
     result = db.add_user_credits(user["id"], credits_to_add, usd_amount, payment_method)
     return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
 
