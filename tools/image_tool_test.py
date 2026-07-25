@@ -101,7 +101,7 @@ class TestImageTools(BaseTestCase):
         callback = MagicMock()
         tools.on_show_image = callback
 
-        res = tools.create_image("sunset scene", "golden hours sunset", image_name="sunset_01")
+        res = tools.create_image("sunset scene", image_name="sunset_01")
         self.assertIn("Successfully generated and displayed image", res)
         self.assertIn("sunset_01", res)
         callback.assert_called_once()
@@ -129,7 +129,7 @@ class TestImageTools(BaseTestCase):
         callback = MagicMock()
         tools.on_show_image = callback
 
-        res = tools.create_image("sunset scene", "golden hours sunset", image_name="sunset_02", display=False)
+        res = tools.create_image("sunset scene", image_name="sunset_02", display=False)
         self.assertIn("Successfully generated image", res)
         self.assertNotIn("and displayed", res)
         callback.assert_not_called()
@@ -304,7 +304,7 @@ class TestImageTools(BaseTestCase):
         callback = MagicMock()
         tools.on_show_image = callback
 
-        res = tools.create_image("sunset scene", "golden hours sunset", image_name="sunset_01")
+        res = tools.create_image("sunset scene", image_name="sunset_01")
         self.assertIn("Successfully generated and displayed image", res)
         self.assertIn("sunset_01", res)
         callback.assert_called_once()
@@ -332,7 +332,7 @@ class TestImageTools(BaseTestCase):
         callback = MagicMock()
         tools.on_show_image = callback
 
-        res = tools.create_image("sunset scene", "golden hours sunset", image_name="sunset_02", display=False)
+        res = tools.create_image("sunset scene", image_name="sunset_02", display=False)
         self.assertIn("Successfully generated image", res)
         self.assertNotIn("and displayed", res)
         callback.assert_not_called()
@@ -386,10 +386,10 @@ class TestImageTools(BaseTestCase):
         Image.new("RGB", (10, 10), color="blue").save(ref_file)
         tools._load_references()
 
-        # 1. Simple render without reference image -> uses simple_model (imagen-3.0-fast-generate-001)
-        tools.create_image("a simple landscape", "desc")
+        # 1. Simple render without reference image -> uses simple_model (gemini-3.1-flash-lite-image)
+        tools.create_image("a simple landscape")
         mock_client_instance.models.generate_content.assert_called_with(
-            model="imagen-3.0-fast-generate-001",
+            model="gemini-3.1-flash-lite-image",
             contents=["a simple landscape"],
         )
 
@@ -398,7 +398,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.reset_mock()
 
         # 2. Render with reference image -> uses reference_model (gemini-3.1-flash-image)
-        tools.create_image("a castle in style of ref1", "desc", reference_images="ref1")
+        tools.create_image("a castle in style of ref1", reference_images="ref1")
         self.assertEqual(
             mock_client_instance.models.generate_content.call_args.kwargs["model"],
             "gemini-3.1-flash-image"
@@ -412,7 +412,7 @@ class TestImageTools(BaseTestCase):
         os.makedirs(tools.output_dir, exist_ok=True)
         os.makedirs(tools.reference_dir, exist_ok=True)
 
-        res = tools.create_image("a fantasy castle", "castle description", reference_images="nonexistent_ref")
+        res = tools.create_image("a fantasy castle", reference_images="nonexistent_ref")
         self.assertIn("Error: Reference image 'nonexistent_ref' not found.", res)
 
     @patch("tools.image_tool.genai.Client")
@@ -428,7 +428,7 @@ class TestImageTools(BaseTestCase):
         img.save(file_path)
 
         tools.last_create_time = time.time()
-        self.assertIn("create_image is on cooldown", tools.create_image("prompt", "desc"))
+        self.assertIn("create_image is on cooldown", tools.create_image("prompt"))
 
         res = tools.show_image(file_path)
         self.assertIn("Successfully displayed", res)
@@ -509,20 +509,20 @@ class TestImageTools(BaseTestCase):
 
         # Test Case 1
         mock_client_instance.models.generate_content.return_value = mock_response_none_content
-        res1 = tools.create_image("prompt 1", "desc 1")
+        res1 = tools.create_image("prompt 1")
         self.assertIn("Failed to generate image", res1)
         self.assertIn("SAFETY", res1)
 
         # Test Case 2
         mock_client_instance.models.generate_content.return_value = mock_response_none_parts
         tools.last_create_time = 0.0
-        res2 = tools.create_image("prompt 2", "desc 2")
+        res2 = tools.create_image("prompt 2")
         self.assertIn("Failed to generate image", res2)
 
         # Test Case 3
         mock_client_instance.models.generate_content.return_value = mock_response_text_part
         tools.last_create_time = 0.0
-        res3 = tools.create_image("prompt 3", "desc 3")
+        res3 = tools.create_image("prompt 3")
         self.assertIn("Failed to generate image", res3)
         self.assertIn("Model refusal message", res3)
 
