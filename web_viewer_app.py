@@ -25,6 +25,12 @@ flags.DEFINE_boolean(
     "Whether to allow mock/simulated credit purchases when live gateway key is unconfigured."
 )
 
+flags.DEFINE_boolean(
+    "testing_use_local_database",
+    False,
+    "If true, use the local SQLite database for authentication and deployments."
+)
+
 FLAGS = flags.FLAGS
 if not FLAGS.is_parsed():
     FLAGS(sys.argv[:1])
@@ -38,7 +44,11 @@ app = FastAPI()
 # Deployer, Database, and Session Manager instances
 local_deployer = LocalDeployer()
 session_manager = SessionManager(deployer=local_deployer)
-db = DatabaseManager()
+
+if FLAGS.testing_use_local_database:
+    db = DatabaseManager.from_local("deployer.db")
+else:
+    db = DatabaseManager.from_live()
 
 # Sessions folder (absolute path resolution)
 sessions_folder = str((Path(__file__).parent / "sessions").resolve())

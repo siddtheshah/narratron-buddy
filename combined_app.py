@@ -47,6 +47,8 @@ flags.DEFINE_boolean(
     "Use PreloadedInMemoryArtifactService pre-loaded with test artifacts",
 )
 
+flags.DEFINE_bool("use_local_test_db", False, "Which database to use (local or live).")
+
 FLAGS = flags.FLAGS
 if not FLAGS.is_parsed():
     FLAGS(sys.argv[:1])

@@ -13,7 +13,7 @@ class TestDatabaseManager(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_deployer.db"
-        self.db = DatabaseManager(db_path=str(self.db_file))
+        self.db = DatabaseManager.from_local(db_path=str(self.db_file))
 
     def tearDown(self):
         import gc
@@ -23,6 +23,11 @@ class TestDatabaseManager(BaseTestCase):
         except Exception:
             pass
 
+
+    def test_pragma_wal_enabled(self):
+        with self.db._get_connection() as conn:
+            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertEqual(mode.lower(), "wal")
 
     def test_user_registration_and_authentication(self):
         user = self.db.register_user("testuser", "test@example.com", "SecretPass123")

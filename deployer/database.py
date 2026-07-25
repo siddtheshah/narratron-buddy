@@ -7,27 +7,106 @@ from pathlib import Path
 import sqlite3
 import secrets
 from typing import Any, Dict, List, Optional
-
 import logging
+import libsql
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+class _DictCursor:
+    """Wraps a DB-API cursor so fetchone/fetchall return dicts keyed by column name.
+
+    libsql does not support row_factory, so this uses cursor.description
+    to map tuple positions to column names after each query.
+    """
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, sql, params=()):
+        self._cursor.execute(sql, params)
+        return self
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_dict(row)
+
+    def fetchall(self):
+        return [self._row_to_dict(r) for r in self._cursor.fetchall()]
+
+    def _row_to_dict(self, row):
+        if self._cursor.description is None:
+            return row
+        cols = [col[0] for col in self._cursor.description]
+        return dict(zip(cols, row))
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class _DictConnection:
+    """Wraps a DB-API connection so that cursor() returns a _DictCursor.
+
+    Proxies commit, close, and context-manager protocol to the inner connection.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return _DictCursor(self._conn.cursor())
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        if hasattr(self._conn, '__enter__'):
+            self._conn.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        if hasattr(self._conn, '__exit__'):
+            return self._conn.__exit__(*args)
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 
 
 class DatabaseManager:
     """Manages SQLite database storage for users, authentication tokens, and deployments."""
 
-    def __init__(self, db_path: Optional[str] = None):
-        if db_path:
-            self.db_path = Path(db_path).resolve()
-        else:
-            self.db_path = (Path(__file__).parent / "deployer.db").resolve()
-        
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+    def __init__(self, is_live: bool, db_path: Optional[str] = None):
+        self.is_live = is_live
+        self.db_path = db_path
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+    @classmethod
+    def from_live(cls) -> "DatabaseManager":
+        return cls(is_live=True, db_path=None)
+
+    @classmethod
+    def from_local(cls, db_path: str) -> "DatabaseManager":
+        return cls(is_live=False, db_path=db_path)
+
+    def _get_connection(self):
+        if not self.is_live:
+            conn = sqlite3.connect(str(self.db_path))
+            conn.row_factory = sqlite3.Row
+        else:
+            conn = _DictConnection(libsql.connect(
+                database=os.environ["TURSO_DATABASE_URL"],
+                auth_token=os.environ["TURSO_DB_TOKEN"]
+            ))
         return conn
 
     def _init_db(self) -> None:

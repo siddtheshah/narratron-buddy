@@ -7,3 +7,4 @@ Pillow
 python-multipart
 python-dotenv>=1.0.1
 jinja2
+libsql
