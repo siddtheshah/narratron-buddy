@@ -47,8 +47,7 @@ RUN mkdir -p sessions output playlists reference_library
 COPY playlists/ playlists/
 COPY reference_library/ reference_library/
 
-# Cloud Run injects the PORT env var (default 9191)
-ENV PORT=9193
+ENV PORT=8080
 
 # Run as non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
