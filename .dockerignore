@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Agent/dev tooling
+.agent/
+.agents/
+.gemini/
+skills/
+
+# Test & scratch
+scratch/
+testing/
+evaluation_results/
+*_test.py
+
+# Data (ephemeral on Cloud Run — mount volumes if needed)
+sessions/
+output/
+deployer.db
+*.db
+
+# Secrets — these must be injected via Cloud Run env vars, NOT baked in
+.env
+client_secret.json
+ngrok_policy.yaml
+
+# Media (large files — copy only what's needed in Dockerfile)
+*.wav
+
+# Misc
+README.md
+TASKLIST.md

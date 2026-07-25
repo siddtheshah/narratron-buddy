@@ -27,4 +27,4 @@
 - [x] Have user name be associated with the chat message in the UI. Handling for anonymous viewers.
 
 ## Database Decoupling
-- [ ] Have a separate database manager implementation for a remote database accessed through cloud.
+- [x] Have a separate database manager implementation for a remote database accessed through cloud.

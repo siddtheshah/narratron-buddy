@@ -1,0 +1,46 @@
+# .gcloudignore — controls what gets uploaded to Cloud Build.
+# This is separate from .gitignore because Cloud Build needs files
+# that git doesn't track (playlists, reference_library assets).
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Git
+.git/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Dev / agent tooling
+.agent/
+.agents/
+.gemini/
+skills/
+
+# Test & scratch
+scratch/
+testing/
+evaluation_results/
+*_test.py
+
+# Data that shouldn't be baked into the image
+sessions/
+output/
+*.db
+
+# Secrets
+.env
+client_secret.json
+ngrok_policy.yaml
+
+# Large media
+*.wav
+
+# Docs
+README.md
+TASKLIST.md
