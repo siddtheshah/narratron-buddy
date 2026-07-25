@@ -6,8 +6,8 @@
 
 ## Frontend
 - [ ] About page. Need to have links to related projects and community servers. Bug reporting guidelines.
-- [ ] Clean up frontend page. Add blurred background carousel.
-- [ ] Add a favicon for tabs.
+- [x] Clean up frontend page. Add blurred background carousel.
+- [x] Add a favicon for tabs.
 
 
 ## Auth, Security & Monetization

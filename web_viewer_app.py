@@ -63,6 +63,10 @@ ref_library_folder = str((Path(__file__).parent / "reference_library").resolve()
 os.makedirs(ref_library_folder, exist_ok=True)
 app.mount("/reference_library", StaticFiles(directory=ref_library_folder), name="reference_library")
 
+# Artwork used by the public join-page background carousel.
+carousel_folder = str((Path(__file__).parent / "templates" / "carousel").resolve())
+app.mount("/carousel", StaticFiles(directory=carousel_folder), name="carousel")
+
 class ChatMessage(BaseModel):
     author: str
     text: str
