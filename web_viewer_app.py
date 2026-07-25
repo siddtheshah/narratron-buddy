@@ -32,8 +32,7 @@ flags.DEFINE_boolean(
 )
 
 FLAGS = flags.FLAGS
-if not FLAGS.is_parsed():
-    FLAGS(sys.argv[:1])
+sys.argv = FLAGS(sys.argv, known_only=True)
 
 logger = logging.getLogger(__name__)
 
@@ -723,9 +722,3 @@ def read_canvas(request: Request, session_id: Optional[str] = None):
     template_path = os.path.join(os.path.dirname(__file__), "templates", template_name)
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        raise RuntimeError("CLI arguments (sys.argv) are not allowed when starting the app. Use config.yaml or environment variables instead.")
-    uvicorn.run(app, host="0.0.0.0", port=8000)

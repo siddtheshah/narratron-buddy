@@ -29,13 +29,6 @@ from web_viewer_app import (
     update_shown_image,
 )
 
-# Immediately error if sys.argv contains CLI arguments
-if len(sys.argv) > 1:
-    raise RuntimeError(
-        f"CLI arguments (sys.argv) are not allowed when starting the app: {sys.argv[1:]}. "
-        "Use config.yaml or environment variables instead."
-    )
-
 # Load environment variables
 load_dotenv()
 config = get_config()
@@ -49,9 +42,16 @@ flags.DEFINE_boolean(
 
 flags.DEFINE_bool("use_local_test_db", False, "Which database to use (local or live).")
 
+flags.DEFINE_string("host", "localhost", "Host to run the app on.")
+flags.DEFINE_integer("port", 8000, "Port to run the app on.")
+
 FLAGS = flags.FLAGS
-if not FLAGS.is_parsed():
-    FLAGS(sys.argv[:1])
+sys.argv = FLAGS(sys.argv, known_only=True)
+
+print("====================================================")
+print("HOST", FLAGS.host)
+print("PORT", FLAGS.port)
+print("====================================================")
 
 # Configure logging
 logging.basicConfig(
@@ -76,9 +76,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # Define services
 session_service = InMemorySessionService()
 
-use_in_memory_artifacts = FLAGS.use_in_memory_artifacts or (
-    os.getenv("USE_IN_MEMORY_ARTIFACTS", "0").lower() in ("1", "true", "yes")
-)
+use_in_memory_artifacts = FLAGS.use_in_memory_artifacts
 
 
 def handle_global_chat_message(text: str, session_id: str = None):
@@ -163,4 +161,4 @@ async def agent_websocket_endpoint(
     )
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=FLAGS.host, port=FLAGS.port)

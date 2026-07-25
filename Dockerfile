@@ -47,8 +47,8 @@ RUN mkdir -p sessions output playlists reference_library
 COPY playlists/ playlists/
 COPY reference_library/ reference_library/
 
-# Cloud Run injects the PORT env var (default 8080)
-ENV PORT=8080
+# Cloud Run injects the PORT env var (default 9191)
+ENV PORT=9193
 
 # Run as non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -58,4 +58,4 @@ USER appuser
 EXPOSE ${PORT}
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
-CMD ["sh", "-c", "uvicorn combined_app:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "python combined_app.py --host=0.0.0.0 --port=${PORT}"]
