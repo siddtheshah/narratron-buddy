@@ -39,9 +39,8 @@ COPY utils/ utils/
 COPY templates/ templates/
 COPY static/ static/
 
-# Create runtime directories (these will be ephemeral on Cloud Run;
-# use a volume mount or GCS bucket if you need persistence)
-RUN mkdir -p sessions output playlists reference_library
+# Cloud Run session data is intentionally ephemeral and stored under /tmp.
+RUN mkdir -p /tmp/sessions output playlists reference_library
 
 # Copy default playlist and reference library assets that are checked in
 COPY playlists/ playlists/
@@ -49,10 +48,10 @@ COPY reference_library/ reference_library/
 
 # Run as non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app /tmp/sessions
 USER appuser
 
 EXPOSE 8080
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
-CMD ["sh", "-c", "python combined_app.py --host=0.0.0.0 --port=8080"]
+CMD ["sh", "-c", "python combined_app.py --use_cloud_session_storage --host=0.0.0.0 --port=8080"]

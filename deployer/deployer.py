@@ -10,6 +10,7 @@ import shutil
 import secrets
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
+from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class LocalDeployer(BaseDeployer):
         if base_sessions_dir:
             self.base_dir = Path(base_sessions_dir).resolve()
         else:
-            self.base_dir = (Path(__file__).parent.parent / "sessions").resolve()
+            self.base_dir = ensure_sessions_root()
         
         self.base_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"LocalDeployer initialized at base directory: {self.base_dir}")

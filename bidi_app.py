@@ -15,6 +15,7 @@ from agent import create_agent
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import handle_live_websocket_connection
 from utils.config_loader import get_config
+from utils.session_paths import ensure_sessions_root
 
 # Monkeypatch OpenTelemetry contextvars context to suppress ValueError on detach in different context
 try:
@@ -73,7 +74,7 @@ async def websocket_endpoint(
 ) -> None:
     """WebSocket endpoint for bidirectional streaming with ADK."""
     session_agent, session_tools = create_agent(session_id=session_id, config=config)
-    session_artifact_service = DiskArtifactService("sessions/test_session")
+    session_artifact_service = DiskArtifactService(ensure_sessions_root() / "test_session")
     session_runner = Runner(
         app_name=APP_NAME,
         agent=session_agent,

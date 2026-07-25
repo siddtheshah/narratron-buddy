@@ -18,6 +18,7 @@ from deployer.deployer import LocalDeployer, SessionMetadata
 from deployer.session_manager import SessionManager
 from utils.config_loader import get_config
 from utils.email_service import send_password_reset_email
+from utils.session_paths import ensure_sessions_root
 
 flags.DEFINE_boolean(
     "allow_mock_payments",
@@ -50,8 +51,7 @@ else:
     db = DatabaseManager.from_live()
 
 # Sessions folder (absolute path resolution)
-sessions_folder = str((Path(__file__).parent / "sessions").resolve())
-os.makedirs(sessions_folder, exist_ok=True)
+sessions_folder = str(ensure_sessions_root())
 
 # Playlists folder from config (absolute path resolution)
 playlists_folder = str((Path(__file__).parent / config.get("music", {}).get("playlists_folder", "playlists")).resolve())

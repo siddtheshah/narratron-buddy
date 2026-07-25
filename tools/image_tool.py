@@ -20,6 +20,7 @@ from utils.image_utils import (
     extract_image_prompt,
     resolve_image_path,
 )
+from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +30,13 @@ class ImageTools:
     _reference_dir_cached: Optional[str] = None
 
     def __init__(self, config: dict, session_id: str):
-        root_dir = Path(__file__).parent.parent.resolve()
         self.active_session_id: str = session_id
-        
-        self.output_dir = str((root_dir / "sessions" / self.active_session_id / "output" / "artifacts" / "images").resolve())
+
+        sessions_root = ensure_sessions_root()
+        self.output_dir = str((sessions_root / self.active_session_id / "output" / "artifacts" / "images").resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
-        self.reference_dir = str((root_dir / "sessions" / self.active_session_id / "references").resolve())
+        self.reference_dir = str((sessions_root / self.active_session_id / "references").resolve())
         os.makedirs(self.reference_dir, exist_ok=True)
         
         # Reuse shared genai Client instance across session re-initializations

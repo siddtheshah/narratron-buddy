@@ -1,17 +1,16 @@
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Optional
+from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
 class NotesTools:
     def __init__(self, config: dict, session_id: str):
-        root_dir = Path(__file__).parent.parent.resolve()
         self.active_session_id: str = session_id
 
-        self.notes_dir = str((root_dir / "sessions" / self.active_session_id / "output" / "artifacts" / "notes").resolve())
+        self.notes_dir = str((ensure_sessions_root() / self.active_session_id / "output" / "artifacts" / "notes").resolve())
         os.makedirs(self.notes_dir, exist_ok=True)
 
     def get_effective_notes_dir(self) -> str:

@@ -15,6 +15,7 @@ from tools.image_tool import ImageTools
 from tools.music_tool import MusicTools
 from tools.notes_tool import NotesTools
 from utils.config_loader import get_config
+from utils.session_paths import ensure_sessions_root
 
 load_dotenv()
 
@@ -145,7 +146,7 @@ async def main():
     print("Initializing ADK Agent...")
     narratron_agent, _ = create_agent(session_id="default_session", config=config)
     session_service = InMemorySessionService()
-    artifact_service = DiskArtifactService("sessions/artifacts")
+    artifact_service = DiskArtifactService(ensure_sessions_root() / "artifacts")
     # The runner manages the execution context and stream connections.
     runner = Runner(
         app_name="narratron_app",

@@ -20,6 +20,7 @@ from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import handle_live_websocket_connection
 from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
 from utils.config_loader import get_config
+from utils.session_paths import ensure_sessions_root
 from web_viewer_app import (
     add_chat_message,
     app,
@@ -123,7 +124,7 @@ async def agent_websocket_endpoint(
     s_chat_tools.on_send_chat_message = lambda text: handle_global_chat_message(text, session_id=session_id)
 
     # Construct session-scoped artifact service if using disk-based storage
-    disk_service_path = f"sessions/{session_id}/output/artifacts"
+    disk_service_path = ensure_sessions_root() / session_id / "output" / "artifacts"
 
     if use_in_memory_artifacts:
         in_mem_svc = PreloadedInMemoryArtifactService()

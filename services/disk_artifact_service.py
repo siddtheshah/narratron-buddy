@@ -5,6 +5,7 @@ from typing import Any, Optional, Union
 from google.genai import types
 from google.adk.artifacts.base_artifact_service import BaseArtifactService, ArtifactVersion, ensure_part
 from google.adk.errors.input_validation_error import InputValidationError
+from utils.session_paths import ensure_sessions_root
 
 class DiskArtifactService(BaseArtifactService):
     """A disk-file based implementation of ADK's artifact service.
@@ -25,8 +26,7 @@ class DiskArtifactService(BaseArtifactService):
         
         base_dir = self.directory
         if session_id:
-            root_dir = Path(__file__).parent.parent.resolve()
-            base_dir = root_dir / "sessions" / session_id / "output" / "artifacts"
+            base_dir = ensure_sessions_root() / session_id / "output" / "artifacts"
             base_dir.mkdir(parents=True, exist_ok=True)
             
         # Guard against traversal
@@ -94,8 +94,7 @@ class DiskArtifactService(BaseArtifactService):
         filenames = []
         target_dir = self.directory
         if session_id:
-            root_dir = Path(__file__).parent.parent.resolve()
-            target_dir = root_dir / "sessions" / session_id / "output" / "artifacts"
+            target_dir = ensure_sessions_root() / session_id / "output" / "artifacts"
 
         if not target_dir.exists():
             return filenames
@@ -168,7 +167,7 @@ class DiskArtifactService(BaseArtifactService):
         session_id: Optional[str] = None,
         version: Optional[int] = None,
     ) -> Optional[ArtifactVersion]:
-        filepath = self._get_path(filename)
+        filepath = self._get_path(filename, session_id=session_id)
         if not filepath.is_file():
             return None
             

@@ -9,6 +9,7 @@ from fastapi import WebSocket
 
 from components.chat_manager import ChatManager
 from utils.image_utils import extract_image_prompt
+from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +21,14 @@ class CanvasStateManager:
     def sessions_dir(self) -> Path:
         if getattr(self, "base_sessions_dir", None) is not None:
             return self.base_sessions_dir
-        return (Path(__file__).parent.parent / "sessions").resolve()
+        return ensure_sessions_root()
 
     def __init__(self, session_id: str, base_sessions_dir: Optional[Path] = None):
         self.session_id = session_id
         if base_sessions_dir is not None:
             self.base_sessions_dir = Path(base_sessions_dir).resolve()
         else:
-            self.base_sessions_dir = (Path(__file__).parent.parent / "sessions").resolve()
+            self.base_sessions_dir = ensure_sessions_root()
         chat_output_dir = str(self.sessions_dir / session_id / "output" / "chats")
         self.chat_manager = ChatManager(output_dir=chat_output_dir)
         self.current_image_basename: Optional[str] = None  
