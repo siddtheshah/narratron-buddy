@@ -240,6 +240,11 @@
     </div>
 
     <div id="chat-tab" class="tab-content active">
+        <div id="chat-user-bar" style="padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15); display: flex; align-items: center; gap: 8px; font-size: 0.8rem;">
+            <span style="color: #94a3b8; font-weight: 500; white-space: nowrap;">Name:</span>
+            <input type="text" id="chat-name-input" style="flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 3px 10px; color: #fff; font-size: 0.8rem; outline: none; font-family: inherit;" placeholder="Your Chat Name..." title="Click to set/change your chat display name">
+            <span id="chat-name-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
+        </div>
         <div id="chat-messages"></div>
         <form id="chat-form">
             <input type="text" id="chat-input" placeholder="Type an idea..." autocomplete="off" required>
@@ -270,8 +275,119 @@
         const sessionId = urlParams.get('session_id') || 'default';
         document.getElementById('popout-session-id').textContent = `Session: ${sessionId}`;
 
+        const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
+        const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
+
+        function generateFunUsername() {
+            const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+            const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+            const num = Math.floor(Math.random() * 90) + 10;
+            return `${adj} ${noun} ${num}`;
+        }
+
+        function getAuthorColor(author) {
+            if (!author || author.toLowerCase() === 'agent' || author.toLowerCase() === 'narratron') {
+                return '#ffffff'; // Reserved white exclusively for Narratron
+            }
+            let hash = 0;
+            for (let i = 0; i < author.length; i++) {
+                hash = author.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = Math.abs(hash) % 360;
+            return `hsl(${hue}, 85%, 68%)`;
+        }
+
+        function renderChatMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'chat-message';
+
+            const rawAuthor = msg.author || 'Narratron';
+            const isNarratron = (rawAuthor.toLowerCase() === 'agent' || rawAuthor.toLowerCase() === 'narratron');
+            const displayAuthor = isNarratron ? 'Narratron' : rawAuthor;
+            const color = getAuthorColor(displayAuthor);
+
+            const prefixSpan = document.createElement('span');
+            prefixSpan.className = 'chat-prefix';
+            prefixSpan.style.color = color;
+            prefixSpan.style.fontWeight = '600';
+            prefixSpan.style.marginRight = '6px';
+            prefixSpan.textContent = `${displayAuthor}:`;
+
+            const textSpan = document.createElement('span');
+            textSpan.className = 'chat-text';
+            textSpan.textContent = msg.text;
+
+            div.appendChild(prefixSpan);
+            div.appendChild(textSpan);
+            return div;
+        }
+
+        let currentChatUsername = "";
+        let isAuthenticatedUser = false;
+
+        async function initChatUser() {
+            try {
+                const res = await fetch('/api/auth/me');
+                const data = await res.json();
+                if (data.authenticated && data.user && data.user.username) {
+                    currentChatUsername = data.user.username;
+                    isAuthenticatedUser = true;
+                    const badge = document.getElementById('chat-name-badge');
+                    if (badge) {
+                        badge.textContent = 'Member';
+                        badge.style.background = 'rgba(34, 197, 94, 0.2)';
+                        badge.style.color = '#4ade80';
+                    }
+                }
+            } catch (e) {}
+
+            if (!currentChatUsername) {
+                const savedAnonName = localStorage.getItem('narratron_anon_chat_name');
+                if (savedAnonName && savedAnonName.trim()) {
+                    currentChatUsername = savedAnonName.trim();
+                } else {
+                    currentChatUsername = generateFunUsername();
+                    localStorage.setItem('narratron_anon_chat_name', currentChatUsername);
+                }
+            }
+
+            const nameInput = document.getElementById('chat-name-input');
+            if (nameInput) {
+                nameInput.value = currentChatUsername;
+                nameInput.addEventListener('change', updateChatName);
+                nameInput.addEventListener('blur', updateChatName);
+            }
+        }
+
+        function updateChatName() {
+            const nameInput = document.getElementById('chat-name-input');
+            if (!nameInput) return;
+            const newName = nameInput.value.trim();
+            if (newName) {
+                currentChatUsername = newName;
+                if (!isAuthenticatedUser) {
+                    localStorage.setItem('narratron_anon_chat_name', newName);
+                }
+                if (typeof broadcast !== 'undefined' && broadcast) {
+                    broadcast.postMessage({ type: 'name_updated', name: newName });
+                }
+            } else {
+                nameInput.value = currentChatUsername;
+            }
+        }
+
+        initChatUser();
+
         const myUserId = "Popout_" + Math.floor(Math.random() * 10000);
         const broadcast = new BroadcastChannel('narratron_popout_channel');
+
+        broadcast.onmessage = (event) => {
+            if (event.data && event.data.type === 'name_updated') {
+                currentChatUsername = event.data.name;
+                const nameInput = document.getElementById('chat-name-input');
+                if (nameInput) nameInput.value = currentChatUsername;
+            }
+        };
 
         // Tab Switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -302,10 +418,7 @@
                 if (messages.length !== lastMsgCount) {
                     chatMessages.innerHTML = '';
                     messages.forEach(msg => {
-                        const div = document.createElement('div');
-                        div.className = 'chat-message';
-                        div.textContent = msg.text;
-                        chatMessages.appendChild(div);
+                        chatMessages.appendChild(renderChatMessage(msg));
                     });
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                     lastMsgCount = messages.length;
@@ -337,7 +450,7 @@
                 await fetch('/api/chat' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ author: myUserId, text: text })
+                    body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
                 });
                 fetchChat();
                 broadcast.postMessage({ type: 'chat_sent', text: text });

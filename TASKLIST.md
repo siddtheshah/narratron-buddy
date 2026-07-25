@@ -11,7 +11,7 @@
 
 ## 3. Auth, Security & Monetization   
 - [x] Password reset flow
-- [ ] Improve auth: ensure access tokens are invalidated when a user logs out
+- [x] Improve auth: ensure access tokens are invalidated when a user logs out
 - [x] Payments setup (buy credits)
 
 ## 4. Narratron UI & Canvas Features
@@ -22,3 +22,6 @@
 - [x] Session export: gather all created images and download as a ZIP file
 - [x] Look back: pop-up arrows to navigate previous and next images
 - [x] Stream plugin: whenever mic is active in canvas, focus shifts in stream and returns when mic is off
+
+## Chat
+- [x] Have user name be associated with the chat message in the UI. Handling for anonymous viewers.
