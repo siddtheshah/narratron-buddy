@@ -972,12 +972,54 @@
 
         // Music player controls and state
         let currentPlaylistTracks = [];
-        let currentTrackIndex = 0;
+        // Each playlist keeps its own shuffle cycle. A track is added to its
+        // played set as soon as it starts, so changing playlists does not reset
+        // the cycle when the user later returns to it.
+        const playlistPlaybackState = new Map();
         let bgMusic = new Audio();
         let isMuted = false;
         let lastPlaylistTime = 0;
         let activePlaylistName = null;
         let fadeInterval = null;
+        let currentTrackSrc = null;
+        let lastMusicStateSave = 0;
+        const musicPlaybackStorageKey = `narratron-music-playback:${sessionId}`;
+        let restoredMusicPlayback = loadMusicPlaybackState();
+
+        function loadMusicPlaybackState() {
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(musicPlaybackStorageKey));
+                if (!saved || !saved.playlist || !saved.track) return null;
+
+                for (const [playlistName, playedTracks] of saved.playbackStates || []) {
+                    playlistPlaybackState.set(playlistName, {
+                        playedTracks: new Set(playedTracks),
+                        lastPlayedTrack: playedTracks[playedTracks.length - 1] || null,
+                    });
+                }
+                return saved;
+            } catch (error) {
+                console.warn("Could not restore saved music playback state:", error);
+                return null;
+            }
+        }
+
+        function saveMusicPlaybackState() {
+            if (!activePlaylistName || !currentTrackSrc) return;
+            try {
+                sessionStorage.setItem(musicPlaybackStorageKey, JSON.stringify({
+                    playlist: activePlaylistName,
+                    track: currentTrackSrc,
+                    position: Number.isFinite(bgMusic.currentTime) ? bgMusic.currentTime : 0,
+                    playbackStates: [...playlistPlaybackState.entries()].map(([name, state]) => [
+                        name,
+                        [...state.playedTracks],
+                    ]),
+                }));
+            } catch (error) {
+                console.warn("Could not save music playback state:", error);
+            }
+        }
 
         const musicMuteBtn = document.getElementById('music-mute-btn');
         const musicStatusSpan = document.getElementById('music-status');
@@ -991,6 +1033,13 @@
         bgMusic.addEventListener('ended', () => {
             playNextTrack();
         });
+        bgMusic.addEventListener('timeupdate', () => {
+            if (Date.now() - lastMusicStateSave >= 1000) {
+                lastMusicStateSave = Date.now();
+                saveMusicPlaybackState();
+            }
+        });
+        window.addEventListener('beforeunload', saveMusicPlaybackState);
 
         function cancelFade() {
             if (fadeInterval) {
@@ -1045,29 +1094,95 @@
             }, 30);
         }
 
-        function playPlaylist(tracks) {
+        function getPlaylistPlaybackState(playlistName, tracks) {
+            let state = playlistPlaybackState.get(playlistName);
+            if (!state) {
+                state = { playedTracks: new Set(), lastPlayedTrack: null };
+                playlistPlaybackState.set(playlistName, state);
+            }
+
+            // Keep the state valid if a playlist's contents change while the
+            // canvas is open (for example, after tracks are added or removed).
+            const availableTracks = new Set(tracks);
+            state.playedTracks = new Set(
+                [...state.playedTracks].filter(track => availableTracks.has(track))
+            );
+            return state;
+        }
+
+        function chooseNextTrack(playlistName, tracks) {
+            const state = getPlaylistPlaybackState(playlistName, tracks);
+            let candidates = tracks.filter(track => !state.playedTracks.has(track));
+
+            // Every song has played once: begin a new shuffle cycle.
+            if (candidates.length === 0) {
+                state.playedTracks.clear();
+                candidates = [...tracks];
+                // Avoid an immediate repeat at the cycle boundary when there
+                // is another track to choose from.
+                if (candidates.length > 1 && state.lastPlayedTrack) {
+                    candidates = candidates.filter(track => track !== state.lastPlayedTrack);
+                }
+            }
+
+            const track = candidates[Math.floor(Math.random() * candidates.length)];
+            state.playedTracks.add(track);
+            state.lastPlayedTrack = track;
+            return track;
+        }
+
+        function getRestoredTrack(playlistName, tracks) {
+            if (!restoredMusicPlayback) return null;
+
+            if (restoredMusicPlayback.playlist !== playlistName) {
+                // The agent selected a different playlist while this viewer was
+                // away, so its old track must not override the current choice.
+                restoredMusicPlayback = null;
+                sessionStorage.removeItem(musicPlaybackStorageKey);
+                return null;
+            }
+
+            const track = tracks.includes(restoredMusicPlayback.track)
+                ? restoredMusicPlayback.track
+                : null;
+            const position = Math.max(0, Number(restoredMusicPlayback.position) || 0);
+            restoredMusicPlayback = null;
+            return track ? { track, position } : null;
+        }
+
+        function playPlaylist(playlistName, tracks) {
             console.log("Playing playlist tracks:", tracks);
             currentPlaylistTracks = tracks;
-            currentTrackIndex = 0;
             if (currentPlaylistTracks.length > 0) {
-                playTrack(currentPlaylistTracks[currentTrackIndex]);
+                playTrack(chooseNextTrack(playlistName, currentPlaylistTracks));
             }
         }
 
-        function playTrack(src) {
+        function playTrack(src, startTime = 0) {
             console.log("Playing track:", src);
             if (!bgMusic.paused && bgMusic.src) {
                 fadeOut(() => {
-                    startTrack(src);
+                    startTrack(src, startTime);
                 }, 500);
             } else {
-                startTrack(src);
+                startTrack(src, startTime);
             }
         }
 
-        function startTrack(src) {
+        function startTrack(src, startTime = 0) {
+            currentTrackSrc = src;
             bgMusic.src = src;
             bgMusic.muted = isMuted;
+            if (startTime > 0) {
+                const restorePosition = () => {
+                    bgMusic.currentTime = startTime;
+                };
+                if (bgMusic.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                    restorePosition();
+                } else {
+                    bgMusic.addEventListener('loadedmetadata', restorePosition, { once: true });
+                }
+            }
             const targetVol = parseFloat(musicVolumeSlider.value);
             if (!isMuted && targetVol > 0) {
                 bgMusic.volume = 0;
@@ -1076,6 +1191,7 @@
             }
             bgMusic.play().then(() => {
                 fadeIn(2000);
+                saveMusicPlaybackState();
             }).catch(err => {
                 console.warn("Audio autoplay blocked/failed. User interaction may be required. Error:", err);
             });
@@ -1083,8 +1199,7 @@
 
         function playNextTrack() {
             if (currentPlaylistTracks.length === 0) return;
-            currentTrackIndex = (currentTrackIndex + 1) % currentPlaylistTracks.length;
-            playTrack(currentPlaylistTracks[currentTrackIndex]);
+            playTrack(chooseNextTrack(activePlaylistName, currentPlaylistTracks));
         }
 
         function stopPlaylist() {
@@ -1093,7 +1208,7 @@
                 bgMusic.pause();
                 bgMusic.src = "";
                 currentPlaylistTracks = [];
-                currentTrackIndex = 0;
+                currentTrackSrc = null;
             }, 500);
         }
 
@@ -1436,7 +1551,13 @@
                         if (activePlaylistName !== data.music.playlist) {
                             activePlaylistName = data.music.playlist;
                             musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist;
-                            playPlaylist(data.music.tracks);
+                            const restoredTrack = getRestoredTrack(data.music.playlist, data.music.tracks);
+                            if (restoredTrack) {
+                                currentPlaylistTracks = data.music.tracks;
+                                playTrack(restoredTrack.track, restoredTrack.position);
+                            } else {
+                                playPlaylist(data.music.playlist, data.music.tracks);
+                            }
                         }
                         
                         if (data.music.paused) {
