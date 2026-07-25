@@ -2,15 +2,30 @@ import asyncio
 import json
 import logging
 import os
+import threading
+import time
+from pathlib import Path
+from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.genai import types
 
-from utils.image_utils import resolve_image_path
+from components.canvas_state import CanvasStateManager
 
 logger = logging.getLogger(__name__)
+
+CANVAS_STATE_REFRESH_SECONDS = 45.0
+
+
+def format_canvas_state(canvas_state_manager: Optional[CanvasStateManager]) -> str:
+    """Format the compact canvas state injected into the live agent context."""
+    image_path = getattr(canvas_state_manager, "shown_image_path", None)
+    image_name = Path(image_path).name if image_path else "none"
+    image_prompt = getattr(canvas_state_manager, "shown_image_prompt", None) or "none"
+    playlist = getattr(canvas_state_manager, "current_playlist", None) or "none"
+    return f"[Canvas Image]: {image_name}, {image_prompt}\n[Canvas music]: {playlist}"
 
 async def handle_live_websocket_connection(
     websocket: WebSocket,
@@ -29,6 +44,7 @@ async def handle_live_websocket_connection(
     app_name: str = "narratron-bidi",
     send_setup_complete_immediately: bool = True,
     send_setup_after_delay: bool = False,
+    canvas_state_manager: Optional[object] = None,
 ) -> None:
     """Handles bidirectional WebSocket streaming between a client and ADK Gemini Live runner."""
     logger.debug(
@@ -133,22 +149,46 @@ async def handle_live_websocket_connection(
             except Exception as e:
                 logger.error(f"[LiveStreamService] Failed to send cooldown expired notification: {e}")
 
-        def handle_after_image_tool(tool_name: str, canvas_info: dict):
-            if canvas_info.get("path"):
-                desc = canvas_info.get("metadata_description") or "N/A"
-                prompt = canvas_info.get("prompt") or "N/A"
-                trans = canvas_info.get("transition") or "crossfade"
-                msg = f"[Canvas Observability] Active image on canvas: path='{canvas_info['path']}', prompt='{prompt}', description='{desc}', transition='{trans}'"
-                logger.info(f"[LiveStreamService] After tool canvas update: {msg}")
+        state_lock = threading.Lock()
+        # Start the refresh window when the live session starts; image tool calls
+        # can still force an immediate snapshot.
+        last_canvas_state_sent = time.monotonic()
+
+        def send_canvas_state(*, force: bool = False) -> bool:
+            """Inject the current image and music state, subject to the refresh interval."""
+            nonlocal last_canvas_state_sent
+            now = time.monotonic()
+            with state_lock:
+                if not force and now - last_canvas_state_sent < CANVAS_STATE_REFRESH_SECONDS:
+                    return False
+                msg = format_canvas_state(canvas_state_manager)
                 try:
-                    content = types.Content(parts=[types.Part(text=msg)])
-                    live_request_queue.send_content(content)
+                    live_request_queue.send_content(types.Content(parts=[types.Part(text=msg)]))
                 except Exception as e:
                     logger.error(f"[LiveStreamService] Failed to send canvas observability update: {e}")
+                    return False
+                last_canvas_state_sent = now
+            logger.info("[LiveStreamService] Canvas state update: %s", msg.replace("\n", " | "))
+            return True
+
+        def handle_after_image_tool(_tool_name: str, _canvas_info: dict):
+            # Every image tool call gets a fresh state snapshot, including failed/cooldown calls.
+            send_canvas_state(force=True)
 
         if image_tools:
             image_tools.on_cooldown_expired = handle_cooldown_expired
             image_tools.on_after_tool_call = handle_after_image_tool
+
+        async def canvas_state_refresh_task() -> None:
+            """Refresh agent context whenever the compact canvas state is older than 45 seconds."""
+            try:
+                while True:
+                    # Check frequently enough that a state which becomes stale just
+                    # after the sleep is refreshed promptly, without busy-waiting.
+                    await asyncio.sleep(1.0)
+                    send_canvas_state()
+            except asyncio.CancelledError:
+                return
 
         async def upstream_task() -> None:
             """Receives messages from WebSocket and sends to LiveRequestQueue."""
@@ -210,6 +250,7 @@ async def handle_live_websocket_connection(
                 event_json = json.dumps(event_dict)
                 await safe_send_text(event_json)
 
+        refresh_task = asyncio.create_task(canvas_state_refresh_task())
         try:
             await asyncio.gather(upstream_task(), downstream_task())
         except WebSocketDisconnect:
@@ -222,6 +263,8 @@ async def handle_live_websocket_connection(
         except Exception as e:
             logger.error(f"Unexpected error in streaming tasks: {e}", exc_info=True)
         finally:
+            refresh_task.cancel()
+            await asyncio.gather(refresh_task, return_exceptions=True)
             chat_tools.on_send_chat_message = on_global_chat_message
             live_request_queue.close()
     except Exception as e:

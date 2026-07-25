@@ -25,6 +25,7 @@ from web_viewer_app import (
     app,
     pause_current_playlist,
     resume_current_playlist,
+    get_canvas_state,
     update_current_playlist,
     update_shown_image,
 )
@@ -158,6 +159,7 @@ async def agent_websocket_endpoint(
         app_name=APP_NAME,
         send_setup_complete_immediately=False,
         send_setup_after_delay=True,
+        canvas_state_manager=get_canvas_state(session_id),
     )
 
 if __name__ == "__main__":
