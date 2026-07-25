@@ -47,14 +47,12 @@ RUN mkdir -p sessions output playlists reference_library
 COPY playlists/ playlists/
 COPY reference_library/ reference_library/
 
-ENV PORT=0
-
 # Run as non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE ${PORT}
+EXPOSE 8080
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
-CMD ["sh", "-c", "python combined_app.py --host=0.0.0.0 --port=${PORT}"]
+CMD ["sh", "-c", "python combined_app.py --host=0.0.0.0 --port=8080"]
