@@ -47,7 +47,7 @@ RUN mkdir -p sessions output playlists reference_library
 COPY playlists/ playlists/
 COPY reference_library/ reference_library/
 
-ENV PORT=8080
+ENV PORT=0
 
 # Run as non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser

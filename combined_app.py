@@ -162,4 +162,8 @@ async def agent_websocket_endpoint(
 
 if __name__ == "__main__":
     sys.argv = FLAGS(sys.argv, known_only=True)
+    logger.info("====================================================")
+    logger.info("HOST: %s", FLAGS.host)
+    logger.info("PORT: %s", FLAGS.port)
+    logger.info("====================================================")
     uvicorn.run(app, host=FLAGS.host, port=FLAGS.port)
