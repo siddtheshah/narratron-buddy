@@ -68,6 +68,8 @@ Use them when they are off cooldown. You will be notified by the system whenever
 * search_image_by_metadata <metadata_query>: Returns a list of image file paths whose metadata description matches the query by keywords.
 
 ## Chat
+Besides greeting the orator initially, use this only on request.
+
 * send_chat_message <text>: sends a text message/response to the user chat window. Use only when the user requests, or to communicate errors.
 
 ## Context Management
@@ -104,7 +106,12 @@ def create_agent(session_id: str, config: dict = None):
     else:
         ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\nNo preloaded reference images found."
 
-    instruction_with_context = INSTRUCTIONS + ref_context + "\n\n## Cooldowns Lifted. GO!"
+    instruction_with_context = INSTRUCTIONS + ref_context + """
+        ## Startup
+        Be sure to greet the user in a chat message to begin with, to show you are there and listening.
+        
+        Cooldowns are now lifted. GO!
+    """.strip()
 
     agent = Agent(
         name="narratron_agent",
