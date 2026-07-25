@@ -2,7 +2,7 @@
 
 ## App Deployment & Infrastructure
 - [ ] Cleanup daemon (triggers on session creation, removes sessions not marked durable and older than 7 days)
-- [ ] Ensure session dir works with mounted google cloud run filesystem. Create flag to set up resource paths per environment. 
+- [x] Ensure session dir works with mounted google cloud run filesystem. Create flag to set up resource paths per environment. 
 
 ## Frontend
 - [ ] About page. Need to have links to related projects and community servers. Bug reporting guidelines.

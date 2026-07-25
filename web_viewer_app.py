@@ -654,6 +654,14 @@ def get_stats_api():
 # Application Root Pages & Navigation
 # ========================================
 
+@app.get("/favicon.png", include_in_schema=False)
+def read_favicon():
+    """Serve the shared browser-tab icon."""
+    return FileResponse(
+        Path(__file__).parent / "templates" / "narratron favicon.png",
+        media_type="image/png",
+    )
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/join", response_class=HTMLResponse)
 def read_join_splash():
