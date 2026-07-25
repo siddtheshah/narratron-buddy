@@ -170,11 +170,16 @@ class TestSessionAPI(BaseTestCase):
         self.assertEqual(forgot_res.status_code, 200)
         data = forgot_res.json()
         self.assertEqual(data["status"], "ok")
-        self.assertIn("reset_link", data)
+        # reset_link must NOT be leaked in the API response
+        self.assertNotIn("reset_link", data)
 
-        # Extract token from reset link
-        reset_link = data["reset_link"]
-        token = reset_link.split("reset_token=")[-1]
+        # Extract token directly from DB (simulates receiving it via email)
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT token FROM password_reset_tokens ORDER BY rowid DESC LIMIT 1"
+            )
+            token = cursor.fetchone()["token"]
         self.assertTrue(len(token) > 10)
 
         # 3. Validate token

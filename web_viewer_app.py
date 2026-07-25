@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+import re
 import sys
 from typing import List, Optional
 
@@ -103,6 +104,14 @@ def get_canvas_state(session_id: Optional[str] = None) -> CanvasStateManager:
         _canvas_states[sid] = CanvasStateManager(session_id=sid, base_sessions_dir=local_deployer.base_dir)
     return _canvas_states[sid]
 
+_SAFE_PARAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.() \-]*$')
+
+def _safe_path_param(value: str, label: str = "parameter") -> str:
+    """Reject path components that could enable directory traversal."""
+    if not value or not _SAFE_PARAM_RE.match(value) or '..' in value:
+        raise HTTPException(status_code=400, detail=f"Invalid {label}.")
+    return value
+
 def get_current_user(request: Request) -> Optional[dict]:
     token = request.cookies.get("auth_token")
     if not token:
@@ -180,7 +189,6 @@ def forgot_password(req: ForgotPasswordRequest, request: Request):
     return {
         "status": "ok",
         "message": "If an account with that email or username exists, a password reset link has been sent.",
-        "reset_link": res.get("reset_link")
     }
 
 @app.get("/api/auth/reset-password/validate")
@@ -278,6 +286,8 @@ def get_payment_history(request: Request):
 
 @app.get("/sessions/{session_id}/references/{filename}")
 async def serve_session_reference(session_id: str, filename: str):
+    _safe_path_param(session_id, "session_id")
+    _safe_path_param(filename, "filename")
     file_path = session_manager.get_session_reference_dir(session_id) / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Session reference file not found")
@@ -285,6 +295,9 @@ async def serve_session_reference(session_id: str, filename: str):
 
 @app.get("/sessions/{session_id}/playlists/{playlist_name}/{filename}")
 async def serve_session_playlist_track(session_id: str, playlist_name: str, filename: str):
+    _safe_path_param(session_id, "session_id")
+    _safe_path_param(playlist_name, "playlist_name")
+    _safe_path_param(filename, "filename")
     file_path = session_manager.get_session_playlists_dir(session_id) / playlist_name / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Session playlist track not found")
@@ -292,6 +305,8 @@ async def serve_session_playlist_track(session_id: str, playlist_name: str, file
 
 @app.get("/sessions/{session_id}/output/{filename}")
 async def serve_session_output(session_id: str, filename: str):
+    _safe_path_param(session_id, "session_id")
+    _safe_path_param(filename, "filename")
     file_path = session_manager.get_session_output_dir(session_id) / filename
     if not file_path.exists():
         # Check subdirectories of output directory (e.g. output/images/filename)
