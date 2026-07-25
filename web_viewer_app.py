@@ -64,6 +64,12 @@ class ResetPasswordRequest(BaseModel):
 class ResolveJoinKeyRequest(BaseModel):
     join_key: str
 
+class BuyCreditsRequest(BaseModel):
+    package_id: Optional[str] = None
+    custom_credits: Optional[float] = None
+    custom_usd: Optional[float] = None
+    payment_method: Optional[str] = "card_mock"
+
 _canvas_states: dict[str, CanvasStateManager] = {}
 
 def get_canvas_state(session_id: Optional[str] = None) -> CanvasStateManager:
@@ -176,6 +182,48 @@ def reset_password(req: ResetPasswordRequest):
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
     return {"status": "ok", "message": "Password updated successfully! You can now log in with your new password."}
+
+# ========================================
+# Payments & Credit Top-Up API Endpoints
+# ========================================
+
+CREDIT_PACKAGES = {
+    "starter": {"credits": 50.0, "amount_usd": 5.00, "name": "Starter Pack"},
+    "pro": {"credits": 200.0, "amount_usd": 18.00, "name": "Pro Pack"},
+    "ultra": {"credits": 500.0, "amount_usd": 40.00, "name": "Ultra Pack"},
+}
+
+@app.post("/api/payments/buy-credits")
+def buy_credits(req: BuyCreditsRequest, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required to purchase credits.")
+
+    if req.package_id and req.package_id in CREDIT_PACKAGES:
+        pkg = CREDIT_PACKAGES[req.package_id]
+        credits_to_add = pkg["credits"]
+        usd_amount = pkg["amount_usd"]
+    elif req.custom_credits and req.custom_credits > 0 and req.custom_usd and req.custom_usd > 0:
+        credits_to_add = req.custom_credits
+        usd_amount = req.custom_usd
+    elif req.package_id is None and req.custom_credits is None:
+        pkg = CREDIT_PACKAGES["starter"]
+        credits_to_add = pkg["credits"]
+        usd_amount = pkg["amount_usd"]
+    else:
+        raise HTTPException(status_code=400, detail="Invalid package or credit amount specified.")
+
+    payment_method = req.payment_method or "card_mock"
+    result = db.add_user_credits(user["id"], credits_to_add, usd_amount, payment_method)
+    return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
+
+@app.get("/api/payments/history")
+def get_payment_history(request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required to view payment history.")
+    transactions = db.get_user_transactions(user["id"])
+    return {"status": "ok", "transactions": transactions}
 
 # ========================================
 # Session Asset Dynamic Routes

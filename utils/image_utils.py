@@ -58,18 +58,15 @@ def extract_image_metadata_description(file_path: str) -> str:
         pass
     return metadata_desc
 
-def embed_image_metadata(exif_obj, image_prompt: str, metadata_description: str):
+def embed_image_metadata(exif_obj, image_prompt: str):
     """Embeds image prompt and metadata description into PIL EXIF tags."""
     if exif_obj is None:
         return
     # 0x010e: ImageDescription
     exif_obj[0x010e] = image_prompt
     # 0x9286: UserComment
-    exif_obj[0x9286] = metadata_description
-    # 0x9c9b: XPTitle
     exif_obj[0x9c9b] = image_prompt.encode("utf-16le")
-    # 0x9c9c: XPComment
-    exif_obj[0x9c9c] = metadata_description.encode("utf-16le")
+
 
 def resolve_image_path(path_str: str, candidate_dirs: Optional[List[str]] = None) -> Optional[str]:
     """Resolves an image filename, path, or alias against direct existence and candidate directories."""

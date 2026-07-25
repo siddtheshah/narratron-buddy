@@ -364,6 +364,46 @@ class TestImageTools(BaseTestCase):
         self.assertIn("Successfully generated and displayed image", res)
         mock_part_cls.from_bytes.assert_called_once()
 
+    @patch("tools.image_tool.types.Part")
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_model_selection(self, mock_genai_client, mock_part_cls):
+        mock_part_data = MagicMock()
+        mock_part_data.inline_data.data = create_fake_image_bytes()
+        mock_response = MagicMock()
+        mock_response.candidates = [MagicMock(content=MagicMock(parts=[mock_part_data]))]
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_genai_client.return_value = mock_client_instance
+
+        tools = ImageTools(self.config, session_id="test_session")
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        tools.reference_dir = os.path.join(self.temp_dir, "refs")
+        os.makedirs(tools.output_dir, exist_ok=True)
+        os.makedirs(tools.reference_dir, exist_ok=True)
+
+        ref_file = os.path.join(tools.reference_dir, "ref1.png")
+        Image.new("RGB", (10, 10), color="blue").save(ref_file)
+        tools._load_references()
+
+        # 1. Simple render without reference image -> uses simple_model (imagen-3.0-fast-generate-001)
+        tools.create_image("a simple landscape", "desc")
+        mock_client_instance.models.generate_content.assert_called_with(
+            model="imagen-3.0-fast-generate-001",
+            contents=["a simple landscape"],
+        )
+
+        # Reset cooldown & mock
+        tools.last_create_time = 0.0
+        mock_client_instance.models.generate_content.reset_mock()
+
+        # 2. Render with reference image -> uses reference_model (gemini-3.1-flash-image)
+        tools.create_image("a castle in style of ref1", "desc", reference_images="ref1")
+        self.assertEqual(
+            mock_client_instance.models.generate_content.call_args.kwargs["model"],
+            "gemini-3.1-flash-image"
+        )
+
     @patch("tools.image_tool.genai.Client")
     def test_create_image_with_missing_reference_fails(self, mock_genai_client):
         tools = ImageTools(self.config, session_id="test_session")

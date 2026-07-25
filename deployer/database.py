@@ -64,6 +64,12 @@ class DatabaseManager:
                 except Exception:
                     pass
 
+            if "credits" not in user_cols:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN credits REAL DEFAULT 100.0")
+                except Exception:
+                    pass
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS auth_sessions (
                     token TEXT PRIMARY KEY,
@@ -120,6 +126,19 @@ class DatabaseManager:
             """)
 
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS payment_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    amount_usd REAL NOT NULL,
+                    credits_added REAL NOT NULL,
+                    payment_method TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS password_reset_tokens (
                     token TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -159,7 +178,7 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, salt, created_at, last_active_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO users (username, email, password_hash, salt, credits, created_at, last_active_at) VALUES (?, ?, ?, ?, 100.0, ?, ?)",
                     (username, email, pwd_hash, salt_hex, now_iso, now_iso)
                 )
                 user_id = cursor.lastrowid
@@ -457,6 +476,18 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_user_by_username_or_email(self, username_or_email: str) -> Optional[Dict]:
+        """Look up user account by username or email (case-insensitive)."""
+        clean_input = username_or_email.strip().lower()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, username, email, credits, created_at FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?",
+                (clean_input, clean_input)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def record_deployment(self, session_id: str, user_id: int, join_key: str, cost: float = 5.0) -> bool:
         """Record deployment in database and deduct cost from user credits."""
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -478,6 +509,49 @@ class DatabaseManager:
             )
             conn.commit()
             return True
+
+    def add_user_credits(self, user_id: int, credits_amount: float, usd_amount: float, payment_method: str = "card_mock") -> Dict[str, Any]:
+        """Add credits to a user's account and log payment transaction."""
+        if credits_amount <= 0:
+            raise ValueError("Credit amount must be positive.")
+        
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET credits = credits + ? WHERE id = ?",
+                (credits_amount, user_id)
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("User not found.")
+            
+            cursor.execute(
+                """INSERT INTO payment_transactions (user_id, amount_usd, credits_added, payment_method, status, created_at)
+                   VALUES (?, ?, ?, ?, 'completed', ?)""",
+                (user_id, usd_amount, credits_amount, payment_method, now_iso)
+            )
+            tx_id = cursor.lastrowid
+            
+            cursor.execute("SELECT id, username, email, credits FROM users WHERE id = ?", (user_id,))
+            updated_user = dict(cursor.fetchone())
+            conn.commit()
+            return {
+                "transaction_id": tx_id,
+                "user": updated_user,
+                "credits_added": credits_amount,
+                "amount_usd": usd_amount,
+                "created_at": now_iso
+            }
+
+    def get_user_transactions(self, user_id: int) -> List[Dict[str, Any]]:
+        """Retrieve payment transaction history for a user."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM payment_transactions WHERE user_id = ? ORDER BY id DESC",
+                (user_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
 
     def get_deployment(self, session_id: str) -> Optional[Dict]:
         with self._get_connection() as conn:

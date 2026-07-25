@@ -12,7 +12,7 @@
 ## 3. Auth, Security & Monetization   
 - [x] Password reset flow
 - [ ] Improve auth: ensure access tokens are invalidated when a user logs out
-- [ ] Payments setup (buy credits)
+- [x] Payments setup (buy credits)
 
 ## 4. Narratron UI & Canvas Features
 - [x] Cinematic mode: exterior panel that only shows UI on mouseover
@@ -21,4 +21,4 @@
 - [x] Disable doodling option: let orator/session owner control whether doodles will be displayed on canvas (persisted to session state)
 - [x] Session export: gather all created images and download as a ZIP file
 - [x] Look back: pop-up arrows to navigate previous and next images
-- [ ] Stream plugin: whenever mic is active in canvas, focus shifts in stream and returns when mic is off
+- [x] Stream plugin: whenever mic is active in canvas, focus shifts in stream and returns when mic is off

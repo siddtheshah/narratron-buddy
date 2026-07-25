@@ -61,6 +61,8 @@ class ImageTools:
         self.last_create_time = 0.0
         self.last_show_time = 0.0
         self.cooldown_duration = float(config.get("image_generation", {}).get("cooldown_duration", 60.0))
+        self.simple_model = config.get("image_generation", {}).get("simple_model", "gemini-3.1-flash-lite-image")
+        self.reference_model = config.get("image_generation", {}).get("reference_model", "gemini-3.1-flash-image")
 
         # In-memory mapping of custom image names/aliases to file paths
         self.image_aliases: Dict[str, str] = {}
@@ -227,7 +229,6 @@ class ImageTools:
     def create_image(
         self,
         image_prompt: str,
-        metadata_description: str,
         image_name: Optional[str] = None,
         reference_images: Union[list[str], str, None] = None,
         display: bool = True
@@ -236,7 +237,6 @@ class ImageTools:
 
         Args:
             image_prompt: The prompt describing the image to generate.
-            metadata_description: A description to embed as metadata in the image.
             image_name: Optional friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
             display: Whether to automatically display the image on the canvas upon creation (default True).
@@ -244,6 +244,7 @@ class ImageTools:
         Returns:
             A string indicating the file path of the saved generated image, or an error message.
         """
+        logging.info(f"[create_image_tool] image_prompt: {image_prompt}, image_name: {image_name}, reference_images: {reference_images}, display: {display}")
         try:
             now = time.time()
             elapsed = now - self.last_create_time
@@ -254,7 +255,6 @@ class ImageTools:
                 res = f"Error: create_image is on cooldown. Please wait {remaining} more seconds before generating another image."
                 self._trigger_after_tool_call("create_image")
                 return res
-
             resolved_refs = []
             if reference_images:
                 if isinstance(reference_images, str):
@@ -290,10 +290,11 @@ class ImageTools:
 
             prompt_parts.append(image_prompt)
 
-            logger.info(f"[create_image tool] Generating image from prompt: {image_prompt[:100]}...")
+            model_name = self.reference_model if resolved_refs else self.simple_model
+            logger.info(f"[create_image tool] Generating image using model '{model_name}' from prompt: {image_prompt[:100]}...")
             
             response = self.client.models.generate_content(
-                model="gemini-3.1-flash-image",
+                model=model_name,
                 contents=prompt_parts,
             )
             
@@ -340,7 +341,7 @@ class ImageTools:
                 filepath = os.path.join(out_folder, filename)
                  
                 exif = image.getexif()
-                embed_image_metadata(exif, image_prompt, metadata_description)
+                embed_image_metadata(exif, image_prompt)
                  
                 image.save(filepath, "JPEG", exif=exif, quality=95)
                 saved_paths.append(filepath)

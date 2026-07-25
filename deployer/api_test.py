@@ -203,6 +203,50 @@ class TestSessionAPI(BaseTestCase):
         self.assertEqual(new_login.status_code, 200)
         self.assertEqual(new_login.json()["user"]["username"], "pw_reset_user")
 
+    def test_buy_credits_api_flow(self):
+        # 1. Unauthenticated request -> 401
+        unauth_res = self.client.post("/api/payments/buy-credits", json={"package_id": "starter"})
+        self.assertEqual(unauth_res.status_code, 401)
+
+        # 2. Register & log in
+        reg_res = self.client.post("/api/auth/register", json={
+            "username": "buyer_user",
+            "email": "buyer@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        # Initial balance (100.0)
+        me_res = self.client.get("/api/auth/me")
+        self.assertEqual(me_res.json()["user"]["credits"], 100.0)
+
+        # 3. Buy Pro package (200 credits for $18.00)
+        buy_res = self.client.post("/api/payments/buy-credits", json={"package_id": "pro"})
+        self.assertEqual(buy_res.status_code, 200)
+        buy_data = buy_res.json()
+        self.assertEqual(buy_data["status"], "ok")
+        self.assertEqual(buy_data["credits_added"], 200.0)
+        self.assertEqual(buy_data["user"]["credits"], 300.0)
+
+        # 4. Check payment history endpoint
+        hist_res = self.client.get("/api/payments/history")
+        self.assertEqual(hist_res.status_code, 200)
+        hist_data = hist_res.json()
+        self.assertEqual(hist_data["status"], "ok")
+        self.assertEqual(len(hist_data["transactions"]), 1)
+        self.assertEqual(hist_data["transactions"][0]["credits_added"], 200.0)
+        self.assertEqual(hist_data["transactions"][0]["amount_usd"], 18.00)
+
+        # 5. Buy custom one-off payment (150 credits for $15.00)
+        custom_res = self.client.post("/api/payments/buy-credits", json={
+            "custom_credits": 150.0,
+            "custom_usd": 15.00
+        })
+        self.assertEqual(custom_res.status_code, 200)
+        custom_data = custom_res.json()
+        self.assertEqual(custom_data["credits_added"], 150.0)
+        self.assertEqual(custom_data["user"]["credits"], 450.0)
+
 
 if __name__ == "__main__":
     unittest.main()

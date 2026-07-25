@@ -78,7 +78,12 @@ def send_password_reset_email(to_email: str, username: str, reset_link: str) -> 
     </html>
     """
 
-    if FLAGS.send_emails and smtp_host:
+    try:
+        should_send = bool(FLAGS.send_emails)
+    except Exception:
+        should_send = False
+
+    if should_send and smtp_host:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject

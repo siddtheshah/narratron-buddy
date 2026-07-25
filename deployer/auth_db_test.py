@@ -156,6 +156,28 @@ class TestDatabaseManager(BaseTestCase):
         # Old session token invalidated
         self.assertIsNone(self.db.validate_session_token(session_token))
 
+    def test_buy_credits_and_transactions(self):
+        user = self.db.register_user("credituser", "credit@example.com", "Password123")
+        initial_credits = user["credits"]
+
+        # Add credits (e.g. Pro pack: 200 credits for $18.00)
+        res = self.db.add_user_credits(user["id"], 200.0, 18.00, payment_method="card_mock")
+        self.assertEqual(res["credits_added"], 200.0)
+        self.assertEqual(res["amount_usd"], 18.00)
+        self.assertEqual(res["user"]["credits"], initial_credits + 200.0)
+
+        # Check transactions history
+        txs = self.db.get_user_transactions(user["id"])
+        self.assertEqual(len(txs), 1)
+        self.assertEqual(txs[0]["credits_added"], 200.0)
+        self.assertEqual(txs[0]["amount_usd"], 18.00)
+        self.assertEqual(txs[0]["payment_method"], "card_mock")
+        self.assertEqual(txs[0]["status"], "completed")
+
+        # Adding invalid/negative credits fails
+        with self.assertRaises(ValueError):
+            self.db.add_user_credits(user["id"], -10.0, 5.0)
+
 
 if __name__ == "__main__":
     unittest.main()
