@@ -18,15 +18,24 @@ class TestSessionAPI(BaseTestCase):
     def setUp(self):
         super().setUp()
         FLAGS.allow_mock_payments = True
+        FLAGS.testing_use_local_database = True
+        self._original_db_is_live = db.is_live
+        self._original_db_path = db.db_path
         self.test_dir = tempfile.mkdtemp()
         local_deployer.base_dir = Path(self.test_dir).resolve()
         local_deployer.base_dir.mkdir(parents=True, exist_ok=True)
+        # The app module is already imported when these tests run, so switch its
+        # shared manager to the local database selected by the testing flag.
+        db.is_live = False
         db.db_path = Path(self.test_dir) / "test_api_deployer.db"
         db._init_db()
         self.client = TestClient(app)
 
     def tearDown(self):
         FLAGS.allow_mock_payments = False
+        FLAGS.testing_use_local_database = False
+        db.is_live = self._original_db_is_live
+        db.db_path = self._original_db_path
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_root_and_join_serves_splash_page(self):
@@ -80,7 +89,7 @@ class TestSessionAPI(BaseTestCase):
 
         response = self.client.post(
             "/api/sessions/create-and-deploy",
-            data={"name": "Integration Test Session"},
+            data={"name": "Integration Test Session", "style": "storybook watercolor"},
             files=[
                 ("reference_files", ref_file),
                 ("playlist_ambient", track_file),
@@ -94,6 +103,10 @@ class TestSessionAPI(BaseTestCase):
         join_key = data["session"]["join_key"]
         self.assertIsNotNone(session_id)
         self.assertIsNotNone(join_key)
+        self.assertEqual(
+            (local_deployer._get_session_dir(session_id) / "style.txt").read_text(encoding="utf-8"),
+            "storybook watercolor",
+        )
 
         # Test resolving join key
         res_key = self.client.post("/api/sessions/resolve-join-key", json={"join_key": join_key})

@@ -14,6 +14,7 @@ class TestDatabaseManager(BaseTestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_deployer.db"
         self.db = DatabaseManager.from_local(db_path=str(self.db_file))
+        self.db._init_db()
 
     def tearDown(self):
         import gc
@@ -88,7 +89,9 @@ class TestDatabaseManager(BaseTestCase):
         }
         image_files = [
             {"filename": "test_out.png", "category": "output", "data": b"PNG_DATA"},
-            {"filename": "test_ref.jpg", "category": "reference", "data": b"JPG_DATA"}
+            {"filename": "test_ref.jpg", "category": "reference", "data": b"JPG_DATA"},
+            # Session-root files are exported with category "." by CanvasStateManager.
+            {"filename": "style.txt", "category": ".", "data": b"moody watercolor"},
         ]
 
         res = self.db.export_session_to_db(session_id, state_data, image_files, user_id=user["id"], name="Export Test")
@@ -97,7 +100,7 @@ class TestDatabaseManager(BaseTestCase):
         exported = self.db.get_exported_session(session_id)
         self.assertIsNotNone(exported)
         self.assertEqual(exported["name"], "Export Test")
-        self.assertEqual(len(exported["images"]), 2)
+        self.assertEqual(len(exported["images"]), 3)
 
         # Test reconstruction into target directory
         recon_dir = Path(self.temp_dir.name) / "reconstructed_session"
@@ -108,6 +111,7 @@ class TestDatabaseManager(BaseTestCase):
         self.assertEqual((recon_dir / "output" / "test_out.png").read_bytes(), b"PNG_DATA")
         self.assertTrue((recon_dir / "references" / "test_ref.jpg").exists())
         self.assertEqual((recon_dir / "references" / "test_ref.jpg").read_bytes(), b"JPG_DATA")
+        self.assertEqual((recon_dir / "style.txt").read_text(encoding="utf-8"), "moody watercolor")
 
     def test_stats_tracking(self):
         user1 = self.db.register_user("statsuser1", "stats1@example.com", "Password123")

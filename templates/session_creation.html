@@ -309,7 +309,7 @@
             color: var(--text-secondary);
         }
 
-        input[type="text"], input[type="password"], input[type="email"], select {
+        input[type="text"], input[type="password"], input[type="email"], select, textarea {
             background: rgba(11, 13, 18, 0.6);
             border: 1px solid var(--card-border);
             border-radius: var(--radius-md);
@@ -321,7 +321,7 @@
             transition: all 0.2s ease;
         }
 
-        input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus {
+        input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
             border-color: var(--accent-primary);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
         }
@@ -601,6 +601,12 @@
                 <div class="form-group">
                     <label for="sessionName">Session Name</label>
                     <input type="text" id="sessionName" placeholder="e.g. Desert Mystery Adventure" value="Narratron Adventure">
+                </div>
+
+                <div class="form-group">
+                    <label for="sessionStyle">Default Image Style</label>
+                    <textarea id="sessionStyle" rows="3" placeholder="e.g. cinematic watercolor, warm desert palette, soft ink outlines"></textarea>
+                    <small>Applied to generated images unless their prompt specifies a style.</small>
                 </div>
 
                 <div class="form-group">
@@ -1424,6 +1430,7 @@
             }
 
             const name = document.getElementById('sessionName').value.trim() || 'Narratron Canvas';
+            const style = document.getElementById('sessionStyle').value.trim();
             const deployBtn = document.getElementById('deployBtn');
             const deploySpinner = document.getElementById('deploySpinner');
             const deployBtnText = document.getElementById('deployBtnText');
@@ -1435,6 +1442,7 @@
             try {
                 const formData = new FormData();
                 formData.append('name', name);
+                formData.append('style', style);
 
                 refFiles.forEach(file => {
                     formData.append('reference_files', file);

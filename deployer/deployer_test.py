@@ -35,6 +35,7 @@ class TestLocalDeployer(BaseTestCase):
             reference_files=ref_files,
             playlists_data=playlists,
             session_config=config,
+            style="painterly fantasy illustrations",
             session_id="test_session_001",
         )
 
@@ -50,6 +51,7 @@ class TestLocalDeployer(BaseTestCase):
         self.assertTrue((session_path / "references" / "hero.png").exists())
         self.assertTrue((session_path / "playlists" / "ambient" / "track1.mp3").exists())
         self.assertTrue((session_path / "session.json").exists())
+        self.assertEqual((session_path / "style.txt").read_text(encoding="utf-8"), "painterly fantasy illustrations")
 
     def test_deploy_and_list_sessions(self):
         s1 = self.deployer.create_session(name="Session 1", session_id="s1")

@@ -33,6 +33,8 @@ class ImageTools:
         self.active_session_id: str = session_id
 
         sessions_root = ensure_sessions_root()
+        self.style_path = sessions_root / self.active_session_id / "style.txt"
+        self.default_style = self._load_default_style()
         self.output_dir = str((sessions_root / self.active_session_id / "output" / "artifacts" / "images").resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
@@ -76,6 +78,24 @@ class ImageTools:
             self._load_references()
             ImageTools._references_cache = self.references_manifest
             ImageTools._reference_dir_cached = self.reference_dir
+
+    def _load_default_style(self) -> str:
+        """Load this session's optional default image style."""
+        try:
+            if self.style_path.is_file():
+                style = self.style_path.read_text(encoding="utf-8").strip()
+                if style:
+                    logger.info("[ImageTools] Loaded default image style for session '%s'.", self.active_session_id)
+                return style
+        except OSError as exc:
+            logger.warning("[ImageTools] Could not read default image style: %s", exc)
+        return ""
+
+    def _apply_default_style(self, image_prompt: str) -> str:
+        """Append the session style unless the prompt supplies a style itself."""
+        if self.default_style and not re.search(r"\bstyle\b", image_prompt, flags=re.IGNORECASE):
+            return f"{image_prompt}\n\nStyle: {self.default_style}"
+        return image_prompt
 
     def get_effective_output_dir(self) -> str:
         """Return active session output directory."""
@@ -245,7 +265,8 @@ class ImageTools:
         Returns:
             A string indicating the file path of the saved generated image, or an error message.
         """
-        logging.info(f"[create_image_tool] image_prompt: {image_prompt}, image_name: {image_name}, reference_images: {reference_images}, display: {display}")
+        effective_prompt = self._apply_default_style(image_prompt)
+        logging.info(f"[create_image_tool] image_prompt: {effective_prompt}, image_name: {image_name}, reference_images: {reference_images}, display: {display}")
         try:
             now = time.time()
             elapsed = now - self.last_create_time
@@ -289,10 +310,10 @@ class ImageTools:
                 
                 logger.info(f"[create_image tool] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
 
-            prompt_parts.append(image_prompt)
+            prompt_parts.append(effective_prompt)
 
             model_name = self.reference_model if resolved_refs else self.simple_model
-            logger.info(f"[create_image tool] Generating image using model '{model_name}' from prompt: {image_prompt[:100]}...")
+            logger.info(f"[create_image tool] Generating image using model '{model_name}' from prompt: {effective_prompt[:100]}...")
             
             response = self.client.models.generate_content(
                 model=model_name,
@@ -342,7 +363,7 @@ class ImageTools:
                 filepath = os.path.join(out_folder, filename)
                  
                 exif = image.getexif()
-                embed_image_metadata(exif, image_prompt)
+                embed_image_metadata(exif, effective_prompt)
                  
                 image.save(filepath, "JPEG", exif=exif, quality=95)
                 saved_paths.append(filepath)

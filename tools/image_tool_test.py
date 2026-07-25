@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from PIL import Image
@@ -61,6 +62,31 @@ class TestImageTools(BaseTestCase):
 
         mock_genai_client.assert_called_once()
         self.assertIs(tools1.client, tools2.client)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_default_style_is_loaded_and_appended_only_when_needed(self, mock_genai_client):
+        session_id = "session_default_style"
+        session_dir = Path(__file__).resolve().parent.parent / "sessions" / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(shutil.rmtree, session_dir, True)
+        (session_dir / "style.txt").write_text("moody watercolor", encoding="utf-8")
+
+        mock_part = MagicMock()
+        mock_part.inline_data.data = create_fake_image_bytes()
+        mock_genai_client.return_value.models.generate_content.return_value.candidates = [
+            MagicMock(content=MagicMock(parts=[mock_part]))
+        ]
+        tools = ImageTools(self.config, session_id=session_id)
+        tools.output_dir = self.temp_dir
+
+        tools.create_image("a moonlit harbor", display=False)
+        generated_prompt = mock_genai_client.return_value.models.generate_content.call_args.kwargs["contents"][-1]
+        self.assertIn("Style: moody watercolor", generated_prompt)
+
+        tools.last_create_time = 0
+        tools.create_image("a moonlit harbor in a noir style", display=False)
+        generated_prompt = mock_genai_client.return_value.models.generate_content.call_args.kwargs["contents"][-1]
+        self.assertEqual(generated_prompt, "a moonlit harbor in a noir style")
 
     @patch("tools.image_tool.genai.Client")
     def test_references_loading_and_caching(self, mock_genai_client):

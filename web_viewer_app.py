@@ -426,6 +426,7 @@ async def create_and_deploy_session(request: Request):
 
     form = await request.form()
     name = str(form.get("name", "Narratron Session"))
+    style = str(form.get("style", "")).strip()
 
     reference_files = []
     playlists_data = {}
@@ -447,6 +448,7 @@ async def create_and_deploy_session(request: Request):
         name=name,
         reference_files=reference_files,
         playlists_data=playlists_data,
+        style=style or None,
     )
     deployed_meta = local_deployer.deploy_session(metadata.session_id)
 

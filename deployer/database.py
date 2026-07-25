@@ -102,6 +102,7 @@ class DatabaseManager:
         if not self.is_live:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
         else:
             conn = _DictConnection(libsql.connect(
                 database=os.environ["TURSO_DATABASE_URL"],

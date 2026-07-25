@@ -39,6 +39,7 @@ class BaseDeployer(ABC):
         reference_files: Optional[List[tuple[str, bytes]]] = None,
         playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None,
         session_config: Optional[Dict] = None,
+        style: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> SessionMetadata:
         """Create a new session instance with mounted reference images and playlists."""
@@ -101,6 +102,7 @@ class LocalDeployer(BaseDeployer):
         reference_files: Optional[List[tuple[str, bytes]]] = None,
         playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None,
         session_config: Optional[Dict] = None,
+        style: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> SessionMetadata:
         """Create local session workspace and mount reference assets & playlists."""
@@ -118,6 +120,9 @@ class LocalDeployer(BaseDeployer):
         ref_dir.mkdir(parents=True, exist_ok=True)
         playlists_dir.mkdir(parents=True, exist_ok=True)
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        if style and style.strip():
+            (session_dir / "style.txt").write_text(style.strip(), encoding="utf-8")
 
         mounted_refs = []
         if reference_files:
