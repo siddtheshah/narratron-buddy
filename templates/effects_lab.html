@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Image Effects Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../static/css/image-effects.css">
+  <style>
+    :root { color-scheme: dark; --ink: #f8fafc; --subtle: #a5b4cc; --line: rgba(255,255,255,.12); --violet: #a78bfa; }
+    * { box-sizing: border-box; } body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0%, #2c1d5b 0, transparent 34%), #080a13; color: var(--ink); font-family: Outfit, sans-serif; }
+    main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 60px; }
+    .eyebrow { margin: 0 0 8px; color: #c4b5fd; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; font-size: .75rem; }
+    h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -.045em; } .intro { max-width: 680px; margin: 14px 0 26px; line-height: 1.55; color: var(--subtle); }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(16, 18, 34, .72); backdrop-filter: blur(12px); }
+    label { color: var(--subtle); font-size: .88rem; } select, input { margin-left: 8px; accent-color: var(--violet); } select { border: 1px solid var(--line); background: #17172a; color: var(--ink); border-radius: 8px; padding: 8px; font: inherit; }
+    input[type=range] { vertical-align: middle; } button { border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; color: var(--ink); background: rgba(255,255,255,.06); cursor: pointer; font: 500 .88rem Outfit, sans-serif; } button:hover { background: rgba(167,139,250,.25); }
+    .stage { margin: 25px auto 0; max-width: 1080px; }
+    figure { margin: 0; border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: #121323; box-shadow: 0 24px 52px rgba(0,0,0,.34); }
+    /* The source, effect canvas, and debug maps occupy the exact same native image box. */
+    #featured-figure .image-effect-frame { aspect-ratio: 1 / 1; min-height: 0; } figcaption { display: flex; justify-content: space-between; gap: 10px; padding: 15px 18px; font-size: 1rem; } figcaption span { color: var(--subtle); }
+    .status { margin-left: auto; font-size: .8rem; color: #c4b5fd; } @media (max-width: 600px) { main { width: min(100% - 24px, 1180px); padding-top: 30px; } .status { margin-left: 0; width: 100%; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Runtime-only prototype</p>
+    <h1>Image effects lab</h1>
+    <p class="intro">Bendy detects the artwork's strongest lines, uses them to divide the image into regions, then stretches and compresses those regions while preserving the source image bounds.</p>
+    <div class="controls">
+      <label>Artwork <select id="artwork"><option value="vortex">Spacetime vortex</option><option value="pirate">Paint pirate</option><option value="river">Glow river</option><option value="map">Candle map</option><option value="nightLake">Sparse night lake</option><option value="sunrise">Diffuse sunrise</option><option value="obsidian">Obsidian beams</option><option value="astrolabe">Brass astrolabe</option></select></label>
+      <label>Effect <select id="effect"><option value="bendy" selected>Bendy</option><option value="gleam3">Gleam 3</option><option value="creeping">Creeping darkness</option><option value="shining">Cloudy dreams</option><option value="sparkle">Starlight twinkle</option></select></label>
+      <label>Intensity <input id="intensity" type="range" min="-100" max="100" value="0" aria-label="Bendy intensity: negative reverses the warp, zero is undistorted, positive applies the warp"><output id="intensity-value" for="intensity">0</output></label>
+      <button id="pause" type="button">Pause motion</button>
+      <button id="gleam3-seed-map" type="button" aria-pressed="false">Show Gleam 3 flow seeds</button>
+      <button id="inverse-blur-map" type="button" aria-pressed="false">Show V inverse-Gaussian map</button>
+      <button id="bendy-line-map" type="button" aria-pressed="false">Show Bendy region lines</button>
+      <span id="status" class="status">Bendy: undistorted</span>
+    </div>
+    <section class="stage" aria-label="Large image effects preview">
+      <figure id="featured-figure">
+        <img id="featured-image" src="carousel/spacetime%20vortex.png" alt="Spacetime vortex preview">
+        <figcaption><strong id="artwork-title">Spacetime vortex</strong><span id="artwork-kind">space</span></figcaption>
+      </figure>
+    </section>
+  </main>
+  <script type="module">
+    import { attachImageEffect, IMAGE_EFFECTS } from '../static/js/image-effects.js';
+    const artworks = {
+      vortex: { src: 'carousel/spacetime%20vortex.png', alt: 'Spacetime vortex preview', title: 'Spacetime vortex', kind: 'space' },
+      pirate: { src: 'carousel/paint%20pirate.png', alt: 'Paint pirate preview', title: 'Paint pirate', kind: 'character' },
+      river: { src: 'carousel/glow%20river.png', alt: 'Glow river preview', title: 'Glow river', kind: 'landscape' },
+      map: { src: 'carousel/candle%20map.png', alt: 'Candle map detail preview', title: 'Candle map', kind: 'detail' },
+      nightLake: { src: 'carousel/sparse-night-lake.png', alt: 'Sparse night lake preview', title: 'Sparse night lake', kind: 'sparse highlights' },
+      sunrise: { src: 'carousel/diffuse-sunrise.png', alt: 'Diffuse sunrise preview', title: 'Diffuse sunrise', kind: 'diffuse light' },
+      obsidian: { src: 'carousel/obsidian-beams.png', alt: 'Obsidian beams preview', title: 'Obsidian beams', kind: 'hard highlights' },
+      astrolabe: { src: 'carousel/brass-astrolabe.png', alt: 'Brass astrolabe preview', title: 'Brass astrolabe', kind: 'dense specular detail' },
+    };
+    const featuredImage = document.querySelector('#featured-image');
+    const controllers = [attachImageEffect(featuredImage, { effect: 'bendy', intensity: 0 })];
+    const artwork = document.querySelector('#artwork'); const effect = document.querySelector('#effect'); const intensity = document.querySelector('#intensity'); const intensityValue = document.querySelector('#intensity-value'); const status = document.querySelector('#status'); const pause = document.querySelector('#pause'); const gleam3SeedMap = document.querySelector('#gleam3-seed-map'); const inverseBlurMap = document.querySelector('#inverse-blur-map'); const bendyLineMap = document.querySelector('#bendy-line-map');
+    function apply() { const signedIntensity = intensity.value / 100; const effectIntensity = effect.value === 'bendy' ? signedIntensity : Math.abs(signedIntensity); controllers.forEach(controller => { controller.setEffect(effect.value); controller.setIntensity(effectIntensity); }); intensityValue.value = intensity.value; intensityValue.textContent = intensity.value; status.textContent = `${IMAGE_EFFECTS[effect.value].label}: ${Number(intensity.value) === 0 ? 'undistorted' : `${intensity.value > 0 ? '+' : ''}${intensity.value}`}`; }
+    effect.addEventListener('change', apply); intensity.addEventListener('input', apply);
+    function syncPreviewAspectRatio() {
+      if (featuredImage.naturalWidth && featuredImage.naturalHeight) {
+        controllers[0].element.style.aspectRatio = `${featuredImage.naturalWidth} / ${featuredImage.naturalHeight}`;
+      }
+    }
+    featuredImage.addEventListener('load', syncPreviewAspectRatio);
+    if (featuredImage.complete) syncPreviewAspectRatio();
+    artwork.addEventListener('change', () => { const next = artworks[artwork.value]; featuredImage.src = next.src; featuredImage.alt = next.alt; document.querySelector('#artwork-title').textContent = next.title; document.querySelector('#artwork-kind').textContent = next.kind; });
+    pause.addEventListener('click', () => { const frozen = document.body.classList.toggle('motion-paused'); controllers.forEach(controller => controller.setPaused(frozen)); pause.textContent = frozen ? 'Resume motion' : 'Pause motion'; });
+    gleam3SeedMap.addEventListener('click', () => { const visible = gleam3SeedMap.getAttribute('aria-pressed') !== 'true'; controllers.forEach(controller => controller.setGleam3SeedMapVisible(visible)); gleam3SeedMap.setAttribute('aria-pressed', String(visible)); gleam3SeedMap.textContent = visible ? 'Hide Gleam 3 flow seeds' : 'Show Gleam 3 flow seeds'; });
+    inverseBlurMap.addEventListener('click', () => { const visible = inverseBlurMap.getAttribute('aria-pressed') !== 'true'; controllers.forEach(controller => controller.setInverseBlurMapVisible(visible)); inverseBlurMap.setAttribute('aria-pressed', String(visible)); inverseBlurMap.textContent = visible ? 'Hide V inverse-Gaussian map' : 'Show V inverse-Gaussian map'; });
+    bendyLineMap.addEventListener('click', () => { const visible = bendyLineMap.getAttribute('aria-pressed') !== 'true'; controllers.forEach(controller => controller.setBendyLineMapVisible(visible)); bendyLineMap.setAttribute('aria-pressed', String(visible)); bendyLineMap.textContent = visible ? 'Hide Bendy region lines' : 'Show Bendy region lines'; });
+  </script>
+  <style>.motion-paused .image-effect-frame::before, .motion-paused .image-effect-frame::after { animation-play-state: paused !important; }</style>
+</body>
+</html>

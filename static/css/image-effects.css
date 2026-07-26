@@ -1,0 +1,150 @@
+/* Non-destructive runtime image effects. The source image remains untouched. */
+.image-effect-frame {
+  --fx-intensity: .72;
+  position: relative;
+  display: block;
+  isolation: isolate;
+  overflow: hidden;
+  background: #070912;
+}
+
+.image-effect-source { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* A canvas holds a precomputed bright-pixel mask; it adds no image/video assets. */
+.image-effect-luminance {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  filter: blur(.65px);
+}
+
+/* The Fourier field is calculated at a small resolution then softly scaled over the art. */
+.image-effect-fourier-shadows {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  filter: blur(3px);
+}
+
+/* Light is rendered from a periodic source mask and blurred outward to form a bloom. */
+.image-effect-periodic-light {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  filter: blur(5px) saturate(1.15);
+}
+
+/* Source-tinted four-pointed stars are drawn only for isolated light points. */
+.image-effect-star-twinkle {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  filter: saturate(1.2);
+}
+
+/* Gleam 3 is a broad, renewing Gaussian field clipped by its seed mask. */
+.image-effect-gleam3 {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  filter: saturate(1.08);
+  image-rendering: auto;
+}
+
+/* Bendy is a complete reverse-mapped replacement, not a blended overlay. */
+.image-effect-bendy {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  image-rendering: auto;
+}
+
+/* Debug view: cyan marks the image lines that partition Bendy's regions. */
+.image-effect-bendy-line-map {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  image-rendering: auto;
+}
+
+/* Debug view: cyan value-flow peaks are the legal Gaussian birthplaces. */
+.image-effect-gleam3-seed-map {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: normal;
+  image-rendering: auto;
+}
+
+/* Debug view: warm = HSV Value above its Gaussian field; cool = below it. */
+.image-effect-v-inverse-map {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: normal;
+  image-rendering: auto;
+}
+
+.image-effect-frame::before,
+.image-effect-frame::after {
+  content: '';
+  position: absolute;
+  inset: -18%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 350ms ease;
+  will-change: transform, background-position;
+}
+
+.image-effect-frame.fx-vignette::after {
+  opacity: calc(var(--fx-intensity) * .58);
+  z-index: 3;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 38%, rgba(2, 3, 11, .62) 100%);
+}
+
+.image-effect-frame.fx-bloom::after {
+  opacity: calc(var(--fx-intensity) * .54);
+  z-index: 2;
+  mix-blend-mode: screen;
+  background: radial-gradient(ellipse at 50% 52%, transparent 35%, rgba(170, 204, 255, .17) 75%, rgba(255, 130, 233, .1));
+  animation: fx-ambient-breathe 4.2s ease-in-out infinite alternate;
+}
+
+@keyframes fx-ambient-breathe { from { transform: scale(.96); opacity: .7; } to { transform: scale(1.06); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .image-effect-frame::before, .image-effect-frame::after { animation: none !important; }
+}
