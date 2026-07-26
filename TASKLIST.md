@@ -19,4 +19,4 @@
 - [x] Agent state observability for music
 - [x] Style defaults. Let user give a style spec which will be fed to agent's create_image tool.
 - [x] Smart music randomization. Have the playlist pick a random song, and then subsequent songs will be picked from the remaining, until looped.
-- [ ] Glamorize images. Simple animation layer in a JS library that applies to existing images, rather than creating large video.
+- [x] Glamorize images. Simple animation layer in a JS library that applies to existing images, rather than creating large video.

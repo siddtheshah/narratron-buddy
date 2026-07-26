@@ -856,7 +856,7 @@
 
     <script type="module">
         import { startAudioRecorderWorklet, stopMicrophone } from "/static/js/audio-recorder.js";
-        import { attachImageEffect, IMAGE_EFFECTS, IMAGE_EFFECT_DEFAULT_INTENSITIES } from "/static/js/image-effects.js";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js";
 
         let lastTime = -1;
         let lastImageRawUrl = null;
@@ -1329,216 +1329,17 @@
 
         const ghostImage = document.getElementById('ghost-image');
         const rendererCanvas = document.getElementById('canvas-renderer');
-        const renderCtx = rendererCanvas ? rendererCanvas.getContext('2d') : null;
-
-        let currentLoadedImg = null;
-        let activeAnimReq = null;
-        let imageEffectController = null;
-
-        function resizeRendererCanvas() {
-            if (!rendererCanvas || !renderCtx) return;
-            const container = rendererCanvas.parentElement;
-            if (!container) return;
-            const rect = container.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-
-            if (rendererCanvas.width !== Math.floor(rect.width * dpr) ||
-                rendererCanvas.height !== Math.floor(rect.height * dpr)) {
-                rendererCanvas.width = Math.floor(rect.width * dpr);
-                rendererCanvas.height = Math.floor(rect.height * dpr);
-            }
-
-            renderCtx.setTransform(1, 0, 0, 1, 0, 0);
-            renderCtx.scale(dpr, dpr);
-
-            if (currentLoadedImg && !activeAnimReq) {
-                drawSingleImage(currentLoadedImg);
-            }
-            layoutImageEffect();
-        }
+        const imageRenderer = createImageRenderer({
+            canvas: rendererCanvas,
+            image: currentImage,
+            backgroundLayer: bgLayer,
+            loadedClassNames: ['t-crossfade', 'loaded'],
+        });
+        const resizeRendererCanvas = imageRenderer.resize;
+        const applyImageTransition = imageRenderer.applyTransition;
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
-
-        function normaliseImageEffect(effect) {
-            const candidate = String(effect || 'gleam3').toLowerCase().trim();
-            return IMAGE_EFFECTS[candidate] ? candidate : 'gleam3';
-        }
-
-        function defaultEffectIntensity(effect) {
-            return IMAGE_EFFECT_DEFAULT_INTENSITIES[effect] ?? IMAGE_EFFECT_DEFAULT_INTENSITIES.gleam3;
-        }
-
-        function layoutImageEffect(sourceImage = currentImage) {
-            if (!imageEffectController || !rendererCanvas || !sourceImage?.naturalWidth) return;
-            const rect = rendererCanvas.getBoundingClientRect();
-            const scale = Math.min(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight);
-            const width = sourceImage.naturalWidth * scale;
-            const height = sourceImage.naturalHeight * scale;
-            const frame = imageEffectController.element;
-            frame.style.left = `${(rect.width - width) / 2}px`;
-            frame.style.top = `${(rect.height - height) / 2}px`;
-            frame.style.width = `${width}px`;
-            frame.style.height = `${height}px`;
-            frame.style.display = 'block';
-        }
-
-        function applyImageEffect(sourceImage, effect, transition = 'none') {
-            if (!currentImage) return;
-            const resolvedEffect = normaliseImageEffect(effect);
-            const resolvedIntensity = defaultEffectIntensity(resolvedEffect);
-            if (resolvedEffect === 'none') {
-                if (imageEffectController) {
-                    imageEffectController.setEffect('none');
-                    imageEffectController.element.style.display = 'none';
-                }
-                return;
-            }
-            currentImage.style.position = 'static';
-            currentImage.style.opacity = '1';
-            currentImage.style.zIndex = 'auto';
-            currentImage.style.pointerEvents = 'none';
-            if (!imageEffectController) {
-                imageEffectController = attachImageEffect(currentImage, {
-                    effect: resolvedEffect,
-                    intensity: resolvedIntensity,
-                });
-                imageEffectController.element.classList.add('canvas-image-effect-frame');
-            } else {
-                imageEffectController.setEffect(resolvedEffect);
-                imageEffectController.setIntensity(resolvedIntensity);
-            }
-            layoutImageEffect(sourceImage);
-            const frame = imageEffectController.element;
-            if (transition === 'none') {
-                frame.style.transition = 'none';
-                frame.style.opacity = '1';
-            } else {
-                frame.style.transition = 'none';
-                frame.style.opacity = '0';
-                requestAnimationFrame(() => {
-                    frame.style.transition = `opacity ${transition === 'crossfade' ? 2000 : 1500}ms ease-in-out`;
-                    frame.style.opacity = '1';
-                });
-            }
-        }
-
-        function drawSingleImage(img) {
-            if (!renderCtx || !rendererCanvas) return;
-            const rect = rendererCanvas.getBoundingClientRect();
-            const w = rect.width;
-            const h = rect.height;
-            renderCtx.clearRect(0, 0, w, h);
-            if (img && img.complete && img.naturalWidth > 0) {
-                drawContainImage(renderCtx, img, w, h, 1.0);
-            }
-        }
-
-        function drawContainImage(ctx, img, containerW, containerH, opacity) {
-            if (!img || !img.complete || img.naturalWidth === 0) return;
-            const imgW = img.naturalWidth;
-            const imgH = img.naturalHeight;
-            const scale = Math.min(containerW / imgW, containerH / imgH);
-            const drawW = imgW * scale;
-            const drawH = imgH * scale;
-            const x = (containerW - drawW) / 2;
-            const y = (containerH - drawH) / 2;
-
-            ctx.save();
-            ctx.globalAlpha = opacity;
-            ctx.drawImage(img, x, y, drawW, drawH);
-            ctx.restore();
-        }
-
-        function easeInOutCubic(t) {
-            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-        }
-
-        async function applyImageTransition(newImgUrl, transition, effect = 'gleam3') {
-            resizeRendererCanvas();
-
-            const newImg = new Image();
-            newImg.crossOrigin = "anonymous";
-            newImg.src = newImgUrl;
-
-            try {
-                await newImg.decode();
-            } catch (e) {
-                await new Promise((resolve) => {
-                    newImg.onload = resolve;
-                    newImg.onerror = resolve;
-                });
-            }
-
-            if (currentImage) {
-                applyImageEffect(newImg, effect, transition);
-                currentImage.src = newImgUrl;
-                currentImage.classList.add('t-crossfade', 'loaded');
-            }
-
-            if (activeAnimReq) {
-                cancelAnimationFrame(activeAnimReq);
-                activeAnimReq = null;
-            }
-
-            const rect = rendererCanvas.getBoundingClientRect();
-            const containerW = rect.width;
-            const containerH = rect.height;
-            const oldImg = currentLoadedImg;
-            const hasOldImage = oldImg && oldImg.complete && oldImg.naturalWidth > 0;
-
-            if (transition === 'crossfade' && hasOldImage) {
-                const duration = 2000;
-                const startTime = performance.now();
-
-                const animate = (now) => {
-                    const elapsed = now - startTime;
-                    const progress = Math.min(1.0, elapsed / duration);
-                    const easeProgress = easeInOutCubic(progress);
-
-                    renderCtx.clearRect(0, 0, containerW, containerH);
-                    drawContainImage(renderCtx, newImg, containerW, containerH, 1.0);
-                    drawContainImage(renderCtx, oldImg, containerW, containerH, 1.0 - easeProgress);
-
-                    if (progress < 1.0) {
-                        activeAnimReq = requestAnimationFrame(animate);
-                    } else {
-                        activeAnimReq = null;
-                        currentLoadedImg = newImg;
-                    }
-                };
-
-                activeAnimReq = requestAnimationFrame(animate);
-
-            } else if (transition === 'none') {
-                drawSingleImage(newImg);
-                currentLoadedImg = newImg;
-
-            } else {
-                const duration = 1500;
-                const startTime = performance.now();
-
-                const animate = (now) => {
-                    const elapsed = now - startTime;
-                    const progress = Math.min(1.0, elapsed / duration);
-                    const easeProgress = easeInOutCubic(progress);
-
-                    renderCtx.clearRect(0, 0, containerW, containerH);
-                    drawContainImage(renderCtx, newImg, containerW, containerH, easeProgress);
-
-                    if (progress < 1.0) {
-                        activeAnimReq = requestAnimationFrame(animate);
-                    } else {
-                        activeAnimReq = null;
-                        currentLoadedImg = newImg;
-                    }
-                };
-
-                activeAnimReq = requestAnimationFrame(animate);
-            }
-
-            bgLayer.style.backgroundImage = `url(${newImgUrl})`;
-        }
 
         let imageHistory = [];
         let currentViewIndex = -1;
@@ -1857,62 +1658,15 @@
             });
         }
 
-        function resizeDoodleCanvas() {
-            if (!canvas || !ctx) return;
-            const rect = canvas.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-
-            if (canvas.width !== Math.floor(rect.width * dpr) || 
-                canvas.height !== Math.floor(rect.height * dpr)) {
-                canvas.width = Math.floor(rect.width * dpr);
-                canvas.height = Math.floor(rect.height * dpr);
-            }
-
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.scale(dpr, dpr);
-            redrawAllDoodles();
-        }
+        const doodleRenderer = createDoodleRenderer({
+            canvas,
+            isVisible: () => doodlesEnabled,
+        });
+        const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
+        const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
+        const renderSegment = doodleRenderer.renderSegment;
 
         window.addEventListener('resize', resizeDoodleCanvas);
-
-        function redrawAllDoodles() {
-            if (!ctx || !canvas) return;
-            const rect = canvas.getBoundingClientRect();
-            const w = rect.width;
-            const h = rect.height;
-
-            ctx.clearRect(0, 0, w, h);
-
-            doodleActions.forEach(action => {
-                if (action.type === 'draw') {
-                    renderSegment(
-                        action.x0 * w, action.y0 * h,
-                        action.x1 * w, action.y1 * h,
-                        action.color, action.size || 3
-                    );
-                }
-            });
-        }
-
-        function renderSegment(x0, y0, x1, y1, color, size) {
-            ctx.save();
-            ctx.beginPath();
-            if (color === 'erase') {
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.strokeStyle = 'rgba(0,0,0,1)';
-            } else {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = color;
-            }
-            
-            ctx.moveTo(x0, y0);
-            ctx.lineTo(x1, y1);
-            ctx.lineWidth = size;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.stroke();
-            ctx.restore();
-        }
 
         colorBtns.forEach(btn => {
             btn.addEventListener('click', () => {
