@@ -9,7 +9,6 @@ import warnings
 from absl import flags
 from dotenv import load_dotenv
 from fastapi import WebSocket
-from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from google import adk
 from google.adk.runners import Runner
@@ -69,7 +68,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 APP_NAME = "narratron-combined"
 
-# Mount static folder for Tester UI
+# Static assets shared by the canvas templates.
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
@@ -78,15 +77,6 @@ adk_session_service = InMemorySessionService()
 
 use_in_memory_artifacts = FLAGS.use_in_memory_artifacts
 
-
-# ========================================
-# Additional Combined App Endpoints
-# ========================================
-
-@app.get("/tester", response_class=HTMLResponse)
-async def read_tester():
-    """Serve the Bidi Agent Tester page."""
-    return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 # ========================================
 # Live Agent WebSocket Endpoint
