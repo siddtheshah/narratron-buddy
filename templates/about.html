@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Narratron Buddy</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0d12;
+            --card-bg: rgba(22, 27, 38, 0.72);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --accent-primary: #6366f1;
+            --accent-secondary: #a855f7;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            background:
+                radial-gradient(circle at 14% 12%, rgba(99, 102, 241, 0.18), transparent 31rem),
+                radial-gradient(circle at 86% 84%, rgba(168, 85, 247, 0.16), transparent 28rem),
+                var(--bg-color);
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.25rem 2.5rem;
+            background: rgba(11, 13, 18, 0.72);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--card-border);
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-primary);
+            font-size: 1.35rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            text-decoration: none;
+        }
+        .brand-icon {
+            display: grid;
+            width: 36px;
+            height: 36px;
+            place-items: center;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+        }
+        .nav-actions { display: flex; gap: 0.75rem; }
+        .nav-link {
+            padding: 0.55rem 0.9rem;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.2s ease;
+        }
+        .nav-link:hover {
+            border-color: rgba(99, 102, 241, 0.65);
+            background: rgba(99, 102, 241, 0.15);
+            transform: translateY(-1px);
+        }
+        main {
+            width: min(920px, calc(100% - 3rem));
+            margin: 0 auto;
+            padding: 4.5rem 0;
+        }
+        .content {
+            padding: clamp(1.5rem, 5vw, 3.5rem);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            background: var(--card-bg);
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.28);
+            backdrop-filter: blur(16px);
+        }
+        h1, h2, h3 { color: var(--text-primary); }
+        h1 {
+            margin: 0 0 1rem;
+            font-size: clamp(2.2rem, 5vw, 3.4rem);
+            line-height: 1.1;
+            background: linear-gradient(135deg, #f8fafc, #a5b4fc, #67e8f9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        h2 {
+            margin: 3rem 0 1.25rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--card-border);
+            font-size: 1.7rem;
+        }
+        h3 { margin: 1.75rem 0 0.55rem; font-size: 1.1rem; color: #c4b5fd; }
+        p, li { color: var(--text-secondary); font-size: 1.03rem; line-height: 1.75; }
+        p { margin: 0.6rem 0 1rem; }
+        ul, ol { padding-left: 1.4rem; }
+        a { color: #67e8f9; }
+        code {
+            padding: 0.15rem 0.35rem;
+            border-radius: 4px;
+            background: rgba(99, 102, 241, 0.2);
+            color: #c4b5fd;
+        }
+        hr { margin: 2rem 0; border: 0; border-top: 1px solid var(--card-border); }
+        @media (max-width: 600px) {
+            header { padding: 1rem; }
+            .brand { font-size: 1rem; }
+            .nav-link { padding: 0.5rem 0.65rem; }
+            main { width: min(100% - 2rem, 920px); padding: 2rem 0; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a class="brand" href="/join"><span class="brand-icon">🎨</span> Narratron Buddy</a>
+        <nav class="nav-actions" aria-label="Primary navigation">
+            <a class="nav-link" href="/join">Join</a>
+            <a class="nav-link" href="/deploy">Deploy</a>
+        </nav>
+    </header>
+    <main>
+        <article class="content">
+            <!-- ABOUT_CONTENT -->
+        </article>
+    </main>
+</body>
+</html>

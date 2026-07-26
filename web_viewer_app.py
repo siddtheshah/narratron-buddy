@@ -1,4 +1,5 @@
 import base64
+import html
 import hmac
 import json
 import logging
@@ -39,6 +40,76 @@ FLAGS = flags.FLAGS
 sys.argv = FLAGS(sys.argv, known_only=True)
 
 logger = logging.getLogger(__name__)
+
+
+def _format_about_inline(text: str) -> str:
+    """Render the small, safe Markdown subset used by ABOUT.md."""
+    escaped = html.escape(text, quote=False)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", escaped)
+
+    def link(match: re.Match) -> str:
+        label, url = match.groups()
+        if re.match(r"^(https?://|mailto:)", url):
+            return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+        return label
+
+    return re.sub(r"\[([^]]+)\]\(([^)]+)\)", link, escaped)
+
+
+def render_about_markdown(markdown_source: str) -> str:
+    """Convert the headings, lists, and paragraphs in ABOUT.md to page markup."""
+    blocks: List[str] = []
+    list_items: List[str] = []
+    list_tag: Optional[str] = None
+    paragraph: List[str] = []
+
+    def flush_list() -> None:
+        nonlocal list_items, list_tag
+        if list_items and list_tag:
+            blocks.append(f"<{list_tag}>" + "".join(list_items) + f"</{list_tag}>")
+        list_items = []
+        list_tag = None
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph
+        if paragraph:
+            blocks.append(f"<p>{_format_about_inline(' '.join(paragraph))}</p>")
+        paragraph = []
+
+    for raw_line in markdown_source.splitlines():
+        line = raw_line.strip()
+        heading = re.match(r"^(#{1,3})\s+(.+)$", line)
+        unordered_item = re.match(r"^[-*]\s+(.+)$", line)
+        ordered_item = re.match(r"^\d+\.\s+(.+)$", line)
+
+        if heading:
+            flush_paragraph()
+            flush_list()
+            level = len(heading.group(1))
+            blocks.append(f"<h{level}>{_format_about_inline(heading.group(2))}</h{level}>")
+        elif unordered_item or ordered_item:
+            flush_paragraph()
+            item_tag = "ul" if unordered_item else "ol"
+            if list_tag and list_tag != item_tag:
+                flush_list()
+            list_tag = item_tag
+            item_text = (unordered_item or ordered_item).group(1)
+            list_items.append(f"<li>{_format_about_inline(item_text)}</li>")
+        elif line == "":
+            flush_paragraph()
+            flush_list()
+        elif line in {"---", "***", "___"}:
+            flush_paragraph()
+            flush_list()
+            blocks.append("<hr>")
+        else:
+            paragraph.append(line)
+
+    flush_paragraph()
+    flush_list()
+    return "\n".join(blocks)
 
 config = get_config()
 
@@ -709,6 +780,18 @@ def read_deployer():
     template_path = os.path.join(os.path.dirname(__file__), "templates", "session_creation.html")
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
+
+@app.get("/about", response_class=HTMLResponse)
+def read_about():
+    """Serve the About page from the repository's ABOUT.md source."""
+    project_root = Path(__file__).parent
+    about_content = render_about_markdown(
+        (project_root / "ABOUT.md").read_text(encoding="utf-8")
+    )
+    template_path = project_root / "templates" / "about.html"
+    return template_path.read_text(encoding="utf-8").replace(
+        "<!-- ABOUT_CONTENT -->", about_content
+    )
 
 @app.get("/stats", response_class=HTMLResponse)
 def read_stats():

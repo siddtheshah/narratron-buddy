@@ -47,12 +47,22 @@ class TestSessionAPI(BaseTestCase):
         join_response = self.client.get("/join")
         self.assertEqual(join_response.status_code, 200)
         self.assertIn("Join a Live Story Session", join_response.text)
+        self.assertIn('href="/about"', join_response.text)
 
     def test_deploy_page(self):
         response = self.client.get("/deploy")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Session Deployer", response.text)
         self.assertIn("Deploy Canvas Instance", response.text)
+        self.assertIn('href="/about"', response.text)
+
+    def test_about_page_renders_about_markdown(self):
+        response = self.client.get("/about")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("About Narratron Buddy", response.text)
+        self.assertIn("FAQ", response.text)
+        self.assertIn("About the Developers", response.text)
+        self.assertIn("Siddthe Shah", response.text)
 
     def test_canvas_page(self):
         owner = db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")
@@ -71,6 +81,7 @@ class TestSessionAPI(BaseTestCase):
         response = self.client.get("/canvas?session_id=test_session")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron Canvas", response.text)
+        self.assertIn('href="/about"', response.text)
 
     def test_canvas_data_endpoints_require_canvas_access(self):
         owner = db.register_user("canvas_api_owner", "canvas-api-owner@example.com", "Password123")
