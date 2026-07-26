@@ -55,9 +55,39 @@ class TestSessionAPI(BaseTestCase):
         self.assertIn("Deploy Canvas Instance", response.text)
 
     def test_canvas_page(self):
+        owner = db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")
+        self.assertTrue(db.record_deployment("test_session", owner["id"], "KEY-CANVAS", cost=5.0))
+
+        response = self.client.get("/canvas?session_id=test_session")
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.get(
+            "/canvas?session_id=test_session&join_key=KEY-CANVAS",
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn("join_key", response.headers["location"])
+
         response = self.client.get("/canvas?session_id=test_session")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron Canvas", response.text)
+
+    def test_canvas_data_endpoints_require_canvas_access(self):
+        owner = db.register_user("canvas_api_owner", "canvas-api-owner@example.com", "Password123")
+        self.assertTrue(db.record_deployment("protected_session", owner["id"], "KEY-PROTECTED", cost=5.0))
+
+        self.assertEqual(
+            self.client.get("/api/latest?session_id=protected_session").status_code,
+            403,
+        )
+        self.client.get(
+            "/canvas?session_id=protected_session&join_key=KEY-PROTECTED",
+            follow_redirects=False,
+        )
+        self.assertEqual(
+            self.client.get("/api/latest?session_id=protected_session").status_code,
+            200,
+        )
 
     def test_auth_registration_and_login_flow(self):
         # Register

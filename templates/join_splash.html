@@ -327,7 +327,7 @@
   <main>
     <div class="hero-badge">✨ Interactive AI Narration Canvas</div>
     <h1>Join a Live Story Session</h1>
-    <p class="subtitle">Experience a story like never before, with real time dynamic visuals, music coordination, and alongside your fellow viewers.</p>
+    <p class="subtitle">Experience a story like never before, with real time dynamic visuals, music coordination, and being alongside your fellow viewers.</p>
     <div class="join-card">
       <h2>Enter Session Join Key</h2>
       <p>Ask the session host for their 8-character join key</p>
@@ -403,7 +403,7 @@
 
         const data = await resp.json();
         if (resp.ok && data.session_id) {
-          window.location.href = `/canvas?session_id=${data.session_id}`;
+          window.location.href = `/canvas?session_id=${encodeURIComponent(data.session_id)}`;
         } else {
           err.textContent = data.detail || 'Invalid or expired Join Key.';
           err.style.display = 'block';

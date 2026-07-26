@@ -1,3 +1,6 @@
+import base64
+import hmac
+import json
 import logging
 import os
 from pathlib import Path
@@ -7,7 +10,7 @@ from typing import List, Optional
 
 from absl import flags
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -115,6 +118,68 @@ def get_current_user(request: Request) -> Optional[dict]:
     if not token:
         return None
     return db.validate_session_token(token)
+
+
+_CANVAS_ACCESS_COOKIE = "canvas_access"
+
+
+def _canvas_access_grants(request: Request) -> dict[str, str]:
+    """Return validly-shaped per-session join-key grants from the HttpOnly cookie."""
+    encoded_grants = request.cookies.get(_CANVAS_ACCESS_COOKIE)
+    if not encoded_grants:
+        return {}
+    try:
+        padding = "=" * (-len(encoded_grants) % 4)
+        grants = json.loads(base64.urlsafe_b64decode(encoded_grants + padding).decode("utf-8"))
+        return {
+            session_id: join_key
+            for session_id, join_key in grants.items()
+            if isinstance(session_id, str) and isinstance(join_key, str)
+        }
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+
+
+def _grant_canvas_access(response: Response, request: Request, session_id: str, join_key: str) -> None:
+    """Store a verified join key outside the URL for subsequent canvas requests."""
+    grants = _canvas_access_grants(request)
+    grants[session_id] = join_key
+    encoded_grants = base64.urlsafe_b64encode(
+        json.dumps(grants, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    response.set_cookie(
+        key=_CANVAS_ACCESS_COOKIE,
+        value=encoded_grants,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 12,
+    )
+
+
+def _valid_join_key(expected_key: str, candidate_key: Optional[str]) -> bool:
+    return bool(candidate_key) and hmac.compare_digest(
+        expected_key.strip().upper(), candidate_key.strip().upper()
+    )
+
+
+def _require_canvas_access(
+    request: Request, session_id: str, join_key: Optional[str] = None
+) -> dict:
+    """Require ownership or a verified join-key grant before serving session content."""
+    _safe_path_param(session_id, "session_id")
+    deployment = db.get_deployment(session_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Active session not found.")
+
+    current_user = get_current_user(request)
+    if current_user and deployment["user_id"] == current_user["id"]:
+        return deployment
+
+    candidate_key = join_key or _canvas_access_grants(request).get(session_id)
+    if _valid_join_key(deployment["join_key"], candidate_key):
+        return deployment
+
+    raise HTTPException(status_code=403, detail="A valid join key is required to access this session.")
 
 # ========================================
 # Authentication API Endpoints
@@ -268,7 +333,8 @@ def get_payment_history(request: Request):
 # ========================================
 
 @app.get("/sessions/{session_id}/references/{filename}")
-async def serve_session_reference(session_id: str, filename: str):
+async def serve_session_reference(request: Request, session_id: str, filename: str):
+    _require_canvas_access(request, session_id)
     _safe_path_param(session_id, "session_id")
     _safe_path_param(filename, "filename")
     file_path = session_manager.get_session_reference_dir(session_id) / filename
@@ -277,7 +343,8 @@ async def serve_session_reference(session_id: str, filename: str):
     return FileResponse(file_path)
 
 @app.get("/sessions/{session_id}/playlists/{playlist_name}/{filename}")
-async def serve_session_playlist_track(session_id: str, playlist_name: str, filename: str):
+async def serve_session_playlist_track(request: Request, session_id: str, playlist_name: str, filename: str):
+    _require_canvas_access(request, session_id)
     _safe_path_param(session_id, "session_id")
     _safe_path_param(playlist_name, "playlist_name")
     _safe_path_param(filename, "filename")
@@ -287,7 +354,8 @@ async def serve_session_playlist_track(session_id: str, playlist_name: str, file
     return FileResponse(file_path)
 
 @app.get("/sessions/{session_id}/output/{filename}")
-async def serve_session_output(session_id: str, filename: str):
+async def serve_session_output(request: Request, session_id: str, filename: str):
+    _require_canvas_access(request, session_id)
     _safe_path_param(session_id, "session_id")
     _safe_path_param(filename, "filename")
     file_path = session_manager.get_session_output_dir(session_id) / filename
@@ -309,13 +377,14 @@ async def serve_session_output(session_id: str, filename: str):
 # ========================================
 
 @app.post("/api/sessions/resolve-join-key")
-def resolve_join_key(req: ResolveJoinKeyRequest):
+def resolve_join_key(req: ResolveJoinKeyRequest, request: Request, response: Response):
     dep = db.get_session_by_join_key(req.join_key)
     if not dep:
         raise HTTPException(status_code=404, detail="Invalid Join Key. No matching active session found.")
     meta = local_deployer.get_session(dep["session_id"])
     if not meta:
         raise HTTPException(status_code=404, detail="Session files no longer exist.")
+    _grant_canvas_access(response, request, meta.session_id, dep["join_key"])
     return {"status": "ok", "session_id": meta.session_id, "name": meta.name, "user_id": dep.get("user_id")}
 
 @app.get("/api/sessions")
@@ -356,6 +425,7 @@ def list_sessions(request: Request):
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific session."""
+    _require_canvas_access(request, session_id)
     session_dir = local_deployer._get_session_dir(session_id)
     if not session_dir.exists() or not (session_dir / "session.json").exists():
         db.reconstruct_session_from_db(session_id, session_dir)
@@ -492,6 +562,12 @@ def destroy_session(session_id: str, request: Request):
 
 @app.websocket("/ws/doodle")
 async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = None):
+    if session_id:
+        try:
+            _require_canvas_access(websocket, session_id)
+        except HTTPException:
+            await websocket.close(code=1008)
+            return
     await websocket.accept()
     websocket.state.session_id = session_id
     cs = await canvas_states.connect_doodle_websocket(websocket, session_id)
@@ -581,19 +657,24 @@ def get_orator_config():
     })
 
 @app.get("/api/latest")
-def get_latest_image(session_id: Optional[str] = None):
+def get_latest_image(request: Request, session_id: Optional[str] = None):
     if session_id:
+        _require_canvas_access(request, session_id)
         session_dir = local_deployer._get_session_dir(session_id)
         if not session_dir.exists():
             db.reconstruct_session_from_db(session_id, session_dir)
     return canvas_states.latest_state(session_id)
 
 @app.get("/api/chat")
-def get_chat(session_id: Optional[str] = None):
+def get_chat(request: Request, session_id: Optional[str] = None):
+    if session_id:
+        _require_canvas_access(request, session_id)
     return canvas_states.chat_messages(session_id)
 
 @app.post("/api/chat")
-def post_chat(msg: ChatMessage, session_id: Optional[str] = None):
+def post_chat(msg: ChatMessage, request: Request, session_id: Optional[str] = None):
+    if session_id:
+        _require_canvas_access(request, session_id)
     canvas_states.add_chat_message(msg.text, author=msg.author, session_id=session_id)
     return {"status": "ok"}
 
@@ -637,8 +718,16 @@ def read_stats():
         return f.read()
 
 @app.get("/popout", response_class=HTMLResponse)
-def read_popout(request: Request, session_id: Optional[str] = None):
+def read_popout(request: Request, session_id: Optional[str] = None, join_key: Optional[str] = None):
     """Serve the standalone Pop-out Panel interface for a session."""
+    if session_id:
+        deployment = _require_canvas_access(request, session_id, join_key)
+        if _valid_join_key(deployment["join_key"], join_key):
+            response = RedirectResponse(
+                url=str(request.url.remove_query_params("join_key")), status_code=303
+            )
+            _grant_canvas_access(response, request, session_id, join_key)
+            return response
     template_path = os.path.join(os.path.dirname(__file__), "templates", "popout.html")
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
@@ -648,6 +737,14 @@ def read_popout(request: Request, session_id: Optional[str] = None):
 def read_obs_canvas(request: Request, session_id: Optional[str] = None):
     """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source."""
     if session_id:
+        join_key = request.query_params.get("join_key")
+        deployment = _require_canvas_access(request, session_id, join_key)
+        if _valid_join_key(deployment["join_key"], join_key):
+            response = RedirectResponse(
+                url=str(request.url.remove_query_params("join_key")), status_code=303
+            )
+            _grant_canvas_access(response, request, session_id, join_key)
+            return response
         session_dir = local_deployer._get_session_dir(session_id)
         if not session_dir.exists():
             db.reconstruct_session_from_db(session_id, session_dir)
@@ -663,9 +760,17 @@ def read_obs_canvas(request: Request, session_id: Optional[str] = None):
         return f.read()
 
 @app.get("/canvas", response_class=HTMLResponse)
-def read_canvas(request: Request, session_id: Optional[str] = None):
+def read_canvas(request: Request, session_id: Optional[str] = None, join_key: Optional[str] = None):
     """Serve the Canvas interface for a specific session."""
     if session_id:
+        deployment = _require_canvas_access(request, session_id, join_key)
+        if _valid_join_key(deployment["join_key"], join_key):
+            response = RedirectResponse(
+                url=str(request.url.remove_query_params("join_key")), status_code=303
+            )
+            _grant_canvas_access(response, request, session_id, join_key)
+            return response
+
         session_dir = local_deployer._get_session_dir(session_id)
         if not session_dir.exists():
             db.reconstruct_session_from_db(session_id, session_dir)

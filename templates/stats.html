@@ -439,6 +439,34 @@
       border-top: 1px solid var(--glass-border);
       background: rgba(15, 23, 42, 0.4);
     }
+
+    .join-modal[hidden] { display: none; }
+    .join-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(2, 6, 23, 0.72);
+    }
+    .join-modal-card {
+      width: min(420px, 100%);
+      padding: 28px;
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      background: #18213a;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    }
+    .join-modal-card h2 { margin-bottom: 10px; }
+    .join-modal-card p { color: var(--text-muted); margin-bottom: 18px; line-height: 1.5; }
+    .join-modal-card input {
+      width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 9px;
+      border: 1px solid var(--glass-border); background: rgba(255,255,255,0.08);
+      color: var(--text-main); font: inherit; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .join-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    .join-error { min-height: 20px; color: #fda4af; font-size: 0.9rem; }
   </style>
 </head>
 <body>
@@ -575,6 +603,19 @@
     </div>
   </main>
 
+  <div id="join-modal" class="join-modal" hidden role="dialog" aria-modal="true" aria-labelledby="join-modal-title">
+    <div class="join-modal-card">
+      <h2 id="join-modal-title">Enter session key</h2>
+      <p>Enter the Join Key for <code id="join-session-id"></code> to view its canvas.</p>
+      <input id="join-key-input" type="text" placeholder="KEY-XXXXXX" autocomplete="off">
+      <div id="join-error" class="join-error" role="alert"></div>
+      <div class="join-modal-actions">
+        <button id="join-cancel" class="nav-btn" type="button">Cancel</button>
+        <button id="join-submit" class="nav-btn primary" type="button">View Canvas</button>
+      </div>
+    </div>
+  </div>
+
   <footer>
     Narratron Buddy Stats Tracking & Analytics System &copy; 2026
   </footer>
@@ -654,14 +695,70 @@
           <td><span class="session-id-tag">${escapeHtml(s.session_id)}</span></td>
           <td><span class="views-badge">👁️ ${s.views}</span></td>
           <td>
-            <a href="/canvas?session_id=${encodeURIComponent(s.session_id)}" class="nav-btn" style="padding: 6px 12px; font-size: 0.85rem;">
+            <button type="button" class="nav-btn view-canvas-btn" data-session-id="${escapeHtml(s.session_id)}" style="padding: 6px 12px; font-size: 0.85rem;">
               View Canvas
-            </a>
+            </button>
           </td>
         `;
+        tr.querySelector('.view-canvas-btn').addEventListener('click', () => openJoinKeyModal(s.session_id));
         tbody.appendChild(tr);
       });
     }
+
+    let pendingSessionId = null;
+    const joinModal = document.getElementById('join-modal');
+    const joinKeyInput = document.getElementById('join-key-input');
+    const joinError = document.getElementById('join-error');
+
+    function openJoinKeyModal(sessionId) {
+      pendingSessionId = sessionId;
+      document.getElementById('join-session-id').textContent = sessionId;
+      joinKeyInput.value = '';
+      joinError.textContent = '';
+      joinModal.hidden = false;
+      joinKeyInput.focus();
+    }
+
+    function closeJoinKeyModal() {
+      joinModal.hidden = true;
+      pendingSessionId = null;
+    }
+
+    async function submitJoinKey() {
+      const joinKey = joinKeyInput.value.trim();
+      joinError.textContent = '';
+      if (!joinKey) {
+        joinError.textContent = 'Please enter a Join Key.';
+        return;
+      }
+      try {
+        const response = await fetch('/api/sessions/resolve-join-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ join_key: joinKey }),
+        });
+        const data = await response.json();
+        if (!response.ok || data.session_id !== pendingSessionId) {
+          joinError.textContent = response.ok
+            ? 'That Join Key belongs to a different session.'
+            : (data.detail || 'Invalid Join Key.');
+          return;
+        }
+        window.location.href = `/canvas?session_id=${encodeURIComponent(data.session_id)}`;
+      } catch (error) {
+        joinError.textContent = 'Unable to verify the Join Key. Please try again.';
+      }
+    }
+
+    document.getElementById('join-cancel').addEventListener('click', closeJoinKeyModal);
+    document.getElementById('join-submit').addEventListener('click', submitJoinKey);
+    joinKeyInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') submitJoinKey();
+      if (event.key === 'Escape') closeJoinKeyModal();
+    });
+    joinModal.addEventListener('click', (event) => {
+      if (event.target === joinModal) closeJoinKeyModal();
+    });
 
     function escapeHtml(str) {
       if (!str) return '';

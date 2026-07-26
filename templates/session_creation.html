@@ -1462,7 +1462,7 @@
                 const result = await response.json();
                 if (response.ok && result.session_id) {
                     await checkAuthStatus();
-                    window.location.href = `/canvas?session_id=${result.session_id}&role=orator`;
+                window.location.href = `/canvas?session_id=${encodeURIComponent(result.session_id)}&role=orator`;
                 } else {
                     alert('Error deploying session: ' + (result.detail || 'Unknown error'));
                 }
@@ -1535,7 +1535,7 @@
 
         function openCanvas(sessionId, isOwner = false, joinKey = '') {
             if (isOwner) {
-                window.location.href = `/canvas?session_id=${encodeURIComponent(sessionId)}${joinKey ? '&join_key=' + encodeURIComponent(joinKey) : ''}&role=orator`;
+                window.location.href = `/canvas?session_id=${encodeURIComponent(sessionId)}&role=orator`;
                 return;
             }
             pendingCanvasSessionId = sessionId;
@@ -1576,7 +1576,7 @@
                     }
                     closeJoinKeyModal();
                     const isOwnerSession = (data.user_id && currentUser && data.user_id === currentUser.id);
-                    window.location.href = `/canvas?session_id=${data.session_id}&join_key=${encodeURIComponent(key)}${isOwnerSession ? '&role=orator' : ''}`;
+                    window.location.href = `/canvas?session_id=${encodeURIComponent(data.session_id)}${isOwnerSession ? '&role=orator' : ''}`;
                 } else {
                     err.textContent = data.detail || 'Invalid Join Key.';
                     err.style.display = 'block';

@@ -25,6 +25,8 @@ from utils.session_paths import ensure_sessions_root
 from web_viewer_app import (
     app,
     canvas_states,
+    db,
+    get_current_user,
 )
 
 # Load environment variables
@@ -101,6 +103,14 @@ async def agent_websocket_endpoint(
     """WebSocket endpoint for bidirectional streaming with ADK.
     Constructs a Runner instance concurrent with the lifespan of the session connection.
     """
+    current_user = get_current_user(websocket)
+    deployment = db.get_deployment(session_id)
+    if not current_user or not deployment or deployment["user_id"] != current_user["id"]:
+        # Join-key holders may view and participate in the canvas, but only its
+        # owner may open the agent-control channel.
+        await websocket.close(code=1008)
+        return
+
     # Create an agent whose bound tool instances are available through agent.tools.
     session_agent = create_agent(
         session_id=session_id,

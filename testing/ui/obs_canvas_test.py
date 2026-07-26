@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 
 from testing.ui.base import UITestCase
 from web_viewer_app import app
@@ -7,6 +8,9 @@ from web_viewer_app import app
 class TestOBSCanvas(UITestCase):
     def setUp(self):
         super().setUp()
+        access_patcher = patch("web_viewer_app._require_canvas_access")
+        access_patcher.start()
+        self.addCleanup(access_patcher.stop)
         self.client = TestClient(app)
 
     def test_obs_route_omits_ui_chrome(self):
