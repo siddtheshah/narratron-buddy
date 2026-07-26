@@ -45,6 +45,7 @@ class CanvasStateManager:
         self.shown_image_prompt: str = ""
         self.shown_images_history: List[str] = []
         self.shown_image_transition: str = "crossfade"
+        self.shown_image_effect: str = "gleam3"
         
         # WebSocket and doodles
         self.active_ws_connections: List[WebSocket] = []
@@ -72,6 +73,7 @@ class CanvasStateManager:
                     self.shown_image_prompt = c_state.get("shown_image_prompt", "")
                     self.shown_images_history = c_state.get("shown_images_history", [])
                     self.shown_image_transition = c_state.get("shown_image_transition", "fade")
+                    self.shown_image_effect = c_state.get("shown_image_effect", "gleam3")
                     self.current_playlist = c_state.get("current_playlist")
                     self.current_playlist_tracks = c_state.get("current_playlist_tracks", [])
                     self.music_paused = c_state.get("music_paused", False)
@@ -107,15 +109,31 @@ class CanvasStateManager:
             return f"/sessions/{self.session_id}/references/{basename}"
         return f"/sessions/{self.session_id}/output/{basename}"
 
-    def update_shown_image(self, file_path: str, session_id: Optional[str] = None, transition: str = "crossfade"):
-        if file_path != self.shown_image_path:
+    def update_shown_image(
+        self,
+        file_path: str,
+        session_id: Optional[str] = None,
+        transition: str = "crossfade",
+        effect: str = "gleam3",
+    ):
+        transition = transition or "crossfade"
+        effect = effect or "gleam3"
+        image_changed = file_path != self.shown_image_path
+        presentation_changed = (
+            image_changed
+            or transition != getattr(self, "shown_image_transition", "crossfade")
+            or effect != getattr(self, "shown_image_effect", "gleam3")
+        )
+        if image_changed:
             self.doodles_state.clear()
+        if presentation_changed:
             self.shown_image_time = time.time()
         elif not getattr(self, "shown_image_time", None):
             self.shown_image_time = time.time()
         self.shown_image_path = file_path
         self.shown_image_prompt = extract_image_prompt(file_path)
-        self.shown_image_transition = transition or "crossfade"
+        self.shown_image_transition = transition
+        self.shown_image_effect = effect
 
         if file_path:
             image_url = self._get_url_for_path(file_path)
@@ -124,7 +142,8 @@ class CanvasStateManager:
                 "url": image_url,
                 "prompt": self.shown_image_prompt,
                 "time": self.shown_image_time,
-                "transition": self.shown_image_transition
+                "transition": self.shown_image_transition,
+                "effect": self.shown_image_effect,
             }
             # Append if history is empty or last item path differs from file_path
             last_path = None
@@ -135,6 +154,8 @@ class CanvasStateManager:
                 self.shown_images_history.append(history_item)
                 if len(self.shown_images_history) > 100:
                     self.shown_images_history = self.shown_images_history[-100:]
+            elif self.shown_images_history:
+                self.shown_images_history[-1] = history_item
 
         # Automatically copy shown image into session output directory if outside session output dir
         target_session = session_id or self.session_id
@@ -229,7 +250,8 @@ class CanvasStateManager:
                     "url": self._get_url_for_path(h),
                     "prompt": extract_image_prompt(h),
                     "time": 0.0,
-                    "transition": getattr(self, "shown_image_transition", "fade") or "fade"
+                    "transition": getattr(self, "shown_image_transition", "fade") or "fade",
+                    "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
                 })
 
         # 2. If no image selected, fallback to session references
@@ -247,7 +269,8 @@ class CanvasStateManager:
                                 "url": ref_url,
                                 "prompt": ref_prompt,
                                 "time": 0,
-                                "transition": getattr(self, "shown_image_transition", "fade") or "fade"
+                                "transition": getattr(self, "shown_image_transition", "fade") or "fade",
+                                "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
                             })
                         return {
                             "latest": ref_url,
@@ -256,9 +279,10 @@ class CanvasStateManager:
                             "music": music_state,
                             "doodles_enabled": self.doodles_enabled,
                             "transition": getattr(self, "shown_image_transition", "fade") or "fade",
+                            "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
                             "history": formatted_history
                         }
-            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "history": formatted_history}
+            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history}
             
         basename = os.path.basename(selected_file)
         
@@ -281,7 +305,8 @@ class CanvasStateManager:
                 "url": image_url,
                 "prompt": prompt_text,
                 "time": selected_time,
-                "transition": getattr(self, "shown_image_transition", "fade") or "fade"
+                "transition": getattr(self, "shown_image_transition", "fade") or "fade",
+                "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
             }
             self.shown_images_history.append(item)
             formatted_history.append(item)
@@ -293,6 +318,7 @@ class CanvasStateManager:
             "music": music_state,
             "doodles_enabled": self.doodles_enabled,
             "transition": getattr(self, "shown_image_transition", "fade") or "fade",
+            "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
             "history": formatted_history
         }
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, history_len={len(formatted_history)}, playlist={music_state['playlist']}")
@@ -302,7 +328,12 @@ class CanvasStateManager:
         """Ensure current displayed image is saved and gather session metadata, canvas data and files."""
         import json
         if self.shown_image_path and session_dir:
-            self.update_shown_image(self.shown_image_path, session_id=session_dir.name, transition=getattr(self, "shown_image_transition", "fade"))
+            self.update_shown_image(
+                self.shown_image_path,
+                session_id=session_dir.name,
+                transition=getattr(self, "shown_image_transition", "fade"),
+                effect=getattr(self, "shown_image_effect", "gleam3"),
+            )
 
         canvas_state = {
             "current_image_basename": self.current_image_basename,
@@ -310,6 +341,7 @@ class CanvasStateManager:
             "shown_image_prompt": self.shown_image_prompt,
             "shown_images_history": self.shown_images_history,
             "shown_image_transition": getattr(self, "shown_image_transition", "fade"),
+            "shown_image_effect": getattr(self, "shown_image_effect", "gleam3"),
             "current_playlist": self.current_playlist,
             "current_playlist_tracks": self.current_playlist_tracks,
             "music_paused": self.music_paused,

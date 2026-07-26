@@ -106,8 +106,12 @@ def test_show_image_callback_transition(tmp_path):
 
     received_calls = []
 
-    def fake_callback(path, transition="crossfade"):
-        received_calls.append({"path": path, "transition": transition})
+    def fake_callback(path, transition="crossfade", effect="gleam3"):
+        received_calls.append({
+            "path": path,
+            "transition": transition,
+            "effect": effect,
+        })
 
     # Construct ImageTools bypassing __init__
     ImageTools._client_cache = None
@@ -143,6 +147,13 @@ def test_show_image_callback_transition(tmp_path):
         if got != trans:
             failures.append(f"  FAIL callback got transition={got!r}, expected={trans!r}")
 
+    received_calls.clear()
+    result = tools.show_image("test_image", effect="sparkle")
+    if "Successfully" not in result:
+        failures.append(f"  FAIL show_image error for effect: {result}")
+    elif not received_calls or received_calls[0]["effect"] != "sparkle":
+        failures.append(f"  FAIL callback did not receive sparkle effect: {received_calls!r}")
+
     return failures
 
 
@@ -170,6 +181,22 @@ def test_get_latest_state_transition(tmp_path):
                 f"  FAIL get_latest_state() transition={state['transition']!r}, expected={trans!r}"
             )
 
+    return failures
+
+
+def test_get_latest_state_effect(tmp_path):
+    session_id = "test_session_effect"
+    img_dir = tmp_path / "images"
+    dummy_img = img_dir / "shown.jpg"
+    make_dummy_image(dummy_img)
+
+    cs = make_canvas_state(session_id, dummy_img)
+    cs.shown_image_effect = "sparkle"
+    state = cs.get_latest_state()
+
+    failures = []
+    if state.get("effect") != "sparkle":
+        failures.append(f"  FAIL state effect={state.get('effect')!r}, expected 'sparkle'")
     return failures
 
 
@@ -231,6 +258,11 @@ class TestCrossfade(BaseTestCase):
             failures = test_get_latest_state_transition(Path(tmp))
             self.assertEqual(failures, [])
 
+    def test_get_latest_state_effect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            failures = test_get_latest_state_effect(Path(tmp))
+            self.assertEqual(failures, [])
+
     def test_html_template_crossfade(self):
         failures = test_html_template_crossfade()
         self.assertEqual(failures, [])
@@ -250,7 +282,8 @@ def main():
             ("1. CanvasStateManager stores transition correctly",    lambda: test_transition_stored(tmp_path)),
             ("2. show_image callback receives transition kwarg",     lambda: test_show_image_callback_transition(tmp_path)),
             ("3. get_latest_state() includes 'transition' field",   lambda: test_get_latest_state_transition(tmp_path)),
-            ("4. index.html CSS classes + ghost-image DOM element",  test_html_template_crossfade),
+            ("4. get_latest_state() includes effect fields",         lambda: test_get_latest_state_effect(tmp_path)),
+            ("5. index.html CSS classes + ghost-image DOM element",  test_html_template_crossfade),
         ]
 
         for name, fn in tests:

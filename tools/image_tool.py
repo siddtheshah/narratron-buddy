@@ -57,6 +57,7 @@ class ImageTools:
 
         self.currently_displayed_image_path: Optional[str] = None
         self.currently_displayed_image_transition: str = "crossfade"
+        self.currently_displayed_image_effect: str = "gleam3"
 
         self._create_cooldown_timer: Optional[threading.Timer] = None
         self._show_cooldown_timer: Optional[threading.Timer] = None
@@ -145,15 +146,17 @@ class ImageTools:
             timer.start()
 
     def get_current_canvas_image_info(self) -> Dict[str, Any]:
-        """Returns details about the image currently displayed on the canvas (path, prompt, metadata description, transition)."""
+        """Returns details about the image currently displayed on the canvas, including its transition and effect."""
         path = getattr(self, "currently_displayed_image_path", None)
         transition = getattr(self, "currently_displayed_image_transition", "crossfade")
+        effect = getattr(self, "currently_displayed_image_effect", "gleam3")
         if not path or not os.path.exists(path):
             return {
                 "path": None,
                 "prompt": None,
                 "metadata_description": None,
                 "transition": None,
+                "effect": None,
             }
 
         prompt = extract_image_prompt(path)
@@ -163,6 +166,7 @@ class ImageTools:
             "prompt": prompt,
             "metadata_description": metadata_desc,
             "transition": transition,
+            "effect": effect,
         }
 
     def _trigger_after_tool_call(self, tool_name: str):
@@ -252,7 +256,8 @@ class ImageTools:
         image_prompt: str,
         image_name: Optional[str] = None,
         reference_images: Union[list[str], str, None] = None,
-        display: bool = True
+        display: bool = True,
+        effect: str = "gleam3",
     ) -> str:
         """Generates an image from a prompt, supporting custom image naming and reference image adaptation.
 
@@ -261,6 +266,8 @@ class ImageTools:
             image_name: Optional friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
             display: Whether to automatically display the image on the canvas upon creation (default True).
+            effect: Optional canvas animation effect; defaults to gleam3. Supported values: none, creeping,
+                    shining, sparkle, gleam3, or bendy.
 
         Returns:
             A string indicating the file path of the saved generated image, or an error message.
@@ -400,7 +407,7 @@ class ImageTools:
             self._schedule_cooldown_timer("create_image", float(self.cooldown_duration))
             show_msg = ""
             if display:
-                show_res = self.show_image(saved_paths[0])
+                show_res = self.show_image(saved_paths[0], effect=effect)
                 if show_res.startswith("Error:"):
                     show_msg = f", but could not display: {show_res}"
                 else:
@@ -417,19 +424,30 @@ class ImageTools:
             self._trigger_after_tool_call("create_image")
             return error_msg
 
-    def show_image(self, file_path: str, transition: str = "crossfade") -> str:
+    def show_image(
+        self,
+        file_path: str,
+        transition: str = "crossfade",
+        effect: str = "gleam3",
+    ) -> str:
         """Shows an image from a file path or friendly name to the user with a specified canvas transition effect.
 
         Args:
             file_path: The file path or friendly name/alias of the image to show.
             transition: The transition effect to apply when displaying the image on the canvas.
                         Supported values: 'crossfade' (default, old image dissolves into new), 'fade' (fades in from black), 'none' (instant).
+            effect: Animation effect to apply after the transition; defaults to 'gleam3'. Supported values:
+                    'none', 'creeping', 'shining', 'sparkle', 'gleam3', and 'bendy'.
 
         Returns:
             A status message indicating success or failure.
         """
         try:
-            logger.info(f"[show_image tool] Called — file_path='{file_path}', transition='{transition}'")
+            supported_effects = {"none", "creeping", "shining", "sparkle", "gleam3", "bendy"}
+            effect = str(effect or "gleam3").lower().strip()
+            if effect not in supported_effects:
+                return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
+            logger.info(f"[show_image tool] Called — file_path='{file_path}', transition='{transition}', effect='{effect}'")
             now = time.time()
             elapsed = now - self.last_show_time
             if elapsed < self.cooldown_duration:
@@ -448,15 +466,20 @@ class ImageTools:
             logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}', transition: '{transition}')")
             if resolved_path:
                 if self.on_show_image:
-                    logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}', transition='{transition}'")
-                    self.on_show_image(resolved_path, transition=transition)
+                    logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}', transition='{transition}', effect='{effect}'")
+                    self.on_show_image(
+                        resolved_path,
+                        transition=transition,
+                        effect=effect,
+                    )
                 else:
                     logger.warning("[show_image tool] on_show_image callback is not set")
                 self.currently_displayed_image_path = resolved_path
                 self.currently_displayed_image_transition = transition
+                self.currently_displayed_image_effect = effect
                 self.last_show_time = time.time()
                 self._schedule_cooldown_timer("show_image", float(self.cooldown_duration))
-                res = f"Successfully displayed {resolved_path} to the user with transition '{transition}'."
+                res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
             else:
                 logger.warning(f"[show_image tool] Image path or alias '{file_path}' could not be resolved.")
                 res = f"Error: Image '{file_path}' not found."

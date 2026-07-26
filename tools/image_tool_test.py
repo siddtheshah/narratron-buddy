@@ -230,7 +230,7 @@ class TestImageTools(BaseTestCase):
 
         res = tools.show_image(file_path)
         self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="crossfade")
+        callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
 
         res2 = tools.show_image(file_path)
         self.assertIn("show_image is on cooldown", res2)
@@ -250,7 +250,7 @@ class TestImageTools(BaseTestCase):
 
         res = tools.show_image(file_path, transition="zoom")
         self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="zoom")
+        callback.assert_called_once_with(file_path, transition="zoom", effect="gleam3")
 
     @patch("tools.image_tool.genai.Client")
     def test_search_and_browse_images(self, mock_genai_client):
@@ -473,7 +473,7 @@ class TestImageTools(BaseTestCase):
 
         res = tools.show_image(file_path)
         self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="crossfade")
+        callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
 
         res2 = tools.show_image(file_path)
         self.assertIn("show_image is on cooldown", res2)
@@ -493,7 +493,7 @@ class TestImageTools(BaseTestCase):
 
         res = tools.show_image(file_path, transition="zoom")
         self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="zoom")
+        callback.assert_called_once_with(file_path, transition="zoom", effect="gleam3")
 
     @patch("tools.image_tool.genai.Client")
     def test_search_and_browse_images(self, mock_genai_client):

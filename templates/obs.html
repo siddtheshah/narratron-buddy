@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/image-effects.css">
     <style>
         * {
             box-sizing: border-box;
@@ -79,6 +80,20 @@
             pointer-events: none;
             z-index: -1;
         }
+
+        #image-container .canvas-image-effect-frame {
+            position: absolute;
+            z-index: 2;
+            pointer-events: none;
+            background: transparent;
+        }
+
+        #image-container .canvas-image-effect-frame .image-effect-source {
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -92,7 +107,8 @@
         <canvas id="doodle-canvas"></canvas>
     </div>
 
-    <script>
+    <script type="module">
+        import { attachImageEffect, IMAGE_EFFECTS, IMAGE_EFFECT_DEFAULT_INTENSITIES } from "/static/js/image-effects.js";
         // Extract Session ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
         let currentSessionId = urlParams.get('session_id') || '';
@@ -113,6 +129,7 @@
 
         let currentLoadedImg = null;
         let activeAnimReq = null;
+        let imageEffectController = null;
         let lastTime = 0;
         let lastImageRawUrl = "";
         let isFirstCanvasLoad = true;
@@ -137,6 +154,7 @@
             if (currentLoadedImg && !activeAnimReq) {
                 drawSingleImage(currentLoadedImg);
             }
+            layoutImageEffect();
         }
 
         function resizeDoodleCanvas() {
@@ -160,6 +178,69 @@
             resizeRendererCanvas();
             resizeDoodleCanvas();
         });
+
+        function normaliseImageEffect(effect) {
+            const candidate = String(effect || 'gleam3').toLowerCase().trim();
+            return IMAGE_EFFECTS[candidate] ? candidate : 'gleam3';
+        }
+
+        function defaultEffectIntensity(effect) {
+            return IMAGE_EFFECT_DEFAULT_INTENSITIES[effect] ?? IMAGE_EFFECT_DEFAULT_INTENSITIES.gleam3;
+        }
+
+        function layoutImageEffect(sourceImage = currentImage) {
+            if (!imageEffectController || !rendererCanvas || !sourceImage?.naturalWidth) return;
+            const rect = rendererCanvas.getBoundingClientRect();
+            const scale = Math.min(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight);
+            const width = sourceImage.naturalWidth * scale;
+            const height = sourceImage.naturalHeight * scale;
+            const frame = imageEffectController.element;
+            frame.style.left = `${(rect.width - width) / 2}px`;
+            frame.style.top = `${(rect.height - height) / 2}px`;
+            frame.style.width = `${width}px`;
+            frame.style.height = `${height}px`;
+            frame.style.display = 'block';
+        }
+
+        function applyImageEffect(sourceImage, effect, transition = 'none') {
+            if (!currentImage) return;
+            const resolvedEffect = normaliseImageEffect(effect);
+            const resolvedIntensity = defaultEffectIntensity(resolvedEffect);
+            if (resolvedEffect === 'none') {
+                if (imageEffectController) {
+                    imageEffectController.setEffect('none');
+                    imageEffectController.element.style.display = 'none';
+                }
+                return;
+            }
+            currentImage.style.position = 'static';
+            currentImage.style.opacity = '1';
+            currentImage.style.zIndex = 'auto';
+            currentImage.style.pointerEvents = 'none';
+            if (!imageEffectController) {
+                imageEffectController = attachImageEffect(currentImage, {
+                    effect: resolvedEffect,
+                    intensity: resolvedIntensity,
+                });
+                imageEffectController.element.classList.add('canvas-image-effect-frame');
+            } else {
+                imageEffectController.setEffect(resolvedEffect);
+                imageEffectController.setIntensity(resolvedIntensity);
+            }
+            layoutImageEffect(sourceImage);
+            const frame = imageEffectController.element;
+            if (transition === 'none') {
+                frame.style.transition = 'none';
+                frame.style.opacity = '1';
+            } else {
+                frame.style.transition = 'none';
+                frame.style.opacity = '0';
+                requestAnimationFrame(() => {
+                    frame.style.transition = `opacity ${transition === 'crossfade' ? 2000 : 1200}ms ease-in-out`;
+                    frame.style.opacity = '1';
+                });
+            }
+        }
 
         function redrawAllDoodles() {
             if (!doodleCanvas || !doodleCtx) return;
@@ -227,7 +308,7 @@
             return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
         }
 
-        async function applyImageTransition(newImgUrl, transition = 'crossfade') {
+        async function applyImageTransition(newImgUrl, transition = 'crossfade', effect = 'gleam3') {
             resizeRendererCanvas();
 
             const newImg = new Image();
@@ -244,6 +325,7 @@
             }
 
             if (currentImage) {
+                applyImageEffect(newImg, effect, transition);
                 currentImage.src = newImgUrl;
                 currentImage.classList.add('loaded');
             }
@@ -331,7 +413,7 @@
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
                         const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                        applyImageTransition(newImgUrl, 'none');
+                        applyImageTransition(newImgUrl, 'none', data.effect || 'gleam3');
                     }
                 } else if (isNewImage) {
                     lastTime = data.time;
@@ -342,7 +424,7 @@
                     doodleActions = [];
                     redrawAllDoodles();
 
-                    applyImageTransition(newImgUrl, transition);
+                    applyImageTransition(newImgUrl, transition, data.effect || 'gleam3');
                 }
             } catch (err) {
                 console.error("OBS Canvas fetch error:", err);

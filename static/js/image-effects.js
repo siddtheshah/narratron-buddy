@@ -11,11 +11,22 @@
  */
 
 export const IMAGE_EFFECTS = Object.freeze({
+  none: { label: 'None', classes: [] },
   creeping: { label: 'Creeping darkness', classes: ['fx-luminance', 'fx-fourier-shadows', 'fx-vignette'] },
   shining: { label: 'Cloudy dreams', classes: ['fx-periodic-light', 'fx-bloom'] },
   sparkle: { label: 'Starlight twinkle', classes: ['fx-star-twinkle'] },
   gleam3: { label: 'Gleam 3', classes: ['fx-gleam3'] },
   bendy: { label: 'Bendy', classes: ['fx-bendy'] },
+});
+
+/** Visual defaults are owned by the canvas, not the agent tool contract. */
+export const IMAGE_EFFECT_DEFAULT_INTENSITIES = Object.freeze({
+  none: 0,
+  creeping: 0.65,
+  shining: 0.62,
+  sparkle: 0.72,
+  gleam3: 0.68,
+  bendy: 0.45,
 });
 
 const ALL_EFFECT_CLASSES = Object.values(IMAGE_EFFECTS)

@@ -6,6 +6,7 @@
     <title>Narratron Canvas</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/image-effects.css">
     <style>
         :root {
             --bg-color: #0f1115;
@@ -174,6 +175,24 @@
         }
         #current-image.t-none.loaded {
             opacity: 1;
+        }
+
+        /* The effect module renders in this precisely aligned layer above the transition canvas. */
+        #image-container .canvas-image-effect-frame {
+            position: absolute;
+            z-index: 2;
+            pointer-events: none;
+            background: transparent;
+        }
+
+        #image-container .canvas-image-effect-frame .image-effect-source {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            object-fit: fill;
+            opacity: 1;
+            transition: none;
         }
 
 
@@ -837,6 +856,7 @@
 
     <script type="module">
         import { startAudioRecorderWorklet, stopMicrophone } from "/static/js/audio-recorder.js";
+        import { attachImageEffect, IMAGE_EFFECTS, IMAGE_EFFECT_DEFAULT_INTENSITIES } from "/static/js/image-effects.js";
 
         let lastTime = -1;
         let lastImageRawUrl = null;
@@ -1313,6 +1333,7 @@
 
         let currentLoadedImg = null;
         let activeAnimReq = null;
+        let imageEffectController = null;
 
         function resizeRendererCanvas() {
             if (!rendererCanvas || !renderCtx) return;
@@ -1333,10 +1354,74 @@
             if (currentLoadedImg && !activeAnimReq) {
                 drawSingleImage(currentLoadedImg);
             }
+            layoutImageEffect();
         }
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
+
+        function normaliseImageEffect(effect) {
+            const candidate = String(effect || 'gleam3').toLowerCase().trim();
+            return IMAGE_EFFECTS[candidate] ? candidate : 'gleam3';
+        }
+
+        function defaultEffectIntensity(effect) {
+            return IMAGE_EFFECT_DEFAULT_INTENSITIES[effect] ?? IMAGE_EFFECT_DEFAULT_INTENSITIES.gleam3;
+        }
+
+        function layoutImageEffect(sourceImage = currentImage) {
+            if (!imageEffectController || !rendererCanvas || !sourceImage?.naturalWidth) return;
+            const rect = rendererCanvas.getBoundingClientRect();
+            const scale = Math.min(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight);
+            const width = sourceImage.naturalWidth * scale;
+            const height = sourceImage.naturalHeight * scale;
+            const frame = imageEffectController.element;
+            frame.style.left = `${(rect.width - width) / 2}px`;
+            frame.style.top = `${(rect.height - height) / 2}px`;
+            frame.style.width = `${width}px`;
+            frame.style.height = `${height}px`;
+            frame.style.display = 'block';
+        }
+
+        function applyImageEffect(sourceImage, effect, transition = 'none') {
+            if (!currentImage) return;
+            const resolvedEffect = normaliseImageEffect(effect);
+            const resolvedIntensity = defaultEffectIntensity(resolvedEffect);
+            if (resolvedEffect === 'none') {
+                if (imageEffectController) {
+                    imageEffectController.setEffect('none');
+                    imageEffectController.element.style.display = 'none';
+                }
+                return;
+            }
+            currentImage.style.position = 'static';
+            currentImage.style.opacity = '1';
+            currentImage.style.zIndex = 'auto';
+            currentImage.style.pointerEvents = 'none';
+            if (!imageEffectController) {
+                imageEffectController = attachImageEffect(currentImage, {
+                    effect: resolvedEffect,
+                    intensity: resolvedIntensity,
+                });
+                imageEffectController.element.classList.add('canvas-image-effect-frame');
+            } else {
+                imageEffectController.setEffect(resolvedEffect);
+                imageEffectController.setIntensity(resolvedIntensity);
+            }
+            layoutImageEffect(sourceImage);
+            const frame = imageEffectController.element;
+            if (transition === 'none') {
+                frame.style.transition = 'none';
+                frame.style.opacity = '1';
+            } else {
+                frame.style.transition = 'none';
+                frame.style.opacity = '0';
+                requestAnimationFrame(() => {
+                    frame.style.transition = `opacity ${transition === 'crossfade' ? 2000 : 1500}ms ease-in-out`;
+                    frame.style.opacity = '1';
+                });
+            }
+        }
 
         function drawSingleImage(img) {
             if (!renderCtx || !rendererCanvas) return;
@@ -1369,7 +1454,7 @@
             return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
         }
 
-        async function applyImageTransition(newImgUrl, transition) {
+        async function applyImageTransition(newImgUrl, transition, effect = 'gleam3') {
             resizeRendererCanvas();
 
             const newImg = new Image();
@@ -1386,6 +1471,7 @@
             }
 
             if (currentImage) {
+                applyImageEffect(newImg, effect, transition);
                 currentImage.src = newImgUrl;
                 currentImage.classList.add('t-crossfade', 'loaded');
             }
@@ -1526,7 +1612,7 @@
             promptBtn.style.display = 'none';
             promptPinned = false;
 
-            applyImageTransition(imgUrl, transition);
+            applyImageTransition(imgUrl, transition, item.effect || 'gleam3');
 
             if (item.prompt) {
                 promptTextSpan.textContent = item.prompt;
@@ -1591,6 +1677,7 @@
                         prompt: data.prompt || "",
                         time: data.time || 0,
                         transition: data.transition || "fade",
+                        effect: data.effect || "gleam3",
                         path: data.latest
                     }];
                 }
@@ -1605,7 +1692,7 @@
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
                         const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                        applyImageTransition(newImgUrl, 'none');
+                        applyImageTransition(newImgUrl, 'none', data.effect || 'gleam3');
                         if (data.prompt) {
                             promptTextSpan.textContent = data.prompt;
                             promptBtn.style.display = 'flex';
@@ -1635,7 +1722,7 @@
                             promptBtn.style.display = 'none';
                             promptPinned = false;
 
-                            applyImageTransition(newImgUrl, transition);
+                            applyImageTransition(newImgUrl, transition, data.effect || 'gleam3');
 
                             if (data.prompt) {
                                 promptTextSpan.textContent = data.prompt;

@@ -140,8 +140,18 @@ def pause_current_playlist(session_id: Optional[str] = None):
 def resume_current_playlist(session_id: Optional[str] = None):
     get_canvas_state(session_id).resume_current_playlist()
 
-def update_shown_image(file_path: str, session_id: Optional[str] = None, transition: str = "crossfade"):
-    get_canvas_state(session_id).update_shown_image(file_path, session_id=session_id, transition=transition)
+def update_shown_image(
+    file_path: str,
+    session_id: Optional[str] = None,
+    transition: str = "crossfade",
+    effect: str = "gleam3",
+):
+    get_canvas_state(session_id).update_shown_image(
+        file_path,
+        session_id=session_id,
+        transition=transition,
+        effect=effect,
+    )
 
 def add_chat_message(text: str, author: str = "agent", session_id: Optional[str] = None):
     get_canvas_state(session_id).add_chat_message(text, author=author)
