@@ -1,6 +1,7 @@
 import asyncio
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 from dotenv import load_dotenv
 from google.adk.agents import Agent
@@ -16,6 +17,8 @@ from tools.music_tool import MusicTools
 from tools.notes_tool import NotesTools
 from utils.config_loader import get_config
 from utils.session_paths import ensure_sessions_root
+
+from components.canvas_state_service import CanvasStateService
 
 load_dotenv()
 
@@ -87,14 +90,19 @@ When a story begins or a scene/mood is described, invoke `play_playlist` immedia
 * resume_playlist: Resume the paused music playlist on the canvas.
 """
 
-def create_agent(session_id: str, config: dict = None):
+def create_agent(
+    session_id: str,
+    config: dict = None,
+    canvas_state_service: Optional["CanvasStateService"] = None,
+):
+    """Create a session-scoped agent whose tools write through canvas state service."""
     if config is None:
         config = get_config()
 
-    image_tools = ImageTools(config, session_id=session_id)
-    chat_tools = ChatTools(config, session_id=session_id)
-    notes_tools = NotesTools(config, session_id=session_id)
-    music_tools = MusicTools(config, session_id=session_id)
+    image_tools = ImageTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
+    chat_tools = ChatTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
+    notes_tools = NotesTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
+    music_tools = MusicTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
 
     # Call list_references immediately on agent init for initial context
     refs = image_tools.list_references()
@@ -135,16 +143,11 @@ def create_agent(session_id: str, config: dict = None):
         ],
     )
 
-    return agent, {
-        "image_tools": image_tools,
-        "chat_tools": chat_tools,
-        "notes_tools": notes_tools,
-        "music_tools": music_tools,
-    }
+    return agent
 
 async def main():
     print("Initializing ADK Agent...")
-    narratron_agent, _ = create_agent(session_id="default_session", config=config)
+    narratron_agent = create_agent(session_id="default_session", config=config)
     session_service = InMemorySessionService()
     artifact_service = DiskArtifactService(ensure_sessions_root() / "artifacts")
     # The runner manages the execution context and stream connections.

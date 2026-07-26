@@ -120,7 +120,7 @@ class TestSessionAPI(BaseTestCase):
 
     def test_export_assets_no_duplication(self):
         import zipfile
-        from web_viewer_app import get_canvas_state
+        from web_viewer_app import canvas_states
 
         # Register and log in
         reg_res = self.client.post("/api/auth/register", json={
@@ -148,7 +148,7 @@ class TestSessionAPI(BaseTestCase):
         img_path.write_bytes(b"fake_jpeg_data")
 
         # Simulate update_shown_image and history addition
-        cs = get_canvas_state(session_id)
+        cs = canvas_states.get(session_id)
         cs.update_shown_image(str(img_path), session_id=session_id)
 
         # Also save session to DB

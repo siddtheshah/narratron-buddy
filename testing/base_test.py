@@ -16,10 +16,10 @@ class BaseTestCase(unittest.TestCase):
         WEB_FLAGS.allow_mock_payments = False
 
     def cleanup_session_directories(self):
-        # 1. Clear web_viewer_app canvas states cache if loaded
+        # 1. Clear the shared canvas-state cache if loaded
         try:
-            from web_viewer_app import _canvas_states
-            _canvas_states.clear()
+            from web_viewer_app import canvas_states
+            canvas_states.states.clear()
         except Exception:
             pass
 

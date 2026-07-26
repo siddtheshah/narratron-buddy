@@ -1,13 +1,13 @@
 import unittest
 from fastapi.testclient import TestClient
-from web_viewer_app import app, get_canvas_state
+from web_viewer_app import app, canvas_states
 
 class TestChatPrefixes(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         self.session_id = "test_prefix_session"
         # Reset chat manager state for test session
-        cs = get_canvas_state(self.session_id)
+        cs = canvas_states.get(self.session_id)
         cs.chat_manager.messages = []
 
     def test_chat_message_authors_and_retrieval(self):

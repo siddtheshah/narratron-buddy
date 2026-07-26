@@ -2,14 +2,15 @@ import glob
 import logging
 import os
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
 logger = logging.getLogger(__name__)
 
 class MusicTools:
-    def __init__(self, config: dict, session_id: str):
+    def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
         self.config = config
         self.session_id = session_id
+        self.canvas_state_service = canvas_state_service
         root_dir = Path(__file__).parent.parent.resolve()
         self.playlists_folder = str((root_dir / "playlists").resolve())
         os.makedirs(self.playlists_folder, exist_ok=True)
@@ -81,6 +82,8 @@ class MusicTools:
             # Build relative URLs for the web app, e.g. /playlists/ambient/track1.mp3
             tracks = [f"/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
 
+            if self.canvas_state_service:
+                self.canvas_state_service.update_playlist(playlist_name, tracks, session_id=self.session_id)
             if self.on_play_playlist:
                 self.on_play_playlist(playlist_name, tracks)
 
@@ -97,6 +100,8 @@ class MusicTools:
             A status message indicating success or failure.
         """
         try:
+            if self.canvas_state_service:
+                self.canvas_state_service.pause_playlist(session_id=self.session_id)
             if self.on_pause_playlist:
                 self.on_pause_playlist()
             logger.info("Paused playlist")
@@ -112,6 +117,8 @@ class MusicTools:
             A status message indicating success or failure.
         """
         try:
+            if self.canvas_state_service:
+                self.canvas_state_service.resume_playlist(session_id=self.session_id)
             if self.on_resume_playlist:
                 self.on_resume_playlist()
             logger.info("Resumed playlist")

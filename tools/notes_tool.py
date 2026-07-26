@@ -1,14 +1,15 @@
 import json
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
 class NotesTools:
-    def __init__(self, config: dict, session_id: str):
+    def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
         self.active_session_id: str = session_id
+        self.canvas_state_service = canvas_state_service
 
         self.notes_dir = str((ensure_sessions_root() / self.active_session_id / "output" / "artifacts" / "notes").resolve())
         os.makedirs(self.notes_dir, exist_ok=True)

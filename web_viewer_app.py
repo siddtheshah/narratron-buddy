@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 
-from components.canvas_state import CanvasStateManager
+from components.canvas_state_service import CanvasStateService
 from deployer.database import DatabaseManager
 from deployer.deployer import LocalDeployer, SessionMetadata
 from deployer.session_manager import SessionManager
@@ -100,22 +100,7 @@ class BuyCreditsRequest(BaseModel):
     card_cvc: Optional[str] = None
     card_name: Optional[str] = None
 
-_canvas_states: dict[str, CanvasStateManager] = {}
-
-def get_canvas_state(session_id: Optional[str] = None) -> CanvasStateManager:
-    """Retrieve or dynamically instantiate a session-scoped CanvasStateManager instance."""
-    if not session_id:
-        deployed = [s for s in local_deployer.list_sessions() if s.status == "deployed"]
-        if deployed:
-            session_id = deployed[0].session_id
-        elif _canvas_states:
-            non_default = [k for k in _canvas_states.keys() if k != "default"]
-            session_id = non_default[0] if non_default else list(_canvas_states.keys())[0]
-
-    sid = session_id or "default"
-    if sid not in _canvas_states:
-        _canvas_states[sid] = CanvasStateManager(session_id=sid, base_sessions_dir=local_deployer.base_dir)
-    return _canvas_states[sid]
+canvas_states = CanvasStateService(local_deployer)
 
 _SAFE_PARAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.() \-]*$')
 
@@ -130,31 +115,6 @@ def get_current_user(request: Request) -> Optional[dict]:
     if not token:
         return None
     return db.validate_session_token(token)
-
-def update_current_playlist(playlist_name: str, tracks: list[str], session_id: Optional[str] = None):
-    get_canvas_state(session_id).update_current_playlist(playlist_name, tracks)
-
-def pause_current_playlist(session_id: Optional[str] = None):
-    get_canvas_state(session_id).pause_current_playlist()
-
-def resume_current_playlist(session_id: Optional[str] = None):
-    get_canvas_state(session_id).resume_current_playlist()
-
-def update_shown_image(
-    file_path: str,
-    session_id: Optional[str] = None,
-    transition: str = "crossfade",
-    effect: str = "gleam3",
-):
-    get_canvas_state(session_id).update_shown_image(
-        file_path,
-        session_id=session_id,
-        transition=transition,
-        effect=effect,
-    )
-
-def add_chat_message(text: str, author: str = "agent", session_id: Optional[str] = None):
-    get_canvas_state(session_id).add_chat_message(text, author=author)
 
 # ========================================
 # Authentication API Endpoints
@@ -467,7 +427,7 @@ async def create_and_deploy_session(request: Request):
 
     # Export & persist session immediately to DB
     session_dir = local_deployer._get_session_dir(deployed_meta.session_id)
-    cs = get_canvas_state(deployed_meta.session_id)
+    cs = canvas_states.get(deployed_meta.session_id)
     state_data, image_files = cs.export_session_data(session_dir=session_dir)
     db.export_session_to_db(
         session_id=deployed_meta.session_id,
@@ -534,25 +494,12 @@ def destroy_session(session_id: str, request: Request):
 async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = None):
     await websocket.accept()
     websocket.state.session_id = session_id
-    cs = get_canvas_state(session_id)
-    cs.register_websocket(websocket)
-    
-    # Send current doodle display state to newly connected client
-    await websocket.send_json({"type": "doodles_toggle", "enabled": cs.doodles_enabled})
-
-    # Send existing doodle actions to newly connected client
-    for action in cs.doodles_state:
-        await websocket.send_json(action)
+    cs = await canvas_states.connect_doodle_websocket(websocket, session_id)
         
     try:
         while True:
             data = await websocket.receive_json()
-            if data.get("type") == "toggle_doodles":
-                cs.set_doodles_enabled(bool(data.get("enabled", True)))
-                await cs.broadcast_ws_message({"type": "doodles_toggle", "enabled": cs.doodles_enabled}, sender=None)
-            else:
-                cs.add_doodle(data)
-                await cs.broadcast_ws_message(data, sender=websocket)
+            await canvas_states.apply_doodle_message(cs, data, sender=websocket)
     except WebSocketDisconnect:
         cs.unregister_websocket(websocket)
 
@@ -565,7 +512,7 @@ def save_session_to_db(session_id: str, request: Request):
     user_id = dep["user_id"] if dep else None
     name = meta.name if meta else session_id
 
-    cs = get_canvas_state(session_id)
+    cs = canvas_states.get(session_id)
     state_data, image_files = cs.export_session_data(session_dir=session_dir)
     db.export_session_to_db(
         session_id=session_id,
@@ -589,7 +536,7 @@ def export_session_assets(session_id: str, request: Request):
         db.reconstruct_session_from_db(session_id, session_dir)
 
     # Ensure current displayed image is saved into the session directory
-    cs = get_canvas_state(session_id)
+    cs = canvas_states.get(session_id)
     cs.export_session_data(session_dir=session_dir)
 
     import io
@@ -622,15 +569,7 @@ async def trigger_orator_mic_toggle(request: Request, session_id: Optional[str] 
         if dep and dep["user_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Permission denied. Only the session owner can control the Orator microphone.")
 
-    count = 0
-    target_states = [get_canvas_state(session_id)] if session_id else list(_canvas_states.values())
-    for cs in target_states:
-        for ws in list(cs.active_ws_connections):
-            try:
-                await ws.send_json({"type": "toggle_mic"})
-                count += 1
-            except Exception:
-                pass
+    count = await canvas_states.toggle_microphone(session_id)
     return {"status": "ok", "broadcasted_to": count}
 
 
@@ -647,18 +586,15 @@ def get_latest_image(session_id: Optional[str] = None):
         session_dir = local_deployer._get_session_dir(session_id)
         if not session_dir.exists():
             db.reconstruct_session_from_db(session_id, session_dir)
-    cs = get_canvas_state(session_id)
-    return cs.get_latest_state()
+    return canvas_states.latest_state(session_id)
 
 @app.get("/api/chat")
 def get_chat(session_id: Optional[str] = None):
-    cs = get_canvas_state(session_id)
-    return cs.chat_manager.get_messages()
+    return canvas_states.chat_messages(session_id)
 
 @app.post("/api/chat")
 def post_chat(msg: ChatMessage, session_id: Optional[str] = None):
-    cs = get_canvas_state(session_id)
-    cs.add_chat_message(msg.text, author=msg.author)
+    canvas_states.add_chat_message(msg.text, author=msg.author, session_id=session_id)
     return {"status": "ok"}
 
 @app.get("/api/stats")

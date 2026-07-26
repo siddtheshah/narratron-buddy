@@ -29,8 +29,9 @@ class ImageTools:
     _references_cache: Dict[str, dict] = {}
     _reference_dir_cached: Optional[str] = None
 
-    def __init__(self, config: dict, session_id: str):
+    def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
         self.active_session_id: str = session_id
+        self.canvas_state_service = canvas_state_service
 
         sessions_root = ensure_sessions_root()
         self.style_path = sessions_root / self.active_session_id / "style.txt"
@@ -465,7 +466,15 @@ class ImageTools:
             resolved_path = self._find_image_path(file_path)
             logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}', transition: '{transition}')")
             if resolved_path:
-                if self.on_show_image:
+                canvas_state_service = getattr(self, "canvas_state_service", None)
+                if canvas_state_service:
+                    canvas_state_service.show_image(
+                        resolved_path,
+                        session_id=self.active_session_id,
+                        transition=transition,
+                        effect=effect,
+                    )
+                elif self.on_show_image:
                     logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}', transition='{transition}', effect='{effect}'")
                     self.on_show_image(
                         resolved_path,

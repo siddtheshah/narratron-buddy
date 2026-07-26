@@ -27,6 +27,17 @@ def format_canvas_state(canvas_state_manager: Optional[CanvasStateManager]) -> s
     playlist = getattr(canvas_state_manager, "current_playlist", None) or "none"
     return f"[Canvas Image]: {image_name}, {image_prompt}\n[Canvas music]: {playlist}"
 
+
+def get_bound_tool_instance(agent: object, tool_name: str) -> object:
+    """Return the object owning the named function tool registered on an agent."""
+    for tool in agent.tools:
+        if tool.name == tool_name and hasattr(tool, "func"):
+            instance = getattr(tool.func, "__self__", None)
+            if instance is not None:
+                return instance
+    raise ValueError(f"Agent does not have a bound '{tool_name}' tool.")
+
+
 async def handle_live_websocket_connection(
     websocket: WebSocket,
     user_id: str,
@@ -35,9 +46,6 @@ async def handle_live_websocket_connection(
     runner: any,
     session_service: any,
     config: dict,
-    image_tools: any,
-    chat_tools: any,
-    notes_tools: any = None,
     proactivity: bool = False,
     affective_dialog: bool = False,
     on_global_chat_message: any = None,
@@ -47,6 +55,10 @@ async def handle_live_websocket_connection(
     canvas_state_manager: Optional[object] = None,
 ) -> None:
     """Handles bidirectional WebSocket streaming between a client and ADK Gemini Live runner."""
+    image_tools = get_bound_tool_instance(agent, "create_image")
+    chat_tools = get_bound_tool_instance(agent, "send_chat_message")
+    notes_tools = get_bound_tool_instance(agent, "edit_notes")
+
     logger.debug(
         f"WebSocket connection request: user_id={user_id}, session_id={session_id}, "
         f"proactivity={proactivity}, affective_dialog={affective_dialog}"

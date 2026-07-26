@@ -26,7 +26,7 @@ class TestAgentInit(BaseTestCase):
         mock_image_cls.return_value = mock_image_tools
 
         session_id = "test_agent_session"
-        agent_inst, tools_dict = create_agent(session_id=session_id)
+        agent_inst = create_agent(session_id=session_id)
 
         # Verify list_references was called immediately during create_agent
         mock_image_tools.list_references.assert_called_once()
@@ -37,6 +37,35 @@ class TestAgentInit(BaseTestCase):
         self.assertIn("Preloaded References Context", kwargs["instruction"])
         self.assertIn("hero_character", kwargs["instruction"])
         self.assertIn("/path/to/hero_character.png", kwargs["instruction"])
+        self.assertIs(agent_inst, mock_agent_cls.return_value)
+
+    @patch("agent.ImageTools")
+    @patch("agent.ChatTools")
+    @patch("agent.NotesTools")
+    @patch("agent.MusicTools")
+    @patch("agent.Agent")
+    def test_create_agent_passes_canvas_state_service_to_every_tool(
+        self, mock_agent_cls, mock_music_cls, mock_notes_cls, mock_chat_cls, mock_image_cls
+    ):
+        mock_image_cls.return_value.list_references.return_value = []
+        canvas_state_service = MagicMock()
+        session_id = "test_agent_session"
+        config = {"agent": {"model_id": "test-model"}}
+
+        create_agent(
+            session_id=session_id,
+            config=config,
+            canvas_state_service=canvas_state_service,
+        )
+
+        expected_kwargs = {
+            "session_id": session_id,
+            "canvas_state_service": canvas_state_service,
+        }
+        mock_image_cls.assert_called_once_with(config, **expected_kwargs)
+        mock_chat_cls.assert_called_once_with(config, **expected_kwargs)
+        mock_notes_cls.assert_called_once_with(config, **expected_kwargs)
+        mock_music_cls.assert_called_once_with(config, **expected_kwargs)
 
 
 if __name__ == "__main__":

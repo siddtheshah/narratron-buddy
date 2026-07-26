@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from fastapi import WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from google import adk
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 import uvicorn
@@ -22,13 +23,8 @@ from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtif
 from utils.config_loader import get_config
 from utils.session_paths import ensure_sessions_root
 from web_viewer_app import (
-    add_chat_message,
     app,
-    pause_current_playlist,
-    resume_current_playlist,
-    get_canvas_state,
-    update_current_playlist,
-    update_shown_image,
+    canvas_states,
 )
 
 # Load environment variables
@@ -76,14 +72,9 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Define services
-session_service = InMemorySessionService()
+adk_session_service = InMemorySessionService()
 
 use_in_memory_artifacts = FLAGS.use_in_memory_artifacts
-
-
-def handle_global_chat_message(text: str, session_id: str = None):
-    logger.info(f"Chat message tool triggered: {text}")
-    add_chat_message(text, "agent", session_id=session_id)
 
 
 # ========================================
@@ -110,23 +101,12 @@ async def agent_websocket_endpoint(
     """WebSocket endpoint for bidirectional streaming with ADK.
     Constructs a Runner instance concurrent with the lifespan of the session connection.
     """
-    # Create agent and tools bound to this session's lifetime
-    session_agent, session_tools = create_agent(session_id=session_id, config=config)
-    s_image_tools = session_tools["image_tools"]
-    s_chat_tools = session_tools["chat_tools"]
-    s_notes_tools = session_tools["notes_tools"]
-    s_music_tools = session_tools["music_tools"]
-
-    s_image_tools.on_show_image = lambda path, transition="crossfade", effect="gleam3": update_shown_image(
-        path,
+    # Create an agent whose bound tool instances are available through agent.tools.
+    session_agent = create_agent(
         session_id=session_id,
-        transition=transition,
-        effect=effect,
+        config=config,
+        canvas_state_service=canvas_states,
     )
-    s_music_tools.on_play_playlist = lambda name, tracks: update_current_playlist(name, tracks, session_id=session_id)
-    s_music_tools.on_pause_playlist = lambda: pause_current_playlist(session_id=session_id)
-    s_music_tools.on_resume_playlist = lambda: resume_current_playlist(session_id=session_id)
-    s_chat_tools.on_send_chat_message = lambda text: handle_global_chat_message(text, session_id=session_id)
 
     # Construct session-scoped artifact service if using disk-based storage
     disk_service_path = ensure_sessions_root() / session_id / "output" / "artifacts"
@@ -144,7 +124,7 @@ async def agent_websocket_endpoint(
     session_runner = Runner(
         app_name=APP_NAME,
         agent=session_agent,
-        session_service=session_service,
+        session_service=adk_session_service,
         artifact_service=artifact_service,
     )
     
@@ -154,18 +134,15 @@ async def agent_websocket_endpoint(
         session_id=session_id,
         agent=session_agent,
         runner=session_runner,
-        session_service=session_service,
+        session_service=adk_session_service,
         config=config,
-        image_tools=s_image_tools,
-        chat_tools=s_chat_tools,
-        notes_tools=s_notes_tools,
         proactivity=proactivity,
         affective_dialog=affective_dialog,
-        on_global_chat_message=handle_global_chat_message,
+        on_global_chat_message=None,
         app_name=APP_NAME,
         send_setup_complete_immediately=False,
         send_setup_after_delay=True,
-        canvas_state_manager=get_canvas_state(session_id),
+        canvas_state_manager=canvas_states.get(session_id),
     )
 
 if __name__ == "__main__":

@@ -73,7 +73,7 @@ async def websocket_endpoint(
     affective_dialog: bool = False,
 ) -> None:
     """WebSocket endpoint for bidirectional streaming with ADK."""
-    session_agent, session_tools = create_agent(session_id=session_id, config=config)
+    session_agent = create_agent(session_id=session_id, config=config)
     session_artifact_service = DiskArtifactService(ensure_sessions_root() / "test_session")
     session_runner = Runner(
         app_name=APP_NAME,
@@ -90,9 +90,6 @@ async def websocket_endpoint(
         runner=session_runner,
         session_service=session_service,
         config=config,
-        image_tools=session_tools["image_tools"],
-        chat_tools=session_tools["chat_tools"],
-        notes_tools=session_tools["notes_tools"],
         proactivity=proactivity,
         affective_dialog=affective_dialog,
         on_global_chat_message=None,
