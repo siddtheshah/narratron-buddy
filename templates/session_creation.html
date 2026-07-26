@@ -574,7 +574,7 @@
             Narratron Deployer
         </a>
         <div class="nav-actions">
-            <a href="/join" class="btn btn-secondary btn-sm">← Back to /join</a>
+            <a href="/join" class="btn btn-secondary btn-sm">← Back to Join Page</a>
             <a href="/stats" class="btn btn-secondary btn-sm">📊 Stats</a>
             <div id="userAccountBar" class="user-account-bar">
                 <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Log In</button>
@@ -586,7 +586,7 @@
     <main>
         <div class="hero">
             <h1>Session & Asset Deployer</h1>
-            <p>Deploy persistent canvas instances, mount reference image assets, and configure multi-channel music playlists.</p>
+            <p>Deploy your Narratron session with your own personal assets and styles.</p>
         </div>
 
         <div class="grid-container">
@@ -610,7 +610,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Reference Images (Mount to /reference_library)</label>
+                    <label>Reference Images</label>
                     <div class="dropzone" id="refDropzone">
                         <input type="file" id="refFileInput" accept="image/*" multiple style="display: none;">
                         <span style="font-size: 1.5rem;">🖼️</span>
@@ -1605,7 +1605,6 @@
 
         // Initialize on load
         playlistsData['default'] = [];
-        playlistsData['ambient'] = [];
         renderPlaylists();
         checkAuthStatus();
         loadSessions();
