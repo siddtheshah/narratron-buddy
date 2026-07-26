@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from deployer.database import DatabaseManager
 
 

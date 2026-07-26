@@ -1,6 +1,6 @@
 import unittest
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from utils.email_service import FLAGS, send_password_reset_email
 
 

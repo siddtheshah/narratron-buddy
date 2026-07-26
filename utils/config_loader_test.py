@@ -1,6 +1,6 @@
 import unittest
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from utils.config_loader import get_config
 
 class TestConfigLoader(BaseTestCase):

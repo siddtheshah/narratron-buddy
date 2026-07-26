@@ -9,7 +9,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from web_viewer_app import app, local_deployer, db, FLAGS
 
 

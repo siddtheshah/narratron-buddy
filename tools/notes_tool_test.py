@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import unittest
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from tools.notes_tool import NotesTools
 
 
@@ -64,4 +64,3 @@ class TestNotesTools(BaseTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

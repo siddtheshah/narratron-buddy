@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from components.canvas_state import CanvasStateManager
 
 class TestCanvasStateManager(BaseTestCase):

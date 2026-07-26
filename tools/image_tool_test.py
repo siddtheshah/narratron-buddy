@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from tools.image_tool import ImageTools
 
 

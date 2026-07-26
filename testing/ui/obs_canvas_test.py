@@ -1,0 +1,42 @@
+from fastapi.testclient import TestClient
+
+from testing.ui.base import UITestCase
+from web_viewer_app import app
+
+
+class TestOBSCanvas(UITestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = TestClient(app)
+
+    def test_obs_route_omits_ui_chrome(self):
+        response = self.client.get("/obs?session_id=test_session")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for element in (
+            'Narratron OBS Canvas',
+            'id="canvas-renderer"',
+            'id="doodle-canvas"',
+            'id="current-image"',
+        ):
+            self.assertIn(element, html)
+        for element in (
+            'id="chat-sidebar"',
+            'id="fullscreen-btn"',
+            'id="bottom-bar"',
+            'id="prompt-toggle-btn"',
+            'id="history-paging-controls"',
+        ):
+            self.assertNotIn(element, html)
+
+    def test_obs_session_path_route(self):
+        response = self.client.get("/obs/test_session_123")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Narratron OBS Canvas", response.text)
+
+    def test_canvas_obs_query_flag_uses_obs_template(self):
+        response = self.client.get("/canvas?session_id=test_session&obs=1")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Narratron OBS Canvas", response.text)
+        self.assertNotIn('id="chat-sidebar"', response.text)

@@ -1,6 +1,6 @@
 import unittest
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from utils.image_utils import resolve_image_path
 
 class TestImageUtils(BaseTestCase):

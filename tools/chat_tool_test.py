@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from tools.chat_tool import ChatTools
 
 class TestChatTools(BaseTestCase):

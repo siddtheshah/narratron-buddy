@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from testing.base_test import BaseTestCase
+from testing.base import BaseTestCase
 from agent import create_agent
 
 

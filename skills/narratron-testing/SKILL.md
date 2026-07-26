@@ -12,6 +12,8 @@ This skill provides comprehensive instructions for running and maintaining tests
 ### File Location & Naming
 Unit tests follow the `*_test.py` naming convention and are placed **directly adjacent** to the modules they test.
 
+UI integration tests are the exception: place them in `testing/ui/`, also using the `*_test.py` convention.
+
 - **Tools**:
   - `tools/image_tool_test.py` (tests `tools/image_tool.py`)
   - `tools/music_tool_test.py` (tests `tools/music_tool.py`)
@@ -47,10 +49,11 @@ python tools/image_tool_test.py
 
 ## 2. Directory Layout of `testing/`
 
-The `testing/` directory is reserved exclusively for test data, evaluation scenarios, and test utilities:
+The `testing/` directory contains UI integration tests, test data, evaluation scenarios, and shared test utilities:
 
 ```text
 testing/
+├── ui/                # UI integration tests (for example, canvas and OBS routes)
 ├── testcases/         # Evaluation test scenarios containing expectations.json and audio files
 │   └── desert_basic/
 │       ├── expectations.json
@@ -58,7 +61,7 @@ testing/
 ├── testdata/          # Preloaded test artifacts, sample images, and test sound files
 │   ├── images/
 │   └── playlists/
-└── utils/             # Shared evaluation and test utility modules
+└── base.py             # Shared unittest fixture
 ```
 
 ---
