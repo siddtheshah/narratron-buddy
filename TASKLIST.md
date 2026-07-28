@@ -3,6 +3,10 @@
 ## App Deployment & Infrastructure
 - [ ] Cleanup daemon (triggers on session creation, removes sessions not marked durable and older than 7 days)
 
+## Database And Performance
+- [ ] Performance is abysmal. Everything related to frontend calls to the database have to be made async.
+- [ ] Prevent session auto-load. Session data shouldn't be loaded when visiting the front page.
+
 ## Frontend
 - [ ] Proper how-to popup for the orator. Doesn't need to be a separate page.
 - [ ] Improve Splash Page Load by loading the images incrementally.
