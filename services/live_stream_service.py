@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.adk.agents.live_request_queue import LiveRequestQueue
-from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.agents.run_config import RunConfig, StreamingMode, ToolThreadPoolConfig
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
@@ -111,6 +111,12 @@ async def handle_live_websocket_connection(
                     types.ProactivityConfig(proactive_audio=True) if proactivity else None
                 ),
                 enable_affective_dialog=affective_dialog if affective_dialog else None,
+                realtime_input_config=types.RealtimeInputConfig(
+                    activity_handling=types.ActivityHandling.NO_INTERRUPTION
+                ),
+                tool_thread_pool_config=ToolThreadPoolConfig(
+                    max_workers=3
+                )
             )
         else:
             response_modalities = ["TEXT"]
