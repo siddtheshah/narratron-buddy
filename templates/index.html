@@ -1965,7 +1965,7 @@
             if (agentWs) return;
 
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/orator-${myUserId}/${sessionId}`;
+            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${sessionId}`;
             
             agentConnectBtn.textContent = 'Connecting...';
             agentConnectBtn.style.background = '#eab308'; // Amber
