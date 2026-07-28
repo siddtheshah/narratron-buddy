@@ -73,9 +73,44 @@ class _DictConnection:
         return self
 
     def __exit__(self, *args):
-        if hasattr(self._conn, '__exit__'):
+        try:
+            if hasattr(self._conn, '__exit__'):
+                return self._conn.__exit__(*args)
+            return False
+        finally:
+            # libsql's context manager commits or rolls back, but does not
+            # necessarily release the remote Hrana stream. Every request gets
+            # a fresh connection, so it must be closed before the next one.
+            self.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+class _ClosingConnection:
+    """Ensure a DB-API context manager also releases its connection."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return self._conn.cursor()
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        self._conn.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        try:
             return self._conn.__exit__(*args)
-        return False
+        finally:
+            self.close()
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
@@ -103,12 +138,12 @@ class DatabaseManager:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
+            return _ClosingConnection(conn)
         else:
-            conn = _DictConnection(libsql.connect(
+            return _DictConnection(libsql.connect(
                 database=os.environ["TURSO_DATABASE_URL"],
                 auth_token=os.environ["TURSO_DB_TOKEN"]
             ))
-        return conn
 
     def _init_db(self) -> None:
         """Initialize database schema if tables do not exist."""
@@ -312,8 +347,10 @@ class DatabaseManager:
         self.record_user_activity(user_id)
         return token
 
-    def validate_session_token(self, token: str) -> Optional[Dict]:
-        """Validate auth session token and return user profile if valid."""
+    def validate_session_token(
+        self, token: str, *, record_activity: bool = True
+    ) -> Optional[Dict]:
+        """Validate an auth session token and optionally record its use."""
         if not token:
             return None
 
@@ -329,7 +366,8 @@ class DatabaseManager:
             row = cursor.fetchone()
             if row:
                 res = dict(row)
-                self.record_user_activity(res["id"])
+                if record_activity:
+                    self.record_user_activity(res["id"])
                 return res
             return None
 
@@ -338,15 +376,16 @@ class DatabaseManager:
         if not user_id:
             return False
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE users SET last_active_at = ? WHERE id = ?", (now_iso, user_id))
-                conn.commit()
-                return cursor.rowcount > 0
-        except Exception as e:
-            logger.error(f"Error recording user activity: {e}")
-            return False
+        return True
+        # try:
+        #     with self._get_connection() as conn:
+        #         cursor = conn.cursor()
+        #         cursor.execute("UPDATE users SET last_active_at = ? WHERE id = ?", (now_iso, user_id))
+        #         conn.commit()
+        #         return cursor.rowcount > 0
+        # except Exception as e:
+        #     logger.error(f"Error recording user activity: {e}")
+        #     return False
 
     def record_session_view(self, session_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> bool:
         """Record a session view event in database."""
