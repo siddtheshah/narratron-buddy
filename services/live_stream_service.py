@@ -58,6 +58,7 @@ async def handle_live_websocket_connection(
     image_tools = get_bound_tool_instance(agent, "create_image")
     chat_tools = get_bound_tool_instance(agent, "send_chat_message")
     notes_tools = get_bound_tool_instance(agent, "edit_notes")
+    music_tools = get_bound_tool_instance(agent, "play_playlist")
 
     logger.debug(
         f"WebSocket connection request: user_id={user_id}, session_id={session_id}, "
@@ -193,8 +194,11 @@ async def handle_live_websocket_connection(
             # Every image tool call gets a fresh state snapshot, including failed/cooldown calls.
             send_canvas_state(force=True)
 
+        for tool_suite in (image_tools, chat_tools, notes_tools, music_tools):
+            if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
+                tool_suite.on_cooldown_expired = handle_cooldown_expired
+
         if image_tools:
-            image_tools.on_cooldown_expired = handle_cooldown_expired
             image_tools.on_after_tool_call = handle_after_image_tool
 
         async def canvas_state_refresh_task() -> None:

@@ -71,7 +71,7 @@ class TestImageTools(BaseTestCase):
             session_id="drawing_indicator",
             canvas_state_service=canvas_state_service,
         )
-        tools.last_create_time = time.time()
+        tools.last_create_time = 0.0
         tools._schedule_cooldown_timer = MagicMock()
 
         tools.create_image("a misty forest")
@@ -581,9 +581,7 @@ class TestImageTools(BaseTestCase):
         os.makedirs(tools.output_dir, exist_ok=True)
 
         on_cooldown_expired = MagicMock()
-        on_show_expired = MagicMock()
         tools.on_cooldown_expired = on_cooldown_expired
-        tools.on_show_cooldown_expired = on_show_expired
 
         file_path = os.path.join(tools.output_dir, "test.jpg")
         img = Image.new("RGB", (10, 10), color="purple")
@@ -595,7 +593,6 @@ class TestImageTools(BaseTestCase):
         # Do NOT call show_image again. Verify callback fires automatically after cooldown duration.
         time.sleep(0.25)
         on_cooldown_expired.assert_called_with("show_image")
-        on_show_expired.assert_called_once()
 
     @patch("tools.image_tool.genai.Client")
     def test_on_after_tool_call_and_canvas_info(self, mock_genai_client):

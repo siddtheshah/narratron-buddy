@@ -24,7 +24,7 @@
 - [ ] Cloudflare
 
 ## Deployment Features
-- [ ] Folder upload.
+- [x] Folder upload.
   - Needs a tutorial popup.
 
 ## Agent Responsiveness
@@ -49,3 +49,8 @@
   - Keep the agent conversation separate from the current speaker: use a stable session-scoped agent identity so a handoff does not start a new conversation.
   - Save a durable handoff snapshot (scene summary, story bible, open threads, current image/music, and recent directives) and inject it when the new holder connects.
   - Persist agent-session continuity outside in-memory process state so handoffs survive reconnects, Cloud Run instance changes, and restarts.
+
+## Music
+
+- [ ] Ramp music gently, have fade-in and fade-out.
+- [ ] Add cooldown for music tool. Agent gets a little crazy with it.

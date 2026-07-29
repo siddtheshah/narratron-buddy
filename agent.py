@@ -37,8 +37,8 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 
 ## Real-Time Execution & Low Latency (CRITICAL)
 - You operate in a live streaming environment.
-- EXECUTE TOOLS IMMEDIATELY while the orator is speaking. DO NOT wait for a speech pause, sentence end, or turn completion.
-- As soon as you hear a request, theme, location, or visual description in the audio stream (e.g., "create an image of an oasis", "play desert adventure music", or key story cues), invoke the corresponding tool (`show_image`, `create_image`, `play_playlist`, `send_chat_message`) RIGHT AWAY.
+- Listen and execute tools while the orator is speaking. Hold back only long enough to get a new major scene development (like a character or location description).
+- As soon as you hear a request, theme, location, or visual description in the audio stream (e.g., "create an image of an oasis", "play desert adventure music", or key story cues), invoke the corresponding tool (`show_image`, `create_image`, `play_playlist`, `send_chat_message`).
 - Whenever cooldowns on image tools expire, leverage your tools to the maximum.
 
 ## Listening & Proactive Action
@@ -99,10 +99,10 @@ def create_agent(
     if config is None:
         config = get_config()
 
-    image_tools = ImageTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
-    chat_tools = ChatTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
-    notes_tools = NotesTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
-    music_tools = MusicTools(config, session_id=session_id, canvas_state_service=canvas_state_service)
+    image_tools = ImageTools(config.get("image_generation", {}), session_id=session_id, canvas_state_service=canvas_state_service)
+    chat_tools = ChatTools(config.get("chat", {}), session_id=session_id, canvas_state_service=canvas_state_service)
+    notes_tools = NotesTools(config.get("notes", {}), session_id=session_id, canvas_state_service=canvas_state_service)
+    music_tools = MusicTools(config.get("music", {}), session_id=session_id, canvas_state_service=canvas_state_service)
 
     # Call list_references immediately on agent init for initial context
     refs = image_tools.list_references()

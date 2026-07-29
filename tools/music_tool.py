@@ -1,16 +1,24 @@
 import glob
 import logging
 import os
+import threading
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+from tools.base_tool import BaseTools, with_cooldown
 
 logger = logging.getLogger(__name__)
 
-class MusicTools:
+class MusicTools(BaseTools):
     def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
-        self.config = config
-        self.session_id = session_id
-        self.canvas_state_service = canvas_state_service
+        raw_config = config or {}
+        subconfig = raw_config.get("music", raw_config) if "music" in raw_config else raw_config
+        super().__init__(
+            config=subconfig,
+            session_id=session_id,
+            canvas_state_service=canvas_state_service,
+            default_cooldown=60.0,
+        )
         root_dir = Path(__file__).parent.parent.resolve()
         self.playlists_folder = str((root_dir / "playlists").resolve())
         os.makedirs(self.playlists_folder, exist_ok=True)
@@ -57,6 +65,7 @@ class MusicTools:
             logger.error(f"Error listing playlists: {e}")
             return f"Error listing playlists: {e}"
 
+    @with_cooldown("playing another playlist")
     def play_playlist(self, playlist_name: str) -> str:
         """Choose a playlist to play. This sends a signal to play the music on the canvas.
 

@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock
 
@@ -13,7 +14,8 @@ class TestMusicTools(BaseTestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.config = {
             "music": {
-                "playlists_folder": self.temp_dir
+                "playlists_folder": self.temp_dir,
+                "cooldown_duration": 15.0,
             }
         }
         
@@ -74,5 +76,25 @@ class TestMusicTools(BaseTestCase):
         self.assertIn("Successfully resumed", resume_res)
         mock_resume_cb.assert_called_once()
 
+    def test_play_playlist_cooldown(self):
+        self.music_tools.cooldown_duration = 5.0
+        res1 = self.music_tools.play_playlist("ambient")
+        self.assertIn("Successfully started playing", res1)
+
+        res2 = self.music_tools.play_playlist("combat")
+        self.assertIn("play_playlist is on cooldown", res2)
+
+    def test_cooldown_expired_callbacks(self):
+        self.music_tools.cooldown_duration = 0.1
+        on_cooldown_expired = MagicMock()
+        self.music_tools.on_cooldown_expired = on_cooldown_expired
+
+        res1 = self.music_tools.play_playlist("ambient")
+        self.assertIn("Successfully started playing", res1)
+
+        time.sleep(0.25)
+        on_cooldown_expired.assert_called_with("play_playlist")
+
 if __name__ == "__main__":
     unittest.main()
+

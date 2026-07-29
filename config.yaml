@@ -15,6 +15,13 @@ image_generation:
 
 music:
     playlists_folder: "playlists"
+    cooldown_duration: 15
+
+notes:
+    cooldown_duration: 5
+
+chat:
+    cooldown_duration: 15
 
 orator:
     hotkey: "<ctrl>+<shift>+["

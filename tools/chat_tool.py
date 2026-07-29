@@ -1,15 +1,21 @@
 import logging
 from typing import Any
+from tools.base_tool import BaseTools, with_cooldown
 
 logger = logging.getLogger(__name__)
 
-class ChatTools:
+class ChatTools(BaseTools):
     def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
-        self.config = config
-        self.session_id = session_id
-        self.canvas_state_service = canvas_state_service
+        raw_config = config or {}
+        subconfig = raw_config.get("chat", raw_config) if "chat" in raw_config else raw_config
+        super().__init__(
+            config=subconfig,
+            session_id=session_id,
+            canvas_state_service=canvas_state_service,
+        )
         self.on_send_chat_message = None
 
+    @with_cooldown("sending chat message")
     def send_chat_message(self, text: str) -> str:
         """Sends a text message/response to the user chat window.
 

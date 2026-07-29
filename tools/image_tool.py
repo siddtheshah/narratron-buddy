@@ -14,6 +14,7 @@ from google import genai
 from google.genai import types
 from PIL import Image
 
+from tools.base_tool import BaseTools, with_cooldown
 from utils.image_utils import (
     embed_image_metadata,
     extract_image_metadata_description,
@@ -24,14 +25,20 @@ from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
-class ImageTools:
+class ImageTools(BaseTools):
     _client_cache = None
     _references_cache: Dict[str, dict] = {}
     _reference_dir_cached: Optional[str] = None
 
     def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
-        self.active_session_id: str = session_id
-        self.canvas_state_service = canvas_state_service
+        raw_config = config or {}
+        subconfig = raw_config.get("image_generation", raw_config) if "image_generation" in raw_config else raw_config
+        super().__init__(
+            config=subconfig,
+            session_id=session_id,
+            canvas_state_service=canvas_state_service,
+            default_cooldown=60.0,
+        )
 
         sessions_root = ensure_sessions_root()
         self.style_path = sessions_root / self.active_session_id / "style.txt"
@@ -44,28 +51,18 @@ class ImageTools:
         
         # Reuse shared genai Client instance across session re-initializations
         if ImageTools._client_cache is None:
-            project_id = config.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))
+            project_id = raw_config.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))
             location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
             ImageTools._client_cache = genai.Client(vertexai=True, project=project_id, location=location)
         
         self.client = ImageTools._client_cache
 
         self.on_show_image = None
-        self.on_cooldown_expired: Optional[Callable[[str], None]] = None
-        self.on_create_cooldown_expired: Optional[Callable[[], None]] = None
-        self.on_show_cooldown_expired: Optional[Callable[[], None]] = None
-        self.on_after_tool_call: Optional[Callable[[str, Dict[str, Any]], None]] = None
 
         self.currently_displayed_image_path: Optional[str] = None
         self.currently_displayed_image_transition: str = "crossfade"
         self.currently_displayed_image_effect: str = "gleam3"
 
-        self._create_cooldown_timer: Optional[threading.Timer] = None
-        self._show_cooldown_timer: Optional[threading.Timer] = None
-
-        self.last_create_time = 0.0
-        self.last_show_time = 0.0
-        self.cooldown_duration = float(config.get("image_generation", {}).get("cooldown_duration", 60.0))
         self.simple_model = config.get("image_generation", {}).get("simple_model", "gemini-3.1-flash-lite-image")
         self.reference_model = config.get("image_generation", {}).get("reference_model", "gemini-3.1-flash-image")
 
@@ -102,49 +99,6 @@ class ImageTools:
     def get_effective_output_dir(self) -> str:
         """Return active session output directory."""
         return self.output_dir
-
-    def _schedule_cooldown_timer(self, tool_name: str, remaining_seconds: float):
-        """Schedules a background timer to invoke callbacks when a tool's cooldown expires."""
-        def _timer_callback():
-            logger.info(f"[ImageTools] Cooldown for '{tool_name}' has expired.")
-            cb_expired = getattr(self, "on_cooldown_expired", None)
-            if cb_expired:
-                try:
-                    cb_expired(tool_name)
-                except Exception as e:
-                    logger.error(f"[ImageTools] Exception in on_cooldown_expired callback: {e}")
-            
-            cb_create = getattr(self, "on_create_cooldown_expired", None)
-            cb_show = getattr(self, "on_show_cooldown_expired", None)
-            if tool_name == "create_image" and cb_create:
-                try:
-                    cb_create()
-                except Exception as e:
-                    logger.error(f"[ImageTools] Exception in on_create_cooldown_expired callback: {e}")
-            elif tool_name == "show_image" and cb_show:
-                try:
-                    cb_show()
-                except Exception as e:
-                    logger.error(f"[ImageTools] Exception in on_show_cooldown_expired callback: {e}")
-
-        delay = max(0.01, remaining_seconds + 0.05)
-
-        if tool_name == "create_image":
-            timer_attr = getattr(self, "_create_cooldown_timer", None)
-            if timer_attr:
-                timer_attr.cancel()
-            timer = threading.Timer(delay, _timer_callback)
-            timer.daemon = True
-            self._create_cooldown_timer = timer
-            timer.start()
-        elif tool_name == "show_image":
-            timer_attr = getattr(self, "_show_cooldown_timer", None)
-            if timer_attr:
-                timer_attr.cancel()
-            timer = threading.Timer(delay, _timer_callback)
-            timer.daemon = True
-            self._show_cooldown_timer = timer
-            timer.start()
 
     def get_current_canvas_image_info(self) -> Dict[str, Any]:
         """Returns details about the image currently displayed on the canvas, including its transition and effect."""
@@ -259,6 +213,7 @@ class ImageTools:
         # General path resolution
         return resolve_image_path(path_str, [self.get_effective_output_dir(), self.output_dir, self.reference_dir])
 
+    @with_cooldown("generating another image")
     def create_image(
         self,
         image_prompt: str,
@@ -284,15 +239,6 @@ class ImageTools:
         logging.info(f"[create_image_tool] image_prompt: {effective_prompt}, image_name: {image_name}, reference_images: {reference_images}, display: {display}")
         self._set_canvas_activity(True)
         try:
-            now = time.time()
-            elapsed = now - self.last_create_time
-            if elapsed < self.cooldown_duration:
-                remaining_sec = float(self.cooldown_duration - elapsed)
-                remaining = int(remaining_sec)
-                self._schedule_cooldown_timer("create_image", remaining_sec)
-                res = f"Error: create_image is on cooldown. Please wait {remaining} more seconds before generating another image."
-                self._trigger_after_tool_call("create_image")
-                return res
             resolved_refs = []
             if reference_images:
                 if isinstance(reference_images, str):
@@ -412,8 +358,7 @@ class ImageTools:
                 self._trigger_after_tool_call("create_image")
                 return res
 
-            self.last_create_time = time.time()
-            self._schedule_cooldown_timer("create_image", float(self.cooldown_duration))
+            self.record_tool_call("create_image")
             show_msg = ""
             if display:
                 show_res = self.show_image(saved_paths[0], effect=effect)
@@ -435,6 +380,7 @@ class ImageTools:
         finally:
             self._set_canvas_activity(False)
 
+    @with_cooldown("displaying another image")
     def show_image(
         self,
         file_path: str,
@@ -459,19 +405,6 @@ class ImageTools:
             if effect not in supported_effects:
                 return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
             logger.info(f"[show_image tool] Called — file_path='{file_path}', transition='{transition}', effect='{effect}'")
-            now = time.time()
-            elapsed = now - self.last_show_time
-            if elapsed < self.cooldown_duration:
-                remaining_sec = float(self.cooldown_duration - elapsed)
-                remaining = int(remaining_sec)
-                self._schedule_cooldown_timer("show_image", remaining_sec)
-                logger.warning(
-                    f"[show_image tool] On cooldown. Elapsed: {elapsed:.2f}s, "
-                    f"Cooldown: {self.cooldown_duration}s, Remaining: {remaining}s"
-                )
-                res = f"Error: show_image is on cooldown. Please wait {remaining} more seconds before displaying another image."
-                self._trigger_after_tool_call("show_image")
-                return res
 
             resolved_path = self._find_image_path(file_path)
             logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}', transition: '{transition}')")
@@ -496,8 +429,6 @@ class ImageTools:
                 self.currently_displayed_image_path = resolved_path
                 self.currently_displayed_image_transition = transition
                 self.currently_displayed_image_effect = effect
-                self.last_show_time = time.time()
-                self._schedule_cooldown_timer("show_image", float(self.cooldown_duration))
                 res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
             else:
                 logger.warning(f"[show_image tool] Image path or alias '{file_path}' could not be resolved.")

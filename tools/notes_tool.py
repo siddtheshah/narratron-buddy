@@ -2,14 +2,20 @@ import json
 import logging
 import os
 from typing import Any, Optional
+from tools.base_tool import BaseTools, with_cooldown
 from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
-class NotesTools:
+class NotesTools(BaseTools):
     def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
-        self.active_session_id: str = session_id
-        self.canvas_state_service = canvas_state_service
+        raw_config = config or {}
+        subconfig = raw_config.get("notes", raw_config) if "notes" in raw_config else raw_config
+        super().__init__(
+            config=subconfig,
+            session_id=session_id,
+            canvas_state_service=canvas_state_service,
+        )
 
         self.notes_dir = str((ensure_sessions_root() / self.active_session_id / "output" / "artifacts" / "notes").resolve())
         os.makedirs(self.notes_dir, exist_ok=True)
@@ -18,6 +24,7 @@ class NotesTools:
         """Return active session notes directory."""
         return self.notes_dir
 
+    @with_cooldown("editing notes")
     def edit_notes(self, note_name: str, content: str) -> str:
         """Create or edit a note file with the given content under active session notes directory.
 
@@ -52,6 +59,7 @@ class NotesTools:
             logger.error(f"Error editing note: {e}")
             return f"Error editing note: {e}"
 
+    @with_cooldown("deleting notes")
     def delete_notes(self, note_name: str) -> str:
         """Delete a note file under active session notes directory.
 

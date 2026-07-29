@@ -62,10 +62,10 @@ class TestAgentInit(BaseTestCase):
             "session_id": session_id,
             "canvas_state_service": canvas_state_service,
         }
-        mock_image_cls.assert_called_once_with(config, **expected_kwargs)
-        mock_chat_cls.assert_called_once_with(config, **expected_kwargs)
-        mock_notes_cls.assert_called_once_with(config, **expected_kwargs)
-        mock_music_cls.assert_called_once_with(config, **expected_kwargs)
+        mock_image_cls.assert_called_once_with(config.get("image_generation", {}), **expected_kwargs)
+        mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
+        mock_notes_cls.assert_called_once_with(config.get("notes", {}), **expected_kwargs)
+        mock_music_cls.assert_called_once_with(config.get("music", {}), **expected_kwargs)
 
 
 if __name__ == "__main__":
