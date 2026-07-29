@@ -55,7 +55,7 @@ class TestMusicTools(BaseTestCase):
         self.assertIn("Successfully started playing", res)
         mock_play_cb.assert_called_once_with(
             "ambient",
-            ["/playlists/ambient/track1.mp3", "/playlists/ambient/track2.mp3"]
+            ["/sessions/test_session/playlists/ambient/track1.mp3", "/sessions/test_session/playlists/ambient/track2.mp3"]
         )
 
     def test_play_playlist_not_found(self):

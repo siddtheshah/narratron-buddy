@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from tools.base_tool import BaseTools, with_cooldown
+from utils.session_paths import ensure_sessions_root
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,21 @@ class MusicTools(BaseTools):
             canvas_state_service=canvas_state_service,
             default_cooldown=60.0,
         )
-        root_dir = Path(__file__).parent.parent.resolve()
-        self.playlists_folder = str((root_dir / "playlists").resolve())
-        os.makedirs(self.playlists_folder, exist_ok=True)
+        sessions_root = ensure_sessions_root()
+        self.session_playlists_dir = str((sessions_root / self.active_session_id / "playlists").resolve())
+        os.makedirs(self.session_playlists_dir, exist_ok=True)
+
         self.on_play_playlist: Optional[Callable[[str, List[str]], None]] = None
         self.on_pause_playlist: Optional[Callable[[], None]] = None
         self.on_resume_playlist: Optional[Callable[[], None]] = None
+
+    @property
+    def playlists_folder(self) -> str:
+        return self.session_playlists_dir
+
+    @playlists_folder.setter
+    def playlists_folder(self, val: str) -> None:
+        self.session_playlists_dir = str(val)
 
     def list_playlists(self) -> str:
         """List all available music playlists, their descriptions, and the tracks inside them.
@@ -33,26 +43,24 @@ class MusicTools(BaseTools):
             A formatted string of all available playlists, descriptions, and tracks.
         """
         try:
-            if not os.path.exists(self.playlists_folder):
+            if not os.path.exists(self.session_playlists_dir):
                 return "No playlists folder found."
 
-            subdirs = [d for d in os.listdir(self.playlists_folder)
-                       if os.path.isdir(os.path.join(self.playlists_folder, d))]
+            subdirs = [d for d in os.listdir(self.session_playlists_dir)
+                       if os.path.isdir(os.path.join(self.session_playlists_dir, d))]
 
             if not subdirs:
                 return "No playlists found. Please add playlist subfolders in the playlists directory."
 
             result = []
-            for subdir in subdirs:
-                path = os.path.join(self.playlists_folder, subdir)
-                # Check for description.txt
+            for subdir in sorted(subdirs):
+                path = os.path.join(self.session_playlists_dir, subdir)
                 desc_path = os.path.join(path, "description.txt")
                 desc = "No description available."
                 if os.path.exists(desc_path):
                     with open(desc_path, "r", encoding="utf-8") as f:
                         desc = f.read().strip()
 
-                # Check for mp3 files
                 mp3_files = [os.path.basename(f) for f in glob.glob(os.path.join(path, "*.mp3"))]
                 if mp3_files:
                     tracks_str = ", ".join(mp3_files)
@@ -76,23 +84,22 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
-            path = os.path.join(self.playlists_folder, playlist_name)
+            path = os.path.join(self.session_playlists_dir, playlist_name)
             if not os.path.exists(path) or not os.path.isdir(path):
                 return f"Error: Playlist '{playlist_name}' not found."
 
-            # Find mp3 files
             mp3_paths = glob.glob(os.path.join(path, "*.mp3"))
             if not mp3_paths:
                 return f"Error: Playlist '{playlist_name}' does not contain any MP3 files."
 
-            # Sort tracks alphabetically to keep order consistent
             mp3_paths.sort()
-
-            # Build relative URLs for the web app, e.g. /playlists/ambient/track1.mp3
-            tracks = [f"/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
+            if self.active_session_id:
+                tracks = [f"/sessions/{self.active_session_id}/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
+            else:
+                tracks = [f"/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
 
             if self.canvas_state_service:
-                self.canvas_state_service.update_playlist(playlist_name, tracks, session_id=self.session_id)
+                self.canvas_state_service.update_playlist(playlist_name, tracks, session_id=self.active_session_id)
             if self.on_play_playlist:
                 self.on_play_playlist(playlist_name, tracks)
 
