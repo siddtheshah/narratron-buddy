@@ -348,6 +348,206 @@
             margin-top: 0.5rem;
         }
 
+        /* Hover Tutorial Component */
+        .hover-tutorial-trigger {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            color: #a5b4fc;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .hover-tutorial-trigger:hover {
+            background: rgba(99, 102, 241, 0.28);
+            border-color: #6366f1;
+            color: #ffffff;
+            box-shadow: 0 0 14px rgba(99, 102, 241, 0.35);
+        }
+
+        .hover-tutorial-popover {
+            visibility: hidden;
+            opacity: 0;
+            transform: translateY(8px) scale(0.97);
+            pointer-events: none;
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 390px;
+            background: rgba(13, 17, 26, 0.96);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(168, 85, 247, 0.35);
+            border-radius: var(--radius-lg);
+            padding: 1.25rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(99, 102, 241, 0.2);
+            z-index: 250;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            color: var(--text-primary);
+            text-align: left;
+        }
+
+        .hover-tutorial-trigger:hover .hover-tutorial-popover,
+        .hover-tutorial-popover:hover {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .hover-tutorial-popover::before {
+            content: '';
+            position: absolute;
+            top: -6px;
+            right: 28px;
+            width: 10px;
+            height: 10px;
+            background: rgba(13, 17, 26, 0.96);
+            border-left: 1px solid rgba(168, 85, 247, 0.35);
+            border-top: 1px solid rgba(168, 85, 247, 0.35);
+            transform: rotate(45deg);
+        }
+
+        .tutorial-title {
+            font-size: 0.98rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, #c084fc, #818cf8, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .tutorial-desc {
+            font-size: 0.83rem;
+            color: var(--text-secondary);
+            line-height: 1.45;
+            margin-bottom: 0.75rem;
+        }
+
+        .folder-tree-card {
+            background: rgba(6, 8, 12, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: var(--radius-md);
+            padding: 0.85rem;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.78rem;
+            line-height: 1.7;
+            color: #e2e8f0;
+            margin-bottom: 0.75rem;
+            overflow-x: auto;
+        }
+
+        .tree-root { color: #c084fc; font-weight: 700; }
+        .tree-folder { color: #818cf8; font-weight: 600; }
+        .tree-file { color: #cbd5e1; }
+        .tree-tag { color: #64748b; font-size: 0.72rem; font-family: 'Outfit', sans-serif; margin-left: 6px; }
+
+        .tutorial-bullet-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-top: 0.65rem;
+        }
+
+        .tutorial-bullet-item {
+            font-size: 0.78rem;
+            color: #94a3b8;
+            line-height: 1.35;
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .tutorial-bullet-item code {
+            background: rgba(99, 102, 241, 0.2);
+            color: #7dd3fc;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 0.74rem;
+        }
+
+        /* 3 Session Creation Path Cards */
+        .creation-paths-container {
+            margin-bottom: 1.25rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .creation-paths-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .creation-paths-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .path-card {
+            background: rgba(15, 20, 32, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: var(--radius-md);
+            padding: 0.85rem 0.65rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            user-select: none;
+        }
+
+        .path-card:hover {
+            border-color: rgba(99, 102, 241, 0.5);
+            background: rgba(30, 41, 59, 0.8);
+            transform: translateY(-2px);
+        }
+
+        .path-card.active {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(168, 85, 247, 0.18));
+            border-color: #6366f1;
+            box-shadow: 0 0 16px rgba(99, 102, 241, 0.3);
+        }
+
+        .path-icon {
+            font-size: 1.5rem;
+            margin-bottom: 2px;
+            transition: transform 0.2s ease;
+        }
+
+        .path-card:hover .path-icon {
+            transform: scale(1.15);
+        }
+
+        .path-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .path-card.active .path-title {
+            color: #a5b4fc;
+        }
+
+        .path-desc {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            line-height: 1.25;
+        }
+
         /* File Item Pills */
         .file-list {
             display: flex;
@@ -599,37 +799,143 @@
                     </div>
                 </div>
 
+                <!-- 3 Session Creation Path Cards -->
+                <div class="creation-paths-container">
+                    <div class="creation-paths-grid">
+                        <div class="path-card active" id="pathCardFolder" onclick="selectCreationPath('folder')">
+                            <div class="path-icon">📁</div>
+                            <div class="path-title">Folder Package</div>
+                            <div class="path-desc">Upload folder / zip with references & audio</div>
+                        </div>
+
+                        <div class="path-card" id="pathCardIndividual" onclick="selectCreationPath('individual')">
+                            <div class="path-icon">🖼️</div>
+                            <div class="path-title">Individual Assets</div>
+                            <div class="path-desc">Pick individual images & build custom playlists</div>
+                        </div>
+
+                        <div class="path-card" id="pathCardBlank" onclick="selectCreationPath('blank')">
+                            <div class="path-icon">✨</div>
+                            <div class="path-title">Blank Canvas</div>
+                            <div class="path-desc">Fast clean launch with default library assets</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Common Top Fields -->
                 <div class="form-group">
                     <label for="sessionName">Session Name</label>
                     <input type="text" id="sessionName" placeholder="e.g. Desert Mystery Adventure" value="Narratron Adventure">
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 1.25rem;">
                     <label for="sessionStyle">Default Image Style</label>
                     <textarea id="sessionStyle" rows="3" placeholder="e.g. cinematic watercolor, warm desert palette, soft ink outlines"></textarea>
                     <small>Applied to generated images unless their prompt specifies a style.</small>
                 </div>
 
-                <div class="form-group">
-                    <label>Reference Images</label>
-                    <div class="dropzone" id="refDropzone">
-                        <input type="file" id="refFileInput" accept="image/*" multiple style="display: none;">
-                        <span style="font-size: 1.5rem;">🖼️</span>
-                        <p>Click or drag & drop reference images here</p>
+                <!-- PATH 1: Folder Creation -->
+                <div id="pathSectionFolder" class="creation-path-section">
+                    <div class="form-group" style="position: relative;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
+                            <label style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #f8fafc;">
+                                <span>📁 Asset Folder / ZIP Upload</span>
+                            </label>
+                            <div class="hover-tutorial-trigger" id="assetTutorialBadge">
+                                <span>ℹ️ Structure Guide</span>
+                                <div class="hover-tutorial-popover">
+                                    <div class="tutorial-title">
+                                        <span>📦</span> Asset Folder Directory Structure
+                                    </div>
+                                    <p class="tutorial-desc">
+                                        Upload a structured folder or <code>.zip</code> package to automatically populate references, playlists, and canvas defaults.
+                                    </p>
+                                    <div class="folder-tree-card">
+                                        <div class="tree-root">📁 my_session_assets/</div>
+                                        <div>├── <span class="tree-folder">📁 references/</span> <span class="tree-tag">(Images: .png, .jpg, .webp)</span></div>
+                                        <div>│   ├── <span class="tree-file">hero_portrait.png</span></div>
+                                        <div>│   └── <span class="tree-file">desert_map.jpg</span></div>
+                                        <div>├── <span class="tree-folder">📁 playlists/</span> <span class="tree-tag">(Audio folders = playlist names)</span></div>
+                                        <div>│   ├── <span class="tree-folder">📁 ambient/</span></div>
+                                        <div>│   │   └── <span class="tree-file">desert_wind.mp3</span></div>
+                                        <div>│   └── <span class="tree-folder">📁 combat/</span></div>
+                                        <div>│       └── <span class="tree-file">battle_theme.wav</span></div>
+                                        <div>└── <span class="tree-file">📄 style.txt</span> <span class="tree-tag">(Optional default style prompt)</span></div>
+                                    </div>
+                                    <div class="tutorial-bullet-list">
+                                        <div class="tutorial-bullet-item">
+                                            <span>⚡</span>
+                                            <span><strong>Auto-Extraction:</strong> References, audio tracks, and style prompts are parsed & mounted instantly.</span>
+                                        </div>
+                                        <div class="tutorial-bullet-item">
+                                            <span>📦</span>
+                                            <span><strong>ZIP Support:</strong> You can drop an uncompressed folder or a compressed <code>.zip</code> file directly.</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dropzone" id="folderDropzone" style="background: rgba(168, 85, 247, 0.04); border-color: rgba(168, 85, 247, 0.25);">
+                            <input type="file" id="folderFileInput" webkitdirectory directory multiple style="display: none;">
+                            <input type="file" id="zipFileInput" accept=".zip" style="display: none;">
+                            <span style="font-size: 1.8rem;">📂</span>
+                            <p style="font-weight: 600; color: #f8fafc; margin-top: 0.25rem;">Drop Asset Folder or .ZIP here</p>
+                            <small style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; display: block;">
+                                Supports full directory folders containing <code>references/</code> and <code>playlists/</code>
+                            </small>
+                            <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="triggerAssetPackageSelect()">📁 Select</button>
+                            </div>
+                        </div>
+
+                        <div id="folderUploadManifest" style="display: none; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-top: 0.4rem;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <div style="font-weight: 600; font-size: 0.88rem; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
+                                    <span>✅ Mounted Asset Package:</span>
+                                    <span id="folderManifestSummary"></span>
+                                </div>
+                                <button type="button" class="remove-btn" onclick="clearFolderUpload()" title="Clear folder package">&times;</button>
+                            </div>
+                            <div id="folderManifestDetails" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;"></div>
+                        </div>
                     </div>
-                    <div class="file-list" id="refFileList"></div>
                 </div>
 
-                <div class="form-group">
-                    <label>Playlists & Tracks</label>
-                    <div id="playlistsContainer"></div>
-                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                        <input type="text" id="newPlaylistName" placeholder="New Playlist Name" style="flex: 1;">
-                        <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add Playlist</button>
+                <!-- PATH 2: Individual Asset Upload -->
+                <div id="pathSectionIndividual" class="creation-path-section" style="display: none;">
+                    <div class="form-group">
+                        <label>Reference Images</label>
+                        <div class="dropzone" id="refDropzone">
+                            <input type="file" id="refFileInput" accept="image/*" multiple style="display: none;">
+                            <span style="font-size: 1.5rem;">🖼️</span>
+                            <p>Click or drag & drop reference images here</p>
+                        </div>
+                        <div class="file-list" id="refFileList"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Playlists & Tracks</label>
+                        <div id="playlistsContainer"></div>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <input type="text" id="newPlaylistName" placeholder="New Playlist Name" style="flex: 1;">
+                            <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add Playlist</button>
+                        </div>
                     </div>
                 </div>
 
-                <button class="btn btn-primary" id="deployBtn" onclick="deployNewSession()">
+                <!-- PATH 3: Blank Canvas -->
+                <div id="pathSectionBlank" class="creation-path-section" style="display: none;">
+                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+                        <span style="font-size: 2rem; display: block; margin-bottom: 0.4rem;">✨</span>
+                        <h4 style="font-size: 0.95rem; font-weight: 700; color: #34d399; margin-bottom: 0.25rem;">Clean Blank Canvas</h4>
+                        <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45;">
+                            Deploy an instant interactive session. Default Narratron library reference assets and ambient audio will be mounted automatically.
+                        </p>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" id="deployBtn" onclick="deployNewSession()" style="margin-top: 1rem;">
                     <span id="deploySpinner" style="display: none;">⏳</span>
                     <span id="deployBtnText">🚀 Deploy Canvas Instance</span>
                 </button>
@@ -1418,6 +1724,184 @@
             });
         }
 
+        // Asset Folder & ZIP Dropzone Handling
+        let mountedZipFile = null;
+        let mountedFolderFiles = [];
+
+        const folderDropzone = document.getElementById('folderDropzone');
+        const folderFileInput = document.getElementById('folderFileInput');
+        const zipFileInput = document.getElementById('zipFileInput');
+
+        function triggerAssetPackageSelect() {
+            const fInput = document.getElementById('folderFileInput');
+            const zInput = document.getElementById('zipFileInput');
+            if (fInput) {
+                fInput.click();
+            } else if (zInput) {
+                zInput.click();
+            }
+        }
+
+        if (folderFileInput) {
+            folderFileInput.onchange = (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    handleFolderUploadFiles(Array.from(e.target.files));
+                }
+            };
+        }
+
+        if (zipFileInput) {
+            zipFileInput.onchange = (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    handleZipUploadFile(e.target.files[0]);
+                }
+            };
+        }
+
+        if (folderDropzone) {
+            folderDropzone.ondragover = (e) => {
+                e.preventDefault();
+                folderDropzone.classList.add('dragover');
+            };
+
+            folderDropzone.ondragleave = () => {
+                folderDropzone.classList.remove('dragover');
+            };
+
+            folderDropzone.ondrop = (e) => {
+                e.preventDefault();
+                folderDropzone.classList.remove('dragover');
+                
+                const files = e.dataTransfer ? e.dataTransfer.files : null;
+                if (files && files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
+                    handleZipUploadFile(files[0]);
+                } else if (files && files.length > 0) {
+                    handleFolderUploadFiles(Array.from(files));
+                }
+            };
+        }
+
+        function handleZipUploadFile(file) {
+            const MAX_SIZE = 10 * 1024 * 1024; // 10MB limit
+            if (file.size > MAX_SIZE) {
+                alert(`Error: ZIP archive "${file.name}" exceeds the maximum allowed 10MB size limit (File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB). Please select a smaller package.`);
+                clearFolderUpload();
+                return;
+            }
+
+            mountedZipFile = file;
+            mountedFolderFiles = [];
+            const summarySpan = document.getElementById('folderManifestSummary');
+            const detailsDiv = document.getElementById('folderManifestDetails');
+            const manifestCard = document.getElementById('folderUploadManifest');
+
+            if (summarySpan) summarySpan.innerText = `ZIP Package (${file.name})`;
+            if (detailsDiv) detailsDiv.innerHTML = `File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB. Contents will be unpacked on canvas deployment (max 10MB limit enforced).`;
+            if (manifestCard) manifestCard.style.display = 'block';
+        }
+
+        function handleFolderUploadFiles(files) {
+            mountedZipFile = null;
+            mountedFolderFiles = files;
+
+            let refCount = 0;
+            let playListMap = {};
+            let hasStyle = false;
+
+            files.forEach(f => {
+                const relPath = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+                const parts = relPath.split('/').filter(Boolean);
+                const cleanName = parts.length > 0 ? parts[parts.length - 1] : f.name;
+
+                if (parts.includes('references') || (cleanName.match(/\.(png|jpg|jpeg|webp|gif)$/i) && !parts.includes('playlists'))) {
+                    refCount++;
+                    if (!refFiles.some(rf => rf.name === cleanName)) {
+                        refFiles.push(f);
+                    }
+                } else if (parts.includes('playlists')) {
+                    const idx = parts.indexOf('playlists');
+                    const plName = (idx + 1 < parts.length - 1) ? parts[idx + 1] : 'default';
+                    if (!playListMap[plName]) playListMap[plName] = 0;
+                    playListMap[plName]++;
+
+                    if (!playlistsData[plName]) playlistsData[plName] = [];
+                    if (!playlistsData[plName].some(tf => tf.name === cleanName)) {
+                        playlistsData[plName].push(f);
+                    }
+                } else if (cleanName.toLowerCase() === 'style.txt') {
+                    hasStyle = true;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const styleElem = document.getElementById('sessionStyle');
+                        if (styleElem) styleElem.value = e.target.result.trim();
+                    };
+                    reader.readAsText(f);
+                }
+            });
+
+            renderRefFileList();
+            renderPlaylists();
+
+            const summarySpan = document.getElementById('folderManifestSummary');
+            const detailsDiv = document.getElementById('folderManifestDetails');
+            const manifestCard = document.getElementById('folderUploadManifest');
+
+            const plNames = Object.keys(playListMap);
+            if (summarySpan) summarySpan.innerText = `${files.length} Files Mounted`;
+            if (detailsDiv) {
+                detailsDiv.innerHTML = `
+                    Found <strong>${refCount}</strong> reference image(s), 
+                    <strong>${plNames.length}</strong> playlist(s) (${Object.values(playListMap).reduce((a,b)=>a+b,0)} tracks)${hasStyle ? ', and default style prompt imported' : ''}.
+                `;
+            }
+            if (manifestCard) manifestCard.style.display = 'block';
+        }
+
+        function clearFolderUpload() {
+            mountedZipFile = null;
+            mountedFolderFiles = [];
+            const fInput = document.getElementById('folderFileInput');
+            const zInput = document.getElementById('zipFileInput');
+            const manifestCard = document.getElementById('folderUploadManifest');
+            if (fInput) fInput.value = '';
+            if (zInput) zInput.value = '';
+            if (manifestCard) manifestCard.style.display = 'none';
+        }
+
+        // 3 Creation Path State & Switcher
+        let currentCreationPath = 'folder';
+
+        function selectCreationPath(mode) {
+            currentCreationPath = mode;
+            
+            const cardFolder = document.getElementById('pathCardFolder');
+            const cardIndividual = document.getElementById('pathCardIndividual');
+            const cardBlank = document.getElementById('pathCardBlank');
+
+            const secFolder = document.getElementById('pathSectionFolder');
+            const secIndividual = document.getElementById('pathSectionIndividual');
+            const secBlank = document.getElementById('pathSectionBlank');
+
+            const deployBtnText = document.getElementById('deployBtnText');
+
+            [cardFolder, cardIndividual, cardBlank].forEach(c => c && c.classList.remove('active'));
+            [secFolder, secIndividual, secBlank].forEach(s => s && (s.style.display = 'none'));
+
+            if (mode === 'folder') {
+                if (cardFolder) cardFolder.classList.add('active');
+                if (secFolder) secFolder.style.display = 'block';
+                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Canvas from Folder';
+            } else if (mode === 'individual') {
+                if (cardIndividual) cardIndividual.classList.add('active');
+                if (secIndividual) secIndividual.style.display = 'block';
+                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Canvas with Custom Assets';
+            } else if (mode === 'blank') {
+                if (cardBlank) cardBlank.classList.add('active');
+                if (secBlank) secBlank.style.display = 'block';
+                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Blank Canvas Instance';
+            }
+        }
+
         // Deploy Session
         async function deployNewSession() {
             if (!currentUser) {
@@ -1445,15 +1929,27 @@
                 formData.append('name', name);
                 formData.append('style', style);
 
-                refFiles.forEach(file => {
-                    formData.append('reference_files', file);
-                });
+                if (currentCreationPath === 'folder') {
+                    if (mountedZipFile) {
+                        formData.append('asset_zip', mountedZipFile);
+                    }
 
-                Object.keys(playlistsData).forEach(plName => {
-                    playlistsData[plName].forEach(file => {
-                        formData.append(`playlist_${plName}`, file);
+                    if (mountedFolderFiles && mountedFolderFiles.length > 0) {
+                        mountedFolderFiles.forEach(file => {
+                            formData.append('asset_folder_files', file);
+                        });
+                    }
+                } else if (currentCreationPath === 'individual') {
+                    refFiles.forEach(file => {
+                        formData.append('reference_files', file);
                     });
-                });
+
+                    Object.keys(playlistsData).forEach(plName => {
+                        playlistsData[plName].forEach(file => {
+                            formData.append(`playlist_${plName}`, file);
+                        });
+                    });
+                }
 
                 const response = await fetch('/api/sessions/create-and-deploy', {
                     method: 'POST',

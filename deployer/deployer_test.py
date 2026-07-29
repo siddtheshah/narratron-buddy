@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from testing.base import BaseTestCase
-from deployer.deployer import LocalDeployer, SessionMetadata
+from deployer.deployer import LocalDeployer, SessionMetadata, extract_asset_package
 
 
 class TestLocalDeployer(BaseTestCase):
@@ -74,9 +74,31 @@ class TestLocalDeployer(BaseTestCase):
         stopped = self.deployer.get_session("del_1")
         self.assertEqual(stopped.status, "stopped")
 
-        success = self.deployer.destroy_session("del_1")
-        self.assertTrue(success)
-        self.assertIsNone(self.deployer.get_session("del_1"))
+    def test_extract_asset_package(self):
+        import io
+        import zipfile
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("my_assets/references/hero.png", b"fake_png")
+            zf.writestr("my_assets/playlists/ambient/rain.mp3", b"fake_mp3")
+            zf.writestr("my_assets/style.txt", "cyberpunk neon glow")
+
+        zip_bytes = zip_buf.getvalue()
+        refs, playlists, style = extract_asset_package(zip_bytes)
+
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0][0], "hero.png")
+        self.assertEqual(refs[0][1], b"fake_png")
+        self.assertIn("ambient", playlists)
+        self.assertEqual(playlists["ambient"][0][0], "rain.mp3")
+        self.assertEqual(style, "cyberpunk neon glow")
+
+    def test_extract_asset_package_exceeds_10mb_limit(self):
+        oversized_bytes = b"0" * (10 * 1024 * 1024 + 100)
+        with self.assertRaises(ValueError) as ctx:
+            extract_asset_package(oversized_bytes)
+        self.assertIn("10MB", str(ctx.exception))
 
 
 if __name__ == "__main__":

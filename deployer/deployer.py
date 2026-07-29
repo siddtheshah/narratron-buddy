@@ -2,13 +2,15 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+import io
 import json
 import logging
 import os
 from pathlib import Path
 import shutil
 import secrets
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+import zipfile
 from pydantic import BaseModel, Field
 from utils.session_paths import ensure_sessions_root
 
@@ -28,11 +30,81 @@ class SessionMetadata(BaseModel):
     canvas_state: Dict = Field(default_factory=dict)
 
 
+MAX_ZIP_BYTES = 10 * 1024 * 1024  # 10MB limit
+
+
+def extract_asset_package(
+    zip_bytes: bytes,
+    max_bytes: int = MAX_ZIP_BYTES,
+) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]], Optional[str]]:
+    """Extract reference files, playlists data, and optional style text from a ZIP archive (max 10MB)."""
+    reference_files: List[Tuple[str, bytes]] = []
+    playlists_data: Dict[str, List[Tuple[str, bytes]]] = {}
+    style: Optional[str] = None
+
+    if len(zip_bytes) > max_bytes:
+        logger.warning(f"ZIP archive size ({len(zip_bytes)} bytes) exceeds limit ({max_bytes} bytes).")
+        raise ValueError(f"ZIP archive exceeds max allowed size of {max_bytes // (1024 * 1024)}MB.")
+
+    total_uncompressed = 0
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+
+                total_uncompressed += info.file_size
+                if total_uncompressed > max_bytes * 2:
+                    logger.warning("Uncompressed ZIP contents exceed max allowable size limit.")
+                    raise ValueError("ZIP uncompressed size exceeds allowable limit.")
+
+                parts = [
+                    p
+                    for p in info.filename.replace("\\", "/").split("/")
+                    if p and p != "__MACOSX"
+                ]
+                if not parts or parts[-1].startswith("."):
+                    continue
+
+                filename = parts[-1]
+                content = zf.read(info.filename)
+
+                # Check path hierarchy
+                if "references" in parts or (
+                    filename.lower().endswith(
+                        (".png", ".jpg", ".jpeg", ".webp", ".gif")
+                    )
+                    and "playlists" not in parts
+                ):
+                    reference_files.append((filename, content))
+                elif "playlists" in parts:
+                    idx = parts.index("playlists")
+                    if idx + 1 < len(parts) - 1:
+                        pl_name = parts[idx + 1]
+                    else:
+                        pl_name = "default"
+                    if filename.lower().endswith(
+                        (".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")
+                    ):
+                        if pl_name not in playlists_data:
+                            playlists_data[pl_name] = []
+                        playlists_data[pl_name].append((filename, content))
+                elif filename.lower() == "style.txt":
+                    try:
+                        style = content.decode("utf-8").strip()
+                    except Exception:
+                        pass
+    except ValueError as ve:
+        raise ve
+    except Exception as e:
+        logger.error(f"Error parsing asset ZIP package: {e}")
+
+    return reference_files, playlists_data, style
+
 
 class BaseDeployer(ABC):
     """Abstract interface for session deployers (Local, Hosted, Cloud)."""
-
-    @abstractmethod
     def create_session(
         self,
         name: str,

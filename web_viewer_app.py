@@ -19,7 +19,7 @@ import uvicorn
 
 from components.canvas_state_service import CanvasStateService
 from deployer.database import DatabaseManager
-from deployer.deployer import LocalDeployer, SessionMetadata
+from deployer.deployer import LocalDeployer, SessionMetadata, extract_asset_package
 from deployer.session_manager import SessionManager
 from utils.config_loader import get_config
 from utils.email_service import send_password_reset_email
@@ -587,7 +587,43 @@ async def create_and_deploy_session(request: Request):
         if filename:
             content = await value.read()
             if content:
-                if key == "reference_files":
+                # Check for uploaded ZIP package
+                if key in ("asset_zip", "asset_package") or filename.lower().endswith(".zip"):
+                    try:
+                        zip_refs, zip_playlists, zip_style = extract_asset_package(content)
+                    except ValueError as ve:
+                        raise HTTPException(status_code=400, detail=str(ve))
+                    reference_files.extend(zip_refs)
+                    for pl_name, tracks in zip_playlists.items():
+                        if pl_name not in playlists_data:
+                            playlists_data[pl_name] = []
+                        playlists_data[pl_name].extend(tracks)
+                    if zip_style and not style:
+                        style = zip_style
+                elif key in ("asset_folder_files", "asset_files"):
+                    # Folder upload with relative path info
+                    rel_path = filename.replace("\\", "/")
+                    parts = [p for p in rel_path.split("/") if p]
+                    clean_name = parts[-1] if parts else filename
+
+                    if "references" in parts or (
+                        clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+                        and "playlists" not in parts
+                    ):
+                        reference_files.append((clean_name, content))
+                    elif "playlists" in parts:
+                        idx = parts.index("playlists")
+                        pl_name = parts[idx + 1] if idx + 1 < len(parts) - 1 else "default"
+                        if clean_name.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
+                            if pl_name not in playlists_data:
+                                playlists_data[pl_name] = []
+                            playlists_data[pl_name].append((clean_name, content))
+                    elif clean_name.lower() == "style.txt" and not style:
+                        try:
+                            style = content.decode("utf-8").strip()
+                        except Exception:
+                            pass
+                elif key == "reference_files":
                     reference_files.append((filename, content))
                 elif key.startswith("playlist_"):
                     pl_name = key[len("playlist_"):]
