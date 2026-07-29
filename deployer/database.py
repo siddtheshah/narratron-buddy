@@ -224,9 +224,30 @@ class DatabaseManager:
                     join_key TEXT NOT NULL,
                     cost REAL DEFAULT 5.0,
                     created_at TEXT NOT NULL,
+                    allowed_orators TEXT DEFAULT '[]',
+                    active_orator_id INTEGER DEFAULT NULL,
+                    baton_request TEXT DEFAULT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             """)
+
+            cursor.execute("PRAGMA table_info(canvas_deployments)")
+            cd_cols = [row["name"] for row in cursor.fetchall()]
+            if "allowed_orators" not in cd_cols:
+                try:
+                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN allowed_orators TEXT DEFAULT '[]'")
+                except Exception:
+                    pass
+            if "active_orator_id" not in cd_cols:
+                try:
+                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN active_orator_id INTEGER DEFAULT NULL")
+                except Exception:
+                    pass
+            if "baton_request" not in cd_cols:
+                try:
+                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN baton_request TEXT DEFAULT NULL")
+                except Exception:
+                    pass
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS exported_sessions (
@@ -1017,8 +1038,182 @@ class DatabaseManager:
         """Reset password asynchronously."""
         return await asyncio.to_thread(self.reset_password_with_token, token, new_password)
 
-    async def delete_deployment_async(self, session_id: str) -> bool:
-        """Delete deployment asynchronously."""
-        return await asyncio.to_thread(self.delete_deployment, session_id)
+    def get_session_baton_state(self, session_id: str) -> Optional[Dict[str, Any]]:
+        dep = self.get_deployment(session_id)
+        if not dep:
+            return None
+        import json
+        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        active_orator_id = dep.get("active_orator_id") or dep["user_id"]
+        baton_req_raw = dep.get("baton_request")
+        baton_req = json.loads(baton_req_raw) if baton_req_raw else None
+        
+        # Check auto-expiry for pending baton request
+        if baton_req and "expires_at" in baton_req:
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            if now_iso > baton_req["expires_at"]:
+                self.decline_baton(session_id, baton_req.get("target_user_id"))
+                baton_req = None
+
+        owner_user = self.get_user_by_id(dep["user_id"])
+        active_orator_user = self.get_user_by_id(active_orator_id)
+        
+        allowed_users = []
+        for uid in allowed_ids:
+            u = self.get_user_by_id(uid)
+            if u:
+                allowed_users.append({"id": u["id"], "username": u["username"]})
+
+        return {
+            "session_id": session_id,
+            "owner": {"id": owner_user["id"], "username": owner_user["username"]} if owner_user else None,
+            "active_orator": {"id": active_orator_user["id"], "username": active_orator_user["username"]} if active_orator_user else None,
+            "allowed_orators": allowed_users,
+            "baton_request": baton_req,
+        }
+
+    def add_allowed_orator(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(session_id)
+        if not dep or dep["user_id"] != owner_id:
+            raise ValueError("Only the session owner can add allowed orators.")
+        target_user = self.get_user_by_id(target_user_id)
+        if not target_user:
+            raise ValueError("Target user does not exist.")
+        
+        import json
+        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        if target_user_id not in allowed_ids:
+            allowed_ids.append(target_user_id)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE canvas_deployments SET allowed_orators = ? WHERE session_id = ?",
+                    (json.dumps(allowed_ids), session_id)
+                )
+                conn.commit()
+        return self.get_session_baton_state(session_id)
+
+    def remove_allowed_orator(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(session_id)
+        if not dep or dep["user_id"] != owner_id:
+            raise ValueError("Only the session owner can remove allowed orators.")
+        
+        import json
+        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        if target_user_id in allowed_ids:
+            allowed_ids.remove(target_user_id)
+        
+        active_orator_id = dep.get("active_orator_id") or dep["user_id"]
+        # If target user was active orator, revert active orator to owner
+        if active_orator_id == target_user_id:
+            active_orator_id = owner_id
+            
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE canvas_deployments SET allowed_orators = ?, active_orator_id = ? WHERE session_id = ?",
+                (json.dumps(allowed_ids), active_orator_id, session_id)
+            )
+            conn.commit()
+        return self.get_session_baton_state(session_id)
+
+    def request_baton(self, session_id: str, owner_id: int, target_user_id: int, timeout_seconds: int = 30) -> Dict[str, Any]:
+        dep = self.get_deployment(session_id)
+        if not dep or dep["user_id"] != owner_id:
+            raise ValueError("Only the session owner can request passing the baton.")
+        
+        import json
+        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        if target_user_id not in allowed_ids and target_user_id != owner_id:
+            raise ValueError("Target user is not in allowed orators.")
+        
+        target_user = self.get_user_by_id(target_user_id)
+        if not target_user:
+            raise ValueError("Target user does not exist.")
+            
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expires = now + datetime.timedelta(seconds=timeout_seconds)
+        baton_req = {
+            "target_user_id": target_user["id"],
+            "target_username": target_user["username"],
+            "requested_by_id": owner_id,
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+        }
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE canvas_deployments SET baton_request = ? WHERE session_id = ?",
+                (json.dumps(baton_req), session_id)
+            )
+            conn.commit()
+        return self.get_session_baton_state(session_id)
+
+    def accept_baton(self, session_id: str, target_user_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(session_id)
+        if not dep:
+            raise ValueError("Session not found.")
+        import json
+        baton_req_raw = dep.get("baton_request")
+        if not baton_req_raw:
+            raise ValueError("No active baton request found.")
+        baton_req = json.loads(baton_req_raw)
+        if baton_req.get("target_user_id") != target_user_id:
+            raise ValueError("Baton request is not for this user.")
+            
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE session_id = ?",
+                (target_user_id, session_id)
+            )
+            conn.commit()
+        return self.get_session_baton_state(session_id)
+
+    def decline_baton(self, session_id: str, target_user_id: Optional[int] = None) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE canvas_deployments SET baton_request = NULL WHERE session_id = ?",
+                (session_id,)
+            )
+            conn.commit()
+        return self.get_session_baton_state(session_id)
+
+    def take_back_baton(self, session_id: str, owner_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(session_id)
+        if not dep or dep["user_id"] != owner_id:
+            raise ValueError("Only the session owner can take back the baton.")
+            
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE session_id = ?",
+                (owner_id, session_id)
+            )
+            conn.commit()
+        return self.get_session_baton_state(session_id)
+
+    async def get_session_baton_state_async(self, session_id: str) -> Optional[Dict[str, Any]]:
+        return await asyncio.to_thread(self.get_session_baton_state, session_id)
+
+    async def add_allowed_orator_async(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.add_allowed_orator, session_id, owner_id, target_user_id)
+
+    async def remove_allowed_orator_async(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.remove_allowed_orator, session_id, owner_id, target_user_id)
+
+    async def request_baton_async(self, session_id: str, owner_id: int, target_user_id: int, timeout_seconds: int = 30) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.request_baton, session_id, owner_id, target_user_id, timeout_seconds)
+
+    async def accept_baton_async(self, session_id: str, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.accept_baton, session_id, target_user_id)
+
+    async def decline_baton_async(self, session_id: str, target_user_id: Optional[int] = None) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.decline_baton, session_id, target_user_id)
+
+    async def take_back_baton_async(self, session_id: str, owner_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.take_back_baton, session_id, owner_id)
+
 
 

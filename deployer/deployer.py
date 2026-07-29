@@ -28,6 +28,10 @@ class SessionMetadata(BaseModel):
     mounted_playlists: Dict[str, List[str]] = Field(default_factory=dict)
     config: Dict = Field(default_factory=dict)
     canvas_state: Dict = Field(default_factory=dict)
+    allowed_orators: List[int] = Field(default_factory=list)
+    active_orator_id: Optional[int] = None
+    baton_request: Optional[Dict] = None
+
 
 
 MAX_ZIP_BYTES = 10 * 1024 * 1024  # 10MB limit

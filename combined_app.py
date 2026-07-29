@@ -1,5 +1,6 @@
 """FastAPI application combining Narratron Web Viewer and Bidi Agent WebSocket."""
 
+from typing import Optional
 import logging
 import os
 from pathlib import Path
@@ -83,11 +84,12 @@ use_in_memory_artifacts = FLAGS.use_in_memory_artifacts
 # Live Agent WebSocket Endpoint
 # ========================================
 
+@app.websocket("/ws/{session_id}/agent")
 @app.websocket("/ws/{user_id}/{session_id}")
 async def agent_websocket_endpoint(
     websocket: WebSocket,
-    user_id: str,
     session_id: str,
+    user_id: Optional[str] = None,
     proactivity: bool = False,
     affective_dialog: bool = False,
 ) -> None:
@@ -95,10 +97,17 @@ async def agent_websocket_endpoint(
     Constructs a Runner instance concurrent with the lifespan of the session connection.
     """
     current_user = get_current_user(websocket)
+    if not current_user and user_id and user_id.isdigit():
+        current_user = db.get_user_by_id(int(user_id))
+
     deployment = db.get_deployment(session_id)
     if not deployment or not can_access_agent_websocket(websocket, deployment, current_user=current_user):
         await websocket.close(code=1008)
         return
+
+    effective_user_id = user_id or (str(current_user["id"]) if current_user else "guest")
+
+
 
     # Create an agent whose bound tool instances are available through agent.tools.
     session_agent = create_agent(
@@ -129,7 +138,7 @@ async def agent_websocket_endpoint(
     
     await handle_live_websocket_connection(
         websocket=websocket,
-        user_id=user_id,
+        user_id=effective_user_id,
         session_id=session_id,
         agent=session_agent,
         runner=session_runner,

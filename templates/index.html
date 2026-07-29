@@ -1275,6 +1275,23 @@
                     style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit;">Switch
                     to Orator</button>
             </div>
+
+            <!-- Baton Controls -->
+            <div id="baton-container"
+                style="margin-left: 1rem; display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                <span id="baton-status-badge"
+                    style="font-size: 0.8rem; font-weight: 600; color: #fbbf24; background: rgba(251, 191, 36, 0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(251, 191, 36, 0.3); display: flex; align-items: center; gap: 5px;">
+                    👑 Owner is Orator
+                </span>
+                <button id="manage-orators-btn"
+                    style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;">
+                    👥 Manage Orators
+                </button>
+                <button id="take-back-baton-btn"
+                    style="display: none; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;">
+                    👑 Take Back Baton
+                </button>
+            </div>
         </header>
 
         <div id="image-container">
@@ -2386,6 +2403,10 @@
                 if (isOrator && agentWs && agentWs.readyState === WebSocket.OPEN && !agentMicBtn.disabled) {
                     agentMicBtn.click();
                 }
+            } else if (data.type === 'baton_state') {
+                if (typeof updateBatonStateUI === 'function') {
+                    updateBatonStateUI(data.baton_state, data.active_viewers);
+                }
             }
         };
 
@@ -2553,6 +2574,306 @@
             const query = params.toString();
             window.location.search = query ? `?${query}` : '';
         });
+
+        // ========================================
+        // Baton Passing & Co-Orator Management JS
+        // ========================================
+        let currentBatonState = null;
+        let activeViewersList = [];
+        let batonTimerInterval = null;
+        let currentUser = null;
+
+        const manageOratorsBtn = document.getElementById('manage-orators-btn');
+        const takeBackBatonBtn = document.getElementById('take-back-baton-btn');
+        const batonStatusBadge = document.getElementById('baton-status-badge');
+        const oratorsModal = document.getElementById('orators-modal');
+        const oratorsCloseBtn = document.getElementById('orators-close-btn');
+        const acceptBatonBtn = document.getElementById('accept-baton-btn');
+        const declineBatonBtn = document.getElementById('decline-baton-btn');
+
+        // Fetch current user details
+        fetch('/api/auth/me')
+            .then(res => res.json())
+            .then(data => {
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                    checkBatonState();
+                }
+            })
+            .catch(() => {});
+
+        function checkBatonState() {
+            if (!currentSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton`)
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                    if (data) {
+                        updateBatonStateUI(data, data.active_viewers || []);
+                    }
+                })
+                .catch(err => console.error("Error fetching baton state:", err));
+        }
+
+        function updateBatonStateUI(batonState, activeViewers) {
+            currentBatonState = batonState;
+            activeViewersList = activeViewers || [];
+
+            const isOwner = currentUser && batonState.owner && currentUser.id === batonState.owner.id;
+            const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
+
+            // Update status badge
+            if (batonStatusBadge) {
+                if (isActiveOrator) {
+                    batonStatusBadge.innerHTML = '🎙️ You hold the Baton';
+                    batonStatusBadge.style.background = 'rgba(34, 197, 94, 0.2)';
+                    batonStatusBadge.style.color = '#4ade80';
+                    batonStatusBadge.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                } else if (batonState.active_orator) {
+                    const oratorName = batonState.active_orator.username || 'User';
+                    const isOwnerActive = batonState.owner && batonState.active_orator.id === batonState.owner.id;
+                    batonStatusBadge.innerHTML = isOwnerActive ? `👑 Owner (@${oratorName})` : `🎙️ Orator (@${oratorName})`;
+                    batonStatusBadge.style.background = 'rgba(251, 191, 36, 0.15)';
+                    batonStatusBadge.style.color = '#fbbf24';
+                    batonStatusBadge.style.borderColor = 'rgba(251, 191, 36, 0.3)';
+                }
+            }
+
+            // Owner control buttons visibility
+            if (manageOratorsBtn) {
+                manageOratorsBtn.style.display = isOwner ? 'inline-flex' : 'none';
+            }
+            if (takeBackBatonBtn) {
+                takeBackBatonBtn.style.display = (isOwner && !isActiveOrator) ? 'inline-flex' : 'none';
+            }
+
+            const wasActiveOrator = window._isActiveOratorState;
+            window._isActiveOratorState = isActiveOrator;
+
+            // Role & Orator Controls activation based on active orator status
+            if (isActiveOrator) {
+                roleBadge.textContent = 'Orator';
+                roleBadge.style.color = '#f97316';
+                roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
+                roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
+                oratorControls.style.display = 'flex';
+                statusIndicator.classList.add('disconnected');
+
+                // Auto-connect agent if newly active orator or agent WebSocket is not open
+                if (!wasActiveOrator || !agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                    connectAgent().catch(err => console.error("Auto-connect agent failed:", err));
+                }
+            } else {
+                roleBadge.textContent = 'Viewer';
+                roleBadge.style.color = '#a5b4fc';
+                roleBadge.style.background = 'rgba(99, 102, 241, 0.2)';
+                roleBadge.style.borderColor = 'rgba(99, 102, 241, 0.4)';
+                oratorControls.style.display = 'none';
+                if (agentWs) {
+                    cleanupAgentConnection();
+                }
+            }
+
+            // Check pending request targeting local user
+            if (batonState.baton_request && currentUser && batonState.baton_request.target_user_id === currentUser.id) {
+                showBatonRequestModal(batonState.baton_request);
+            } else {
+                hideBatonRequestModal();
+            }
+
+            // Refresh modal contents if open
+            if (oratorsModal && oratorsModal.classList.contains('active')) {
+                renderOratorManagementModalContent();
+            }
+        }
+
+        function showBatonRequestModal(batonReq) {
+            const modal = document.getElementById('baton-request-modal');
+            if (!modal) return;
+            if (modal.classList.contains('active')) return;
+
+            modal.classList.add('active');
+            modal.setAttribute('aria-hidden', 'false');
+
+            const timerBar = document.getElementById('baton-timer-bar');
+            const totalMs = 30000;
+            const startTime = Date.now();
+
+            if (batonTimerInterval) clearInterval(batonTimerInterval);
+
+            batonTimerInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const remaining = Math.max(0, totalMs - elapsed);
+                const pct = (remaining / totalMs) * 100;
+                if (timerBar) timerBar.style.width = `${pct}%`;
+
+                if (remaining <= 0) {
+                    clearInterval(batonTimerInterval);
+                    declineBatonPass();
+                }
+            }, 100);
+        }
+
+        function hideBatonRequestModal() {
+            const modal = document.getElementById('baton-request-modal');
+            if (modal) {
+                modal.classList.remove('active');
+                modal.setAttribute('aria-hidden', 'true');
+            }
+            if (batonTimerInterval) {
+                clearInterval(batonTimerInterval);
+                batonTimerInterval = null;
+            }
+        }
+
+        function acceptBatonPass() {
+            if (!currentSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/accept`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    hideBatonRequestModal();
+                    if (data && !data.detail) {
+                        updateBatonStateUI(data, data.active_viewers);
+                        if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                            connectAgent().catch(err => console.error("Auto-connect agent failed on accept:", err));
+                        }
+                    }
+                })
+                .catch(err => console.error("Error accepting baton:", err));
+        }
+
+        function declineBatonPass() {
+            if (!currentSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/decline`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    hideBatonRequestModal();
+                    if (data && !data.detail) {
+                        updateBatonStateUI(data, data.active_viewers);
+                    }
+                })
+                .catch(err => console.error("Error declining baton:", err));
+        }
+
+        function takeBackBaton() {
+            if (!currentSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/takeback`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data && !data.detail) {
+                        updateBatonStateUI(data, data.active_viewers);
+                        if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                            connectAgent().catch(err => console.error("Auto-connect agent failed on takeback:", err));
+                        }
+                    }
+                })
+                .catch(err => console.error("Error taking back baton:", err));
+        }
+
+        function renderOratorManagementModalContent() {
+            if (!currentBatonState) return;
+
+            const activeViewersContainer = document.getElementById('active-viewers-list');
+            const allowedOratorsContainer = document.getElementById('allowed-orators-list');
+            const allowedIds = (currentBatonState.allowed_orators || []).map(u => u.id);
+
+            // Render Active Connected Viewers
+            if (activeViewersContainer) {
+                const viewers = activeViewersList.filter(u => u.id !== (currentBatonState.owner ? currentBatonState.owner.id : null));
+                if (viewers.length === 0) {
+                    activeViewersContainer.innerHTML = '<div style="font-size:0.85rem; color:#64748b; padding:6px;">No other connected viewers online.</div>';
+                } else {
+                    activeViewersContainer.innerHTML = viewers.map(v => {
+                        const isAllowed = allowedIds.includes(v.id);
+                        return `
+                            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,0.05); border-radius:6px;">
+                                <span style="font-size:0.9rem; color:#fff;">👤 @${v.username}</span>
+                                ${isAllowed
+                                    ? `<span style="font-size:0.75rem; color:#4ade80; font-weight:600;">Allowed</span>`
+                                    : `<button onclick="addAllowedOrator(${v.id})" style="background:#6366f1; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">+ Allow Orator</button>`
+                                }
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+
+            // Render Allowed Orators List
+            if (allowedOratorsContainer) {
+                const allowedList = currentBatonState.allowed_orators || [];
+                if (allowedList.length === 0) {
+                    allowedOratorsContainer.innerHTML = '<div style="font-size:0.85rem; color:#64748b; padding:6px;">No allowed co-orators added yet.</div>';
+                } else {
+                    allowedOratorsContainer.innerHTML = allowedList.map(u => {
+                        const isTargeting = currentBatonState.baton_request && currentBatonState.baton_request.target_user_id === u.id;
+                        return `
+                            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,0.05); border-radius:6px;">
+                                <span style="font-size:0.9rem; color:#fff;">🎙️ @${u.username}</span>
+                                <div style="display:flex; gap:6px;">
+                                    ${isTargeting
+                                        ? `<span style="font-size:0.75rem; color:#fbbf24; padding:3px 8px; font-weight:600;">Pending 30s...</span>`
+                                        : `<button onclick="requestBatonPass(${u.id})" style="background:#f59e0b; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Pass Baton 🎙️</button>`
+                                    }
+                                    <button onclick="removeAllowedOrator(${u.id})" style="background:rgba(239,68,68,0.2); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:4px 8px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Remove</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+        }
+
+        window.addAllowedOrator = function(targetUserId) {
+            if (!currentSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/allowed_orators`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_user_id: targetUserId })
+            }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
+        };
+
+        window.removeAllowedOrator = function(targetUserId) {
+            if (!currentSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/allowed_orators/${targetUserId}`, {
+                method: 'DELETE'
+            }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
+        };
+
+        window.requestBatonPass = function(targetUserId) {
+            if (!currentSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/request`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_user_id: targetUserId, timeout_seconds: 30 })
+            }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
+        };
+
+        if (manageOratorsBtn) {
+            manageOratorsBtn.addEventListener('click', () => {
+                if (oratorsModal) {
+                    oratorsModal.classList.add('active');
+                    oratorsModal.setAttribute('aria-hidden', 'false');
+                    renderOratorManagementModalContent();
+                }
+            });
+        }
+        if (oratorsCloseBtn) {
+            oratorsCloseBtn.addEventListener('click', () => {
+                if (oratorsModal) {
+                    oratorsModal.classList.remove('active');
+                    oratorsModal.setAttribute('aria-hidden', 'true');
+                }
+            });
+        }
+        if (takeBackBatonBtn) {
+            takeBackBatonBtn.addEventListener('click', takeBackBaton);
+        }
+        if (acceptBatonBtn) {
+            acceptBatonBtn.addEventListener('click', acceptBatonPass);
+        }
+        if (declineBatonBtn) {
+            declineBatonBtn.addEventListener('click', declineBatonPass);
+        }
+
 
 
         let toastElem = null;
@@ -3487,6 +3808,65 @@
 
             <div class="howto-footer">
                 <button id="howto-ack-btn" class="howto-ack-btn">Got it, let's start!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Orators Modal -->
+    <div id="orators-modal" class="modal-overlay" role="dialog" aria-labelledby="orators-title" aria-hidden="true">
+        <div class="modal-card" style="max-width: 500px; width: 90%;">
+            <button id="orators-close-btn" class="modal-close-btn" aria-label="Close modal">✕</button>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
+                <div style="font-size: 1.5rem;">👑</div>
+                <div>
+                    <h3 id="orators-title" style="margin: 0; font-size: 1.2rem; color: #fff;">Baton & Orator Management</h3>
+                    <div style="font-size: 0.85rem; color: #94a3b8;">Control who can speak and interact with the AI Agent</div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <h4 style="margin: 0 0 8px 0; font-size: 0.85rem; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px;">Actively Connected Viewers</h4>
+                <div id="active-viewers-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border);">
+                    <div style="font-size:0.85rem; color:#64748b; padding:6px;">No other connected viewers online.</div>
+                </div>
+            </div>
+
+            <div>
+                <h4 style="margin: 0 0 8px 0; font-size: 0.85rem; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px;">Allowed Orators List</h4>
+                <div id="allowed-orators-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border);">
+                    <div style="font-size:0.85rem; color:#64748b; padding:6px;">No allowed co-orators added yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quicktime Baton Request Popup Modal -->
+    <div id="baton-request-modal" class="modal-overlay" role="dialog" aria-hidden="true" style="z-index: 9999;">
+        <div class="modal-card" style="max-width: 420px; width: 90%; text-align: center; border: 1px solid #fbbf24; box-shadow: 0 0 30px rgba(251, 191, 36, 0.3);">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem; animation: pulse 1.5s infinite;">🎙️</div>
+            <h3 style="margin: 0 0 8px 0; font-size: 1.3rem; color: #fff;">Baton Pass Request!</h3>
+            <div id="baton-request-text" style="font-size: 0.95rem; color: #e2e8f0; margin-bottom: 0.5rem;">
+                The session owner is passing you the microphone baton!
+            </div>
+
+            <!-- Unmute Reminder Badge -->
+            <div style="font-size: 0.85rem; color: #fbbf24; background: rgba(251, 191, 36, 0.1); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3); margin-bottom: 1rem; text-align: center;">
+                💡 <strong>Tip:</strong> Agent connects automatically. Remember to click <strong>🎤 Mic Off</strong> (or press <code style="background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px; color: #fff;">Ctrl+Shift+[</code>) to unmute your mic!
+            </div>
+
+
+            <!-- Diminishing Progress Bar -->
+            <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 1.2rem;">
+                <div id="baton-timer-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #fbbf24, #f59e0b); transition: width 0.1s linear;"></div>
+            </div>
+
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button id="accept-baton-btn" style="flex: 1; background: #22c55e; border: none; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: transform 0.1s;">
+                    Accept Baton 🎙️
+                </button>
+                <button id="decline-baton-btn" style="flex: 1; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: #94a3b8; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
+                    Decline
+                </button>
             </div>
         </div>
     </div>

@@ -184,13 +184,29 @@ class CanvasStateManager:
     def add_chat_message(self, text: str, author: str = "agent"):
         self.chat_manager.add_message({"author": author, "text": text})
 
-    def register_websocket(self, websocket: WebSocket):
+    def register_websocket(self, websocket: WebSocket, user: Optional[Dict[str, Any]] = None):
         if websocket not in self.active_ws_connections:
             self.active_ws_connections.append(websocket)
+        if not hasattr(self, "active_user_connections"):
+            self.active_user_connections = {}
+        self.active_user_connections[websocket] = user
 
     def unregister_websocket(self, websocket: WebSocket):
         if websocket in self.active_ws_connections:
             self.active_ws_connections.remove(websocket)
+        if hasattr(self, "active_user_connections") and websocket in self.active_user_connections:
+            del self.active_user_connections[websocket]
+
+    def get_active_viewers(self) -> List[Dict[str, Any]]:
+        """Return list of distinct authenticated users currently connected as active canvas viewers."""
+        if not hasattr(self, "active_user_connections"):
+            return []
+        users_by_id = {}
+        for u in self.active_user_connections.values():
+            if u and "id" in u:
+                users_by_id[u["id"]] = {"id": u["id"], "username": u.get("username", "")}
+        return list(users_by_id.values())
+
 
     async def broadcast_ws_message(self, message: Dict[str, Any], sender: Optional[WebSocket] = None):
         for connection in list(self.active_ws_connections):

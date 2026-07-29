@@ -94,14 +94,27 @@ class CanvasStateService:
     def chat_messages(self, session_id: Optional[str] = None) -> list[dict[str, Any]]:
         return self.get(session_id).chat_manager.get_messages()
 
-    async def connect_doodle_websocket(self, websocket: WebSocket, session_id: Optional[str] = None) -> CanvasStateManager:
+    async def connect_doodle_websocket(
+        self, websocket: WebSocket, session_id: Optional[str] = None, user: Optional[dict] = None
+    ) -> CanvasStateManager:
         """Register a doodle client and synchronize its current state."""
         state = self.get(session_id)
-        state.register_websocket(websocket)
+        state.register_websocket(websocket, user=user)
         await websocket.send_json({"type": "doodles_toggle", "enabled": state.doodles_enabled})
         for action in state.doodles_state:
             await websocket.send_json(action)
         return state
+
+    async def broadcast_baton_update(self, session_id: str, baton_state: dict[str, Any]) -> None:
+        """Broadcast updated baton state to all connected canvas websockets for session."""
+        state = self.get(session_id)
+        payload = {
+            "type": "baton_state",
+            "baton_state": baton_state,
+            "active_viewers": state.get_active_viewers(),
+        }
+        await state.broadcast_ws_message(payload)
+
 
     async def apply_doodle_message(
         self,

@@ -42,7 +42,7 @@
 - [ ] Revise existing image
   - If the image is on canvas, it'll be faded in. 
   - Otherwise, the adapted image will simply remain available to be pulled in.
-- [ ] Baton passing
+- [x] Baton passing
   - Co-orators must be identified by authenticated accounts; support `owner`, `co-orator`, and `viewer` roles.
   - One account holds the active baton at a time. Only the baton holder may open the audio/agent-control channel.
   - The owner can pass, revoke, take back, and optionally lock the baton; invalidate the former holder's connection immediately on a handoff.

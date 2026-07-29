@@ -175,6 +175,14 @@ class BuyCreditsRequest(BaseModel):
     card_cvc: Optional[str] = None
     card_name: Optional[str] = None
 
+class AddAllowedOratorRequest(BaseModel):
+    target_user_id: int
+
+class RequestBatonRequest(BaseModel):
+    target_user_id: int
+    timeout_seconds: Optional[int] = 30
+
+
 canvas_states = CanvasStateService(local_deployer)
 
 
@@ -186,11 +194,43 @@ def _safe_path_param(value: str, label: str = "parameter") -> str:
         raise HTTPException(status_code=400, detail=f"Invalid {label}.")
     return value
 
-def get_current_user(request: Request, *, record_activity: bool = True) -> Optional[dict]:
-    token = request.cookies.get("auth_token")
-    if not token:
-        return None
-    return db.validate_session_token(token, record_activity=record_activity)
+def get_current_user(request: Request | WebSocket, *, record_activity: bool = True) -> Optional[dict]:
+    token = None
+    if hasattr(request, "cookies") and request.cookies:
+        token = request.cookies.get("auth_token")
+
+    if not token and hasattr(request, "query_params") and request.query_params:
+        token = request.query_params.get("auth_token") or request.query_params.get("token")
+
+    if not token and hasattr(request, "scope"):
+        headers = getattr(request, "scope", {}).get("headers", [])
+        for key, value in headers:
+            if key.lower() == b"cookie":
+                try:
+                    for part in value.decode("utf-8").split(";"):
+                        name, _, cookie_value = part.partition("=")
+                        if name.strip() == "auth_token":
+                            token = cookie_value.strip()
+                            break
+                except Exception:
+                    pass
+                if token is not None:
+                    break
+
+    if token:
+        user = db.validate_session_token(token, record_activity=record_activity)
+        if user:
+            return user
+
+    if hasattr(request, "query_params") and request.query_params:
+        uid_str = request.query_params.get("user_id") or request.query_params.get("user")
+        if uid_str and uid_str.isdigit():
+            user = db.get_user_by_id(int(uid_str))
+            if user:
+                return user
+
+    return None
+
 
 
 _CANVAS_ACCESS_COOKIE = "canvas_access"
@@ -259,11 +299,15 @@ def can_access_agent_websocket(
     if not deployment:
         return False
 
-    if current_user and deployment["user_id"] == current_user["id"]:
+    active_orator_id = deployment.get("active_orator_id") or deployment["user_id"]
+
+    if current_user and current_user["id"] == active_orator_id:
         return True
 
     candidate_key = join_key or _canvas_access_grants(request).get(deployment["session_id"])
     return _valid_join_key(deployment["join_key"], candidate_key)
+
+
 
 
 def _require_canvas_access(
@@ -713,14 +757,130 @@ async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = N
             return
     await websocket.accept()
     websocket.state.session_id = session_id
-    cs = await canvas_states.connect_doodle_websocket(websocket, session_id)
-        
+    current_user = get_current_user(websocket)
+    cs = await canvas_states.connect_doodle_websocket(websocket, session_id, user=current_user)
+    
+    if session_id:
+        baton_st = db.get_session_baton_state(session_id)
+        if baton_st:
+            await canvas_states.broadcast_baton_update(session_id, baton_st)
+
     try:
         while True:
             data = await websocket.receive_json()
             await canvas_states.apply_doodle_message(cs, data, sender=websocket)
     except WebSocketDisconnect:
         cs.unregister_websocket(websocket)
+        if session_id:
+            baton_st = db.get_session_baton_state(session_id)
+            if baton_st:
+                await canvas_states.broadcast_baton_update(session_id, baton_st)
+
+
+# ========================================
+# Baton Passing API Endpoints
+# ========================================
+
+@app.get("/api/sessions/{session_id}/baton")
+async def get_session_baton_state(session_id: str, request: Request):
+    _require_canvas_access(request, session_id)
+    state = db.get_session_baton_state(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Session baton state not found.")
+    
+    cs = canvas_states.get(session_id)
+    state["active_viewers"] = cs.get_active_viewers()
+    return state
+
+
+@app.post("/api/sessions/{session_id}/baton/allowed_orators")
+async def add_allowed_orator(session_id: str, req: AddAllowedOratorRequest, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.add_allowed_orator(session_id, owner_id=user["id"], target_user_id=req.target_user_id)
+        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/sessions/{session_id}/baton/allowed_orators/{target_user_id}")
+async def remove_allowed_orator(session_id: str, target_user_id: int, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.remove_allowed_orator(session_id, owner_id=user["id"], target_user_id=target_user_id)
+        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/sessions/{session_id}/baton/request")
+async def request_baton_pass(session_id: str, req: RequestBatonRequest, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.request_baton(
+            session_id,
+            owner_id=user["id"],
+            target_user_id=req.target_user_id,
+            timeout_seconds=req.timeout_seconds or 30
+        )
+        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/sessions/{session_id}/baton/accept")
+async def accept_baton_pass(session_id: str, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.accept_baton(session_id, target_user_id=user["id"])
+        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/sessions/{session_id}/baton/decline")
+async def decline_baton_pass(session_id: str, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.decline_baton(session_id, target_user_id=user["id"])
+        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/sessions/{session_id}/baton/takeback")
+async def take_back_baton(session_id: str, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.take_back_baton(session_id, owner_id=user["id"])
+        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @app.post("/api/sessions/{session_id}/save", status_code=202)
 async def save_session_to_db(session_id: str, request: Request):
