@@ -34,6 +34,7 @@ class TestSessionAPI(BaseTestCase):
     def tearDown(self):
         FLAGS.allow_mock_payments = False
         FLAGS.testing_use_local_database = False
+        db.close()
         db.is_live = self._original_db_is_live
         db.db_path = self._original_db_path
         shutil.rmtree(self.test_dir, ignore_errors=True)
@@ -59,10 +60,10 @@ class TestSessionAPI(BaseTestCase):
     def test_about_page_renders_about_markdown(self):
         response = self.client.get("/about")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("About Narratron Buddy", response.text)
-        self.assertIn("FAQ", response.text)
-        self.assertIn("About the Developers", response.text)
-        self.assertIn("Siddthe Shah", response.text)
+        self.assertIn("Narratron Information Page", response.text)
+        self.assertIn("Frequently Asked Questions", response.text)
+        self.assertIn("About the (Original) Developer", response.text)
+        self.assertIn("Sidd", response.text)
 
     def test_canvas_page(self):
         owner = db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")

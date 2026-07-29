@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import html
 import hmac
@@ -10,7 +11,7 @@ import sys
 from typing import List, Optional
 
 from absl import flags
-from fastapi import BackgroundTasks, FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -175,36 +176,6 @@ class BuyCreditsRequest(BaseModel):
     card_name: Optional[str] = None
 
 canvas_states = CanvasStateService(local_deployer)
-
-def _record_session_view_in_background(
-    session_id: str, user_id: Optional[int], ip_address: Optional[str]
-) -> None:
-    """Persist page-view telemetry after the client has received its response."""
-    try:
-        db.record_session_view(session_id, user_id=user_id, ip_address=ip_address)
-    except Exception:
-        logger.exception("Failed to record view for session '%s'", session_id)
-
-
-def _persist_canvas_session_in_background(
-    session_id: str, user_id: Optional[int], name: str
-) -> None:
-    """Snapshot a canvas and write its assets without delaying the UI response."""
-    try:
-        session_dir = local_deployer._get_session_dir(session_id)
-        state_data, image_files = canvas_states.get(session_id).export_session_data(
-            session_dir=session_dir
-        )
-        db.export_session_to_db(
-            session_id=session_id,
-            state_data=state_data,
-            image_files=image_files,
-            user_id=user_id,
-            name=name,
-        )
-        logger.info("Session '%s' saved to database in the background.", session_id)
-    except Exception:
-        logger.exception("Failed to save session '%s' to database", session_id)
 
 
 _SAFE_PARAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.() \-]*$')
@@ -557,7 +528,7 @@ def list_sessions(request: Request):
     return result
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str, request: Request, background_tasks: BackgroundTasks):
+async def get_session(session_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific session."""
     _require_canvas_access(request, session_id)
     session_dir = local_deployer._get_session_dir(session_id)
@@ -575,11 +546,12 @@ def get_session(session_id: str, request: Request, background_tasks: BackgroundT
 
     # Analytics must not hold up the canvas reload, especially with a remote DB.
     client_ip = request.client.host if request.client else None
-    background_tasks.add_task(
-        _record_session_view_in_background,
-        session_id,
-        current_user["id"] if current_user else None,
-        client_ip,
+    asyncio.create_task(
+        db.record_session_view_async(
+            session_id,
+            current_user["id"] if current_user else None,
+            client_ip,
+        )
     )
 
     meta_dict = meta.model_dump()
@@ -594,7 +566,7 @@ def get_session(session_id: str, request: Request, background_tasks: BackgroundT
     }
 
 @app.post("/api/sessions/create-and-deploy")
-async def create_and_deploy_session(request: Request, background_tasks: BackgroundTasks):
+async def create_and_deploy_session(request: Request):
     """API endpoint to handle multi-file asset upload and deploy a session canvas instance."""
     user = get_current_user(request)
     if not user:
@@ -636,11 +608,14 @@ async def create_and_deploy_session(request: Request, background_tasks: Backgrou
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
-    background_tasks.add_task(
-        _persist_canvas_session_in_background,
-        deployed_meta.session_id,
-        user["id"],
-        deployed_meta.name,
+    asyncio.create_task(
+        db.persist_canvas_session_async(
+            canvas_states,
+            local_deployer,
+            deployed_meta.session_id,
+            user["id"],
+            deployed_meta.name,
+        )
     )
     return {"status": "ok", "session_id": deployed_meta.session_id, "session": res_dict}
 
@@ -712,14 +687,22 @@ async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = N
         cs.unregister_websocket(websocket)
 
 @app.post("/api/sessions/{session_id}/save", status_code=202)
-def save_session_to_db(session_id: str, request: Request, background_tasks: BackgroundTasks):
+async def save_session_to_db(session_id: str, request: Request):
     """Save canvas session state and image assets to SQLite database on user demand."""
     meta = local_deployer.get_session(session_id)
     dep = db.get_deployment(session_id)
     user_id = dep["user_id"] if dep else None
     name = meta.name if meta else session_id
 
-    background_tasks.add_task(_persist_canvas_session_in_background, session_id, user_id, name)
+    asyncio.create_task(
+        db.persist_canvas_session_async(
+            canvas_states,
+            local_deployer,
+            session_id,
+            user_id,
+            name,
+        )
+    )
     return {"status": "queued", "session_id": session_id}
 
 @app.get("/api/sessions/{session_id}/export-assets")
@@ -868,9 +851,8 @@ def read_popout(request: Request, session_id: Optional[str] = None, join_key: Op
 
 @app.get("/obs", response_class=HTMLResponse)
 @app.get("/obs/{session_id}", response_class=HTMLResponse)
-def read_obs_canvas(
+async def read_obs_canvas(
     request: Request,
-    background_tasks: BackgroundTasks,
     session_id: Optional[str] = None,
 ):
     """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source."""
@@ -891,11 +873,12 @@ def read_obs_canvas(
 
         current_user = get_current_user(request, record_activity=False)
         client_ip = request.client.host if request.client else None
-        background_tasks.add_task(
-            _record_session_view_in_background,
-            session_id,
-            current_user["id"] if current_user else None,
-            client_ip,
+        asyncio.create_task(
+            db.record_session_view_async(
+                session_id,
+                current_user["id"] if current_user else None,
+                client_ip,
+            )
         )
 
     template_path = os.path.join(os.path.dirname(__file__), "templates", "obs.html")
@@ -903,9 +886,8 @@ def read_obs_canvas(
         return f.read()
 
 @app.get("/canvas", response_class=HTMLResponse)
-def read_canvas(
+async def read_canvas(
     request: Request,
-    background_tasks: BackgroundTasks,
     session_id: Optional[str] = None,
     join_key: Optional[str] = None,
 ):
@@ -928,11 +910,12 @@ def read_canvas(
         # Analytics must not delay the initial canvas render.
         current_user = get_current_user(request, record_activity=False)
         client_ip = request.client.host if request.client else None
-        background_tasks.add_task(
-            _record_session_view_in_background,
-            session_id,
-            current_user["id"] if current_user else None,
-            client_ip,
+        asyncio.create_task(
+            db.record_session_view_async(
+                session_id,
+                current_user["id"] if current_user else None,
+                client_ip,
+            )
         )
 
     is_obs = request.query_params.get("obs") == "1" or request.query_params.get("obs") == "true"

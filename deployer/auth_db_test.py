@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 import tempfile
@@ -17,12 +18,51 @@ class TestDatabaseManager(BaseTestCase):
         self.db._init_db()
 
     def tearDown(self):
+        self.db.close()
         import gc
         gc.collect()
         try:
             self.temp_dir.cleanup()
         except Exception:
             pass
+
+    def test_connection_reuse(self):
+        conn1 = self.db._get_connection()
+        conn2 = self.db._get_connection()
+        self.assertIs(conn1, conn2)
+
+        self.db.close()
+        self.assertIsNone(self.db._conn)
+        conn3 = self.db._get_connection()
+        self.assertIsNot(conn1, conn3)
+
+    def test_async_database_methods(self):
+        async def _run_async():
+            user = await self.db.register_user_async("async_user", "async@example.com", "Pass12345")
+            self.assertEqual(user["username"], "async_user")
+
+            token = await self.db.create_auth_session_async(user["id"])
+            self.assertTrue(len(token) > 20)
+
+            dep_success = await self.db.record_deployment_async("async_session_1", user["id"], "KEY-ASYNC")
+            self.assertTrue(dep_success)
+
+            view_success = await self.db.record_session_view_async("async_session_1", user["id"], "127.0.0.1")
+            self.assertTrue(view_success)
+
+            export_success = await self.db.export_session_to_db_async(
+                "async_session_1",
+                {"shown_image_prompt": "Async Prompt"},
+                [{"filename": "out.png", "category": "output", "data": b"ASYNC_BYTES"}],
+                user_id=user["id"],
+                name="Async Session"
+            )
+            self.assertTrue(export_success)
+
+            inval_success = await self.db.invalidate_session_token_async(token)
+            self.assertTrue(inval_success)
+
+        asyncio.run(_run_async())
 
 
     def test_pragma_wal_enabled(self):

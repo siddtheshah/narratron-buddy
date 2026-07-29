@@ -1,5 +1,6 @@
 """Database module for user management, authentication, and session deployment tracking using SQLite."""
 
+import asyncio
 import datetime
 import hashlib
 import os
@@ -49,73 +50,45 @@ class _DictCursor:
         return getattr(self._cursor, name)
 
 
-class _DictConnection:
-    """Wraps a DB-API connection so that cursor() returns a _DictCursor.
+class _ReusableConnection:
+    """Wraps a DB-API connection so context managers commit or rollback without closing the underlying connection."""
 
-    Proxies commit, close, and context-manager protocol to the inner connection.
-    """
-
-    def __init__(self, conn):
+    def __init__(self, conn, is_dict_cursor: bool = False):
         self._conn = conn
+        self._is_dict_cursor = is_dict_cursor
 
     def cursor(self):
-        return _DictCursor(self._conn.cursor())
-
-    def commit(self):
-        self._conn.commit()
-
-    def close(self):
-        self._conn.close()
-
-    def __enter__(self):
-        if hasattr(self._conn, '__enter__'):
-            self._conn.__enter__()
-        return self
-
-    def __exit__(self, *args):
-        try:
-            if hasattr(self._conn, '__exit__'):
-                return self._conn.__exit__(*args)
-            return False
-        finally:
-            # libsql's context manager commits or rolls back, but does not
-            # necessarily release the remote Hrana stream. Every request gets
-            # a fresh connection, so it must be closed before the next one.
-            self.close()
-
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
-
-
-class _ClosingConnection:
-    """Ensure a DB-API context manager also releases its connection."""
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    def cursor(self):
+        if self._is_dict_cursor:
+            return _DictCursor(self._conn.cursor())
         return self._conn.cursor()
 
     def commit(self):
         self._conn.commit()
 
+    def rollback(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
     def close(self):
-        self._conn.close()
+        try:
+            self._conn.close()
+        except Exception:
+            pass
 
     def __enter__(self):
-        self._conn.__enter__()
         return self
 
-    def __exit__(self, *args):
-        try:
-            return self._conn.__exit__(*args)
-        finally:
-            self.close()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        else:
+            self.commit()
+        return False
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
-
-
 
 
 class DatabaseManager:
@@ -124,6 +97,9 @@ class DatabaseManager:
     def __init__(self, is_live: bool, db_path: Optional[str] = None):
         self.is_live = is_live
         self.db_path = db_path
+        self._conn = None
+        self._cached_db_path = None
+        self._cached_is_live = None
 
     @classmethod
     def from_live(cls) -> "DatabaseManager":
@@ -133,17 +109,63 @@ class DatabaseManager:
     def from_local(cls, db_path: str) -> "DatabaseManager":
         return cls(is_live=False, db_path=db_path)
 
+    def close(self) -> None:
+        """Close the active cached database connection if open."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+        self._cached_db_path = None
+        self._cached_is_live = None
+
     def _get_connection(self):
-        if not self.is_live:
-            conn = sqlite3.connect(str(self.db_path))
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            return _ClosingConnection(conn)
-        else:
-            return _DictConnection(libsql.connect(
-                database=os.environ["TURSO_DATABASE_URL"],
-                auth_token=os.environ["TURSO_DB_TOKEN"]
-            ))
+        str_db_path = str(self.db_path) if self.db_path is not None else None
+        if (
+            self._conn is not None
+            and (self._cached_db_path != str_db_path or self._cached_is_live != self.is_live)
+        ):
+            self.close()
+
+        if self._conn is None:
+            if not self.is_live:
+                db_file = str(self.db_path or "deployer.db")
+                conn = sqlite3.connect(db_file, check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                self._conn = _ReusableConnection(conn, is_dict_cursor=False)
+                self._ensure_tables_exist()
+            else:
+                try:
+                    turso_url = os.environ.get("TURSO_DATABASE_URL")
+                    turso_token = os.environ.get("TURSO_DB_TOKEN")
+                    if not turso_url or not turso_token:
+                        raise ValueError("Missing Turso database credentials.")
+                    conn = libsql.connect(
+                        database=turso_url,
+                        auth_token=turso_token
+                    )
+                    self._conn = _ReusableConnection(conn, is_dict_cursor=True)
+                    self._ensure_tables_exist()
+                except BaseException as e:
+                    logger.warning("Live database connection unavailable (%s), falling back to local SQLite.", e)
+                    db_file = str(self.db_path or "deployer.db")
+                    conn = sqlite3.connect(db_file, check_same_thread=False)
+                    conn.row_factory = sqlite3.Row
+                    conn.execute("PRAGMA journal_mode=WAL")
+                    self._conn = _ReusableConnection(conn, is_dict_cursor=False)
+                    self._ensure_tables_exist()
+            self._cached_db_path = str_db_path
+            self._cached_is_live = self.is_live
+
+        return self._conn
+
+    def _ensure_tables_exist(self) -> None:
+        if getattr(self, "_initializing_tables", False):
+            return
+        self._initializing_tables = True
+        try:
+            self._init_db()
+        finally:
+            self._initializing_tables = False
 
     def _init_db(self) -> None:
         """Initialize database schema if tables do not exist."""
@@ -904,4 +926,99 @@ class DatabaseManager:
                     f.write(data)
 
             return True
+
+    # ========================================
+    # Async Methods (Write & Non-Blocking Operations)
+    # ========================================
+
+    async def record_session_view_async(
+        self, session_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None
+    ) -> bool:
+        """Record session view asynchronously."""
+        try:
+            return await asyncio.to_thread(
+                self.record_session_view, session_id, user_id, ip_address
+            )
+        except Exception:
+            logger.exception("Failed to record view for session '%s'", session_id)
+            return False
+
+    async def export_session_to_db_async(
+        self,
+        session_id: str,
+        state_data: Dict,
+        image_files: List[Dict[str, Any]],
+        user_id: Optional[int] = None,
+        name: Optional[str] = None
+    ) -> bool:
+        """Export session to database asynchronously."""
+        try:
+            return await asyncio.to_thread(
+                self.export_session_to_db, session_id, state_data, image_files, user_id, name
+            )
+        except Exception:
+            logger.exception("Failed to export session '%s' to database", session_id)
+            return False
+
+    async def persist_canvas_session_async(
+        self, canvas_states: Any, local_deployer: Any, session_id: str, user_id: Optional[int], name: str
+    ) -> bool:
+        """Snapshot canvas state and save assets to database asynchronously."""
+        try:
+            def _export_and_save():
+                session_dir = local_deployer._get_session_dir(session_id)
+                state_data, image_files = canvas_states.get(session_id).export_session_data(
+                    session_dir=session_dir
+                )
+                return self.export_session_to_db(
+                    session_id=session_id,
+                    state_data=state_data,
+                    image_files=image_files,
+                    user_id=user_id,
+                    name=name,
+                )
+            success = await asyncio.to_thread(_export_and_save)
+            if success:
+                logger.info("Session '%s' saved to database asynchronously.", session_id)
+            return success
+        except Exception:
+            logger.exception("Failed to save session '%s' to database", session_id)
+            return False
+
+    async def record_deployment_async(
+        self, session_id: str, user_id: int, join_key: str, cost: float = 5.0
+    ) -> bool:
+        """Record deployment asynchronously."""
+        return await asyncio.to_thread(
+            self.record_deployment, session_id, user_id, join_key, cost
+        )
+
+    async def register_user_async(self, username: str, email: str, password: str) -> Dict:
+        """Register user asynchronously."""
+        return await asyncio.to_thread(self.register_user, username, email, password)
+
+    async def create_auth_session_async(self, user_id: int, days_valid: int = 7) -> str:
+        """Create auth session asynchronously."""
+        return await asyncio.to_thread(self.create_auth_session, user_id, days_valid)
+
+    async def invalidate_session_token_async(self, token: str) -> bool:
+        """Invalidate session token asynchronously."""
+        return await asyncio.to_thread(self.invalidate_session_token, token)
+
+    async def add_user_credits_async(
+        self, user_id: int, credits_amount: float, usd_amount: float, payment_method: str = "card_mock"
+    ) -> Dict[str, Any]:
+        """Add user credits asynchronously."""
+        return await asyncio.to_thread(
+            self.add_user_credits, user_id, credits_amount, usd_amount, payment_method
+        )
+
+    async def reset_password_with_token_async(self, token: str, new_password: str) -> bool:
+        """Reset password asynchronously."""
+        return await asyncio.to_thread(self.reset_password_with_token, token, new_password)
+
+    async def delete_deployment_async(self, session_id: str) -> bool:
+        """Delete deployment asynchronously."""
+        return await asyncio.to_thread(self.delete_deployment, session_id)
+
 
