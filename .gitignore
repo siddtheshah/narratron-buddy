@@ -4,6 +4,7 @@ ngrok_policy.yaml
 __pycache__/
 .venv/
 .agent/
+.agents/
 output/
 scratch/
 sessions/

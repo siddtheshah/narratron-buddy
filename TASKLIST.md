@@ -52,5 +52,5 @@
 
 ## Music
 
-- [ ] Ramp music gently, have fade-in and fade-out.
+- [x] Ramp music gently, have fade-in and fade-out.
 - [x] Add cooldown for music tool. Agent gets a little crazy with it.

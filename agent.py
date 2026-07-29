@@ -51,7 +51,7 @@ If the user mentions named characters or places, check the preloaded references 
 Note: The references are loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_references` on every turn.
 
 ## Note Taking
-The storytelling session may be long and therefore by difficult to keep track of everything. You are given access to a note taking tool
+The storytelling session may be long and therefore difficult to keep track of everything. You are given access to a note taking tool
 which can be accessed using the `load_artifacts_tool` tool.  This tool will enable you to consolidate details and perform better
 image generation. 
 
@@ -85,7 +85,7 @@ Besides greeting the orator initially, use this only on request.
 When a story begins or a scene/mood is described, invoke `play_playlist` immediately with an appropriate playlist (e.g., 'default', 'desert adventure', 'desert combat'). You can call `play_playlist` directly without listing playlists first.
 
 * list_playlists: List all available music playlists, their descriptions, and the tracks inside them.
-* play_playlist <playlist_name>: Choose a playlist to play (e.g. 'default', 'desert adventure', 'desert combat'). This sends a signal to play the music on the canvas.
+* play_playlist <playlist_name>: Choose a playlist to play. This sends a signal to play the music on the canvas.
 * pause_playlist: Pause the current music playlist playing on the canvas.
 * resume_playlist: Resume the paused music playlist on the canvas.
 """

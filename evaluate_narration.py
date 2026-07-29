@@ -488,6 +488,9 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             if cookies_to_add:
                 await context.add_cookies(cookies_to_add)
             
+            # Dismiss onboarding modal by setting localStorage before page load
+            await context.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
+            
             # Measure time of recording start
             record_start_time = time.time()
             
@@ -499,6 +502,20 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             print(f"[Evaluator] Opening Narratron Orator Canvas at {canvas_url} ...")
             await page.goto(canvas_url)
             await page.wait_for_selector("#image-container")
+
+            # Ensure any onboarding popup modal is dismissed when page is entered
+            await page.evaluate("""() => {
+                localStorage.setItem('narratron_orator_howto_seen', 'true');
+                if (typeof window.closeOratorHowtoModal === 'function') {
+                    window.closeOratorHowtoModal();
+                }
+            }""")
+            try:
+                ack_btn = page.locator("#howto-ack-btn")
+                if await ack_btn.count() > 0 and await ack_btn.is_visible():
+                    await ack_btn.click()
+            except Exception:
+                pass
             
             # Measure delay from recording start to audio stream start
             stream_start_time = time.time()
