@@ -4,12 +4,11 @@
 - [ ] Cleanup daemon (triggers on session creation, removes sessions not marked durable and older than 7 days)
 
 ## Database And Performance
-- [ ] Performance is abysmal. Everything related to frontend calls to the database have to be made async.
-- [ ] Prevent session auto-load. Session data shouldn't be loaded when visiting the front page.
+- [x] Performance is abysmal. Everything related to frontend calls to the database have to be made async.
 
 ## Frontend
-- [ ] Proper how-to popup for the orator. Doesn't need to be a separate page.
-- [ ] Improve Splash Page Load by loading the images incrementally.
+- [x] Proper how-to popup for the orator. Doesn't need to be a separate page.
+- [x] Improve Splash Page Load by loading the images incrementally.
 
 ## Auth, Security & Monetization
 - [ ] Determine fair pricing
@@ -29,7 +28,7 @@
   - Needs a tutorial popup.
 
 ## Agent Responsiveness
-- [ ] Show flashing indicator for when the agent is "drawing"
+- [x] Show flashing indicator for when the agent is "drawing"
   - Helps user understand when agent is doing stuff.
   - Add an indicator for notes taken too.
 

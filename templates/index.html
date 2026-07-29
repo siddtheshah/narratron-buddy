@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,7 +17,8 @@
             --glass-border: rgba(255, 255, 255, 0.1);
         }
 
-        body, html {
+        body,
+        html {
             margin: 0;
             padding: 0;
             width: 100vw;
@@ -144,8 +146,13 @@
         }
 
         @keyframes ghost-fade-out {
-            from { opacity: 1; }
-            to   { opacity: 0; }
+            from {
+                opacity: 1;
+            }
+
+            to {
+                opacity: 0;
+            }
         }
 
         /* --- Transition classes applied by JS: t-{transition} --- */
@@ -155,6 +162,7 @@
             opacity: 1;
             transition: none;
         }
+
         #current-image.t-crossfade.loaded {
             opacity: 1;
         }
@@ -164,6 +172,7 @@
             opacity: 0;
             transition: opacity 1.8s ease-in-out;
         }
+
         #current-image.t-fade.loaded {
             opacity: 1;
         }
@@ -173,6 +182,7 @@
             opacity: 0;
             transition: none;
         }
+
         #current-image.t-none.loaded {
             opacity: 1;
         }
@@ -222,19 +232,41 @@
         }
 
         @keyframes micPulse {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
         }
-        
+
         .recording-active {
             animation: micPulse 1.5s infinite !important;
         }
 
         @keyframes pulse {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
         }
 
         h1 {
@@ -247,6 +279,426 @@
             background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+        }
+
+        /* --- Left-Side Pull-In Menu Handle Tab --- */
+        .menu-left-toggle-tab {
+            position: fixed;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 56px;
+            border-radius: 0 12px 12px 0;
+            background: rgba(15, 20, 30, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-left: none;
+            color: #a5b4fc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 6px 0 20px rgba(0, 0, 0, 0.4);
+            z-index: 9997;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+        }
+
+        .menu-left-toggle-tab:hover {
+            background: rgba(168, 85, 247, 0.3);
+            color: #fff;
+            border-color: rgba(168, 85, 247, 0.5);
+        }
+
+        /* --- Pullout Menu Drawer Styles --- */
+        .pullout-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9998;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .pullout-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .pullout-drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 320px;
+            max-width: 85vw;
+            background: rgba(18, 22, 32, 0.96);
+            border-right: 1px solid var(--glass-border);
+            box-shadow: 15px 0 40px rgba(0, 0, 0, 0.6);
+            z-index: 9999;
+            transform: translateX(-100%);
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            color: #f8fafc;
+            font-family: 'Outfit', sans-serif;
+            overflow-y: auto;
+        }
+
+        .pullout-overlay.active .pullout-drawer {
+            transform: translateX(0);
+        }
+
+        .pullout-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .pullout-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        .pullout-close-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--glass-border);
+            color: #94a3b8;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .pullout-close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        .pullout-body {
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            flex: 1;
+        }
+
+        .pullout-section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #a5b4fc;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .pullout-menu-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .pullout-menu-item {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 0.75rem 1rem;
+            color: #e2e8f0;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .pullout-menu-item:hover {
+            background: rgba(168, 85, 247, 0.15);
+            border-color: rgba(168, 85, 247, 0.35);
+            color: #fff;
+            transform: translateX(4px);
+        }
+
+        .pullout-item-icon {
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+        }
+
+        /* --- Chat Side Arrow Minimizer Tab --- */
+        .chat-side-toggle-tab {
+            position: absolute;
+            left: -24px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 56px;
+            border-radius: 12px 0 0 12px;
+            background: rgba(15, 20, 30, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-right: none;
+            color: #a5b4fc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: -6px 0 20px rgba(0, 0, 0, 0.4);
+            z-index: 30;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+        }
+
+        .chat-side-toggle-tab:hover {
+            background: rgba(99, 102, 241, 0.3);
+            color: #fff;
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        #chat-toggle-arrow {
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #chat-sidebar.collapsed #chat-toggle-arrow {
+            transform: rotate(180deg);
+        }
+
+        #chat-sidebar.collapsed .chat-side-toggle-tab {
+            left: auto;
+            right: 0;
+            position: fixed;
+            top: 50%;
+            border-radius: 12px 0 0 12px;
+            border-right: none;
+            border-left: 1px solid var(--glass-border);
+            box-shadow: -6px 0 20px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+
+        /* --- Orator How-To Modal Styles --- */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-card {
+            background: rgba(20, 24, 33, 0.95);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            border-radius: 24px;
+            max-width: 520px;
+            width: 100%;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 30px rgba(168, 85, 247, 0.15);
+            padding: 2rem;
+            position: relative;
+            transform: scale(0.95) translateY(10px);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            color: #f8fafc;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .modal-overlay.active .modal-card {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 1.25rem;
+            right: 1.25rem;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #94a3b8;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        .howto-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 1rem;
+        }
+
+        .howto-icon-badge {
+            background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+            width: 48px;
+            height: 48px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+            flex-shrink: 0;
+        }
+
+        .howto-title-text {
+            font-size: 1.35rem;
+            font-weight: 600;
+            color: #ffffff;
+            margin: 0;
+            letter-spacing: -0.01em;
+        }
+
+        .howto-subtitle {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+
+        .howto-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .howto-step-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 1rem 1.25rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .howto-step-card:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(168, 85, 247, 0.3);
+        }
+
+        .step-num {
+            background: rgba(168, 85, 247, 0.2);
+            color: #c084fc;
+            border: 1px solid rgba(168, 85, 247, 0.4);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #f1f5f9;
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .step-desc {
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            line-height: 1.45;
+        }
+
+        .step-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #3b82f6;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .step-badge.mic-badge {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid var(--glass-border);
+            color: #e2e8f0;
+        }
+
+        .howto-footer {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .howto-ack-btn {
+            background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+            color: #ffffff;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 24px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+            font-family: inherit;
+        }
+
+        .howto-ack-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(168, 85, 247, 0.5);
         }
 
         #prompt-toggle-btn {
@@ -272,7 +724,8 @@
             transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             max-width: 44px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-            display: none; /* Controlled by JS when prompt is available */
+            display: none;
+            /* Controlled by JS when prompt is available */
         }
 
         #prompt-toggle-btn svg {
@@ -306,6 +759,7 @@
         #prompt-toggle-btn.expanded::-webkit-scrollbar {
             width: 4px;
         }
+
         #prompt-toggle-btn.expanded::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 4px;
@@ -363,12 +817,26 @@
             -webkit-backdrop-filter: blur(10px);
         }
 
-        .agent-activity-icon.active { display: flex; }
-        .agent-activity-icon.drawing { color: #fbbf24; border-color: rgba(251, 191, 36, 0.7); animation: agentActivityPulse 1s ease-in-out infinite; }
-        .agent-activity-icon.notes { color: #a5b4fc; border-color: rgba(165, 180, 252, 0.7); }
+        .agent-activity-icon.active {
+            display: flex;
+        }
+
+        .agent-activity-icon.drawing {
+            color: #fbbf24;
+            border-color: rgba(251, 191, 36, 0.7);
+            animation: agentActivityPulse 1s ease-in-out infinite;
+        }
+
+        .agent-activity-icon.notes {
+            color: #a5b4fc;
+            border-color: rgba(165, 180, 252, 0.7);
+        }
 
         @keyframes agentActivityPulse {
-            50% { transform: scale(1.08); box-shadow: 0 0 20px rgba(251, 191, 36, 0.7); }
+            50% {
+                transform: scale(1.08);
+                box-shadow: 0 0 20px rgba(251, 191, 36, 0.7);
+            }
         }
 
         #chat-sidebar {
@@ -381,7 +849,7 @@
             border-radius: 20px;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow: visible;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             z-index: 10;
             flex-shrink: 0;
@@ -528,9 +996,20 @@
         }
 
         @keyframes pulseBadge {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.18); opacity: 0.85; }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.18);
+                opacity: 0.85;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         #chat-messages {
@@ -546,6 +1025,7 @@
         #chat-messages::-webkit-scrollbar {
             width: 6px;
         }
+
         #chat-messages::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 10px;
@@ -564,8 +1044,15 @@
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         #chat-form {
@@ -586,7 +1073,8 @@
             font-family: 'Outfit', sans-serif;
             outline: none;
             transition: all 0.2s ease;
-            min-width: 0; /* fixes flex item stretching */
+            min-width: 0;
+            /* fixes flex item stretching */
         }
 
         #chat-input:focus {
@@ -627,7 +1115,7 @@
             gap: 0.5rem;
             align-items: center;
         }
-        
+
         .color-btn {
             width: 24px;
             height: 24px;
@@ -636,15 +1124,15 @@
             border: 2px solid transparent;
             transition: transform 0.2s;
         }
-        
+
         .color-btn:hover {
             transform: scale(1.1);
         }
-        
+
         .color-btn.active {
             border-color: var(--text-color);
         }
-        
+
         .eraser-btn {
             background: rgba(255, 255, 255, 0.1);
             color: #fff;
@@ -653,7 +1141,7 @@
             align-items: center;
             font-size: 14px;
         }
-        
+
         #brush-size {
             margin: 0 0.5rem;
             width: 80px;
@@ -676,7 +1164,7 @@
         #music-volume-slider:hover {
             background: rgba(255, 255, 255, 0.3);
         }
-        
+
         #clear-doodle-btn {
             background: rgba(255, 255, 255, 0.1);
             color: white;
@@ -688,7 +1176,7 @@
             margin-left: 0.5rem;
             transition: background 0.2s;
         }
-        
+
         #clear-doodle-btn:hover {
             background: rgba(255, 255, 255, 0.2);
         }
@@ -718,94 +1206,127 @@
             opacity: 1;
             transform: translateX(-50%) translateY(0) scale(1);
         }
-
     </style>
 </head>
+
 <body>
+
+    <!-- Left-side pull in tab handle button with three lines -->
+    <button id="menu-left-toggle-btn" class="menu-left-toggle-tab" title="Open Menu" aria-label="Open Menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" x2="20" y1="12" y2="12" />
+            <line x1="4" x2="20" y1="6" y2="6" />
+            <line x1="4" x2="20" y1="18" y2="18" />
+        </svg>
+    </button>
 
     <div id="bg-layer"></div>
 
     <div id="main-container">
         <header>
-            <a id="back-btn" href="/" title="Back to Deployer" style="text-decoration: none; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
-                ←
-            </a>
-            <div class="status-dot" id="status-indicator"></div>
+            <a href="/" id="back-btn" title="Back to Session Launcher"
+                style="text-decoration: none; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit;">🏠</a>
+            <div class="status-dot disconnected" id="status-indicator" title="Connection status"></div>
             <h1>Narratron Canvas</h1>
-            <a href="/about" title="About Narratron Buddy" aria-label="About Narratron Buddy" style="text-decoration: none; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 20px; padding: 5px 11px; font-size: 0.8rem; font-weight: 500; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit;">About</a>
-            <button id="share-session-btn" title="Copy session share link" style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
+            <button id="share-session-btn" title="Copy session share link"
+                style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 🔗
             </button>
-            <button id="obs-session-btn" title="Copy OBS Browser Source link" style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
+            <button id="obs-session-btn" title="Copy OBS Browser Source link"
+                style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 📹
             </button>
-            <button id="save-session-btn" title="Save session to database" style="background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
+            <button id="save-session-btn" title="Save session to database"
+                style="background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 💾
             </button>
 
-            <!-- Full Screen & Pop-out Panel buttons -->
-            <button id="fullscreen-btn" title="Full Screen (F11)" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
-                <svg id="fullscreen-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            <!-- Full Screen button -->
+            <button id="fullscreen-btn" title="Full Screen (F11)"
+                style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
+                <svg id="fullscreen-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path
+                        d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
                 </svg>
-            </button>
-            <button id="popout-toggle-btn" title="Toggle Chat Sidebar" style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-                    <line x1="15" x2="15" y1="3" y2="21"/>
-                    <path d="m10 9 3 3-3 3"/>
-                </svg>
-                <span>Chat</span>
             </button>
 
             <!-- Orator Audio controls (Connect & Mic) -->
-            <div id="orator-controls" style="display: none; align-items: center; gap: 10px; margin-left: 1rem; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
-                <button id="agent-connect-btn" style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
+            <div id="orator-controls"
+                style="display: none; align-items: center; gap: 10px; margin-left: 1rem; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                <button id="agent-connect-btn"
+                    style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
                     🔌 Connect Agent
                 </button>
-                <button id="agent-mic-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #94a3b8; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;" disabled>
+                <button id="agent-mic-btn"
+                    style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #94a3b8; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;"
+                    disabled>
                     🎤 Mic Off
-                </button>
-                <button id="mic-hotkey-btn" title="Click to change mic hotkey" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #a5b4fc; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                    ⌨️ <span id="hotkey-display">Hotkey: M</span>
                 </button>
             </div>
 
             <!-- Role Indicator & Toggle (Orator switch) -->
-            <div id="role-container" style="margin-left: 1rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
-                <span id="role-badge" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.4);">Viewer</span>
-                <button id="role-toggle-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit;">Switch to Orator</button>
+            <div id="role-container"
+                style="margin-left: 1rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                <span id="role-badge"
+                    style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.4);">Viewer</span>
+                <button id="role-toggle-btn"
+                    style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit;">Switch
+                    to Orator</button>
             </div>
         </header>
 
         <div id="image-container">
-            <canvas id="canvas-renderer" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
-            <img id="current-image" src="" alt="Narratron Generation" style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
-            <img id="ghost-image" src="" alt="" aria-hidden="true" style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
+            <canvas id="canvas-renderer"
+                style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
+            <img id="current-image" src="" alt="Narratron Generation"
+                style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
+            <img id="ghost-image" src="" alt="" aria-hidden="true"
+                style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
             <div id="agent-activity-tray" aria-label="Agent activity" aria-live="polite">
-                <div id="agent-drawing-indicator" class="agent-activity-icon drawing" role="status" title="Agent is drawing" aria-hidden="true">
-                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 20 9-9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                <div id="agent-drawing-indicator" class="agent-activity-icon drawing" role="status"
+                    title="Agent is drawing" aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="m12 20 9-9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
                 </div>
-                <div id="agent-notes-indicator" class="agent-activity-icon notes" role="status" title="Agent updated notes" aria-hidden="true">
-                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+                <div id="agent-notes-indicator" class="agent-activity-icon notes" role="status"
+                    title="Agent updated notes" aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                        <path d="M14 2v6h6M8 13h8M8 17h6" />
+                    </svg>
                 </div>
             </div>
             <div id="prompt-toggle-btn" title="View Prompt">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path
+                        d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z" />
                 </svg>
                 <span id="prompt-text"></span>
             </div>
 
             <!-- Image History Paging Controls -->
-            <div id="history-paging-controls" style="display: none; position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 20; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 4px 12px; align-items: center; gap: 8px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4); font-family: 'Outfit', sans-serif;">
-                <button id="page-prev-btn" title="Previous Image (Left Arrow)" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">◀</button>
-                <span id="page-indicator" style="font-size: 0.8rem; font-weight: 500; color: #e2e8f0; min-width: 80px; text-align: center; user-select: none;">1 / 1</span>
-                <button id="page-next-btn" title="Next Image (Right Arrow)" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">▶</button>
-                <button id="page-head-btn" title="Jump to Head / Latest Image" style="display: none; background: rgba(99, 102, 241, 0.3); border: 1px solid rgba(99, 102, 241, 0.5); color: #a5b4fc; border-radius: 16px; padding: 3px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s;">
+            <div id="history-paging-controls"
+                style="display: none; position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 20; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 4px 12px; align-items: center; gap: 8px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4); font-family: 'Outfit', sans-serif;">
+                <button id="page-prev-btn" title="Previous Image (Left Arrow)"
+                    style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">◀</button>
+                <span id="page-indicator"
+                    style="font-size: 0.8rem; font-weight: 500; color: #e2e8f0; min-width: 80px; text-align: center; user-select: none;">1
+                    / 1</span>
+                <button id="page-next-btn" title="Next Image (Right Arrow)"
+                    style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">▶</button>
+                <button id="page-head-btn" title="Jump to Head / Latest Image"
+                    style="display: none; background: rgba(99, 102, 241, 0.3); border: 1px solid rgba(99, 102, 241, 0.5); color: #a5b4fc; border-radius: 16px; padding: 3px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s;">
                     <span>Head ⏩</span>
-                    <span id="new-head-badge" style="display: none; background: #ef4444; color: #fff; font-size: 0.65rem; border-radius: 10px; padding: 1px 5px; font-weight: 700; animation: pulseBadge 1.5s infinite;">NEW</span>
+                    <span id="new-head-badge"
+                        style="display: none; background: #ef4444; color: #fff; font-size: 0.65rem; border-radius: 10px; padding: 1px 5px; font-weight: 700; animation: pulseBadge 1.5s infinite;">NEW</span>
                 </button>
             </div>
         </div>
@@ -813,8 +1334,12 @@
         <div id="bottom-bar">
             <!-- Music controls -->
             <div id="music-controls" style="display: flex; align-items: center; gap: 10px;">
-                <span id="music-status" style="font-size: 0.8rem; color: #a5b4fc; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">🎵 Silent</span>
-                <button id="music-mute-btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 5px;">🔊 Mute</button>
+                <span id="music-status"
+                    style="font-size: 0.8rem; color: #a5b4fc; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">🎵
+                    Silent</span>
+                <button id="music-mute-btn"
+                    style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 5px;">🔊
+                    Mute</button>
                 <div id="volume-container" style="display: flex; align-items: center; gap: 8px;">
                     <input type="range" id="music-volume-slider" min="0" max="1" step="0.01" value="0.5" title="Volume">
                     <span id="volume-percent" style="font-size: 0.75rem; color: #a5b4fc; min-width: 32px;">50%</span>
@@ -822,8 +1347,10 @@
             </div>
 
             <!-- Doodle toggle button (Orator control) & palette controls -->
-            <div id="doodle-section" style="display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
-                <button id="doodles-toggle-btn" title="Toggle doodle display on canvas" style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
+            <div id="doodle-section"
+                style="display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+                <button id="doodles-toggle-btn" title="Toggle doodle display on canvas"
+                    style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
                     ✏️ Doodles: On
                 </button>
                 <div id="doodle-toolbar" style="display: flex; align-items: center; gap: 0.5rem;">
@@ -833,8 +1360,11 @@
                     <div class="color-btn" style="background: #3b82f6;" data-color="#3b82f6"></div>
                     <div class="color-btn" style="background: #eab308;" data-color="#eab308"></div>
                     <div class="color-btn eraser-btn" data-color="erase" title="Eraser">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path
+                                d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21">
+                            </path>
                             <path d="M22 21H7"></path>
                             <path d="m5 11 9 9"></path>
                         </svg>
@@ -847,46 +1377,68 @@
     </div>
 
     <!-- Floating Expand button when Chat Panel is collapsed -->
-    <button id="popout-expand-btn" title="Expand Chat Panel" style="display: none; position: absolute; right: 1.5rem; top: 1.5rem; z-index: 20; background: var(--glass-bg); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid var(--glass-border); color: #a5b4fc; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; align-items: center; gap: 6px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3); transition: all 0.3s ease; font-family: inherit;">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-            <line x1="9" x2="9" y1="3" y2="21"/>
-            <path d="m14 9-3 3 3 3"/>
+    <button id="popout-expand-btn" title="Expand Chat Panel"
+        style="display: none; position: absolute; right: 1.5rem; top: 1.5rem; z-index: 20; background: var(--glass-bg); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid var(--glass-border); color: #a5b4fc; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; align-items: center; gap: 6px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3); transition: all 0.3s ease; font-family: inherit;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+            <line x1="9" x2="9" y1="3" y2="21" />
+            <path d="m14 9-3 3 3 3" />
         </svg>
         <span>Chat</span>
     </button>
 
     <div id="chat-sidebar">
+        <!-- Side arrow minimizer handle tab -->
+        <button id="chat-side-toggle-btn" class="chat-side-toggle-tab" title="Hide / Show Chat Panel"
+            aria-label="Toggle Chat Panel">
+            <svg id="chat-toggle-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m9 18 6-6-6-6" />
+            </svg>
+        </button>
+
         <div class="panel-header">
             <span class="panel-title">Chat</span>
             <div class="panel-actions">
                 <button class="panel-btn" id="popout-window-btn" title="Pop out into separate window">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                        <polyline points="15 3 21 3 21 9"/>
-                        <line x1="10" x2="21" y1="14" y2="3"/>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" x2="21" y1="14" y2="3" />
                     </svg>
                     Pop Out
                 </button>
-                <button class="panel-btn" id="popout-collapse-btn" title="Collapse Panel">
-                    ✕
+                <button class="panel-btn" id="popout-collapse-btn" title="Hide Chat Panel">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m9 18 6-6-6-6" />
+                    </svg>
                 </button>
             </div>
         </div>
 
-        <div id="popped-out-placeholder" style="display: none; padding: 2rem 1rem; text-align: center; color: #94a3b8; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
+        <div id="popped-out-placeholder"
+            style="display: none; padding: 2rem 1rem; text-align: center; color: #94a3b8; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
             <div style="font-size: 2rem;">🗗</div>
-            <p style="font-size: 0.9rem; margin: 0; color: #cbd5e1;">Chat is currently popped out in a separate window.</p>
-            <button id="dock-panel-btn" class="panel-btn" style="padding: 6px 14px; background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc;">
+            <p style="font-size: 0.9rem; margin: 0; color: #cbd5e1;">Chat is currently popped out in a separate window.
+            </p>
+            <button id="dock-panel-btn" class="panel-btn"
+                style="padding: 6px 14px; background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc;">
                 📥 Dock Back Here
             </button>
         </div>
 
         <div id="panel-body" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
-            <div id="chat-user-bar" style="padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15); display: flex; align-items: center; gap: 8px; font-size: 0.8rem;">
+            <div id="chat-user-bar"
+                style="padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15); display: flex; align-items: center; gap: 8px; font-size: 0.8rem;">
                 <span style="color: #94a3b8; font-weight: 500; white-space: nowrap;">Name:</span>
-                <input type="text" id="chat-name-input" style="flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 3px 10px; color: #fff; font-size: 0.8rem; outline: none; font-family: inherit;" placeholder="Your Chat Name..." title="Click to set/change your chat display name">
-                <span id="chat-name-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
+                <input type="text" id="chat-name-input"
+                    style="flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 3px 10px; color: #fff; font-size: 0.8rem; outline: none; font-family: inherit;"
+                    placeholder="Your Chat Name..." title="Click to set/change your chat display name">
+                <span id="chat-name-badge"
+                    style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
             </div>
             <div id="chat-messages"></div>
             <form id="chat-form">
@@ -918,7 +1470,7 @@
         const chatMessages = document.getElementById('chat-messages');
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
-        
+
         const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
         const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
 
@@ -983,7 +1535,7 @@
                         badge.style.color = '#4ade80';
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             if (!currentChatUsername) {
                 const savedAnonName = localStorage.getItem('narratron_anon_chat_name');
@@ -1298,7 +1850,7 @@
                 // Try to play if it was blocked or paused
                 if (bgMusic.paused && currentPlaylistTracks.length > 0) {
                     bgMusic.volume = 0;
-                    bgMusic.play().then(() => fadeIn(1500)).catch(() => {});
+                    bgMusic.play().then(() => fadeIn(1500)).catch(() => { });
                 } else {
                     fadeIn(1000);
                 }
@@ -1310,7 +1862,7 @@
             const volume = parseFloat(e.target.value);
             bgMusic.volume = volume;
             volumePercentSpan.textContent = Math.round(volume * 100) + '%';
-            
+
             if (volume > 0 && isMuted) {
                 isMuted = false;
                 bgMusic.muted = false;
@@ -1319,7 +1871,7 @@
                 musicMuteBtn.style.borderColor = 'var(--glass-border)';
             }
         });
-        
+
         const promptBtn = document.getElementById('prompt-toggle-btn');
         const drawingIndicator = document.getElementById('agent-drawing-indicator');
         const notesIndicator = document.getElementById('agent-notes-indicator');
@@ -1494,7 +2046,7 @@
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 updateAgentActivity(data.tool_activity);
-                
+
                 // Process music payload
                 if (data.music && data.music.time > lastPlaylistTime) {
                     lastPlaylistTime = data.music.time;
@@ -1510,7 +2062,7 @@
                                 playPlaylist(data.music.playlist, data.music.tracks);
                             }
                         }
-                        
+
                         if (data.music.paused) {
                             musicStatusSpan.textContent = '\u{1F3B5} ' + data.music.playlist + ' (Paused)';
                             if (!bgMusic.paused) {
@@ -1529,7 +2081,7 @@
                         stopPlaylist();
                     }
                 }
-                
+
                 if (data.doodles_enabled !== undefined && data.doodles_enabled !== doodlesEnabled) {
                     setDoodlesDisplay(data.doodles_enabled);
                 }
@@ -1594,7 +2146,7 @@
                                 promptBtn.style.display = 'flex';
                             }
                         };
-                        
+
                         tempImage.onload = triggerTransition;
                         tempImage.onerror = triggerTransition;
                         tempImage.src = newImgUrl;
@@ -1715,7 +2267,7 @@
                 }
             });
         }
-        
+
         if (brushSizeSlider) {
             brushSizeSlider.addEventListener('input', (e) => {
                 currentBrushSize = parseInt(e.target.value);
@@ -1782,7 +2334,7 @@
             renderSegment(nx0 * rect.width, ny0 * rect.height, nx1 * rect.width, ny1 * rect.height, color, size);
 
             if (!emit) return;
-            
+
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify(action));
             }
@@ -1884,6 +2436,11 @@
             oratorControls.style.display = 'flex';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
             statusIndicator.classList.add('disconnected'); // Start red
+
+            // Show Orator How-To popup automatically on first visit
+            if (!localStorage.getItem('narratron_orator_howto_seen')) {
+                setTimeout(() => openOratorHowtoModal(), 400);
+            }
         } else {
             if (backBtn) backBtn.href = '/';
             roleBadge.textContent = 'Viewer';
@@ -1993,7 +2550,7 @@
             e.preventDefault();
             const text = chatInput.value.trim();
             if (!text) return;
-            
+
             chatInput.value = '';
             try {
                 // Post to chat_manager first
@@ -2049,7 +2606,7 @@
 
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${sessionId}`;
-            
+
             agentConnectBtn.textContent = 'Connecting...';
             agentConnectBtn.style.background = '#eab308'; // Amber
 
@@ -2087,7 +2644,7 @@
                         if (data.setupComplete) {
                             window.isSetupComplete = true;
                         }
-                    } catch (err) {}
+                    } catch (err) { }
                 };
             });
         }
@@ -2098,7 +2655,7 @@
                 stopMicStream();
             }
             if (agentWs) {
-                try { agentWs.close(); } catch(e) {}
+                try { agentWs.close(); } catch (e) { }
                 agentWs = null;
                 window.agentWs = null; // Clear globally
                 window.isSetupComplete = false;
@@ -2129,7 +2686,7 @@
                 audioRecorderContext = context;
                 micStream = stream;
                 isRecording = true;
-                
+
                 agentMicBtn.innerHTML = '<span class="icon">🎙️</span> Mic Active';
                 agentMicBtn.style.background = '#ef4444'; // Red
                 agentMicBtn.style.color = '#fff';
@@ -2147,12 +2704,12 @@
                 micStream = null;
             }
             if (audioRecorderContext) {
-                try { audioRecorderContext.close(); } catch(e) {}
+                try { audioRecorderContext.close(); } catch (e) { }
                 audioRecorderContext = null;
             }
             audioRecorderNode = null;
             isRecording = false;
-            
+
             agentMicBtn.innerHTML = '<span class="icon">🎤</span> Mic Off';
             agentMicBtn.style.background = 'rgba(255,255,255,0.15)';
             agentMicBtn.style.color = '#fff';
@@ -2178,8 +2735,8 @@
         // ========================================
         // Configurable Mic Hotkey Logic
         // ========================================
-        const micHotkeyBtn = document.getElementById('mic-hotkey-btn');
-        const hotkeyDisplay = document.getElementById('hotkey-display');
+        const micHotkeyBtn = null;
+        const hotkeyDisplay = null;
         let isRebindingHotkey = false;
 
         // Default hotkey: Ctrl + Shift + [
@@ -2215,9 +2772,9 @@
                             currentHotkey = { code, key, altKey: alt, ctrlKey: ctrl, shiftKey: shift };
                             updateHotkeyUI();
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
             }
-        } catch(e) {}
+        } catch (e) { }
 
         function formatHotkeyLabel(hk) {
             let parts = [];
@@ -2260,23 +2817,43 @@
         }
 
         function updateHotkeyUI() {
+            const label = `Mic Hotkey: ${formatHotkeyLabel(currentHotkey)}`;
             if (hotkeyDisplay) {
-                hotkeyDisplay.textContent = `Hotkey: ${formatHotkeyLabel(currentHotkey)}`;
+                hotkeyDisplay.textContent = label;
+            }
+            const menuHotkeyDisplay = document.getElementById('menu-hotkey-display');
+            if (menuHotkeyDisplay) {
+                menuHotkeyDisplay.textContent = label;
             }
         }
 
         updateHotkeyUI();
 
         // Rebind hotkey click handler
+        const menuItemHotkey = document.getElementById('menu-item-hotkey');
+        function startHotkeyRebind(btnElem, labelElem) {
+            if (isRebindingHotkey) return;
+            isRebindingHotkey = true;
+            if (btnElem) {
+                btnElem.style.background = 'rgba(234, 179, 8, 0.25)';
+                btnElem.style.color = '#fef08a';
+            }
+            if (labelElem) {
+                labelElem.textContent = 'Press key combo to rebind...';
+            }
+        }
+
+        if (menuItemHotkey) {
+            menuItemHotkey.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const menuHotkeyDisplay = document.getElementById('menu-hotkey-display');
+                startHotkeyRebind(menuItemHotkey, menuHotkeyDisplay);
+            });
+        }
         if (micHotkeyBtn) {
             micHotkeyBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (isRebindingHotkey) return;
-                
-                isRebindingHotkey = true;
-                micHotkeyBtn.style.background = '#eab308';
-                micHotkeyBtn.style.color = '#000';
-                hotkeyDisplay.textContent = 'Press any key...';
+                startHotkeyRebind(micHotkeyBtn, hotkeyDisplay);
             });
         }
 
@@ -2292,8 +2869,14 @@
                 // If user presses Escape, cancel rebinding
                 if (e.code === 'Escape') {
                     isRebindingHotkey = false;
-                    micHotkeyBtn.style.background = 'rgba(255,255,255,0.08)';
-                    micHotkeyBtn.style.color = '#a5b4fc';
+                    if (micHotkeyBtn) {
+                        micHotkeyBtn.style.background = 'rgba(255,255,255,0.08)';
+                        micHotkeyBtn.style.color = '#a5b4fc';
+                    }
+                    if (menuItemHotkey) {
+                        menuItemHotkey.style.background = '';
+                        menuItemHotkey.style.color = '';
+                    }
                     updateHotkeyUI();
                     return;
                 }
@@ -2313,16 +2896,28 @@
 
                 try {
                     localStorage.setItem('narratron_mic_hotkey', JSON.stringify(currentHotkey));
-                } catch(err) {}
+                } catch (err) { }
 
                 isRebindingHotkey = false;
-                micHotkeyBtn.style.background = '#10b981';
-                micHotkeyBtn.style.color = '#fff';
+                if (micHotkeyBtn) {
+                    micHotkeyBtn.style.background = '#10b981';
+                    micHotkeyBtn.style.color = '#fff';
+                }
+                if (menuItemHotkey) {
+                    menuItemHotkey.style.background = 'rgba(16, 185, 129, 0.25)';
+                    menuItemHotkey.style.color = '#6ee7b7';
+                }
                 updateHotkeyUI();
 
                 setTimeout(() => {
-                    micHotkeyBtn.style.background = 'rgba(255,255,255,0.08)';
-                    micHotkeyBtn.style.color = '#a5b4fc';
+                    if (micHotkeyBtn) {
+                        micHotkeyBtn.style.background = 'rgba(255,255,255,0.08)';
+                        micHotkeyBtn.style.color = '#a5b4fc';
+                    }
+                    if (menuItemHotkey) {
+                        menuItemHotkey.style.background = '';
+                        menuItemHotkey.style.color = '';
+                    }
                 }, 600);
                 return;
             }
@@ -2344,7 +2939,7 @@
 
             if (matchCode && matchAlt && matchCtrl && matchShift) {
                 e.preventDefault();
-                
+
                 if (agentWs && agentWs.readyState === WebSocket.OPEN && !agentMicBtn.disabled) {
                     agentMicBtn.click();
                 } else if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
@@ -2357,7 +2952,7 @@
 
         window.setMicHotkey = (code) => {
             currentHotkey = { code: code, key: code, altKey: false, ctrlKey: false, shiftKey: false };
-            try { localStorage.setItem('narratron_mic_hotkey', JSON.stringify(currentHotkey)); } catch(e) {}
+            try { localStorage.setItem('narratron_mic_hotkey', JSON.stringify(currentHotkey)); } catch (e) { }
             updateHotkeyUI();
         };
 
@@ -2398,7 +2993,7 @@
             const totalBytes = binary.length;
             let offset = 0;
             const ws = window.agentWs || agentWs;
-            
+
             return new Promise((resolve) => {
                 const interval = setInterval(() => {
                     if (offset >= totalBytes) {
@@ -2500,7 +3095,6 @@
         });
 
         // Pop-out Panel drawer & standalone window logic
-        const popoutToggleBtn = document.getElementById('popout-toggle-btn');
         const popoutCollapseBtn = document.getElementById('popout-collapse-btn');
         const popoutExpandBtn = document.getElementById('popout-expand-btn');
         const popoutWindowBtn = document.getElementById('popout-window-btn');
@@ -2531,9 +3125,6 @@
             }, 360);
         }
 
-        if (popoutToggleBtn) {
-            popoutToggleBtn.addEventListener('click', () => setPanelCollapsed(!isPanelCollapsed));
-        }
         if (popoutCollapseBtn) {
             popoutCollapseBtn.addEventListener('click', () => setPanelCollapsed(true));
         }
@@ -2546,10 +3137,10 @@
             const height = 680;
             const left = window.screen.width - width - 50;
             const top = 100;
-            
+
             const url = `/popout?session_id=${encodeURIComponent(sessionId)}&role=${isOrator ? 'orator' : 'viewer'}`;
             popoutWindowRef = window.open(url, 'NarratronPopoutPanel', `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
-            
+
             if (popoutWindowRef) {
                 if (panelBody) panelBody.style.display = 'none';
                 if (poppedOutPlaceholder) poppedOutPlaceholder.style.display = 'flex';
@@ -2584,6 +3175,250 @@
         window.togglePopoutPanel = () => setPanelCollapsed(!isPanelCollapsed);
         window.openPopoutWindow = openPopoutWindow;
         window.dockPanelBack = dockPanelBack;
+
+        // Chat side arrow toggle tab listener
+        const chatSideToggleBtn = document.getElementById('chat-side-toggle-btn');
+        if (chatSideToggleBtn) {
+            chatSideToggleBtn.addEventListener('click', () => setPanelCollapsed(!isPanelCollapsed));
+        }
+
+        // ========================================
+        // Pullout Drawer Menu Logic
+        // ========================================
+        const pulloutOverlay = document.getElementById('pullout-overlay');
+        const menuLeftToggleBtn = document.getElementById('menu-left-toggle-btn');
+        const pulloutCloseBtn = document.getElementById('pullout-close-btn');
+        const menuItemHowto = document.getElementById('menu-item-howto');
+        const menuItemShare = document.getElementById('menu-item-share');
+        const menuItemObs = document.getElementById('menu-item-obs');
+
+        function openPulloutMenu() {
+            if (!pulloutOverlay) return;
+            pulloutOverlay.classList.add('active');
+            pulloutOverlay.setAttribute('aria-hidden', 'false');
+        }
+
+        function closePulloutMenu() {
+            if (!pulloutOverlay) return;
+            pulloutOverlay.classList.remove('active');
+            pulloutOverlay.setAttribute('aria-hidden', 'true');
+        }
+
+        if (menuLeftToggleBtn) menuLeftToggleBtn.addEventListener('click', openPulloutMenu);
+        if (pulloutCloseBtn) pulloutCloseBtn.addEventListener('click', closePulloutMenu);
+
+        if (pulloutOverlay) {
+            pulloutOverlay.addEventListener('click', (e) => {
+                if (e.target === pulloutOverlay) {
+                    closePulloutMenu();
+                }
+            });
+        }
+
+        if (menuItemHowto) {
+            menuItemHowto.addEventListener('click', () => {
+                closePulloutMenu();
+                openOratorHowtoModal();
+            });
+        }
+
+        if (menuItemShare) {
+            menuItemShare.addEventListener('click', () => {
+                closePulloutMenu();
+                const shareBtn = document.getElementById('share-session-btn');
+                if (shareBtn) shareBtn.click();
+            });
+        }
+
+        if (menuItemObs) {
+            menuItemObs.addEventListener('click', () => {
+                closePulloutMenu();
+                const obsBtn = document.getElementById('obs-session-btn');
+                if (obsBtn) obsBtn.click();
+            });
+        }
+
+        // ========================================
+        // Orator How-To Modal Logic
+        // ========================================
+        const oratorHowtoModal = document.getElementById('orator-howto-modal');
+        const howtoCloseBtn = document.getElementById('howto-close-btn');
+        const howtoAckBtn = document.getElementById('howto-ack-btn');
+
+        function openOratorHowtoModal() {
+            if (!oratorHowtoModal) return;
+            oratorHowtoModal.classList.add('active');
+            oratorHowtoModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeOratorHowtoModal() {
+            if (!oratorHowtoModal) return;
+            oratorHowtoModal.classList.remove('active');
+            oratorHowtoModal.setAttribute('aria-hidden', 'true');
+            try {
+                localStorage.setItem('narratron_orator_howto_seen', 'true');
+            } catch (e) { }
+        }
+
+        if (howtoCloseBtn) howtoCloseBtn.addEventListener('click', closeOratorHowtoModal);
+        if (howtoAckBtn) howtoAckBtn.addEventListener('click', closeOratorHowtoModal);
+
+        if (oratorHowtoModal) {
+            oratorHowtoModal.addEventListener('click', (e) => {
+                if (e.target === oratorHowtoModal) {
+                    closeOratorHowtoModal();
+                }
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (pulloutOverlay && pulloutOverlay.classList.contains('active')) {
+                    closePulloutMenu();
+                } else if (oratorHowtoModal && oratorHowtoModal.classList.contains('active')) {
+                    closeOratorHowtoModal();
+                }
+            }
+        });
+
+        window.openPulloutMenu = openPulloutMenu;
+        window.closePulloutMenu = closePulloutMenu;
+        window.openOratorHowtoModal = openOratorHowtoModal;
+        window.closeOratorHowtoModal = closeOratorHowtoModal;
     </script>
+
+    <!-- Pullout Navigation & Help Menu Drawer -->
+    <div id="pullout-overlay" class="pullout-overlay" role="dialog" aria-labelledby="pullout-title" aria-hidden="true">
+        <div class="pullout-drawer">
+            <div class="pullout-header">
+                <div class="pullout-title">
+                    <span>✨ Narratron Menu</span>
+                </div>
+                <button id="pullout-close-btn" class="pullout-close-btn" aria-label="Close menu">✕</button>
+            </div>
+
+            <div class="pullout-body">
+                <div>
+                    <div class="pullout-section-title">Guides & Information</div>
+                    <div class="pullout-menu-list">
+                        <button id="menu-item-howto" class="pullout-menu-item">
+                            <span class="pullout-item-icon">🎙️</span>
+                            <span>Orator How-To Guide</span>
+                        </button>
+                        <a href="/about" class="pullout-menu-item">
+                            <span class="pullout-item-icon">ℹ️</span>
+                            <span>About Narratron Buddy</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="pullout-section-title">Navigation</div>
+                    <div class="pullout-menu-list">
+                        <a href="/" class="pullout-menu-item">
+                            <span class="pullout-item-icon">🏠</span>
+                            <span>Session Launcher</span>
+                        </a>
+                        <a href="/deploy" class="pullout-menu-item">
+                            <span class="pullout-item-icon">🚀</span>
+                            <span>Deploy & Manage Sessions</span>
+                        </a>
+                        <a href="/stats" class="pullout-menu-item">
+                            <span class="pullout-item-icon">📊</span>
+                            <span>Session Analytics</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="pullout-section-title">Orator & Audio Settings</div>
+                    <div class="pullout-menu-list">
+                        <button id="menu-item-hotkey" class="pullout-menu-item"
+                            title="Click to rebind Orator mic toggle hotkey">
+                            <span class="pullout-item-icon">⌨️</span>
+                            <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="pullout-section-title">Session Actions</div>
+                    <div class="pullout-menu-list">
+                        <button id="menu-item-share" class="pullout-menu-item">
+                            <span class="pullout-item-icon">🔗</span>
+                            <span>Copy Share Link</span>
+                        </button>
+                        <button id="menu-item-obs" class="pullout-menu-item">
+                            <span class="pullout-item-icon">📹</span>
+                            <span>Copy OBS Source Link</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Orator How-To Popup Modal -->
+    <div id="orator-howto-modal" class="modal-overlay" role="dialog" aria-labelledby="howto-title" aria-hidden="true">
+        <div class="modal-card">
+            <button id="howto-close-btn" class="modal-close-btn" aria-label="Close how-to guide">✕</button>
+
+            <div class="howto-header">
+                <div class="howto-icon-badge">🎙️</div>
+                <div>
+                    <h3 id="howto-title" class="howto-title-text">Orator Quick Start Guide</h3>
+                    <div class="howto-subtitle">How to interact with Narratron as the Orator</div>
+                </div>
+            </div>
+
+            <div class="howto-steps">
+                <div class="howto-step-card">
+                    <div class="step-num">1</div>
+                    <div class="step-content">
+                        <div class="step-title">
+                            Connect to the Agent
+                            <span class="step-badge">🔌 Connect Agent</span>
+                        </div>
+                        <div class="step-desc">
+                            Click the <strong>Connect Agent</strong> button in the top control bar to connect your
+                            canvas session to the Narratron AI agent.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="howto-step-card">
+                    <div class="step-num">2</div>
+                    <div class="step-content">
+                        <div class="step-title">
+                            Unmute Microphone
+                            <span class="step-badge mic-badge">🎤 Mic Off ➔ 🎙️ Mic Active</span>
+                        </div>
+                        <div class="step-desc">
+                            Click <strong>Mic Off</strong> (or press hotkey <code
+                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;">Ctrl+Shift+[</code>)
+                            to unmute your microphone and start speaking to the agent in real time.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="howto-step-card">
+                    <div class="step-num">💡</div>
+                    <div class="step-content">
+                        <div class="step-title">Tips for Orators</div>
+                        <div class="step-desc">
+                            • Use headphones to prevent background audio echo.<br>
+                            • Use the bottom toolbar to doodle live on canvas.<br>
+                            • Click <strong>Hotkey</strong> in top bar to customize your mic shortcut.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="howto-footer">
+                <button id="howto-ack-btn" class="howto-ack-btn">Got it, let's start!</button>
+            </div>
+        </div>
+    </div>
 </body>
+
 </html>
