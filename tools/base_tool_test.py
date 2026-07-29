@@ -18,7 +18,7 @@ class TestBaseTools(BaseTestCase):
         self.config = {
             "cooldown_duration": 10.0
         }
-        self.base_tools = BaseTools(self.config, session_id="test_session")
+        self.base_tools = BaseTools(self.config, narratron_session_id="test_session")
 
     def test_cooldown_checking_and_recording(self):
         self.assertIsNone(self.base_tools.check_cooldown("sample_tool", "running sample tool"))
@@ -40,7 +40,7 @@ class TestBaseTools(BaseTestCase):
         mock_on_expired.assert_called_with("play_playlist")
 
     def test_with_cooldown_decorator(self):
-        sample = SampleTools({"cooldown_duration": 10.0}, session_id="test_session")
+        sample = SampleTools({"cooldown_duration": 10.0}, narratron_session_id="test_session")
         res1 = sample.decorated_tool()
         self.assertEqual(res1, "Success")
 

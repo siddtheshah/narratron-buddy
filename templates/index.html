@@ -1270,17 +1270,16 @@
                 </svg>
             </button>
 
-            <!-- Orator Audio controls (Connect & Mic) -->
+            <!-- Orator Audio controls (Start/Stop Agent, Connect) -->
             <div id="orator-controls"
                 style="display: none; align-items: center; gap: 10px; margin-left: 1rem; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                <button id="agent-start-stop-btn"
+                    style="background: #10b981; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                    🚀 Start Agent
+                </button>
                 <button id="agent-connect-btn"
                     style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                    🔌 Connect Agent
-                </button>
-                <button id="agent-mic-btn"
-                    style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #94a3b8; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;"
-                    disabled>
-                    🎤 Mic Off
+                    🔌 Connect
                 </button>
             </div>
 
@@ -1624,8 +1623,8 @@
         // Generate anonymous user ID
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
         const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        if (!sessionId) {
+        const narratronSessionId = urlParams.get('narratron_session_id');
+        if (!narratronSessionId) {
             console.error("Session ID missing from URL parameters.");
             const container = document.getElementById('image-container');
             if (container) {
@@ -1637,7 +1636,7 @@
                     </div>
                 `;
             }
-            throw new Error("Missing required session_id parameter in URL");
+            throw new Error("Missing required narratron_session_id parameter in URL");
         }
 
         // Music player controls and state
@@ -1655,7 +1654,7 @@
         let outgoingFadeInterval = null;
         let currentTrackSrc = null;
         let lastMusicStateSave = 0;
-        const musicPlaybackStorageKey = `narratron-music-playback:${sessionId}`;
+        const musicPlaybackStorageKey = `narratron-music-playback:${narratronSessionId}`;
         let restoredMusicPlayback = loadMusicPlaybackState();
 
         function loadMusicPlaybackState() {
@@ -2027,12 +2026,12 @@
             }
         });
 
-        const currentSessionId = sessionId;
+        const currentNarratronSessionId = narratronSessionId;
 
         const saveSessionBtn = document.getElementById('save-session-btn');
         if (saveSessionBtn) {
             saveSessionBtn.addEventListener('click', async () => {
-                if (!currentSessionId) {
+                if (!currentNarratronSessionId) {
                     alert('No active session ID found to save.');
                     return;
                 }
@@ -2040,7 +2039,7 @@
                 saveSessionBtn.innerHTML = '⏳';
                 saveSessionBtn.disabled = true;
                 try {
-                    const res = await fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/save`, {
+                    const res = await fetch(`/api/sessions/${encodeURIComponent(currentNarratronSessionId)}/save`, {
                         method: 'POST'
                     });
                     const data = await res.json();
@@ -2163,7 +2162,7 @@
 
         async function fetchLatestImage() {
             try {
-                const apiUrl = currentSessionId ? `/api/latest?session_id=${encodeURIComponent(currentSessionId)}` : '/api/latest';
+                const apiUrl = currentNarratronSessionId ? `/api/latest?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 updateAgentActivity(data.tool_activity);
@@ -2328,7 +2327,7 @@
         let lastMessageCount = 0;
         async function fetchChat() {
             try {
-                const response = await fetch('/api/chat' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''));
+                const response = await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''));
                 const messages = await response.json();
                 if (messages.length !== lastMessageCount) {
                     chatMessages.innerHTML = '';
@@ -2414,7 +2413,7 @@
         });
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currentSessionId ? `?session_id=${encodeURIComponent(currentSessionId)}` : '');
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currentNarratronSessionId ? `?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '');
         const ws = new WebSocket(wsUrl);
 
         ws.onmessage = (event) => {
@@ -2538,8 +2537,8 @@
         const roleBadge = document.getElementById('role-badge');
         const roleToggleBtn = document.getElementById('role-toggle-btn');
         const oratorControls = document.getElementById('orator-controls');
+        const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
         const agentConnectBtn = document.getElementById('agent-connect-btn');
-        const agentMicBtn = document.getElementById('agent-mic-btn');
         const statusIndicator = document.getElementById('status-indicator');
 
         // State variables
@@ -2548,6 +2547,7 @@
         let audioRecorderContext = null;
         let micStream = null;
         let isRecording = false;
+        let isAgentStarted = false;
 
         // Initialize UI based on role
         const backBtn = document.getElementById('back-btn');
@@ -2576,9 +2576,9 @@
         }
 
         // Session ownership verification for Orator controls
-        const activeSessionId = urlParams.get('session_id');
-        if (activeSessionId) {
-            fetch(`/api/sessions/${activeSessionId}`)
+        const activeNarratronSessionId = urlParams.get('narratron_session_id');
+        if (activeNarratronSessionId) {
+            fetch(`/api/sessions/${activeNarratronSessionId}`)
                 .then(res => res.ok ? res.json() : null)
                 .then(data => {
                     if (data && data.metadata) {
@@ -2636,8 +2636,8 @@
             .catch(() => {});
 
         function checkBatonState() {
-            if (!currentSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton`)
+            if (!narratronSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton`)
                 .then(res => res.ok ? res.json() : null)
                 .then(data => {
                     if (data) {
@@ -2759,8 +2759,8 @@
         }
 
         function acceptBatonPass() {
-            if (!currentSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/accept`, { method: 'POST' })
+            if (!narratronSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/accept`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     hideBatonRequestModal();
@@ -2775,8 +2775,8 @@
         }
 
         function declineBatonPass() {
-            if (!currentSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/decline`, { method: 'POST' })
+            if (!narratronSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/decline`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     hideBatonRequestModal();
@@ -2788,8 +2788,8 @@
         }
 
         function takeBackBaton() {
-            if (!currentSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/takeback`, { method: 'POST' })
+            if (!narratronSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/takeback`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     if (data && !data.detail) {
@@ -2856,8 +2856,8 @@
         }
 
         window.addAllowedOrator = function(targetUserId) {
-            if (!currentSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/allowed_orators`, {
+            if (!narratronSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/allowed_orators`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_user_id: targetUserId })
@@ -2865,15 +2865,15 @@
         };
 
         window.removeAllowedOrator = function(targetUserId) {
-            if (!currentSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/allowed_orators/${targetUserId}`, {
+            if (!narratronSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/allowed_orators/${targetUserId}`, {
                 method: 'DELETE'
             }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
         };
 
         window.requestBatonPass = function(targetUserId) {
-            if (!currentSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/baton/request`, {
+            if (!narratronSessionId) return;
+            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/request`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_user_id: targetUserId, timeout_seconds: 30 })
@@ -2952,7 +2952,7 @@
             obsSessionBtn.addEventListener('click', () => {
                 const currentUrl = new URL(window.location.href);
                 const obsUrl = new URL('/obs', window.location.origin);
-                // Copy all search params (session_id, join_key, role)
+                // Copy all search params (narratron_session_id, join_key, role)
                 currentUrl.searchParams.forEach((val, key) => {
                     obsUrl.searchParams.set(key, val);
                 });
@@ -2970,6 +2970,8 @@
             });
         }
 
+
+
         // Chat submit forwarding to agent
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -2979,7 +2981,7 @@
             chatInput.value = '';
             try {
                 // Post to chat_manager first
-                await fetch('/api/chat' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''), {
+                await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
@@ -2999,12 +3001,98 @@
         });
 
         // Audio Recorder Callback
+        let clientAudioChunkCount = 0;
         function audioRecorderHandler(pcmData) {
             if (!isRecording) return;
-            if (!agentWs || agentWs.readyState !== WebSocket.OPEN || !window.isSetupComplete) {
+            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
                 return;
             }
+            clientAudioChunkCount++;
+            if (clientAudioChunkCount % 100 === 1) {
+                console.log(`[AudioRecorder] Forwarding PCM audio chunk #${clientAudioChunkCount} (${pcmData.byteLength || pcmData.size || 'raw'} bytes) to Agent WebSocket.`);
+            }
             agentWs.send(pcmData);
+        }
+
+        // ========================================
+        // Agent Memory Lifecycle API Helpers
+        // ========================================
+        function setAgentStartedUI(started) {
+            isAgentStarted = started;
+            if (!agentStartStopBtn) return;
+            if (started) {
+                agentStartStopBtn.textContent = '🛑 Stop Agent';
+                agentStartStopBtn.style.background = '#ef4444'; // Red
+            } else {
+                agentStartStopBtn.textContent = '🚀 Start Agent';
+                agentStartStopBtn.style.background = '#10b981'; // Emerald
+            }
+        }
+
+        async function checkAgentStatus() {
+            try {
+                const res = await fetch(`/api/sessions/${narratronSessionId}/agent/status`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setAgentStartedUI(!!data.agent_running);
+                    return data;
+                }
+            } catch (e) {
+                console.warn("Failed to fetch agent status:", e);
+            }
+        }
+
+        async function startAgentSession() {
+            if (agentStartStopBtn) {
+                agentStartStopBtn.textContent = 'Starting...';
+                agentStartStopBtn.style.background = '#eab308'; // Amber
+            }
+            try {
+                const res = await fetch(`/api/sessions/${narratronSessionId}/agent/start`, { method: 'POST' });
+                if (!res.ok) throw new Error("Failed to start agent session");
+                const data = await res.json();
+                setAgentStartedUI(true);
+                return data;
+            } catch (err) {
+                console.error("Error starting agent session:", err);
+                setAgentStartedUI(false);
+                throw err;
+            }
+        }
+
+        async function stopAgentSession() {
+            cleanupAgentConnection();
+            if (agentStartStopBtn) {
+                agentStartStopBtn.textContent = 'Stopping...';
+                agentStartStopBtn.style.background = '#eab308'; // Amber
+            }
+            try {
+                await fetch(`/api/sessions/${narratronSessionId}/agent/stop`, { method: 'POST' });
+            } catch (e) {
+                console.warn("Error stopping agent session:", e);
+            } finally {
+                setAgentStartedUI(false);
+            }
+        }
+
+        if (agentStartStopBtn) {
+            agentStartStopBtn.addEventListener('click', async () => {
+                if (isAgentStarted) {
+                    await stopAgentSession();
+                } else {
+                    await startAgentSession();
+                }
+            });
+        }
+
+        // Auto-start agent on page load for Orators
+        if (isOrator) {
+            checkAgentStatus().then((status) => {
+                if (!status || !status.agent_running) {
+                    console.log("Auto-starting agent on page load...");
+                    startAgentSession().catch(e => console.warn("Auto-start agent on page load failed:", e));
+                }
+            });
         }
 
         // Connect Agent WebSocket
@@ -3029,7 +3117,7 @@
             }
 
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${sessionId}`;
+            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${narratronSessionId}`;
 
             agentConnectBtn.textContent = 'Connecting...';
             agentConnectBtn.style.background = '#eab308'; // Amber
@@ -3042,9 +3130,6 @@
                     console.log("Agent WebSocket connected.");
                     agentConnectBtn.textContent = '🔌 Disconnect';
                     agentConnectBtn.style.background = '#ef4444'; // Red
-                    agentMicBtn.disabled = false;
-                    agentMicBtn.style.color = '#fff';
-                    agentMicBtn.style.background = 'rgba(255,255,255,0.15)';
                     statusIndicator.classList.remove('disconnected'); // Set back to green
                     resolve(agentWs);
                 };
@@ -3104,12 +3189,8 @@
             if (typeof updateAgentActivity === 'function') {
                 updateAgentActivity({ live_ready: false });
             }
-            agentConnectBtn.textContent = '🔌 Connect Agent';
+            agentConnectBtn.textContent = '🔌 Connect';
             agentConnectBtn.style.background = '#3b82f6'; // Blue
-            agentMicBtn.disabled = true;
-            agentMicBtn.innerHTML = '🎤 Mic Off';
-            agentMicBtn.style.color = '#94a3b8';
-            agentMicBtn.style.background = 'rgba(255,255,255,0.08)';
             statusIndicator.classList.add('disconnected'); // Set back to red
         }
 
@@ -3130,11 +3211,6 @@
                 audioRecorderContext = context;
                 micStream = stream;
                 isRecording = true;
-
-                agentMicBtn.innerHTML = '<span class="icon">🎙️</span> Mic Active';
-                agentMicBtn.style.background = '#ef4444'; // Red
-                agentMicBtn.style.color = '#fff';
-                agentMicBtn.classList.add('recording-active');
             } catch (err) {
                 console.error("Failed to start mic recording:", err);
                 alert("Could not access microphone: " + err.message);
@@ -3153,26 +3229,25 @@
             }
             audioRecorderNode = null;
             isRecording = false;
-
-            agentMicBtn.innerHTML = '<span class="icon">🎤</span> Mic Off';
-            agentMicBtn.style.background = 'rgba(255,255,255,0.15)';
-            agentMicBtn.style.color = '#fff';
-            agentMicBtn.classList.remove('recording-active');
         }
 
-        agentConnectBtn.addEventListener('click', () => {
-            if (agentWs) {
+        // Connect button handler (connects socket & starts mic stream automatically)
+        agentConnectBtn.addEventListener('click', async () => {
+            if (agentWs && (agentWs.readyState === WebSocket.OPEN || agentWs.readyState === WebSocket.CONNECTING)) {
                 cleanupAgentConnection();
             } else {
-                connectAgent();
-            }
-        });
-
-        agentMicBtn.addEventListener('click', () => {
-            if (isRecording) {
-                stopMicStream();
-            } else {
-                startMicStream();
+                try {
+                    agentConnectBtn.textContent = 'Connecting...';
+                    agentConnectBtn.style.background = '#eab308';
+                    if (!isAgentStarted) {
+                        await startAgentSession();
+                    }
+                    await connectAgent();
+                    await startMicStream();
+                } catch (err) {
+                    console.error("Failed to connect stream:", err);
+                    cleanupAgentConnection();
+                }
             }
         });
 
@@ -3582,7 +3657,7 @@
             const left = window.screen.width - width - 50;
             const top = 100;
 
-            const url = `/popout?session_id=${encodeURIComponent(sessionId)}&role=${isOrator ? 'orator' : 'viewer'}`;
+            const url = `/popout?narratron_session_id=${encodeURIComponent(narratronSessionId)}&role=${isOrator ? 'orator' : 'viewer'}`;
             popoutWindowRef = window.open(url, 'NarratronPopoutPanel', `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
 
             if (popoutWindowRef) {

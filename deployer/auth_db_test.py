@@ -116,7 +116,7 @@ class TestDatabaseManager(BaseTestCase):
         # Query by join key
         dep = self.db.get_session_by_join_key("key-test12")
         self.assertIsNotNone(dep)
-        self.assertEqual(dep["session_id"], "session_test123")
+        self.assertEqual(dep["narratron_session_id"], "session_test123")
 
 
     def test_export_session_and_reconstruction(self):
@@ -167,7 +167,7 @@ class TestDatabaseManager(BaseTestCase):
         self.assertGreaterEqual(stats["active_users_7d"], 2)
         self.assertEqual(stats["total_session_views"], 3)
         self.assertEqual(stats["session_views_7d"], 3)
-        self.assertTrue(any(s["session_id"] == "session_alpha" and s["views"] == 2 for s in stats["top_viewed_sessions"]))
+        self.assertTrue(any(s["narratron_session_id"] == "session_alpha" and s["views"] == 2 for s in stats["top_viewed_sessions"]))
 
     def test_password_reset_flow(self):
         user = self.db.register_user("resetuser", "reset@example.com", "OldPassword123")

@@ -23,13 +23,13 @@ class CanvasStateManager:
             return self.base_sessions_dir
         return ensure_sessions_root()
 
-    def __init__(self, session_id: str, base_sessions_dir: Optional[Path] = None):
-        self.session_id = session_id
+    def __init__(self, narratron_session_id: str, base_sessions_dir: Optional[Path] = None):
+        self.narratron_session_id = narratron_session_id
         if base_sessions_dir is not None:
             self.base_sessions_dir = Path(base_sessions_dir).resolve()
         else:
             self.base_sessions_dir = ensure_sessions_root()
-        chat_output_dir = str(self.sessions_dir / session_id / "output" / "chats")
+        chat_output_dir = str(self.sessions_dir / narratron_session_id / "output" / "chats")
         self.chat_manager = ChatManager(output_dir=chat_output_dir)
         self.current_image_basename: Optional[str] = None  
         
@@ -65,7 +65,7 @@ class CanvasStateManager:
     def load_state_from_disk(self):
         """Restore canvas state from local session.json if available."""
         import json
-        sess_dir = (self.sessions_dir / self.session_id).resolve()
+        sess_dir = (self.sessions_dir / self.narratron_session_id).resolve()
         session_file = sess_dir / "session.json"
         legacy_state_file = sess_dir / "session_state.json"
         
@@ -90,9 +90,9 @@ class CanvasStateManager:
                     chat_msgs = c_state.get("chat_messages", [])
                     if chat_msgs:
                         self.chat_manager.messages = chat_msgs
-                    logger.info(f"Loaded canvas state from {target_file.name} for session '{self.session_id}'.")
+                    logger.info(f"Loaded canvas state from {target_file.name} for session '{self.narratron_session_id}'.")
             except Exception as e:
-                logger.warning(f"Failed to load canvas state for {self.session_id}: {e}")
+                logger.warning(f"Failed to load canvas state for {self.narratron_session_id}: {e}")
 
     def update_current_playlist(self, playlist_name: str, tracks: List[str]):
         self.current_playlist = playlist_name
@@ -114,13 +114,13 @@ class CanvasStateManager:
         basename = os.path.basename(file_path)
         sel_path_obj = Path(file_path).resolve()
         if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
-            return f"/sessions/{self.session_id}/references/{basename}"
-        return f"/sessions/{self.session_id}/output/{basename}"
+            return f"/sessions/{self.narratron_session_id}/references/{basename}"
+        return f"/sessions/{self.narratron_session_id}/output/{basename}"
 
     def update_shown_image(
         self,
         file_path: str,
-        session_id: Optional[str] = None,
+        narratron_session_id: Optional[str] = None,
         transition: str = "crossfade",
         effect: str = "gleam3",
     ):
@@ -166,7 +166,7 @@ class CanvasStateManager:
                 self.shown_images_history[-1] = history_item
 
         # Automatically copy shown image into session output directory if outside session output dir
-        target_session = session_id or self.session_id
+        target_session = narratron_session_id or self.narratron_session_id
         if target_session and file_path and os.path.exists(file_path):
             sess_out_dir = (self.sessions_dir / target_session / "output").resolve()
             sess_out_dir.mkdir(parents=True, exist_ok=True)
@@ -223,13 +223,13 @@ class CanvasStateManager:
             self.doodles_state.clear()
         else:
             self.doodles_state.append(doodle)
-        sess_dir = (self.sessions_dir / self.session_id).resolve()
+        sess_dir = (self.sessions_dir / self.narratron_session_id).resolve()
         sess_dir.mkdir(parents=True, exist_ok=True)
         self.export_session_data(session_dir=sess_dir)
 
     def set_doodles_enabled(self, enabled: bool):
         self.doodles_enabled = bool(enabled)
-        sess_dir = (self.sessions_dir / self.session_id).resolve()
+        sess_dir = (self.sessions_dir / self.narratron_session_id).resolve()
         if sess_dir.exists():
             self.export_session_data(session_dir=sess_dir)
 
@@ -255,7 +255,7 @@ class CanvasStateManager:
         }
 
     def get_latest_state(self) -> Dict[str, Any]:
-        image_folder = str(self.sessions_dir / self.session_id / "output")
+        image_folder = str(self.sessions_dir / self.narratron_session_id / "output")
 
         music_state = {
             "playlist": self.current_playlist,
@@ -301,12 +301,12 @@ class CanvasStateManager:
 
         # 2. If no image selected, fallback to session references
         if not selected_file:
-            if self.session_id:
-                session_ref_dir = (self.sessions_dir / self.session_id / "references").resolve()
+            if self.narratron_session_id:
+                session_ref_dir = (self.sessions_dir / self.narratron_session_id / "references").resolve()
                 if session_ref_dir.exists():
                     ref_images = [f for f in session_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
                     if ref_images:
-                        ref_url = f"/sessions/{self.session_id}/references/{ref_images[0].name}"
+                        ref_url = f"/sessions/{self.narratron_session_id}/references/{ref_images[0].name}"
                         ref_prompt = f"Mounted Reference: {ref_images[0].stem}"
                         if not formatted_history:
                             formatted_history.append({
@@ -340,9 +340,9 @@ class CanvasStateManager:
         
         sel_path_obj = Path(selected_file).resolve()
         if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
-            image_url = f"/sessions/{self.session_id}/references/{basename}"
+            image_url = f"/sessions/{self.narratron_session_id}/references/{basename}"
         else:
-            image_url = f"/sessions/{self.session_id}/output/{basename}"
+            image_url = f"/sessions/{self.narratron_session_id}/output/{basename}"
 
         # Ensure history is populated if empty
         if not self.shown_images_history:
@@ -377,7 +377,7 @@ class CanvasStateManager:
         if self.shown_image_path and session_dir:
             self.update_shown_image(
                 self.shown_image_path,
-                session_id=session_dir.name,
+                narratron_session_id=session_dir.name,
                 transition=getattr(self, "shown_image_transition", "fade"),
                 effect=getattr(self, "shown_image_effect", "gleam3"),
             )

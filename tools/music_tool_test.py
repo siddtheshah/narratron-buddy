@@ -34,7 +34,7 @@ class TestMusicTools(BaseTestCase):
         with open(os.path.join(self.combat_dir, "battle.mp3"), "w") as f:
             f.write("dummy audio")
 
-        self.music_tools = MusicTools(self.config, session_id="test_session")
+        self.music_tools = MusicTools(self.config, narratron_session_id="test_session")
         self.music_tools.playlists_folder = self.temp_dir
 
     def tearDown(self):

@@ -32,14 +32,14 @@ class TestLocalDeployer(BaseTestCase):
 
         session = self.deployer.create_session(
             name="Fantasy Quest",
+            narratron_session_id="test_session_001",
             reference_files=ref_files,
             playlists_data=playlists,
             session_config=config,
             style="painterly fantasy illustrations",
-            session_id="test_session_001",
         )
 
-        self.assertEqual(session.session_id, "test_session_001")
+        self.assertEqual(session.narratron_session_id, "test_session_001")
         self.assertEqual(session.name, "Fantasy Quest")
         self.assertIn("hero.png", session.mounted_references)
         self.assertIn("map.jpg", session.mounted_references)
@@ -54,8 +54,8 @@ class TestLocalDeployer(BaseTestCase):
         self.assertEqual((session_path / "style.txt").read_text(encoding="utf-8"), "painterly fantasy illustrations")
 
     def test_deploy_and_list_sessions(self):
-        s1 = self.deployer.create_session(name="Session 1", session_id="s1")
-        s2 = self.deployer.create_session(name="Session 2", session_id="s2")
+        s1 = self.deployer.create_session(name="Session 1", narratron_session_id="s1")
+        s2 = self.deployer.create_session(name="Session 2", narratron_session_id="s2")
 
         sessions = self.deployer.list_sessions()
         self.assertEqual(len(sessions), 2)
@@ -68,7 +68,7 @@ class TestLocalDeployer(BaseTestCase):
         self.assertEqual(fetched_s1.status, "deployed")
 
     def test_stop_and_destroy_session(self):
-        self.deployer.create_session(name="To Delete", session_id="del_1")
+        self.deployer.create_session(name="To Delete", narratron_session_id="del_1")
         self.deployer.stop_session("del_1")
         
         stopped = self.deployer.get_session("del_1")

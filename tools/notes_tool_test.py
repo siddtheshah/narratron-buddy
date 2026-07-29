@@ -13,8 +13,8 @@ class TestNotesTools(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.mkdtemp()
         self.config = {}
-        self.session_id = "test_session_123"
-        self.notes_tools = NotesTools(self.config, session_id=self.session_id)
+        self.narratron_session_id = "test_session_123"
+        self.notes_tools = NotesTools(self.config, narratron_session_id=self.narratron_session_id)
         # Override notes_dir to use isolated temp directory for file operations tests
         self.notes_tools.notes_dir = os.path.join(self.temp_dir, "notes")
         os.makedirs(self.notes_tools.notes_dir, exist_ok=True)
@@ -23,8 +23,8 @@ class TestNotesTools(BaseTestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_init_session_paths(self):
-        notes_tools = NotesTools(self.config, session_id="sess_abc")
-        self.assertEqual(notes_tools.active_session_id, "sess_abc")
+        notes_tools = NotesTools(self.config, narratron_session_id="sess_abc")
+        self.assertEqual(notes_tools.active_narratron_session_id, "sess_abc")
         self.assertTrue(notes_tools.notes_dir.endswith(os.path.join("sessions", "sess_abc", "output", "artifacts", "notes")))
         self.assertEqual(notes_tools.get_effective_notes_dir(), notes_tools.notes_dir)
 
@@ -56,7 +56,7 @@ class TestNotesTools(BaseTestCase):
         self.notes_tools.edit_notes("story", "The dragon woke.")
 
         canvas_state_service.set_tool_activity.assert_called_once_with(
-            "notes", session_id=self.session_id, recent_seconds=5.0
+            "notes", narratron_session_id=self.narratron_session_id, recent_seconds=5.0
         )
 
     def test_delete_notes(self):

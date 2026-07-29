@@ -21,8 +21,8 @@ class UITestCase(unittest.TestCase):
         self.sessions_dir.mkdir()
         self.addCleanup(self._temporary_directory.cleanup)
 
-    def make_canvas_state(self, session_id: str) -> CanvasStateManager:
-        return CanvasStateManager(session_id=session_id, base_sessions_dir=self.sessions_dir)
+    def make_canvas_state(self, narratron_session_id: str) -> CanvasStateManager:
+        return CanvasStateManager(narratron_session_id=narratron_session_id, base_sessions_dir=self.sessions_dir)
 
     def isolate_canvas_state_service(self) -> CanvasStateService:
         """Replace the web app's shared state service with a temporary one."""

@@ -408,7 +408,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
         print("[Evaluator] Server is online and responsive.")
         
         # Step 2.5: Create & Deploy a Session with Authentication
-        session_id = None
+        narratron_session_id = None
         join_key = ""
         cj = http.cookiejar.CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
@@ -449,13 +449,13 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
         )
         with opener.open(create_req) as resp:
             created_session = json.loads(resp.read().decode("utf-8"))
-            session_id = created_session.get("session_id")
+            narratron_session_id = created_session.get("narratron_session_id")
             session_info = created_session.get("session", {})
             join_key = session_info.get("join_key", "")
-            print(f"[Evaluator] Created session '{session_id}' (Join Key: '{join_key}')")
+            print(f"[Evaluator] Created session '{narratron_session_id}' (Join Key: '{join_key}')")
 
-        if not session_id:
-            raise RuntimeError("Failed to create session via API: session_id is empty.")
+        if not narratron_session_id:
+            raise RuntimeError("Failed to create session via API: narratron_session_id is empty.")
 
         # Step 3: Launch Playwright & start video recording
         async with async_playwright() as p:
@@ -497,7 +497,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             page = await context.new_page()
             
             # Build target canvas URL
-            canvas_url = f"http://127.0.0.1:{port}/canvas?session_id={session_id}&join_key={join_key}&role=orator"
+            canvas_url = f"http://127.0.0.1:{port}/canvas?narratron_session_id={narratron_session_id}&join_key={join_key}&role=orator"
 
             print(f"[Evaluator] Opening Narratron Orator Canvas at {canvas_url} ...")
             await page.goto(canvas_url)

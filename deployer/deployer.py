@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class SessionMetadata(BaseModel):
     """Metadata representing a single canvas session deployment."""
-    session_id: str
+    narratron_session_id: str
     name: str
     status: str = "created"  # created, deployed, stopped
     join_key: str = Field(default_factory=lambda: f"KEY-{''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(6))}")
@@ -31,6 +31,7 @@ class SessionMetadata(BaseModel):
     allowed_orators: List[int] = Field(default_factory=list)
     active_orator_id: Optional[int] = None
     baton_request: Optional[Dict] = None
+
 
 
 
@@ -112,22 +113,22 @@ class BaseDeployer(ABC):
     def create_session(
         self,
         name: str,
+        narratron_session_id: str,
         reference_files: Optional[List[tuple[str, bytes]]] = None,
         playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None,
         session_config: Optional[Dict] = None,
         style: Optional[str] = None,
-        session_id: Optional[str] = None,
     ) -> SessionMetadata:
         """Create a new session instance with mounted reference images and playlists."""
         pass
 
     @abstractmethod
-    def deploy_session(self, session_id: str) -> SessionMetadata:
+    def deploy_session(self, narratron_session_id: str) -> SessionMetadata:
         """Deploy/activate a created session instance."""
         pass
 
     @abstractmethod
-    def get_session(self, session_id: str) -> Optional[SessionMetadata]:
+    def get_session(self, narratron_session_id: str) -> Optional[SessionMetadata]:
         """Retrieve session metadata by ID."""
         pass
 
@@ -137,12 +138,12 @@ class BaseDeployer(ABC):
         pass
 
     @abstractmethod
-    def stop_session(self, session_id: str) -> SessionMetadata:
+    def stop_session(self, narratron_session_id: str) -> SessionMetadata:
         """Stop/deactivate a running session instance."""
         pass
 
     @abstractmethod
-    def destroy_session(self, session_id: str) -> bool:
+    def destroy_session(self, narratron_session_id: str) -> bool:
         """Completely remove and clean up a session instance."""
         pass
 
@@ -159,31 +160,31 @@ class LocalDeployer(BaseDeployer):
         self.base_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"LocalDeployer initialized at base directory: {self.base_dir}")
 
-    def _get_session_dir(self, session_id: str) -> Path:
-        return self.base_dir / session_id
+    def _get_session_dir(self, narratron_session_id: str) -> Path:
+        return self.base_dir / narratron_session_id
 
-    def _get_metadata_path(self, session_id: str) -> Path:
-        return self._get_session_dir(session_id) / "session.json"
+    def _get_metadata_path(self, narratron_session_id: str) -> Path:
+        return self._get_session_dir(narratron_session_id) / "session.json"
 
     def _save_metadata(self, metadata: SessionMetadata) -> None:
-        session_dir = self._get_session_dir(metadata.session_id)
+        session_dir = self._get_session_dir(metadata.narratron_session_id)
         session_dir.mkdir(parents=True, exist_ok=True)
-        meta_path = self._get_metadata_path(metadata.session_id)
+        meta_path = self._get_metadata_path(metadata.narratron_session_id)
         with open(meta_path, "w", encoding="utf-8") as f:
             f.write(metadata.model_dump_json(indent=2))
 
     def create_session(
         self,
         name: str,
+        narratron_session_id: str,
         reference_files: Optional[List[tuple[str, bytes]]] = None,
         playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None,
         session_config: Optional[Dict] = None,
         style: Optional[str] = None,
-        session_id: Optional[str] = None,
     ) -> SessionMetadata:
         """Create local session workspace and mount reference assets & playlists."""
         import uuid
-        sid = session_id or f"session_{uuid.uuid4().hex[:8]}"
+        sid = narratron_session_id
         session_dir = self._get_session_dir(sid)
         
         if session_dir.exists():
@@ -235,7 +236,7 @@ class LocalDeployer(BaseDeployer):
                     mounted_playlists[playlist_name].append(clean_name)
 
         metadata = SessionMetadata(
-            session_id=sid,
+            narratron_session_id=sid,
             name=name,
             status="created",
             mounted_references=mounted_refs,
@@ -247,19 +248,19 @@ class LocalDeployer(BaseDeployer):
         logger.info(f"Created local session '{sid}' with {len(mounted_refs)} reference files and {len(mounted_playlists)} playlists.")
         return metadata
 
-    def deploy_session(self, session_id: str) -> SessionMetadata:
+    def deploy_session(self, narratron_session_id: str) -> SessionMetadata:
         """Mark session status as deployed and ready for canvas connections."""
-        metadata = self.get_session(session_id)
+        metadata = self.get_session(narratron_session_id)
         if not metadata:
-            raise FileNotFoundError(f"Session '{session_id}' not found.")
+            raise FileNotFoundError(f"Session '{narratron_session_id}' not found.")
 
         metadata.status = "deployed"
         self._save_metadata(metadata)
-        logger.info(f"Session '{session_id}' status updated to deployed.")
+        logger.info(f"Session '{narratron_session_id}' status updated to deployed.")
         return metadata
 
-    def get_session(self, session_id: str) -> Optional[SessionMetadata]:
-        meta_path = self._get_metadata_path(session_id)
+    def get_session(self, narratron_session_id: str) -> Optional[SessionMetadata]:
+        meta_path = self._get_metadata_path(narratron_session_id)
         if not meta_path.exists():
             return None
         with open(meta_path, "r", encoding="utf-8") as f:
@@ -283,19 +284,19 @@ class LocalDeployer(BaseDeployer):
         sessions.sort(key=lambda s: s.created_at, reverse=True)
         return sessions
 
-    def stop_session(self, session_id: str) -> SessionMetadata:
-        metadata = self.get_session(session_id)
+    def stop_session(self, narratron_session_id: str) -> SessionMetadata:
+        metadata = self.get_session(narratron_session_id)
         if not metadata:
-            raise FileNotFoundError(f"Session '{session_id}' not found.")
+            raise FileNotFoundError(f"Session '{narratron_session_id}' not found.")
         metadata.status = "stopped"
         self._save_metadata(metadata)
-        logger.info(f"Session '{session_id}' status set to stopped.")
+        logger.info(f"Session '{narratron_session_id}' status set to stopped.")
         return metadata
 
-    def destroy_session(self, session_id: str) -> bool:
-        session_dir = self._get_session_dir(session_id)
+    def destroy_session(self, narratron_session_id: str) -> bool:
+        session_dir = self._get_session_dir(narratron_session_id)
         if session_dir.exists():
             shutil.rmtree(session_dir)
-            logger.info(f"Session '{session_id}' directory removed.")
+            logger.info(f"Session '{narratron_session_id}' directory removed.")
             return True
         return False

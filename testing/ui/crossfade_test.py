@@ -31,7 +31,7 @@ class TestCrossfade(UITestCase):
         ):
             tool = ImageTools(
                 config={"image_generation": {"cooldown_duration": 0}},
-                session_id="image_tool_transition",
+                narratron_session_id="image_tool_transition",
             )
 
         image = Path(tool.output_dir) / "test_image.jpg"

@@ -8,16 +8,16 @@ from utils.session_paths import ensure_sessions_root
 logger = logging.getLogger(__name__)
 
 class NotesTools(BaseTools):
-    def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, narratron_session_id: str, canvas_state_service: Any = None):
         raw_config = config or {}
         subconfig = raw_config.get("notes", raw_config) if "notes" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            session_id=session_id,
+            narratron_session_id=narratron_session_id,
             canvas_state_service=canvas_state_service,
         )
 
-        self.notes_dir = str((ensure_sessions_root() / self.active_session_id / "output" / "artifacts" / "notes").resolve())
+        self.notes_dir = str((ensure_sessions_root() / self.active_narratron_session_id / "output" / "artifacts" / "notes").resolve())
         os.makedirs(self.notes_dir, exist_ok=True)
 
     def get_effective_notes_dir(self) -> str:
@@ -52,7 +52,7 @@ class NotesTools(BaseTools):
             logger.info(f"Saved note '{filename}' at {filepath}.")
             if self.canvas_state_service:
                 self.canvas_state_service.set_tool_activity(
-                    "notes", session_id=self.active_session_id, recent_seconds=5.0
+                    "notes", narratron_session_id=self.active_narratron_session_id, recent_seconds=5.0
                 )
             return f"Successfully saved note '{filename}'."
         except Exception as e:

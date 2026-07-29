@@ -438,8 +438,8 @@
         });
 
         const data = await resp.json();
-        if (resp.ok && data.session_id) {
-          window.location.href = `/canvas?session_id=${encodeURIComponent(data.session_id)}`;
+        if (resp.ok && data.narratron_session_id) {
+          window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(data.narratron_session_id)}`;
         } else {
           err.textContent = data.detail || 'Invalid or expired Join Key.';
           err.style.display = 'block';

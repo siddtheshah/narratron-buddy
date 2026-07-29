@@ -11,17 +11,17 @@ from utils.session_paths import ensure_sessions_root
 logger = logging.getLogger(__name__)
 
 class MusicTools(BaseTools):
-    def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, narratron_session_id: str, canvas_state_service: Any = None):
         raw_config = config or {}
         subconfig = raw_config.get("music", raw_config) if "music" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            session_id=session_id,
+            narratron_session_id=narratron_session_id,
             canvas_state_service=canvas_state_service,
             default_cooldown=60.0,
         )
         sessions_root = ensure_sessions_root()
-        self.session_playlists_dir = str((sessions_root / self.active_session_id / "playlists").resolve())
+        self.session_playlists_dir = str((sessions_root / self.active_narratron_session_id / "playlists").resolve())
         os.makedirs(self.session_playlists_dir, exist_ok=True)
 
         self.on_play_playlist: Optional[Callable[[str, List[str]], None]] = None
@@ -93,13 +93,13 @@ class MusicTools(BaseTools):
                 return f"Error: Playlist '{playlist_name}' does not contain any MP3 files."
 
             mp3_paths.sort()
-            if self.active_session_id:
-                tracks = [f"/sessions/{self.active_session_id}/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
+            if self.active_narratron_session_id:
+                tracks = [f"/sessions/{self.active_narratron_session_id}/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
             else:
                 tracks = [f"/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
 
             if self.canvas_state_service:
-                self.canvas_state_service.update_playlist(playlist_name, tracks, session_id=self.active_session_id)
+                self.canvas_state_service.update_playlist(playlist_name, tracks, narratron_session_id=self.active_narratron_session_id)
             if self.on_play_playlist:
                 self.on_play_playlist(playlist_name, tracks)
 
@@ -117,7 +117,7 @@ class MusicTools(BaseTools):
         """
         try:
             if self.canvas_state_service:
-                self.canvas_state_service.pause_playlist(session_id=self.session_id)
+                self.canvas_state_service.pause_playlist(narratron_session_id=self.narratron_session_id)
             if self.on_pause_playlist:
                 self.on_pause_playlist()
             logger.info("Paused playlist")
@@ -134,7 +134,7 @@ class MusicTools(BaseTools):
         """
         try:
             if self.canvas_state_service:
-                self.canvas_state_service.resume_playlist(session_id=self.session_id)
+                self.canvas_state_service.resume_playlist(narratron_session_id=self.narratron_session_id)
             if self.on_resume_playlist:
                 self.on_resume_playlist()
             logger.info("Resumed playlist")

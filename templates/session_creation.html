@@ -1957,9 +1957,9 @@
                 });
 
                 const result = await response.json();
-                if (response.ok && result.session_id) {
+                if (response.ok && result.narratron_session_id) {
                     await checkAuthStatus();
-                window.location.href = `/canvas?session_id=${encodeURIComponent(result.session_id)}&role=orator`;
+                    window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(result.narratron_session_id)}&role=orator`;
                 } else {
                     alert('Error deploying session: ' + (result.detail || 'Unknown error'));
                 }
@@ -1998,14 +1998,14 @@
                         joinKeyHtml += `<button class="copy-key-btn" onclick="copyJoinKey('${s.join_key}', this)">📋 Copy</button>`;
                     }
 
-                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.session_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')">Launch Canvas</button>`;
-                    actionsHtml += ` <a href="/api/sessions/${s.session_id}/export-assets" class="btn-sm btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; font-size:1.1rem;" title="Export Assets" download>📦</a>`;
+                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.narratron_session_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')">Launch Canvas</button>`;
+                    actionsHtml += ` <a href="/api/sessions/${s.narratron_session_id}/export-assets" class="btn-sm btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; font-size:1.1rem;" title="Export Assets" download>📦</a>`;
                     if (s.is_owner) {
-                        actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroySession('${s.session_id}')">Destroy</button>`;
+                        actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroySession('${s.narratron_session_id}')">Destroy</button>`;
                     }
 
                     tr.innerHTML = `
-                        <td><code>${s.session_id}</code></td>
+                        <td><code>${s.narratron_session_id}</code></td>
                         <td><strong>${s.name}</strong> ${s.is_owner ? '<span style="color:#a78bfa; font-size:0.75rem;">(Owner)</span>' : ''}</td>
                         <td><span class="badge ${badgeClass}">${s.status}</span></td>
                         <td>${joinKeyHtml}</td>
@@ -2028,15 +2028,15 @@
             });
         }
 
-        let pendingCanvasSessionId = null;
+        let pendingCanvasNarratronSessionId = null;
 
-        function openCanvas(sessionId, isOwner = false, joinKey = '') {
+        function openCanvas(narratronSessionId, isOwner = false, joinKey = '') {
             if (isOwner) {
-                window.location.href = `/canvas?session_id=${encodeURIComponent(sessionId)}&role=orator`;
+                window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(narratronSessionId)}&role=orator`;
                 return;
             }
-            pendingCanvasSessionId = sessionId;
-            document.getElementById('promptSessionIdDisplay').textContent = sessionId;
+            pendingCanvasNarratronSessionId = narratronSessionId;
+            document.getElementById('promptNarratronSessionIdDisplay').textContent = narratronSessionId;
             document.getElementById('canvasJoinKeyInput').value = '';
             document.getElementById('joinKeyModalError').style.display = 'none';
             document.getElementById('joinKeyModal').classList.add('active');
@@ -2044,7 +2044,7 @@
 
         function closeJoinKeyModal() {
             document.getElementById('joinKeyModal').classList.remove('active');
-            pendingCanvasSessionId = null;
+            pendingCanvasNarratronSessionId = null;
         }
 
         async function submitCanvasJoinKey() {
@@ -2065,15 +2065,15 @@
                     body: JSON.stringify({ join_key: key })
                 });
                 const data = await res.json();
-                if (res.ok && data.session_id) {
-                    if (data.session_id !== pendingCanvasSessionId) {
-                        err.textContent = `This Join Key belongs to a different session (${data.name || data.session_id}).`;
+                if (res.ok && data.narratron_session_id) {
+                    if (data.narratron_session_id !== pendingCanvasNarratronSessionId) {
+                        err.textContent = `This Join Key belongs to a different session (${data.name || data.narratron_session_id}).`;
                         err.style.display = 'block';
                         return;
                     }
                     closeJoinKeyModal();
                     const isOwnerSession = (data.user_id && currentUser && data.user_id === currentUser.id);
-                    window.location.href = `/canvas?session_id=${encodeURIComponent(data.session_id)}${isOwnerSession ? '&role=orator' : ''}`;
+                    window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(data.narratron_session_id)}${isOwnerSession ? '&role=orator' : ''}`;
                 } else {
                     err.textContent = data.detail || 'Invalid Join Key.';
                     err.style.display = 'block';
@@ -2085,10 +2085,10 @@
         }
 
 
-        async function destroySession(sessionId) {
-            if (!confirm(`Are you sure you want to destroy session ${sessionId}?`)) return;
+        async function destroySession(narratronSessionId) {
+            if (!confirm(`Are you sure you want to destroy session ${narratronSessionId}?`)) return;
             try {
-                const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+                const res = await fetch(`/api/sessions/${narratronSessionId}`, { method: 'DELETE' });
                 if (!res.ok) {
                     const data = await res.json();
                     alert(data.detail || 'Failed to destroy session.');

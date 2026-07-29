@@ -30,23 +30,23 @@ class ImageTools(BaseTools):
     _references_cache: Dict[str, dict] = {}
     _reference_dir_cached: Optional[str] = None
 
-    def __init__(self, config: dict, session_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, narratron_session_id: str, canvas_state_service: Any = None):
         raw_config = config or {}
         subconfig = raw_config.get("image_generation", raw_config) if "image_generation" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            session_id=session_id,
+            narratron_session_id=narratron_session_id,
             canvas_state_service=canvas_state_service,
             default_cooldown=60.0,
         )
 
         sessions_root = ensure_sessions_root()
-        self.style_path = sessions_root / self.active_session_id / "style.txt"
+        self.style_path = sessions_root / self.active_narratron_session_id / "style.txt"
         self.default_style = self._load_default_style()
-        self.output_dir = str((sessions_root / self.active_session_id / "output" / "artifacts" / "images").resolve())
+        self.output_dir = str((sessions_root / self.active_narratron_session_id / "output" / "artifacts" / "images").resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
-        self.reference_dir = str((sessions_root / self.active_session_id / "references").resolve())
+        self.reference_dir = str((sessions_root / self.active_narratron_session_id / "references").resolve())
         os.makedirs(self.reference_dir, exist_ok=True)
         
         # Reuse shared genai Client instance across session re-initializations
@@ -84,7 +84,7 @@ class ImageTools(BaseTools):
             if self.style_path.is_file():
                 style = self.style_path.read_text(encoding="utf-8").strip()
                 if style:
-                    logger.info("[ImageTools] Loaded default image style for session '%s'.", self.active_session_id)
+                    logger.info("[ImageTools] Loaded default image style for session '%s'.", self.active_narratron_session_id)
                 return style
         except OSError as exc:
             logger.warning("[ImageTools] Could not read default image style: %s", exc)
@@ -139,7 +139,7 @@ class ImageTools(BaseTools):
         """Notify connected canvases that image generation has started or finished."""
         if self.canvas_state_service:
             self.canvas_state_service.set_tool_activity(
-                "image", active=active, session_id=self.active_session_id
+                "image", active=active, narratron_session_id=self.active_narratron_session_id
             )
 
     def _load_references(self):
@@ -413,7 +413,7 @@ class ImageTools(BaseTools):
                 if canvas_state_service:
                     canvas_state_service.show_image(
                         resolved_path,
-                        session_id=self.active_session_id,
+                        narratron_session_id=self.active_narratron_session_id,
                         transition=transition,
                         effect=effect,
                     )

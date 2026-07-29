@@ -266,15 +266,15 @@
             <div class="card">
                 <h3>Session Details</h3>
                 <p>Status: <span class="status-badge">Active</span></p>
-                <p style="margin-top: 6px; font-size: 0.8rem; color: #94a3b8;" id="popout-session-id">Session: Loading...</p>
+                <p style="margin-top: 6px; font-size: 0.8rem; color: #94a3b8;" id="popout-narratron-session-id">Session: Loading...</p>
             </div>
         </div>
     </div>
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id') || 'default';
-        document.getElementById('popout-session-id').textContent = `Session: ${sessionId}`;
+        const narratronSessionId = urlParams.get('narratron_session_id') || 'default';
+        document.getElementById('popout-narratron-session-id').textContent = `Session: ${narratronSessionId}`;
 
         const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
         const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
@@ -414,7 +414,7 @@
 
         async function fetchChat() {
             try {
-                const res = await fetch('/api/chat' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''));
+                const res = await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''));
                 const messages = await res.json();
                 if (messages.length !== lastMsgCount) {
                     chatMessages.innerHTML = '';
@@ -429,7 +429,7 @@
 
         async function fetchLatestState() {
             try {
-                const res = await fetch('/api/latest' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''));
+                const res = await fetch('/api/latest' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''));
                 const data = await res.json();
                 if (data.prompt) {
                     document.getElementById('popout-prompt-text').textContent = data.prompt;
@@ -448,7 +448,7 @@
             if (!text) return;
             chatInput.value = '';
             try {
-                await fetch('/api/chat' + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''), {
+                await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })

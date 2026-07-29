@@ -7,7 +7,7 @@ from tools.chat_tool import ChatTools
 class TestChatTools(BaseTestCase):
     def setUp(self):
         super().setUp()
-        self.chat_tools = ChatTools(config={}, session_id="test_session")
+        self.chat_tools = ChatTools(config={}, narratron_session_id="test_session")
 
     def test_send_chat_message_success(self):
         mock_cb = MagicMock()

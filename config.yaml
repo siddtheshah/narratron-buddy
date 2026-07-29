@@ -3,6 +3,8 @@ gcloud:
 
 agent:
     model_id: "gemini-3.1-flash-live-preview"
+    proactivity: false
+    affective_dialog: false
     compaction:
         trigger_tokens: 12000
         target_tokens: 6000

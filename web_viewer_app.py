@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 from typing import List, Optional
+import uuid
 
 from absl import flags
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
@@ -258,18 +259,18 @@ def _canvas_access_grants(request: Request | WebSocket) -> dict[str, str]:
         padding = "=" * (-len(encoded_grants) % 4)
         grants = json.loads(base64.urlsafe_b64decode(encoded_grants + padding).decode("utf-8"))
         return {
-            session_id: join_key
-            for session_id, join_key in grants.items()
-            if isinstance(session_id, str) and isinstance(join_key, str)
+            narratron_session_id: join_key
+            for narratron_session_id, join_key in grants.items()
+            if isinstance(narratron_session_id, str) and isinstance(join_key, str)
         }
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
 
 
-def _grant_canvas_access(response: Response, request: Request, session_id: str, join_key: str) -> None:
+def _grant_canvas_access(response: Response, request: Request, narratron_session_id: str, join_key: str) -> None:
     """Store a verified join key outside the URL for subsequent canvas requests."""
     grants = _canvas_access_grants(request)
-    grants[session_id] = join_key
+    grants[narratron_session_id] = join_key
     encoded_grants = base64.urlsafe_b64encode(
         json.dumps(grants, separators=(",", ":")).encode("utf-8")
     ).decode("ascii")
@@ -301,21 +302,21 @@ def can_access_agent_websocket(
 
     active_orator_id = deployment.get("active_orator_id") or deployment["user_id"]
 
-    if current_user and current_user["id"] == active_orator_id:
+    if current_user and (current_user["id"] == deployment["user_id"] or current_user["id"] == active_orator_id):
         return True
 
-    candidate_key = join_key or _canvas_access_grants(request).get(deployment["session_id"])
+    candidate_key = join_key or _canvas_access_grants(request).get(deployment["narratron_session_id"])
     return _valid_join_key(deployment["join_key"], candidate_key)
 
 
 
 
 def _require_canvas_access(
-    request: Request, session_id: str, join_key: Optional[str] = None
+    request: Request, narratron_session_id: str, join_key: Optional[str] = None
 ) -> dict:
     """Require ownership or a verified join-key grant before serving session content."""
-    _safe_path_param(session_id, "session_id")
-    deployment = db.get_deployment(session_id)
+    _safe_path_param(narratron_session_id, "narratron_session_id")
+    deployment = db.get_deployment(narratron_session_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Active session not found.")
 
@@ -476,40 +477,40 @@ def get_payment_history(request: Request):
 # Session Asset Dynamic Routes
 # ========================================
 
-@app.get("/sessions/{session_id}/references/{filename}")
-async def serve_session_reference(request: Request, session_id: str, filename: str):
-    _require_canvas_access(request, session_id)
-    _safe_path_param(session_id, "session_id")
+@app.get("/sessions/{narratron_session_id}/references/{filename}")
+async def serve_session_reference(request: Request, narratron_session_id: str, filename: str):
+    _require_canvas_access(request, narratron_session_id)
+    _safe_path_param(narratron_session_id, "narratron_session_id")
     _safe_path_param(filename, "filename")
-    file_path = session_manager.get_session_reference_dir(session_id) / filename
+    file_path = session_manager.get_session_reference_dir(narratron_session_id) / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Session reference file not found")
     return FileResponse(file_path)
 
-@app.get("/sessions/{session_id}/playlists/{playlist_name}/{filename}")
-async def serve_session_playlist_track(request: Request, session_id: str, playlist_name: str, filename: str):
-    _require_canvas_access(request, session_id)
-    _safe_path_param(session_id, "session_id")
+@app.get("/sessions/{narratron_session_id}/playlists/{playlist_name}/{filename}")
+async def serve_session_playlist_track(request: Request, narratron_session_id: str, playlist_name: str, filename: str):
+    _require_canvas_access(request, narratron_session_id)
+    _safe_path_param(narratron_session_id, "narratron_session_id")
     _safe_path_param(playlist_name, "playlist_name")
     _safe_path_param(filename, "filename")
-    file_path = session_manager.get_session_playlists_dir(session_id) / playlist_name / filename
+    file_path = session_manager.get_session_playlists_dir(narratron_session_id) / playlist_name / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Session playlist track not found")
     return FileResponse(file_path)
 
-@app.get("/sessions/{session_id}/output/{filename}")
-async def serve_session_output(request: Request, session_id: str, filename: str):
-    _require_canvas_access(request, session_id)
-    _safe_path_param(session_id, "session_id")
+@app.get("/sessions/{narratron_session_id}/output/{filename}")
+async def serve_session_output(request: Request, narratron_session_id: str, filename: str):
+    _require_canvas_access(request, narratron_session_id)
+    _safe_path_param(narratron_session_id, "narratron_session_id")
     _safe_path_param(filename, "filename")
-    file_path = session_manager.get_session_output_dir(session_id) / filename
+    file_path = session_manager.get_session_output_dir(narratron_session_id) / filename
     if not file_path.exists():
         # Check subdirectories of output directory (e.g. output/images/filename)
-        sub_path = session_manager.get_session_output_dir(session_id) / "images" / filename
+        sub_path = session_manager.get_session_output_dir(narratron_session_id) / "images" / filename
         if sub_path.exists():
             file_path = sub_path
         else:
-            found = list(session_manager.get_session_output_dir(session_id).rglob(filename))
+            found = list(session_manager.get_session_output_dir(narratron_session_id).rglob(filename))
             if found:
                 file_path = found[0]
             else:
@@ -526,15 +527,15 @@ def resolve_join_key(req: ResolveJoinKeyRequest, request: Request, response: Res
     if not dep:
         raise HTTPException(status_code=404, detail="Invalid Join Key. No matching active session found.")
 
-    meta = local_deployer.get_session(dep["session_id"])
+    meta = local_deployer.get_session(dep["narratron_session_id"])
     if not meta:
-        db_meta = db.get_session_metadata_from_db(dep["session_id"])
+        db_meta = db.get_session_metadata_from_db(dep["narratron_session_id"])
         if not db_meta:
             raise HTTPException(status_code=404, detail="Session files no longer exist.")
         meta = SessionMetadata(**db_meta)
 
-    _grant_canvas_access(response, request, meta.session_id, dep["join_key"])
-    return {"status": "ok", "session_id": meta.session_id, "name": meta.name, "user_id": dep.get("user_id")}
+    _grant_canvas_access(response, request, meta.narratron_session_id, dep["join_key"])
+    return {"status": "ok", "narratron_session_id": meta.narratron_session_id, "name": meta.name, "user_id": dep.get("user_id")}
 
 @app.get("/api/sessions")
 def list_sessions(request: Request):
@@ -544,10 +545,10 @@ def list_sessions(request: Request):
 
     # Get sessions currently on disk
     disk_sessions = local_deployer.list_sessions()
-    all_sessions_dict = {s.session_id: s.model_dump() for s in disk_sessions}
+    all_sessions_dict = {s.narratron_session_id: s.model_dump() for s in disk_sessions}
 
     # Add DB sessions that are not on disk yet (without writing files to disk!)
-    for sid in db.get_all_exported_session_ids():
+    for sid in db.get_all_exported_narratron_session_ids():
         if sid not in all_sessions_dict:
             db_meta = db.get_session_metadata_from_db(sid)
             if db_meta:
@@ -571,20 +572,20 @@ def list_sessions(request: Request):
     result.sort(key=lambda x: (not x["is_owner"], x.get("created_at", "")), reverse=False)
     return result
 
-@app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str, request: Request):
+@app.get("/api/sessions/{narratron_session_id}")
+async def get_session(narratron_session_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific session."""
-    _require_canvas_access(request, session_id)
-    session_dir = local_deployer._get_session_dir(session_id)
+    _require_canvas_access(request, narratron_session_id)
+    session_dir = local_deployer._get_session_dir(narratron_session_id)
     if not session_dir.exists() or not (session_dir / "session.json").exists():
-        db.reconstruct_session_from_db(session_id, session_dir)
+        db.reconstruct_session_from_db(narratron_session_id, session_dir)
 
-    meta = local_deployer.get_session(session_id)
+    meta = local_deployer.get_session(narratron_session_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Session not found")
     
     current_user = get_current_user(request, record_activity=False)
-    dep = db.get_deployment(session_id)
+    dep = db.get_deployment(narratron_session_id)
     owner_id = dep["user_id"] if dep else None
     is_owner = (current_user is not None and owner_id == current_user["id"])
 
@@ -592,7 +593,7 @@ async def get_session(session_id: str, request: Request):
     client_ip = request.client.host if request.client else None
     asyncio.create_task(
         db.record_session_view_async(
-            session_id,
+            narratron_session_id,
             current_user["id"] if current_user else None,
             client_ip,
         )
@@ -605,8 +606,8 @@ async def get_session(session_id: str, request: Request):
 
     return {
         "metadata": meta_dict,
-        "references": session_manager.get_session_references(session_id),
-        "playlists": session_manager.get_session_playlists(session_id),
+        "references": session_manager.get_session_references(narratron_session_id),
+        "playlists": session_manager.get_session_playlists(narratron_session_id),
     }
 
 @app.post("/api/sessions/create-and-deploy")
@@ -675,16 +676,18 @@ async def create_and_deploy_session(request: Request):
                         playlists_data[pl_name] = []
                     playlists_data[pl_name].append((filename, content))
 
+    narratron_session_id = f"session_{uuid.uuid4().hex[:8]}"
     metadata = local_deployer.create_session(
         name=name,
+        narratron_session_id=narratron_session_id,
         reference_files=reference_files,
         playlists_data=playlists_data,
         style=style or None,
     )
-    deployed_meta = local_deployer.deploy_session(metadata.session_id)
+    deployed_meta = local_deployer.deploy_session(metadata.narratron_session_id)
 
     # Record deployment & deduct credits
-    db.record_deployment(deployed_meta.session_id, user["id"], deployed_meta.join_key, cost=5.0)
+    db.record_deployment(deployed_meta.narratron_session_id, user["id"], deployed_meta.join_key, cost=5.0)
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
@@ -692,78 +695,78 @@ async def create_and_deploy_session(request: Request):
         db.persist_canvas_session_async(
             canvas_states,
             local_deployer,
-            deployed_meta.session_id,
+            deployed_meta.narratron_session_id,
             user["id"],
             deployed_meta.name,
         )
     )
-    return {"status": "ok", "session_id": deployed_meta.session_id, "session": res_dict}
+    return {"status": "ok", "narratron_session_id": deployed_meta.narratron_session_id, "session": res_dict}
 
-@app.post("/api/sessions/{session_id}/deploy")
-def deploy_existing_session(session_id: str, request: Request):
+@app.post("/api/sessions/{narratron_session_id}/deploy")
+def deploy_existing_session(narratron_session_id: str, request: Request):
     """Deploy an existing created session."""
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    session_dir = local_deployer._get_session_dir(session_id)
+    session_dir = local_deployer._get_session_dir(narratron_session_id)
     if not session_dir.exists() or not (session_dir / "session.json").exists():
-        db.reconstruct_session_from_db(session_id, session_dir)
+        db.reconstruct_session_from_db(narratron_session_id, session_dir)
     
-    dep = db.get_deployment(session_id)
+    dep = db.get_deployment(narratron_session_id)
     if dep and dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only the session owner can deploy this session.")
 
     # Stop any other currently deployed sessions
     existing_sessions = local_deployer.list_sessions()
     for s in existing_sessions:
-        if s.session_id != session_id and s.status == "deployed":
+        if s.narratron_session_id != narratron_session_id and s.status == "deployed":
             try:
-                local_deployer.stop_session(s.session_id)
+                local_deployer.stop_session(s.narratron_session_id)
             except Exception:
                 pass
 
-    meta = local_deployer.deploy_session(session_id)
+    meta = local_deployer.deploy_session(narratron_session_id)
     return {"status": "ok", "session": meta}
 
-@app.delete("/api/sessions/{session_id}")
-def destroy_session(session_id: str, request: Request):
+@app.delete("/api/sessions/{narratron_session_id}")
+def destroy_session(narratron_session_id: str, request: Request):
     """Remove and clean up a local session instance. Requires owner login."""
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to delete sessions.")
 
-    dep = db.get_deployment(session_id)
+    dep = db.get_deployment(narratron_session_id)
     if dep and dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the session owner can delete this session.")
 
-    success = local_deployer.destroy_session(session_id)
+    success = local_deployer.destroy_session(narratron_session_id)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found or could not be removed")
-    db.delete_deployment(session_id)
-    return {"status": "ok", "session_id": session_id}
+    db.delete_deployment(narratron_session_id)
+    return {"status": "ok", "narratron_session_id": narratron_session_id}
 
 # ========================================
 # Canvas & WebSocket Endpoints
 # ========================================
 
 @app.websocket("/ws/doodle")
-async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = None):
-    if session_id:
+async def websocket_endpoint(websocket: WebSocket, narratron_session_id: Optional[str] = None):
+    if narratron_session_id:
         try:
-            _require_canvas_access(websocket, session_id)
+            _require_canvas_access(websocket, narratron_session_id)
         except HTTPException:
             await websocket.close(code=1008)
             return
     await websocket.accept()
-    websocket.state.session_id = session_id
+    websocket.state.narratron_session_id = narratron_session_id
     current_user = get_current_user(websocket)
-    cs = await canvas_states.connect_doodle_websocket(websocket, session_id, user=current_user)
+    cs = await canvas_states.connect_doodle_websocket(websocket, narratron_session_id, user=current_user)
     
-    if session_id:
-        baton_st = db.get_session_baton_state(session_id)
+    if narratron_session_id:
+        baton_st = db.get_session_baton_state(narratron_session_id)
         if baton_st:
-            await canvas_states.broadcast_baton_update(session_id, baton_st)
+            await canvas_states.broadcast_baton_update(narratron_session_id, baton_st)
 
     try:
         while True:
@@ -771,149 +774,149 @@ async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = N
             await canvas_states.apply_doodle_message(cs, data, sender=websocket)
     except WebSocketDisconnect:
         cs.unregister_websocket(websocket)
-        if session_id:
-            baton_st = db.get_session_baton_state(session_id)
+        if narratron_session_id:
+            baton_st = db.get_session_baton_state(narratron_session_id)
             if baton_st:
-                await canvas_states.broadcast_baton_update(session_id, baton_st)
+                await canvas_states.broadcast_baton_update(narratron_session_id, baton_st)
 
 
 # ========================================
 # Baton Passing API Endpoints
 # ========================================
 
-@app.get("/api/sessions/{session_id}/baton")
-async def get_session_baton_state(session_id: str, request: Request):
-    _require_canvas_access(request, session_id)
-    state = db.get_session_baton_state(session_id)
+@app.get("/api/sessions/{narratron_session_id}/baton")
+async def get_session_baton_state(narratron_session_id: str, request: Request):
+    _require_canvas_access(request, narratron_session_id)
+    state = db.get_session_baton_state(narratron_session_id)
     if not state:
         raise HTTPException(status_code=404, detail="Session baton state not found.")
     
-    cs = canvas_states.get(session_id)
+    cs = canvas_states.get(narratron_session_id)
     state["active_viewers"] = cs.get_active_viewers()
     return state
 
 
-@app.post("/api/sessions/{session_id}/baton/allowed_orators")
-async def add_allowed_orator(session_id: str, req: AddAllowedOratorRequest, request: Request):
+@app.post("/api/sessions/{narratron_session_id}/baton/allowed_orators")
+async def add_allowed_orator(narratron_session_id: str, req: AddAllowedOratorRequest, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.add_allowed_orator(session_id, owner_id=user["id"], target_user_id=req.target_user_id)
-        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        updated_state = db.add_allowed_orator(narratron_session_id, owner_id=user["id"], target_user_id=req.target_user_id)
+        await canvas_states.broadcast_baton_update(narratron_session_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/api/sessions/{session_id}/baton/allowed_orators/{target_user_id}")
-async def remove_allowed_orator(session_id: str, target_user_id: int, request: Request):
+@app.delete("/api/sessions/{narratron_session_id}/baton/allowed_orators/{target_user_id}")
+async def remove_allowed_orator(narratron_session_id: str, target_user_id: int, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.remove_allowed_orator(session_id, owner_id=user["id"], target_user_id=target_user_id)
-        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        updated_state = db.remove_allowed_orator(narratron_session_id, owner_id=user["id"], target_user_id=target_user_id)
+        await canvas_states.broadcast_baton_update(narratron_session_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/sessions/{session_id}/baton/request")
-async def request_baton_pass(session_id: str, req: RequestBatonRequest, request: Request):
+@app.post("/api/sessions/{narratron_session_id}/baton/request")
+async def request_baton_pass(narratron_session_id: str, req: RequestBatonRequest, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
         updated_state = db.request_baton(
-            session_id,
+            narratron_session_id,
             owner_id=user["id"],
             target_user_id=req.target_user_id,
             timeout_seconds=req.timeout_seconds or 30
         )
-        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        await canvas_states.broadcast_baton_update(narratron_session_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/sessions/{session_id}/baton/accept")
-async def accept_baton_pass(session_id: str, request: Request):
+@app.post("/api/sessions/{narratron_session_id}/baton/accept")
+async def accept_baton_pass(narratron_session_id: str, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.accept_baton(session_id, target_user_id=user["id"])
-        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        updated_state = db.accept_baton(narratron_session_id, target_user_id=user["id"])
+        await canvas_states.broadcast_baton_update(narratron_session_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/sessions/{session_id}/baton/decline")
-async def decline_baton_pass(session_id: str, request: Request):
+@app.post("/api/sessions/{narratron_session_id}/baton/decline")
+async def decline_baton_pass(narratron_session_id: str, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.decline_baton(session_id, target_user_id=user["id"])
-        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        updated_state = db.decline_baton(narratron_session_id, target_user_id=user["id"])
+        await canvas_states.broadcast_baton_update(narratron_session_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/sessions/{session_id}/baton/takeback")
-async def take_back_baton(session_id: str, request: Request):
+@app.post("/api/sessions/{narratron_session_id}/baton/takeback")
+async def take_back_baton(narratron_session_id: str, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.take_back_baton(session_id, owner_id=user["id"])
-        await canvas_states.broadcast_baton_update(session_id, updated_state)
+        updated_state = db.take_back_baton(narratron_session_id, owner_id=user["id"])
+        await canvas_states.broadcast_baton_update(narratron_session_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/sessions/{session_id}/save", status_code=202)
-async def save_session_to_db(session_id: str, request: Request):
+@app.post("/api/sessions/{narratron_session_id}/save", status_code=202)
+async def save_session_to_db(narratron_session_id: str, request: Request):
     """Save canvas session state and image assets to SQLite database on user demand."""
-    meta = local_deployer.get_session(session_id)
-    dep = db.get_deployment(session_id)
+    meta = local_deployer.get_session(narratron_session_id)
+    dep = db.get_deployment(narratron_session_id)
     user_id = dep["user_id"] if dep else None
-    name = meta.name if meta else session_id
+    name = meta.name if meta else narratron_session_id
 
     asyncio.create_task(
         db.persist_canvas_session_async(
             canvas_states,
             local_deployer,
-            session_id,
+            narratron_session_id,
             user_id,
             name,
         )
     )
-    return {"status": "queued", "session_id": session_id}
+    return {"status": "queued", "narratron_session_id": narratron_session_id}
 
-@app.get("/api/sessions/{session_id}/export-assets")
-def export_session_assets(session_id: str, request: Request):
+@app.get("/api/sessions/{narratron_session_id}/export-assets")
+def export_session_assets(narratron_session_id: str, request: Request):
     """Package and export all session assets into a ZIP file."""
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    session_dir = local_deployer._get_session_dir(session_id)
+    session_dir = local_deployer._get_session_dir(narratron_session_id)
     if not session_dir.exists():
-        db.reconstruct_session_from_db(session_id, session_dir)
+        db.reconstruct_session_from_db(narratron_session_id, session_dir)
 
     # Ensure current displayed image is saved into the session directory
-    cs = canvas_states.get(session_id)
+    cs = canvas_states.get(narratron_session_id)
     cs.export_session_data(session_dir=session_dir)
 
     import io
@@ -931,22 +934,22 @@ def export_session_assets(session_id: str, request: Request):
 
     zip_buffer.seek(0)
     headers = {
-        "Content-Disposition": f'attachment; filename="{session_id}_assets.zip"'
+        "Content-Disposition": f'attachment; filename="{narratron_session_id}_assets.zip"'
     }
     return Response(content=zip_buffer.getvalue(), media_type="application/zip", headers=headers)
 
 @app.api_route("/api/orator/toggle_mic", methods=["GET", "POST"])
-async def trigger_orator_mic_toggle(request: Request, session_id: Optional[str] = None):
+async def trigger_orator_mic_toggle(request: Request, narratron_session_id: Optional[str] = None):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to control Orator microphone.")
     
-    if session_id:
-        dep = db.get_deployment(session_id)
+    if narratron_session_id:
+        dep = db.get_deployment(narratron_session_id)
         if dep and dep["user_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Permission denied. Only the session owner can control the Orator microphone.")
 
-    count = await canvas_states.toggle_microphone(session_id)
+    count = await canvas_states.toggle_microphone(narratron_session_id)
     return {"status": "ok", "broadcasted_to": count}
 
 
@@ -958,25 +961,25 @@ def get_orator_config():
     })
 
 @app.get("/api/latest")
-def get_latest_image(request: Request, session_id: Optional[str] = None):
-    if session_id:
-        _require_canvas_access(request, session_id)
-        session_dir = local_deployer._get_session_dir(session_id)
+def get_latest_image(request: Request, narratron_session_id: Optional[str] = None):
+    if narratron_session_id:
+        _require_canvas_access(request, narratron_session_id)
+        session_dir = local_deployer._get_session_dir(narratron_session_id)
         if not session_dir.exists():
-            db.reconstruct_session_from_db(session_id, session_dir)
-    return canvas_states.latest_state(session_id)
+            db.reconstruct_session_from_db(narratron_session_id, session_dir)
+    return canvas_states.latest_state(narratron_session_id)
 
 @app.get("/api/chat")
-def get_chat(request: Request, session_id: Optional[str] = None):
-    if session_id:
-        _require_canvas_access(request, session_id)
-    return canvas_states.chat_messages(session_id)
+def get_chat(request: Request, narratron_session_id: Optional[str] = None):
+    if narratron_session_id:
+        _require_canvas_access(request, narratron_session_id)
+    return canvas_states.chat_messages(narratron_session_id)
 
 @app.post("/api/chat")
-def post_chat(msg: ChatMessage, request: Request, session_id: Optional[str] = None):
-    if session_id:
-        _require_canvas_access(request, session_id)
-    canvas_states.add_chat_message(msg.text, author=msg.author, session_id=session_id)
+def post_chat(msg: ChatMessage, request: Request, narratron_session_id: Optional[str] = None):
+    if narratron_session_id:
+        _require_canvas_access(request, narratron_session_id)
+    canvas_states.add_chat_message(msg.text, author=msg.author, narratron_session_id=narratron_session_id)
     return {"status": "ok"}
 
 @app.get("/api/stats")
@@ -1031,39 +1034,39 @@ def read_stats():
         return f.read()
 
 @app.get("/popout", response_class=HTMLResponse)
-def read_popout(request: Request, session_id: Optional[str] = None, join_key: Optional[str] = None):
+def read_popout(request: Request, narratron_session_id: Optional[str] = None, join_key: Optional[str] = None):
     """Serve the standalone Pop-out Panel interface for a session."""
-    if session_id:
-        deployment = _require_canvas_access(request, session_id, join_key)
+    if narratron_session_id:
+        deployment = _require_canvas_access(request, narratron_session_id, join_key)
         if _valid_join_key(deployment["join_key"], join_key):
             response = RedirectResponse(
                 url=str(request.url.remove_query_params("join_key")), status_code=303
             )
-            _grant_canvas_access(response, request, session_id, join_key)
+            _grant_canvas_access(response, request, narratron_session_id, join_key)
             return response
     template_path = os.path.join(os.path.dirname(__file__), "templates", "popout.html")
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
 @app.get("/obs", response_class=HTMLResponse)
-@app.get("/obs/{session_id}", response_class=HTMLResponse)
+@app.get("/obs/{narratron_session_id}", response_class=HTMLResponse)
 async def read_obs_canvas(
     request: Request,
-    session_id: Optional[str] = None,
+    narratron_session_id: Optional[str] = None,
 ):
     """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source."""
-    if session_id:
+    if narratron_session_id:
         join_key = request.query_params.get("join_key")
-        deployment = _require_canvas_access(request, session_id, join_key)
+        deployment = _require_canvas_access(request, narratron_session_id, join_key)
         if _valid_join_key(deployment["join_key"], join_key):
             response = RedirectResponse(
                 url=str(request.url.remove_query_params("join_key")), status_code=303
             )
-            _grant_canvas_access(response, request, session_id, join_key)
+            _grant_canvas_access(response, request, narratron_session_id, join_key)
             return response
-        session_dir = local_deployer._get_session_dir(session_id)
+        session_dir = local_deployer._get_session_dir(narratron_session_id)
         if not session_dir.exists():
-            db.reconstruct_session_from_db(session_id, session_dir)
+            db.reconstruct_session_from_db(narratron_session_id, session_dir)
         artifacts_dir = session_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1071,7 +1074,7 @@ async def read_obs_canvas(
         client_ip = request.client.host if request.client else None
         asyncio.create_task(
             db.record_session_view_async(
-                session_id,
+                narratron_session_id,
                 current_user["id"] if current_user else None,
                 client_ip,
             )
@@ -1084,22 +1087,22 @@ async def read_obs_canvas(
 @app.get("/canvas", response_class=HTMLResponse)
 async def read_canvas(
     request: Request,
-    session_id: Optional[str] = None,
+    narratron_session_id: Optional[str] = None,
     join_key: Optional[str] = None,
 ):
     """Serve the Canvas interface for a specific session."""
-    if session_id:
-        deployment = _require_canvas_access(request, session_id, join_key)
+    if narratron_session_id:
+        deployment = _require_canvas_access(request, narratron_session_id, join_key)
         if _valid_join_key(deployment["join_key"], join_key):
             response = RedirectResponse(
                 url=str(request.url.remove_query_params("join_key")), status_code=303
             )
-            _grant_canvas_access(response, request, session_id, join_key)
+            _grant_canvas_access(response, request, narratron_session_id, join_key)
             return response
 
-        session_dir = local_deployer._get_session_dir(session_id)
+        session_dir = local_deployer._get_session_dir(narratron_session_id)
         if not session_dir.exists():
-            db.reconstruct_session_from_db(session_id, session_dir)
+            db.reconstruct_session_from_db(narratron_session_id, session_dir)
         artifacts_dir = session_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1108,7 +1111,7 @@ async def read_canvas(
         client_ip = request.client.host if request.client else None
         asyncio.create_task(
             db.record_session_view_async(
-                session_id,
+                narratron_session_id,
                 current_user["id"] if current_user else None,
                 client_ip,
             )

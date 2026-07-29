@@ -91,7 +91,7 @@ When a story begins or a scene/mood is described, invoke `play_playlist` immedia
 """
 
 def create_agent(
-    session_id: str,
+    narratron_session_id: str,
     config: dict = None,
     canvas_state_service: Optional["CanvasStateService"] = None,
 ):
@@ -99,10 +99,10 @@ def create_agent(
     if config is None:
         config = get_config()
 
-    image_tools = ImageTools(config.get("image_generation", {}), session_id=session_id, canvas_state_service=canvas_state_service)
-    chat_tools = ChatTools(config.get("chat", {}), session_id=session_id, canvas_state_service=canvas_state_service)
-    notes_tools = NotesTools(config.get("notes", {}), session_id=session_id, canvas_state_service=canvas_state_service)
-    music_tools = MusicTools(config.get("music", {}), session_id=session_id, canvas_state_service=canvas_state_service)
+    image_tools = ImageTools(config.get("image_generation", {}), narratron_session_id=narratron_session_id, canvas_state_service=canvas_state_service)
+    chat_tools = ChatTools(config.get("chat", {}), narratron_session_id=narratron_session_id, canvas_state_service=canvas_state_service)
+    notes_tools = NotesTools(config.get("notes", {}), narratron_session_id=narratron_session_id, canvas_state_service=canvas_state_service)
+    music_tools = MusicTools(config.get("music", {}), narratron_session_id=narratron_session_id, canvas_state_service=canvas_state_service)
 
     # Call list_references immediately on agent init for initial context
     refs = image_tools.list_references()
@@ -147,7 +147,7 @@ def create_agent(
 
 async def main():
     print("Initializing ADK Agent...")
-    narratron_agent = create_agent(session_id="default_session", config=config)
+    narratron_agent = create_agent(narratron_session_id="default_session", config=config)
     session_service = InMemorySessionService()
     artifact_service = DiskArtifactService(ensure_sessions_root() / "artifacts")
     # The runner manages the execution context and stream connections.

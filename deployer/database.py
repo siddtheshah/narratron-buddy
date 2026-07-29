@@ -169,12 +169,24 @@ class DatabaseManager:
 
     def _init_db(self) -> None:
         """Initialize database schema if tables do not exist."""
+        def _get_cols(cursor, table_name: str) -> List[str]:
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            rows = cursor.fetchall()
+            cols = []
+            for r in rows:
+                if isinstance(r, dict):
+                    cols.append(r.get("name"))
+                elif hasattr(r, "keys"):
+                    cols.append(r["name"])
+                elif isinstance(r, (tuple, list)):
+                    cols.append(r[1])
+            return cols
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Check if users table exists and has id column
-            cursor.execute("PRAGMA table_info(users)")
-            cols = [row["name"] for row in cursor.fetchall()]
+            cols = _get_cols(cursor, "users")
             if cols and "id" not in cols:
                 cursor.execute("DROP TABLE IF EXISTS auth_sessions")
                 cursor.execute("DROP TABLE IF EXISTS canvas_deployments")
@@ -193,8 +205,7 @@ class DatabaseManager:
                 )
             """)
 
-            cursor.execute("PRAGMA table_info(users)")
-            user_cols = [row["name"] for row in cursor.fetchall()]
+            user_cols = _get_cols(cursor, "users")
             if "last_active_at" not in user_cols:
                 try:
                     cursor.execute("ALTER TABLE users ADD COLUMN last_active_at TEXT")
@@ -219,7 +230,7 @@ class DatabaseManager:
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS canvas_deployments (
-                    session_id TEXT PRIMARY KEY,
+                    narratron_session_id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
                     join_key TEXT NOT NULL,
                     cost REAL DEFAULT 5.0,
@@ -231,8 +242,41 @@ class DatabaseManager:
                 )
             """)
 
-            cursor.execute("PRAGMA table_info(canvas_deployments)")
-            cd_cols = [row["name"] for row in cursor.fetchall()]
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS exported_sessions (
+                    narratron_session_id TEXT PRIMARY KEY,
+                    user_id INTEGER,
+                    name TEXT,
+                    exported_at TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS exported_session_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    narratron_session_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    image_data BLOB NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (narratron_session_id) REFERENCES exported_sessions(narratron_session_id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS session_views (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    narratron_session_id TEXT NOT NULL,
+                    user_id INTEGER,
+                    viewed_at TEXT NOT NULL,
+                    ip_address TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                )
+            """)
+
+            cd_cols = _get_cols(cursor, "canvas_deployments")
             if "allowed_orators" not in cd_cols:
                 try:
                     cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN allowed_orators TEXT DEFAULT '[]'")
@@ -248,40 +292,6 @@ class DatabaseManager:
                     cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN baton_request TEXT DEFAULT NULL")
                 except Exception:
                     pass
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS exported_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    user_id INTEGER,
-                    name TEXT,
-                    exported_at TEXT NOT NULL,
-                    state_json TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS exported_session_images (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    filename TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    image_data BLOB NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES exported_sessions(session_id) ON DELETE CASCADE
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS session_views (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    user_id INTEGER,
-                    viewed_at TEXT NOT NULL,
-                    ip_address TEXT,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-                )
-            """)
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS payment_transactions (
@@ -308,46 +318,48 @@ class DatabaseManager:
             """)
             conn.commit()
 
-
-    @staticmethod
-    def _hash_password(password: str, salt_bytes: Optional[bytes] = None) -> tuple[str, str]:
-        if salt_bytes is None:
-            salt_bytes = os.urandom(16)
-        pwd_hash = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            salt_bytes,
-            100000
-        )
-        return pwd_hash.hex(), salt_bytes.hex()
-
     def register_user(self, username: str, email: str, password: str) -> Dict:
-        """Register a new user account with hashed password and default 100 credits."""
-        username = username.strip()
-        email = email.strip().lower()
-        
-        if not username or not email or not password:
+        """Register a new user account."""
+        username_clean = username.strip()
+        email_clean = email.strip().lower()
+        if not username_clean or not email_clean or not password:
             raise ValueError("Username, email, and password are required.")
 
-        pwd_hash, salt_hex = self._hash_password(password)
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        salt = secrets.token_hex(16)
+        password_hash = hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
+        created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            try:
                 cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, salt, credits, created_at, last_active_at) VALUES (?, ?, ?, ?, 100.0, ?, ?)",
-                    (username, email, pwd_hash, salt_hex, now_iso, now_iso)
+                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits) VALUES (?, ?, ?, ?, ?, 100.0)",
+                    (username_clean, email_clean, password_hash, salt, created_at)
                 )
                 user_id = cursor.lastrowid
                 conn.commit()
-                return self.get_user_by_id(user_id)
-        except sqlite3.IntegrityError:
-            raise ValueError("Username or email already exists.")
+                return {
+                    "id": user_id,
+                    "username": username_clean,
+                    "email": email_clean,
+                    "credits": 100.0,
+                    "created_at": created_at
+                }
+            except sqlite3.IntegrityError as e:
+                err_msg = str(e).lower()
+                if "username" in err_msg:
+                    raise ValueError("Username already exists.")
+                elif "email" in err_msg:
+                    raise ValueError("Email already registered.")
+                else:
+                    raise ValueError("Username or email already exists.")
 
     def authenticate_user(self, username_or_email: str, password: str) -> Optional[Dict]:
-        """Authenticate user credentials and return user dict if valid."""
+        """Authenticate user credentials."""
         query_val = username_or_email.strip()
+        if not query_val or not password:
+            return None
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -359,24 +371,27 @@ class DatabaseManager:
                 return None
 
             user_dict = dict(row)
-            salt_bytes = bytes.fromhex(user_dict["salt"])
-            computed_hash, _ = self._hash_password(password, salt_bytes)
-
-            if secrets.compare_digest(computed_hash, user_dict["password_hash"]):
-                user_res = {
+            expected_hash = hashlib.sha256((password + user_dict["salt"]).encode("utf-8")).hexdigest()
+            if secrets.compare_digest(expected_hash, user_dict["password_hash"]):
+                return {
                     "id": user_dict["id"],
                     "username": user_dict["username"],
                     "email": user_dict["email"],
-                    "credits": user_dict["credits"],
+                    "credits": user_dict.get("credits", 100.0),
                     "created_at": user_dict["created_at"]
                 }
-                self.record_user_activity(user_dict["id"])
-                return user_res
             return None
 
+    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, username, email, credits, created_at FROM users WHERE id = ?", (user_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def create_auth_session(self, user_id: int, days_valid: int = 7) -> str:
-        """Create a new session token for an authenticated user."""
-        token = secrets.token_hex(32)
+        """Create a new session token for a user."""
+        token = secrets.token_urlsafe(32)
         now = datetime.datetime.now(datetime.timezone.utc)
         expires = now + datetime.timedelta(days=days_valid)
 
@@ -387,60 +402,57 @@ class DatabaseManager:
                 (token, user_id, now.isoformat(), expires.isoformat())
             )
             conn.commit()
-        self.record_user_activity(user_id)
         return token
 
-    def validate_session_token(
-        self, token: str, *, record_activity: bool = True
-    ) -> Optional[Dict]:
-        """Validate an auth session token and optionally record its use."""
+    def validate_session_token(self, token: str, record_activity: bool = True) -> Optional[Dict]:
+        """Validate an active authentication token and return user information if valid."""
         if not token:
             return None
 
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT u.id, u.username, u.email, u.credits, u.created_at, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON s.user_id = u.id
-                WHERE s.token = ? AND s.expires_at > ?
-            """, (token, now_iso))
+                WHERE s.token = ?
+                """,
+                (token,)
+            )
             row = cursor.fetchone()
-            if row:
-                res = dict(row)
-                if record_activity:
-                    self.record_user_activity(res["id"])
-                return res
-            return None
+            if not row:
+                return None
+
+            res = dict(row)
+            expires_at = datetime.datetime.fromisoformat(res["expires_at"])
+
+            if datetime.datetime.now(datetime.timezone.utc) > expires_at:
+                cursor.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+                conn.commit()
+                return None
+
+            if record_activity:
+                self.record_user_activity(res["id"])
+            return res
 
     def record_user_activity(self, user_id: int) -> bool:
         """Update last_active_at timestamp for user."""
         if not user_id:
             return False
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         return True
-        # try:
-        #     with self._get_connection() as conn:
-        #         cursor = conn.cursor()
-        #         cursor.execute("UPDATE users SET last_active_at = ? WHERE id = ?", (now_iso, user_id))
-        #         conn.commit()
-        #         return cursor.rowcount > 0
-        # except Exception as e:
-        #     logger.error(f"Error recording user activity: {e}")
-        #     return False
 
-    def record_session_view(self, session_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> bool:
+    def record_session_view(self, narratron_session_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> bool:
         """Record a session view event in database."""
-        if not session_id:
+        if not narratron_session_id:
             return False
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO session_views (session_id, user_id, viewed_at, ip_address) VALUES (?, ?, ?, ?)",
-                    (session_id, user_id, now_iso, ip_address)
+                    "INSERT INTO session_views (narratron_session_id, user_id, viewed_at, ip_address) VALUES (?, ?, ?, ?)",
+                    (narratron_session_id, user_id, now_iso, ip_address)
                 )
                 conn.commit()
                 if user_id:
@@ -485,16 +497,16 @@ class DatabaseManager:
 
             # 4. Top viewed sessions
             cursor.execute("""
-                SELECT v.session_id, COUNT(*) as views,
-                       COALESCE(es.name, cd.session_id, v.session_id) as name
+                SELECT v.narratron_session_id as narratron_session_id, COUNT(*) as views,
+                       COALESCE(es.name, cd.narratron_session_id, v.narratron_session_id) as name
                 FROM session_views v
-                LEFT JOIN exported_sessions es ON v.session_id = es.session_id
-                LEFT JOIN canvas_deployments cd ON v.session_id = cd.session_id
-                GROUP BY v.session_id
+                LEFT JOIN exported_sessions es ON v.narratron_session_id = es.narratron_session_id
+                LEFT JOIN canvas_deployments cd ON v.narratron_session_id = cd.narratron_session_id
+                GROUP BY v.narratron_session_id
                 ORDER BY views DESC
                 LIMIT 10
             """)
-            top_viewed_sessions = [dict(row) for row in cursor.fetchall()]
+            top_viewed_sessions = [dict(r) for r in cursor.fetchall()]
 
             # 5. Daily session views for past 7 days
             daily_views_7d = []
@@ -581,81 +593,63 @@ class DatabaseManager:
                 (token, user_dict["id"], now.isoformat(), expires.isoformat())
             )
             conn.commit()
-        return token, user_dict
+            return token, user_dict
 
     def validate_password_reset_token(self, token: str) -> Optional[Dict]:
-        """Validate password reset token and return associated user profile if valid, unused, and not expired."""
+        """Validate password reset token and return associated user."""
         if not token:
             return None
 
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT u.id, u.username, u.email, t.expires_at
+            cursor.execute(
+                """
+                SELECT u.id, u.username, u.email, t.expires_at, t.used
                 FROM password_reset_tokens t
                 JOIN users u ON t.user_id = u.id
-                WHERE t.token = ? AND t.used = 0 AND t.expires_at > ?
-            """, (token, now_iso))
+                WHERE t.token = ?
+                """,
+                (token,)
+            )
             row = cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+            if not row:
+                return None
+
+            res = dict(row)
+            if res["used"]:
+                return None
+
+            expires_at = datetime.datetime.fromisoformat(res["expires_at"])
+            if datetime.datetime.now(datetime.timezone.utc) > expires_at:
+                return None
+
+            return {"id": res["id"], "username": res["username"], "email": res["email"]}
 
     def reset_password_with_token(self, token: str, new_password: str) -> bool:
-        """Reset user's password using token, mark token used, and invalidate active sessions."""
-        if not new_password or len(new_password.strip()) == 0:
-            raise ValueError("New password cannot be empty.")
-
+        """Reset user password using token."""
         user = self.validate_password_reset_token(token)
-        if not user:
+        if not user or not new_password:
             return False
 
-        user_id = user["id"]
-        pwd_hash, salt_hex = self._hash_password(new_password)
+        salt = secrets.token_hex(16)
+        password_hash = hashlib.sha256((new_password + salt).encode("utf-8")).hexdigest()
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
-                (pwd_hash, salt_hex, user_id)
+                (password_hash, salt, user["id"])
             )
-            cursor.execute(
-                "UPDATE password_reset_tokens SET used = 1 WHERE token = ?",
-                (token,)
-            )
-            cursor.execute(
-                "DELETE FROM auth_sessions WHERE user_id = ?",
-                (user_id,)
-            )
+            cursor.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = ?", (token,))
+            cursor.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user["id"],))
             conn.commit()
             return True
 
-    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, username, email, credits, created_at FROM users WHERE id = ?", (user_id,))
-            row = cursor.fetchone()
-            return dict(row) if row else None
-
-    def get_user_by_username_or_email(self, username_or_email: str) -> Optional[Dict]:
-        """Look up user account by username or email (case-insensitive)."""
-        clean_input = username_or_email.strip().lower()
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id, username, email, credits, created_at FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?",
-                (clean_input, clean_input)
-            )
-            row = cursor.fetchone()
-            return dict(row) if row else None
-
-    def record_deployment(self, session_id: str, user_id: int, join_key: str, cost: float = 5.0) -> bool:
+    def record_deployment(self, narratron_session_id: str, user_id: int, join_key: str, cost: float = 5.0) -> bool:
         """Record deployment in database and deduct cost from user credits."""
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            # Check user credits
             cursor.execute("SELECT credits FROM users WHERE id = ?", (user_id,))
             user = cursor.fetchone()
             if not user or user["credits"] < cost:
@@ -666,8 +660,8 @@ class DatabaseManager:
                 (cost, user_id)
             )
             cursor.execute(
-                "INSERT INTO canvas_deployments (session_id, user_id, join_key, cost, created_at) VALUES (?, ?, ?, ?, ?)",
-                (session_id, user_id, join_key, cost, now_iso)
+                "INSERT INTO canvas_deployments (narratron_session_id, user_id, join_key, cost, created_at) VALUES (?, ?, ?, ?, ?)",
+                (narratron_session_id, user_id, join_key, cost, now_iso)
             )
             conn.commit()
             return True
@@ -715,18 +709,18 @@ class DatabaseManager:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_deployment(self, session_id: str) -> Optional[Dict]:
+    def get_deployment(self, narratron_session_id: str) -> Optional[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM canvas_deployments WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT * FROM canvas_deployments WHERE narratron_session_id = ?", (narratron_session_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def delete_deployment(self, session_id: str) -> bool:
+    def delete_deployment(self, narratron_session_id: str) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM canvas_deployments WHERE session_id = ?", (session_id,))
-            cursor.execute("DELETE FROM exported_sessions WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM canvas_deployments WHERE narratron_session_id = ?", (narratron_session_id,))
+            cursor.execute("DELETE FROM exported_sessions WHERE narratron_session_id = ?", (narratron_session_id,))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -738,26 +732,26 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_all_exported_session_ids(self) -> List[str]:
+    def get_all_exported_narratron_session_ids(self) -> List[str]:
         """Get all distinct session IDs stored in exported_sessions or canvas_deployments."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT session_id FROM exported_sessions
+                SELECT narratron_session_id FROM exported_sessions
                 UNION
-                SELECT session_id FROM canvas_deployments
+                SELECT narratron_session_id FROM canvas_deployments
             """)
-            return [row["session_id"] for row in cursor.fetchall() if row["session_id"]]
+            return [row["narratron_session_id"] for row in cursor.fetchall() if row["narratron_session_id"]]
 
-    def get_session_metadata_from_db(self, session_id: str) -> Optional[Dict]:
+    def get_session_metadata_from_db(self, narratron_session_id: str) -> Optional[Dict]:
         """Extract metadata dictionary for a session stored in database without reconstructing disk files."""
         import json
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM exported_sessions WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT * FROM exported_sessions WHERE narratron_session_id = ?", (narratron_session_id,))
             session_row = cursor.fetchone()
             
-            cursor.execute("SELECT * FROM canvas_deployments WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT * FROM canvas_deployments WHERE narratron_session_id = ?", (narratron_session_id,))
             dep_row = cursor.fetchone()
 
             if not session_row and not dep_row:
@@ -772,11 +766,11 @@ class DatabaseManager:
                     pass
 
             if not metadata:
-                name = session_row["name"] if session_row else session_id
+                name = session_row["name"] if session_row else narratron_session_id
                 join_key = dep_row["join_key"] if dep_row else "KEY-DEFAULT"
                 created_at = session_row["exported_at"] if session_row else (dep_row["created_at"] if dep_row else "")
                 metadata = {
-                    "session_id": session_id,
+                    "narratron_session_id": narratron_session_id,
                     "name": name,
                     "status": "deployed",
                     "join_key": join_key,
@@ -785,11 +779,13 @@ class DatabaseManager:
                     "mounted_playlists": {},
                     "config": {}
                 }
+            elif metadata:
+                metadata["narratron_session_id"] = metadata.get("narratron_session_id") or narratron_session_id
             return metadata
 
     def export_session_to_db(
         self,
-        session_id: str,
+        narratron_session_id: str,
         state_data: Dict,
         image_files: List[Dict[str, Any]],
         user_id: Optional[int] = None,
@@ -804,37 +800,37 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO exported_sessions (session_id, user_id, name, exported_at, state_json)
+                INSERT INTO exported_sessions (narratron_session_id, user_id, name, exported_at, state_json)
                 VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET
+                ON CONFLICT(narratron_session_id) DO UPDATE SET
                     user_id = coalesce(excluded.user_id, exported_sessions.user_id),
                     name = coalesce(excluded.name, exported_sessions.name),
                     exported_at = excluded.exported_at,
                     state_json = excluded.state_json
                 """,
-                (session_id, user_id, name or session_id, now_iso, state_json)
+                (narratron_session_id, user_id, name or narratron_session_id, now_iso, state_json)
             )
 
             # Clear previous images for this session
-            cursor.execute("DELETE FROM exported_session_images WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM exported_session_images WHERE narratron_session_id = ?", (narratron_session_id,))
 
             for img in image_files:
                 cursor.execute(
                     """
-                    INSERT INTO exported_session_images (session_id, filename, category, image_data, created_at)
+                    INSERT INTO exported_session_images (narratron_session_id, filename, category, image_data, created_at)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    (session_id, img["filename"], img.get("category", "output"), img["data"], now_iso)
+                    (narratron_session_id, img["filename"], img.get("category", "output"), img["data"], now_iso)
                 )
             conn.commit()
             return True
 
-    def get_exported_session(self, session_id: str) -> Optional[Dict]:
+    def get_exported_session(self, narratron_session_id: str) -> Optional[Dict]:
         """Fetch exported session record and list of image files."""
         import json
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM exported_sessions WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT * FROM exported_sessions WHERE narratron_session_id = ?", (narratron_session_id,))
             session_row = cursor.fetchone()
             if not session_row:
                 return None
@@ -842,20 +838,19 @@ class DatabaseManager:
             res = dict(session_row)
             res["state"] = json.loads(res["state_json"])
             
-            cursor.execute("SELECT id, filename, category, created_at FROM exported_session_images WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT id, filename, category, created_at FROM exported_session_images WHERE narratron_session_id = ?", (narratron_session_id,))
             res["images"] = [dict(r) for r in cursor.fetchall()]
             return res
 
-    def reconstruct_session_from_db(self, session_id: str, target_dir: Path) -> bool:
+    def reconstruct_session_from_db(self, narratron_session_id: str, target_dir: Path) -> bool:
         """Reconstruct session folder, session metadata, state, and files from database if missing."""
         import json
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM exported_sessions WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT * FROM exported_sessions WHERE narratron_session_id = ?", (narratron_session_id,))
             session_row = cursor.fetchone()
             if not session_row:
-                # Check if deployment exists even if not exported yet
-                cursor.execute("SELECT * FROM canvas_deployments WHERE session_id = ?", (session_id,))
+                cursor.execute("SELECT * FROM canvas_deployments WHERE narratron_session_id = ?", (narratron_session_id,))
                 dep_row = cursor.fetchone()
                 if not dep_row:
                     return False
@@ -872,36 +867,34 @@ class DatabaseManager:
 
             state_data = {}
             user_id = None
-            name = session_id
+            name = narratron_session_id
 
             if session_row:
                 session_dict = dict(session_row)
                 user_id = session_dict.get("user_id")
-                name = session_dict.get("name") or session_id
+                name = session_dict.get("name") or narratron_session_id
                 state_json_str = session_dict.get("state_json", "{}")
                 try:
                     state_data = json.loads(state_json_str)
                 except Exception:
                     state_data = {}
 
-            # Restore or write single session.json containing metadata and canvas_state
             metadata = state_data.get("metadata") or dict(state_data)
-            if "session_id" not in metadata:
-                metadata["session_id"] = session_id
+            if "narratron_session_id" not in metadata:
+                metadata["narratron_session_id"] = narratron_session_id
             if "name" not in metadata:
                 metadata["name"] = name
             if "status" not in metadata:
                 metadata["status"] = "deployed"
             if "join_key" not in metadata:
                 metadata["join_key"] = "KEY-DEFAULT"
-                cursor.execute("SELECT join_key FROM canvas_deployments WHERE session_id = ?", (session_id,))
+                cursor.execute("SELECT join_key FROM canvas_deployments WHERE narratron_session_id = ?", (narratron_session_id,))
                 dep_row = cursor.fetchone()
                 if dep_row and dep_row["join_key"]:
                     metadata["join_key"] = dep_row["join_key"]
             if "created_at" not in metadata:
                 metadata["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Ensure canvas_state is included if state_data has canvas_state or UI properties
             if "canvas_state" not in metadata and "canvas_state" in state_data:
                 metadata["canvas_state"] = state_data["canvas_state"]
             elif "canvas_state" not in metadata:
@@ -914,7 +907,6 @@ class DatabaseManager:
             with open(meta_file, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
 
-            # Clean up legacy session_state.json if it exists
             legacy_file = target_dir / "session_state.json"
             if legacy_file.exists():
                 try:
@@ -922,8 +914,7 @@ class DatabaseManager:
                 except Exception:
                     pass
 
-            # Restore exported images/files
-            cursor.execute("SELECT filename, category, image_data FROM exported_session_images WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT filename, category, image_data FROM exported_session_images WHERE narratron_session_id = ?", (narratron_session_id,))
             image_rows = cursor.fetchall()
 
             for row in image_rows:
@@ -953,20 +944,20 @@ class DatabaseManager:
     # ========================================
 
     async def record_session_view_async(
-        self, session_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None
+        self, narratron_session_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None
     ) -> bool:
         """Record session view asynchronously."""
         try:
             return await asyncio.to_thread(
-                self.record_session_view, session_id, user_id, ip_address
+                self.record_session_view, narratron_session_id, user_id, ip_address
             )
         except Exception:
-            logger.exception("Failed to record view for session '%s'", session_id)
+            logger.exception("Failed to record view for session '%s'", narratron_session_id)
             return False
 
     async def export_session_to_db_async(
         self,
-        session_id: str,
+        narratron_session_id: str,
         state_data: Dict,
         image_files: List[Dict[str, Any]],
         user_id: Optional[int] = None,
@@ -975,24 +966,24 @@ class DatabaseManager:
         """Export session to database asynchronously."""
         try:
             return await asyncio.to_thread(
-                self.export_session_to_db, session_id, state_data, image_files, user_id, name
+                self.export_session_to_db, narratron_session_id, state_data, image_files, user_id, name
             )
         except Exception:
-            logger.exception("Failed to export session '%s' to database", session_id)
+            logger.exception("Failed to export session '%s' to database", narratron_session_id)
             return False
 
     async def persist_canvas_session_async(
-        self, canvas_states: Any, local_deployer: Any, session_id: str, user_id: Optional[int], name: str
+        self, canvas_states: Any, local_deployer: Any, narratron_session_id: str, user_id: Optional[int], name: str
     ) -> bool:
         """Snapshot canvas state and save assets to database asynchronously."""
         try:
             def _export_and_save():
-                session_dir = local_deployer._get_session_dir(session_id)
-                state_data, image_files = canvas_states.get(session_id).export_session_data(
+                session_dir = local_deployer._get_session_dir(narratron_session_id)
+                state_data, image_files = canvas_states.get(narratron_session_id).export_session_data(
                     session_dir=session_dir
                 )
                 return self.export_session_to_db(
-                    session_id=session_id,
+                    narratron_session_id=narratron_session_id,
                     state_data=state_data,
                     image_files=image_files,
                     user_id=user_id,
@@ -1000,18 +991,18 @@ class DatabaseManager:
                 )
             success = await asyncio.to_thread(_export_and_save)
             if success:
-                logger.info("Session '%s' saved to database asynchronously.", session_id)
+                logger.info("Session '%s' saved to database asynchronously.", narratron_session_id)
             return success
         except Exception:
-            logger.exception("Failed to save session '%s' to database", session_id)
+            logger.exception("Failed to save session '%s' to database", narratron_session_id)
             return False
 
     async def record_deployment_async(
-        self, session_id: str, user_id: int, join_key: str, cost: float = 5.0
+        self, narratron_session_id: str, user_id: int, join_key: str, cost: float = 5.0
     ) -> bool:
         """Record deployment asynchronously."""
         return await asyncio.to_thread(
-            self.record_deployment, session_id, user_id, join_key, cost
+            self.record_deployment, narratron_session_id, user_id, join_key, cost
         )
 
     async def register_user_async(self, username: str, email: str, password: str) -> Dict:
@@ -1038,8 +1029,8 @@ class DatabaseManager:
         """Reset password asynchronously."""
         return await asyncio.to_thread(self.reset_password_with_token, token, new_password)
 
-    def get_session_baton_state(self, session_id: str) -> Optional[Dict[str, Any]]:
-        dep = self.get_deployment(session_id)
+    def get_session_baton_state(self, narratron_session_id: str) -> Optional[Dict[str, Any]]:
+        dep = self.get_deployment(narratron_session_id)
         if not dep:
             return None
         import json
@@ -1048,11 +1039,10 @@ class DatabaseManager:
         baton_req_raw = dep.get("baton_request")
         baton_req = json.loads(baton_req_raw) if baton_req_raw else None
         
-        # Check auto-expiry for pending baton request
         if baton_req and "expires_at" in baton_req:
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             if now_iso > baton_req["expires_at"]:
-                self.decline_baton(session_id, baton_req.get("target_user_id"))
+                self.decline_baton(narratron_session_id, baton_req.get("target_user_id"))
                 baton_req = None
 
         owner_user = self.get_user_by_id(dep["user_id"])
@@ -1065,15 +1055,15 @@ class DatabaseManager:
                 allowed_users.append({"id": u["id"], "username": u["username"]})
 
         return {
-            "session_id": session_id,
+            "narratron_session_id": narratron_session_id,
             "owner": {"id": owner_user["id"], "username": owner_user["username"]} if owner_user else None,
             "active_orator": {"id": active_orator_user["id"], "username": active_orator_user["username"]} if active_orator_user else None,
             "allowed_orators": allowed_users,
             "baton_request": baton_req,
         }
 
-    def add_allowed_orator(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
-        dep = self.get_deployment(session_id)
+    def add_allowed_orator(self, narratron_session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(narratron_session_id)
         if not dep or dep["user_id"] != owner_id:
             raise ValueError("Only the session owner can add allowed orators.")
         target_user = self.get_user_by_id(target_user_id)
@@ -1087,14 +1077,14 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE canvas_deployments SET allowed_orators = ? WHERE session_id = ?",
-                    (json.dumps(allowed_ids), session_id)
+                    "UPDATE canvas_deployments SET allowed_orators = ? WHERE narratron_session_id = ?",
+                    (json.dumps(allowed_ids), narratron_session_id)
                 )
                 conn.commit()
-        return self.get_session_baton_state(session_id)
+        return self.get_session_baton_state(narratron_session_id)
 
-    def remove_allowed_orator(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
-        dep = self.get_deployment(session_id)
+    def remove_allowed_orator(self, narratron_session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(narratron_session_id)
         if not dep or dep["user_id"] != owner_id:
             raise ValueError("Only the session owner can remove allowed orators.")
         
@@ -1104,21 +1094,20 @@ class DatabaseManager:
             allowed_ids.remove(target_user_id)
         
         active_orator_id = dep.get("active_orator_id") or dep["user_id"]
-        # If target user was active orator, revert active orator to owner
         if active_orator_id == target_user_id:
             active_orator_id = owner_id
             
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET allowed_orators = ?, active_orator_id = ? WHERE session_id = ?",
-                (json.dumps(allowed_ids), active_orator_id, session_id)
+                "UPDATE canvas_deployments SET allowed_orators = ?, active_orator_id = ? WHERE narratron_session_id = ?",
+                (json.dumps(allowed_ids), active_orator_id, narratron_session_id)
             )
             conn.commit()
-        return self.get_session_baton_state(session_id)
+        return self.get_session_baton_state(narratron_session_id)
 
-    def request_baton(self, session_id: str, owner_id: int, target_user_id: int, timeout_seconds: int = 30) -> Dict[str, Any]:
-        dep = self.get_deployment(session_id)
+    def request_baton(self, narratron_session_id: str, owner_id: int, target_user_id: int, timeout_seconds: int = 30) -> Dict[str, Any]:
+        dep = self.get_deployment(narratron_session_id)
         if not dep or dep["user_id"] != owner_id:
             raise ValueError("Only the session owner can request passing the baton.")
         
@@ -1143,14 +1132,14 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET baton_request = ? WHERE session_id = ?",
-                (json.dumps(baton_req), session_id)
+                "UPDATE canvas_deployments SET baton_request = ? WHERE narratron_session_id = ?",
+                (json.dumps(baton_req), narratron_session_id)
             )
             conn.commit()
-        return self.get_session_baton_state(session_id)
+        return self.get_session_baton_state(narratron_session_id)
 
-    def accept_baton(self, session_id: str, target_user_id: int) -> Dict[str, Any]:
-        dep = self.get_deployment(session_id)
+    def accept_baton(self, narratron_session_id: str, target_user_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(narratron_session_id)
         if not dep:
             raise ValueError("Session not found.")
         import json
@@ -1164,56 +1153,53 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE session_id = ?",
-                (target_user_id, session_id)
+                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE narratron_session_id = ?",
+                (target_user_id, narratron_session_id)
             )
             conn.commit()
-        return self.get_session_baton_state(session_id)
+        return self.get_session_baton_state(narratron_session_id)
 
-    def decline_baton(self, session_id: str, target_user_id: Optional[int] = None) -> Dict[str, Any]:
+    def decline_baton(self, narratron_session_id: str, target_user_id: Optional[int] = None) -> Dict[str, Any]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET baton_request = NULL WHERE session_id = ?",
-                (session_id,)
+                "UPDATE canvas_deployments SET baton_request = NULL WHERE narratron_session_id = ?",
+                (narratron_session_id,)
             )
             conn.commit()
-        return self.get_session_baton_state(session_id)
+        return self.get_session_baton_state(narratron_session_id)
 
-    def take_back_baton(self, session_id: str, owner_id: int) -> Dict[str, Any]:
-        dep = self.get_deployment(session_id)
+    def take_back_baton(self, narratron_session_id: str, owner_id: int) -> Dict[str, Any]:
+        dep = self.get_deployment(narratron_session_id)
         if not dep or dep["user_id"] != owner_id:
             raise ValueError("Only the session owner can take back the baton.")
             
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE session_id = ?",
-                (owner_id, session_id)
+                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE narratron_session_id = ?",
+                (owner_id, narratron_session_id)
             )
             conn.commit()
-        return self.get_session_baton_state(session_id)
+        return self.get_session_baton_state(narratron_session_id)
 
-    async def get_session_baton_state_async(self, session_id: str) -> Optional[Dict[str, Any]]:
-        return await asyncio.to_thread(self.get_session_baton_state, session_id)
+    async def get_session_baton_state_async(self, narratron_session_id: str) -> Optional[Dict[str, Any]]:
+        return await asyncio.to_thread(self.get_session_baton_state, narratron_session_id)
 
-    async def add_allowed_orator_async(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.add_allowed_orator, session_id, owner_id, target_user_id)
+    async def add_allowed_orator_async(self, narratron_session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.add_allowed_orator, narratron_session_id, owner_id, target_user_id)
 
-    async def remove_allowed_orator_async(self, session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.remove_allowed_orator, session_id, owner_id, target_user_id)
+    async def remove_allowed_orator_async(self, narratron_session_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.remove_allowed_orator, narratron_session_id, owner_id, target_user_id)
 
-    async def request_baton_async(self, session_id: str, owner_id: int, target_user_id: int, timeout_seconds: int = 30) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.request_baton, session_id, owner_id, target_user_id, timeout_seconds)
+    async def request_baton_async(self, narratron_session_id: str, owner_id: int, target_user_id: int, timeout_seconds: int = 30) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.request_baton, narratron_session_id, owner_id, target_user_id, timeout_seconds)
 
-    async def accept_baton_async(self, session_id: str, target_user_id: int) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.accept_baton, session_id, target_user_id)
+    async def accept_baton_async(self, narratron_session_id: str, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.accept_baton, narratron_session_id, target_user_id)
 
-    async def decline_baton_async(self, session_id: str, target_user_id: Optional[int] = None) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.decline_baton, session_id, target_user_id)
+    async def decline_baton_async(self, narratron_session_id: str, target_user_id: Optional[int] = None) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.decline_baton, narratron_session_id, target_user_id)
 
-    async def take_back_baton_async(self, session_id: str, owner_id: int) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.take_back_baton, session_id, owner_id)
-
-
-
+    async def take_back_baton_async(self, narratron_session_id: str, owner_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.take_back_baton, narratron_session_id, owner_id)

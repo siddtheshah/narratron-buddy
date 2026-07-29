@@ -111,11 +111,11 @@
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js";
         // Extract Session ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
-        let currentSessionId = urlParams.get('session_id') || '';
-        if (!currentSessionId) {
+        let currentNarratronSessionId = urlParams.get('narratron_session_id') || '';
+        if (!currentNarratronSessionId) {
             const pathParts = window.location.pathname.split('/');
             if (pathParts.length > 2 && pathParts[1] === 'obs') {
-                currentSessionId = decodeURIComponent(pathParts[2]);
+                currentNarratronSessionId = decodeURIComponent(pathParts[2]);
             }
         }
 
@@ -152,7 +152,7 @@
 
         async function fetchLatestImage() {
             try {
-                const apiUrl = currentSessionId ? `/api/latest?session_id=${encodeURIComponent(currentSessionId)}` : '/api/latest';
+                const apiUrl = currentNarratronSessionId ? `/api/latest?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
 
@@ -189,7 +189,7 @@
 
         // Connect WebSocket for Doodles Sync
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currentSessionId ? `?session_id=${encodeURIComponent(currentSessionId)}` : '');
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currentNarratronSessionId ? `?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '');
         const ws = new WebSocket(wsUrl);
 
         ws.onmessage = (event) => {

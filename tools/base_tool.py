@@ -67,12 +67,12 @@ class BaseTools:
     def __init__(
         self,
         config: dict = None,
-        session_id: str = "",
+        narratron_session_id: str = "",
         canvas_state_service: Any = None,
         default_cooldown: float = 0.0,
     ):
         self.config: dict = config or {}
-        self.active_session_id: str = session_id
+        self.active_narratron_session_id: str = narratron_session_id
         self.canvas_state_service: Any = canvas_state_service
 
         # Callback hooks
@@ -87,12 +87,24 @@ class BaseTools:
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", default_cooldown))
 
     @property
+    def narratron_session_id(self) -> str:
+        return self.active_narratron_session_id
+
+    @narratron_session_id.setter
+    def narratron_session_id(self, value: str) -> None:
+        self.active_narratron_session_id = value
+
+    @property
+    def active_session_id(self) -> str:
+        return self.active_narratron_session_id
+
+    @property
     def session_id(self) -> str:
-        return self.active_session_id
+        return self.active_narratron_session_id
 
     @session_id.setter
     def session_id(self, value: str) -> None:
-        self.active_session_id = value
+        self.active_narratron_session_id = value
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("last_") and name.endswith("_time"):

@@ -69,17 +69,17 @@ class TestSessionAPI(BaseTestCase):
         owner = db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")
         self.assertTrue(db.record_deployment("test_session", owner["id"], "KEY-CANVAS", cost=5.0))
 
-        response = self.client.get("/canvas?session_id=test_session")
+        response = self.client.get("/canvas?narratron_session_id=test_session")
         self.assertEqual(response.status_code, 403)
 
         response = self.client.get(
-            "/canvas?session_id=test_session&join_key=KEY-CANVAS",
+            "/canvas?narratron_session_id=test_session&join_key=KEY-CANVAS",
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
         self.assertNotIn("join_key", response.headers["location"])
 
-        response = self.client.get("/canvas?session_id=test_session")
+        response = self.client.get("/canvas?narratron_session_id=test_session")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron Canvas", response.text)
         self.assertIn('href="/about"', response.text)
@@ -89,15 +89,15 @@ class TestSessionAPI(BaseTestCase):
         self.assertTrue(db.record_deployment("protected_session", owner["id"], "KEY-PROTECTED", cost=5.0))
 
         self.assertEqual(
-            self.client.get("/api/latest?session_id=protected_session").status_code,
+            self.client.get("/api/latest?narratron_session_id=protected_session").status_code,
             403,
         )
         self.client.get(
-            "/canvas?session_id=protected_session&join_key=KEY-PROTECTED",
+            "/canvas?narratron_session_id=protected_session&join_key=KEY-PROTECTED",
             follow_redirects=False,
         )
         self.assertEqual(
-            self.client.get("/api/latest?session_id=protected_session").status_code,
+            self.client.get("/api/latest?narratron_session_id=protected_session").status_code,
             200,
         )
 
@@ -141,7 +141,7 @@ class TestSessionAPI(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "ok")
-        session_id = data["session_id"]
+        session_id = data["narratron_session_id"]
         join_key = data["session"]["join_key"]
         self.assertIsNotNone(session_id)
         self.assertIsNotNone(join_key)
@@ -153,7 +153,7 @@ class TestSessionAPI(BaseTestCase):
         # Test resolving join key
         res_key = self.client.post("/api/sessions/resolve-join-key", json={"join_key": join_key})
         self.assertEqual(res_key.status_code, 200)
-        self.assertEqual(res_key.json()["session_id"], session_id)
+        self.assertEqual(res_key.json()["narratron_session_id"], session_id)
 
         # Test destroying session by owner
         del_res = self.client.delete(f"/api/sessions/{session_id}")
@@ -178,7 +178,7 @@ class TestSessionAPI(BaseTestCase):
             data={"name": "Export Test Session"}
         )
         self.assertEqual(response.status_code, 200)
-        session_id = response.json()["session_id"]
+        session_id = response.json()["narratron_session_id"]
 
         session_dir = local_deployer._get_session_dir(session_id)
         out_dir = session_dir / "output"
@@ -191,7 +191,7 @@ class TestSessionAPI(BaseTestCase):
 
         # Simulate update_shown_image and history addition
         cs = canvas_states.get(session_id)
-        cs.update_shown_image(str(img_path), session_id=session_id)
+        cs.update_shown_image(str(img_path), narratron_session_id=session_id)
 
         # Also save session to DB
         self.client.post(f"/api/sessions/{session_id}/save")

@@ -606,7 +606,7 @@
   <div id="join-modal" class="join-modal" hidden role="dialog" aria-modal="true" aria-labelledby="join-modal-title">
     <div class="join-modal-card">
       <h2 id="join-modal-title">Enter session key</h2>
-      <p>Enter the Join Key for <code id="join-session-id"></code> to view its canvas.</p>
+      <p>Enter the Join Key for <code id="join-narratron-session-id"></code> to view its canvas.</p>
       <input id="join-key-input" type="text" placeholder="KEY-XXXXXX" autocomplete="off">
       <div id="join-error" class="join-error" role="alert"></div>
       <div class="join-modal-actions">
@@ -691,28 +691,28 @@
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td style="font-weight: 600; color: var(--text-muted);">#${idx + 1}</td>
-          <td class="session-name">${escapeHtml(s.name || s.session_id)}</td>
-          <td><span class="session-id-tag">${escapeHtml(s.session_id)}</span></td>
+          <td class="session-name">${escapeHtml(s.name || s.narratron_session_id)}</td>
+          <td><span class="session-id-tag">${escapeHtml(s.narratron_session_id)}</span></td>
           <td><span class="views-badge">👁️ ${s.views}</span></td>
           <td>
-            <button type="button" class="nav-btn view-canvas-btn" data-session-id="${escapeHtml(s.session_id)}" style="padding: 6px 12px; font-size: 0.85rem;">
+            <button type="button" class="nav-btn view-canvas-btn" data-narratron-session-id="${escapeHtml(s.narratron_session_id)}" style="padding: 6px 12px; font-size: 0.85rem;">
               View Canvas
             </button>
           </td>
         `;
-        tr.querySelector('.view-canvas-btn').addEventListener('click', () => openJoinKeyModal(s.session_id));
+        tr.querySelector('.view-canvas-btn').addEventListener('click', () => openJoinKeyModal(s.narratron_session_id));
         tbody.appendChild(tr);
       });
     }
 
-    let pendingSessionId = null;
+    let pendingNarratronSessionId = null;
     const joinModal = document.getElementById('join-modal');
     const joinKeyInput = document.getElementById('join-key-input');
     const joinError = document.getElementById('join-error');
 
-    function openJoinKeyModal(sessionId) {
-      pendingSessionId = sessionId;
-      document.getElementById('join-session-id').textContent = sessionId;
+    function openJoinKeyModal(narratronSessionId) {
+      pendingNarratronSessionId = narratronSessionId;
+      document.getElementById('join-narratron-session-id').textContent = narratronSessionId;
       joinKeyInput.value = '';
       joinError.textContent = '';
       joinModal.hidden = false;
@@ -721,7 +721,7 @@
 
     function closeJoinKeyModal() {
       joinModal.hidden = true;
-      pendingSessionId = null;
+      pendingNarratronSessionId = null;
     }
 
     async function submitJoinKey() {
@@ -738,13 +738,13 @@
           body: JSON.stringify({ join_key: joinKey }),
         });
         const data = await response.json();
-        if (!response.ok || data.session_id !== pendingSessionId) {
+        if (!response.ok || data.narratron_session_id !== pendingNarratronSessionId) {
           joinError.textContent = response.ok
             ? 'That Join Key belongs to a different session.'
             : (data.detail || 'Invalid Join Key.');
           return;
         }
-        window.location.href = `/canvas?session_id=${encodeURIComponent(data.session_id)}`;
+        window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(data.narratron_session_id)}`;
       } catch (error) {
         joinError.textContent = 'Unable to verify the Join Key. Please try again.';
       }

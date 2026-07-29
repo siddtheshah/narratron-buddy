@@ -45,11 +45,11 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_init_session_paths(self, mock_genai_client):
-        session_id = "test_session_abc"
-        tools = ImageTools(self.config, session_id=session_id)
-        self.assertEqual(tools.active_session_id, session_id)
-        self.assertTrue(tools.output_dir.endswith(os.path.join("sessions", session_id, "output", "artifacts", "images")))
-        self.assertTrue(tools.reference_dir.endswith(os.path.join("sessions", session_id, "references")))
+        narratron_session_id = "test_session_abc"
+        tools = ImageTools(self.config, narratron_session_id=narratron_session_id)
+        self.assertEqual(tools.active_narratron_session_id, narratron_session_id)
+        self.assertTrue(tools.output_dir.endswith(os.path.join("sessions", narratron_session_id, "output", "artifacts", "images")))
+        self.assertTrue(tools.reference_dir.endswith(os.path.join("sessions", narratron_session_id, "references")))
         self.assertEqual(tools.get_effective_output_dir(), tools.output_dir)
 
     @patch("tools.image_tool.genai.Client")
@@ -57,8 +57,8 @@ class TestImageTools(BaseTestCase):
         mock_client_inst = MagicMock()
         mock_genai_client.return_value = mock_client_inst
 
-        tools1 = ImageTools(self.config, session_id="session_1")
-        tools2 = ImageTools(self.config, session_id="session_2")
+        tools1 = ImageTools(self.config, narratron_session_id="session_1")
+        tools2 = ImageTools(self.config, narratron_session_id="session_2")
 
         mock_genai_client.assert_called_once()
         self.assertIs(tools1.client, tools2.client)
@@ -68,7 +68,7 @@ class TestImageTools(BaseTestCase):
         canvas_state_service = MagicMock()
         tools = ImageTools(
             self.config,
-            session_id="drawing_indicator",
+            narratron_session_id="drawing_indicator",
             canvas_state_service=canvas_state_service,
         )
         tools.last_create_time = 0.0
@@ -79,15 +79,15 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(
             canvas_state_service.set_tool_activity.call_args_list,
             [
-                call("image", active=True, session_id="drawing_indicator"),
-                call("image", active=False, session_id="drawing_indicator"),
+                call("image", active=True, narratron_session_id="drawing_indicator"),
+                call("image", active=False, narratron_session_id="drawing_indicator"),
             ],
         )
 
     @patch("tools.image_tool.genai.Client")
     def test_default_style_is_loaded_and_appended_only_when_needed(self, mock_genai_client):
-        session_id = "session_default_style"
-        session_dir = Path(__file__).resolve().parent.parent / "sessions" / session_id
+        narratron_session_id = "session_default_style"
+        session_dir = Path(__file__).resolve().parent.parent / "sessions" / narratron_session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         self.addCleanup(shutil.rmtree, session_dir, True)
         (session_dir / "style.txt").write_text("moody watercolor", encoding="utf-8")
@@ -97,7 +97,7 @@ class TestImageTools(BaseTestCase):
         mock_genai_client.return_value.models.generate_content.return_value.candidates = [
             MagicMock(content=MagicMock(parts=[mock_part]))
         ]
-        tools = ImageTools(self.config, session_id=session_id)
+        tools = ImageTools(self.config, narratron_session_id=narratron_session_id)
         tools.output_dir = self.temp_dir
 
         tools.create_image("a moonlit harbor", display=False)
@@ -111,8 +111,8 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_references_loading_and_caching(self, mock_genai_client):
-        session_id = "session_ref_test"
-        tools = ImageTools(self.config, session_id=session_id)
+        narratron_session_id = "session_ref_test"
+        tools = ImageTools(self.config, narratron_session_id=narratron_session_id)
 
         ref_path = os.path.join(tools.reference_dir, "hero_character.png")
         img = Image.new("RGB", (10, 10), color="red")
@@ -124,7 +124,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(manifest[0]["name"], "hero_character")
         self.assertEqual(manifest[0]["alias"], "hero_character")
 
-        tools2 = ImageTools(self.config, session_id=session_id)
+        tools2 = ImageTools(self.config, narratron_session_id=narratron_session_id)
         self.assertEqual(len(tools2.list_references()), 1)
 
     @patch("tools.image_tool.genai.Client")
@@ -141,7 +141,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.return_value = mock_response
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -169,7 +169,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.return_value = mock_response
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -194,7 +194,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.return_value = mock_response
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         tools.reference_dir = os.path.join(self.temp_dir, "refs")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -210,7 +210,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_create_image_with_missing_reference_fails(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         tools.reference_dir = os.path.join(self.temp_dir, "refs")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -221,7 +221,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_independent_cooldowns(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
         callback = MagicMock()
@@ -239,7 +239,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_show_image_and_cooldown(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
         callback = MagicMock()
@@ -259,7 +259,7 @@ class TestImageTools(BaseTestCase):
     @patch("tools.image_tool.genai.Client")
     def test_show_image_transition(self, mock_genai_client):
         """Test that show_image forwards the transition parameter to the callback."""
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
         callback = MagicMock()
@@ -275,7 +275,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_search_and_browse_images(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -307,7 +307,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance = MagicMock()
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -344,7 +344,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.return_value = mock_response
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -372,7 +372,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.return_value = mock_response
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -397,7 +397,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.return_value = mock_response
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         tools.reference_dir = os.path.join(self.temp_dir, "refs")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -423,7 +423,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance.models.generate_content.return_value = mock_response
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         tools.reference_dir = os.path.join(self.temp_dir, "refs")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -453,7 +453,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_create_image_with_missing_reference_fails(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         tools.reference_dir = os.path.join(self.temp_dir, "refs")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -464,7 +464,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_independent_cooldowns(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
         callback = MagicMock()
@@ -482,7 +482,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_show_image_and_cooldown(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
         callback = MagicMock()
@@ -502,7 +502,7 @@ class TestImageTools(BaseTestCase):
     @patch("tools.image_tool.genai.Client")
     def test_show_image_transition(self, mock_genai_client):
         """Test that show_image forwards the transition parameter to the callback."""
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
         callback = MagicMock()
@@ -518,7 +518,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_search_and_browse_images(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -550,7 +550,7 @@ class TestImageTools(BaseTestCase):
         mock_client_instance = MagicMock()
         mock_genai_client.return_value = mock_client_instance
 
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
@@ -575,7 +575,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_cooldown_expired_callbacks(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         tools.cooldown_duration = 0.1
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -596,7 +596,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.genai.Client")
     def test_on_after_tool_call_and_canvas_info(self, mock_genai_client):
-        tools = ImageTools(self.config, session_id="test_session")
+        tools = ImageTools(self.config, narratron_session_id="test_session")
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
 
