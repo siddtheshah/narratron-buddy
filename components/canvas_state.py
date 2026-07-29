@@ -57,6 +57,8 @@ class CanvasStateManager:
         # previous server process.
         self.image_generation_active: bool = False
         self.notes_activity_until: float = 0.0
+        self.live_connection_active: bool = False
+        self.live_connection_until: float = 0.0
 
         self.load_state_from_disk()
 
@@ -237,11 +239,19 @@ class CanvasStateManager:
             self.image_generation_active = bool(active)
         elif tool == "notes" and active:
             self.notes_activity_until = time.time() + max(0.0, recent_seconds)
+        elif tool == "live":
+            self.live_connection_active = bool(active)
+            if active and recent_seconds > 0:
+                self.live_connection_until = time.time() + max(0.0, recent_seconds)
+            elif not active:
+                self.live_connection_until = 0.0
 
     def get_tool_activity(self) -> Dict[str, bool]:
+        now = time.time()
         return {
             "image_generating": self.image_generation_active,
-            "notes_recent": time.time() < self.notes_activity_until,
+            "notes_recent": now < self.notes_activity_until,
+            "live_ready": self.live_connection_active or (now < self.live_connection_until),
         }
 
     def get_latest_state(self) -> Dict[str, Any]:

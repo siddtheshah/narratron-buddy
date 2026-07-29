@@ -31,6 +31,8 @@
 - [x] Show flashing indicator for when the agent is "drawing"
   - Helps user understand when agent is doing stuff.
   - Add an indicator for notes taken too.
+- [ ] Show icon for "warming up".
+  - Basically, the agent should be polled while connect to verify it is listening.
 
 ## Narratron UI & Canvas Features
 

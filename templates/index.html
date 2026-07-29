@@ -832,6 +832,24 @@
             border-color: rgba(165, 180, 252, 0.7);
         }
 
+        .agent-activity-icon.live {
+            color: #10b981;
+            border-color: rgba(16, 185, 129, 0.7);
+            animation: livePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes livePulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+            }
+
+            50% {
+                transform: scale(1.08);
+                box-shadow: 0 0 22px rgba(16, 185, 129, 0.85);
+            }
+        }
+
         @keyframes agentActivityPulse {
             50% {
                 transform: scale(1.08);
@@ -1303,6 +1321,18 @@
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
             <div id="agent-activity-tray" aria-label="Agent activity" aria-live="polite">
+                <div id="agent-live-indicator" class="agent-activity-icon live" role="status"
+                    title="Gemini Live API Ready & Healthy" aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M2 10v4" />
+                        <path d="M6 6v12" />
+                        <path d="M10 3v18" />
+                        <path d="M14 8v8" />
+                        <path d="M18 5v14" />
+                        <path d="M22 10v4" />
+                    </svg>
+                </div>
                 <div id="agent-drawing-indicator" class="agent-activity-icon drawing" role="status"
                     title="Agent is drawing" aria-hidden="true">
                     <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -1961,6 +1991,7 @@
         });
 
         const promptBtn = document.getElementById('prompt-toggle-btn');
+        const liveIndicator = document.getElementById('agent-live-indicator');
         const drawingIndicator = document.getElementById('agent-drawing-indicator');
         const notesIndicator = document.getElementById('agent-notes-indicator');
 
@@ -1970,6 +2001,8 @@
                 element.classList.toggle('active', !!visible);
                 element.setAttribute('aria-hidden', String(!visible));
             };
+            const isLiveReady = !!(toolActivity.live_ready || (agentWs && agentWs.readyState === WebSocket.OPEN && window.isSetupComplete));
+            setVisible(liveIndicator, isLiveReady);
             setVisible(drawingIndicator, toolActivity.image_generating);
             setVisible(notesIndicator, toolActivity.notes_recent);
         }
@@ -2968,8 +3001,7 @@
         // Audio Recorder Callback
         function audioRecorderHandler(pcmData) {
             if (!isRecording) return;
-            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                console.warn("[OratorAudio] Mic is active but the agent WebSocket is not open; dropping audio frame.");
+            if (!agentWs || agentWs.readyState !== WebSocket.OPEN || !window.isSetupComplete) {
                 return;
             }
             agentWs.send(pcmData);
@@ -3033,11 +3065,24 @@
                     console.log("WS_MSG:" + e.data);
                     try {
                         const data = JSON.parse(e.data);
-                        if (data.setupComplete) {
+                        if (data.setupComplete || data.type === 'pong') {
                             window.isSetupComplete = true;
+                            if (typeof updateAgentActivity === 'function') {
+                                updateAgentActivity({ live_ready: true });
+                            }
                         }
                     } catch (err) { }
                 };
+
+                if (!window.agentPingInterval) {
+                    window.agentPingInterval = setInterval(() => {
+                        if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                            try {
+                                agentWs.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+                            } catch (e) { }
+                        }
+                    }, 5000);
+                }
             });
         }
 
@@ -3046,11 +3091,18 @@
             if (isRecording) {
                 stopMicStream();
             }
+            if (window.agentPingInterval) {
+                clearInterval(window.agentPingInterval);
+                window.agentPingInterval = null;
+            }
             if (agentWs) {
                 try { agentWs.close(); } catch (e) { }
                 agentWs = null;
                 window.agentWs = null; // Clear globally
                 window.isSetupComplete = false;
+            }
+            if (typeof updateAgentActivity === 'function') {
+                updateAgentActivity({ live_ready: false });
             }
             agentConnectBtn.textContent = '🔌 Connect Agent';
             agentConnectBtn.style.background = '#3b82f6'; // Blue
