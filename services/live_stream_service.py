@@ -94,7 +94,7 @@ async def handle_live_websocket_connection(
                 audio_blob = types.Blob(
                     mime_type="audio/pcm;rate=16000", data=audio_data
                 )
-                agent_session.live_request_queue.send_realtime(audio_blob)
+                agent_session.send_realtime(audio_blob)
 
             elif "text" in message:
                 text_data = message.get("text")
@@ -111,7 +111,7 @@ async def handle_live_websocket_connection(
                     user_text = json_message.get("text", "")
                     if user_text and user_text.strip():
                         content = types.Content(parts=[types.Part(text=user_text)])
-                        agent_session.live_request_queue.send_content(content)
+                        agent_session.send_content(content)
 
                 elif msg_type == "mic_detect":
                     rms = json_message.get("rms")
@@ -134,7 +134,7 @@ async def handle_live_websocket_connection(
                             if image_data:
                                 mime_type = json_message.get("mimeType", "image/jpeg")
                                 image_blob = types.Blob(mime_type=mime_type, data=image_data)
-                                agent_session.live_request_queue.send_realtime(image_blob)
+                                agent_session.send_realtime(image_blob)
                         except Exception as e:
                             logger.warning(f"Failed to decode image payload: {e}")
     except (WebSocketDisconnect, RuntimeError):

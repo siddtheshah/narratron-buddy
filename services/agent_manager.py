@@ -155,13 +155,29 @@ class AgentSession:
     def websocket_connected(self) -> bool:
         return len(self.websockets) > 0
 
+    def send_content(self, content: types.Content) -> bool:
+        """Send content to live_request_queue if user is connected; suppress otherwise."""
+        if not self.websocket_connected:
+            logger.debug(f"[AgentSession] User disconnected; suppressing content input for session {self.narratron_session_id}.")
+            return False
+        self.live_request_queue.send_content(content)
+        return True
+
+    def send_realtime(self, blob: types.Blob) -> bool:
+        """Send realtime audio/image blob to live_request_queue if user is connected; suppress otherwise."""
+        if not self.websocket_connected:
+            logger.debug(f"[AgentSession] User disconnected; suppressing realtime input for session {self.narratron_session_id}.")
+            return False
+        self.live_request_queue.send_realtime(blob)
+        return True
+
     def _setup_tool_callbacks(self):
         def handle_cooldown_expired(tool_name: str):
             msg = f"[System Notification] The cooldown for '{tool_name}' has expired. You may now call {tool_name} again."
             logger.info(f"[AgentSession] Cooldown expired notification: {msg}")
             try:
                 content = types.Content(parts=[types.Part(text=msg)])
-                self.live_request_queue.send_content(content)
+                self.send_content(content)
             except Exception as e:
                 logger.error(f"[AgentSession] Failed to send cooldown expired notification: {e}")
 
@@ -194,13 +210,16 @@ class AgentSession:
 
     def send_canvas_state(self, *, force: bool = False) -> bool:
         """Inject current canvas image/music state into LiveRequestQueue."""
+        if not self.websocket_connected:
+            logger.debug(f"[AgentSession] User disconnected; suppressing canvas state update for session {self.narratron_session_id}.")
+            return False
         now = time.monotonic()
         with self.state_lock:
             if not force and now - self.last_canvas_state_sent < CANVAS_STATE_REFRESH_SECONDS:
                 return False
             msg = format_canvas_state(self.canvas_state_manager)
             try:
-                self.live_request_queue.send_content(types.Content(parts=[types.Part(text=msg)]))
+                self.send_content(types.Content(parts=[types.Part(text=msg)]))
             except Exception as e:
                 logger.error(f"[AgentSession] Failed to send canvas observability update: {e}", exc_info=True)
                 return False
@@ -270,18 +289,26 @@ class AgentSession:
 
     async def add_websocket(self, websocket: WebSocket):
         async with self.ws_lock:
+            was_disconnected = len(self.websockets) == 0
             self.websockets.add(websocket)
             self.status = "active"
             self.last_active_at = time.time()
             logger.info(f"[AgentSession] WebSocket attached to session {self.narratron_session_id} (total={len(self.websockets)})")
 
+        if was_disconnected:
+            logger.info(f"[AgentSession] User reconnected for session {self.narratron_session_id}; re-enabling state information.")
+            self.send_canvas_state(force=True)
+
     async def remove_websocket(self, websocket: WebSocket):
         async with self.ws_lock:
             self.websockets.discard(websocket)
             self.last_active_at = time.time()
-            if len(self.websockets) == 0:
+            is_now_disconnected = len(self.websockets) == 0
+            if is_now_disconnected:
                 self.status = "ready"
             logger.info(f"[AgentSession] WebSocket detached from session {self.narratron_session_id} (remaining={len(self.websockets)})")
+            if is_now_disconnected:
+                logger.info(f"[AgentSession] User disconnected for session {self.narratron_session_id}; inputs are now suppressed.")
 
     async def broadcast_text(self, text: str):
         async with self.ws_lock:

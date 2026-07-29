@@ -104,7 +104,80 @@ class TestAgentSessionManager(unittest.TestCase):
         )
         mock_runner.run_live.assert_called_once()
 
+    def test_suppress_inputs_when_disconnected(self):
+        import asyncio
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+
+        session = AgentSession(
+            narratron_session_id="test_suppress",
+            agent=mock_agent,
+            runner=mock_runner,
+            session_service=MagicMock(),
+            artifact_service=MagicMock(),
+        )
+
+        session.live_request_queue = MagicMock()
+        mock_ws = MagicMock()
+
+        # Connect websocket (which auto-triggers state re-enabling canvas update)
+        asyncio.run(session.add_websocket(mock_ws))
+        self.assertTrue(session.websocket_connected)
+        session.live_request_queue.reset_mock()
+
+        # Send input while connected succeeds
+        dummy_content = MagicMock()
+        dummy_blob = MagicMock()
+        self.assertTrue(session.send_content(dummy_content))
+        session.live_request_queue.send_content.assert_called_once_with(dummy_content)
+        session.live_request_queue.send_content.reset_mock()
+
+        self.assertTrue(session.send_realtime(dummy_blob))
+        session.live_request_queue.send_realtime.assert_called_once_with(dummy_blob)
+        session.live_request_queue.send_realtime.reset_mock()
+
+        # Disconnect websocket
+        asyncio.run(session.remove_websocket(mock_ws))
+        self.assertFalse(session.websocket_connected)
+
+        # Now inputs should be suppressed and discarded
+        self.assertFalse(session.send_content(dummy_content))
+        session.live_request_queue.send_content.assert_not_called()
+
+        self.assertFalse(session.send_realtime(dummy_blob))
+        session.live_request_queue.send_realtime.assert_not_called()
+
+        self.assertFalse(session.send_canvas_state(force=True))
+
+    def test_reenable_state_on_reconnect(self):
+        import asyncio
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+
+        session = AgentSession(
+            narratron_session_id="test_reconnect",
+            agent=mock_agent,
+            runner=mock_runner,
+            session_service=MagicMock(),
+            artifact_service=MagicMock(),
+        )
+
+        session.live_request_queue = MagicMock()
+        mock_ws = MagicMock()
+
+        with patch.object(session, "send_canvas_state") as mock_send_canvas:
+            # Initially disconnected
+            self.assertFalse(session.websocket_connected)
+
+            # Connect websocket -> should trigger send_canvas_state(force=True)
+            asyncio.run(session.add_websocket(mock_ws))
+            self.assertTrue(session.websocket_connected)
+            mock_send_canvas.assert_called_once_with(force=True)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

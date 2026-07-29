@@ -2689,11 +2689,8 @@
                 roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
                 roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
                 oratorControls.style.display = 'flex';
-                statusIndicator.classList.add('disconnected');
-
-                // Auto-connect agent if newly active orator or agent WebSocket is not open
-                if (!wasActiveOrator || !agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                    connectAgent().catch(err => console.error("Auto-connect agent failed:", err));
+                if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                    statusIndicator.classList.add('disconnected');
                 }
             } else {
                 roleBadge.textContent = 'Viewer';
@@ -2766,9 +2763,6 @@
                     hideBatonRequestModal();
                     if (data && !data.detail) {
                         updateBatonStateUI(data, data.active_viewers);
-                        if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                            connectAgent().catch(err => console.error("Auto-connect agent failed on accept:", err));
-                        }
                     }
                 })
                 .catch(err => console.error("Error accepting baton:", err));
@@ -2794,9 +2788,6 @@
                 .then(data => {
                     if (data && !data.detail) {
                         updateBatonStateUI(data, data.active_viewers);
-                        if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                            connectAgent().catch(err => console.error("Auto-connect agent failed on takeback:", err));
-                        }
                     }
                 })
                 .catch(err => console.error("Error taking back baton:", err));
@@ -3085,14 +3076,9 @@
             });
         }
 
-        // Auto-start agent on page load for Orators
+        // Check agent status on page load for Orators
         if (isOrator) {
-            checkAgentStatus().then((status) => {
-                if (!status || !status.agent_running) {
-                    console.log("Auto-starting agent on page load...");
-                    startAgentSession().catch(e => console.warn("Auto-start agent on page load failed:", e));
-                }
-            });
+            checkAgentStatus();
         }
 
         // Connect Agent WebSocket
@@ -3978,7 +3964,7 @@
 
             <!-- Unmute Reminder Badge -->
             <div style="font-size: 0.85rem; color: #fbbf24; background: rgba(251, 191, 36, 0.1); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3); margin-bottom: 1rem; text-align: center;">
-                💡 <strong>Tip:</strong> Agent connects automatically. Remember to click <strong>🎤 Mic Off</strong> (or press <code style="background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px; color: #fff;">Ctrl+Shift+[</code>) to unmute your mic!
+                💡 <strong>Tip:</strong> Click <strong>🔌 Connect</strong> in top bar to connect to the agent when ready!
             </div>
 
 

@@ -620,6 +620,33 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(info["path"], file_path)
         self.assertEqual(info["transition"], "fade")
 
+    @patch("tools.image_tool.genai.Client")
+    def test_on_show_image_triggers_with_and_without_canvas_state_service(self, mock_genai_client):
+        mock_canvas_service = MagicMock()
+        tools = ImageTools(self.config, narratron_session_id="test_session", canvas_state_service=mock_canvas_service)
+        tools.output_dir = os.path.join(self.temp_dir, "output")
+        os.makedirs(tools.output_dir, exist_ok=True)
+
+        on_show_image_cb = MagicMock()
+        tools.on_show_image = on_show_image_cb
+
+        file_path = os.path.join(tools.output_dir, "view_test_cb.jpg")
+        img = Image.new("RGB", (10, 10), color="green")
+        img.save(file_path)
+
+        res = tools.show_image(file_path, transition="crossfade", effect="gleam3")
+        self.assertIn("Successfully displayed", res)
+
+        # Verify canvas_state_service.show_image was called
+        mock_canvas_service.show_image.assert_called_once_with(
+            file_path, narratron_session_id="test_session", transition="crossfade", effect="gleam3"
+        )
+        # Verify on_show_image callback was ALSO triggered
+        on_show_image_cb.assert_called_once_with(
+            file_path, transition="crossfade", effect="gleam3"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
+

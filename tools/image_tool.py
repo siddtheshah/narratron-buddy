@@ -417,14 +417,17 @@ class ImageTools(BaseTools):
                         transition=transition,
                         effect=effect,
                     )
-                elif self.on_show_image:
+                if self.on_show_image:
                     logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}', transition='{transition}', effect='{effect}'")
-                    self.on_show_image(
-                        resolved_path,
-                        transition=transition,
-                        effect=effect,
-                    )
-                else:
+                    try:
+                        self.on_show_image(
+                            resolved_path,
+                            transition=transition,
+                            effect=effect,
+                        )
+                    except Exception as e:
+                        logger.error(f"[show_image tool] Exception in on_show_image callback: {e}")
+                elif not canvas_state_service:
                     logger.warning("[show_image tool] on_show_image callback is not set")
                 self.currently_displayed_image_path = resolved_path
                 self.currently_displayed_image_transition = transition
