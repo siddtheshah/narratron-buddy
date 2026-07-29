@@ -231,6 +231,14 @@ async def handle_live_websocket_connection(
                         )
                         live_request_queue.send_content(content)
 
+                    elif json_message.get("type") == "mic_detect":
+                        try:
+                            rms = json_message.get("rms")
+                            ts = json_message.get("ts")
+                            logger.info(f"[Mic Detection] session={session_id} user={user_id} rms={rms} ts={ts}")
+                        except Exception:
+                            logger.exception("Failed to process mic_detect message")
+
                     elif json_message.get("type") == "image":
                         image_data = base64.b64decode(json_message["data"])
                         mime_type = json_message.get("mimeType", "image/jpeg")

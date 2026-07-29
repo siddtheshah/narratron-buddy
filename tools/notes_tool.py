@@ -43,6 +43,10 @@ class NotesTools:
                 f.write(content)
             
             logger.info(f"Saved note '{filename}' at {filepath}.")
+            if self.canvas_state_service:
+                self.canvas_state_service.set_tool_activity(
+                    "notes", session_id=self.active_session_id, recent_seconds=5.0
+                )
             return f"Successfully saved note '{filename}'."
         except Exception as e:
             logger.error(f"Error editing note: {e}")

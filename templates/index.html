@@ -338,6 +338,39 @@
             line-height: 1.45;
         }
 
+        #agent-activity-tray {
+            position: absolute;
+            top: 1.25rem;
+            right: 1.25rem;
+            z-index: 20;
+            display: flex;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+
+        .agent-activity-icon {
+            display: none;
+            width: 42px;
+            height: 42px;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.82);
+            color: #e2e8f0;
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .agent-activity-icon.active { display: flex; }
+        .agent-activity-icon.drawing { color: #fbbf24; border-color: rgba(251, 191, 36, 0.7); animation: agentActivityPulse 1s ease-in-out infinite; }
+        .agent-activity-icon.notes { color: #a5b4fc; border-color: rgba(165, 180, 252, 0.7); }
+
+        @keyframes agentActivityPulse {
+            50% { transform: scale(1.08); box-shadow: 0 0 20px rgba(251, 191, 36, 0.7); }
+        }
+
         #chat-sidebar {
             position: relative;
             width: 320px;
@@ -750,6 +783,14 @@
             <img id="current-image" src="" alt="Narratron Generation" style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <img id="ghost-image" src="" alt="" aria-hidden="true" style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
+            <div id="agent-activity-tray" aria-label="Agent activity" aria-live="polite">
+                <div id="agent-drawing-indicator" class="agent-activity-icon drawing" role="status" title="Agent is drawing" aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 20 9-9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                </div>
+                <div id="agent-notes-indicator" class="agent-activity-icon notes" role="status" title="Agent updated notes" aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+                </div>
+            </div>
             <div id="prompt-toggle-btn" title="View Prompt">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/>
@@ -856,7 +897,16 @@
     </div>
 
     <script type="module">
-        import { startAudioRecorderWorklet, stopMicrophone } from "/static/js/audio-recorder.js";
+        let startAudioRecorderWorklet;
+        let stopMicrophone;
+        import(`/static/js/audio-recorder.js?cache_bust=${Date.now()}`)
+            .then((module) => {
+                startAudioRecorderWorklet = module.startAudioRecorderWorklet;
+                stopMicrophone = module.stopMicrophone;
+            })
+            .catch((err) => {
+                console.error("Failed to load audio-recorder.js:", err);
+            });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js";
 
         let lastTime = -1;
@@ -1271,6 +1321,18 @@
         });
         
         const promptBtn = document.getElementById('prompt-toggle-btn');
+        const drawingIndicator = document.getElementById('agent-drawing-indicator');
+        const notesIndicator = document.getElementById('agent-notes-indicator');
+
+        function updateAgentActivity(toolActivity = {}) {
+            const setVisible = (element, visible) => {
+                if (!element) return;
+                element.classList.toggle('active', !!visible);
+                element.setAttribute('aria-hidden', String(!visible));
+            };
+            setVisible(drawingIndicator, toolActivity.image_generating);
+            setVisible(notesIndicator, toolActivity.notes_recent);
+        }
         let promptPinned = false;
 
         promptBtn.addEventListener('mouseenter', () => {
@@ -1431,6 +1493,7 @@
                 const apiUrl = currentSessionId ? `/api/latest?session_id=${encodeURIComponent(currentSessionId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
+                updateAgentActivity(data.tool_activity);
                 
                 // Process music payload
                 if (data.music && data.music.time > lastPlaylistTime) {
@@ -1955,14 +2018,34 @@
 
         // Audio Recorder Callback
         function audioRecorderHandler(pcmData) {
-            if (agentWs && agentWs.readyState === WebSocket.OPEN && isRecording) {
-                agentWs.send(pcmData);
+            if (!isRecording) return;
+            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                console.warn("[OratorAudio] Mic is active but the agent WebSocket is not open; dropping audio frame.");
+                return;
             }
+            agentWs.send(pcmData);
         }
 
         // Connect Agent WebSocket
         function connectAgent() {
-            if (agentWs) return;
+            if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                return Promise.resolve(agentWs);
+            }
+
+            if (agentWs && agentWs.readyState === WebSocket.CONNECTING) {
+                return new Promise((resolve, reject) => {
+                    const pendingOpen = agentWs.onopen;
+                    const pendingError = agentWs.onerror;
+                    agentWs.onopen = () => {
+                        if (typeof pendingOpen === 'function') pendingOpen();
+                        resolve(agentWs);
+                    };
+                    agentWs.onerror = (err) => {
+                        if (typeof pendingError === 'function') pendingError(err);
+                        reject(err);
+                    };
+                });
+            }
 
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${sessionId}`;
@@ -1973,36 +2056,40 @@
             agentWs = new WebSocket(agentWsUrl);
             window.agentWs = agentWs; // Expose globally for testing/automation
 
-            agentWs.onopen = () => {
-                console.log("Agent WebSocket connected.");
-                agentConnectBtn.textContent = '🔌 Disconnect';
-                agentConnectBtn.style.background = '#ef4444'; // Red
-                agentMicBtn.disabled = false;
-                agentMicBtn.style.color = '#fff';
-                agentMicBtn.style.background = 'rgba(255,255,255,0.15)';
-                statusIndicator.classList.remove('disconnected'); // Set back to green
-            };
+            return new Promise((resolve, reject) => {
+                agentWs.onopen = () => {
+                    console.log("Agent WebSocket connected.");
+                    agentConnectBtn.textContent = '🔌 Disconnect';
+                    agentConnectBtn.style.background = '#ef4444'; // Red
+                    agentMicBtn.disabled = false;
+                    agentMicBtn.style.color = '#fff';
+                    agentMicBtn.style.background = 'rgba(255,255,255,0.15)';
+                    statusIndicator.classList.remove('disconnected'); // Set back to green
+                    resolve(agentWs);
+                };
 
-            agentWs.onclose = () => {
-                console.log("Agent WebSocket disconnected.");
-                cleanupAgentConnection();
-            };
+                agentWs.onclose = () => {
+                    console.log("Agent WebSocket disconnected.");
+                    cleanupAgentConnection();
+                };
 
-            agentWs.onerror = (err) => {
-                console.error("Agent WebSocket error:", err);
-                cleanupAgentConnection();
-            };
+                agentWs.onerror = (err) => {
+                    console.error("Agent WebSocket error:", err);
+                    cleanupAgentConnection();
+                    reject(err);
+                };
 
-            window.isSetupComplete = false;
-            agentWs.onmessage = (e) => {
-                console.log("WS_MSG:" + e.data);
-                try {
-                    const data = JSON.parse(e.data);
-                    if (data.setupComplete) {
-                        window.isSetupComplete = true;
-                    }
-                } catch (err) {}
-            };
+                window.isSetupComplete = false;
+                agentWs.onmessage = (e) => {
+                    console.log("WS_MSG:" + e.data);
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.setupComplete) {
+                            window.isSetupComplete = true;
+                        }
+                    } catch (err) {}
+                };
+            });
         }
 
         // Disconnect and cleanup
@@ -2028,6 +2115,15 @@
         // Start mic recording
         async function startMicStream() {
             try {
+                if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                    console.log("Agent WebSocket not open yet; connecting before starting microphone capture.");
+                    await connectAgent();
+                }
+
+                if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                    throw new Error("Agent WebSocket is not ready for audio forwarding.");
+                }
+
                 const [node, context, stream] = await startAudioRecorderWorklet(audioRecorderHandler);
                 audioRecorderNode = node;
                 audioRecorderContext = context;

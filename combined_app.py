@@ -26,6 +26,7 @@ from web_viewer_app import (
     canvas_states,
     db,
     get_current_user,
+    can_access_agent_websocket,
 )
 
 # Load environment variables
@@ -95,9 +96,7 @@ async def agent_websocket_endpoint(
     """
     current_user = get_current_user(websocket)
     deployment = db.get_deployment(session_id)
-    if not current_user or not deployment or deployment["user_id"] != current_user["id"]:
-        # Join-key holders may view and participate in the canvas, but only its
-        # owner may open the agent-control channel.
+    if not deployment or not can_access_agent_websocket(websocket, deployment, current_user=current_user):
         await websocket.close(code=1008)
         return
 

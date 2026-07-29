@@ -82,6 +82,17 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertEqual(state["history"][0]["path"], "/path/to/scene1.png")
         self.assertEqual(state["history"][1]["path"], "/path/to/scene2.png")
 
+    def test_tool_activity_is_transient_and_exposed_in_latest_state(self):
+        manager = CanvasStateManager(session_id="tool_activity")
+        manager.set_tool_activity("image", True)
+        manager.set_tool_activity("notes", recent_seconds=5)
+
+        self.assertTrue(manager.get_latest_state()["tool_activity"]["image_generating"])
+        self.assertTrue(manager.get_latest_state()["tool_activity"]["notes_recent"])
+
+        manager.set_tool_activity("image", False)
+        self.assertFalse(manager.get_latest_state()["tool_activity"]["image_generating"])
+
 if __name__ == "__main__":
     unittest.main()
 

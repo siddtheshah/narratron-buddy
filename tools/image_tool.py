@@ -181,6 +181,13 @@ class ImageTools:
             except Exception as e:
                 logger.error(f"[ImageTools] Exception in on_after_tool_call callback for '{tool_name}': {e}")
 
+    def _set_canvas_activity(self, active: bool) -> None:
+        """Notify connected canvases that image generation has started or finished."""
+        if self.canvas_state_service:
+            self.canvas_state_service.set_tool_activity(
+                "image", active=active, session_id=self.active_session_id
+            )
+
     def _load_references(self):
         """Scans the references folder once at startup and builds a read-only manifest."""
         try:
@@ -275,6 +282,7 @@ class ImageTools:
         """
         effective_prompt = self._apply_default_style(image_prompt)
         logging.info(f"[create_image_tool] image_prompt: {effective_prompt}, image_name: {image_name}, reference_images: {reference_images}, display: {display}")
+        self._set_canvas_activity(True)
         try:
             now = time.time()
             elapsed = now - self.last_create_time
@@ -424,6 +432,8 @@ class ImageTools:
             logger.error(f"[create_image tool] {error_msg}")
             self._trigger_after_tool_call("create_image")
             return error_msg
+        finally:
+            self._set_canvas_activity(False)
 
     def show_image(
         self,

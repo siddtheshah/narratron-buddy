@@ -10,7 +10,7 @@ import sys
 from typing import List, Optional
 
 from absl import flags
-from fastapi import FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -176,6 +176,37 @@ class BuyCreditsRequest(BaseModel):
 
 canvas_states = CanvasStateService(local_deployer)
 
+def _record_session_view_in_background(
+    session_id: str, user_id: Optional[int], ip_address: Optional[str]
+) -> None:
+    """Persist page-view telemetry after the client has received its response."""
+    try:
+        db.record_session_view(session_id, user_id=user_id, ip_address=ip_address)
+    except Exception:
+        logger.exception("Failed to record view for session '%s'", session_id)
+
+
+def _persist_canvas_session_in_background(
+    session_id: str, user_id: Optional[int], name: str
+) -> None:
+    """Snapshot a canvas and write its assets without delaying the UI response."""
+    try:
+        session_dir = local_deployer._get_session_dir(session_id)
+        state_data, image_files = canvas_states.get(session_id).export_session_data(
+            session_dir=session_dir
+        )
+        db.export_session_to_db(
+            session_id=session_id,
+            state_data=state_data,
+            image_files=image_files,
+            user_id=user_id,
+            name=name,
+        )
+        logger.info("Session '%s' saved to database in the background.", session_id)
+    except Exception:
+        logger.exception("Failed to save session '%s' to database", session_id)
+
+
 _SAFE_PARAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.() \-]*$')
 
 def _safe_path_param(value: str, label: str = "parameter") -> str:
@@ -184,19 +215,32 @@ def _safe_path_param(value: str, label: str = "parameter") -> str:
         raise HTTPException(status_code=400, detail=f"Invalid {label}.")
     return value
 
-def get_current_user(request: Request) -> Optional[dict]:
+def get_current_user(request: Request, *, record_activity: bool = True) -> Optional[dict]:
     token = request.cookies.get("auth_token")
     if not token:
         return None
-    return db.validate_session_token(token)
+    return db.validate_session_token(token, record_activity=record_activity)
 
 
 _CANVAS_ACCESS_COOKIE = "canvas_access"
 
 
-def _canvas_access_grants(request: Request) -> dict[str, str]:
+def _canvas_access_grants(request: Request | WebSocket) -> dict[str, str]:
     """Return validly-shaped per-session join-key grants from the HttpOnly cookie."""
-    encoded_grants = request.cookies.get(_CANVAS_ACCESS_COOKIE)
+    if hasattr(request, "cookies"):
+        encoded_grants = request.cookies.get(_CANVAS_ACCESS_COOKIE)
+    else:
+        encoded_grants = None
+        for key, value in getattr(request, "scope", {}).get("headers", []):
+            if key.lower() == b"cookie":
+                for part in value.decode("utf-8").split(";"):
+                    name, _, cookie_value = part.partition("=")
+                    if name.strip() == _CANVAS_ACCESS_COOKIE:
+                        encoded_grants = cookie_value.strip()
+                        break
+                if encoded_grants is not None:
+                    break
+
     if not encoded_grants:
         return {}
     try:
@@ -233,6 +277,24 @@ def _valid_join_key(expected_key: str, candidate_key: Optional[str]) -> bool:
     )
 
 
+def can_access_agent_websocket(
+    request: Request | WebSocket,
+    deployment: dict,
+    *,
+    current_user: Optional[dict] = None,
+    join_key: Optional[str] = None,
+) -> bool:
+    """Return True when the request can access the session's agent websocket."""
+    if not deployment:
+        return False
+
+    if current_user and deployment["user_id"] == current_user["id"]:
+        return True
+
+    candidate_key = join_key or _canvas_access_grants(request).get(deployment["session_id"])
+    return _valid_join_key(deployment["join_key"], candidate_key)
+
+
 def _require_canvas_access(
     request: Request, session_id: str, join_key: Optional[str] = None
 ) -> dict:
@@ -243,11 +305,7 @@ def _require_canvas_access(
         raise HTTPException(status_code=404, detail="Active session not found.")
 
     current_user = get_current_user(request)
-    if current_user and deployment["user_id"] == current_user["id"]:
-        return deployment
-
-    candidate_key = join_key or _canvas_access_grants(request).get(session_id)
-    if _valid_join_key(deployment["join_key"], candidate_key):
+    if can_access_agent_websocket(request, deployment, current_user=current_user, join_key=join_key):
         return deployment
 
     raise HTTPException(status_code=403, detail="A valid join key is required to access this session.")
@@ -452,9 +510,14 @@ def resolve_join_key(req: ResolveJoinKeyRequest, request: Request, response: Res
     dep = db.get_session_by_join_key(req.join_key)
     if not dep:
         raise HTTPException(status_code=404, detail="Invalid Join Key. No matching active session found.")
+
     meta = local_deployer.get_session(dep["session_id"])
     if not meta:
-        raise HTTPException(status_code=404, detail="Session files no longer exist.")
+        db_meta = db.get_session_metadata_from_db(dep["session_id"])
+        if not db_meta:
+            raise HTTPException(status_code=404, detail="Session files no longer exist.")
+        meta = SessionMetadata(**db_meta)
+
     _grant_canvas_access(response, request, meta.session_id, dep["join_key"])
     return {"status": "ok", "session_id": meta.session_id, "name": meta.name, "user_id": dep.get("user_id")}
 
@@ -494,7 +557,7 @@ def list_sessions(request: Request):
     return result
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str, request: Request):
+def get_session(session_id: str, request: Request, background_tasks: BackgroundTasks):
     """Retrieve metadata and mounted assets for a specific session."""
     _require_canvas_access(request, session_id)
     session_dir = local_deployer._get_session_dir(session_id)
@@ -505,14 +568,19 @@ def get_session(session_id: str, request: Request):
     if not meta:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    current_user = get_current_user(request)
+    current_user = get_current_user(request, record_activity=False)
     dep = db.get_deployment(session_id)
     owner_id = dep["user_id"] if dep else None
     is_owner = (current_user is not None and owner_id == current_user["id"])
 
-    # Record session view in database
+    # Analytics must not hold up the canvas reload, especially with a remote DB.
     client_ip = request.client.host if request.client else None
-    db.record_session_view(session_id, user_id=current_user["id"] if current_user else None, ip_address=client_ip)
+    background_tasks.add_task(
+        _record_session_view_in_background,
+        session_id,
+        current_user["id"] if current_user else None,
+        client_ip,
+    )
 
     meta_dict = meta.model_dump()
     meta_dict["is_owner"] = is_owner
@@ -526,7 +594,7 @@ def get_session(session_id: str, request: Request):
     }
 
 @app.post("/api/sessions/create-and-deploy")
-async def create_and_deploy_session(request: Request):
+async def create_and_deploy_session(request: Request, background_tasks: BackgroundTasks):
     """API endpoint to handle multi-file asset upload and deploy a session canvas instance."""
     user = get_current_user(request)
     if not user:
@@ -566,21 +634,14 @@ async def create_and_deploy_session(request: Request):
     # Record deployment & deduct credits
     db.record_deployment(deployed_meta.session_id, user["id"], deployed_meta.join_key, cost=5.0)
 
-    # Export & persist session immediately to DB
-    session_dir = local_deployer._get_session_dir(deployed_meta.session_id)
-    cs = canvas_states.get(deployed_meta.session_id)
-    state_data, image_files = cs.export_session_data(session_dir=session_dir)
-    db.export_session_to_db(
-        session_id=deployed_meta.session_id,
-        state_data=state_data,
-        image_files=image_files,
-        user_id=user["id"],
-        name=deployed_meta.name
-    )
-
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
-
+    background_tasks.add_task(
+        _persist_canvas_session_in_background,
+        deployed_meta.session_id,
+        user["id"],
+        deployed_meta.name,
+    )
     return {"status": "ok", "session_id": deployed_meta.session_id, "session": res_dict}
 
 @app.post("/api/sessions/{session_id}/deploy")
@@ -650,26 +711,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: Optional[str] = N
     except WebSocketDisconnect:
         cs.unregister_websocket(websocket)
 
-@app.post("/api/sessions/{session_id}/save")
-def save_session_to_db(session_id: str, request: Request):
+@app.post("/api/sessions/{session_id}/save", status_code=202)
+def save_session_to_db(session_id: str, request: Request, background_tasks: BackgroundTasks):
     """Save canvas session state and image assets to SQLite database on user demand."""
-    session_dir = local_deployer._get_session_dir(session_id)
     meta = local_deployer.get_session(session_id)
     dep = db.get_deployment(session_id)
     user_id = dep["user_id"] if dep else None
     name = meta.name if meta else session_id
 
-    cs = canvas_states.get(session_id)
-    state_data, image_files = cs.export_session_data(session_dir=session_dir)
-    db.export_session_to_db(
-        session_id=session_id,
-        state_data=state_data,
-        image_files=image_files,
-        user_id=user_id,
-        name=name
-    )
-    logger.info(f"Session '{session_id}' saved to database on user demand.")
-    return {"status": "ok", "session_id": session_id}
+    background_tasks.add_task(_persist_canvas_session_in_background, session_id, user_id, name)
+    return {"status": "queued", "session_id": session_id}
 
 @app.get("/api/sessions/{session_id}/export-assets")
 def export_session_assets(session_id: str, request: Request):
@@ -817,7 +868,11 @@ def read_popout(request: Request, session_id: Optional[str] = None, join_key: Op
 
 @app.get("/obs", response_class=HTMLResponse)
 @app.get("/obs/{session_id}", response_class=HTMLResponse)
-def read_obs_canvas(request: Request, session_id: Optional[str] = None):
+def read_obs_canvas(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session_id: Optional[str] = None,
+):
     """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source."""
     if session_id:
         join_key = request.query_params.get("join_key")
@@ -834,16 +889,26 @@ def read_obs_canvas(request: Request, session_id: Optional[str] = None):
         artifacts_dir = session_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-        current_user = get_current_user(request)
+        current_user = get_current_user(request, record_activity=False)
         client_ip = request.client.host if request.client else None
-        db.record_session_view(session_id, user_id=current_user["id"] if current_user else None, ip_address=client_ip)
+        background_tasks.add_task(
+            _record_session_view_in_background,
+            session_id,
+            current_user["id"] if current_user else None,
+            client_ip,
+        )
 
     template_path = os.path.join(os.path.dirname(__file__), "templates", "obs.html")
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
 @app.get("/canvas", response_class=HTMLResponse)
-def read_canvas(request: Request, session_id: Optional[str] = None, join_key: Optional[str] = None):
+def read_canvas(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session_id: Optional[str] = None,
+    join_key: Optional[str] = None,
+):
     """Serve the Canvas interface for a specific session."""
     if session_id:
         deployment = _require_canvas_access(request, session_id, join_key)
@@ -860,10 +925,15 @@ def read_canvas(request: Request, session_id: Optional[str] = None, join_key: Op
         artifacts_dir = session_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-        # Record session view in database
-        current_user = get_current_user(request)
+        # Analytics must not delay the initial canvas render.
+        current_user = get_current_user(request, record_activity=False)
         client_ip = request.client.host if request.client else None
-        db.record_session_view(session_id, user_id=current_user["id"] if current_user else None, ip_address=client_ip)
+        background_tasks.add_task(
+            _record_session_view_in_background,
+            session_id,
+            current_user["id"] if current_user else None,
+            client_ip,
+        )
 
     is_obs = request.query_params.get("obs") == "1" or request.query_params.get("obs") == "true"
     template_name = "obs.html" if is_obs else "index.html"

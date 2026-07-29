@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import MagicMock
 
 from testing.base import BaseTestCase
 from tools.notes_tool import NotesTools
@@ -47,6 +48,16 @@ class TestNotesTools(BaseTestCase):
         self.assertIn("Successfully saved note 'secret.txt'", res)
         notes_dir = self.notes_tools.get_effective_notes_dir()
         self.assertTrue(os.path.exists(os.path.join(notes_dir, "secret.txt")))
+
+    def test_edit_notes_marks_recent_canvas_activity(self):
+        canvas_state_service = MagicMock()
+        self.notes_tools.canvas_state_service = canvas_state_service
+
+        self.notes_tools.edit_notes("story", "The dragon woke.")
+
+        canvas_state_service.set_tool_activity.assert_called_once_with(
+            "notes", session_id=self.session_id, recent_seconds=5.0
+        )
 
     def test_delete_notes(self):
         self.notes_tools.edit_notes("npc_list", "Merchant, Guard")

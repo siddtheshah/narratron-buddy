@@ -70,3 +70,12 @@ class TestCrossfade(UITestCase):
             self.assertIn(selector, content)
         self.assertIn('id="ghost-image"', content)
         self.assertIn("data.transition", content)
+
+    def test_canvas_template_contains_agent_activity_indicators(self):
+        import web_viewer_app
+
+        template_path = Path(web_viewer_app.__file__).with_name("templates") / "index.html"
+        content = template_path.read_text(encoding="utf-8")
+        self.assertIn('id="agent-drawing-indicator"', content)
+        self.assertIn('id="agent-notes-indicator"', content)
+        self.assertIn("data.tool_activity", content)

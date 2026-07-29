@@ -52,6 +52,12 @@ class CanvasStateManager:
         self.doodles_state: List[Dict[str, Any]] = []
         self.doodles_enabled: bool = True
 
+        # Transient agent tool activity. This is intentionally not persisted: a
+        # reconnect should not show an activity indicator left over from a
+        # previous server process.
+        self.image_generation_active: bool = False
+        self.notes_activity_until: float = 0.0
+
         self.load_state_from_disk()
 
     def load_state_from_disk(self):
@@ -209,6 +215,19 @@ class CanvasStateManager:
         if sess_dir.exists():
             self.export_session_data(session_dir=sess_dir)
 
+    def set_tool_activity(self, tool: str, active: bool = True, recent_seconds: float = 5.0):
+        """Update transient canvas indicators for agent tool use."""
+        if tool == "image":
+            self.image_generation_active = bool(active)
+        elif tool == "notes" and active:
+            self.notes_activity_until = time.time() + max(0.0, recent_seconds)
+
+    def get_tool_activity(self) -> Dict[str, bool]:
+        return {
+            "image_generating": self.image_generation_active,
+            "notes_recent": time.time() < self.notes_activity_until,
+        }
+
     def get_latest_state(self) -> Dict[str, Any]:
         image_folder = str(self.sessions_dir / self.session_id / "output")
 
@@ -280,9 +299,10 @@ class CanvasStateManager:
                             "doodles_enabled": self.doodles_enabled,
                             "transition": getattr(self, "shown_image_transition", "fade") or "fade",
                             "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
-                            "history": formatted_history
+                            "history": formatted_history,
+                            "tool_activity": self.get_tool_activity(),
                         }
-            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history}
+            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history, "tool_activity": self.get_tool_activity()}
             
         basename = os.path.basename(selected_file)
         
@@ -319,7 +339,8 @@ class CanvasStateManager:
             "doodles_enabled": self.doodles_enabled,
             "transition": getattr(self, "shown_image_transition", "fade") or "fade",
             "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
-            "history": formatted_history
+            "history": formatted_history,
+            "tool_activity": self.get_tool_activity(),
         }
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, history_len={len(formatted_history)}, playlist={music_state['playlist']}")
         return res

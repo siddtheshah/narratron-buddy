@@ -79,6 +79,15 @@ class CanvasStateService:
     def add_chat_message(self, text: str, author: str = "agent", session_id: Optional[str] = None) -> None:
         self.get(session_id).add_chat_message(text, author=author)
 
+    def set_tool_activity(
+        self,
+        tool: str,
+        active: bool = True,
+        session_id: Optional[str] = None,
+        recent_seconds: float = 5.0,
+    ) -> None:
+        self.get(session_id).set_tool_activity(tool, active, recent_seconds)
+
     def latest_state(self, session_id: Optional[str] = None) -> dict[str, Any]:
         return self.get(session_id).get_latest_state()
 

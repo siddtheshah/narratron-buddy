@@ -5,7 +5,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from PIL import Image
 
@@ -62,6 +62,27 @@ class TestImageTools(BaseTestCase):
 
         mock_genai_client.assert_called_once()
         self.assertIs(tools1.client, tools2.client)
+
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_marks_canvas_drawing_for_the_duration_of_the_call(self, mock_genai_client):
+        canvas_state_service = MagicMock()
+        tools = ImageTools(
+            self.config,
+            session_id="drawing_indicator",
+            canvas_state_service=canvas_state_service,
+        )
+        tools.last_create_time = time.time()
+        tools._schedule_cooldown_timer = MagicMock()
+
+        tools.create_image("a misty forest")
+
+        self.assertEqual(
+            canvas_state_service.set_tool_activity.call_args_list,
+            [
+                call("image", active=True, session_id="drawing_indicator"),
+                call("image", active=False, session_id="drawing_indicator"),
+            ],
+        )
 
     @patch("tools.image_tool.genai.Client")
     def test_default_style_is_loaded_and_appended_only_when_needed(self, mock_genai_client):
