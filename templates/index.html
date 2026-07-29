@@ -1600,10 +1600,12 @@
         // the cycle when the user later returns to it.
         const playlistPlaybackState = new Map();
         let bgMusic = new Audio();
+        let outgoingMusic = null;
         let isMuted = false;
         let lastPlaylistTime = 0;
         let activePlaylistName = null;
         let fadeInterval = null;
+        let outgoingFadeInterval = null;
         let currentTrackSrc = null;
         let lastMusicStateSave = 0;
         const musicPlaybackStorageKey = `narratron-music-playback:${sessionId}`;
@@ -1628,7 +1630,7 @@
         }
 
         function saveMusicPlaybackState() {
-            if (!activePlaylistName || !currentTrackSrc) return;
+            if (!activePlaylistName || !currentTrackSrc || !bgMusic) return;
             try {
                 sessionStorage.setItem(musicPlaybackStorageKey, JSON.stringify({
                     playlist: activePlaylistName,
@@ -1653,15 +1655,21 @@
         bgMusic.volume = parseFloat(musicVolumeSlider.value);
         bgMusic.muted = isMuted;
 
-        bgMusic.addEventListener('ended', () => {
-            playNextTrack();
-        });
-        bgMusic.addEventListener('timeupdate', () => {
-            if (Date.now() - lastMusicStateSave >= 1000) {
-                lastMusicStateSave = Date.now();
-                saveMusicPlaybackState();
-            }
-        });
+        function setupBgMusicListeners(audioObj) {
+            if (!audioObj) return;
+            audioObj.addEventListener('ended', () => {
+                if (audioObj === bgMusic) {
+                    playNextTrack();
+                }
+            });
+            audioObj.addEventListener('timeupdate', () => {
+                if (audioObj === bgMusic && Date.now() - lastMusicStateSave >= 1000) {
+                    lastMusicStateSave = Date.now();
+                    saveMusicPlaybackState();
+                }
+            });
+        }
+        setupBgMusicListeners(bgMusic);
         window.addEventListener('beforeunload', saveMusicPlaybackState);
 
         function cancelFade() {
@@ -1671,33 +1679,65 @@
             }
         }
 
-        function fadeIn(durationMs = 2000) {
+        function cancelOutgoingFade() {
+            if (outgoingFadeInterval) {
+                clearInterval(outgoingFadeInterval);
+                outgoingFadeInterval = null;
+            }
+            if (outgoingMusic) {
+                try {
+                    outgoingMusic.pause();
+                    outgoingMusic.src = "";
+                } catch (e) {
+                    console.warn("Error stopping outgoing music:", e);
+                }
+                outgoingMusic = null;
+            }
+        }
+
+        function gentleFadeInCurve(progress) {
+            // Quadratic ease-in for gentle volume swell
+            return Math.pow(progress, 2);
+        }
+
+        function gentleFadeOutCurve(progress) {
+            // Quadratic ease-out for smooth volume decrease
+            return Math.pow(1 - progress, 2);
+        }
+
+        function fadeIn(durationMs = 3500) {
             cancelFade();
             const targetVolume = parseFloat(musicVolumeSlider.value);
             if (isMuted || targetVolume === 0) {
-                bgMusic.volume = targetVolume;
+                if (bgMusic) bgMusic.volume = targetVolume;
                 return;
             }
 
-            bgMusic.volume = 0;
+            if (bgMusic) bgMusic.volume = 0;
             const startTime = Date.now();
 
             fadeInterval = setInterval(() => {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min(1, elapsed / durationMs);
                 const currentTarget = parseFloat(musicVolumeSlider.value);
-                bgMusic.volume = progress * currentTarget;
+                const gentleVal = gentleFadeInCurve(progress) * currentTarget;
+
+                if (bgMusic) {
+                    bgMusic.volume = Math.min(currentTarget, Math.max(0, gentleVal));
+                }
 
                 if (progress >= 1) {
                     cancelFade();
-                    bgMusic.volume = currentTarget;
+                    if (bgMusic && !isMuted) {
+                        bgMusic.volume = currentTarget;
+                    }
                 }
             }, 30);
         }
 
-        function fadeOut(onComplete, durationMs = 800) {
+        function fadeOut(onComplete, durationMs = 2500) {
             cancelFade();
-            if (bgMusic.paused || bgMusic.volume === 0 || isMuted) {
+            if (!bgMusic || bgMusic.paused || bgMusic.volume === 0 || isMuted) {
                 if (onComplete) onComplete();
                 return;
             }
@@ -1708,7 +1748,11 @@
             fadeInterval = setInterval(() => {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min(1, elapsed / durationMs);
-                bgMusic.volume = Math.max(0, startVolume * (1 - progress));
+                const gentleVal = startVolume * gentleFadeOutCurve(progress);
+
+                if (bgMusic) {
+                    bgMusic.volume = Math.max(0, gentleVal);
+                }
 
                 if (progress >= 1) {
                     cancelFade();
@@ -1783,16 +1827,39 @@
 
         function playTrack(src, startTime = 0) {
             console.log("Playing track:", src);
-            if (!bgMusic.paused && bgMusic.src) {
-                fadeOut(() => {
-                    startTrack(src, startTime);
-                }, 500);
+            const blendDuration = 3500;
+            if (bgMusic && !bgMusic.paused && bgMusic.src && currentTrackSrc && currentTrackSrc !== src) {
+                // Crossfade / blend outgoing music with incoming track
+                cancelOutgoingFade();
+                outgoingMusic = bgMusic;
+                const outgoingStartVol = outgoingMusic.volume;
+                const fadeOutStartTime = Date.now();
+
+                // Detach listeners from outgoing music
+                outgoingMusic.onended = null;
+                outgoingMusic.ontimeupdate = null;
+
+                outgoingFadeInterval = setInterval(() => {
+                    const elapsed = Date.now() - fadeOutStartTime;
+                    const progress = Math.min(1, elapsed / blendDuration);
+                    const gentleVal = outgoingStartVol * gentleFadeOutCurve(progress);
+                    if (outgoingMusic) {
+                        outgoingMusic.volume = Math.max(0, gentleVal);
+                    }
+                    if (progress >= 1) {
+                        cancelOutgoingFade();
+                    }
+                }, 30);
+
+                bgMusic = new Audio();
+                setupBgMusicListeners(bgMusic);
+                startTrack(src, startTime, blendDuration);
             } else {
-                startTrack(src, startTime);
+                startTrack(src, startTime, blendDuration);
             }
         }
 
-        function startTrack(src, startTime = 0) {
+        function startTrack(src, startTime = 0, fadeDurationMs = 3500) {
             currentTrackSrc = src;
             bgMusic.src = src;
             bgMusic.muted = isMuted;
@@ -1813,7 +1880,7 @@
                 bgMusic.volume = targetVol;
             }
             bgMusic.play().then(() => {
-                fadeIn(2000);
+                fadeIn(fadeDurationMs);
                 saveMusicPlaybackState();
             }).catch(err => {
                 console.warn("Audio autoplay blocked/failed. User interaction may be required. Error:", err);
@@ -1827,17 +1894,21 @@
 
         function stopPlaylist() {
             console.log("Stopping playlist");
+            cancelOutgoingFade();
             fadeOut(() => {
-                bgMusic.pause();
-                bgMusic.src = "";
+                if (bgMusic) {
+                    bgMusic.pause();
+                    bgMusic.src = "";
+                }
                 currentPlaylistTracks = [];
                 currentTrackSrc = null;
-            }, 500);
+            }, 2500);
         }
 
         musicMuteBtn.addEventListener('click', () => {
             isMuted = !isMuted;
-            bgMusic.muted = isMuted;
+            if (bgMusic) bgMusic.muted = isMuted;
+            if (outgoingMusic) outgoingMusic.muted = isMuted;
             if (isMuted) {
                 cancelFade();
                 musicMuteBtn.textContent = '🔇 Unmute';
@@ -1848,11 +1919,11 @@
                 musicMuteBtn.style.background = 'rgba(255,255,255,0.08)';
                 musicMuteBtn.style.borderColor = 'var(--glass-border)';
                 // Try to play if it was blocked or paused
-                if (bgMusic.paused && currentPlaylistTracks.length > 0) {
+                if (bgMusic && bgMusic.paused && currentPlaylistTracks.length > 0) {
                     bgMusic.volume = 0;
-                    bgMusic.play().then(() => fadeIn(1500)).catch(() => { });
+                    bgMusic.play().then(() => fadeIn(2500)).catch(() => { });
                 } else {
-                    fadeIn(1000);
+                    fadeIn(2000);
                 }
             }
         });
