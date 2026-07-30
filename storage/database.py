@@ -292,6 +292,16 @@ class DatabaseManager:
                     cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN baton_request TEXT DEFAULT NULL")
                 except Exception:
                     pass
+            if "is_persistent" not in cd_cols:
+                try:
+                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN is_persistent INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+            if "last_billed_at" not in cd_cols:
+                try:
+                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN last_billed_at TEXT DEFAULT NULL")
+                except Exception:
+                    pass
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS payment_transactions (
@@ -645,7 +655,7 @@ class DatabaseManager:
             conn.commit()
             return True
 
-    def record_deployment(self, theater_id: str, user_id: int, join_key: str, cost: float = 5.0) -> bool:
+    def record_deployment(self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0, is_persistent: bool = False) -> bool:
         """Record deployment in database and deduct cost from user credits."""
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
@@ -659,9 +669,11 @@ class DatabaseManager:
                 "UPDATE users SET credits = credits - ? WHERE id = ?",
                 (cost, user_id)
             )
+            persistent_val = 1 if is_persistent else 0
+            last_billed_val = now_iso if is_persistent else None
             cursor.execute(
-                "INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at) VALUES (?, ?, ?, ?, ?)",
-                (theater_id, user_id, join_key, cost, now_iso)
+                "INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (theater_id, user_id, join_key, cost, now_iso, persistent_val, last_billed_val)
             )
             conn.commit()
             return True
@@ -723,6 +735,156 @@ class DatabaseManager:
             cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def set_theater_persistence(self, theater_id: str, is_persistent: bool) -> bool:
+        """Set whether a theater session is marked as persistent."""
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            dep = cursor.fetchone()
+            if not dep:
+                return False
+            
+            persistent_val = 1 if is_persistent else 0
+            if is_persistent:
+                last_billed = (dep["last_billed_at"] if isinstance(dep, dict) else dep[9]) if "last_billed_at" in dep else now_iso
+                if not last_billed:
+                    last_billed = now_iso
+                cursor.execute(
+                    "UPDATE canvas_deployments SET is_persistent = ?, last_billed_at = ? WHERE theater_id = ?",
+                    (persistent_val, last_billed, theater_id)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE canvas_deployments SET is_persistent = ? WHERE theater_id = ?",
+                    (persistent_val, theater_id)
+                )
+            conn.commit()
+            return True
+
+    def get_theater_persistence(self, theater_id: str) -> bool:
+        """Check if a theater session is marked persistent."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT is_persistent FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            val = row["is_persistent"] if isinstance(row, dict) else row[0]
+            return bool(val)
+
+    def storage_daemon(
+        self,
+        local_deployer: Any = None,
+        ttl_seconds: float = 604800.0,
+        hourly_cost: float = 0.004167,
+        current_time: Optional[datetime.datetime] = None,
+    ) -> Dict[str, Any]:
+        """Alias for run_database_daemon: process non-persistent storage cleanup and persistent session billing."""
+        return self.run_database_daemon(
+            local_deployer=local_deployer,
+            ttl_seconds=ttl_seconds,
+            hourly_cost=hourly_cost,
+            current_time=current_time,
+        )
+
+    def run_database_daemon(
+        self,
+        local_deployer: Any = None,
+        ttl_seconds: float = 604800.0,
+        hourly_cost: float = 0.004167,
+        current_time: Optional[datetime.datetime] = None,
+    ) -> Dict[str, Any]:
+        """Database daemon logic to clean up expired non-persistent sessions and accrue charges for persistent sessions."""
+        now = current_time or datetime.datetime.now(datetime.timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=datetime.timezone.utc)
+
+        cleaned_up_sessions = []
+        accrued_charges = []
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM canvas_deployments")
+            rows = cursor.fetchall()
+            deployments = [dict(r) if isinstance(r, dict) else dict(r) for r in rows]
+
+            for dep in deployments:
+                theater_id = dep["theater_id"]
+                user_id = dep["user_id"]
+                is_persistent = bool(dep.get("is_persistent", 0))
+                created_at_str = dep.get("created_at")
+
+                try:
+                    created_at_dt = datetime.datetime.fromisoformat(created_at_str)
+                    if created_at_dt.tzinfo is None:
+                        created_at_dt = created_at_dt.replace(tzinfo=datetime.timezone.utc)
+                except Exception:
+                    created_at_dt = now
+
+                if not is_persistent:
+                    # Clean up if older than ttl_seconds
+                    age_seconds = (now - created_at_dt).total_seconds()
+                    if age_seconds > ttl_seconds:
+                        logger.info(f"[DatabaseDaemon] Auto-cleaning expired non-persistent theater_id={theater_id}")
+                        cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+                        cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+                        if local_deployer:
+                            try:
+                                local_deployer.destroy_theater(theater_id)
+                            except Exception as e:
+                                logger.warning(f"[DatabaseDaemon] Error destroying theater files for {theater_id}: {e}")
+                        cleaned_up_sessions.append(theater_id)
+                else:
+                    # Accrue charges for persistent session
+                    last_billed_str = dep.get("last_billed_at") or created_at_str
+                    try:
+                        last_billed_dt = datetime.datetime.fromisoformat(last_billed_str)
+                        if last_billed_dt.tzinfo is None:
+                            last_billed_dt = last_billed_dt.replace(tzinfo=datetime.timezone.utc)
+                    except Exception:
+                        last_billed_dt = created_at_dt
+
+                    elapsed_seconds = (now - last_billed_dt).total_seconds()
+                    elapsed_hours = elapsed_seconds / 3600.0
+
+                    if elapsed_hours >= 1.0:
+                        hours_to_bill = int(elapsed_hours)
+                        charge_amount = round(hours_to_bill * hourly_cost, 4)
+
+                        cursor.execute("SELECT credits FROM users WHERE id = ?", (user_id,))
+                        user_row = cursor.fetchone()
+                        user_credits = user_row["credits"] if user_row else 0.0
+
+                        if user_credits >= charge_amount:
+                            new_last_billed = (last_billed_dt + datetime.timedelta(hours=hours_to_bill)).isoformat()
+                            cursor.execute("UPDATE users SET credits = credits - ? WHERE id = ?", (charge_amount, user_id))
+                            cursor.execute("UPDATE canvas_deployments SET last_billed_at = ? WHERE theater_id = ?", (new_last_billed, theater_id))
+                            accrued_charges.append({
+                                "theater_id": theater_id,
+                                "user_id": user_id,
+                                "amount": charge_amount,
+                                "hours": hours_to_bill,
+                            })
+                            logger.info(f"[DatabaseDaemon] Accrued {charge_amount} credits charge for persistent theater_id={theater_id}")
+                        else:
+                            logger.warning(f"[DatabaseDaemon] User user_id={user_id} has insufficient credits ({user_credits}) for persistent theater_id={theater_id}. Expiring session.")
+                            cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+                            cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+                            if local_deployer:
+                                try:
+                                    local_deployer.destroy_theater(theater_id)
+                                except Exception as e:
+                                    logger.warning(f"[DatabaseDaemon] Error destroying theater files for {theater_id}: {e}")
+                            cleaned_up_sessions.append(theater_id)
+
+            conn.commit()
+
+        return {
+            "cleaned_up_sessions": cleaned_up_sessions,
+            "accrued_charges": accrued_charges,
+        }
 
     def get_theater_by_join_key(self, join_key: str) -> Optional[Dict]:
         clean_key = join_key.strip().upper()
@@ -998,7 +1160,7 @@ class DatabaseManager:
             return False
 
     async def record_deployment_async(
-        self, theater_id: str, user_id: int, join_key: str, cost: float = 5.0
+        self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0
     ) -> bool:
         """Record deployment asynchronously."""
         return await asyncio.to_thread(

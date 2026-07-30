@@ -29,10 +29,8 @@ COPY ABOUT.md .
 
 # Copy package directories
 COPY components/ components/
-COPY deployer/__init__.py deployer/__init__.py
-COPY deployer/database.py deployer/database.py
-COPY deployer/deployer.py deployer/deployer.py
-COPY deployer/theater_manager.py deployer/theater_manager.py
+COPY deployer/ deployer/
+COPY storage/ storage/
 COPY services/ services/
 COPY tools/ tools/
 COPY utils/ utils/

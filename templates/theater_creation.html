@@ -2030,11 +2030,6 @@
                 return;
             }
 
-            if (currentUser.credits < 5.0) {
-                openBuyCreditsModal('Insufficient credits! You need at least 5.0 credits to deploy a theater.');
-                return;
-            }
-
             const name = document.getElementById('theaterName').value.trim() || 'Narratron Canvas';
             const style = document.getElementById('theaterStyle').value.trim();
             const deployBtn = document.getElementById('deployBtn');

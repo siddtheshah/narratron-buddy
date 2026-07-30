@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from testing.base import BaseTestCase
-from deployer.database import DatabaseManager
+from storage.database import DatabaseManager
 
 
 class TestDatabaseManager(BaseTestCase):

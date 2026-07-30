@@ -19,7 +19,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from components.canvas_state_service import CanvasStateService
-from deployer.database import DatabaseManager
+from storage.database import DatabaseManager
 from deployer.deployer import LocalDeployer, TheaterMetadata, extract_asset_package
 from deployer.theater_manager import TheaterManager
 from utils.config_loader import get_config
@@ -617,9 +617,6 @@ async def create_and_deploy_theater(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to deploy theaters.")
 
-    if user["credits"] < 5.0:
-        raise HTTPException(status_code=402, detail="Insufficient credits (5.0 credits required).")
-
     form = await request.form()
     name = str(form.get("name", "Narratron Theater"))
     style = str(form.get("style", "")).strip()
@@ -686,8 +683,8 @@ async def create_and_deploy_theater(request: Request):
     )
     deployed_meta = local_deployer.deploy_theater(metadata.theater_id)
 
-    # Record deployment & deduct credits
-    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=5.0)
+    # Record deployment & deduct credits (0.0 cost)
+    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0)
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
