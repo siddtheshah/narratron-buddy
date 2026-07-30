@@ -2,6 +2,10 @@
 
 ## App Deployment & Infrastructure
 - [x] Storage daemon (standalone process in storage/ folder; auto-removes non-persistent theaters older than 7 days and accrues charges for persistent ones)
+- [ ] Better database tests. Should use a fake database with some sample tables.
+   - Decouple database definition from code. Have an SQL script that creates the tables, so that it's more easily
+   understandable.
+
 
 ## Auth, Security & Monetization
 - [ ] Determine fair pricing

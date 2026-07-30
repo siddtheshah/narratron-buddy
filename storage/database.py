@@ -732,9 +732,12 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            c1 = cursor.rowcount or 0
             cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+            c2 = cursor.rowcount or 0
             conn.commit()
-            return cursor.rowcount > 0
+            return (c1 + c2) > 0
+
 
     def set_theater_persistence(self, theater_id: str, is_persistent: bool) -> bool:
         """Set whether a theater session is marked as persistent."""
