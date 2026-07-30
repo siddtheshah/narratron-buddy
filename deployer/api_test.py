@@ -56,6 +56,36 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn("Theater Deployer", response.text)
         self.assertIn("Deploy Canvas Instance", response.text)
         self.assertIn('href="/about"', response.text)
+        self.assertIn("pricingModal", response.text)
+        self.assertIn("openPricingModal", response.text)
+
+    def test_pricing_api_route(self):
+        # Basic rates lookup
+        response = self.client.get("/api/pricing")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("voice_credit_rate", data)
+        self.assertIn("image_credit_rate", data)
+        self.assertIn("storage_gb_monthly_rate", data)
+        self.assertIn("storage_gb_daily_rate", data)
+        self.assertIn("credits_per_usd", data)
+        self.assertIn("usd_per_credit", data)
+        self.assertEqual(data["credits_per_usd"], 20.0)
+
+        # Calculation query params
+        calc_res = self.client.get("/api/pricing?voice_minutes=30&images_created=10&gb_amount=2&days=30&usd_amount=10")
+        self.assertEqual(calc_res.status_code, 200)
+        calc_data = calc_res.json()
+        self.assertIn("calculation", calc_data)
+        calc = calc_data["calculation"]
+        self.assertEqual(calc["usage_credits"], 40.0)
+        self.assertAlmostEqual(calc["storage_credits"], 1.98, places=2)
+        self.assertEqual(calc["usd_credits"], 200.0)
+
+        # Negative query param validation
+        bad_res = self.client.get("/api/pricing?voice_minutes=-5")
+        self.assertEqual(bad_res.status_code, 400)
+        self.assertIn("voice_minutes must be non-negative", bad_res.json()["detail"])
 
     def test_about_page_renders_about_markdown(self):
         response = self.client.get("/about")

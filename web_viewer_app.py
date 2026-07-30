@@ -20,6 +20,7 @@ import uvicorn
 
 from components.canvas_state_service import CanvasStateService
 from storage.database import DatabaseManager
+from pricing.pricing_controller import PricingController
 from deployer.deployer import LocalDeployer, TheaterMetadata, extract_asset_package
 from deployer.theater_manager import TheaterManager
 from utils.config_loader import get_config
@@ -472,6 +473,47 @@ def get_payment_history(request: Request):
         raise HTTPException(status_code=401, detail="Authentication required to view payment history.")
     transactions = db.get_user_transactions(user["id"])
     return {"status": "ok", "transactions": transactions}
+
+@app.get("/api/pricing")
+def get_pricing_rates(
+    voice_minutes: Optional[float] = None,
+    images_created: Optional[int] = None,
+    gb_amount: Optional[float] = None,
+    days: Optional[float] = 1.0,
+    usd_amount: Optional[float] = None,
+):
+    """Retrieve current pricing rates and optionally calculate costs dynamically from PricingController."""
+    if voice_minutes is not None and voice_minutes < 0:
+        raise HTTPException(status_code=400, detail="voice_minutes must be non-negative.")
+    if images_created is not None and images_created < 0:
+        raise HTTPException(status_code=400, detail="images_created must be non-negative.")
+    if gb_amount is not None and gb_amount < 0:
+        raise HTTPException(status_code=400, detail="gb_amount must be non-negative.")
+    if days is not None and days < 0:
+        raise HTTPException(status_code=400, detail="days must be non-negative.")
+    if usd_amount is not None and usd_amount < 0:
+        raise HTTPException(status_code=400, detail="usd_amount must be non-negative.")
+
+    pricing = getattr(db, "pricing_controller", None) or PricingController.from_env()
+    rates = pricing.get_rates()
+
+    calculation = {}
+    if voice_minutes is not None or images_created is not None:
+        vm = voice_minutes if voice_minutes is not None else 0.0
+        ic = images_created if images_created is not None else 0
+        calculation["usage_credits"] = pricing.calculate_usage_cost(voice_minutes=vm, images_created=ic)
+
+    if gb_amount is not None:
+        d = days if days is not None else 1.0
+        calculation["storage_credits"] = pricing.calculate_storage_cost(gb_amount=gb_amount, days=d)
+
+    if usd_amount is not None:
+        calculation["usd_credits"] = pricing.credits_for_usd(usd_amount)
+
+    if calculation:
+        rates["calculation"] = calculation
+
+    return rates
 
 # ========================================
 # Theater Asset Dynamic Routes

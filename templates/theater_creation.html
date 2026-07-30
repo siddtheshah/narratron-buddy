@@ -825,6 +825,7 @@
             <a href="/join" class="btn btn-secondary btn-sm">← Back to Join Page</a>
             <a href="/about" class="btn btn-secondary btn-sm">About</a>
             <a href="/stats" class="btn btn-secondary btn-sm">📊 Stats</a>
+            <button class="btn btn-secondary btn-sm" onclick="openPricingModal()">🏷️ Pricing</button>
             <div id="userAccountBar" class="user-account-bar">
                 <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Log In</button>
                 <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Sign Up</button>
@@ -1167,10 +1168,13 @@
                 <h3 style="margin: 0; font-size: 1.3rem; display: flex; align-items: center; gap: 8px;">
                     ⚡ Buy Credits
                 </h3>
-                <span id="buyCreditsCurrentBalance"
-                    style="font-size: 0.85rem; color: #34d399; font-weight: 600; background: rgba(16, 185, 129, 0.15); padding: 4px 10px; border-radius: 99px;">
-                    Balance: 0.0 Cr
-                </span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 3px 8px;" onclick="closeBuyCreditsModal(); openPricingModal();">🏷️ Rates</button>
+                    <span id="buyCreditsCurrentBalance"
+                        style="font-size: 0.85rem; color: #34d399; font-weight: 600; background: rgba(16, 185, 129, 0.15); padding: 4px 10px; border-radius: 99px;">
+                        Balance: 0.0 Cr
+                    </span>
+                </div>
             </div>
 
             <div id="buyCreditsAlertBanner"
@@ -1282,6 +1286,132 @@
 
             <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 0.75rem;"
                 onclick="closeBuyCreditsModal()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Pricing Information Modal -->
+    <div class="modal-overlay" id="pricingModal">
+        <div class="modal-card" style="max-width: 680px; width: 92%;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem;">
+                <div>
+                    <h3 style="margin: 0; font-size: 1.35rem; display: flex; align-items: center; gap: 8px;">
+                        🏷️ Pricing & Credit Rates
+                    </h3>
+                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">
+                        Live rate information retrieved dynamically from Narratron Pricing Controller
+                    </p>
+                </div>
+                <button onclick="closePricingModal()" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.25rem; cursor: pointer; padding: 4px 8px; border-radius: 6px;">&times;</button>
+            </div>
+
+            <!-- Live Status & Refresh Header Bar -->
+            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.06); padding: 8px 14px; border-radius: 10px; margin-bottom: 1.25rem;">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: #34d399; font-weight: 500;">
+                    <span style="width: 8px; height: 8px; background: #34d399; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #34d399;"></span>
+                    <span id="pricingLiveStatusText">Live Rates Active</span>
+                    <span id="pricingLastUpdated" style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px;"></span>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="fetchPricingRates()" style="padding: 4px 10px; font-size: 0.78rem; display: flex; align-items: center; gap: 4px;">
+                    🔄 Refresh Rates
+                </button>
+            </div>
+
+            <!-- Pricing Rates Summary Grid -->
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.25rem;">
+                <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; padding: 1rem;">
+                    <div style="font-size: 0.78rem; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        💵 Credit Exchange Rate
+                    </div>
+                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
+                        $1.00 = <span id="rateCreditsPerUsd">20.0</span> Cr
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                        1 Credit = <span id="rateUsdPerCredit">$0.05</span> USD
+                    </div>
+                </div>
+
+                <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 12px; padding: 1rem;">
+                    <div style="font-size: 0.78rem; font-weight: 700; color: #c084fc; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        🎙️ Voice Minutes Rate
+                    </div>
+                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
+                        <span id="rateVoice">1.0</span> Cr / min
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                        Gemini Live streaming (~<span id="rateVoiceUsd">$0.05</span> / min)
+                    </div>
+                </div>
+
+                <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: 12px; padding: 1rem;">
+                    <div style="font-size: 0.78rem; font-weight: 700; color: #22d3ee; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        🖼️ Image Generation Rate
+                    </div>
+                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
+                        <span id="rateImage">1.0</span> Cr / image
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                        Imagen / Flash scene images (~<span id="rateImageUsd">$0.05</span> / img)
+                    </div>
+                </div>
+
+                <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 1rem;">
+                    <div style="font-size: 0.78rem; font-weight: 700; color: #34d399; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        💾 Persistent Storage
+                    </div>
+                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
+                        <span id="rateStorageMonthly">1.0</span> Cr / GB / mo
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                        Daily rate: ~<span id="rateStorageDaily">0.033</span> Cr / GB / day
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interactive Session Cost Estimator -->
+            <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 1.1rem; margin-bottom: 1.25rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem;">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">
+                        🧮 Interactive Session Cost Calculator
+                    </div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Calculated live via API</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Voice (Mins)</label>
+                        <input type="number" id="calcVoiceInput" min="0" max="300" step="5" value="30" oninput="calculateLivePricingEstimate()" style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Images Created</label>
+                        <input type="number" id="calcImagesInput" min="0" max="100" step="1" value="10" oninput="calculateLivePricingEstimate()" style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Storage (GB)</label>
+                        <input type="number" id="calcStorageInput" min="0" max="50" step="0.5" value="1.0" oninput="calculateLivePricingEstimate()" style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                    </div>
+                </div>
+
+                <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 0.85rem 1rem; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600;">Estimated Session Cost</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);" id="calcBreakdownText">30 voice mins + 10 images + 1.0 GB/mo</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.35rem; font-weight: 800; color: #34d399;" id="calcTotalCredits">⚡ 41.0 Cr</div>
+                        <div style="font-size: 0.82rem; color: var(--text-secondary);" id="calcTotalUsd">~$2.05 USD</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" style="flex: 1; font-weight: 600;" onclick="closePricingModal(); openBuyCreditsModal();">
+                    ⚡ Get Credits Now
+                </button>
+                <button class="btn btn-secondary" style="flex: 1;" onclick="closePricingModal()">
+                    Close
+                </button>
+            </div>
         </div>
     </div>
 
@@ -2215,6 +2345,124 @@
                 alert('Error destroying theater: ' + err.message);
             }
         }
+
+        // Pricing Modal Logic & Live Query
+        let currentPricingRates = null;
+
+        async function fetchPricingRates() {
+            const statusText = document.getElementById('pricingLiveStatusText');
+            const updatedText = document.getElementById('pricingLastUpdated');
+            if (statusText) statusText.innerText = 'Fetching live rates...';
+
+            try {
+                const response = await fetch('/api/pricing');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch pricing rates: ${response.status}`);
+                }
+                const data = await response.json();
+                currentPricingRates = data;
+
+                if (document.getElementById('rateCreditsPerUsd')) {
+                    document.getElementById('rateCreditsPerUsd').innerText = data.credits_per_usd.toFixed(1);
+                }
+                if (document.getElementById('rateUsdPerCredit')) {
+                    document.getElementById('rateUsdPerCredit').innerText = `$${data.usd_per_credit.toFixed(2)}`;
+                }
+                if (document.getElementById('rateVoice')) {
+                    document.getElementById('rateVoice').innerText = data.voice_credit_rate.toFixed(1);
+                }
+                if (document.getElementById('rateVoiceUsd')) {
+                    document.getElementById('rateVoiceUsd').innerText = `$${(data.voice_credit_rate * data.usd_per_credit).toFixed(2)}`;
+                }
+                if (document.getElementById('rateImage')) {
+                    document.getElementById('rateImage').innerText = data.image_credit_rate.toFixed(1);
+                }
+                if (document.getElementById('rateImageUsd')) {
+                    document.getElementById('rateImageUsd').innerText = `$${(data.image_credit_rate * data.usd_per_credit).toFixed(2)}`;
+                }
+                if (document.getElementById('rateStorageMonthly')) {
+                    document.getElementById('rateStorageMonthly').innerText = data.storage_gb_monthly_rate.toFixed(1);
+                }
+                if (document.getElementById('rateStorageDaily')) {
+                    document.getElementById('rateStorageDaily').innerText = data.storage_gb_daily_rate.toFixed(3);
+                }
+
+                if (statusText) statusText.innerText = 'Live Rates Active';
+                if (updatedText) {
+                    const now = new Date();
+                    updatedText.innerText = `Updated: ${now.toLocaleTimeString()}`;
+                }
+
+                calculateLivePricingEstimate();
+            } catch (err) {
+                console.error('Error loading pricing rates:', err);
+                if (statusText) statusText.innerText = 'Error loading rates';
+            }
+        }
+
+        async function calculateLivePricingEstimate() {
+            const voiceInput = document.getElementById('calcVoiceInput');
+            const imagesInput = document.getElementById('calcImagesInput');
+            const storageInput = document.getElementById('calcStorageInput');
+
+            if (!voiceInput || !imagesInput || !storageInput) return;
+
+            const voiceMins = parseFloat(voiceInput.value) || 0;
+            const images = parseInt(imagesInput.value) || 0;
+            const storageGb = parseFloat(storageInput.value) || 0;
+
+            try {
+                const queryParams = new URLSearchParams({
+                    voice_minutes: voiceMins,
+                    images_created: images,
+                    gb_amount: storageGb,
+                    days: 30
+                });
+                const res = await fetch(`/api/pricing?${queryParams.toString()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const calc = data.calculation || {};
+                    const usageCredits = calc.usage_credits || 0.0;
+                    const storageCredits = calc.storage_credits || 0.0;
+                    const totalCredits = usageCredits + storageCredits;
+                    const totalUsd = totalCredits * (data.usd_per_credit || 0.05);
+
+                    if (document.getElementById('calcTotalCredits')) {
+                        document.getElementById('calcTotalCredits').innerText = `⚡ ${totalCredits.toFixed(1)} Cr`;
+                    }
+                    if (document.getElementById('calcTotalUsd')) {
+                        document.getElementById('calcTotalUsd').innerText = `~$${totalUsd.toFixed(2)} USD`;
+                    }
+                    if (document.getElementById('calcBreakdownText')) {
+                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${storageGb} GB/mo`;
+                    }
+                }
+            } catch (e) {
+                console.error('Error calculating live pricing estimate:', e);
+            }
+        }
+
+        function openPricingModal() {
+            const modal = document.getElementById('pricingModal');
+            if (modal) {
+                modal.classList.add('active');
+                fetchPricingRates();
+            }
+        }
+
+        function closePricingModal() {
+            const modal = document.getElementById('pricingModal');
+            if (modal) {
+                modal.classList.remove('active');
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            const modal = document.getElementById('pricingModal');
+            if (modal && e.target === modal) {
+                closePricingModal();
+            }
+        });
 
         // Initialize on load
         playlistsData['default'] = [];
