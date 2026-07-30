@@ -1090,7 +1090,7 @@
                     <input type="password" id="regPassword" placeholder="••••••••"
                         onkeypress="if(event.key==='Enter') submitRegister()">
                 </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitRegister()">Sign Up (Get 100
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitRegister()">Sign Up (Get 25
                     Credits)</button>
             </div>
 
@@ -1187,27 +1187,27 @@
             </p>
 
             <div class="packages-grid">
-                <div class="package-card" id="pkgStarter" onclick="selectCreditPackage('starter', 50, 5.00)">
+                <div class="package-card" id="pkgStarter" onclick="selectCreditPackage('starter', 100, 5.00)">
                     <div class="package-title">Starter</div>
-                    <div class="package-credits">⚡ 50</div>
+                    <div class="package-credits">⚡ 100</div>
                     <div class="package-price">$5.00</div>
-                    <div class="package-subtext">$0.10 / credit</div>
+                    <div class="package-subtext">$0.05 / credit</div>
                 </div>
 
-                <div class="package-card selected" id="pkgPro" onclick="selectCreditPackage('pro', 200, 18.00)">
+                <div class="package-card selected" id="pkgPro" onclick="selectCreditPackage('pro', 400, 18.00)">
                     <div class="package-badge">POPULAR (10% BONUS)</div>
                     <div class="package-title">Pro Pack</div>
-                    <div class="package-credits">⚡ 200</div>
+                    <div class="package-credits">⚡ 400</div>
                     <div class="package-price">$18.00</div>
-                    <div class="package-subtext">$0.09 / credit</div>
+                    <div class="package-subtext">$0.045 / credit</div>
                 </div>
 
-                <div class="package-card" id="pkgUltra" onclick="selectCreditPackage('ultra', 500, 40.00)">
-                    <div class="package-badge">20% BONUS</div>
+                <div class="package-card" id="pkgUltra" onclick="selectCreditPackage('ultra', 1000, 40.00)">
+                    <div class="package-badge">25% BONUS</div>
                     <div class="package-title">Ultra Pack</div>
-                    <div class="package-credits">⚡ 500</div>
+                    <div class="package-credits">⚡ 1000</div>
                     <div class="package-price">$40.00</div>
-                    <div class="package-subtext">$0.08 / credit</div>
+                    <div class="package-subtext">$0.04 / credit</div>
                 </div>
 
                 <div class="package-card" id="pkgCustom" onclick="selectCreditPackage('custom', null, null)">
@@ -1235,7 +1235,7 @@
                     <div style="flex: 1;">
                         <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8;">Credits Added</label>
                         <div id="customCreditsDisplay"
-                            style="font-size: 1.1rem; font-weight: 800; color: #34d399; margin-top: 6px;">⚡ 100.0 Cr
+                            style="font-size: 1.1rem; font-weight: 800; color: #34d399; margin-top: 6px;">⚡ 200.0 Cr
                         </div>
                     </div>
                 </div>
@@ -1277,7 +1277,7 @@
 
             <button class="btn btn-primary" id="btnCompletePurchase"
                 style="width: 100%; font-size: 1rem; padding: 0.75rem;" onclick="submitBuyCredits()">
-                Pay $18.00 & Add 200 Credits
+                Pay $18.00 & Add 400 Credits
             </button>
 
             <div class="modal-error" id="buyCreditsModalError"></div>
@@ -1489,7 +1489,7 @@
         }
 
         // Buy Credits Modal Logic
-        let selectedPackage = { id: 'pro', credits: 200, usd: 18.00 };
+        let selectedPackage = { id: 'pro', credits: 400, usd: 18.00 };
 
         function openBuyCreditsModal(reason = null) {
             if (!currentUser) {
@@ -1516,7 +1516,7 @@
             err.style.display = 'none';
             succ.style.display = 'none';
 
-            selectCreditPackage('pro', 200, 18.00);
+            selectCreditPackage('pro', 400, 18.00);
             modal.classList.add('active');
         }
 
@@ -1536,7 +1536,7 @@
             const display = document.getElementById('customCreditsDisplay');
             let usd = parseFloat(usdInput.value) || 0;
             if (usd < 1) usd = 1;
-            const credits = usd * 10;
+            const credits = usd * 20;
             if (display) {
                 display.innerText = `⚡ ${credits.toFixed(1)} Cr`;
             }
@@ -1561,7 +1561,7 @@
             if (pkgId === 'custom') {
                 if (customSection) customSection.style.display = 'block';
                 const usdVal = parseFloat(document.getElementById('customUsdInput').value) || 10;
-                const creditsVal = usdVal * 10;
+                const creditsVal = usdVal * 20;
                 selectedPackage = { id: 'custom', credits: creditsVal, usd: usdVal };
                 const customEl = document.getElementById('pkgCustom');
                 if (customEl) customEl.classList.add('selected');

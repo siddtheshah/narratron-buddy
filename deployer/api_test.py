@@ -309,9 +309,9 @@ class TestTheaterAPI(BaseTestCase):
         })
         self.assertEqual(reg_res.status_code, 200)
 
-        # Initial balance (100.0)
+        # Initial balance (25.0)
         me_res = self.client.get("/api/auth/me")
-        self.assertEqual(me_res.json()["user"]["credits"], 100.0)
+        self.assertEqual(me_res.json()["user"]["credits"], 25.0)
 
         # 3. Invalid / missing card -> 400 Bad Request
         bad_card_res = self.client.post("/api/payments/buy-credits", json={
@@ -342,8 +342,8 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(buy_res.status_code, 200)
         buy_data = buy_res.json()
         self.assertEqual(buy_data["status"], "ok")
-        self.assertEqual(buy_data["credits_added"], 200.0)
-        self.assertEqual(buy_data["user"]["credits"], 300.0)
+        self.assertEqual(buy_data["credits_added"], 400.0)
+        self.assertEqual(buy_data["user"]["credits"], 425.0)
 
         # 6. Check payment history endpoint
         hist_res = self.client.get("/api/payments/history")
@@ -351,7 +351,7 @@ class TestTheaterAPI(BaseTestCase):
         hist_data = hist_res.json()
         self.assertEqual(hist_data["status"], "ok")
         self.assertEqual(len(hist_data["transactions"]), 1)
-        self.assertEqual(hist_data["transactions"][0]["credits_added"], 200.0)
+        self.assertEqual(hist_data["transactions"][0]["credits_added"], 400.0)
         self.assertEqual(hist_data["transactions"][0]["amount_usd"], 18.00)
 
         # 7. Buy custom one-off payment (150 credits for $15.00)

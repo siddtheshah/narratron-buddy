@@ -80,9 +80,9 @@ class TestPricingController(BaseTestCase):
 
         # Register user and test usage calculation with custom controller rates
         user = db.register_user("pricinguser", "pricing@test.com", "Pass12345")
-        # 10 voice mins * 3.0 + 2 images * 2.0 = 34.0 credits deducted from 100.0 -> 66.0
+        # 10 voice mins * 3.0 + 2 images * 2.0 = 34.0 credits deducted from 25.0 -> -9.0
         updated = db.record_user_usage(user["id"], voice_minutes=10.0, images_created=2)
-        self.assertEqual(updated["credits"], 66.0)
+        self.assertEqual(updated["credits"], -9.0)
         db.close()
 
 

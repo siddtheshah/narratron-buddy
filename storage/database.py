@@ -205,7 +205,7 @@ class DatabaseManager:
                     email TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
-                    credits REAL DEFAULT 100.0,
+                    credits REAL DEFAULT 25.0,
                     total_voice_minutes REAL DEFAULT 0.0,
                     total_images_created INTEGER DEFAULT 0,
                     created_at TEXT NOT NULL,
@@ -222,7 +222,7 @@ class DatabaseManager:
 
             if "credits" not in user_cols:
                 try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN credits REAL DEFAULT 100.0")
+                    cursor.execute("ALTER TABLE users ADD COLUMN credits REAL DEFAULT 25.0")
                 except Exception:
                     pass
 
@@ -363,7 +363,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             try:
                 cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits) VALUES (?, ?, ?, ?, ?, 100.0)",
+                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits) VALUES (?, ?, ?, ?, ?, 25.0)",
                     (username_clean, email_clean, password_hash, salt, created_at)
                 )
                 user_id = cursor.lastrowid
@@ -372,7 +372,7 @@ class DatabaseManager:
                     "id": user_id,
                     "username": username_clean,
                     "email": email_clean,
-                    "credits": 100.0,
+                    "credits": 25.0,
                     "total_voice_minutes": 0.0,
                     "total_images_created": 0,
                     "created_at": created_at
@@ -409,7 +409,7 @@ class DatabaseManager:
                     "id": user_dict["id"],
                     "username": user_dict["username"],
                     "email": user_dict["email"],
-                    "credits": user_dict.get("credits", 100.0),
+                    "credits": user_dict.get("credits", 25.0),
                     "total_voice_minutes": user_dict.get("total_voice_minutes", 0.0),
                     "total_images_created": user_dict.get("total_images_created", 0),
                     "created_at": user_dict["created_at"]

@@ -409,9 +409,9 @@ def reset_password(req: ResetPasswordRequest):
 # ========================================
 
 CREDIT_PACKAGES = {
-    "starter": {"credits": 50.0, "amount_usd": 5.00, "name": "Starter Pack"},
-    "pro": {"credits": 200.0, "amount_usd": 18.00, "name": "Pro Pack"},
-    "ultra": {"credits": 500.0, "amount_usd": 40.00, "name": "Ultra Pack"},
+    "starter": {"credits": 100.0, "amount_usd": 5.00, "name": "Starter Pack"},
+    "pro": {"credits": 400.0, "amount_usd": 18.00, "name": "Pro Pack"},
+    "ultra": {"credits": 1000.0, "amount_usd": 40.00, "name": "Ultra Pack"},
 }
 
 @app.post("/api/payments/buy-credits")

@@ -73,7 +73,7 @@ class TestDatabaseManager(BaseTestCase):
     def test_user_registration_and_authentication(self):
         user = self.db.register_user("testuser", "test@example.com", "SecretPass123")
         self.assertEqual(user["username"], "testuser")
-        self.assertEqual(user["credits"], 100.0)
+        self.assertEqual(user["credits"], 25.0)
         self.assertEqual(user["total_voice_minutes"], 0.0)
         self.assertEqual(user["total_images_created"], 0)
 
@@ -115,7 +115,7 @@ class TestDatabaseManager(BaseTestCase):
 
         # Check updated credits
         updated_user = self.db.get_user_by_id(user["id"])
-        self.assertEqual(updated_user["credits"], 95.0)
+        self.assertEqual(updated_user["credits"], 20.0)
 
         # Query by join key
         dep = self.db.get_theater_by_join_key("key-test12")
