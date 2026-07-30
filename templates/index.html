@@ -2434,8 +2434,8 @@
                     data.color, data.size || 3
                 );
             } else if (data.type === 'toggle_mic') {
-                if (isOrator && agentWs && agentWs.readyState === WebSocket.OPEN && !agentMicBtn.disabled) {
-                    agentMicBtn.click();
+                if (isOrator && agentConnectBtn && !agentConnectBtn.disabled) {
+                    agentConnectBtn.click();
                 }
             } else if (data.type === 'baton_state') {
                 if (typeof updateBatonStateUI === 'function') {
@@ -3452,12 +3452,8 @@
             if (matchCode && matchAlt && matchCtrl && matchShift) {
                 e.preventDefault();
 
-                if (agentWs && agentWs.readyState === WebSocket.OPEN && !agentMicBtn.disabled) {
-                    agentMicBtn.click();
-                } else if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                    console.log("[Hotkey] Cannot toggle mic: Agent not connected.");
-                    agentConnectBtn.style.transform = 'scale(1.05)';
-                    setTimeout(() => agentConnectBtn.style.transform = 'none', 200);
+                if (agentConnectBtn && !agentConnectBtn.disabled) {
+                    agentConnectBtn.click();
                 }
             }
         });
@@ -3471,9 +3467,10 @@
         // Expose helper functions on window for automated evaluation
         window.enableAudioInput = () => {
             isRecording = true;
-            agentMicBtn.innerHTML = '<span class="icon">🎙️</span> Mic Active';
-            agentMicBtn.style.background = '#ef4444';
-            agentMicBtn.classList.add('recording-active');
+            if (agentConnectBtn) {
+                agentConnectBtn.textContent = '🔌 Disconnect';
+                agentConnectBtn.style.background = '#ef4444';
+            }
         };
 
         window.connectAgentAndMic = async () => {
@@ -3895,12 +3892,13 @@
                     <div class="step-num">1</div>
                     <div class="step-content">
                         <div class="step-title">
-                            Connect to the Agent
+                            Connect & Stream Microphone
                             <span class="step-badge">🔌 Connect Agent</span>
                         </div>
                         <div class="step-desc">
-                            Click the <strong>Connect Agent</strong> button in the top control bar to connect your
-                            canvas theater to the Narratron AI agent.
+                            Click <strong>Connect Agent</strong> (or press hotkey <code
+                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;">Ctrl+Shift+[</code>)
+                            to connect your canvas theater to the Narratron AI agent and start real-time microphone streaming.
                         </div>
                     </div>
                 </div>
@@ -3909,13 +3907,11 @@
                     <div class="step-num">2</div>
                     <div class="step-content">
                         <div class="step-title">
-                            Unmute Microphone
-                            <span class="step-badge mic-badge">🎤 Mic Off ➔ 🎙️ Mic Active</span>
+                            Interact & Speak Live
+                            <span class="step-badge mic-badge">🔌 Connect ➔ 🎙️ Disconnect</span>
                         </div>
                         <div class="step-desc">
-                            Click <strong>Mic Off</strong> (or press hotkey <code
-                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;">Ctrl+Shift+[</code>)
-                            to unmute your microphone and start speaking to the agent in real time.
+                            Speak to the agent in real time while using the bottom toolbar to doodle on canvas. Press the hotkey again (or click <strong>Disconnect</strong>) to end the session.
                         </div>
                     </div>
                 </div>
@@ -3927,7 +3923,7 @@
                         <div class="step-desc">
                             • Use headphones to prevent background audio echo.<br>
                             • Use the bottom toolbar to doodle live on canvas.<br>
-                            • Click <strong>Hotkey</strong> in top bar to customize your mic shortcut.
+                            • Open pullout menu ➔ <strong>Hotkey</strong> to customize your shortcut.
                         </div>
                     </div>
                 </div>

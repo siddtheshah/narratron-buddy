@@ -850,10 +850,10 @@
                 <!-- 3 Theater Creation Path Cards -->
                 <div class="creation-paths-container">
                     <div class="creation-paths-grid">
-                        <div class="path-card active" id="pathCardFolder" onclick="selectCreationPath('folder')">
-                            <div class="path-icon">📁</div>
-                            <div class="path-title">Folder Package</div>
-                            <div class="path-desc">Upload folder / zip with references & audio</div>
+                        <div class="path-card active" id="pathCardBlank" onclick="selectCreationPath('blank')">
+                            <div class="path-icon">✨</div>
+                            <div class="path-title">Blank Canvas</div>
+                            <div class="path-desc">Fast clean launch with default library assets</div>
                         </div>
 
                         <div class="path-card" id="pathCardIndividual" onclick="selectCreationPath('individual')">
@@ -862,10 +862,10 @@
                             <div class="path-desc">Pick individual images & build custom playlists</div>
                         </div>
 
-                        <div class="path-card" id="pathCardBlank" onclick="selectCreationPath('blank')">
-                            <div class="path-icon">✨</div>
-                            <div class="path-title">Blank Canvas</div>
-                            <div class="path-desc">Fast clean launch with default library assets</div>
+                        <div class="path-card" id="pathCardFolder" onclick="selectCreationPath('folder')">
+                            <div class="path-icon">📁</div>
+                            <div class="path-title">Folder Package</div>
+                            <div class="path-desc">Upload folder / zip with references & audio</div>
                         </div>
                     </div>
                 </div>
@@ -884,8 +884,45 @@
                     <small>Applied to generated images unless their prompt specifies a style.</small>
                 </div>
 
-                <!-- PATH 1: Folder Creation -->
-                <div id="pathSectionFolder" class="creation-path-section">
+                <!-- PATH 1: Blank Canvas -->
+                <div id="pathSectionBlank" class="creation-path-section">
+                    <div
+                        style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+                        <span style="font-size: 2rem; display: block; margin-bottom: 0.4rem;">✨</span>
+                        <h4 style="font-size: 0.95rem; font-weight: 700; color: #34d399; margin-bottom: 0.25rem;">Clean
+                            Blank Canvas</h4>
+                        <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45;">
+                            Deploy an instant interactive theater. Default Narratron library reference assets and
+                            ambient audio will be mounted automatically.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- PATH 2: Individual Asset Upload -->
+                <div id="pathSectionIndividual" class="creation-path-section" style="display: none;">
+                    <div class="form-group">
+                        <label>Reference Images</label>
+                        <div class="dropzone" id="refDropzone">
+                            <input type="file" id="refFileInput" accept="image/*" multiple style="display: none;">
+                            <span style="font-size: 1.5rem;">🖼️</span>
+                            <p>Click or drag & drop reference images here</p>
+                        </div>
+                        <div class="file-list" id="refFileList"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Playlists & Tracks</label>
+                        <div id="playlistsContainer"></div>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <input type="text" id="newPlaylistName" placeholder="New Playlist Name" style="flex: 1;">
+                            <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add
+                                Playlist</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PATH 3: Folder Package Creation -->
+                <div id="pathSectionFolder" class="creation-path-section" style="display: none;">
                     <div class="form-group" style="position: relative;">
                         <div
                             style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
@@ -968,43 +1005,6 @@
                                 style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- PATH 2: Individual Asset Upload -->
-                <div id="pathSectionIndividual" class="creation-path-section" style="display: none;">
-                    <div class="form-group">
-                        <label>Reference Images</label>
-                        <div class="dropzone" id="refDropzone">
-                            <input type="file" id="refFileInput" accept="image/*" multiple style="display: none;">
-                            <span style="font-size: 1.5rem;">🖼️</span>
-                            <p>Click or drag & drop reference images here</p>
-                        </div>
-                        <div class="file-list" id="refFileList"></div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Playlists & Tracks</label>
-                        <div id="playlistsContainer"></div>
-                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                            <input type="text" id="newPlaylistName" placeholder="New Playlist Name" style="flex: 1;">
-                            <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add
-                                Playlist</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- PATH 3: Blank Canvas -->
-                <div id="pathSectionBlank" class="creation-path-section" style="display: none;">
-                    <div
-                        style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
-                        <span style="font-size: 2rem; display: block; margin-bottom: 0.4rem;">✨</span>
-                        <h4 style="font-size: 0.95rem; font-weight: 700; color: #34d399; margin-bottom: 0.25rem;">Clean
-                            Blank Canvas</h4>
-                        <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45;">
-                            Deploy an instant interactive theater. Default Narratron library reference assets and
-                            ambient audio will be mounted automatically.
-                        </p>
                     </div>
                 </div>
 
@@ -1990,7 +1990,7 @@
         }
 
         // 3 Creation Path State & Switcher
-        let currentCreationPath = 'folder';
+        let currentCreationPath = 'blank';
 
         function selectCreationPath(mode) {
             currentCreationPath = mode;
