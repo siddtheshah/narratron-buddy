@@ -74,6 +74,44 @@ async def handle_live_websocket_connection(
     total_audio_bytes = 0
     last_audio_log_time = time.monotonic()
 
+    TARGET_AUDIO_CHUNK_BYTES = 96000  # 3.0 seconds at 16kHz 16-bit mono PCM (16000 * 2 * 3)
+    TARGET_AUDIO_FLUSH_INTERVAL = 3.0
+    audio_buffer = bytearray()
+    last_audio_flush_time = time.monotonic()
+
+    def _send_audio_blob(chunk_bytes: bytes):
+        nonlocal audio_chunk_count, total_audio_bytes, last_audio_log_time
+        if not chunk_bytes:
+            return
+        audio_chunk_count += 1
+        total_audio_bytes += len(chunk_bytes)
+        now = time.monotonic()
+        if now - last_audio_log_time >= 5.0 or audio_chunk_count == 1:
+            logger.info(
+                f"[LiveStreamService] Audio chunk #{audio_chunk_count} ({len(chunk_bytes)} bytes, total {total_audio_bytes} bytes) sent to model for theater_id={theater_id}"
+            )
+            last_audio_log_time = now
+
+        audio_blob = types.Blob(
+            mime_type="audio/pcm;rate=16000", data=chunk_bytes
+        )
+        agent_session.record_audio_input(len(chunk_bytes))
+        agent_session.send_realtime(audio_blob)
+
+    def flush_audio_buffer(force_all: bool = False):
+        nonlocal last_audio_flush_time
+        while len(audio_buffer) >= TARGET_AUDIO_CHUNK_BYTES:
+            chunk = bytes(audio_buffer[:TARGET_AUDIO_CHUNK_BYTES])
+            del audio_buffer[:TARGET_AUDIO_CHUNK_BYTES]
+            _send_audio_blob(chunk)
+            last_audio_flush_time = time.monotonic()
+
+        if force_all and audio_buffer:
+            chunk = bytes(audio_buffer)
+            audio_buffer.clear()
+            _send_audio_blob(chunk)
+            last_audio_flush_time = time.monotonic()
+
     try:
         while True:
             message = await websocket.receive()
@@ -82,20 +120,12 @@ async def handle_live_websocket_connection(
                 audio_data = message.get("bytes")
                 if not audio_data or len(audio_data) < 64:
                     continue
-                audio_chunk_count += 1
-                total_audio_bytes += len(audio_data)
+                audio_buffer.extend(audio_data)
                 now = time.monotonic()
-                if now - last_audio_log_time >= 5.0 or audio_chunk_count == 1:
-                    logger.info(
-                        f"[LiveStreamService] Audio stream active: received {audio_chunk_count} chunks ({total_audio_bytes} bytes total) for theater_id={theater_id}"
-                    )
-                    last_audio_log_time = now
-
-                audio_blob = types.Blob(
-                    mime_type="audio/pcm;rate=16000", data=audio_data
-                )
-                agent_session.record_audio_input(len(audio_data))
-                agent_session.send_realtime(audio_blob)
+                if now - last_audio_flush_time >= TARGET_AUDIO_FLUSH_INTERVAL and len(audio_buffer) > 0:
+                    flush_audio_buffer(force_all=True)
+                else:
+                    flush_audio_buffer(force_all=False)
 
             elif "text" in message:
                 text_data = message.get("text")
@@ -143,4 +173,7 @@ async def handle_live_websocket_connection(
     except (WebSocketDisconnect, RuntimeError):
         logger.debug(f"[LiveStreamService] Client disconnected for theater_id={theater_id}")
     finally:
+        if audio_buffer:
+            flush_audio_buffer(force_all=True)
         await agent_session.remove_websocket(websocket)
+

@@ -2993,18 +2993,49 @@
             }
         });
 
-        // Audio Recorder Callback
+        // Audio Recorder Callback with 3-Second Chunking (96,000 bytes @ 16kHz 16-bit PCM mono)
+        const AUDIO_TARGET_CHUNK_BYTES = 96000;
+        const AUDIO_FLUSH_MAX_INTERVAL_MS = 3000;
         let clientAudioChunkCount = 0;
+        let clientAudioBuffers = [];
+        let clientAudioTotalBytes = 0;
+        let clientAudioLastFlushTime = Date.now();
+
+        function flushClientAudioBuffer() {
+            if (clientAudioTotalBytes === 0) return;
+            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                clientAudioBuffers = [];
+                clientAudioTotalBytes = 0;
+                return;
+            }
+            const combined = new Uint8Array(clientAudioTotalBytes);
+            let offset = 0;
+            for (let i = 0; i < clientAudioBuffers.length; i++) {
+                const chunk = new Uint8Array(clientAudioBuffers[i]);
+                combined.set(chunk, offset);
+                offset += chunk.byteLength;
+            }
+            clientAudioChunkCount++;
+            console.log(`[AudioRecorder] Forwarding 3-second PCM audio chunk #${clientAudioChunkCount} (${combined.byteLength} bytes) to Agent WebSocket.`);
+            agentWs.send(combined.buffer);
+
+            clientAudioBuffers = [];
+            clientAudioTotalBytes = 0;
+            clientAudioLastFlushTime = Date.now();
+        }
+
         function audioRecorderHandler(pcmData) {
             if (!isRecording) return;
             if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
                 return;
             }
-            clientAudioChunkCount++;
-            if (clientAudioChunkCount % 100 === 1) {
-                console.log(`[AudioRecorder] Forwarding PCM audio chunk #${clientAudioChunkCount} (${pcmData.byteLength || pcmData.size || 'raw'} bytes) to Agent WebSocket.`);
+            clientAudioBuffers.push(pcmData);
+            clientAudioTotalBytes += (pcmData.byteLength || pcmData.size || 0);
+
+            const now = Date.now();
+            if (clientAudioTotalBytes >= AUDIO_TARGET_CHUNK_BYTES || (now - clientAudioLastFlushTime >= AUDIO_FLUSH_MAX_INTERVAL_MS)) {
+                flushClientAudioBuffer();
             }
-            agentWs.send(pcmData);
         }
 
         // ========================================
@@ -3212,6 +3243,7 @@
 
         // Stop mic recording
         function stopMicStream() {
+            try { flushClientAudioBuffer(); } catch (e) { }
             if (micStream) {
                 stopMicrophone(micStream);
                 micStream = null;
