@@ -118,6 +118,8 @@ async def handle_live_websocket_connection(
                     rms = json_message.get("rms")
                     ts = json_message.get("ts")
                     logger.info(f"[Mic Detection] theater_id={theater_id} rms={rms} ts={ts}")
+                    if hasattr(agent_session, "record_input_detected"):
+                        agent_session.record_input_detected()
 
                 elif msg_type == "ping":
                     if agent_session.canvas_state_manager:

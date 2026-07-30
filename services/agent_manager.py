@@ -24,6 +24,7 @@ from services.live_stream_service import (
     get_bound_tool_instance,
 )
 from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
+from services.priority_live_request_queue import PriorityLiveRequestQueue
 from utils.theaters_paths import ensure_theaters_root
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ class AgentSession:
         self.last_active_at = time.time()
         self.status = "ready"  # "ready", "active", "stopped"
 
-        self.live_request_queue = LiveRequestQueue()
+        self.live_request_queue = PriorityLiveRequestQueue(retention_window=0.5)
         self.websockets: Set[WebSocket] = set()
         self.ws_lock = asyncio.Lock()
 
@@ -162,6 +163,11 @@ class AgentSession:
     @property
     def websocket_connected(self) -> bool:
         return len(self.websockets) > 0
+
+    def record_input_detected(self) -> None:
+        """Mark that orator input has been detected to hold priority window."""
+        if hasattr(self.live_request_queue, "record_input_detected"):
+            self.live_request_queue.record_input_detected()
 
     def send_content(self, content: types.Content) -> bool:
         """Send content to live_request_queue if user is connected; suppress otherwise."""
