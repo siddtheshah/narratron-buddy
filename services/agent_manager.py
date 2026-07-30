@@ -24,7 +24,7 @@ from services.live_stream_service import (
     get_bound_tool_instance,
 )
 from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
-from utils.session_paths import ensure_sessions_root
+from utils.theaters_paths import ensure_theaters_root
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def build_run_config(
 class AgentSession:
     def __init__(
         self,
-        narratron_session_id: str,
+        theater_id: str,
         agent: Any,
         runner: Runner,
         session_service: InMemorySessionService,
@@ -111,9 +111,9 @@ class AgentSession:
         adk_session_id: Optional[str] = None,
     ):
         import uuid
-        self.narratron_session_id = narratron_session_id
-        self.adk_session_id = adk_session_id or f"adk_{narratron_session_id}_{uuid.uuid4().hex[:8]}"
-        self.adk_user_id = adk_user_id or f"orator_{narratron_session_id}"
+        self.theater_id = theater_id
+        self.adk_session_id = adk_session_id or f"adk_{theater_id}_{uuid.uuid4().hex[:8]}"
+        self.adk_user_id = adk_user_id or f"orator_{theater_id}"
         self.agent = agent
         self.runner = runner
         self.session_service = session_service
@@ -135,9 +135,9 @@ class AgentSession:
         self.music_tools = get_bound_tool_instance(agent, "play_playlist")
 
         if self.image_tools and hasattr(self.image_tools, "active_session_id"):
-            self.image_tools.active_narratron_session_id = narratron_session_id
+            self.image_tools.active_theater_id = theater_id
         if self.notes_tools and hasattr(self.notes_tools, "active_session_id"):
-            self.notes_tools.active_narratron_session_id = narratron_session_id
+            self.notes_tools.active_theater_id = theater_id
 
         self.run_config = run_config or build_run_config(
             agent=agent,
@@ -158,7 +158,7 @@ class AgentSession:
     def send_content(self, content: types.Content) -> bool:
         """Send content to live_request_queue if user is connected; suppress otherwise."""
         if not self.websocket_connected:
-            logger.debug(f"[AgentSession] User disconnected; suppressing content input for session {self.narratron_session_id}.")
+            logger.debug(f"[AgentSession] User disconnected; suppressing content input for session {self.theater_id}.")
             return False
         self.live_request_queue.send_content(content)
         return True
@@ -166,7 +166,7 @@ class AgentSession:
     def send_realtime(self, blob: types.Blob) -> bool:
         """Send realtime audio/image blob to live_request_queue if user is connected; suppress otherwise."""
         if not self.websocket_connected:
-            logger.debug(f"[AgentSession] User disconnected; suppressing realtime input for session {self.narratron_session_id}.")
+            logger.debug(f"[AgentSession] User disconnected; suppressing realtime input for session {self.theater_id}.")
             return False
         self.live_request_queue.send_realtime(blob)
         return True
@@ -211,7 +211,7 @@ class AgentSession:
     def send_canvas_state(self, *, force: bool = False) -> bool:
         """Inject current canvas image/music state into LiveRequestQueue."""
         if not self.websocket_connected:
-            logger.debug(f"[AgentSession] User disconnected; suppressing canvas state update for session {self.narratron_session_id}.")
+            logger.debug(f"[AgentSession] User disconnected; suppressing canvas state update for session {self.theater_id}.")
             return False
         now = time.monotonic()
         with self.state_lock:
@@ -239,7 +239,7 @@ class AgentSession:
 
     async def _run_downstream(self):
         """Task that runs runner.run_live() continuously and broadcasts model events to attached WebSockets."""
-        logger.info(f"[AgentSession] Starting downstream_task (runner.run_live) for narratron_session_id={self.narratron_session_id}")
+        logger.info(f"[AgentSession] Starting downstream_task (runner.run_live) for theater_id={self.theater_id}")
         try:
             if await self.session_service.get_session(
                 app_name=self.runner.app_name,
@@ -273,9 +273,9 @@ class AgentSession:
                 event_json = json.dumps(event_dict)
                 await self.broadcast_text(event_json)
         except asyncio.CancelledError:
-            logger.debug(f"[AgentSession] downstream_task cancelled for narratron_session_id={self.narratron_session_id}")
+            logger.debug(f"[AgentSession] downstream_task cancelled for theater_id={self.theater_id}")
         except Exception as e:
-            logger.error(f"[AgentSession] Exception in downstream_task for narratron_session_id={self.narratron_session_id}: {e}", exc_info=True)
+            logger.error(f"[AgentSession] Exception in downstream_task for theater_id={self.theater_id}: {e}", exc_info=True)
 
     async def _run_canvas_refresh(self):
         try:
@@ -293,10 +293,10 @@ class AgentSession:
             self.websockets.add(websocket)
             self.status = "active"
             self.last_active_at = time.time()
-            logger.info(f"[AgentSession] WebSocket attached to session {self.narratron_session_id} (total={len(self.websockets)})")
+            logger.info(f"[AgentSession] WebSocket attached to session {self.theater_id} (total={len(self.websockets)})")
 
         if was_disconnected:
-            logger.info(f"[AgentSession] User reconnected for session {self.narratron_session_id}; re-enabling state information.")
+            logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state(force=True)
 
     async def remove_websocket(self, websocket: WebSocket):
@@ -306,9 +306,9 @@ class AgentSession:
             is_now_disconnected = len(self.websockets) == 0
             if is_now_disconnected:
                 self.status = "ready"
-            logger.info(f"[AgentSession] WebSocket detached from session {self.narratron_session_id} (remaining={len(self.websockets)})")
+            logger.info(f"[AgentSession] WebSocket detached from session {self.theater_id} (remaining={len(self.websockets)})")
             if is_now_disconnected:
-                logger.info(f"[AgentSession] User disconnected for session {self.narratron_session_id}; inputs are now suppressed.")
+                logger.info(f"[AgentSession] User disconnected for session {self.theater_id}; inputs are now suppressed.")
 
     async def broadcast_text(self, text: str):
         async with self.ws_lock:
@@ -344,33 +344,33 @@ class AgentSessionManager:
         # Construct run_config internally from configuration
         self.run_config = build_run_config(config=self.config)
 
-    def get_session(self, narratron_session_id: str) -> Optional[AgentSession]:
-        """Retrieve an active agent session by narratron_session_id if present."""
-        return self._sessions.get(narratron_session_id)
+    def get_session(self, theater_id: str) -> Optional[AgentSession]:
+        """Retrieve an active agent session by theater_id if present."""
+        return self._sessions.get(theater_id)
 
     def get_or_create_session(
         self,
-        narratron_session_id: str,
+        theater_id: str,
         canvas_state_service: Optional[Any] = None,
         use_in_memory_artifacts: bool = False,
     ) -> AgentSession:
         """Fetch an existing active session or instantiate a new AgentSession."""
-        existing = self.get_session(narratron_session_id)
+        existing = self.get_session(theater_id)
         if existing and existing.status != "stopped":
             existing.last_active_at = time.time()
             return existing
 
-        logger.info(f"[AgentSessionManager] Creating new AgentSession for narratron_session_id={narratron_session_id}")
+        logger.info(f"[AgentSessionManager] Creating new AgentSession for theater_id={theater_id}")
 
-        canvas_mgr = canvas_state_service.get(narratron_session_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
+        canvas_mgr = canvas_state_service.get(theater_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
 
         session_agent = create_agent(
-            narratron_session_id=narratron_session_id,
+            theater_id=theater_id,
             config=self.config,
             canvas_state_service=canvas_state_service,
         )
 
-        disk_service_path = ensure_sessions_root() / narratron_session_id / "output" / "artifacts"
+        disk_service_path = ensure_theaters_root() / theater_id / "output" / "artifacts"
         if use_in_memory_artifacts:
             artifact_service = PreloadedInMemoryArtifactService()
             test_data_dir = Path(__file__).parent.parent / "testing" / "testdata"
@@ -387,7 +387,7 @@ class AgentSessionManager:
         )
 
         agent_session = AgentSession(
-            narratron_session_id=narratron_session_id,
+            theater_id=theater_id,
             agent=session_agent,
             runner=runner,
             session_service=self.shared_session_service,
@@ -398,18 +398,18 @@ class AgentSessionManager:
         )
 
         agent_session.start_background_tasks()
-        self._sessions[narratron_session_id] = agent_session
+        self._sessions[theater_id] = agent_session
         return agent_session
 
-    def stop_session(self, narratron_session_id: str) -> bool:
+    def stop_session(self, theater_id: str) -> bool:
         """Stop and remove an agent session from memory."""
-        session = self._sessions.get(narratron_session_id)
+        session = self._sessions.get(theater_id)
         if not session:
             return False
 
-        logger.info(f"[AgentSessionManager] Stopping agent narratron_session_id={narratron_session_id}")
+        logger.info(f"[AgentSessionManager] Stopping agent theater_id={theater_id}")
         session.close()
-        del self._sessions[narratron_session_id]
+        del self._sessions[theater_id]
         return True
 
     def cleanup_idle_sessions(self, ttl_seconds: float = 300.0) -> list:
@@ -421,7 +421,7 @@ class AgentSessionManager:
                 expired_ids.append(sid)
 
         for sid in expired_ids:
-            logger.info(f"[AgentSessionManager] Auto-cleaning idle narratron_session_id={sid}")
+            logger.info(f"[AgentSessionManager] Auto-cleaning idle theater_id={sid}")
             self.stop_session(sid)
 
         return expired_ids

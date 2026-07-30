@@ -1,3 +1,3 @@
-from deployer.deployer import BaseDeployer, LocalDeployer, SessionMetadata
+from deployer.deployer import BaseDeployer, LocalDeployer, TheaterMetadata
 
-__all__ = ["BaseDeployer", "LocalDeployer", "SessionMetadata"]
+__all__ = ["BaseDeployer", "LocalDeployer", "TheaterMetadata"]

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -165,9 +166,20 @@
     }
 
     @keyframes pulse {
-      0% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(1.2); }
-      100% { opacity: 1; transform: scale(1); }
+      0% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(1.2);
+      }
+
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
     }
 
     /* Cards Grid */
@@ -342,7 +354,7 @@
       white-space: nowrap;
     }
 
-    /* Top Sessions Table */
+    /* Top Theaters Table */
     .table-card {
       background: var(--glass-card);
       border: 1px solid var(--glass-border);
@@ -394,7 +406,7 @@
       background: rgba(255, 255, 255, 0.02);
     }
 
-    .session-name {
+    .theater-name {
       font-weight: 600;
       color: #ffffff;
       display: flex;
@@ -402,7 +414,7 @@
       gap: 10px;
     }
 
-    .session-id-tag {
+    .theater-id-tag {
       font-family: monospace;
       font-size: 0.8rem;
       color: var(--text-muted);
@@ -440,7 +452,10 @@
       background: rgba(15, 23, 42, 0.4);
     }
 
-    .join-modal[hidden] { display: none; }
+    .join-modal[hidden] {
+      display: none;
+    }
+
     .join-modal {
       position: fixed;
       inset: 0;
@@ -450,6 +465,7 @@
       padding: 20px;
       background: rgba(2, 6, 23, 0.72);
     }
+
     .join-modal-card {
       width: min(420px, 100%);
       padding: 28px;
@@ -458,22 +474,51 @@
       background: #18213a;
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
     }
-    .join-modal-card h2 { margin-bottom: 10px; }
-    .join-modal-card p { color: var(--text-muted); margin-bottom: 18px; line-height: 1.5; }
-    .join-modal-card input {
-      width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 9px;
-      border: 1px solid var(--glass-border); background: rgba(255,255,255,0.08);
-      color: var(--text-main); font: inherit; text-transform: uppercase; letter-spacing: 1px;
+
+    .join-modal-card h2 {
+      margin-bottom: 10px;
     }
-    .join-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
-    .join-error { min-height: 20px; color: #fda4af; font-size: 0.9rem; }
+
+    .join-modal-card p {
+      color: var(--text-muted);
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+
+    .join-modal-card input {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 10px;
+      border-radius: 9px;
+      border: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      font: inherit;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .join-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .join-error {
+      min-height: 20px;
+      color: #fda4af;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
+
 <body>
 
   <header>
     <a href="/" class="logo">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+        stroke-linecap="round" stroke-linejoin="round">
         <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
         <polyline points="2 17 12 22 22 17"></polyline>
         <polyline points="2 12 12 17 22 12"></polyline>
@@ -481,8 +526,8 @@
       Narratron Buddy
     </a>
     <div class="nav-links">
-      <a href="/deploy" class="nav-btn">Deploy Session</a>
-      <a href="/join" class="nav-btn">Join Session</a>
+      <a href="/deploy" class="nav-btn">Deploy Theater</a>
+      <a href="/join" class="nav-btn">Join Theater</a>
       <a href="/stats" class="nav-btn primary">Stats Dashboard</a>
     </div>
   </header>
@@ -491,7 +536,7 @@
     <div class="title-row">
       <div class="title-area">
         <h1>Stats & Analytics Dashboard</h1>
-        <p>Live platform metrics, user activity, and session view insights</p>
+        <p>Live platform metrics, user activity, and theater view insights</p>
       </div>
       <div class="controls-row">
         <div class="live-badge">
@@ -499,7 +544,8 @@
           Live Tracking
         </div>
         <button class="nav-btn" onclick="fetchStats()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
           </svg>
@@ -534,7 +580,7 @@
 
       <div class="metric-card">
         <div class="metric-title">
-          Total Session Views
+          Total Theater Views
           <span class="metric-icon">👁️</span>
         </div>
         <div class="metric-value" id="val-total-views">--</div>
@@ -559,7 +605,7 @@
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-header">
-          <h3>Daily Session Views</h3>
+          <h3>Daily Theater Views</h3>
           <span>Past 7 Days</span>
         </div>
         <div class="bar-chart-container" id="chart-daily-views">
@@ -578,25 +624,25 @@
       </div>
     </div>
 
-    <!-- Top Viewed Sessions Table -->
+    <!-- Top Viewed Theaters Table -->
     <div class="table-card">
       <div class="table-header">
-        <h3>Top Viewed Sessions</h3>
-        <span style="font-size: 0.85rem; color: var(--text-muted);">Most popular session canvases</span>
+        <h3>Top Viewed Theaters</h3>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">Most popular theater canvases</span>
       </div>
       <table>
         <thead>
           <tr>
             <th>Rank</th>
-            <th>Session Name</th>
-            <th>Session ID</th>
+            <th>Theater Name</th>
+            <th>Theater ID</th>
             <th>Views</th>
             <th>Action</th>
           </tr>
         </thead>
-        <tbody id="top-sessions-body">
+        <tbody id="top-theaters-body">
           <tr>
-            <td colspan="5" class="empty-state">Loading top sessions...</td>
+            <td colspan="5" class="empty-state">Loading top theaters...</td>
           </tr>
         </tbody>
       </table>
@@ -605,8 +651,8 @@
 
   <div id="join-modal" class="join-modal" hidden role="dialog" aria-modal="true" aria-labelledby="join-modal-title">
     <div class="join-modal-card">
-      <h2 id="join-modal-title">Enter session key</h2>
-      <p>Enter the Join Key for <code id="join-narratron-session-id"></code> to view its canvas.</p>
+      <h2 id="join-modal-title">Enter theater key</h2>
+      <p>Enter the Join Key for <code id="join-narratron-theater-id"></code> to view its canvas.</p>
       <input id="join-key-input" type="text" placeholder="KEY-XXXXXX" autocomplete="off">
       <div id="join-error" class="join-error" role="alert"></div>
       <div class="join-modal-actions">
@@ -636,8 +682,8 @@
       // Metric values
       document.getElementById('val-accounts').textContent = data.total_accounts.toLocaleString();
       document.getElementById('val-active-7d').textContent = data.active_users_7d.toLocaleString();
-      document.getElementById('val-total-views').textContent = data.total_session_views.toLocaleString();
-      document.getElementById('val-views-7d').textContent = data.session_views_7d.toLocaleString();
+      document.getElementById('val-total-views').textContent = data.total_theater_views.toLocaleString();
+      document.getElementById('val-views-7d').textContent = data.theater_views_7d.toLocaleString();
 
       // Render Views Bar Chart
       renderBarChart('chart-daily-views', data.daily_views_7d, 'views', false);
@@ -645,8 +691,8 @@
       // Render Active Users Bar Chart
       renderBarChart('chart-daily-users', data.daily_active_users_7d, 'active_users', true);
 
-      // Render Top Sessions Table
-      renderTopSessions(data.top_viewed_sessions);
+      // Render Top Theaters Table
+      renderTopTheaters(data.top_viewed_theaters);
     }
 
     function renderBarChart(containerId, list, key, isAlt) {
@@ -678,41 +724,41 @@
       });
     }
 
-    function renderTopSessions(sessions) {
-      const tbody = document.getElementById('top-sessions-body');
+    function renderTopTheaters(theaters) {
+      const tbody = document.getElementById('top-theaters-body');
       tbody.innerHTML = '';
 
-      if (!sessions || sessions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No session view history recorded yet.</td></tr>';
+      if (!theaters || theaters.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No theater view history recorded yet.</td></tr>';
         return;
       }
 
-      sessions.forEach((s, idx) => {
+      theaters.forEach((s, idx) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td style="font-weight: 600; color: var(--text-muted);">#${idx + 1}</td>
-          <td class="session-name">${escapeHtml(s.name || s.narratron_session_id)}</td>
-          <td><span class="session-id-tag">${escapeHtml(s.narratron_session_id)}</span></td>
+          <td class="theater-name">${escapeHtml(s.name || s.theater_id)}</td>
+          <td><span class="theater-id-tag">${escapeHtml(s.theater_id)}</span></td>
           <td><span class="views-badge">👁️ ${s.views}</span></td>
           <td>
-            <button type="button" class="nav-btn view-canvas-btn" data-narratron-session-id="${escapeHtml(s.narratron_session_id)}" style="padding: 6px 12px; font-size: 0.85rem;">
+            <button type="button" class="nav-btn view-canvas-btn" data-narratron-theater-id="${escapeHtml(s.theater_id)}" style="padding: 6px 12px; font-size: 0.85rem;">
               View Canvas
             </button>
           </td>
         `;
-        tr.querySelector('.view-canvas-btn').addEventListener('click', () => openJoinKeyModal(s.narratron_session_id));
+        tr.querySelector('.view-canvas-btn').addEventListener('click', () => openJoinKeyModal(s.theater_id));
         tbody.appendChild(tr);
       });
     }
 
-    let pendingNarratronSessionId = null;
+    let pendingtheaterId = null;
     const joinModal = document.getElementById('join-modal');
     const joinKeyInput = document.getElementById('join-key-input');
     const joinError = document.getElementById('join-error');
 
-    function openJoinKeyModal(narratronSessionId) {
-      pendingNarratronSessionId = narratronSessionId;
-      document.getElementById('join-narratron-session-id').textContent = narratronSessionId;
+    function openJoinKeyModal(theaterId) {
+      pendingtheaterId = theaterId;
+      document.getElementById('join-narratron-theater-id').textContent = theaterId;
       joinKeyInput.value = '';
       joinError.textContent = '';
       joinModal.hidden = false;
@@ -721,7 +767,7 @@
 
     function closeJoinKeyModal() {
       joinModal.hidden = true;
-      pendingNarratronSessionId = null;
+      pendingtheaterId = null;
     }
 
     async function submitJoinKey() {
@@ -732,19 +778,19 @@
         return;
       }
       try {
-        const response = await fetch('/api/sessions/resolve-join-key', {
+        const response = await fetch('/api/theaters/resolve-join-key', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ join_key: joinKey }),
         });
         const data = await response.json();
-        if (!response.ok || data.narratron_session_id !== pendingNarratronSessionId) {
+        if (!response.ok || data.theater_id !== pendingtheaterId) {
           joinError.textContent = response.ok
-            ? 'That Join Key belongs to a different session.'
+            ? 'That Join Key belongs to a different theater.'
             : (data.detail || 'Invalid Join Key.');
           return;
         }
-        window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(data.narratron_session_id)}`;
+        window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
       } catch (error) {
         joinError.textContent = 'Unable to verify the Join Key. Please try again.';
       }
@@ -775,4 +821,5 @@
     setInterval(fetchStats, 10000);
   </script>
 </body>
+
 </html>

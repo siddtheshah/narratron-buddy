@@ -7,7 +7,7 @@ __pycache__/
 .agents/
 output/
 scratch/
-sessions/
+theaters/
 evaluation_results/
 .env
 *.db

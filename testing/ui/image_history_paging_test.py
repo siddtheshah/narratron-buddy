@@ -37,13 +37,13 @@ class TestImageHistoryPaging(UITestCase):
         self.assertTrue(history[0]["url"])
         self.assertIn("prompt", history[0])
 
-    def test_history_persists_in_the_test_session_directory(self):
-        session_id = "history_persistence"
-        manager = self.make_canvas_state(session_id)
+    def test_history_persists_in_the_test_theater_directory(self):
+        theater_id = "history_persistence"
+        manager = self.make_canvas_state(theater_id)
         manager.update_shown_image("/path/a.png", transition="fade")
         manager.update_shown_image("/path/b.png", transition="crossfade")
 
-        manager.export_session_data(session_dir=self.sessions_dir / session_id)
+        manager.export_theater_data(theater_dir=self.theaters_dir / theater_id)
 
-        reloaded_manager = self.make_canvas_state(session_id)
+        reloaded_manager = self.make_canvas_state(theater_id)
         self.assertEqual(len(reloaded_manager.shown_images_history), 2)

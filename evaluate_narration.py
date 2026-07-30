@@ -198,7 +198,7 @@ async def stream_audio_task(page, wav_path, buffer_time):
             
         await asyncio.sleep(2)
     
-    print("[Evaluator] Audio input active and Gemini session ready. Ready to stream narration WAV...")
+    print("[Evaluator] Audio input active and Gemini theater ready. Ready to stream narration WAV...")
     
     with wave.open(wav_path, "rb") as wav_file:
         n_channels = wav_file.getnchannels()
@@ -408,7 +408,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
         print("[Evaluator] Server is online and responsive.")
         
         # Step 2.5: Create & Deploy a Session with Authentication
-        narratron_session_id = None
+        theater_id = None
         join_key = ""
         cj = http.cookiejar.CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
@@ -439,8 +439,8 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             with opener.open(login_req) as resp:
                 print("[Evaluator] Logged in eval_user successfully.")
 
-        # Create & deploy session via form data
-        create_url = f"http://127.0.0.1:{port}/api/sessions/create-and-deploy"
+        # Create & deploy theater via form data
+        create_url = f"http://127.0.0.1:{port}/api/theaters/create-and-deploy"
         form_data = urllib.parse.urlencode({"name": "Evaluation Session"}).encode("utf-8")
         create_req = urllib.request.Request(
             create_url,
@@ -448,14 +448,14 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
         with opener.open(create_req) as resp:
-            created_session = json.loads(resp.read().decode("utf-8"))
-            narratron_session_id = created_session.get("narratron_session_id")
-            session_info = created_session.get("session", {})
-            join_key = session_info.get("join_key", "")
-            print(f"[Evaluator] Created session '{narratron_session_id}' (Join Key: '{join_key}')")
+            created_theater = json.loads(resp.read().decode("utf-8"))
+            theater_id = created_theater.get("theater_id")
+            theater_info = created_theater.get("theater", {})
+            join_key = theater_info.get("join_key", "")
+            print(f"[Evaluator] Created theater '{theater_id}' (Join Key: '{join_key}')")
 
-        if not narratron_session_id:
-            raise RuntimeError("Failed to create session via API: narratron_session_id is empty.")
+        if not theater_id:
+            raise RuntimeError("Failed to create theater via API: theater_id is empty.")
 
         # Step 3: Launch Playwright & start video recording
         async with async_playwright() as p:
@@ -497,7 +497,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
             page = await context.new_page()
             
             # Build target canvas URL
-            canvas_url = f"http://127.0.0.1:{port}/canvas?narratron_session_id={narratron_session_id}&join_key={join_key}&role=orator"
+            canvas_url = f"http://127.0.0.1:{port}/canvas?theater_id={theater_id}&join_key={join_key}&role=orator"
 
             print(f"[Evaluator] Opening Narratron Orator Canvas at {canvas_url} ...")
             await page.goto(canvas_url)

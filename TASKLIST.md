@@ -3,13 +3,6 @@
 ## App Deployment & Infrastructure
 - [ ] Cleanup daemon (triggers on session creation, removes sessions not marked durable and older than 7 days)
 
-## Database And Performance
-- [x] Performance is abysmal. Everything related to frontend calls to the database have to be made async.
-
-## Frontend
-- [x] Proper how-to popup for the orator. Doesn't need to be a separate page.
-- [x] Improve Splash Page Load by loading the images incrementally.
-
 ## Auth, Security & Monetization
 - [ ] Determine fair pricing
   - Need to track number of image calls used.
@@ -23,16 +16,12 @@
 - [ ] Review public session listing, stats, and configuration endpoints; expose only intentionally public metadata.
 - [ ] Cloudflare
 
-## Deployment Features
-- [x] Folder upload.
-  - Needs a tutorial popup.
+## Sessionization
+- [ ] Narratron Session -> "Theater"
+  - Rather than allow confusion between ADK sessions and the narratron session, we relabel it to theater.
+  - This enables Theater : Agent : Canvas correspondence, decouples the agent audio websocket from the specific user.
+  - Will need to migrate the database schema.
 
-## Agent Responsiveness
-- [x] Show flashing indicator for when the agent is "drawing"
-  - Helps user understand when agent is doing stuff.
-  - Add an indicator for notes taken too.
-- [ ] Show icon for "warming up".
-  - Basically, the agent should be polled while connect to verify it is listening.
 
 ## Narratron UI & Canvas Features
 
@@ -44,15 +33,9 @@
 - [ ] Revise existing image
   - If the image is on canvas, it'll be faded in. 
   - Otherwise, the adapted image will simply remain available to be pulled in.
-- [x] Baton passing
-  - Co-orators must be identified by authenticated accounts; support `owner`, `co-orator`, and `viewer` roles.
-  - One account holds the active baton at a time. Only the baton holder may open the audio/agent-control channel.
-  - The owner can pass, revoke, take back, and optionally lock the baton; invalidate the former holder's connection immediately on a handoff.
-  - Keep the agent conversation separate from the current speaker: use a stable session-scoped agent identity so a handoff does not start a new conversation.
-  - Save a durable handoff snapshot (scene summary, story bible, open threads, current image/music, and recent directives) and inject it when the new holder connects.
-  - Persist agent-session continuity outside in-memory process state so handoffs survive reconnects, Cloud Run instance changes, and restarts.
 
-## Music
+## Bugs
 
-- [x] Ramp music gently, have fade-in and fade-out.
-- [x] Add cooldown for music tool. Agent gets a little crazy with it.
+- [ ] Unresponsive to voice input. Potentially sequence state updates to be after a viewer takes a pause.
+- [ ] Move the old mic binding to bind the connect button instead.
+- [ ] Deletion of theaters/theaters does not work!

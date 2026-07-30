@@ -7,12 +7,12 @@ from testing.ui.base import UITestCase
 
 class TestDoodles(UITestCase):
     def test_doodles_persist_and_reset_when_the_image_changes(self):
-        session_id = "doodle_persistence"
+        theater_id = "doodle_persistence"
         first_image = self.workspace / "img1.jpg"
         second_image = self.workspace / "img2.jpg"
         first_image.write_bytes(b"image one")
         second_image.write_bytes(b"image two")
-        manager = self.make_canvas_state(session_id)
+        manager = self.make_canvas_state(theater_id)
         manager.update_shown_image(str(first_image))
 
         first_doodle = {
@@ -26,12 +26,12 @@ class TestDoodles(UITestCase):
         manager.add_doodle(first_doodle)
         manager.add_doodle(second_doodle)
 
-        session_file = self.sessions_dir / session_id / "session.json"
-        with session_file.open(encoding="utf-8") as file:
+        theater_file = self.theaters_dir / theater_id / "theater.json"
+        with theater_file.open(encoding="utf-8") as file:
             saved_doodles = json.load(file)["canvas_state"]["doodles"]
         self.assertEqual(saved_doodles, [first_doodle, second_doodle])
 
-        reloaded_manager = self.make_canvas_state(session_id)
+        reloaded_manager = self.make_canvas_state(theater_id)
         self.assertEqual(reloaded_manager.doodles_state, [first_doodle, second_doodle])
 
         manager.update_shown_image(str(first_image))

@@ -34,7 +34,7 @@ class TestMusicTools(BaseTestCase):
         with open(os.path.join(self.combat_dir, "battle.mp3"), "w") as f:
             f.write("dummy audio")
 
-        self.music_tools = MusicTools(self.config, narratron_session_id="test_session")
+        self.music_tools = MusicTools(self.config, theater_id="test_theater")
         self.music_tools.playlists_folder = self.temp_dir
 
     def tearDown(self):
@@ -55,7 +55,7 @@ class TestMusicTools(BaseTestCase):
         self.assertIn("Successfully started playing", res)
         mock_play_cb.assert_called_once_with(
             "ambient",
-            ["/sessions/test_session/playlists/ambient/track1.mp3", "/sessions/test_session/playlists/ambient/track2.mp3"]
+            ["/theaters/test_theater/playlists/ambient/track1.mp3", "/theaters/test_theater/playlists/ambient/track2.mp3"]
         )
 
     def test_play_playlist_not_found(self):

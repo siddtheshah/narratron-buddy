@@ -14,13 +14,13 @@ class TestFullscreenPopout(UITestCase):
         self.client = TestClient(app)
 
     def test_canvas_contains_fullscreen_and_popout_controls(self):
-        response = self.client.get("/canvas?session_id=test_session")
+        response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
 
         for element in (
             'id="fullscreen-btn"',
-            'id="obs-session-btn"',
+            'id="obs-theater-btn"',
             'id="fullscreen-icon"',
             "toggleFullScreen",
             "fullscreen-cinematic",
@@ -35,7 +35,7 @@ class TestFullscreenPopout(UITestCase):
             self.assertIn(element, html)
 
     def test_popout_route_serves_chat_template(self):
-        response = self.client.get("/popout?session_id=test_session")
+        response = self.client.get("/popout?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
 

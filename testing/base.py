@@ -5,17 +5,17 @@ from pathlib import Path
 
 
 class BaseTestCase(unittest.TestCase):
-    """Base test fixture that automatically cleans up leftover session directories and cached states."""
+    """Base test fixture that automatically cleans up leftover theater directories and cached states."""
 
     def setUp(self):
         super().setUp()
-        self.addCleanup(self.cleanup_session_directories)
+        self.addCleanup(self.cleanup_theater_directories)
         from utils.email_service import FLAGS
         FLAGS.send_emails = False
         from web_viewer_app import FLAGS as WEB_FLAGS
         WEB_FLAGS.allow_mock_payments = False
 
-    def cleanup_session_directories(self):
+    def cleanup_theater_directories(self):
         # 1. Clear the shared canvas-state cache if loaded
         try:
             from web_viewer_app import canvas_states
@@ -23,10 +23,10 @@ class BaseTestCase(unittest.TestCase):
         except Exception:
             pass
 
-        # 2. Automatically clean up all subdirectories inside sessions/
+        # 2. Automatically clean up all subdirectories inside theaters/
         project_root = Path(__file__).parent.parent.resolve()
-        sessions_dir = project_root / "sessions"
-        if sessions_dir.exists():
-            for item in sessions_dir.iterdir():
+        theaters_dir = project_root / "theaters"
+        if theaters_dir.exists():
+            for item in theaters_dir.iterdir():
                 if item.is_dir():
                     shutil.rmtree(item, ignore_errors=True)

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,7 +17,8 @@
             padding: 0;
         }
 
-        html, body {
+        html,
+        body {
             width: 100vw;
             height: 100vh;
             margin: 0;
@@ -74,7 +76,8 @@
         }
 
         /* Hidden DOM elements for compatibility & image preloading */
-        #current-image, #ghost-image {
+        #current-image,
+        #ghost-image {
             position: absolute;
             opacity: 0;
             pointer-events: none;
@@ -96,6 +99,7 @@
         }
     </style>
 </head>
+
 <body>
 
     <div id="bg-layer"></div>
@@ -109,13 +113,13 @@
 
     <script type="module">
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js";
-        // Extract Session ID from URL parameters or Path
+        // Extract Theater ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
-        let currentNarratronSessionId = urlParams.get('narratron_session_id') || '';
-        if (!currentNarratronSessionId) {
+        let currenttheaterId = urlParams.get('theater_id') || '';
+        if (!currenttheaterId) {
             const pathParts = window.location.pathname.split('/');
             if (pathParts.length > 2 && pathParts[1] === 'obs') {
-                currentNarratronSessionId = decodeURIComponent(pathParts[2]);
+                currenttheaterId = decodeURIComponent(pathParts[2]);
             }
         }
 
@@ -152,7 +156,7 @@
 
         async function fetchLatestImage() {
             try {
-                const apiUrl = currentNarratronSessionId ? `/api/latest?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '/api/latest';
+                const apiUrl = currenttheaterId ? `/api/latest?theater_id=${encodeURIComponent(currenttheaterId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
 
@@ -189,7 +193,7 @@
 
         // Connect WebSocket for Doodles Sync
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currentNarratronSessionId ? `?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '');
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
         const ws = new WebSocket(wsUrl);
 
         ws.onmessage = (event) => {
@@ -220,4 +224,5 @@
         setInterval(fetchLatestImage, 1000);
     </script>
 </body>
+
 </html>

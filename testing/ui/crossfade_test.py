@@ -25,13 +25,13 @@ class TestCrossfade(UITestCase):
         from tools.image_tool import ImageTools
 
         with (
-            patch("tools.image_tool.ensure_sessions_root", return_value=self.sessions_dir),
+            patch("tools.image_tool.ensure_theaters_root", return_value=self.theaters_dir),
             patch("tools.image_tool.genai.Client"),
             patch.object(ImageTools, "_client_cache", None),
         ):
             tool = ImageTools(
                 config={"image_generation": {"cooldown_duration": 0}},
-                narratron_session_id="image_tool_transition",
+                theater_id="image_tool_transition",
             )
 
         image = Path(tool.output_dir) / "test_image.jpg"

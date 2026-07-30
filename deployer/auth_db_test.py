@@ -41,17 +41,17 @@ class TestDatabaseManager(BaseTestCase):
             user = await self.db.register_user_async("async_user", "async@example.com", "Pass12345")
             self.assertEqual(user["username"], "async_user")
 
-            token = await self.db.create_auth_session_async(user["id"])
+            token = await self.db.create_auth_theater_async(user["id"])
             self.assertTrue(len(token) > 20)
 
-            dep_success = await self.db.record_deployment_async("async_session_1", user["id"], "KEY-ASYNC")
+            dep_success = await self.db.record_deployment_async("async_theater_1", user["id"], "KEY-ASYNC")
             self.assertTrue(dep_success)
 
-            view_success = await self.db.record_session_view_async("async_session_1", user["id"], "127.0.0.1")
+            view_success = await self.db.record_theater_view_async("async_theater_1", user["id"], "127.0.0.1")
             self.assertTrue(view_success)
 
-            export_success = await self.db.export_session_to_db_async(
-                "async_session_1",
+            export_success = await self.db.export_theater_to_db_async(
+                "async_theater_1",
                 {"shown_image_prompt": "Async Prompt"},
                 [{"filename": "out.png", "category": "output", "data": b"ASYNC_BYTES"}],
                 user_id=user["id"],
@@ -106,7 +106,7 @@ class TestDatabaseManager(BaseTestCase):
         user = self.db.register_user("deployuser", "deploy@example.com", "Password123")
         join_key = "KEY-TEST12"
         
-        success = self.db.record_deployment("session_test123", user["id"], join_key, cost=5.0)
+        success = self.db.record_deployment("theater_test123", user["id"], join_key, cost=5.0)
         self.assertTrue(success)
 
         # Check updated credits
@@ -114,14 +114,14 @@ class TestDatabaseManager(BaseTestCase):
         self.assertEqual(updated_user["credits"], 95.0)
 
         # Query by join key
-        dep = self.db.get_session_by_join_key("key-test12")
+        dep = self.db.get_theater_by_join_key("key-test12")
         self.assertIsNotNone(dep)
-        self.assertEqual(dep["narratron_session_id"], "session_test123")
+        self.assertEqual(dep["theater_id"], "theater_test123")
 
 
-    def test_export_session_and_reconstruction(self):
+    def test_export_theater_and_reconstruction(self):
         user = self.db.register_user("exportuser", "export@example.com", "Password123")
-        session_id = "session_export_test"
+        theater_id = "theater_export_test"
         state_data = {
             "shown_image_prompt": "Test Prompt",
             "doodles": [{"type": "draw", "x0": 0.1, "y0": 0.2}],
@@ -130,21 +130,21 @@ class TestDatabaseManager(BaseTestCase):
         image_files = [
             {"filename": "test_out.png", "category": "output", "data": b"PNG_DATA"},
             {"filename": "test_ref.jpg", "category": "reference", "data": b"JPG_DATA"},
-            # Session-root files are exported with category "." by CanvasStateManager.
+            # Theater-root files are exported with category "." by CanvasStateManager.
             {"filename": "style.txt", "category": ".", "data": b"moody watercolor"},
         ]
 
-        res = self.db.export_session_to_db(session_id, state_data, image_files, user_id=user["id"], name="Export Test")
+        res = self.db.export_theater_to_db(theater_id, state_data, image_files, user_id=user["id"], name="Export Test")
         self.assertTrue(res)
 
-        exported = self.db.get_exported_session(session_id)
+        exported = self.db.get_exported_theater(theater_id)
         self.assertIsNotNone(exported)
         self.assertEqual(exported["name"], "Export Test")
         self.assertEqual(len(exported["images"]), 3)
 
         # Test reconstruction into target directory
-        recon_dir = Path(self.temp_dir.name) / "reconstructed_session"
-        recon_success = self.db.reconstruct_session_from_db(session_id, recon_dir)
+        recon_dir = Path(self.temp_dir.name) / "reconstructed_theater"
+        recon_success = self.db.reconstruct_theater_from_db(theater_id, recon_dir)
         self.assertTrue(recon_success)
 
         self.assertTrue((recon_dir / "output" / "test_out.png").exists())
@@ -157,17 +157,17 @@ class TestDatabaseManager(BaseTestCase):
         user1 = self.db.register_user("statsuser1", "stats1@example.com", "Password123")
         user2 = self.db.register_user("statsuser2", "stats2@example.com", "Password123")
 
-        # Record session views
-        self.db.record_session_view("session_alpha", user_id=user1["id"], ip_address="127.0.0.1")
-        self.db.record_session_view("session_alpha", user_id=user2["id"], ip_address="127.0.0.1")
-        self.db.record_session_view("session_beta", user_id=None, ip_address="192.168.1.1")
+        # Record theater views
+        self.db.record_theater_view("theater_alpha", user_id=user1["id"], ip_address="127.0.0.1")
+        self.db.record_theater_view("theater_alpha", user_id=user2["id"], ip_address="127.0.0.1")
+        self.db.record_theater_view("theater_beta", user_id=None, ip_address="192.168.1.1")
 
         stats = self.db.get_stats_summary()
         self.assertGreaterEqual(stats["total_accounts"], 2)
         self.assertGreaterEqual(stats["active_users_7d"], 2)
-        self.assertEqual(stats["total_session_views"], 3)
-        self.assertEqual(stats["session_views_7d"], 3)
-        self.assertTrue(any(s["narratron_session_id"] == "session_alpha" and s["views"] == 2 for s in stats["top_viewed_sessions"]))
+        self.assertEqual(stats["total_theater_views"], 3)
+        self.assertEqual(stats["theater_views_7d"], 3)
+        self.assertTrue(any(s["theater_id"] == "theater_alpha" and s["views"] == 2 for s in stats["top_viewed_theaters"]))
 
     def test_password_reset_flow(self):
         user = self.db.register_user("resetuser", "reset@example.com", "OldPassword123")

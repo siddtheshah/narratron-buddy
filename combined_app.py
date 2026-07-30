@@ -11,15 +11,11 @@ from absl import flags
 from dotenv import load_dotenv
 from fastapi import WebSocket
 from fastapi.staticfiles import StaticFiles
-from google import adk
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
 import uvicorn
 
 from services.agent_manager import AgentSessionManager
 from services.live_stream_service import handle_live_websocket_connection
 from utils.config_loader import get_config
-from utils.session_paths import ensure_sessions_root
 from web_viewer_app import (
     app,
     canvas_states,
@@ -82,45 +78,45 @@ agent_manager = AgentSessionManager(app_name=APP_NAME, config=config)
 # Agent Lifecycle REST API Endpoints
 # ========================================
 
-@app.post("/api/sessions/{narratron_session_id}/agent/start")
-async def start_agent_endpoint(narratron_session_id: str):
+@app.post("/api/theaters/{theater_id}/agent/start")
+async def start_agent_endpoint(theater_id: str):
     """API endpoint to instantiate/start the agent session in memory if not already started."""
     agent_session = agent_manager.get_or_create_session(
-        narratron_session_id=narratron_session_id,
+        theater_id=theater_id,
         canvas_state_service=canvas_states,
         use_in_memory_artifacts=use_in_memory_artifacts,
     )
     return {
         "status": agent_session.status,
-        "narratron_session_id": narratron_session_id,
+        "theater_id": theater_id,
         "agent_running": True,
     }
 
 
-@app.post("/api/sessions/{narratron_session_id}/agent/stop")
-async def stop_agent_endpoint(narratron_session_id: str):
+@app.post("/api/theaters/{theater_id}/agent/stop")
+async def stop_agent_endpoint(theater_id: str):
     """API endpoint to explicitly stop and remove the agent session from memory."""
-    stopped = agent_manager.stop_session(narratron_session_id=narratron_session_id)
+    stopped = agent_manager.stop_session(theater_id=theater_id)
     return {
         "status": "stopped" if stopped else "not_found",
-        "narratron_session_id": narratron_session_id,
+        "theater_id": theater_id,
         "agent_running": False,
     }
 
 
-@app.get("/api/sessions/{narratron_session_id}/agent/status")
-async def get_agent_status_endpoint(narratron_session_id: str):
+@app.get("/api/theaters/{theater_id}/agent/status")
+async def get_agent_status_endpoint(theater_id: str):
     """API endpoint to check if an agent session is active in memory."""
-    session = agent_manager.get_session(narratron_session_id=narratron_session_id)
+    session = agent_manager.get_session(theater_id=theater_id)
     if not session or session.status == "stopped":
         return {
-            "narratron_session_id": narratron_session_id,
+            "theater_id": theater_id,
             "agent_running": False,
             "websocket_connected": False,
             "status": "stopped",
         }
     return {
-        "narratron_session_id": narratron_session_id,
+        "theater_id": theater_id,
         "agent_running": True,
         "websocket_connected": session.websocket_connected,
         "status": session.status,
@@ -133,11 +129,11 @@ async def get_agent_status_endpoint(narratron_session_id: str):
 # Live Agent WebSocket Endpoint
 # ========================================
 
-@app.websocket("/ws/{narratron_session_id}/agent")
-@app.websocket("/ws/{user_id}/{narratron_session_id}")
+@app.websocket("/ws/{theater_id}/agent")
+@app.websocket("/ws/{user_id}/{theater_id}")
 async def agent_websocket_endpoint(
     websocket: WebSocket,
-    narratron_session_id: str,
+    theater_id: str,
     user_id: Optional[str] = None,
 ) -> None:
     """WebSocket endpoint for bidirectional streaming with ADK.
@@ -147,14 +143,14 @@ async def agent_websocket_endpoint(
     if not current_user and user_id and user_id.isdigit():
         current_user = db.get_user_by_id(int(user_id))
 
-    deployment = db.get_deployment(narratron_session_id)
+    deployment = db.get_deployment(theater_id)
     if not deployment or not can_access_agent_websocket(websocket, deployment, current_user=current_user):
         await websocket.close(code=1008)
         return
 
     await handle_live_websocket_connection(
         websocket=websocket,
-        narratron_session_id=narratron_session_id,
+        theater_id=theater_id,
         agent_manager=agent_manager,
     )
     # Perform periodic cleanup of old idle sessions

@@ -51,7 +51,7 @@ def build_run_config(*args, **kwargs):
 
 async def handle_live_websocket_connection(
     websocket: WebSocket,
-    narratron_session_id: str,
+    theater_id: str,
     agent_manager: Any,
     send_setup_complete_immediately: bool = True,
 ) -> None:
@@ -59,7 +59,7 @@ async def handle_live_websocket_connection(
     await websocket.accept()
 
     agent_session = agent_manager.get_or_create_session(
-        narratron_session_id=narratron_session_id
+        theater_id=theater_id
     )
 
     await agent_session.add_websocket(websocket)
@@ -87,7 +87,7 @@ async def handle_live_websocket_connection(
                 now = time.monotonic()
                 if now - last_audio_log_time >= 5.0 or audio_chunk_count == 1:
                     logger.info(
-                        f"[LiveStreamService] Audio stream active: received {audio_chunk_count} chunks ({total_audio_bytes} bytes total) for narratron_session_id={narratron_session_id}"
+                        f"[LiveStreamService] Audio stream active: received {audio_chunk_count} chunks ({total_audio_bytes} bytes total) for theater_id={theater_id}"
                     )
                     last_audio_log_time = now
 
@@ -116,7 +116,7 @@ async def handle_live_websocket_connection(
                 elif msg_type == "mic_detect":
                     rms = json_message.get("rms")
                     ts = json_message.get("ts")
-                    logger.info(f"[Mic Detection] narratron_session_id={narratron_session_id} rms={rms} ts={ts}")
+                    logger.info(f"[Mic Detection] theater_id={theater_id} rms={rms} ts={ts}")
 
                 elif msg_type == "ping":
                     if agent_session.canvas_state_manager:
@@ -138,6 +138,6 @@ async def handle_live_websocket_connection(
                         except Exception as e:
                             logger.warning(f"Failed to decode image payload: {e}")
     except (WebSocketDisconnect, RuntimeError):
-        logger.debug(f"[LiveStreamService] Client disconnected for narratron_session_id={narratron_session_id}")
+        logger.debug(f"[LiveStreamService] Client disconnected for theater_id={theater_id}")
     finally:
         await agent_session.remove_websocket(websocket)

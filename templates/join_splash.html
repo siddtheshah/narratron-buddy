@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -79,11 +80,17 @@
     }
 
     @keyframes carousel-pan {
-      from { transform: translateX(7%) scale(1.08); }
-      to { transform: translateX(-7%) scale(1.08); }
+      from {
+        transform: translateX(7%) scale(1.08);
+      }
+
+      to {
+        transform: translateX(-7%) scale(1.08);
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
+
       .carousel-slide,
       .carousel-slide.is-panning {
         animation: none;
@@ -307,9 +314,11 @@
     }
   </style>
 </head>
+
 <body>
   <div class="background-carousel" aria-hidden="true">
-    <div class="carousel-slide is-active is-panning" style="background-image: url('/carousel/candle%20map.png');" data-src="/carousel/candle%20map.png"></div>
+    <div class="carousel-slide is-active is-panning" style="background-image: url('/carousel/candle%20map.png');"
+      data-src="/carousel/candle%20map.png"></div>
     <div class="carousel-slide" data-src="/carousel/glow%20river.png"></div>
     <div class="carousel-slide" data-src="/carousel/paint%20pirate.png"></div>
     <div class="carousel-slide" data-src="/carousel/spacetime%20vortex.png"></div>
@@ -322,17 +331,18 @@
     <div style="display: flex; gap: 12px; align-items: center;">
       <a href="/about" class="deploy-nav-btn">About</a>
       <a href="/stats" class="deploy-nav-btn">Stats Dashboard</a>
-      <a href="/deploy" class="deploy-nav-btn">Host / Deploy Session →</a>
+      <a href="/deploy" class="deploy-nav-btn">Host / Deploy Theater →</a>
     </div>
   </header>
 
   <main>
     <div class="hero-badge">✨ Interactive AI Narration Canvas</div>
-    <h1>Join a Live Story Session</h1>
-    <p class="subtitle">Experience a story like never before, with real time dynamic visuals, music coordination, and being alongside your fellow viewers.</p>
+    <h1>Join a Live Story Theater</h1>
+    <p class="subtitle">Experience a story like never before, with real time dynamic visuals, music coordination, and
+      being alongside your fellow viewers.</p>
     <div class="join-card">
-      <h2>Enter Session Join Key</h2>
-      <p>Ask the session host for their 8-character join key</p>
+      <h2>Enter Theater Join Key</h2>
+      <p>Ask the theater host for their 8-character join key</p>
       <div class="input-group">
         <input type="text" id="joinKeyInput" class="join-input" placeholder="KEY-XXXXXX" maxlength="12">
         <button class="join-btn" onclick="submitJoinKey()">Join</button>
@@ -431,15 +441,15 @@
       }
 
       try {
-        const resp = await fetch('/api/sessions/resolve-join-key', {
+        const resp = await fetch('/api/theaters/resolve-join-key', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ join_key: key })
         });
 
         const data = await resp.json();
-        if (resp.ok && data.narratron_session_id) {
-          window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(data.narratron_session_id)}`;
+        if (resp.ok && data.theater_id) {
+          window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
         } else {
           err.textContent = data.detail || 'Invalid or expired Join Key.';
           err.style.display = 'block';
@@ -457,4 +467,5 @@
     });
   </script>
 </body>
+
 </html>

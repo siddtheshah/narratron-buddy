@@ -1,4 +1,4 @@
-"""API tests for Session Deployer, Join Splash, and Authentication endpoints in FastAPI application."""
+"""API tests for Theater Deployer, Join Splash, and Authentication endpoints in FastAPI application."""
 
 import io
 import os
@@ -13,7 +13,7 @@ from testing.base import BaseTestCase
 from web_viewer_app import app, local_deployer, db, FLAGS
 
 
-class TestSessionAPI(BaseTestCase):
+class TestTheaterAPI(BaseTestCase):
 
     def setUp(self):
         super().setUp()
@@ -42,18 +42,18 @@ class TestSessionAPI(BaseTestCase):
     def test_root_and_join_serves_splash_page(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Join a Live Story Session", response.text)
+        self.assertIn("Join a Live Story Theater", response.text)
         self.assertIn("Narratron Buddy", response.text)
 
         join_response = self.client.get("/join")
         self.assertEqual(join_response.status_code, 200)
-        self.assertIn("Join a Live Story Session", join_response.text)
+        self.assertIn("Join a Live Story Theater", join_response.text)
         self.assertIn('href="/about"', join_response.text)
 
     def test_deploy_page(self):
         response = self.client.get("/deploy")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Session Deployer", response.text)
+        self.assertIn("Theater Deployer", response.text)
         self.assertIn("Deploy Canvas Instance", response.text)
         self.assertIn('href="/about"', response.text)
 
@@ -67,37 +67,37 @@ class TestSessionAPI(BaseTestCase):
 
     def test_canvas_page(self):
         owner = db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")
-        self.assertTrue(db.record_deployment("test_session", owner["id"], "KEY-CANVAS", cost=5.0))
+        self.assertTrue(db.record_deployment("test_theater", owner["id"], "KEY-CANVAS", cost=5.0))
 
-        response = self.client.get("/canvas?narratron_session_id=test_session")
+        response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 403)
 
         response = self.client.get(
-            "/canvas?narratron_session_id=test_session&join_key=KEY-CANVAS",
+            "/canvas?theater_id=test_theater&join_key=KEY-CANVAS",
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
         self.assertNotIn("join_key", response.headers["location"])
 
-        response = self.client.get("/canvas?narratron_session_id=test_session")
+        response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron Canvas", response.text)
         self.assertIn('href="/about"', response.text)
 
     def test_canvas_data_endpoints_require_canvas_access(self):
         owner = db.register_user("canvas_api_owner", "canvas-api-owner@example.com", "Password123")
-        self.assertTrue(db.record_deployment("protected_session", owner["id"], "KEY-PROTECTED", cost=5.0))
+        self.assertTrue(db.record_deployment("protected_theater", owner["id"], "KEY-PROTECTED", cost=5.0))
 
         self.assertEqual(
-            self.client.get("/api/latest?narratron_session_id=protected_session").status_code,
+            self.client.get("/api/latest?theater_id=protected_theater").status_code,
             403,
         )
         self.client.get(
-            "/canvas?narratron_session_id=protected_session&join_key=KEY-PROTECTED",
+            "/canvas?theater_id=protected_theater&join_key=KEY-PROTECTED",
             follow_redirects=False,
         )
         self.assertEqual(
-            self.client.get("/api/latest?narratron_session_id=protected_session").status_code,
+            self.client.get("/api/latest?theater_id=protected_theater").status_code,
             200,
         )
 
@@ -117,7 +117,7 @@ class TestSessionAPI(BaseTestCase):
         self.assertTrue(me_res.json()["authenticated"])
         self.assertEqual(me_res.json()["user"]["username"], "api_user")
 
-    def test_create_and_deploy_session_with_join_key(self):
+    def test_create_and_deploy_theater_with_join_key(self):
         # Register and log in
         reg_res = self.client.post("/api/auth/register", json={
             "username": "creator_user",
@@ -130,8 +130,8 @@ class TestSessionAPI(BaseTestCase):
         track_file = ("ambient_01.mp3", io.BytesIO(b"fake_mp3_bytes"), "audio/mpeg")
 
         response = self.client.post(
-            "/api/sessions/create-and-deploy",
-            data={"name": "Integration Test Session", "style": "storybook watercolor"},
+            "/api/theaters/create-and-deploy",
+            data={"name": "Integration Test Theater", "style": "storybook watercolor"},
             files=[
                 ("reference_files", ref_file),
                 ("playlist_ambient", track_file),
@@ -141,22 +141,22 @@ class TestSessionAPI(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "ok")
-        session_id = data["narratron_session_id"]
-        join_key = data["session"]["join_key"]
-        self.assertIsNotNone(session_id)
+        theater_id = data["theater_id"]
+        join_key = data["theater"]["join_key"]
+        self.assertIsNotNone(theater_id)
         self.assertIsNotNone(join_key)
         self.assertEqual(
-            (local_deployer._get_session_dir(session_id) / "style.txt").read_text(encoding="utf-8"),
+            (local_deployer._get_theater_dir(theater_id) / "style.txt").read_text(encoding="utf-8"),
             "storybook watercolor",
         )
 
         # Test resolving join key
-        res_key = self.client.post("/api/sessions/resolve-join-key", json={"join_key": join_key})
+        res_key = self.client.post("/api/theaters/resolve-join-key", json={"join_key": join_key})
         self.assertEqual(res_key.status_code, 200)
-        self.assertEqual(res_key.json()["narratron_session_id"], session_id)
+        self.assertEqual(res_key.json()["theater_id"], theater_id)
 
-        # Test destroying session by owner
-        del_res = self.client.delete(f"/api/sessions/{session_id}")
+        # Test destroying theater by owner
+        del_res = self.client.delete(f"/api/theaters/{theater_id}")
         self.assertEqual(del_res.status_code, 200)
         self.assertEqual(del_res.json()["status"], "ok")
 
@@ -172,16 +172,16 @@ class TestSessionAPI(BaseTestCase):
         })
         self.assertEqual(reg_res.status_code, 200)
 
-        # Create session
+        # Create theater
         response = self.client.post(
-            "/api/sessions/create-and-deploy",
-            data={"name": "Export Test Session"}
+            "/api/theaters/create-and-deploy",
+            data={"name": "Export Test Theater"}
         )
         self.assertEqual(response.status_code, 200)
-        session_id = response.json()["narratron_session_id"]
+        theater_id = response.json()["theater_id"]
 
-        session_dir = local_deployer._get_session_dir(session_id)
-        out_dir = session_dir / "output"
+        theater_dir = local_deployer._get_theater_dir(theater_id)
+        out_dir = theater_dir / "output"
         images_dir = out_dir / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -190,14 +190,14 @@ class TestSessionAPI(BaseTestCase):
         img_path.write_bytes(b"fake_jpeg_data")
 
         # Simulate update_shown_image and history addition
-        cs = canvas_states.get(session_id)
-        cs.update_shown_image(str(img_path), narratron_session_id=session_id)
+        cs = canvas_states.get(theater_id)
+        cs.update_shown_image(str(img_path), theater_id=theater_id)
 
-        # Also save session to DB
-        self.client.post(f"/api/sessions/{session_id}/save")
+        # Also save theater to DB
+        self.client.post(f"/api/theaters/{theater_id}/save")
 
         # Export assets
-        export_res = self.client.get(f"/api/sessions/{session_id}/export-assets")
+        export_res = self.client.get(f"/api/theaters/{theater_id}/export-assets")
         self.assertEqual(export_res.status_code, 200)
 
         zip_bytes = export_res.content

@@ -5,12 +5,12 @@ from tools.base_tool import BaseTools, with_cooldown
 logger = logging.getLogger(__name__)
 
 class ChatTools(BaseTools):
-    def __init__(self, config: dict, narratron_session_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
         raw_config = config or {}
         subconfig = raw_config.get("chat", raw_config) if "chat" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            narratron_session_id=narratron_session_id,
+            theater_id=theater_id,
             canvas_state_service=canvas_state_service,
         )
         self.on_send_chat_message = None
@@ -28,7 +28,7 @@ class ChatTools(BaseTools):
         try:
             logger.info(f"[chat_tool] Sending chat message: {text}")
             if self.canvas_state_service:
-                self.canvas_state_service.add_chat_message(text, author="agent", narratron_session_id=self.narratron_session_id)
+                self.canvas_state_service.add_chat_message(text, author="agent", theater_id=self.theater_id)
             if self.on_send_chat_message:
                 self.on_send_chat_message(text)
             return f"Successfully sent chat message to the user: {text}"

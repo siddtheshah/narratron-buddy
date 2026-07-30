@@ -62,17 +62,17 @@ def with_cooldown(func_or_desc=None, action_desc: Optional[str] = None):
         return decorator
 
 class BaseTools:
-    """Base class for all agent tool suites providing unified session management and cooldown tracking."""
+    """Base class for all agent tool suites providing unified theater management and cooldown tracking."""
 
     def __init__(
         self,
         config: dict = None,
-        narratron_session_id: str = "",
+        theater_id: str = "",
         canvas_state_service: Any = None,
         default_cooldown: float = 0.0,
     ):
         self.config: dict = config or {}
-        self.active_narratron_session_id: str = narratron_session_id
+        self.active_theater_id: str = theater_id
         self.canvas_state_service: Any = canvas_state_service
 
         # Callback hooks
@@ -87,24 +87,24 @@ class BaseTools:
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", default_cooldown))
 
     @property
-    def narratron_session_id(self) -> str:
-        return self.active_narratron_session_id
+    def theater_id(self) -> str:
+        return self.active_theater_id
 
-    @narratron_session_id.setter
-    def narratron_session_id(self, value: str) -> None:
-        self.active_narratron_session_id = value
-
-    @property
-    def active_session_id(self) -> str:
-        return self.active_narratron_session_id
+    @theater_id.setter
+    def theater_id(self, value: str) -> None:
+        self.active_theater_id = value
 
     @property
-    def session_id(self) -> str:
-        return self.active_narratron_session_id
+    def active_theater_id(self) -> str:
+        return self.active_theater_id
 
-    @session_id.setter
-    def session_id(self, value: str) -> None:
-        self.active_narratron_session_id = value
+    @property
+    def theater_id(self) -> str:
+        return self.active_theater_id
+
+    @theater_id.setter
+    def theater_id(self, value: str) -> None:
+        self.active_theater_id = value
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("last_") and name.endswith("_time"):

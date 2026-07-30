@@ -6,23 +6,23 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from tools.base_tool import BaseTools, with_cooldown
-from utils.session_paths import ensure_sessions_root
+from utils.theaters_paths import ensure_theaters_root
 
 logger = logging.getLogger(__name__)
 
 class MusicTools(BaseTools):
-    def __init__(self, config: dict, narratron_session_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
         raw_config = config or {}
         subconfig = raw_config.get("music", raw_config) if "music" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            narratron_session_id=narratron_session_id,
+            theater_id=theater_id,
             canvas_state_service=canvas_state_service,
             default_cooldown=60.0,
         )
-        sessions_root = ensure_sessions_root()
-        self.session_playlists_dir = str((sessions_root / self.active_narratron_session_id / "playlists").resolve())
-        os.makedirs(self.session_playlists_dir, exist_ok=True)
+        theaters_root = ensure_theaters_root()
+        self.theater_playlists_dir = str((theaters_root / self.active_theater_id / "playlists").resolve())
+        os.makedirs(self.theater_playlists_dir, exist_ok=True)
 
         self.on_play_playlist: Optional[Callable[[str, List[str]], None]] = None
         self.on_pause_playlist: Optional[Callable[[], None]] = None
@@ -30,11 +30,11 @@ class MusicTools(BaseTools):
 
     @property
     def playlists_folder(self) -> str:
-        return self.session_playlists_dir
+        return self.theater_playlists_dir
 
     @playlists_folder.setter
     def playlists_folder(self, val: str) -> None:
-        self.session_playlists_dir = str(val)
+        self.theater_playlists_dir = str(val)
 
     def list_playlists(self) -> str:
         """List all available music playlists, their descriptions, and the tracks inside them.
@@ -43,18 +43,18 @@ class MusicTools(BaseTools):
             A formatted string of all available playlists, descriptions, and tracks.
         """
         try:
-            if not os.path.exists(self.session_playlists_dir):
+            if not os.path.exists(self.theater_playlists_dir):
                 return "No playlists folder found."
 
-            subdirs = [d for d in os.listdir(self.session_playlists_dir)
-                       if os.path.isdir(os.path.join(self.session_playlists_dir, d))]
+            subdirs = [d for d in os.listdir(self.theater_playlists_dir)
+                       if os.path.isdir(os.path.join(self.theater_playlists_dir, d))]
 
             if not subdirs:
                 return "No playlists found. Please add playlist subfolders in the playlists directory."
 
             result = []
             for subdir in sorted(subdirs):
-                path = os.path.join(self.session_playlists_dir, subdir)
+                path = os.path.join(self.theater_playlists_dir, subdir)
                 desc_path = os.path.join(path, "description.txt")
                 desc = "No description available."
                 if os.path.exists(desc_path):
@@ -84,7 +84,7 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
-            path = os.path.join(self.session_playlists_dir, playlist_name)
+            path = os.path.join(self.theater_playlists_dir, playlist_name)
             if not os.path.exists(path) or not os.path.isdir(path):
                 return f"Error: Playlist '{playlist_name}' not found."
 
@@ -93,13 +93,13 @@ class MusicTools(BaseTools):
                 return f"Error: Playlist '{playlist_name}' does not contain any MP3 files."
 
             mp3_paths.sort()
-            if self.active_narratron_session_id:
-                tracks = [f"/sessions/{self.active_narratron_session_id}/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
+            if self.active_theater_id:
+                tracks = [f"/theaters/{self.active_theater_id}/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
             else:
                 tracks = [f"/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
 
             if self.canvas_state_service:
-                self.canvas_state_service.update_playlist(playlist_name, tracks, narratron_session_id=self.active_narratron_session_id)
+                self.canvas_state_service.update_playlist(playlist_name, tracks, theater_id=self.active_theater_id)
             if self.on_play_playlist:
                 self.on_play_playlist(playlist_name, tracks)
 
@@ -117,7 +117,7 @@ class MusicTools(BaseTools):
         """
         try:
             if self.canvas_state_service:
-                self.canvas_state_service.pause_playlist(narratron_session_id=self.narratron_session_id)
+                self.canvas_state_service.pause_playlist(theater_id=self.theater_id)
             if self.on_pause_playlist:
                 self.on_pause_playlist()
             logger.info("Paused playlist")
@@ -134,7 +134,7 @@ class MusicTools(BaseTools):
         """
         try:
             if self.canvas_state_service:
-                self.canvas_state_service.resume_playlist(narratron_session_id=self.narratron_session_id)
+                self.canvas_state_service.resume_playlist(theater_id=self.theater_id)
             if self.on_resume_playlist:
                 self.on_resume_playlist()
             logger.info("Resumed playlist")

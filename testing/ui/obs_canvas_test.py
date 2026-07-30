@@ -14,7 +14,7 @@ class TestOBSCanvas(UITestCase):
         self.client = TestClient(app)
 
     def test_obs_route_omits_ui_chrome(self):
-        response = self.client.get("/obs?session_id=test_session")
+        response = self.client.get("/obs?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
 
@@ -34,13 +34,13 @@ class TestOBSCanvas(UITestCase):
         ):
             self.assertNotIn(element, html)
 
-    def test_obs_session_path_route(self):
-        response = self.client.get("/obs/test_session_123")
+    def test_obs_theater_path_route(self):
+        response = self.client.get("/obs/test_theater_123")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron OBS Canvas", response.text)
 
     def test_canvas_obs_query_flag_uses_obs_template(self):
-        response = self.client.get("/canvas?session_id=test_session&obs=1")
+        response = self.client.get("/canvas?theater_id=test_theater&obs=1")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron OBS Canvas", response.text)
         self.assertNotIn('id="chat-sidebar"', response.text)

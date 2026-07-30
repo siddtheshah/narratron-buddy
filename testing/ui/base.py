@@ -17,20 +17,20 @@ class UITestCase(unittest.TestCase):
         super().setUp()
         self._temporary_directory = tempfile.TemporaryDirectory()
         self.workspace = Path(self._temporary_directory.name)
-        self.sessions_dir = self.workspace / "sessions"
-        self.sessions_dir.mkdir()
+        self.theaters_dir = self.workspace / "theaters"
+        self.theaters_dir.mkdir()
         self.addCleanup(self._temporary_directory.cleanup)
 
-    def make_canvas_state(self, narratron_session_id: str) -> CanvasStateManager:
-        return CanvasStateManager(narratron_session_id=narratron_session_id, base_sessions_dir=self.sessions_dir)
+    def make_canvas_state(self, theater_id: str) -> CanvasStateManager:
+        return CanvasStateManager(theater_id=theater_id, base_theaters_dir=self.theaters_dir)
 
     def isolate_canvas_state_service(self) -> CanvasStateService:
         """Replace the web app's shared state service with a temporary one."""
         import web_viewer_app
 
         deployer = SimpleNamespace(
-            base_dir=self.sessions_dir,
-            list_sessions=lambda: [],
+            base_dir=self.theaters_dir,
+            list_theaters=lambda: [],
         )
         service = CanvasStateService(deployer)
         patcher = patch.object(web_viewer_app, "canvas_states", service)

@@ -21,7 +21,7 @@ from utils.image_utils import (
     extract_image_prompt,
     resolve_image_path,
 )
-from utils.session_paths import ensure_sessions_root
+from utils.theaters_paths import ensure_theaters_root
 
 logger = logging.getLogger(__name__)
 
@@ -30,26 +30,26 @@ class ImageTools(BaseTools):
     _references_cache: Dict[str, dict] = {}
     _reference_dir_cached: Optional[str] = None
 
-    def __init__(self, config: dict, narratron_session_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
         raw_config = config or {}
         subconfig = raw_config.get("image_generation", raw_config) if "image_generation" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            narratron_session_id=narratron_session_id,
+            theater_id=theater_id,
             canvas_state_service=canvas_state_service,
             default_cooldown=60.0,
         )
 
-        sessions_root = ensure_sessions_root()
-        self.style_path = sessions_root / self.active_narratron_session_id / "style.txt"
+        theaters_root = ensure_theaters_root()
+        self.style_path = theaters_root / self.active_theater_id / "style.txt"
         self.default_style = self._load_default_style()
-        self.output_dir = str((sessions_root / self.active_narratron_session_id / "output" / "artifacts" / "images").resolve())
+        self.output_dir = str((theaters_root / self.active_theater_id / "output" / "artifacts" / "images").resolve())
         os.makedirs(self.output_dir, exist_ok=True)
         
-        self.reference_dir = str((sessions_root / self.active_narratron_session_id / "references").resolve())
+        self.reference_dir = str((theaters_root / self.active_theater_id / "references").resolve())
         os.makedirs(self.reference_dir, exist_ok=True)
         
-        # Reuse shared genai Client instance across session re-initializations
+        # Reuse shared genai Client instance across theater re-initializations
         if ImageTools._client_cache is None:
             project_id = raw_config.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))
             location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
@@ -79,25 +79,25 @@ class ImageTools(BaseTools):
             ImageTools._reference_dir_cached = self.reference_dir
 
     def _load_default_style(self) -> str:
-        """Load this session's optional default image style."""
+        """Load this theater's optional default image style."""
         try:
             if self.style_path.is_file():
                 style = self.style_path.read_text(encoding="utf-8").strip()
                 if style:
-                    logger.info("[ImageTools] Loaded default image style for session '%s'.", self.active_narratron_session_id)
+                    logger.info("[ImageTools] Loaded default image style for theater '%s'.", self.active_theater_id)
                 return style
         except OSError as exc:
             logger.warning("[ImageTools] Could not read default image style: %s", exc)
         return ""
 
     def _apply_default_style(self, image_prompt: str) -> str:
-        """Append the session style unless the prompt supplies a style itself."""
+        """Append the theater style unless the prompt supplies a style itself."""
         if self.default_style and not re.search(r"\bstyle\b", image_prompt, flags=re.IGNORECASE):
             return f"{image_prompt}\n\nStyle: {self.default_style}"
         return image_prompt
 
     def get_effective_output_dir(self) -> str:
-        """Return active session output directory."""
+        """Return active theater output directory."""
         return self.output_dir
 
     def get_current_canvas_image_info(self) -> Dict[str, Any]:
@@ -139,7 +139,7 @@ class ImageTools(BaseTools):
         """Notify connected canvases that image generation has started or finished."""
         if self.canvas_state_service:
             self.canvas_state_service.set_tool_activity(
-                "image", active=active, narratron_session_id=self.active_narratron_session_id
+                "image", active=active, theater_id=self.active_theater_id
             )
 
     def _load_references(self):
@@ -413,7 +413,7 @@ class ImageTools(BaseTools):
                 if canvas_state_service:
                     canvas_state_service.show_image(
                         resolved_path,
-                        narratron_session_id=self.active_narratron_session_id,
+                        theater_id=self.active_theater_id,
                         transition=transition,
                         effect=effect,
                     )

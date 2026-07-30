@@ -10,7 +10,7 @@ from components.canvas_state import CanvasStateManager
 class TestCanvasStateManager(BaseTestCase):
 
     def test_canvas_state_manager(self):
-        manager = CanvasStateManager(narratron_session_id="test_session")
+        manager = CanvasStateManager(theater_id="test_theater")
         manager.update_current_playlist("test_playlist", ["/playlists/test/1.mp3"])
         self.assertEqual(manager.current_playlist, "test_playlist")
         self.assertFalse(manager.music_paused)
@@ -30,7 +30,7 @@ class TestCanvasStateManager(BaseTestCase):
                 tmp_path = tmp_file.name
 
             try:
-                manager = CanvasStateManager(narratron_session_id="test_session")
+                manager = CanvasStateManager(theater_id="test_theater")
                 manager.update_shown_image(tmp_path)
 
                 state = manager.get_latest_state()
@@ -42,7 +42,7 @@ class TestCanvasStateManager(BaseTestCase):
                     os.remove(tmp_path)
 
     def test_doodles_enabled_state_and_persistence(self):
-        manager = CanvasStateManager(narratron_session_id="test_doodles_session")
+        manager = CanvasStateManager(theater_id="test_doodles_theater")
         self.assertTrue(manager.doodles_enabled)
 
         latest_state = manager.get_latest_state()
@@ -54,11 +54,11 @@ class TestCanvasStateManager(BaseTestCase):
         latest_state = manager.get_latest_state()
         self.assertFalse(latest_state.get("doodles_enabled"))
 
-        exported_state, _ = manager.export_session_data()
+        exported_state, _ = manager.export_theater_data()
         self.assertFalse(exported_state["canvas_state"]["doodles_enabled"])
 
     def test_shown_images_history_capping(self):
-        manager = CanvasStateManager(narratron_session_id="test_history_session")
+        manager = CanvasStateManager(theater_id="test_history_theater")
         # Add 120 images
         for i in range(120):
             fake_path = f"/path/to/image_{i}.png"
@@ -72,7 +72,7 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertIn("image_20.png", first_entry["path"])
 
     def test_get_latest_state_returns_history(self):
-        manager = CanvasStateManager(narratron_session_id="test_history_payload")
+        manager = CanvasStateManager(theater_id="test_history_payload")
         manager.update_shown_image("/path/to/scene1.png")
         manager.update_shown_image("/path/to/scene2.png")
 
@@ -83,7 +83,7 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertEqual(state["history"][1]["path"], "/path/to/scene2.png")
 
     def test_tool_activity_is_transient_and_exposed_in_latest_state(self):
-        manager = CanvasStateManager(narratron_session_id="tool_activity")
+        manager = CanvasStateManager(theater_id="tool_activity")
         manager.set_tool_activity("image", True)
         manager.set_tool_activity("notes", recent_seconds=5)
         manager.set_tool_activity("live", True)

@@ -3,30 +3,30 @@ import logging
 import os
 from typing import Any, Optional
 from tools.base_tool import BaseTools, with_cooldown
-from utils.session_paths import ensure_sessions_root
+from utils.theaters_paths import ensure_theaters_root
 
 logger = logging.getLogger(__name__)
 
 class NotesTools(BaseTools):
-    def __init__(self, config: dict, narratron_session_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
         raw_config = config or {}
         subconfig = raw_config.get("notes", raw_config) if "notes" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            narratron_session_id=narratron_session_id,
+            theater_id=theater_id,
             canvas_state_service=canvas_state_service,
         )
 
-        self.notes_dir = str((ensure_sessions_root() / self.active_narratron_session_id / "output" / "artifacts" / "notes").resolve())
+        self.notes_dir = str((ensure_theaters_root() / self.active_theater_id / "output" / "artifacts" / "notes").resolve())
         os.makedirs(self.notes_dir, exist_ok=True)
 
     def get_effective_notes_dir(self) -> str:
-        """Return active session notes directory."""
+        """Return active theater notes directory."""
         return self.notes_dir
 
     @with_cooldown("editing notes")
     def edit_notes(self, note_name: str, content: str) -> str:
-        """Create or edit a note file with the given content under active session notes directory.
+        """Create or edit a note file with the given content under active theater notes directory.
 
         Args:
             note_name: The name of the note (e.g. 'characters.txt' or 'characters').
@@ -52,7 +52,7 @@ class NotesTools(BaseTools):
             logger.info(f"Saved note '{filename}' at {filepath}.")
             if self.canvas_state_service:
                 self.canvas_state_service.set_tool_activity(
-                    "notes", narratron_session_id=self.active_narratron_session_id, recent_seconds=5.0
+                    "notes", theater_id=self.active_theater_id, recent_seconds=5.0
                 )
             return f"Successfully saved note '{filename}'."
         except Exception as e:
@@ -61,7 +61,7 @@ class NotesTools(BaseTools):
 
     @with_cooldown("deleting notes")
     def delete_notes(self, note_name: str) -> str:
-        """Delete a note file under active session notes directory.
+        """Delete a note file under active theater notes directory.
 
         Args:
             note_name: The name of the note to delete (e.g. 'characters.txt' or 'characters').

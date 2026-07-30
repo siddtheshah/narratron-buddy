@@ -8,7 +8,7 @@ from services.agent_manager import AgentSessionManager, AgentSession
 class TestAgentSessionManager(unittest.TestCase):
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
-    @patch("services.agent_manager.ensure_sessions_root")
+    @patch("services.agent_manager.ensure_theaters_root")
     def test_get_or_create_session(self, mock_ensure_root, mock_create_agent, mock_tasks):
         mock_ensure_root.return_value = MagicMock()
         mock_agent = MagicMock()
@@ -16,19 +16,19 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_create_agent.return_value = mock_agent
 
         manager = AgentSessionManager()
-        session1 = manager.get_or_create_session(narratron_session_id="s1")
+        session1 = manager.get_or_create_session(theater_id="s1")
 
         self.assertIsNotNone(session1)
-        self.assertEqual(session1.narratron_session_id, "s1")
+        self.assertEqual(session1.theater_id, "s1")
         self.assertTrue(session1.adk_session_id.startswith("adk_s1_"))
 
         # Retrieving existing session returns the same instance
-        session2 = manager.get_or_create_session(narratron_session_id="s1")
+        session2 = manager.get_or_create_session(theater_id="s1")
         self.assertIs(session1, session2)
 
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
-    @patch("services.agent_manager.ensure_sessions_root")
+    @patch("services.agent_manager.ensure_theaters_root")
     def test_stop_session(self, mock_ensure_root, mock_create_agent, mock_tasks):
         mock_ensure_root.return_value = MagicMock()
         mock_agent = MagicMock()
@@ -36,7 +36,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_create_agent.return_value = mock_agent
 
         manager = AgentSessionManager()
-        manager.get_or_create_session(narratron_session_id="s2")
+        manager.get_or_create_session(theater_id="s2")
         self.assertIsNotNone(manager.get_session("s2"))
 
         stopped = manager.stop_session("s2")
@@ -48,7 +48,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
-    @patch("services.agent_manager.ensure_sessions_root")
+    @patch("services.agent_manager.ensure_theaters_root")
     def test_cleanup_idle_sessions(self, mock_ensure_root, mock_create_agent, mock_tasks):
         mock_ensure_root.return_value = MagicMock()
         mock_agent = MagicMock()
@@ -56,7 +56,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_create_agent.return_value = mock_agent
 
         manager = AgentSessionManager()
-        session = manager.get_or_create_session(narratron_session_id="s3")
+        session = manager.get_or_create_session(theater_id="s3")
         # Set last active to 10 minutes ago (600s)
         session.last_active_at = time.time() - 600.0
 
@@ -83,7 +83,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_session_service.create_session = AsyncMock()
 
         session = AgentSession(
-            narratron_session_id="test_sess",
+            theater_id="test_sess",
             agent=mock_agent,
             runner=mock_runner,
             session_service=mock_session_service,
@@ -111,7 +111,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
 
         session = AgentSession(
-            narratron_session_id="test_suppress",
+            theater_id="test_suppress",
             agent=mock_agent,
             runner=mock_runner,
             session_service=MagicMock(),
@@ -157,7 +157,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
 
         session = AgentSession(
-            narratron_session_id="test_reconnect",
+            theater_id="test_reconnect",
             agent=mock_agent,
             runner=mock_runner,
             session_service=MagicMock(),

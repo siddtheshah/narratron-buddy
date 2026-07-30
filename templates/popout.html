@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,7 +16,8 @@
             --glass-border: rgba(255, 255, 255, 0.12);
         }
 
-        body, html {
+        body,
+        html {
             margin: 0;
             padding: 0;
             width: 100vw;
@@ -224,6 +226,7 @@
         }
     </style>
 </head>
+
 <body>
 
     <header>
@@ -237,14 +240,18 @@
 
     <div class="tab-bar">
         <button class="tab-btn active" data-tab="chat-tab">💬 Live Chat</button>
-        <button class="tab-btn" data-tab="controls-tab">🎛️ Session Info</button>
+        <button class="tab-btn" data-tab="controls-tab">🎛️ Theater Info</button>
     </div>
 
     <div id="chat-tab" class="tab-content active">
-        <div id="chat-user-bar" style="padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15); display: flex; align-items: center; gap: 8px; font-size: 0.8rem;">
+        <div id="chat-user-bar"
+            style="padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15); display: flex; align-items: center; gap: 8px; font-size: 0.8rem;">
             <span style="color: #94a3b8; font-weight: 500; white-space: nowrap;">Name:</span>
-            <input type="text" id="chat-name-input" style="flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 3px 10px; color: #fff; font-size: 0.8rem; outline: none; font-family: inherit;" placeholder="Your Chat Name..." title="Click to set/change your chat display name">
-            <span id="chat-name-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
+            <input type="text" id="chat-name-input"
+                style="flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 3px 10px; color: #fff; font-size: 0.8rem; outline: none; font-family: inherit;"
+                placeholder="Your Chat Name..." title="Click to set/change your chat display name">
+            <span id="chat-name-badge"
+                style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
         </div>
         <div id="chat-messages"></div>
         <form id="chat-form">
@@ -264,17 +271,18 @@
                 <p id="popout-music-status">🎵 Silent</p>
             </div>
             <div class="card">
-                <h3>Session Details</h3>
+                <h3>Theater Details</h3>
                 <p>Status: <span class="status-badge">Active</span></p>
-                <p style="margin-top: 6px; font-size: 0.8rem; color: #94a3b8;" id="popout-narratron-session-id">Session: Loading...</p>
+                <p style="margin-top: 6px; font-size: 0.8rem; color: #94a3b8;" id="popout-narratron-theater-id">Theater:
+                    Loading...</p>
             </div>
         </div>
     </div>
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const narratronSessionId = urlParams.get('narratron_session_id') || 'default';
-        document.getElementById('popout-narratron-session-id').textContent = `Session: ${narratronSessionId}`;
+        const theaterId = urlParams.get('theater_id') || 'default';
+        document.getElementById('popout-narratron-theater-id').textContent = `Theater: ${theaterId}`;
 
         const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
         const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
@@ -340,7 +348,7 @@
                         badge.style.color = '#4ade80';
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             if (!currentChatUsername) {
                 const savedAnonName = localStorage.getItem('narratron_anon_chat_name');
@@ -414,7 +422,7 @@
 
         async function fetchChat() {
             try {
-                const res = await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''));
+                const res = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
                 const messages = await res.json();
                 if (messages.length !== lastMsgCount) {
                     chatMessages.innerHTML = '';
@@ -424,12 +432,12 @@
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                     lastMsgCount = messages.length;
                 }
-            } catch (err) {}
+            } catch (err) { }
         }
 
         async function fetchLatestState() {
             try {
-                const res = await fetch('/api/latest' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''));
+                const res = await fetch('/api/latest' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
                 const data = await res.json();
                 if (data.prompt) {
                     document.getElementById('popout-prompt-text').textContent = data.prompt;
@@ -439,7 +447,7 @@
                 } else {
                     document.getElementById('popout-music-status').textContent = '🎵 Silent';
                 }
-            } catch(e) {}
+            } catch (e) { }
         }
 
         chatForm.addEventListener('submit', async (e) => {
@@ -448,14 +456,14 @@
             if (!text) return;
             chatInput.value = '';
             try {
-                await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''), {
+                await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
                 });
                 fetchChat();
                 broadcast.postMessage({ type: 'chat_sent', text: text });
-            } catch(e) {}
+            } catch (e) { }
         });
 
         setInterval(fetchChat, 1000);
@@ -469,4 +477,5 @@
         });
     </script>
 </body>
+
 </html>

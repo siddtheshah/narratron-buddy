@@ -839,7 +839,9 @@
         }
 
         @keyframes livePulse {
-            0%, 100% {
+
+            0%,
+            100% {
                 transform: scale(1);
                 box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
             }
@@ -1243,19 +1245,19 @@
 
     <div id="main-container">
         <header>
-            <a href="/" id="back-btn" title="Back to Session Launcher"
+            <a href="/" id="back-btn" title="Back to Theater Launcher"
                 style="text-decoration: none; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit;">🏠</a>
             <div class="status-dot disconnected" id="status-indicator" title="Connection status"></div>
             <h1>Narratron Canvas</h1>
-            <button id="share-session-btn" title="Copy session share link"
+            <button id="share-theater-btn" title="Copy theater share link"
                 style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 🔗
             </button>
-            <button id="obs-session-btn" title="Copy OBS Browser Source link"
+            <button id="obs-theater-btn" title="Copy OBS Browser Source link"
                 style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 📹
             </button>
-            <button id="save-session-btn" title="Save session to database"
+            <button id="save-theater-btn" title="Save theater to database"
                 style="background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 💾
             </button>
@@ -1623,20 +1625,20 @@
         // Generate anonymous user ID
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
         const urlParams = new URLSearchParams(window.location.search);
-        const narratronSessionId = urlParams.get('narratron_session_id');
-        if (!narratronSessionId) {
-            console.error("Session ID missing from URL parameters.");
+        const theaterId = urlParams.get('theater_id');
+        if (!theaterId) {
+            console.error("Theater ID missing from URL parameters.");
             const container = document.getElementById('image-container');
             if (container) {
                 container.innerHTML = `
                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #f87171; text-align: center; padding: 2rem;">
-                        <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; font-weight: 600;">⚠️ No Active Session</h2>
-                        <p style="color: #94a3b8; max-width: 400px; margin-bottom: 1.5rem; font-size: 0.95rem;">No session ID was specified in the URL. Please launch or join a session from the deployer page.</p>
+                        <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; font-weight: 600;">⚠️ No Active Theater</h2>
+                        <p style="color: #94a3b8; max-width: 400px; margin-bottom: 1.5rem; font-size: 0.95rem;">No theater ID was specified in the URL. Please launch or join a theater from the deployer page.</p>
                         <a href="/deploy" style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; padding: 0.6rem 1.2rem; border-radius: 20px; text-decoration: none; font-size: 0.9rem; transition: all 0.2s;">Go to Deployer Dashboard →</a>
                     </div>
                 `;
             }
-            throw new Error("Missing required narratron_session_id parameter in URL");
+            throw new Error("Missing required theater_id parameter in URL");
         }
 
         // Music player controls and state
@@ -1654,12 +1656,12 @@
         let outgoingFadeInterval = null;
         let currentTrackSrc = null;
         let lastMusicStateSave = 0;
-        const musicPlaybackStorageKey = `narratron-music-playback:${narratronSessionId}`;
+        const musicPlaybackStorageKey = `narratron-music-playback:${theaterId}`;
         let restoredMusicPlayback = loadMusicPlaybackState();
 
         function loadMusicPlaybackState() {
             try {
-                const saved = JSON.parse(sessionStorage.getItem(musicPlaybackStorageKey));
+                const saved = JSON.parse(theaterStorage.getItem(musicPlaybackStorageKey));
                 if (!saved || !saved.playlist || !saved.track) return null;
 
                 for (const [playlistName, playedTracks] of saved.playbackStates || []) {
@@ -1678,7 +1680,7 @@
         function saveMusicPlaybackState() {
             if (!activePlaylistName || !currentTrackSrc || !bgMusic) return;
             try {
-                sessionStorage.setItem(musicPlaybackStorageKey, JSON.stringify({
+                theaterStorage.setItem(musicPlaybackStorageKey, JSON.stringify({
                     playlist: activePlaylistName,
                     track: currentTrackSrc,
                     position: Number.isFinite(bgMusic.currentTime) ? bgMusic.currentTime : 0,
@@ -1851,7 +1853,7 @@
                 // The agent selected a different playlist while this viewer was
                 // away, so its old track must not override the current choice.
                 restoredMusicPlayback = null;
-                sessionStorage.removeItem(musicPlaybackStorageKey);
+                theaterStorage.removeItem(musicPlaybackStorageKey);
                 return null;
             }
 
@@ -2026,38 +2028,38 @@
             }
         });
 
-        const currentNarratronSessionId = narratronSessionId;
+        const currenttheaterId = theaterId;
 
-        const saveSessionBtn = document.getElementById('save-session-btn');
-        if (saveSessionBtn) {
-            saveSessionBtn.addEventListener('click', async () => {
-                if (!currentNarratronSessionId) {
-                    alert('No active session ID found to save.');
+        const saveTheaterBtn = document.getElementById('save-theater-btn');
+        if (saveTheaterBtn) {
+            saveTheaterBtn.addEventListener('click', async () => {
+                if (!currenttheaterId) {
+                    alert('No active theater ID found to save.');
                     return;
                 }
-                const originalText = saveSessionBtn.innerHTML;
-                saveSessionBtn.innerHTML = '⏳';
-                saveSessionBtn.disabled = true;
+                const originalText = saveTheaterBtn.innerHTML;
+                saveTheaterBtn.innerHTML = '⏳';
+                saveTheaterBtn.disabled = true;
                 try {
-                    const res = await fetch(`/api/sessions/${encodeURIComponent(currentNarratronSessionId)}/save`, {
+                    const res = await fetch(`/api/theaters/${encodeURIComponent(currenttheaterId)}/save`, {
                         method: 'POST'
                     });
                     const data = await res.json();
                     if (res.ok) {
-                        saveSessionBtn.innerHTML = '✓';
+                        saveTheaterBtn.innerHTML = '✓';
                         setTimeout(() => {
-                            saveSessionBtn.innerHTML = originalText;
-                            saveSessionBtn.disabled = false;
+                            saveTheaterBtn.innerHTML = originalText;
+                            saveTheaterBtn.disabled = false;
                         }, 2000);
                     } else {
                         alert('Save failed: ' + (data.detail || 'Unknown error'));
-                        saveSessionBtn.innerHTML = originalText;
-                        saveSessionBtn.disabled = false;
+                        saveTheaterBtn.innerHTML = originalText;
+                        saveTheaterBtn.disabled = false;
                     }
                 } catch (e) {
-                    alert('Failed to save session: ' + e.message);
-                    saveSessionBtn.innerHTML = originalText;
-                    saveSessionBtn.disabled = false;
+                    alert('Failed to save theater: ' + e.message);
+                    saveTheaterBtn.innerHTML = originalText;
+                    saveTheaterBtn.disabled = false;
                 }
             });
         }
@@ -2162,7 +2164,7 @@
 
         async function fetchLatestImage() {
             try {
-                const apiUrl = currentNarratronSessionId ? `/api/latest?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '/api/latest';
+                const apiUrl = currenttheaterId ? `/api/latest?theater_id=${encodeURIComponent(currenttheaterId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 updateAgentActivity(data.tool_activity);
@@ -2327,7 +2329,7 @@
         let lastMessageCount = 0;
         async function fetchChat() {
             try {
-                const response = await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''));
+                const response = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
                 const messages = await response.json();
                 if (messages.length !== lastMessageCount) {
                     chatMessages.innerHTML = '';
@@ -2413,7 +2415,7 @@
         });
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currentNarratronSessionId ? `?narratron_session_id=${encodeURIComponent(currentNarratronSessionId)}` : '');
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
         const ws = new WebSocket(wsUrl);
 
         ws.onmessage = (event) => {
@@ -2575,10 +2577,10 @@
             statusIndicator.classList.remove('disconnected'); // Viewer always green/default
         }
 
-        // Session ownership verification for Orator controls
-        const activeNarratronSessionId = urlParams.get('narratron_session_id');
-        if (activeNarratronSessionId) {
-            fetch(`/api/sessions/${activeNarratronSessionId}`)
+        // Theater ownership verification for Orator controls
+        const activetheaterId = urlParams.get('theater_id');
+        if (activetheaterId) {
+            fetch(`/api/theaters/${activetheaterId}`)
                 .then(res => res.ok ? res.json() : null)
                 .then(data => {
                     if (data && data.metadata) {
@@ -2586,7 +2588,7 @@
                         if (!isOwner) {
                             roleToggleBtn.style.display = 'none';
                             if (isOrator) {
-                                alert("🔒 Only the session owner can become the Orator.");
+                                alert("🔒 Only the theater owner can become the Orator.");
                                 const params = new URLSearchParams(window.location.search);
                                 params.delete('role');
                                 window.location.search = params.toString() ? `?${params.toString()}` : '';
@@ -2594,7 +2596,7 @@
                         }
                     }
                 })
-                .catch(err => console.error("Error checking session ownership:", err));
+                .catch(err => console.error("Error checking theater ownership:", err));
         }
 
         roleToggleBtn.addEventListener('click', () => {
@@ -2633,11 +2635,11 @@
                     checkBatonState();
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
 
         function checkBatonState() {
-            if (!narratronSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton`)
+            if (!theaterId) return;
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton`)
                 .then(res => res.ok ? res.json() : null)
                 .then(data => {
                     if (data) {
@@ -2756,8 +2758,8 @@
         }
 
         function acceptBatonPass() {
-            if (!narratronSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/accept`, { method: 'POST' })
+            if (!theaterId) return;
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/accept`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     hideBatonRequestModal();
@@ -2769,8 +2771,8 @@
         }
 
         function declineBatonPass() {
-            if (!narratronSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/decline`, { method: 'POST' })
+            if (!theaterId) return;
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/decline`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     hideBatonRequestModal();
@@ -2782,8 +2784,8 @@
         }
 
         function takeBackBaton() {
-            if (!narratronSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/takeback`, { method: 'POST' })
+            if (!theaterId) return;
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/takeback`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     if (data && !data.detail) {
@@ -2812,9 +2814,9 @@
                             <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,0.05); border-radius:6px;">
                                 <span style="font-size:0.9rem; color:#fff;">👤 @${v.username}</span>
                                 ${isAllowed
-                                    ? `<span style="font-size:0.75rem; color:#4ade80; font-weight:600;">Allowed</span>`
-                                    : `<button onclick="addAllowedOrator(${v.id})" style="background:#6366f1; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">+ Allow Orator</button>`
-                                }
+                                ? `<span style="font-size:0.75rem; color:#4ade80; font-weight:600;">Allowed</span>`
+                                : `<button onclick="addAllowedOrator(${v.id})" style="background:#6366f1; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">+ Allow Orator</button>`
+                            }
                             </div>
                         `;
                     }).join('');
@@ -2834,9 +2836,9 @@
                                 <span style="font-size:0.9rem; color:#fff;">🎙️ @${u.username}</span>
                                 <div style="display:flex; gap:6px;">
                                     ${isTargeting
-                                        ? `<span style="font-size:0.75rem; color:#fbbf24; padding:3px 8px; font-weight:600;">Pending 30s...</span>`
-                                        : `<button onclick="requestBatonPass(${u.id})" style="background:#f59e0b; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Pass Baton 🎙️</button>`
-                                    }
+                                ? `<span style="font-size:0.75rem; color:#fbbf24; padding:3px 8px; font-weight:600;">Pending 30s...</span>`
+                                : `<button onclick="requestBatonPass(${u.id})" style="background:#f59e0b; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Pass Baton 🎙️</button>`
+                            }
                                     <button onclick="removeAllowedOrator(${u.id})" style="background:rgba(239,68,68,0.2); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:4px 8px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Remove</button>
                                 </div>
                             </div>
@@ -2846,25 +2848,25 @@
             }
         }
 
-        window.addAllowedOrator = function(targetUserId) {
-            if (!narratronSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/allowed_orators`, {
+        window.addAllowedOrator = function (targetUserId) {
+            if (!theaterId) return;
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/allowed_orators`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_user_id: targetUserId })
             }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
         };
 
-        window.removeAllowedOrator = function(targetUserId) {
-            if (!narratronSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/allowed_orators/${targetUserId}`, {
+        window.removeAllowedOrator = function (targetUserId) {
+            if (!theaterId) return;
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/allowed_orators/${targetUserId}`, {
                 method: 'DELETE'
             }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
         };
 
-        window.requestBatonPass = function(targetUserId) {
-            if (!narratronSessionId) return;
-            fetch(`/api/sessions/${encodeURIComponent(narratronSessionId)}/baton/request`, {
+        window.requestBatonPass = function (targetUserId) {
+            if (!theaterId) return;
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/request`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_user_id: targetUserId, timeout_seconds: 30 })
@@ -2920,9 +2922,9 @@
             }, 2200);
         }
 
-        const shareSessionBtn = document.getElementById('share-session-btn');
-        if (shareSessionBtn) {
-            shareSessionBtn.addEventListener('click', () => {
+        const shareTheaterBtn = document.getElementById('share-theater-btn');
+        if (shareTheaterBtn) {
+            shareTheaterBtn.addEventListener('click', () => {
                 const currentUrl = new URL(window.location.href);
                 const shareUrl = currentUrl.toString();
 
@@ -2938,12 +2940,12 @@
             });
         }
 
-        const obsSessionBtn = document.getElementById('obs-session-btn');
-        if (obsSessionBtn) {
-            obsSessionBtn.addEventListener('click', () => {
+        const obsTheaterBtn = document.getElementById('obs-theater-btn');
+        if (obsTheaterBtn) {
+            obsTheaterBtn.addEventListener('click', () => {
                 const currentUrl = new URL(window.location.href);
                 const obsUrl = new URL('/obs', window.location.origin);
-                // Copy all search params (narratron_session_id, join_key, role)
+                // Copy all search params (theater_id, join_key, role)
                 currentUrl.searchParams.forEach((val, key) => {
                     obsUrl.searchParams.set(key, val);
                 });
@@ -2972,7 +2974,7 @@
             chatInput.value = '';
             try {
                 // Post to chat_manager first
-                await fetch('/api/chat' + (narratronSessionId ? `?narratron_session_id=${encodeURIComponent(narratronSessionId)}` : ''), {
+                await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
@@ -3022,7 +3024,7 @@
 
         async function checkAgentStatus() {
             try {
-                const res = await fetch(`/api/sessions/${narratronSessionId}/agent/status`);
+                const res = await fetch(`/api/theaters/${theaterId}/agent/status`);
                 if (res.ok) {
                     const data = await res.json();
                     setAgentStartedUI(!!data.agent_running);
@@ -3033,34 +3035,34 @@
             }
         }
 
-        async function startAgentSession() {
+        async function startAgentTheater() {
             if (agentStartStopBtn) {
                 agentStartStopBtn.textContent = 'Starting...';
                 agentStartStopBtn.style.background = '#eab308'; // Amber
             }
             try {
-                const res = await fetch(`/api/sessions/${narratronSessionId}/agent/start`, { method: 'POST' });
-                if (!res.ok) throw new Error("Failed to start agent session");
+                const res = await fetch(`/api/theaters/${theaterId}/agent/start`, { method: 'POST' });
+                if (!res.ok) throw new Error("Failed to start agent theater");
                 const data = await res.json();
                 setAgentStartedUI(true);
                 return data;
             } catch (err) {
-                console.error("Error starting agent session:", err);
+                console.error("Error starting agent theater:", err);
                 setAgentStartedUI(false);
                 throw err;
             }
         }
 
-        async function stopAgentSession() {
+        async function stopAgentTheater() {
             cleanupAgentConnection();
             if (agentStartStopBtn) {
                 agentStartStopBtn.textContent = 'Stopping...';
                 agentStartStopBtn.style.background = '#eab308'; // Amber
             }
             try {
-                await fetch(`/api/sessions/${narratronSessionId}/agent/stop`, { method: 'POST' });
+                await fetch(`/api/theaters/${theaterId}/agent/stop`, { method: 'POST' });
             } catch (e) {
-                console.warn("Error stopping agent session:", e);
+                console.warn("Error stopping agent theater:", e);
             } finally {
                 setAgentStartedUI(false);
             }
@@ -3069,9 +3071,9 @@
         if (agentStartStopBtn) {
             agentStartStopBtn.addEventListener('click', async () => {
                 if (isAgentStarted) {
-                    await stopAgentSession();
+                    await stopAgentTheater();
                 } else {
-                    await startAgentSession();
+                    await startAgentTheater();
                 }
             });
         }
@@ -3103,7 +3105,7 @@
             }
 
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${narratronSessionId}`;
+            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${theaterId}`;
 
             agentConnectBtn.textContent = 'Connecting...';
             agentConnectBtn.style.background = '#eab308'; // Amber
@@ -3226,7 +3228,7 @@
                     agentConnectBtn.textContent = 'Connecting...';
                     agentConnectBtn.style.background = '#eab308';
                     if (!isAgentStarted) {
-                        await startAgentSession();
+                        await startAgentTheater();
                     }
                     await connectAgent();
                     await startMicStream();
@@ -3643,7 +3645,7 @@
             const left = window.screen.width - width - 50;
             const top = 100;
 
-            const url = `/popout?narratron_session_id=${encodeURIComponent(narratronSessionId)}&role=${isOrator ? 'orator' : 'viewer'}`;
+            const url = `/popout?theater_id=${encodeURIComponent(theaterId)}&role=${isOrator ? 'orator' : 'viewer'}`;
             popoutWindowRef = window.open(url, 'NarratronPopoutPanel', `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
 
             if (popoutWindowRef) {
@@ -3730,7 +3732,7 @@
         if (menuItemShare) {
             menuItemShare.addEventListener('click', () => {
                 closePulloutMenu();
-                const shareBtn = document.getElementById('share-session-btn');
+                const shareBtn = document.getElementById('share-theater-btn');
                 if (shareBtn) shareBtn.click();
             });
         }
@@ -3738,7 +3740,7 @@
         if (menuItemObs) {
             menuItemObs.addEventListener('click', () => {
                 closePulloutMenu();
-                const obsBtn = document.getElementById('obs-session-btn');
+                const obsBtn = document.getElementById('obs-theater-btn');
                 if (obsBtn) obsBtn.click();
             });
         }
@@ -3822,15 +3824,15 @@
                     <div class="pullout-menu-list">
                         <a href="/" class="pullout-menu-item">
                             <span class="pullout-item-icon">🏠</span>
-                            <span>Session Launcher</span>
+                            <span>Theater Launcher</span>
                         </a>
                         <a href="/deploy" class="pullout-menu-item">
                             <span class="pullout-item-icon">🚀</span>
-                            <span>Deploy & Manage Sessions</span>
+                            <span>Deploy & Manage Theaters</span>
                         </a>
                         <a href="/stats" class="pullout-menu-item">
                             <span class="pullout-item-icon">📊</span>
-                            <span>Session Analytics</span>
+                            <span>Theater Analytics</span>
                         </a>
                     </div>
                 </div>
@@ -3847,7 +3849,7 @@
                 </div>
 
                 <div>
-                    <div class="pullout-section-title">Session Actions</div>
+                    <div class="pullout-section-title">Theater Actions</div>
                     <div class="pullout-menu-list">
                         <button id="menu-item-share" class="pullout-menu-item">
                             <span class="pullout-item-icon">🔗</span>
@@ -3886,7 +3888,7 @@
                         </div>
                         <div class="step-desc">
                             Click the <strong>Connect Agent</strong> button in the top control bar to connect your
-                            canvas session to the Narratron AI agent.
+                            canvas theater to the Narratron AI agent.
                         </div>
                     </div>
                 </div>
@@ -3932,21 +3934,29 @@
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
                 <div style="font-size: 1.5rem;">👑</div>
                 <div>
-                    <h3 id="orators-title" style="margin: 0; font-size: 1.2rem; color: #fff;">Baton & Orator Management</h3>
-                    <div style="font-size: 0.85rem; color: #94a3b8;">Control who can speak and interact with the AI Agent</div>
+                    <h3 id="orators-title" style="margin: 0; font-size: 1.2rem; color: #fff;">Baton & Orator Management
+                    </h3>
+                    <div style="font-size: 0.85rem; color: #94a3b8;">Control who can speak and interact with the AI
+                        Agent</div>
                 </div>
             </div>
 
             <div style="margin-bottom: 1.5rem;">
-                <h4 style="margin: 0 0 8px 0; font-size: 0.85rem; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px;">Actively Connected Viewers</h4>
-                <div id="active-viewers-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border);">
+                <h4
+                    style="margin: 0 0 8px 0; font-size: 0.85rem; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px;">
+                    Actively Connected Viewers</h4>
+                <div id="active-viewers-list"
+                    style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border);">
                     <div style="font-size:0.85rem; color:#64748b; padding:6px;">No other connected viewers online.</div>
                 </div>
             </div>
 
             <div>
-                <h4 style="margin: 0 0 8px 0; font-size: 0.85rem; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px;">Allowed Orators List</h4>
-                <div id="allowed-orators-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border);">
+                <h4
+                    style="margin: 0 0 8px 0; font-size: 0.85rem; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px;">
+                    Allowed Orators List</h4>
+                <div id="allowed-orators-list"
+                    style="display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border);">
                     <div style="font-size:0.85rem; color:#64748b; padding:6px;">No allowed co-orators added yet.</div>
                 </div>
             </div>
@@ -3955,29 +3965,37 @@
 
     <!-- Quicktime Baton Request Popup Modal -->
     <div id="baton-request-modal" class="modal-overlay" role="dialog" aria-hidden="true" style="z-index: 9999;">
-        <div class="modal-card" style="max-width: 420px; width: 90%; text-align: center; border: 1px solid #fbbf24; box-shadow: 0 0 30px rgba(251, 191, 36, 0.3);">
+        <div class="modal-card"
+            style="max-width: 420px; width: 90%; text-align: center; border: 1px solid #fbbf24; box-shadow: 0 0 30px rgba(251, 191, 36, 0.3);">
             <div style="font-size: 2.5rem; margin-bottom: 0.5rem; animation: pulse 1.5s infinite;">🎙️</div>
             <h3 style="margin: 0 0 8px 0; font-size: 1.3rem; color: #fff;">Baton Pass Request!</h3>
             <div id="baton-request-text" style="font-size: 0.95rem; color: #e2e8f0; margin-bottom: 0.5rem;">
-                The session owner is passing you the microphone baton!
+                The theater owner is passing you the microphone baton!
             </div>
 
             <!-- Unmute Reminder Badge -->
-            <div style="font-size: 0.85rem; color: #fbbf24; background: rgba(251, 191, 36, 0.1); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3); margin-bottom: 1rem; text-align: center;">
-                💡 <strong>Tip:</strong> Click <strong>🔌 Connect</strong> in top bar to connect to the agent when ready!
+            <div
+                style="font-size: 0.85rem; color: #fbbf24; background: rgba(251, 191, 36, 0.1); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3); margin-bottom: 1rem; text-align: center;">
+                💡 <strong>Tip:</strong> Click <strong>🔌 Connect</strong> in top bar to connect to the agent when
+                ready!
             </div>
 
 
             <!-- Diminishing Progress Bar -->
-            <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 1.2rem;">
-                <div id="baton-timer-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #fbbf24, #f59e0b); transition: width 0.1s linear;"></div>
+            <div
+                style="width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 1.2rem;">
+                <div id="baton-timer-bar"
+                    style="width: 100%; height: 100%; background: linear-gradient(90deg, #fbbf24, #f59e0b); transition: width 0.1s linear;">
+                </div>
             </div>
 
             <div style="display: flex; gap: 12px; justify-content: center;">
-                <button id="accept-baton-btn" style="flex: 1; background: #22c55e; border: none; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: transform 0.1s;">
+                <button id="accept-baton-btn"
+                    style="flex: 1; background: #22c55e; border: none; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: transform 0.1s;">
                     Accept Baton 🎙️
                 </button>
-                <button id="decline-baton-btn" style="flex: 1; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: #94a3b8; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
+                <button id="decline-baton-btn"
+                    style="flex: 1; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: #94a3b8; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
                     Decline
                 </button>
             </div>

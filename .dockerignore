@@ -27,7 +27,7 @@ evaluation_results/
 *_test.py
 
 # Data (ephemeral on Cloud Run — mount volumes if needed)
-sessions/
+theaters/
 output/
 deployer.db
 *.db

@@ -25,8 +25,8 @@ class TestAgentInit(BaseTestCase):
         ]
         mock_image_cls.return_value = mock_image_tools
 
-        narratron_session_id = "test_agent_session"
-        agent_inst = create_agent(narratron_session_id=narratron_session_id)
+        theater_id = "test_agent_theater"
+        agent_inst = create_agent(theater_id=theater_id)
 
         # Verify list_references was called immediately during create_agent
         mock_image_tools.list_references.assert_called_once()
@@ -49,17 +49,17 @@ class TestAgentInit(BaseTestCase):
     ):
         mock_image_cls.return_value.list_references.return_value = []
         canvas_state_service = MagicMock()
-        narratron_session_id = "test_agent_session"
+        theater_id = "test_agent_theater"
         config = {"agent": {"model_id": "test-model"}}
 
         create_agent(
-            narratron_session_id=narratron_session_id,
+            theater_id=theater_id,
             config=config,
             canvas_state_service=canvas_state_service,
         )
 
         expected_kwargs = {
-            "narratron_session_id": narratron_session_id,
+            "theater_id": theater_id,
             "canvas_state_service": canvas_state_service,
         }
         mock_image_cls.assert_called_once_with(config.get("image_generation", {}), **expected_kwargs)

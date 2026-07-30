@@ -29,7 +29,7 @@ evaluation_results/
 *_test.py
 
 # Data that shouldn't be baked into the image
-sessions/
+theaters/
 output/
 *.db
 

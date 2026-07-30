@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Narratron Buddy - Session Deployer</title>
+    <title>Narratron Buddy - Theater Deployer</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -38,7 +39,7 @@
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            background-image: 
+            background-image:
                 radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
                 radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.12) 0%, transparent 40%);
             background-attachment: fixed;
@@ -309,7 +310,11 @@
             color: var(--text-secondary);
         }
 
-        input[type="text"], input[type="password"], input[type="email"], select, textarea {
+        input[type="text"],
+        input[type="password"],
+        input[type="email"],
+        select,
+        textarea {
             background: rgba(11, 13, 18, 0.6);
             border: 1px solid var(--card-border);
             border-radius: var(--radius-md);
@@ -321,7 +326,10 @@
             transition: all 0.2s ease;
         }
 
-        input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="email"]:focus,
+        textarea:focus {
             border-color: var(--accent-primary);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
         }
@@ -337,7 +345,8 @@
             background: rgba(11, 13, 18, 0.3);
         }
 
-        .dropzone:hover, .dropzone.dragover {
+        .dropzone:hover,
+        .dropzone.dragover {
             border-color: var(--accent-primary);
             background: rgba(99, 102, 241, 0.05);
         }
@@ -446,10 +455,26 @@
             overflow-x: auto;
         }
 
-        .tree-root { color: #c084fc; font-weight: 700; }
-        .tree-folder { color: #818cf8; font-weight: 600; }
-        .tree-file { color: #cbd5e1; }
-        .tree-tag { color: #64748b; font-size: 0.72rem; font-family: 'Outfit', sans-serif; margin-left: 6px; }
+        .tree-root {
+            color: #c084fc;
+            font-weight: 700;
+        }
+
+        .tree-folder {
+            color: #818cf8;
+            font-weight: 600;
+        }
+
+        .tree-file {
+            color: #cbd5e1;
+        }
+
+        .tree-tag {
+            color: #64748b;
+            font-size: 0.72rem;
+            font-family: 'Outfit', sans-serif;
+            margin-left: 6px;
+        }
 
         .tutorial-bullet-list {
             display: flex;
@@ -476,7 +501,7 @@
             font-size: 0.74rem;
         }
 
-        /* 3 Session Creation Path Cards */
+        /* 3 Theater Creation Path Cards */
         .creation-paths-container {
             margin-bottom: 1.25rem;
             padding-bottom: 1rem;
@@ -660,7 +685,7 @@
             color: white;
         }
 
-        /* Sessions Table */
+        /* Theaters Table */
         .table-responsive {
             overflow-x: auto;
         }
@@ -696,10 +721,29 @@
             display: inline-block;
         }
 
-        .badge-deployed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-        .badge-created { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
-        .badge-stopped { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
-        .join-key-badge { background: rgba(168, 85, 247, 0.15); color: #e9d5ff; border: 1px solid rgba(168, 85, 247, 0.3); font-family: monospace; font-size: 0.85rem; letter-spacing: 1px; }
+        .badge-deployed {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+
+        .badge-created {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+        }
+
+        .badge-stopped {
+            background: rgba(100, 116, 139, 0.2);
+            color: #94a3b8;
+        }
+
+        .join-key-badge {
+            background: rgba(168, 85, 247, 0.15);
+            color: #e9d5ff;
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            font-family: monospace;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
 
         .empty-state {
             text-align: center;
@@ -710,7 +754,10 @@
         /* Modal overlay */
         .modal-overlay {
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: rgba(0, 0, 0, 0.75);
             backdrop-filter: blur(8px);
             display: flex;
@@ -734,7 +781,7 @@
             width: 100%;
             max-width: 420px;
             padding: 2rem;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
         }
 
         .modal-tabs {
@@ -766,6 +813,7 @@
         }
     </style>
 </head>
+
 <body>
 
     <header>
@@ -786,20 +834,20 @@
 
     <main>
         <div class="hero">
-            <h1>Session & Asset Deployer</h1>
-            <p>Deploy your Narratron session with your own personal assets and styles.</p>
+            <h1>Theater & Asset Deployer</h1>
+            <p>Deploy your Narratron theater with your own personal assets and styles.</p>
         </div>
 
         <div class="grid-container">
-            <!-- Left Panel: Create Session -->
+            <!-- Left Panel: Create Theater -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-title">
-                        <span>✨</span> Create New Session
+                        <span>✨</span> Create New Theater
                     </div>
                 </div>
 
-                <!-- 3 Session Creation Path Cards -->
+                <!-- 3 Theater Creation Path Cards -->
                 <div class="creation-paths-container">
                     <div class="creation-paths-grid">
                         <div class="path-card active" id="pathCardFolder" onclick="selectCreationPath('folder')">
@@ -824,21 +872,25 @@
 
                 <!-- Common Top Fields -->
                 <div class="form-group">
-                    <label for="sessionName">Session Name</label>
-                    <input type="text" id="sessionName" placeholder="e.g. Desert Mystery Adventure" value="Narratron Adventure">
+                    <label for="theaterName">Theater Name</label>
+                    <input type="text" id="theaterName" placeholder="e.g. Desert Mystery Adventure"
+                        value="Narratron Adventure">
                 </div>
 
                 <div class="form-group" style="margin-bottom: 1.25rem;">
-                    <label for="sessionStyle">Default Image Style</label>
-                    <textarea id="sessionStyle" rows="3" placeholder="e.g. cinematic watercolor, warm desert palette, soft ink outlines"></textarea>
+                    <label for="theaterStyle">Default Image Style</label>
+                    <textarea id="theaterStyle" rows="3"
+                        placeholder="e.g. cinematic watercolor, warm desert palette, soft ink outlines"></textarea>
                     <small>Applied to generated images unless their prompt specifies a style.</small>
                 </div>
 
                 <!-- PATH 1: Folder Creation -->
                 <div id="pathSectionFolder" class="creation-path-section">
                     <div class="form-group" style="position: relative;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
-                            <label style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #f8fafc;">
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
+                            <label
+                                style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #f8fafc;">
                                 <span>📁 Asset Folder / ZIP Upload</span>
                             </label>
                             <div class="hover-tutorial-trigger" id="assetTutorialBadge">
@@ -848,56 +900,73 @@
                                         <span>📦</span> Asset Folder Directory Structure
                                     </div>
                                     <p class="tutorial-desc">
-                                        Upload a structured folder or <code>.zip</code> package to automatically populate references, playlists, and canvas defaults.
+                                        Upload a structured folder or <code>.zip</code> package to automatically
+                                        populate references, playlists, and canvas defaults.
                                     </p>
                                     <div class="folder-tree-card">
-                                        <div class="tree-root">📁 my_session_assets/</div>
-                                        <div>├── <span class="tree-folder">📁 references/</span> <span class="tree-tag">(Images: .png, .jpg, .webp)</span></div>
-                                        <div>│   ├── <span class="tree-file">hero_portrait.png</span></div>
-                                        <div>│   └── <span class="tree-file">desert_map.jpg</span></div>
-                                        <div>├── <span class="tree-folder">📁 playlists/</span> <span class="tree-tag">(Audio folders = playlist names)</span></div>
-                                        <div>│   ├── <span class="tree-folder">📁 ambient/</span></div>
-                                        <div>│   │   └── <span class="tree-file">desert_wind.mp3</span></div>
-                                        <div>│   └── <span class="tree-folder">📁 combat/</span></div>
-                                        <div>│       └── <span class="tree-file">battle_theme.wav</span></div>
-                                        <div>└── <span class="tree-file">📄 style.txt</span> <span class="tree-tag">(Optional default style prompt)</span></div>
+                                        <div class="tree-root">📁 my_theater_assets/</div>
+                                        <div>├── <span class="tree-folder">📁 references/</span> <span
+                                                class="tree-tag">(Images: .png, .jpg, .webp)</span></div>
+                                        <div>│ ├── <span class="tree-file">hero_portrait.png</span></div>
+                                        <div>│ └── <span class="tree-file">desert_map.jpg</span></div>
+                                        <div>├── <span class="tree-folder">📁 playlists/</span> <span
+                                                class="tree-tag">(Audio folders = playlist names)</span></div>
+                                        <div>│ ├── <span class="tree-folder">📁 ambient/</span></div>
+                                        <div>│ │ └── <span class="tree-file">desert_wind.mp3</span></div>
+                                        <div>│ └── <span class="tree-folder">📁 combat/</span></div>
+                                        <div>│ └── <span class="tree-file">battle_theme.wav</span></div>
+                                        <div>└── <span class="tree-file">📄 style.txt</span> <span
+                                                class="tree-tag">(Optional default style prompt)</span></div>
                                     </div>
                                     <div class="tutorial-bullet-list">
                                         <div class="tutorial-bullet-item">
                                             <span>⚡</span>
-                                            <span><strong>Auto-Extraction:</strong> References, audio tracks, and style prompts are parsed & mounted instantly.</span>
+                                            <span><strong>Auto-Extraction:</strong> References, audio tracks, and style
+                                                prompts are parsed & mounted instantly.</span>
                                         </div>
                                         <div class="tutorial-bullet-item">
                                             <span>📦</span>
-                                            <span><strong>ZIP Support:</strong> You can drop an uncompressed folder or a compressed <code>.zip</code> file directly.</span>
+                                            <span><strong>ZIP Support:</strong> You can drop an uncompressed folder or a
+                                                compressed <code>.zip</code> file directly.</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="dropzone" id="folderDropzone" style="background: rgba(168, 85, 247, 0.04); border-color: rgba(168, 85, 247, 0.25);">
-                            <input type="file" id="folderFileInput" webkitdirectory directory multiple style="display: none;">
+                        <div class="dropzone" id="folderDropzone"
+                            style="background: rgba(168, 85, 247, 0.04); border-color: rgba(168, 85, 247, 0.25);">
+                            <input type="file" id="folderFileInput" webkitdirectory directory multiple
+                                style="display: none;">
                             <input type="file" id="zipFileInput" accept=".zip" style="display: none;">
                             <span style="font-size: 1.8rem;">📂</span>
-                            <p style="font-weight: 600; color: #f8fafc; margin-top: 0.25rem;">Drop Asset Folder or .ZIP here</p>
-                            <small style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; display: block;">
-                                Supports full directory folders containing <code>references/</code> and <code>playlists/</code>
+                            <p style="font-weight: 600; color: #f8fafc; margin-top: 0.25rem;">Drop Asset Folder or .ZIP
+                                here</p>
+                            <small
+                                style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; display: block;">
+                                Supports full directory folders containing <code>references/</code> and
+                                <code>playlists/</code>
                             </small>
                             <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="triggerAssetPackageSelect()">📁 Select</button>
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                    onclick="triggerAssetPackageSelect()">📁 Select</button>
                             </div>
                         </div>
 
-                        <div id="folderUploadManifest" style="display: none; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-top: 0.4rem;">
+                        <div id="folderUploadManifest"
+                            style="display: none; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-top: 0.4rem;">
                             <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <div style="font-weight: 600; font-size: 0.88rem; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
+                                <div
+                                    style="font-weight: 600; font-size: 0.88rem; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
                                     <span>✅ Mounted Asset Package:</span>
                                     <span id="folderManifestSummary"></span>
                                 </div>
-                                <button type="button" class="remove-btn" onclick="clearFolderUpload()" title="Clear folder package">&times;</button>
+                                <button type="button" class="remove-btn" onclick="clearFolderUpload()"
+                                    title="Clear folder package">&times;</button>
                             </div>
-                            <div id="folderManifestDetails" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;"></div>
+                            <div id="folderManifestDetails"
+                                style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -919,43 +988,47 @@
                         <div id="playlistsContainer"></div>
                         <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
                             <input type="text" id="newPlaylistName" placeholder="New Playlist Name" style="flex: 1;">
-                            <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add Playlist</button>
+                            <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add
+                                Playlist</button>
                         </div>
                     </div>
                 </div>
 
                 <!-- PATH 3: Blank Canvas -->
                 <div id="pathSectionBlank" class="creation-path-section" style="display: none;">
-                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+                    <div
+                        style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
                         <span style="font-size: 2rem; display: block; margin-bottom: 0.4rem;">✨</span>
-                        <h4 style="font-size: 0.95rem; font-weight: 700; color: #34d399; margin-bottom: 0.25rem;">Clean Blank Canvas</h4>
+                        <h4 style="font-size: 0.95rem; font-weight: 700; color: #34d399; margin-bottom: 0.25rem;">Clean
+                            Blank Canvas</h4>
                         <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45;">
-                            Deploy an instant interactive session. Default Narratron library reference assets and ambient audio will be mounted automatically.
+                            Deploy an instant interactive theater. Default Narratron library reference assets and
+                            ambient audio will be mounted automatically.
                         </p>
                     </div>
                 </div>
 
-                <button class="btn btn-primary" id="deployBtn" onclick="deployNewSession()" style="margin-top: 1rem;">
+                <button class="btn btn-primary" id="deployBtn" onclick="deployNewTheater()" style="margin-top: 1rem;">
                     <span id="deploySpinner" style="display: none;">⏳</span>
                     <span id="deployBtnText">🚀 Deploy Canvas Instance</span>
                 </button>
             </div>
         </div>
 
-        <!-- Bottom Panel: Active Deployed Sessions -->
-        <div class="panel" id="activeSessionsPanel">
+        <!-- Bottom Panel: Active Deployed Theaters -->
+        <div class="panel" id="activeTheatersPanel">
             <div class="panel-header">
                 <div class="panel-title">
                     <span>🌐</span> Deployed Canvas Instances
                 </div>
-                <button class="btn btn-secondary btn-sm" onclick="loadSessions()">🔄 Refresh</button>
+                <button class="btn btn-secondary btn-sm" onclick="loadTheaters()">🔄 Refresh</button>
             </div>
 
             <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
-                            <th>Session ID</th>
+                            <th>Theater ID</th>
                             <th>Name</th>
                             <th>Status</th>
                             <th>Join Key</th>
@@ -963,9 +1036,9 @@
                             <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="sessionsTableBody">
+                    <tbody id="theatersTableBody">
                         <tr>
-                            <td colspan="6" class="empty-state">Loading active sessions...</td>
+                            <td colspan="6" class="empty-state">Loading active theaters...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -985,14 +1058,18 @@
             <div id="formLogin">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label>Username or Email</label>
-                    <input type="text" id="loginUserEmail" placeholder="username or email" onkeypress="if(event.key==='Enter') submitLogin()">
+                    <input type="text" id="loginUserEmail" placeholder="username or email"
+                        onkeypress="if(event.key==='Enter') submitLogin()">
                 </div>
                 <div class="form-group" style="margin-bottom: 0.5rem;">
                     <label>Password</label>
-                    <input type="password" id="loginPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') submitLogin()">
+                    <input type="password" id="loginPassword" placeholder="••••••••"
+                        onkeypress="if(event.key==='Enter') submitLogin()">
                 </div>
                 <div style="text-align: right; margin-bottom: 1.25rem;">
-                    <a href="javascript:void(0)" onclick="switchAuthTab('forgot')" style="font-size: 0.85rem; color: var(--accent-primary, #38bdf8); text-decoration: none;">Forgot password?</a>
+                    <a href="javascript:void(0)" onclick="switchAuthTab('forgot')"
+                        style="font-size: 0.85rem; color: var(--accent-primary, #38bdf8); text-decoration: none;">Forgot
+                        password?</a>
                 </div>
                 <button class="btn btn-primary" style="width: 100%;" onclick="submitLogin()">Log In</button>
             </div>
@@ -1009,29 +1086,37 @@
                 </div>
                 <div class="form-group" style="margin-bottom: 1.5rem;">
                     <label>Password</label>
-                    <input type="password" id="regPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') submitRegister()">
+                    <input type="password" id="regPassword" placeholder="••••••••"
+                        onkeypress="if(event.key==='Enter') submitRegister()">
                 </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitRegister()">Sign Up (Get 100 Credits)</button>
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitRegister()">Sign Up (Get 100
+                    Credits)</button>
             </div>
 
             <!-- Forgot Password Form -->
             <div id="formForgotPassword" style="display: none;">
                 <h4 style="margin-bottom: 0.5rem;">Reset Your Password</h4>
-                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">Enter your email address or username and we'll send you a password reset link.</p>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">Enter your email
+                    address or username and we'll send you a password reset link.</p>
                 <div class="form-group" style="margin-bottom: 1.25rem;">
                     <label>Username or Email</label>
-                    <input type="text" id="forgotUserEmail" placeholder="username or email" onkeypress="if(event.key==='Enter') submitForgotPassword()">
+                    <input type="text" id="forgotUserEmail" placeholder="username or email"
+                        onkeypress="if(event.key==='Enter') submitForgotPassword()">
                 </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitForgotPassword()">Send Reset Link</button>
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitForgotPassword()">Send Reset
+                    Link</button>
                 <div style="text-align: center; margin-top: 1rem;">
-                    <a href="javascript:void(0)" onclick="switchAuthTab('login')" style="font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;">← Back to Log In</a>
+                    <a href="javascript:void(0)" onclick="switchAuthTab('login')"
+                        style="font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;">← Back to Log
+                        In</a>
                 </div>
             </div>
 
             <!-- Reset Password Form -->
             <div id="formResetPassword" style="display: none;">
                 <h4 style="margin-bottom: 0.5rem;">Set New Password</h4>
-                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;" id="resetPasswordSubtext">Enter a new password for your account.</p>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;"
+                    id="resetPasswordSubtext">Enter a new password for your account.</p>
                 <input type="hidden" id="resetTokenInput">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label>New Password</label>
@@ -1039,30 +1124,39 @@
                 </div>
                 <div class="form-group" style="margin-bottom: 1.25rem;">
                     <label>Confirm New Password</label>
-                    <input type="password" id="resetConfirmPassword" placeholder="••••••••" onkeypress="if(event.key==='Enter') submitResetPassword()">
+                    <input type="password" id="resetConfirmPassword" placeholder="••••••••"
+                        onkeypress="if(event.key==='Enter') submitResetPassword()">
                 </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitResetPassword()">Update Password</button>
+                <button class="btn btn-primary" style="width: 100%;" onclick="submitResetPassword()">Update
+                    Password</button>
             </div>
 
             <div class="modal-error" id="modalError"></div>
-            <div class="modal-success" id="modalSuccess" style="display:none; color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; word-break: break-all;"></div>
-            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;" onclick="closeAuthModal()">Cancel</button>
+            <div class="modal-success" id="modalSuccess"
+                style="display:none; color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; word-break: break-all;">
+            </div>
+            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;"
+                onclick="closeAuthModal()">Cancel</button>
         </div>
     </div>
 
     <!-- Join Key Modal -->
     <div class="modal-overlay" id="joinKeyModal">
         <div class="modal-card">
-            <h3 style="margin-bottom: 0.5rem;">🔑 Enter Session Join Key</h3>
+            <h3 style="margin-bottom: 0.5rem;">🔑 Enter Theater Join Key</h3>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.25rem;">
-                Please enter the Join Key to launch canvas for session <code id="promptSessionIdDisplay"></code>.
+                Please enter the Join Key to launch canvas for theater <code id="promptTheaterIdDisplay"></code>.
             </p>
             <div class="form-group" style="margin-bottom: 1.25rem;">
-                <input type="text" id="canvasJoinKeyInput" placeholder="KEY-XXXXXX" style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 1.1rem;" onkeypress="if(event.key==='Enter') submitCanvasJoinKey()">
+                <input type="text" id="canvasJoinKeyInput" placeholder="KEY-XXXXXX"
+                    style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 1.1rem;"
+                    onkeypress="if(event.key==='Enter') submitCanvasJoinKey()">
             </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="submitCanvasJoinKey()">Launch Canvas →</button>
+            <button class="btn btn-primary" style="width: 100%;" onclick="submitCanvasJoinKey()">Launch Canvas
+                →</button>
             <div class="modal-error" id="joinKeyModalError"></div>
-            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;" onclick="closeJoinKeyModal()">Cancel</button>
+            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;"
+                onclick="closeJoinKeyModal()">Cancel</button>
         </div>
     </div>
 
@@ -1073,12 +1167,15 @@
                 <h3 style="margin: 0; font-size: 1.3rem; display: flex; align-items: center; gap: 8px;">
                     ⚡ Buy Credits
                 </h3>
-                <span id="buyCreditsCurrentBalance" style="font-size: 0.85rem; color: #34d399; font-weight: 600; background: rgba(16, 185, 129, 0.15); padding: 4px 10px; border-radius: 99px;">
+                <span id="buyCreditsCurrentBalance"
+                    style="font-size: 0.85rem; color: #34d399; font-weight: 600; background: rgba(16, 185, 129, 0.15); padding: 4px 10px; border-radius: 99px;">
                     Balance: 0.0 Cr
                 </span>
             </div>
-            
-            <div id="buyCreditsAlertBanner" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1rem;"></div>
+
+            <div id="buyCreditsAlertBanner"
+                style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1rem;">
+            </div>
 
             <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 1rem; line-height: 1.4;">
                 Select a credit package below to power canvas deployments and storytelling features.
@@ -1117,50 +1214,74 @@
             </div>
 
             <!-- Custom One-Off Amount Input Section -->
-            <div id="customAmountSection" style="display: none; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
-                <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">⚡ One-Off Custom Transaction</div>
+            <div id="customAmountSection"
+                style="display: none; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
+                <div
+                    style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">
+                    ⚡ One-Off Custom Transaction</div>
                 <div style="display: flex; gap: 12px; align-items: center;">
                     <div style="flex: 1;">
                         <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8;">USD Amount ($)</label>
-                        <input type="number" id="customUsdInput" min="1" max="1000" step="1" value="10" style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; margin-top: 4px;" oninput="updateCustomAmountCalculation()">
+                        <input type="number" id="customUsdInput" min="1" max="1000" step="1" value="10"
+                            style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; margin-top: 4px;"
+                            oninput="updateCustomAmountCalculation()">
                     </div>
                     <div style="font-size: 1.2rem; color: #64748b; font-weight: 700; margin-top: 16px;">=</div>
                     <div style="flex: 1;">
                         <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8;">Credits Added</label>
-                        <div id="customCreditsDisplay" style="font-size: 1.1rem; font-weight: 800; color: #34d399; margin-top: 6px;">⚡ 100.0 Cr</div>
+                        <div id="customCreditsDisplay"
+                            style="font-size: 1.1rem; font-weight: 800; color: #34d399; margin-top: 6px;">⚡ 100.0 Cr
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
-                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem;">Payment Method</div>
+            <div
+                style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+                <div
+                    style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem;">
+                    Payment Method</div>
                 <div style="display: flex; gap: 1rem; margin-bottom: 0.75rem;">
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.88rem; color: #f8fafc;">
-                        <input type="radio" name="paymentMethod" value="card_mock" checked onclick="toggleCardFields(true)"> 💳 Credit / Debit Card
+                    <label
+                        style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.88rem; color: #f8fafc;">
+                        <input type="radio" name="paymentMethod" value="card_mock" checked
+                            onclick="toggleCardFields(true)"> 💳 Credit / Debit Card
                     </label>
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.88rem; color: #94a3b8;">
-                        <input type="radio" name="paymentMethod" value="paypal_mock" onclick="toggleCardFields(false)"> 🅿️ PayPal
+                    <label
+                        style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.88rem; color: #94a3b8;">
+                        <input type="radio" name="paymentMethod" value="paypal_mock" onclick="toggleCardFields(false)">
+                        🅿️ PayPal
                     </label>
                 </div>
                 <!-- Simulated Card Input Fields -->
-                <div id="cardFieldsContainer" style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
-                    <input type="text" id="cardHolderName" placeholder="Cardholder Name" autocomplete="cc-name" style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem;">
-                    <input type="text" id="cardNumber" placeholder="Card Number (•••• •••• •••• 4242)" autocomplete="cc-number" style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem;">
+                <div id="cardFieldsContainer"
+                    style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
+                    <input type="text" id="cardHolderName" placeholder="Cardholder Name" autocomplete="cc-name"
+                        style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem;">
+                    <input type="text" id="cardNumber" placeholder="Card Number (•••• •••• •••• 4242)"
+                        autocomplete="cc-number"
+                        style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem;">
                     <div style="display: flex; gap: 10px;">
-                        <input type="text" id="cardExp" placeholder="MM / YY" autocomplete="cc-exp" style="flex: 1; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem; text-align: center;">
-                        <input type="text" id="cardCvc" placeholder="CVC / CVV" autocomplete="cc-csc" style="flex: 1; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem; text-align: center;">
+                        <input type="text" id="cardExp" placeholder="MM / YY" autocomplete="cc-exp"
+                            style="flex: 1; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem; text-align: center;">
+                        <input type="text" id="cardCvc" placeholder="CVC / CVV" autocomplete="cc-csc"
+                            style="flex: 1; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem; text-align: center;">
                     </div>
                 </div>
             </div>
 
-            <button class="btn btn-primary" id="btnCompletePurchase" style="width: 100%; font-size: 1rem; padding: 0.75rem;" onclick="submitBuyCredits()">
+            <button class="btn btn-primary" id="btnCompletePurchase"
+                style="width: 100%; font-size: 1rem; padding: 0.75rem;" onclick="submitBuyCredits()">
                 Pay $18.00 & Add 200 Credits
             </button>
 
             <div class="modal-error" id="buyCreditsModalError"></div>
-            <div class="modal-success" id="buyCreditsModalSuccess" style="display:none; color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); padding: 0.75rem; border-radius: 8px; font-size: 0.88rem; margin-top: 1rem; text-align: center;"></div>
-            
-            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 0.75rem;" onclick="closeBuyCreditsModal()">Cancel</button>
+            <div class="modal-success" id="buyCreditsModalSuccess"
+                style="display:none; color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); padding: 0.75rem; border-radius: 8px; font-size: 0.88rem; margin-top: 1rem; text-align: center;">
+            </div>
+
+            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 0.75rem;"
+                onclick="closeBuyCreditsModal()">Cancel</button>
         </div>
     </div>
 
@@ -1176,7 +1297,7 @@
                 const res = await fetch('/api/auth/me');
                 const data = await res.json();
                 const bar = document.getElementById('userAccountBar');
-                
+
                 if (data.authenticated && data.user) {
                     currentUser = data.user;
                     bar.innerHTML = `
@@ -1263,7 +1384,7 @@
 
         function selectCreditPackage(pkgId, credits, usd) {
             const customSection = document.getElementById('customAmountSection');
-            
+
             ['pkgStarter', 'pkgPro', 'pkgUltra', 'pkgCustom'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('selected');
@@ -1276,7 +1397,7 @@
                 selectedPackage = { id: 'custom', credits: creditsVal, usd: usdVal };
                 const customEl = document.getElementById('pkgCustom');
                 if (customEl) customEl.classList.add('selected');
-                
+
                 const payBtn = document.getElementById('btnCompletePurchase');
                 if (payBtn) {
                     payBtn.innerText = `Pay $${usdVal.toFixed(2)} & Add ${creditsVal.toFixed(1)} Credits`;
@@ -1412,7 +1533,7 @@
             success.style.display = 'none';
 
             tabsContainer.style.display = (tab === 'login' || tab === 'register') ? 'flex' : 'none';
-            
+
             document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
             document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
 
@@ -1547,7 +1668,7 @@
                 if (res.ok) {
                     closeAuthModal();
                     await checkAuthStatus();
-                    await loadSessions();
+                    await loadTheaters();
                 } else {
                     err.textContent = data.detail || 'Login failed.';
                     err.style.display = 'block';
@@ -1581,7 +1702,7 @@
                 if (res.ok) {
                     closeAuthModal();
                     await checkAuthStatus();
-                    await loadSessions();
+                    await loadTheaters();
                 } else {
                     err.textContent = data.detail || 'Registration failed.';
                     err.style.display = 'block';
@@ -1595,7 +1716,7 @@
         async function submitLogout() {
             await fetch('/api/auth/logout', { method: 'POST' });
             await checkAuthStatus();
-            await loadSessions();
+            await loadTheaters();
         }
 
         // Dropzone Reference Files Handling
@@ -1684,7 +1805,7 @@
                 addTrackBtn.className = 'btn-sm btn-success';
                 addTrackBtn.innerText = '+ Track';
                 addTrackBtn.style.marginLeft = 'auto';
-                
+
                 const trackInput = document.createElement('input');
                 trackInput.type = 'file';
                 trackInput.accept = 'audio/*';
@@ -1708,7 +1829,7 @@
                     trackRow.className = 'file-pill';
                     trackRow.style.marginTop = '0.25rem';
                     trackRow.innerHTML = `<span>${trackFile.name}</span>`;
-                    
+
                     const remTrack = document.createElement('button');
                     remTrack.className = 'remove-btn';
                     remTrack.innerHTML = '&times;';
@@ -1771,7 +1892,7 @@
             folderDropzone.ondrop = (e) => {
                 e.preventDefault();
                 folderDropzone.classList.remove('dragover');
-                
+
                 const files = e.dataTransfer ? e.dataTransfer.files : null;
                 if (files && files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
                     handleZipUploadFile(files[0]);
@@ -1832,7 +1953,7 @@
                     hasStyle = true;
                     const reader = new FileReader();
                     reader.onload = (e) => {
-                        const styleElem = document.getElementById('sessionStyle');
+                        const styleElem = document.getElementById('theaterStyle');
                         if (styleElem) styleElem.value = e.target.result.trim();
                     };
                     reader.readAsText(f);
@@ -1851,7 +1972,7 @@
             if (detailsDiv) {
                 detailsDiv.innerHTML = `
                     Found <strong>${refCount}</strong> reference image(s), 
-                    <strong>${plNames.length}</strong> playlist(s) (${Object.values(playListMap).reduce((a,b)=>a+b,0)} tracks)${hasStyle ? ', and default style prompt imported' : ''}.
+                    <strong>${plNames.length}</strong> playlist(s) (${Object.values(playListMap).reduce((a, b) => a + b, 0)} tracks)${hasStyle ? ', and default style prompt imported' : ''}.
                 `;
             }
             if (manifestCard) manifestCard.style.display = 'block';
@@ -1873,7 +1994,7 @@
 
         function selectCreationPath(mode) {
             currentCreationPath = mode;
-            
+
             const cardFolder = document.getElementById('pathCardFolder');
             const cardIndividual = document.getElementById('pathCardIndividual');
             const cardBlank = document.getElementById('pathCardBlank');
@@ -1902,27 +2023,27 @@
             }
         }
 
-        // Deploy Session
-        async function deployNewSession() {
+        // Deploy Theater
+        async function deployNewTheater() {
             if (!currentUser) {
                 openAuthModal('login');
                 return;
             }
 
             if (currentUser.credits < 5.0) {
-                openBuyCreditsModal('Insufficient credits! You need at least 5.0 credits to deploy a session.');
+                openBuyCreditsModal('Insufficient credits! You need at least 5.0 credits to deploy a theater.');
                 return;
             }
 
-            const name = document.getElementById('sessionName').value.trim() || 'Narratron Canvas';
-            const style = document.getElementById('sessionStyle').value.trim();
+            const name = document.getElementById('theaterName').value.trim() || 'Narratron Canvas';
+            const style = document.getElementById('theaterStyle').value.trim();
             const deployBtn = document.getElementById('deployBtn');
             const deploySpinner = document.getElementById('deploySpinner');
             const deployBtnText = document.getElementById('deployBtnText');
 
             deployBtn.disabled = true;
             deploySpinner.style.display = 'inline-block';
-            deployBtnText.innerText = 'Deploying Session...';
+            deployBtnText.innerText = 'Deploying Theater...';
 
             try {
                 const formData = new FormData();
@@ -1951,21 +2072,21 @@
                     });
                 }
 
-                const response = await fetch('/api/sessions/create-and-deploy', {
+                const response = await fetch('/api/theaters/create-and-deploy', {
                     method: 'POST',
                     body: formData,
                 });
 
                 const result = await response.json();
-                if (response.ok && result.narratron_session_id) {
+                if (response.ok && result.theater_id) {
                     await checkAuthStatus();
-                    window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(result.narratron_session_id)}&role=orator`;
+                    window.location.href = `/canvas?theater_id=${encodeURIComponent(result.theater_id)}&role=orator`;
                 } else {
-                    alert('Error deploying session: ' + (result.detail || 'Unknown error'));
+                    alert('Error deploying theater: ' + (result.detail || 'Unknown error'));
                 }
             } catch (err) {
                 console.error(err);
-                alert('Failed to deploy session: ' + err.message);
+                alert('Failed to deploy theater: ' + err.message);
             } finally {
                 deployBtn.disabled = false;
                 deploySpinner.style.display = 'none';
@@ -1973,23 +2094,23 @@
             }
         }
 
-        // Active Sessions List
-        async function loadSessions() {
-            const body = document.getElementById('sessionsTableBody');
+        // Active Theaters List
+        async function loadTheaters() {
+            const body = document.getElementById('theatersTableBody');
             try {
-                const res = await fetch('/api/sessions');
-                const sessions = await res.json();
-                
-                if (!sessions || sessions.length === 0) {
-                    body.innerHTML = `<tr><td colspan="6" class="empty-state">No sessions deployed yet. Create your first session above!</td></tr>`;
+                const res = await fetch('/api/theaters');
+                const theaters = await res.json();
+
+                if (!theaters || theaters.length === 0) {
+                    body.innerHTML = `<tr><td colspan="6" class="empty-state">No theaters deployed yet. Create your first theater above!</td></tr>`;
                     return;
                 }
 
                 body.innerHTML = '';
-                sessions.forEach(s => {
+                theaters.forEach(s => {
                     const tr = document.createElement('tr');
                     const badgeClass = s.status === 'deployed' ? 'badge-deployed' : (s.status === 'created' ? 'badge-created' : 'badge-stopped');
-                    
+
                     const refCount = s.mounted_references ? s.mounted_references.length : 0;
                     const plCount = s.mounted_playlists ? Object.keys(s.mounted_playlists).length : 0;
 
@@ -1998,14 +2119,14 @@
                         joinKeyHtml += `<button class="copy-key-btn" onclick="copyJoinKey('${s.join_key}', this)">📋 Copy</button>`;
                     }
 
-                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.narratron_session_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')">Launch Canvas</button>`;
-                    actionsHtml += ` <a href="/api/sessions/${s.narratron_session_id}/export-assets" class="btn-sm btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; font-size:1.1rem;" title="Export Assets" download>📦</a>`;
+                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')">Launch Canvas</button>`;
+                    actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; font-size:1.1rem;" title="Export Assets" download>📦</a>`;
                     if (s.is_owner) {
-                        actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroySession('${s.narratron_session_id}')">Destroy</button>`;
+                        actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroyTheater('${s.theater_id}')">Destroy</button>`;
                     }
 
                     tr.innerHTML = `
-                        <td><code>${s.narratron_session_id}</code></td>
+                        <td><code>${s.theater_id}</code></td>
                         <td><strong>${s.name}</strong> ${s.is_owner ? '<span style="color:#a78bfa; font-size:0.75rem;">(Owner)</span>' : ''}</td>
                         <td><span class="badge ${badgeClass}">${s.status}</span></td>
                         <td>${joinKeyHtml}</td>
@@ -2015,8 +2136,8 @@
                     body.appendChild(tr);
                 });
             } catch (err) {
-                console.error('Error loading sessions:', err);
-                body.innerHTML = `<tr><td colspan="6" class="empty-state">Error loading active sessions.</td></tr>`;
+                console.error('Error loading theaters:', err);
+                body.innerHTML = `<tr><td colspan="6" class="empty-state">Error loading active theaters.</td></tr>`;
             }
         }
 
@@ -2028,15 +2149,15 @@
             });
         }
 
-        let pendingCanvasNarratronSessionId = null;
+        let pendingCanvastheaterId = null;
 
-        function openCanvas(narratronSessionId, isOwner = false, joinKey = '') {
+        function openCanvas(theaterId, isOwner = false, joinKey = '') {
             if (isOwner) {
-                window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(narratronSessionId)}&role=orator`;
+                window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}&role=orator`;
                 return;
             }
-            pendingCanvasNarratronSessionId = narratronSessionId;
-            document.getElementById('promptNarratronSessionIdDisplay').textContent = narratronSessionId;
+            pendingCanvastheaterId = theaterId;
+            document.getElementById('prompttheaterIdDisplay').textContent = theaterId;
             document.getElementById('canvasJoinKeyInput').value = '';
             document.getElementById('joinKeyModalError').style.display = 'none';
             document.getElementById('joinKeyModal').classList.add('active');
@@ -2044,7 +2165,7 @@
 
         function closeJoinKeyModal() {
             document.getElementById('joinKeyModal').classList.remove('active');
-            pendingCanvasNarratronSessionId = null;
+            pendingCanvastheaterId = null;
         }
 
         async function submitCanvasJoinKey() {
@@ -2059,21 +2180,21 @@
             }
 
             try {
-                const res = await fetch('/api/sessions/resolve-join-key', {
+                const res = await fetch('/api/theaters/resolve-join-key', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ join_key: key })
                 });
                 const data = await res.json();
-                if (res.ok && data.narratron_session_id) {
-                    if (data.narratron_session_id !== pendingCanvasNarratronSessionId) {
-                        err.textContent = `This Join Key belongs to a different session (${data.name || data.narratron_session_id}).`;
+                if (res.ok && data.theater_id) {
+                    if (data.theater_id !== pendingCanvastheaterId) {
+                        err.textContent = `This Join Key belongs to a different theater (${data.name || data.theater_id}).`;
                         err.style.display = 'block';
                         return;
                     }
                     closeJoinKeyModal();
-                    const isOwnerSession = (data.user_id && currentUser && data.user_id === currentUser.id);
-                    window.location.href = `/canvas?narratron_session_id=${encodeURIComponent(data.narratron_session_id)}${isOwnerSession ? '&role=orator' : ''}`;
+                    const isOwnerTheater = (data.user_id && currentUser && data.user_id === currentUser.id);
+                    window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}${isOwnerTheater ? '&role=orator' : ''}`;
                 } else {
                     err.textContent = data.detail || 'Invalid Join Key.';
                     err.style.display = 'block';
@@ -2085,18 +2206,18 @@
         }
 
 
-        async function destroySession(narratronSessionId) {
-            if (!confirm(`Are you sure you want to destroy session ${narratronSessionId}?`)) return;
+        async function destroyTheater(theaterId) {
+            if (!confirm(`Are you sure you want to destroy theater ${theaterId}?`)) return;
             try {
-                const res = await fetch(`/api/sessions/${narratronSessionId}`, { method: 'DELETE' });
+                const res = await fetch(`/api/theaters/${theaterId}`, { method: 'DELETE' });
                 if (!res.ok) {
                     const data = await res.json();
-                    alert(data.detail || 'Failed to destroy session.');
+                    alert(data.detail || 'Failed to destroy theater.');
                     return;
                 }
-                loadSessions();
+                loadTheaters();
             } catch (err) {
-                alert('Error destroying session: ' + err.message);
+                alert('Error destroying theater: ' + err.message);
             }
         }
 
@@ -2104,8 +2225,9 @@
         playlistsData['default'] = [];
         renderPlaylists();
         checkAuthStatus();
-        loadSessions();
+        loadTheaters();
         checkResetTokenInURL();
     </script>
 </body>
+
 </html>
