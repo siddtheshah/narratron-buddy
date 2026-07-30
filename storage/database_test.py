@@ -410,6 +410,45 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         dep = self.db.get_deployment("theater_pers")
         self.assertIsNotNone(dep["last_billed_at"])
 
+    def test_record_user_usage_default_pricing_and_totals(self):
+        # Initial user has 100.0 credits, 0.0 voice mins, 0 images created
+        res = self.db.record_user_usage(self.user["id"], voice_minutes=15.5, images_created=4)
+        self.assertEqual(res["total_voice_minutes"], 15.5)
+        self.assertEqual(res["total_images_created"], 4)
+        # Default cost: 15.5 + 4 = 19.5 credits deducted -> 100.0 - 19.5 = 80.5
+        self.assertEqual(res["credits"], 80.5)
+
+        # Record subsequent usage
+        res2 = self.db.record_user_usage(self.user["id"], voice_minutes=10.0, images_created=2, credit_cost=5.0)
+        self.assertEqual(res2["total_voice_minutes"], 25.5)
+        self.assertEqual(res2["total_images_created"], 6)
+        # Explicit cost 5.0 deducted -> 80.5 - 5.0 = 75.5
+        self.assertEqual(res2["credits"], 75.5)
+
+    def test_record_user_usage_negative_credits_allowed(self):
+        # User has 100.0 credits; deduct 150.0 credits -> credits should become -50.0
+        res = self.db.record_user_usage(self.user["id"], voice_minutes=100.0, images_created=50, credit_cost=150.0)
+        self.assertEqual(res["credits"], -50.0)
+        self.assertEqual(res["total_voice_minutes"], 100.0)
+        self.assertEqual(res["total_images_created"], 50)
+
+    def test_record_user_usage_validation_errors(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.db.record_user_usage(self.user["id"], voice_minutes=-1.0, images_created=5)
+        self.assertIn("non-negative", str(ctx.exception).lower())
+
+        with self.assertRaises(ValueError) as ctx:
+            self.db.record_user_usage(self.user["id"], voice_minutes=5.0, images_created=-2)
+        self.assertIn("non-negative", str(ctx.exception).lower())
+
+        with self.assertRaises(ValueError) as ctx:
+            self.db.record_user_usage(self.user["id"], voice_minutes=5.0, images_created=2, credit_cost=-10.0)
+        self.assertIn("non-negative", str(ctx.exception).lower())
+
+        with self.assertRaises(ValueError) as ctx:
+            self.db.record_user_usage(99999, voice_minutes=5.0, images_created=2)
+        self.assertIn("not found", str(ctx.exception).lower())
+
 
 class TestBatonManagement(BaseTestCase):
     """Test multi-orator allowed list, baton request, accept, decline, and take back operations."""
@@ -700,6 +739,11 @@ class TestAsyncDatabaseMethods(BaseTestCase):
             # add_user_credits_async
             credit_res = await self.db.add_user_credits_async(user["id"], 50.0, 5.0)
             self.assertEqual(credit_res["credits_added"], 50.0)
+
+            # record_user_usage_async
+            usage_res = await self.db.record_user_usage_async(user["id"], voice_minutes=5.0, images_created=2)
+            self.assertEqual(usage_res["total_voice_minutes"], 5.0)
+            self.assertEqual(usage_res["total_images_created"], 2)
 
             # export_theater_to_db_async
             exp_ok = await self.db.export_theater_to_db_async("async_theater", {"prompt": "test"}, [], user_id=user["id"])

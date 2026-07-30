@@ -1,0 +1,90 @@
+"""Unit tests for pricing/pricing_controller.py."""
+
+import os
+import unittest
+from unittest.mock import patch
+
+from testing.base import BaseTestCase
+from pricing.pricing_controller import PricingController
+from storage.database import DatabaseManager
+
+
+class TestPricingController(BaseTestCase):
+    """Test PricingController initialization, env overrides, cost calculation, and rates polling."""
+
+    def test_default_initialization(self):
+        controller = PricingController()
+        rates = controller.get_rates()
+        self.assertEqual(rates["voice_credit_rate"], 1.0)
+        self.assertEqual(rates["image_credit_rate"], 1.0)
+        self.assertEqual(rates["storage_gb_monthly_rate"], 1.0)
+        self.assertEqual(rates["storage_gb_daily_rate"], 0.033)
+        self.assertEqual(rates["credits_per_usd"], 20.0)
+        self.assertEqual(rates["usd_per_credit"], 0.05)
+
+    def test_from_env_overrides(self):
+        env_vars = {
+            "VOICE_CREDIT_RATE": "2.5",
+            "IMAGE_CREDIT_RATE": "0.5",
+            "STORAGE_GB_MONTHLY_CREDIT_RATE": "1.5",
+            "STORAGE_GB_DAILY_CREDIT_RATE": "0.05",
+            "CREDITS_PER_USD": "10.0",
+        }
+        with patch.dict(os.environ, env_vars):
+            controller = PricingController.from_env()
+            rates = controller.get_rates()
+            self.assertEqual(rates["voice_credit_rate"], 2.5)
+            self.assertEqual(rates["image_credit_rate"], 0.5)
+            self.assertEqual(rates["storage_gb_monthly_rate"], 1.5)
+            self.assertEqual(rates["storage_gb_daily_rate"], 0.05)
+            self.assertEqual(rates["credits_per_usd"], 10.0)
+            self.assertEqual(rates["usd_per_credit"], 0.10)
+
+    def test_usd_per_credit_property(self):
+        controller = PricingController(credits_per_usd=25.0)
+        # 1.0 / 25.0 = 0.04
+        self.assertEqual(controller.usd_per_credit, 0.04)
+
+        invalid_controller = PricingController(credits_per_usd=0.0)
+        with self.assertRaises(ValueError):
+            _ = invalid_controller.usd_per_credit
+
+    def test_calculate_usage_cost(self):
+        controller = PricingController(voice_credit_rate=2.0, image_credit_rate=1.5)
+        # 10 mins * 2.0 + 4 images * 1.5 = 20.0 + 6.0 = 26.0
+        self.assertEqual(controller.calculate_usage_cost(10.0, 4), 26.0)
+
+        with self.assertRaises(ValueError):
+            controller.calculate_usage_cost(-1.0, 4)
+
+        with self.assertRaises(ValueError):
+            controller.calculate_usage_cost(10.0, -2)
+
+    def test_calculate_storage_cost_and_credits_for_usd(self):
+        controller = PricingController(storage_gb_daily_rate=0.1, credits_per_usd=20.0)
+        # 5 GB * 0.1 * 3 days = 1.5 credits
+        self.assertAlmostEqual(controller.calculate_storage_cost(5.0, 3.0), 1.5)
+        self.assertEqual(controller.credits_for_usd(10.0), 200.0)
+
+        with self.assertRaises(ValueError):
+            controller.calculate_storage_cost(-1.0, 1.0)
+
+        with self.assertRaises(ValueError):
+            controller.credits_for_usd(-5.0)
+
+    def test_database_manager_pricing_controller_integration(self):
+        custom_controller = PricingController(voice_credit_rate=3.0, image_credit_rate=2.0)
+        db = DatabaseManager.from_local(":memory:", pricing_controller=custom_controller)
+        self.assertIs(db.pricing_controller, custom_controller)
+        self.assertEqual(db.get_pricing_rates()["voice_credit_rate"], 3.0)
+
+        # Register user and test usage calculation with custom controller rates
+        user = db.register_user("pricinguser", "pricing@test.com", "Pass12345")
+        # 10 voice mins * 3.0 + 2 images * 2.0 = 34.0 credits deducted from 100.0 -> 66.0
+        updated = db.record_user_usage(user["id"], voice_minutes=10.0, images_created=2)
+        self.assertEqual(updated["credits"], 66.0)
+        db.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

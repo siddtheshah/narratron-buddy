@@ -65,4 +65,3 @@ If a Theater Owner runs a **30-minute interactive live session** with 5 particip
 * **Images:** 10 dynamic scene images generated × 1 Cr/img = **10 Credits** ($0.50)
 * **Storage:** 500 MB theater assets saved for 1 month = **0.5 Credits** ($0.025)
 * **Total Session Cost to Theater Owner:** **40.5 Credits** (~$2.025 USD total)
-

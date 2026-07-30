@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import logging
 import libsql
 from dotenv import load_dotenv
+from pricing.pricing_controller import PricingController
 
 load_dotenv()
 
@@ -94,20 +95,25 @@ class _ReusableConnection:
 class DatabaseManager:
     """Manages SQLite database storage for users, authentication tokens, and deployments."""
 
-    def __init__(self, is_live: bool, db_path: Optional[str] = None):
+    def __init__(self, is_live: bool, db_path: Optional[str] = None, pricing_controller: Optional[PricingController] = None):
         self.is_live = is_live
         self.db_path = db_path
         self._conn = None
         self._cached_db_path = None
         self._cached_is_live = None
+        self.pricing_controller = pricing_controller or PricingController.from_env()
+
+    def get_pricing_rates(self) -> Dict[str, float]:
+        """Return current pricing rates dictionary for polling."""
+        return self.pricing_controller.get_rates()
 
     @classmethod
-    def from_live(cls) -> "DatabaseManager":
-        return cls(is_live=True, db_path=None)
+    def from_live(cls, pricing_controller: Optional[PricingController] = None) -> "DatabaseManager":
+        return cls(is_live=True, db_path=None, pricing_controller=pricing_controller)
 
     @classmethod
-    def from_local(cls, db_path: str) -> "DatabaseManager":
-        return cls(is_live=False, db_path=db_path)
+    def from_local(cls, db_path: str, pricing_controller: Optional[PricingController] = None) -> "DatabaseManager":
+        return cls(is_live=False, db_path=db_path, pricing_controller=pricing_controller)
 
     def close(self) -> None:
         """Close the active cached database connection if open."""
@@ -200,6 +206,8 @@ class DatabaseManager:
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     credits REAL DEFAULT 100.0,
+                    total_voice_minutes REAL DEFAULT 0.0,
+                    total_images_created INTEGER DEFAULT 0,
                     created_at TEXT NOT NULL,
                     last_active_at TEXT
                 )
@@ -215,6 +223,18 @@ class DatabaseManager:
             if "credits" not in user_cols:
                 try:
                     cursor.execute("ALTER TABLE users ADD COLUMN credits REAL DEFAULT 100.0")
+                except Exception:
+                    pass
+
+            if "total_voice_minutes" not in user_cols:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN total_voice_minutes REAL DEFAULT 0.0")
+                except Exception:
+                    pass
+
+            if "total_images_created" not in user_cols:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN total_images_created INTEGER DEFAULT 0")
                 except Exception:
                     pass
 
@@ -353,6 +373,8 @@ class DatabaseManager:
                     "username": username_clean,
                     "email": email_clean,
                     "credits": 100.0,
+                    "total_voice_minutes": 0.0,
+                    "total_images_created": 0,
                     "created_at": created_at
                 }
             except sqlite3.IntegrityError as e:
@@ -388,6 +410,8 @@ class DatabaseManager:
                     "username": user_dict["username"],
                     "email": user_dict["email"],
                     "credits": user_dict.get("credits", 100.0),
+                    "total_voice_minutes": user_dict.get("total_voice_minutes", 0.0),
+                    "total_images_created": user_dict.get("total_images_created", 0),
                     "created_at": user_dict["created_at"]
                 }
             return None
@@ -395,7 +419,7 @@ class DatabaseManager:
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, username, email, credits, created_at FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -423,7 +447,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT u.id, u.username, u.email, u.credits, u.created_at, s.expires_at
+                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.created_at, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE s.token = ?
@@ -700,7 +724,7 @@ class DatabaseManager:
             )
             tx_id = cursor.lastrowid
             
-            cursor.execute("SELECT id, username, email, credits FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at FROM users WHERE id = ?", (user_id,))
             updated_user = dict(cursor.fetchone())
             conn.commit()
             return {
@@ -710,6 +734,50 @@ class DatabaseManager:
                 "amount_usd": usd_amount,
                 "created_at": now_iso
             }
+
+    def record_user_usage(
+        self,
+        user_id: int,
+        voice_minutes: float = 0.0,
+        images_created: int = 0,
+        credit_cost: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Record voice minutes used and images created for a user while simultaneously updating credit balance.
+
+        Credits are allowed to go negative per user settings/preferences.
+        """
+        if voice_minutes < 0 or images_created < 0:
+            raise ValueError("Usage parameters (voice_minutes, images_created) must be non-negative.")
+
+        if credit_cost is None:
+            credit_cost = self.pricing_controller.calculate_usage_cost(
+                voice_minutes=voice_minutes, images_created=images_created
+            )
+        elif credit_cost < 0:
+            raise ValueError("credit_cost must be non-negative.")
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE users
+                SET total_voice_minutes = total_voice_minutes + ?,
+                    total_images_created = total_images_created + ?,
+                    credits = credits - ?
+                WHERE id = ?
+                """,
+                (voice_minutes, images_created, credit_cost, user_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("User not found.")
+
+            cursor.execute(
+                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at FROM users WHERE id = ?",
+                (user_id,),
+            )
+            updated_user = dict(cursor.fetchone())
+            conn.commit()
+            return updated_user
 
     def get_user_transactions(self, user_id: int) -> List[Dict[str, Any]]:
         """Retrieve payment transaction history for a user."""
@@ -1188,6 +1256,18 @@ class DatabaseManager:
         """Add user credits asynchronously."""
         return await asyncio.to_thread(
             self.add_user_credits, user_id, credits_amount, usd_amount, payment_method
+        )
+
+    async def record_user_usage_async(
+        self,
+        user_id: int,
+        voice_minutes: float = 0.0,
+        images_created: int = 0,
+        credit_cost: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Record user usage asynchronously."""
+        return await asyncio.to_thread(
+            self.record_user_usage, user_id, voice_minutes, images_created, credit_cost
         )
 
     async def reset_password_with_token_async(self, token: str, new_password: str) -> bool:

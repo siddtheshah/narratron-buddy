@@ -74,11 +74,15 @@ class TestDatabaseManager(BaseTestCase):
         user = self.db.register_user("testuser", "test@example.com", "SecretPass123")
         self.assertEqual(user["username"], "testuser")
         self.assertEqual(user["credits"], 100.0)
+        self.assertEqual(user["total_voice_minutes"], 0.0)
+        self.assertEqual(user["total_images_created"], 0)
 
         # Authenticate valid credentials
         auth_user = self.db.authenticate_user("testuser", "SecretPass123")
         self.assertIsNotNone(auth_user)
         self.assertEqual(auth_user["id"], user["id"])
+        self.assertEqual(auth_user["total_voice_minutes"], 0.0)
+        self.assertEqual(auth_user["total_images_created"], 0)
 
         # Authenticate by email
         auth_email = self.db.authenticate_user("TEST@EXAMPLE.COM", "SecretPass123")
