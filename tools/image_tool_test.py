@@ -147,11 +147,14 @@ class TestImageTools(BaseTestCase):
 
         callback = MagicMock()
         tools.on_show_image = callback
+        created_cb = MagicMock()
+        tools.on_image_created = created_cb
 
         res = tools.create_image("sunset scene", image_name="sunset_01")
         self.assertIn("Successfully generated and displayed image", res)
         self.assertIn("sunset_01", res)
         callback.assert_called_once()
+        created_cb.assert_called_once()
         self.assertIn("sunset_01", tools.image_aliases)
         self.assertTrue(os.path.exists(tools.image_aliases["sunset_01"]))
 

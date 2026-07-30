@@ -301,10 +301,13 @@ def can_access_agent_websocket(
     if not deployment:
         return False
 
-    active_orator_id = deployment.get("active_orator_id") or deployment["user_id"]
-
-    if current_user and (current_user["id"] == deployment["user_id"] or current_user["id"] == active_orator_id):
-        return True
+    active_orator_id = deployment.get("active_orator_id")
+    if current_user:
+        if active_orator_id is not None:
+            if current_user["id"] == active_orator_id:
+                return True
+        elif current_user["id"] == deployment["user_id"]:
+            return True
 
     candidate_key = join_key or _canvas_access_grants(request).get(deployment["theater_id"])
     return _valid_join_key(deployment["join_key"], candidate_key)

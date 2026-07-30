@@ -109,6 +109,8 @@ class AgentSession:
         canvas_state_manager: Optional[Any] = None,
         adk_user_id: Optional[str] = None,
         adk_session_id: Optional[str] = None,
+        db: Optional[Any] = None,
+        owner_user_id: Optional[int] = None,
     ):
         import uuid
         self.theater_id = theater_id
@@ -120,6 +122,12 @@ class AgentSession:
         self.artifact_service = artifact_service
         self.config = config or {}
         self.canvas_state_manager = canvas_state_manager
+        self.db = db
+        self.owner_user_id = owner_user_id
+        self.images_created_count: int = 0
+        self.audio_bytes_received: int = 0
+        self.unbilled_images: int = 0
+        self.unbilled_audio_bytes: int = 0
         self.created_at = time.time()
         self.last_active_at = time.time()
         self.status = "ready"  # "ready", "active", "stopped"
@@ -190,6 +198,7 @@ class AgentSession:
 
         if self.image_tools:
             self.image_tools.on_after_tool_call = handle_after_image_tool
+            self.image_tools.on_image_created = self.record_image_created
 
         def handle_session_chat_message(text: str):
             async def send_to_ws():
@@ -299,6 +308,80 @@ class AgentSession:
             logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state(force=True)
 
+    @property
+    def voice_minutes(self) -> float:
+        """Calculate voice minutes from total raw PCM 16kHz audio input bytes (1,920,000 bytes/min)."""
+        return self.audio_bytes_received / 1920000.0
+
+    def record_image_created(self, image_path: str = ""):
+        """Record image created for active theater session and flush usage."""
+        self.images_created_count += 1
+        self.unbilled_images += 1
+        logger.info(f"[AgentSession] Image created recorded for theater {self.theater_id} (total={self.images_created_count})")
+        self.flush_usage_to_db()
+
+    def record_audio_input(self, byte_count: int):
+        """Record incoming PCM audio input stream bytes as time counter proxy and flush usage periodically."""
+        if byte_count <= 0:
+            return
+        self.audio_bytes_received += byte_count
+        self.unbilled_audio_bytes += byte_count
+        # Flush unbilled usage whenever unbilled audio reaches >= 96,000 bytes (~3 seconds of audio)
+        if self.unbilled_audio_bytes >= 96000:
+            self.flush_usage_to_db()
+
+    def flush_usage_to_db(self):
+        """Deduct credits and record cumulative voice minutes / images created in database."""
+        if self.unbilled_audio_bytes <= 0 and self.unbilled_images <= 0:
+            return
+        unbilled_vm = self.unbilled_audio_bytes / 1920000.0
+        unbilled_img = self.unbilled_images
+
+        # Reset unbilled counters before DB call
+        self.unbilled_audio_bytes = 0
+        self.unbilled_images = 0
+
+        db_inst = self.db
+        if db_inst is None:
+            try:
+                from web_viewer_app import db as global_db
+                db_inst = global_db
+            except ImportError:
+                db_inst = None
+
+        owner_id = self.owner_user_id
+        if owner_id is None and db_inst:
+            try:
+                deployment = db_inst.get_deployment(self.theater_id)
+                if deployment:
+                    owner_id = deployment.get("user_id")
+                    self.owner_user_id = owner_id
+            except Exception as e:
+                logger.debug(f"[AgentSession] Could not fetch deployment owner: {e}")
+
+        if db_inst and owner_id:
+            try:
+                db_inst.record_user_usage(
+                    user_id=owner_id,
+                    voice_minutes=unbilled_vm,
+                    images_created=unbilled_img,
+                )
+                logger.info(
+                    f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}"
+                )
+            except Exception as e:
+                logger.error(f"[AgentSession] Error flushing usage to DB: {e}")
+
+    def get_usage(self) -> Dict[str, Any]:
+        """Return usage summary dictionary for the active session."""
+        return {
+            "theater_id": self.theater_id,
+            "owner_user_id": self.owner_user_id,
+            "voice_minutes": self.voice_minutes,
+            "images_created": self.images_created_count,
+            "total_audio_bytes": self.audio_bytes_received,
+        }
+
     async def remove_websocket(self, websocket: WebSocket):
         async with self.ws_lock:
             self.websockets.discard(websocket)
@@ -309,6 +392,7 @@ class AgentSession:
             logger.info(f"[AgentSession] WebSocket detached from session {self.theater_id} (remaining={len(self.websockets)})")
             if is_now_disconnected:
                 logger.info(f"[AgentSession] User disconnected for session {self.theater_id}; inputs are now suppressed.")
+        self.flush_usage_to_db()
 
     async def broadcast_text(self, text: str):
         async with self.ws_lock:
@@ -324,6 +408,7 @@ class AgentSession:
     def close(self):
         """Close LiveRequestQueue and cancel background tasks."""
         self.status = "stopped"
+        self.flush_usage_to_db()
         if self.downstream_task and not self.downstream_task.done():
             self.downstream_task.cancel()
         if self.refresh_task and not self.refresh_task.done():

@@ -58,6 +58,7 @@ class ImageTools(BaseTools):
         self.client = ImageTools._client_cache
 
         self.on_show_image = None
+        self.on_image_created: Optional[Callable] = None
 
         self.currently_displayed_image_path: Optional[str] = None
         self.currently_displayed_image_transition: str = "crossfade"
@@ -339,6 +340,16 @@ class ImageTools(BaseTools):
                     self.image_aliases[clean_name.lower()] = filepath
                 
                 logger.info(f"[create_image tool] Saved image to {filepath} (Name alias: {image_name})")
+                if self.on_image_created:
+                    try:
+                        self.on_image_created(filepath)
+                    except TypeError:
+                        try:
+                            self.on_image_created()
+                        except Exception as cb_err:
+                            logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
+                    except Exception as cb_err:
+                        logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
             
             if not saved_paths:
                 details = ""

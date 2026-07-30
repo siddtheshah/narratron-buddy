@@ -94,6 +94,7 @@ async def handle_live_websocket_connection(
                 audio_blob = types.Blob(
                     mime_type="audio/pcm;rate=16000", data=audio_data
                 )
+                agent_session.record_audio_input(len(audio_data))
                 agent_session.send_realtime(audio_blob)
 
             elif "text" in message:

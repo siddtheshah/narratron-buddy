@@ -176,6 +176,50 @@ class TestAgentSessionManager(unittest.TestCase):
             self.assertTrue(session.websocket_connected)
             mock_send_canvas.assert_called_once_with(force=True)
 
+    def test_usage_tracking_and_db_flushing(self):
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+        mock_db = MagicMock()
+
+        session = AgentSession(
+            theater_id="test_usage",
+            agent=mock_agent,
+            runner=mock_runner,
+            session_service=MagicMock(),
+            artifact_service=MagicMock(),
+            db=mock_db,
+            owner_user_id=123,
+        )
+
+        # 1. Record image created -> triggers immediate flush
+        session.record_image_created("path/to/img.jpg")
+        self.assertEqual(session.images_created_count, 1)
+        mock_db.record_user_usage.assert_called_once_with(
+            user_id=123,
+            voice_minutes=0.0,
+            images_created=1,
+        )
+        mock_db.record_user_usage.reset_mock()
+
+        # 2. Record PCM audio bytes (1,920,000 bytes = 1.0 minute)
+        # Record 96,000 bytes (triggers automatic flush threshold)
+        session.record_audio_input(96000)
+        self.assertAlmostEqual(session.voice_minutes, 96000 / 1920000.0)
+        mock_db.record_user_usage.assert_called_once_with(
+            user_id=123,
+            voice_minutes=96000 / 1920000.0,
+            images_created=0,
+        )
+        mock_db.record_user_usage.reset_mock()
+
+        # 3. Check get_usage dictionary
+        usage = session.get_usage()
+        self.assertEqual(usage["theater_id"], "test_usage")
+        self.assertEqual(usage["owner_user_id"], 123)
+        self.assertEqual(usage["images_created"], 1)
+        self.assertEqual(usage["total_audio_bytes"], 96000)
+
 
 if __name__ == "__main__":
     unittest.main()
