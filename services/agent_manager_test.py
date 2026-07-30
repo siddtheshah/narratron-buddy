@@ -2,14 +2,80 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from services.agent_manager import AgentSessionManager, AgentSession
+from services.agent_manager import AgentSessionManager, AgentSession, create_agent
+
+
+class TestCreateAgent(unittest.TestCase):
+    @patch("services.agent_manager.create_tool_bundle_for_session")
+    @patch("services.agent_manager.Agent")
+    def test_create_agent_calls_list_references_on_init(
+        self, mock_agent_cls, mock_bundle_fn
+    ):
+        mock_image_tools = MagicMock()
+        mock_image_tools.list_references.return_value = [
+            {
+                "name": "hero_character",
+                "alias": "hero_character",
+                "path": "/path/to/hero_character.png",
+                "description": "Hero character reference image",
+            }
+        ]
+        mock_tool = MagicMock()
+        mock_tool.name = "list_references"
+        mock_tool.func = mock_image_tools.list_references
+        mock_bundle = MagicMock()
+        mock_bundle.tools = [mock_tool]
+        mock_bundle_fn.return_value = mock_bundle
+
+        theater_id = "test_agent_theater"
+        agent_inst = create_agent(theater_id=theater_id)
+
+        # Verify list_references was called immediately during create_agent
+        mock_image_tools.list_references.assert_called_once()
+
+        # Verify Agent instruction includes the preloaded references context
+        mock_agent_cls.assert_called_once()
+        _, kwargs = mock_agent_cls.call_args
+        self.assertIn("Preloaded References Context", kwargs["instruction"])
+        self.assertIn("hero_character", kwargs["instruction"])
+        self.assertIn("/path/to/hero_character.png", kwargs["instruction"])
+        self.assertIs(agent_inst, mock_agent_cls.return_value)
+
+    @patch("services.agent_manager.ImageTools")
+    @patch("services.agent_manager.ChatTools")
+    @patch("services.agent_manager.NotesTools")
+    @patch("services.agent_manager.MusicTools")
+    @patch("services.agent_manager.Agent")
+    def test_create_agent_passes_canvas_state_service_to_every_tool(
+        self, mock_agent_cls, mock_music_cls, mock_notes_cls, mock_chat_cls, mock_image_cls
+    ):
+        mock_image_cls.return_value.list_references.return_value = []
+        canvas_state_service = MagicMock()
+        theater_id = "test_agent_theater"
+        config = {"agent": {"model_id": "test-model"}}
+
+        create_agent(
+            theater_id=theater_id,
+            config=config,
+            canvas_state_service=canvas_state_service,
+        )
+
+        expected_kwargs = {
+            "theater_id": theater_id,
+            "canvas_state_service": canvas_state_service,
+        }
+        mock_image_cls.assert_called_once_with(config.get("image_generation", {}), **expected_kwargs)
+        mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
+        mock_notes_cls.assert_called_once_with(config.get("notes", {}), **expected_kwargs)
+        mock_music_cls.assert_called_once_with(config.get("music", {}), **expected_kwargs)
 
 
 class TestAgentSessionManager(unittest.TestCase):
+    @patch("services.agent_manager.create_tool_bundle_for_session")
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
     @patch("services.agent_manager.ensure_theaters_root")
-    def test_get_or_create_session(self, mock_ensure_root, mock_create_agent, mock_tasks):
+    def test_get_or_create_session(self, mock_ensure_root, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_ensure_root.return_value = MagicMock()
         mock_agent = MagicMock()
         mock_agent.tools = []
@@ -26,10 +92,11 @@ class TestAgentSessionManager(unittest.TestCase):
         session2 = manager.get_or_create_session(theater_id="s1")
         self.assertIs(session1, session2)
 
+    @patch("services.agent_manager.create_tool_bundle_for_session")
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
     @patch("services.agent_manager.ensure_theaters_root")
-    def test_stop_session(self, mock_ensure_root, mock_create_agent, mock_tasks):
+    def test_stop_session(self, mock_ensure_root, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_ensure_root.return_value = MagicMock()
         mock_agent = MagicMock()
         mock_agent.tools = []
@@ -46,10 +113,11 @@ class TestAgentSessionManager(unittest.TestCase):
         # Stopping non-existent session returns False
         self.assertFalse(manager.stop_session("s2"))
 
+    @patch("services.agent_manager.create_tool_bundle_for_session")
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
     @patch("services.agent_manager.ensure_theaters_root")
-    def test_cleanup_idle_sessions(self, mock_ensure_root, mock_create_agent, mock_tasks):
+    def test_cleanup_idle_sessions(self, mock_ensure_root, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_ensure_root.return_value = MagicMock()
         mock_agent = MagicMock()
         mock_agent.tools = []
@@ -219,6 +287,38 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(usage["owner_user_id"], 123)
         self.assertEqual(usage["images_created"], 1)
         self.assertEqual(usage["total_audio_bytes"], 96000)
+
+    def test_inject_tool_definitions(self):
+        import asyncio
+        from tools.tool_bundle import ToolBundle
+
+        def sample_tool(query: str) -> str:
+            """Sample search tool."""
+            return query
+
+        tool_bundle = ToolBundle([sample_tool])
+        mock_agent = MagicMock()
+        mock_runner = MagicMock()
+
+        session = AgentSession(
+            theater_id="test_inject",
+            agent=mock_agent,
+            runner=mock_runner,
+            session_service=MagicMock(),
+            artifact_service=MagicMock(),
+            tool_bundle=tool_bundle,
+        )
+        session.live_request_queue = MagicMock()
+        mock_ws = MagicMock()
+        asyncio.run(session.add_websocket(mock_ws))
+        session.live_request_queue.send_content.reset_mock()
+
+        res = session.inject_tool_definitions()
+        self.assertTrue(res)
+        session.live_request_queue.send_content.assert_called_once()
+        args, _ = session.live_request_queue.send_content.call_args
+        content = args[0]
+        self.assertIn("sample_tool", content.parts[0].text)
 
 
 if __name__ == "__main__":
