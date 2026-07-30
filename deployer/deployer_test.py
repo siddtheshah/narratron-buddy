@@ -80,7 +80,7 @@ class TestLocalDeployer(BaseTestCase):
 
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w") as zf:
-            zf.writestr("my_assets/references/hero.png", b"fake_png")
+            zf.writestr("my_assets/references/subfolder/hero.png", b"fake_png")
             zf.writestr("my_assets/playlists/ambient/rain.mp3", b"fake_mp3")
             zf.writestr("my_assets/style.txt", "cyberpunk neon glow")
 
@@ -88,7 +88,7 @@ class TestLocalDeployer(BaseTestCase):
         refs, playlists, style = extract_asset_package(zip_bytes)
 
         self.assertEqual(len(refs), 1)
-        self.assertEqual(refs[0][0], "hero.png")
+        self.assertEqual(refs[0][0], "my_assets/references/subfolder/hero.png")
         self.assertEqual(refs[0][1], b"fake_png")
         self.assertIn("ambient", playlists)
         self.assertEqual(playlists["ambient"][0][0], "rain.mp3")

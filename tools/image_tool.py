@@ -147,24 +147,25 @@ class ImageTools(BaseTools):
         """Scans the references folder once at startup and builds a read-only manifest."""
         try:
             if os.path.exists(self.reference_dir):
-                for filename in os.listdir(self.reference_dir):
-                    if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                        filepath = os.path.join(self.reference_dir, filename)
-                        stem = Path(filename).stem
-                        clean_stem = re.sub(r'[^a-zA-Z0-9_-]', '_', stem)
-                        
-                        metadata_desc = extract_image_metadata_description(filepath)
+                for root, _, files in os.walk(self.reference_dir):
+                    for filename in files:
+                        if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                            filepath = os.path.join(root, filename)
+                            stem = Path(filename).stem
+                            clean_stem = re.sub(r'[^a-zA-Z0-9_-]', '_', stem)
+                            
+                            metadata_desc = extract_image_metadata_description(filepath)
 
-                        entry = {
-                            "name": stem,
-                            "alias": clean_stem,
-                            "path": filepath,
-                            "description": metadata_desc or f"Reference image {filename}"
-                        }
-                        self.references_manifest[stem] = entry
-                        self.references_manifest[clean_stem] = entry
-                        self.references_manifest[stem.lower()] = entry
-                        self.references_manifest[clean_stem.lower()] = entry
+                            entry = {
+                                "name": stem,
+                                "alias": clean_stem,
+                                "path": filepath,
+                                "description": metadata_desc or f"Reference image {filename}"
+                            }
+                            self.references_manifest[stem] = entry
+                            self.references_manifest[clean_stem] = entry
+                            self.references_manifest[stem.lower()] = entry
+                            self.references_manifest[clean_stem.lower()] = entry
             unique_count = len(set(item['path'] for item in self.references_manifest.values())) if self.references_manifest else 0
             logger.info(f"[ImageTools] Loaded {unique_count} reference images into references manifest.")
         except Exception as e:

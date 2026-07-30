@@ -82,7 +82,7 @@ def extract_asset_package(
                     )
                     and "playlists" not in parts
                 ):
-                    reference_files.append((filename, content))
+                    reference_files.append((info.filename, content))
                 elif "playlists" in parts:
                     idx = parts.index("playlists")
                     if idx + 1 < len(parts) - 1:
@@ -203,12 +203,19 @@ class LocalDeployer(BaseDeployer):
 
         mounted_refs = []
         if reference_files:
-            for filename, content in reference_files:
-                clean_name = Path(filename).name
-                file_path = ref_dir / clean_name
+            for rel_filename, content in reference_files:
+                rel_path = rel_filename.replace("\\", "/")
+                parts = [p for p in rel_path.split("/") if p]
+                if "references" in parts:
+                    idx = parts.index("references")
+                    sub_path = Path(*parts[idx + 1:]) if idx + 1 < len(parts) else Path(parts[-1])
+                else:
+                    sub_path = Path(parts[-1])
+                file_path = ref_dir / sub_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, "wb") as f:
                     f.write(content)
-                mounted_refs.append(clean_name)
+                mounted_refs.append(str(sub_path).replace("\\", "/"))
 
         # Copy default reference images from top-level reference_library if present
         import shutil

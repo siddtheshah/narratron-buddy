@@ -697,7 +697,7 @@ async def create_and_deploy_theater(request: Request):
                         clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
                         and "playlists" not in parts
                     ):
-                        reference_files.append((clean_name, content))
+                        reference_files.append((rel_path, content))
                     elif "playlists" in parts:
                         idx = parts.index("playlists")
                         pl_name = parts[idx + 1] if idx + 1 < len(parts) - 1 else "default"

@@ -128,6 +128,23 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(len(tools2.list_references()), 1)
 
     @patch("tools.image_tool.genai.Client")
+    def test_nested_references_loading(self, mock_genai_client):
+        theater_id = "theater_nested_ref_test"
+        tools = ImageTools(self.config, theater_id=theater_id)
+
+        nested_dir = os.path.join(tools.reference_dir, "subfolder", "characters")
+        os.makedirs(nested_dir, exist_ok=True)
+        ref_path = os.path.join(nested_dir, "villain.png")
+        img = Image.new("RGB", (10, 10), color="blue")
+        img.save(ref_path)
+
+        tools._load_references()
+        manifest = tools.list_references()
+        names = [item["name"] for item in manifest]
+        self.assertIn("villain", names)
+        self.assertEqual(tools._find_image_path("villain"), ref_path)
+
+    @patch("tools.image_tool.genai.Client")
     def test_create_image_success_and_alias(self, mock_genai_client):
         mock_part = MagicMock()
         mock_part.inline_data.data = create_fake_image_bytes()
