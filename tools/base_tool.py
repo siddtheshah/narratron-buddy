@@ -72,7 +72,7 @@ class BaseTools:
         default_cooldown: float = 0.0,
     ):
         self.config: dict = config or {}
-        self.active_theater_id: str = theater_id
+        self._active_theater_id: str = theater_id
         self.canvas_state_service: Any = canvas_state_service
 
         # Callback hooks
@@ -88,23 +88,19 @@ class BaseTools:
 
     @property
     def theater_id(self) -> str:
-        return self.active_theater_id
+        return self._active_theater_id
 
     @theater_id.setter
     def theater_id(self, value: str) -> None:
-        self.active_theater_id = value
+        self._active_theater_id = value
 
     @property
     def active_theater_id(self) -> str:
-        return self.active_theater_id
+        return self._active_theater_id
 
-    @property
-    def theater_id(self) -> str:
-        return self.active_theater_id
-
-    @theater_id.setter
-    def theater_id(self, value: str) -> None:
-        self.active_theater_id = value
+    @active_theater_id.setter
+    def active_theater_id(self, value: str) -> None:
+        self._active_theater_id = value
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("last_") and name.endswith("_time"):

@@ -3012,6 +3012,7 @@
         // ========================================
         function setAgentStartedUI(started) {
             isAgentStarted = started;
+            window.isAgentStarted = started;
             if (!agentStartStopBtn) return;
             if (started) {
                 agentStartStopBtn.textContent = '🛑 Stop Agent';
@@ -3021,6 +3022,10 @@
                 agentStartStopBtn.style.background = '#10b981'; // Emerald
             }
         }
+
+        window.startAgentTheater = startAgentTheater;
+        window.stopAgentTheater = stopAgentTheater;
+
 
         async function checkAgentStatus() {
             try {
@@ -3471,7 +3476,14 @@
             agentMicBtn.classList.add('recording-active');
         };
 
-        window.connectAgentAndMic = () => {
+        window.connectAgentAndMic = async () => {
+            if (!isAgentStarted) {
+                try {
+                    await startAgentTheater();
+                } catch (e) {
+                    console.error("Failed to start agent theater before connecting:", e);
+                }
+            }
             connectAgent();
             const checkConnect = setInterval(() => {
                 if (agentWs && agentWs.readyState === WebSocket.OPEN) {

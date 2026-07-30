@@ -41,7 +41,7 @@ class TestDatabaseManager(BaseTestCase):
             user = await self.db.register_user_async("async_user", "async@example.com", "Pass12345")
             self.assertEqual(user["username"], "async_user")
 
-            token = await self.db.create_auth_theater_async(user["id"])
+            token = await self.db.create_auth_session_async(user["id"])
             self.assertTrue(len(token) > 20)
 
             dep_success = await self.db.record_deployment_async("async_theater_1", user["id"], "KEY-ASYNC")

@@ -1010,7 +1010,7 @@
 
                 <button class="btn btn-primary" id="deployBtn" onclick="deployNewTheater()" style="margin-top: 1rem;">
                     <span id="deploySpinner" style="display: none;">⏳</span>
-                    <span id="deployBtnText">🚀 Deploy Canvas Instance</span>
+                    <span id="deployBtnText">🚀 Deploy Theater</span>
                 </button>
             </div>
         </div>
@@ -1019,7 +1019,7 @@
         <div class="panel" id="activeTheatersPanel">
             <div class="panel-header">
                 <div class="panel-title">
-                    <span>🌐</span> Deployed Canvas Instances
+                    <span>🌐</span> Deployed Theaters
                 </div>
                 <button class="btn btn-secondary btn-sm" onclick="loadTheaters()">🔄 Refresh</button>
             </div>
@@ -2011,15 +2011,15 @@
             if (mode === 'folder') {
                 if (cardFolder) cardFolder.classList.add('active');
                 if (secFolder) secFolder.style.display = 'block';
-                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Canvas from Folder';
+                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater from Folder';
             } else if (mode === 'individual') {
                 if (cardIndividual) cardIndividual.classList.add('active');
                 if (secIndividual) secIndividual.style.display = 'block';
-                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Canvas with Custom Assets';
+                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater with Custom Assets';
             } else if (mode === 'blank') {
                 if (cardBlank) cardBlank.classList.add('active');
                 if (secBlank) secBlank.style.display = 'block';
-                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Blank Canvas Instance';
+                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater Instance';
             }
         }
 

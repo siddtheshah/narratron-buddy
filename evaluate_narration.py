@@ -165,8 +165,21 @@ async def stream_audio_task(page, wav_path, buffer_time):
     
     # Wait for helper functions to be exposed on window
     await page.wait_for_function("typeof window.connectAgentAndMic === 'function'", timeout=10000)
+    
+    # Start Agent first before connecting
+    print("[Evaluator] Starting agent before connecting...")
+    await page.evaluate("""async () => {
+        if (typeof window.startAgentTheater === 'function') {
+            await window.startAgentTheater();
+        } else {
+            const btn = document.getElementById('agent-start-stop-btn');
+            if (btn) btn.click();
+        }
+    }""")
+    await asyncio.sleep(1)
+
     # Trigger connection and microphone status visually
-    await page.evaluate("window.connectAgentAndMic()")
+    await page.evaluate("async () => { await window.connectAgentAndMic(); }")
     
     # Wait for setupComplete from Gemini Live with auto-reconnection
     print("[Evaluator] Waiting for Gemini Live API setup to be complete...")
