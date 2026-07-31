@@ -24,7 +24,8 @@ COPY agent.py .
 COPY combined_app.py .
 COPY web_viewer_app.py .
 COPY evaluate_narration.py .
-COPY config.yaml .
+COPY app.yaml .
+COPY theater_default.yaml .
 COPY ABOUT.md .
 
 # Copy package directories

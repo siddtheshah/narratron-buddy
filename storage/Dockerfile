@@ -19,7 +19,8 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy application source code needed by DatabaseManager & LocalDeployer
-COPY config.yaml .
+COPY app.yaml .
+COPY theater_default.yaml .
 COPY deployer/ deployer/
 COPY utils/ utils/
 COPY storage/ storage/
