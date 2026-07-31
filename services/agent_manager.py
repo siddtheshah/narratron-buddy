@@ -30,7 +30,7 @@ from tools.image_tool import ImageTools
 from tools.music_tool import MusicTools
 from tools.notes_tool import NotesTools
 from tools.tool_bundle import ToolBundle
-from utils.config_loader import get_config
+from utils.config_loader import get_app_config, get_theater_config
 from utils.theaters_paths import ensure_theaters_root
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ def build_run_config(
     """Construct RunConfig for ADK streaming execution using parameters from config.yaml."""
     config = config or {}
     agent_config = config.get("agent", {})
+    app_internal = get_app_config().get("agent_internal", {})
 
     if proactivity is None:
         proactivity = agent_config.get("proactivity", False)
@@ -56,14 +57,18 @@ def build_run_config(
 
     if model_name is None and agent is not None:
         model_name = getattr(agent, "model", "")
-    model_name = model_name or agent_config.get("model_id") or agent_config.get("model", "gemini-3.1-flash-live-preview")
+    model_name = (
+        model_name
+        or app_internal.get("model_id")
+        or app_internal.get("model", "gemini-3.1-flash-live-preview")
+    )
 
     is_native_audio = any(
         token in model_name.lower()
         for token in ["native-audio", "1.5-flash", "2.0-flash-exp", "3.1-flash", "live"]
     )
 
-    compaction = agent_config.get("compaction", {})
+    compaction = app_internal.get("compaction", {})
     compaction_config = None
     if compaction:
         trigger = compaction.get("trigger_tokens")
@@ -559,7 +564,7 @@ def create_agent(
 ) -> Agent:
     """Create a session-scoped agent whose tools write through canvas state service."""
     if config is None:
-        config = get_config()
+        config = get_theater_config(theater_id)
 
     if tool_bundle is None:
         tool_bundle = create_tool_bundle_for_session(
@@ -590,9 +595,15 @@ def create_agent(
         Cooldowns are now lifted. GO!
     """.strip()
 
+    app_internal = get_app_config().get("agent_internal", {})
+    model_id = (
+        app_internal.get("model_id")
+        or app_internal.get("model", "gemini-3.1-flash-live-preview")
+    )
+
     agent = Agent(
         name="narratron_agent",
-        model=config.get("agent", {}).get("model_id", "gemini-3.1-flash-live-preview"),
+        model=model_id,
         instruction=instruction_with_context,
         tools=tool_bundle.tools,
     )
@@ -659,15 +670,18 @@ class AgentSessionManager:
 
         canvas_mgr = canvas_state_service.get(theater_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
 
+        theater_config = get_theater_config(theater_id)
+        session_run_config = build_run_config(config=theater_config)
+
         tool_bundle = create_tool_bundle_for_session(
             theater_id=theater_id,
-            config=self.config,
+            config=theater_config,
             canvas_state_service=canvas_state_service,
         )
 
         session_agent = create_agent(
             theater_id=theater_id,
-            config=self.config,
+            config=theater_config,
             canvas_state_service=canvas_state_service,
             tool_bundle=tool_bundle,
         )
@@ -694,8 +708,8 @@ class AgentSessionManager:
             runner=runner,
             session_service=self.shared_session_service,
             artifact_service=artifact_service,
-            run_config=self.run_config,
-            config=self.config,
+            run_config=session_run_config,
+            config=theater_config,
             canvas_state_manager=canvas_mgr,
             tool_bundle=tool_bundle,
         )

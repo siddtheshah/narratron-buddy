@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import zipfile
 from pydantic import BaseModel, Field
 from utils.theaters_paths import ensure_theaters_root
+from utils.config_loader import save_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
 
@@ -242,13 +243,20 @@ class LocalDeployer(BaseDeployer):
                         f.write(content)
                     mounted_playlists[playlist_name].append(clean_name)
 
+        final_config = get_theater_default_config()
+        if theater_config:
+            from utils.config_loader import deep_merge
+            deep_merge(final_config, theater_config)
+
+        save_theater_config(sid, final_config, base_dir=self.base_dir)
+
         metadata = TheaterMetadata(
             theater_id=sid,
             name=name,
             status="created",
             mounted_references=mounted_refs,
             mounted_playlists=mounted_playlists,
-            config=theater_config or {},
+            config=final_config,
         )
 
         self._save_metadata(metadata)

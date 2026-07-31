@@ -20,3 +20,8 @@
   - If the image is on canvas, it'll be faded in. 
   - Otherwise, the adapted image will simply remain available to be pulled in.
 
+## Theaters
+
+- [ ] Give all theaters their own theater.yaml that has settings for that theater.
+  - Let the user set their theater settings from within the canvas. Settings load is OK to require agent restart.
+  

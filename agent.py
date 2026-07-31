@@ -11,11 +11,9 @@ from tools.image_tool import ImageTools
 from tools.music_tool import MusicTools
 from tools.notes_tool import NotesTools
 from tools.tool_bundle import ToolBundle
-from utils.config_loader import get_config
 from utils.theaters_paths import ensure_theaters_root
 
 load_dotenv()
-config = get_config()
 
 __all__ = [
     "INSTRUCTIONS",
@@ -32,7 +30,7 @@ __all__ = [
 async def main():
     """Thin debugging shell for initializing and testing ADK agent standalone."""
     print("Initializing ADK Agent (debugging shell)...")
-    narratron_agent = create_agent(theater_id="default_session", config=config)
+    narratron_agent = create_agent(theater_id="default_session")
     session_service = InMemorySessionService()
     artifact_service = DiskArtifactService(ensure_theaters_root() / "artifacts")
     runner = Runner(

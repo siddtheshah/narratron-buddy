@@ -885,6 +885,57 @@
                     <small>Applied to generated images unless their prompt specifies a style.</small>
                 </div>
 
+                <!-- Custom Theater Settings -->
+                <div
+                    style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
+                    <div
+                        style="font-weight: 600; font-size: 0.95rem; color: #a5b4fc; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                        <span>⚙️ Custom Theater Settings (theater.yaml)</span>
+                    </div>
+
+                    <div
+                        style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 0.75rem;">
+                        <label
+                            style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-primary); cursor: pointer;">
+                            <input type="checkbox" id="cfgAgentProactivity"> Proactive Agent
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-primary); cursor: pointer;">
+                            <input type="checkbox" id="cfgAffectiveDialog"> Affective Dialog
+                        </label>
+                    </div>
+
+                    <div
+                        style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 0.75rem;">
+                        <div class="form-group">
+                            <label style="font-size: 0.78rem;">Image Cooldown (s)</label>
+                            <input type="number" id="cfgImageCooldown" min="0" value="12"
+                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 0.78rem;">Music Cooldown (s)</label>
+                            <input type="number" id="cfgMusicCooldown" min="0" value="15"
+                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 0.78rem;">Notes Cooldown (s)</label>
+                            <input type="number" id="cfgNotesCooldown" min="0" value="5"
+                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 0.78rem;">Chat Cooldown (s)</label>
+                            <input type="number" id="cfgChatCooldown" min="0" value="15"
+                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label style="font-size: 0.78rem;">Orator Hotkey</label>
+                        <input type="text" id="cfgOratorHotkey" value="<ctrl>+<shift>+["
+                            style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                    </div>
+                </div>
+
                 <!-- PATH 1: Blank Canvas -->
                 <div id="pathSectionBlank" class="creation-path-section">
                     <div
@@ -2213,6 +2264,37 @@
                 formData.append('name', name);
                 formData.append('style', style);
 
+                const proactivity = document.getElementById('cfgAgentProactivity') ? document.getElementById('cfgAgentProactivity').checked : false;
+                const affectiveDialog = document.getElementById('cfgAffectiveDialog') ? document.getElementById('cfgAffectiveDialog').checked : false;
+                const imgCooldown = parseInt(document.getElementById('cfgImageCooldown') ? document.getElementById('cfgImageCooldown').value : 12, 10);
+                const musicCooldown = parseInt(document.getElementById('cfgMusicCooldown') ? document.getElementById('cfgMusicCooldown').value : 15, 10);
+                const notesCooldown = parseInt(document.getElementById('cfgNotesCooldown') ? document.getElementById('cfgNotesCooldown').value : 5, 10);
+                const chatCooldown = parseInt(document.getElementById('cfgChatCooldown') ? document.getElementById('cfgChatCooldown').value : 15, 10);
+                const hotkey = document.getElementById('cfgOratorHotkey') ? document.getElementById('cfgOratorHotkey').value : "<ctrl>+<shift>+[";
+
+                const theaterConfig = {
+                    agent: {
+                        proactivity: proactivity,
+                        affective_dialog: affectiveDialog
+                    },
+                    image_generation: {
+                        cooldown_duration: isNaN(imgCooldown) ? 12 : imgCooldown
+                    },
+                    music: {
+                        cooldown_duration: isNaN(musicCooldown) ? 15 : musicCooldown
+                    },
+                    notes: {
+                        cooldown_duration: isNaN(notesCooldown) ? 5 : notesCooldown
+                    },
+                    chat: {
+                        cooldown_duration: isNaN(chatCooldown) ? 15 : chatCooldown
+                    },
+                    orator: {
+                        hotkey: hotkey
+                    }
+                };
+                formData.append('theater_config', JSON.stringify(theaterConfig));
+
                 if (currentCreationPath === 'folder') {
                     if (mountedZipFile) {
                         formData.append('asset_zip', mountedZipFile);
@@ -2253,7 +2335,7 @@
             } finally {
                 deployBtn.disabled = false;
                 deploySpinner.style.display = 'none';
-                deployBtnText.innerText = '🚀 Deploy Canvas Instance';
+                deployBtnText.innerText = '🚀 Deploy Theater';
             }
         }
 

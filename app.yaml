@@ -1,0 +1,13 @@
+gcloud:
+    project_id: "narratron"
+
+smtp:
+    from_email: "noreply@narratron.io"
+    host: "smtp.gmail.com"
+    port: 587
+
+agent_internal:
+    model_id: "gemini-3.1-flash-live-preview"
+    compaction:
+        trigger_tokens: 20000
+        target_tokens: 8000

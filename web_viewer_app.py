@@ -23,7 +23,7 @@ from storage.database import DatabaseManager
 from pricing.pricing_controller import PricingController
 from deployer.deployer import LocalDeployer, TheaterMetadata, extract_asset_package
 from deployer.theater_manager import TheaterManager
-from utils.config_loader import get_config
+from utils.config_loader import get_app_config
 from utils.email_service import send_password_reset_email
 from utils.theaters_paths import ensure_theaters_root
 
@@ -114,7 +114,7 @@ def render_about_markdown(markdown_source: str) -> str:
     flush_list()
     return "\n".join(blocks)
 
-config = get_config()
+config = get_app_config()
 
 app = FastAPI()
 
@@ -718,18 +718,27 @@ async def create_and_deploy_theater(request: Request):
                         playlists_data[pl_name] = []
                     playlists_data[pl_name].append((filename, content))
 
+    raw_config_param = form.get("theater_config")
+    theater_config = None
+    if raw_config_param:
+        try:
+            theater_config = json.loads(raw_config_param) if isinstance(raw_config_param, str) else raw_config_param
+        except Exception:
+            pass
+
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = local_deployer.create_theater(
         name=name,
         theater_id=theater_id,
         reference_files=reference_files,
         playlists_data=playlists_data,
+        theater_config=theater_config,
         style=style or None,
     )
     deployed_meta = local_deployer.deploy_theater(metadata.theater_id)
 
     # Record deployment & deduct credits (0.0 cost)
-    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0)
+    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0, theater_config=theater_config)
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True

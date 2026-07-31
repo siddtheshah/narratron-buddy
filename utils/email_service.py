@@ -9,7 +9,7 @@ from typing import Any, Dict
 from absl import flags
 from dotenv import load_dotenv
 
-from utils.config_loader import get_config
+from utils.config_loader import get_app_config
 
 load_dotenv()
 
@@ -30,7 +30,7 @@ def send_password_reset_email(to_email: str, username: str, reset_link: str) -> 
 
     Returns a dictionary containing execution status and debug details.
     """
-    config = get_config()
+    config = get_app_config()
     smtp_cfg = config.get("smtp", {})
 
     smtp_host = smtp_cfg.get("host", "")

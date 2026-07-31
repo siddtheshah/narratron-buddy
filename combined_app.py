@@ -16,7 +16,7 @@ import uvicorn
 
 from services.agent_manager import AgentSessionManager
 from services.live_stream_service import handle_live_websocket_connection
-from utils.config_loader import get_config
+from utils.config_loader import get_app_config
 from web_viewer_app import (
     app,
     canvas_states,
@@ -27,7 +27,7 @@ from web_viewer_app import (
 
 # Load environment variables
 load_dotenv()
-config = get_config()
+config = get_app_config()
 
 # Define absl flags
 flags.DEFINE_boolean(

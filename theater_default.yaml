@@ -1,13 +1,6 @@
-gcloud:
-    project_id: "narratron"
-
 agent:
-    model_id: "gemini-3.1-flash-live-preview"
     proactivity: false
     affective_dialog: false
-    compaction:
-        trigger_tokens: 20000
-        target_tokens: 8000
 
 image_generation:
     reference_library_folder: "reference_library"
@@ -31,10 +24,4 @@ orator:
 
 email:
     enabled: false
-
-smtp:
-    from_email: "noreply@narratron.io"
-    host: "smtp.gmail.com"
-    port: 587
-
 
