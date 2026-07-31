@@ -31,9 +31,14 @@ export async function startAudioRecorderWorklet(audioRecorderHandler) {
   const workletURL = new URL("./pcm-recorder-processor.js", import.meta.url);
   await audioRecorderContext.audioWorklet.addModule(workletURL);
 
-  // Request access to the microphone
+  // Request access to the microphone with Acoustic Echo Cancellation (AEC) and Noise Suppression
   micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1 },
+    audio: {
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
   });
   const source = audioRecorderContext.createMediaStreamSource(micStream);
 
