@@ -13,3 +13,6 @@ agent_internal:
         trigger_tokens: 20000
         target_tokens: 8000
 
+audio:
+    use_ricky0123_vad: true
+

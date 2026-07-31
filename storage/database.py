@@ -209,6 +209,7 @@ class DatabaseManager:
                     credits REAL DEFAULT 25.0,
                     total_voice_minutes REAL DEFAULT 0.0,
                     total_images_created INTEGER DEFAULT 0,
+                    mic_sensitivity REAL DEFAULT 0.5,
                     created_at TEXT NOT NULL,
                     last_active_at TEXT
                 )
@@ -236,6 +237,12 @@ class DatabaseManager:
             if "total_images_created" not in user_cols:
                 try:
                     cursor.execute("ALTER TABLE users ADD COLUMN total_images_created INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+
+            if "mic_sensitivity" not in user_cols:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN mic_sensitivity REAL DEFAULT 0.5")
                 except Exception:
                     pass
 
@@ -381,6 +388,7 @@ class DatabaseManager:
                     "credits": 25.0,
                     "total_voice_minutes": 0.0,
                     "total_images_created": 0,
+                    "mic_sensitivity": 0.5,
                     "created_at": created_at
                 }
             except sqlite3.IntegrityError as e:
@@ -418,6 +426,7 @@ class DatabaseManager:
                     "credits": user_dict.get("credits", 25.0),
                     "total_voice_minutes": user_dict.get("total_voice_minutes", 0.0),
                     "total_images_created": user_dict.get("total_images_created", 0),
+                    "mic_sensitivity": user_dict.get("mic_sensitivity", 0.5),
                     "created_at": user_dict["created_at"]
                 }
             return None
@@ -425,7 +434,7 @@ class DatabaseManager:
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, mic_sensitivity, created_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -453,7 +462,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.created_at, s.expires_at
+                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.mic_sensitivity, u.created_at, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE s.token = ?
@@ -475,6 +484,17 @@ class DatabaseManager:
             if record_activity:
                 self.record_user_activity(res["id"])
             return res
+
+    def update_user_mic_sensitivity(self, user_id: int, mic_sensitivity: float) -> bool:
+        """Update microphone sensitivity setting for a user."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET mic_sensitivity = ? WHERE id = ?",
+                (mic_sensitivity, user_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
 
     def record_user_activity(self, user_id: int) -> bool:
         """Update last_active_at timestamp for user."""

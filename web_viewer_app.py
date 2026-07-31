@@ -188,6 +188,9 @@ class RequestBatonRequest(BaseModel):
 class SaveTheaterConfigRequest(BaseModel):
     config_yaml: str
 
+class MicSensitivityRequest(BaseModel):
+    mic_sensitivity: float
+
 
 canvas_states = CanvasStateService(local_deployer)
 
@@ -367,10 +370,22 @@ def logout_user(request: Request, response: Response):
 
 @app.get("/api/auth/me")
 def get_auth_me(request: Request):
+    app_cfg = get_app_config()
+    use_ricky = app_cfg.get("audio", {}).get("use_ricky0123_vad", True)
     user = get_current_user(request)
     if not user:
-        return {"authenticated": False, "user": None}
-    return {"authenticated": True, "user": user}
+        return {"authenticated": False, "user": None, "use_ricky0123_vad": use_ricky}
+    return {"authenticated": True, "user": user, "use_ricky0123_vad": use_ricky}
+
+@app.post("/api/auth/mic-sensitivity")
+def update_mic_sensitivity_endpoint(req: MicSensitivityRequest, request: Request):
+    if req.mic_sensitivity < 0.0 or req.mic_sensitivity > 1.0:
+        raise HTTPException(status_code=400, detail="mic_sensitivity must be between 0.0 and 1.0.")
+    user = get_current_user(request)
+    if user:
+        db.update_user_mic_sensitivity(user["id"], req.mic_sensitivity)
+        return {"status": "ok", "authenticated": True, "mic_sensitivity": req.mic_sensitivity}
+    return {"status": "ok", "authenticated": False, "mic_sensitivity": req.mic_sensitivity}
 
 @app.post("/api/auth/forgot-password")
 def forgot_password(req: ForgotPasswordRequest, request: Request):

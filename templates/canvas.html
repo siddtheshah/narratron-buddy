@@ -8,6 +8,8 @@
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/image-effects.css">
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web/dist/bundle.min.js"></script>
     <style>
         :root {
             --bg-color: #0f1115;
@@ -3829,6 +3831,80 @@
             });
         }
 
+        // Microphone Sensitivity Slider Logic
+        const micSensSlider = document.getElementById('menu-mic-sensitivity-slider');
+        const micSensValDisplay = document.getElementById('menu-mic-sensitivity-val');
+
+        function setMicSensitivity(percentVal, saveDb = false) {
+            const val = Math.max(0, Math.min(100, parseInt(percentVal, 10) || 50));
+            if (micSensSlider) micSensSlider.value = val;
+            if (micSensValDisplay) micSensValDisplay.textContent = `${val}%`;
+
+            const s = val / 100.0;
+            // Map sensitivity to Silero VAD positiveSpeechThreshold:
+            // 50% -> 0.50 (standard default); 100% -> 0.10 (whisper mode); 0% -> 0.90 (strict noise filter)
+            const posThreshold = Math.max(0.1, Math.min(0.9, 0.9 - (s * 0.8)));
+            const negThreshold = Math.max(0.05, posThreshold - 0.15);
+
+            window.VAD_POSITIVE_THRESHOLD = posThreshold;
+            window.VAD_NEGATIVE_THRESHOLD = negThreshold;
+
+            // RMS fallback threshold mapping
+            window.MIC_DETECT_THRESHOLD = 0.01 * Math.pow(10, (0.5 - s) * 2);
+            window.MIC_SENSITIVITY = s;
+
+            // Update active MicVAD instance threshold dynamically via ricky-vad module
+            import('/static/js/ricky-vad.js').then(m => {
+                m.updateRickyVadThresholds(posThreshold, negThreshold);
+            }).catch(() => {});
+
+            try {
+                localStorage.setItem('narratron_mic_sensitivity', val.toString());
+            } catch (e) {}
+
+            if (saveDb) {
+                fetch('/api/auth/mic-sensitivity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mic_sensitivity: s })
+                }).catch(err => console.debug('Failed to sync mic_sensitivity to server:', err));
+            }
+        }
+
+        if (micSensSlider) {
+            micSensSlider.addEventListener('input', (e) => {
+                setMicSensitivity(e.target.value, false);
+            });
+            micSensSlider.addEventListener('change', (e) => {
+                setMicSensitivity(e.target.value, true);
+            });
+        }
+
+        (function initMicSensitivity() {
+            let initialVal = 50;
+            try {
+                const stored = localStorage.getItem('narratron_mic_sensitivity');
+                if (stored !== null && !isNaN(parseInt(stored, 10))) {
+                    initialVal = parseInt(stored, 10);
+                }
+            } catch (e) {}
+
+            fetch('/api/auth/me')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.use_ricky0123_vad !== undefined) {
+                        window.USE_RICKY0123_VAD = data.use_ricky0123_vad;
+                    }
+                    if (data && data.authenticated && data.user && data.user.mic_sensitivity !== undefined && data.user.mic_sensitivity !== null) {
+                        const userVal = Math.round(data.user.mic_sensitivity * 100);
+                        setMicSensitivity(userVal, false);
+                    } else {
+                        setMicSensitivity(initialVal, false);
+                    }
+                })
+                .catch(() => setMicSensitivity(initialVal, false));
+        })();
+
         // ========================================
         // Orator How-To Modal Logic
         // ========================================
@@ -4114,6 +4190,21 @@
                             <span class="pullout-item-icon">⌨️</span>
                             <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
                         </button>
+                        <div class="pullout-menu-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;" title="Adjust microphone voice activity detection sensitivity">
+                            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; font-weight: 500; width: 100%;">
+                                <span style="display: flex; align-items: center; gap: 12px;">
+                                    <span class="pullout-item-icon">🎚️</span>
+                                    <span>Mic Sensitivity</span>
+                                </span>
+                                <span id="menu-mic-sensitivity-val" style="color: #a5b4fc; font-weight: 600; font-family: monospace; font-size: 0.85rem;">50%</span>
+                            </div>
+                            <input type="range" id="menu-mic-sensitivity-slider" min="0" max="100" value="50"
+                                style="width: 100%; accent-color: #6366f1; cursor: pointer; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.15); outline: none;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #64748b; font-weight: 500; width: 100%;">
+                                <span>Strict Noise (Low)</span>
+                                <span>Whisper (High)</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

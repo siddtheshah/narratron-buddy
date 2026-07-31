@@ -248,8 +248,19 @@ class TestUserManagementAndAuth(BaseTestCase):
         found = self.db.get_user_by_id(user["id"])
         self.assertIsNotNone(found)
         self.assertEqual(found["username"], "iduser")
+        self.assertEqual(found.get("mic_sensitivity"), 0.5)
 
         self.assertIsNone(self.db.get_user_by_id(99999))
+
+    def test_update_user_mic_sensitivity(self):
+        user = self.db.register_user("micuser", "mic@test.com", "Pass12345")
+        self.assertEqual(user.get("mic_sensitivity"), 0.5)
+
+        success = self.db.update_user_mic_sensitivity(user["id"], 0.85)
+        self.assertTrue(success)
+
+        found = self.db.get_user_by_id(user["id"])
+        self.assertEqual(found.get("mic_sensitivity"), 0.85)
 
 
 class TestAuthSessionsAndActivity(BaseTestCase):
