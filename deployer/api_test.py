@@ -131,6 +131,63 @@ class TestTheaterAPI(BaseTestCase):
             200,
         )
 
+    def test_theater_config_api_get_and_post(self):
+        owner = db.register_user("config_owner", "config-owner@example.com", "Password123")
+        self.assertTrue(db.record_deployment("config_theater", owner["id"], "KEY-CONFIG", cost=5.0))
+
+        # Access canvas to grant canvas_access cookie
+        self.client.get(
+            "/canvas?theater_id=config_theater&join_key=KEY-CONFIG",
+            follow_redirects=False,
+        )
+
+        # 1. GET config
+        get_res = self.client.get("/api/theaters/config_theater/config")
+        self.assertEqual(get_res.status_code, 200)
+        data = get_res.json()
+        self.assertIn("config_yaml", data)
+        self.assertEqual(data["theater_id"], "config_theater")
+
+        # 2. POST invalid YAML
+        bad_post = self.client.post(
+            "/api/theaters/config_theater/config",
+            json={"config_yaml": "invalid: yaml: : :"}
+        )
+        self.assertEqual(bad_post.status_code, 400)
+
+        # 3. POST valid YAML
+        new_yaml = "agent:\n  name: TestAgent\n  cooldown: 5\n"
+        post_res = self.client.post(
+            "/api/theaters/config_theater/config",
+            json={"config_yaml": new_yaml}
+        )
+        self.assertEqual(post_res.status_code, 200)
+        res_json = post_res.json()
+        self.assertEqual(res_json["status"], "ok")
+        self.assertIn("Restart your agent", res_json["message"])
+
+        # 4. Verify file on disk
+        yaml_disk_path = local_deployer.base_dir / "config_theater" / "theater.yaml"
+        self.assertTrue(yaml_disk_path.exists())
+        self.assertEqual(yaml_disk_path.read_text(encoding="utf-8"), new_yaml)
+
+        # 5. Verify DB record update
+        dep = db.get_deployment("config_theater")
+        self.assertIsNotNone(dep)
+        tc = dep.get("theater_config", {})
+        if isinstance(tc, str):
+            self.assertIn("TestAgent", tc)
+        elif isinstance(tc, dict):
+            self.assertEqual(tc.get("agent", {}).get("name"), "TestAgent")
+
+        # 6. Test format-yaml endpoint
+        fmt_valid = self.client.post("/api/theaters/format-yaml", json={"config_yaml": "agent:\n  name: FormatTest\n"})
+        self.assertEqual(fmt_valid.status_code, 200)
+        self.assertIn("formatted_yaml", fmt_valid.json())
+
+        fmt_invalid = self.client.post("/api/theaters/format-yaml", json={"config_yaml": "invalid: yaml: :"})
+        self.assertEqual(fmt_invalid.status_code, 400)
+
     def test_auth_registration_and_login_flow(self):
         # Register
         reg_res = self.client.post("/api/auth/register", json={

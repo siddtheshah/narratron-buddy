@@ -10,6 +10,7 @@ import re
 import sys
 from typing import List, Optional
 import uuid
+import yaml
 
 from absl import flags
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
@@ -23,7 +24,7 @@ from storage.database import DatabaseManager
 from pricing.pricing_controller import PricingController
 from deployer.deployer import LocalDeployer, TheaterMetadata, extract_asset_package
 from deployer.theater_manager import TheaterManager
-from utils.config_loader import get_app_config
+from utils.config_loader import get_app_config, get_theater_config, save_theater_config, get_theater_default_config
 from utils.email_service import send_password_reset_email
 from utils.theaters_paths import ensure_theaters_root
 
@@ -183,6 +184,9 @@ class AddAllowedOratorRequest(BaseModel):
 class RequestBatonRequest(BaseModel):
     target_user_id: int
     timeout_seconds: Optional[int] = 30
+
+class SaveTheaterConfigRequest(BaseModel):
+    config_yaml: str
 
 
 canvas_states = CanvasStateService(local_deployer)
@@ -654,6 +658,89 @@ async def get_theater(theater_id: str, request: Request):
         "references": theater_manager.get_theater_references(theater_id),
         "playlists": theater_manager.get_theater_playlists(theater_id),
     }
+
+@app.get("/api/theaters/{theater_id}/config")
+async def get_theater_config_endpoint(theater_id: str, request: Request):
+    """Get raw theater.yaml configuration for a theater session."""
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+
+    base_dir = local_deployer.base_dir
+    theater_dir = local_deployer._get_theater_dir(theater_id)
+    yaml_path = theater_dir / "theater.yaml"
+
+    if not yaml_path.exists():
+        get_theater_config(theater_id, base_dir=base_dir, db=db)
+
+    if yaml_path.exists():
+        try:
+            content = yaml_path.read_text(encoding="utf-8")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to read theater.yaml: {e}")
+    else:
+        default_config = get_theater_default_config()
+        content = yaml.safe_dump(default_config, default_flow_style=False)
+
+    return {"theater_id": theater_id, "config_yaml": content}
+
+@app.post("/api/theaters/{theater_id}/config")
+async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRequest, request: Request):
+    """Save raw theater.yaml configuration directly to local theater directory and DB."""
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+
+    try:
+        config_data = yaml.safe_load(req.config_yaml)
+        if config_data is None:
+            config_data = {}
+        if not isinstance(config_data, dict):
+            raise HTTPException(status_code=400, detail="Invalid YAML: Root structure must be a mapping/object.")
+    except yaml.YAMLError as err:
+        raise HTTPException(status_code=400, detail=f"YAML Syntax Error: {err}")
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {err}")
+
+    # Save to local theater directory
+    base_dir = local_deployer.base_dir
+    theater_dir = local_deployer._get_theater_dir(theater_id)
+    theater_dir.mkdir(parents=True, exist_ok=True)
+    yaml_path = theater_dir / "theater.yaml"
+
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        f.write(req.config_yaml)
+
+    # Save to DB
+    if db is not None and hasattr(db, "save_theater_config"):
+        try:
+            db.save_theater_config(theater_id, config_data)
+        except Exception as e:
+            logger.warning(f"[web_viewer_app] Warning: Failed to save DB config for {theater_id}: {e}")
+
+    return {
+        "status": "ok",
+        "message": "theater.yaml saved directly to DB and theater directory. Restart your agent to apply changes.",
+        "theater_id": theater_id
+    }
+
+@app.post("/api/theaters/format-yaml")
+async def format_yaml_endpoint(req: SaveTheaterConfigRequest):
+    """Validate and format a YAML string, returning pretty-printed YAML or syntax error details."""
+    try:
+        data = yaml.safe_load(req.config_yaml)
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Invalid YAML: Root structure must be a mapping/object.")
+        formatted = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+        return {"status": "ok", "formatted_yaml": formatted}
+    except yaml.YAMLError as err:
+        raise HTTPException(status_code=400, detail=f"YAML Syntax Error: {err}")
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Failed to format YAML: {err}")
 
 @app.post("/api/theaters/create-and-deploy")
 async def create_and_deploy_theater(request: Request):
