@@ -36,6 +36,7 @@ COPY tools/ tools/
 COPY utils/ utils/
 COPY templates/ templates/
 COPY static/ static/
+COPY pricing/ pricing/
 
 # Cloud Run theater data is intentionally ephemeral and stored under /tmp.
 RUN mkdir -p /tmp/theaters output playlists reference_library
