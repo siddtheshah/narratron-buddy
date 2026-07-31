@@ -305,6 +305,21 @@ class AgentSession:
         try:
             while True:
                 await asyncio.sleep(1.0)
+                if self.db and self.owner_user_id:
+                    try:
+                        owner = self.db.get_user_by_id(self.owner_user_id)
+                        if owner and owner.get("credits", 0.0) <= 0.0:
+                            logger.warning(f"[AgentSession] Owner user {self.owner_user_id} credit balance <= 0. Auto-stopping agent session for {self.theater_id}.")
+                            await self.broadcast_text(json.dumps({
+                                "type": "insufficient_credits",
+                                "detail": "Agent stopped because your credit balance reached 0 or less.",
+                                "credits": owner.get("credits", 0.0),
+                            }))
+                            self.close()
+                            return
+                    except Exception as err:
+                        logger.debug(f"[AgentSession] Periodic credit check error: {err}")
+
                 if self.websocket_connected and self.canvas_state_manager:
                     self.canvas_state_manager.set_tool_activity("live", active=True, recent_seconds=10.0)
                 self.send_canvas_state()
@@ -395,7 +410,7 @@ class AgentSession:
 
         if db_inst and owner_id:
             try:
-                db_inst.record_user_usage(
+                updated_user = db_inst.record_user_usage(
                     user_id=owner_id,
                     voice_minutes=unbilled_vm,
                     images_created=unbilled_img,
@@ -403,6 +418,21 @@ class AgentSession:
                 logger.info(
                     f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}"
                 )
+                credits_remaining = updated_user.get("credits", 0.0) if updated_user else 1.0
+                if credits_remaining <= 0.0:
+                    logger.warning(
+                        f"[AgentSession] Owner user {owner_id} credit balance reached <= 0 ({credits_remaining:.2f}). Gracefully stopping agent session for theater {self.theater_id}."
+                    )
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(self.broadcast_text(json.dumps({
+                            "type": "insufficient_credits",
+                            "detail": "Agent stopped because your credit balance reached 0 or less.",
+                            "credits": credits_remaining,
+                        })))
+                    except RuntimeError:
+                        pass
+                    self.close()
             except Exception as e:
                 logger.error(f"[AgentSession] Error flushing usage to DB: {e}")
 

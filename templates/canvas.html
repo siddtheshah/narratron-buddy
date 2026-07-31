@@ -3041,6 +3041,35 @@
         // ========================================
         // Agent Memory Lifecycle API Helpers
         // ========================================
+        function showInsufficientCreditsModal(message) {
+            const modal = document.getElementById('insufficient-credits-modal');
+            const msgElem = document.getElementById('credits-modal-message');
+            if (msgElem && message) {
+                msgElem.textContent = message;
+            }
+            if (modal) {
+                modal.classList.add('active');
+                modal.setAttribute('aria-hidden', 'false');
+            }
+        }
+
+        function hideInsufficientCreditsModal() {
+            const modal = document.getElementById('insufficient-credits-modal');
+            if (modal) {
+                modal.classList.remove('active');
+                modal.setAttribute('aria-hidden', 'true');
+            }
+        }
+
+        document.getElementById('credits-modal-deploy-btn')?.addEventListener('click', () => {
+            window.location.href = '/deploy';
+        });
+        document.getElementById('credits-modal-dismiss-btn')?.addEventListener('click', hideInsufficientCreditsModal);
+        document.getElementById('credits-modal-close-btn')?.addEventListener('click', hideInsufficientCreditsModal);
+
+        window.showInsufficientCreditsModal = showInsufficientCreditsModal;
+        window.hideInsufficientCreditsModal = hideInsufficientCreditsModal;
+
         function setAgentStartedUI(started) {
             isAgentStarted = started;
             window.isAgentStarted = started;
@@ -3063,7 +3092,12 @@
                 const res = await fetch(`/api/theaters/${theaterId}/agent/status`);
                 if (res.ok) {
                     const data = await res.json();
-                    setAgentStartedUI(!!data.agent_running);
+                    if (data.insufficient_credits) {
+                        setAgentStartedUI(false);
+                        cleanupAgentConnection();
+                    } else {
+                        setAgentStartedUI(!!data.agent_running);
+                    }
                     return data;
                 }
             } catch (e) {
@@ -3078,8 +3112,13 @@
             }
             try {
                 const res = await fetch(`/api/theaters/${theaterId}/agent/start`, { method: 'POST' });
-                if (!res.ok) throw new Error("Failed to start agent theater");
                 const data = await res.json();
+                if (!res.ok || data.insufficient_credits) {
+                    setAgentStartedUI(false);
+                    const msg = data.detail || "Your agent has been stopped because your account credit balance is 0 or less. Please top up your credits on the Deploy page.";
+                    showInsufficientCreditsModal(msg);
+                    throw new Error(msg);
+                }
                 setAgentStartedUI(true);
                 return data;
             } catch (err) {
@@ -3174,7 +3213,11 @@
                     console.log("WS_MSG:" + e.data);
                     try {
                         const data = JSON.parse(e.data);
-                        if (data.setupComplete || data.type === 'pong') {
+                        if (data.type === 'insufficient_credits') {
+                            cleanupAgentConnection();
+                            setAgentStartedUI(false);
+                            showInsufficientCreditsModal(data.detail || "Your agent was stopped because your credit balance is 0 or less.");
+                        } else if (data.setupComplete || data.type === 'pong') {
                             window.isSetupComplete = true;
                             if (typeof updateAgentActivity === 'function') {
                                 updateAgentActivity({ live_ready: true });
@@ -4037,6 +4080,29 @@
                 <button id="decline-baton-btn"
                     style="flex: 1; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: #94a3b8; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
                     Decline
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Insufficient Credits / Agent Stopped Popup Modal -->
+    <div id="insufficient-credits-modal" class="modal-overlay" role="dialog" aria-labelledby="credits-modal-title" aria-hidden="true" style="z-index: 10000;">
+        <div class="modal-card" style="max-width: 440px; width: 90%; text-align: center; border: 1px solid rgba(239, 68, 68, 0.6); box-shadow: 0 0 35px rgba(239, 68, 68, 0.25);">
+            <button id="credits-modal-close-btn" class="modal-close-btn" aria-label="Close modal">✕</button>
+            <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">⚡</div>
+            <h3 id="credits-modal-title" style="margin: 0 0 8px 0; font-size: 1.35rem; color: #fff; font-weight: 700;">Insufficient Credits</h3>
+            <div id="credits-modal-message" style="font-size: 0.95rem; color: #cbd5e1; margin-bottom: 1.25rem; line-height: 1.5;">
+                Your agent has been stopped because your account credit balance is 0 or less. Please top up your credits on the Deploy page to resume agent features.
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button id="credits-modal-deploy-btn"
+                    style="width: 100%; background: linear-gradient(135deg, #6366f1, #3b82f6); border: none; color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 600; cursor: pointer; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4); transition: transform 0.15s ease;">
+                    🚀 Go to Deploy Page
+                </button>
+                <button id="credits-modal-dismiss-btn"
+                    style="width: 100%; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-border); color: #94a3b8; padding: 8px 16px; border-radius: 12px; font-size: 0.85rem; cursor: pointer; transition: background 0.2s;">
+                    Dismiss
                 </button>
             </div>
         </div>

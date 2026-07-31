@@ -9,7 +9,8 @@ import warnings
 
 from absl import flags
 from dotenv import load_dotenv
-from fastapi import WebSocket
+from fastapi import WebSocket, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -74,13 +75,42 @@ use_in_memory_artifacts = FLAGS.use_in_memory_artifacts
 agent_manager = AgentSessionManager(app_name=APP_NAME, config=config)
 
 
+def get_theater_owner_credits(theater_id: str):
+    """Return (has_credits, credit_balance, owner_user_id) for the theater owner."""
+    deployment = db.get_deployment(theater_id)
+    if not deployment:
+        return False, 0.0, None
+    owner_id = deployment.get("user_id")
+    if owner_id is None:
+        return False, 0.0, None
+    owner = db.get_user_by_id(owner_id)
+    if not owner:
+        return False, 0.0, owner_id
+    credits = owner.get("credits", 0.0)
+    return (credits > 0.0), credits, owner_id
+
+
 # ========================================
 # Agent Lifecycle REST API Endpoints
 # ========================================
 
 @app.post("/api/theaters/{theater_id}/agent/start")
 async def start_agent_endpoint(theater_id: str):
-    """API endpoint to instantiate/start the agent session in memory if not already started."""
+    """API endpoint to instantiate/start the agent session in memory if owner has sufficient credits."""
+    has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
+    if not has_credits:
+        agent_manager.stop_session(theater_id=theater_id)
+        return JSONResponse(
+            status_code=402,
+            content={
+                "status": "error",
+                "detail": "Insufficient credits (0 or fewer). Please top up credits on the deploy page.",
+                "insufficient_credits": True,
+                "credits": credits_bal,
+                "theater_id": theater_id,
+                "agent_running": False,
+            },
+        )
     agent_session = agent_manager.get_or_create_session(
         theater_id=theater_id,
         canvas_state_service=canvas_states,
@@ -90,6 +120,8 @@ async def start_agent_endpoint(theater_id: str):
         "status": agent_session.status,
         "theater_id": theater_id,
         "agent_running": True,
+        "credits": credits_bal,
+        "insufficient_credits": False,
     }
 
 
@@ -107,6 +139,20 @@ async def stop_agent_endpoint(theater_id: str):
 @app.get("/api/theaters/{theater_id}/agent/status")
 async def get_agent_status_endpoint(theater_id: str):
     """API endpoint to check if an agent session is active in memory."""
+    has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
+    if not has_credits:
+        session = agent_manager.get_session(theater_id=theater_id)
+        if session and session.status != "stopped":
+            agent_manager.stop_session(theater_id=theater_id)
+        return {
+            "theater_id": theater_id,
+            "agent_running": False,
+            "websocket_connected": False,
+            "status": "stopped",
+            "insufficient_credits": True,
+            "credits": credits_bal,
+        }
+
     session = agent_manager.get_session(theater_id=theater_id)
     if not session or session.status == "stopped":
         return {
@@ -114,6 +160,8 @@ async def get_agent_status_endpoint(theater_id: str):
             "agent_running": False,
             "websocket_connected": False,
             "status": "stopped",
+            "insufficient_credits": False,
+            "credits": credits_bal,
         }
     return {
         "theater_id": theater_id,
@@ -122,6 +170,8 @@ async def get_agent_status_endpoint(theater_id: str):
         "status": session.status,
         "created_at": session.created_at,
         "last_active_at": session.last_active_at,
+        "insufficient_credits": False,
+        "credits": credits_bal,
     }
 
 
@@ -148,6 +198,18 @@ async def agent_websocket_endpoint(
         await websocket.close(code=1008)
         return
 
+    has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
+    if not has_credits:
+        agent_manager.stop_session(theater_id=theater_id)
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "insufficient_credits",
+            "detail": "Theater owner has <= 0 credits. Agent stopped.",
+            "credits": credits_bal,
+        })
+        await websocket.close(code=1008)
+        return
+
     await handle_live_websocket_connection(
         websocket=websocket,
         theater_id=theater_id,
@@ -163,4 +225,5 @@ if __name__ == "__main__":
     logger.info("PORT: %s", FLAGS.port)
     logger.info("====================================================")
     uvicorn.run(app, host=FLAGS.host, port=FLAGS.port)
+
 
