@@ -31,14 +31,9 @@ UI integration tests are the exception: place them in `testing/ui/`, also using 
 To run all unit tests across the repository:
 
 ```bash
-python -m unittest discover -s . -p "*_test.py"
+pytest --ignore=scratch
 ```
 
-To run a specific module's unit tests:
-
-```bash
-python tools/image_tool_test.py
-```
 
 ### Mocking Practices
 - **Gemini API / Vertex AI**: Always mock `genai.Client` in `ImageTools` tests using `unittest.mock.patch("tools.image_tool.genai.Client")` to avoid external API calls during unit tests.

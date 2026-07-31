@@ -54,7 +54,7 @@ class TestTheaterAPI(BaseTestCase):
         response = self.client.get("/deploy")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Theater Deployer", response.text)
-        self.assertIn("Deploy Canvas Instance", response.text)
+        self.assertIn("Deploy Theater", response.text)
         self.assertIn('href="/about"', response.text)
         self.assertIn("pricingModal", response.text)
         self.assertIn("openPricingModal", response.text)

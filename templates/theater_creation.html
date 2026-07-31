@@ -313,9 +313,10 @@
         input[type="text"],
         input[type="password"],
         input[type="email"],
+        input[type="number"],
         select,
         textarea {
-            background: rgba(11, 13, 18, 0.6);
+            background: rgba(11, 13, 18, 0.7);
             border: 1px solid var(--card-border);
             border-radius: var(--radius-md);
             padding: 0.75rem 1rem;
@@ -323,15 +324,31 @@
             font-family: inherit;
             font-size: 0.95rem;
             outline: none;
+            width: 100%;
             transition: all 0.2s ease;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+            background: rgba(11, 13, 18, 0.7);
+            color: var(--text-primary);
         }
 
         input[type="text"]:focus,
         input[type="password"]:focus,
         input[type="email"]:focus,
+        input[type="number"]:focus,
+        select:focus,
         textarea:focus {
             border-color: var(--accent-primary);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            background: rgba(11, 13, 18, 0.85);
+        }
+
+        ::placeholder {
+            color: var(--text-muted);
+            opacity: 0.8;
         }
 
         /* Dropzone */
@@ -811,6 +828,102 @@
             margin-top: 0.5rem;
             display: none;
         }
+
+        /* Advanced Configuration Expandable Accordion */
+        details.advanced-config-accordion {
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: var(--radius-md);
+            margin-bottom: 1.25rem;
+            overflow: hidden;
+            transition: all 0.25s ease;
+        }
+
+        details.advanced-config-accordion:hover {
+            border-color: rgba(99, 102, 241, 0.5);
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+        }
+
+        details.advanced-config-accordion[open] {
+            background: rgba(15, 23, 42, 0.75);
+            border-color: rgba(168, 85, 247, 0.4);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        summary.advanced-config-summary {
+            padding: 0.9rem 1.1rem;
+            font-weight: 600;
+            font-size: 0.92rem;
+            color: #a5b4fc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+            list-style: none;
+            transition: background-color 0.2s ease;
+        }
+
+        summary.advanced-config-summary::-webkit-details-marker {
+            display: none;
+        }
+
+        summary.advanced-config-summary:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: #c084fc;
+        }
+
+        .accordion-chevron {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            transition: transform 0.3s ease;
+        }
+
+        details[open] summary .accordion-chevron {
+            transform: rotate(180deg);
+            color: #c084fc;
+        }
+
+        .advanced-config-body {
+            padding: 1.1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 1.1rem;
+        }
+
+        .config-section-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #818cf8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.4rem;
+        }
+
+        .checkbox-card {
+            background: rgba(11, 13, 18, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: var(--radius-sm);
+            padding: 0.65rem 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .checkbox-card:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            background: rgba(99, 102, 241, 0.08);
+        }
+
+        .checkbox-card input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
     </style>
 </head>
 
@@ -836,7 +949,7 @@
     <main>
         <div class="hero">
             <h1>Theater & Asset Deployer</h1>
-            <p>Deploy your Narratron theater with your own personal assets and styles.</p>
+            <p>Deploy Canvas Instance with your own personal assets and custom styles.</p>
         </div>
 
         <div class="grid-container">
@@ -885,56 +998,86 @@
                     <small>Applied to generated images unless their prompt specifies a style.</small>
                 </div>
 
-                <!-- Custom Theater Settings -->
-                <div
-                    style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
-                    <div
-                        style="font-weight: 600; font-size: 0.95rem; color: #a5b4fc; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
-                        <span>⚙️ Custom Theater Settings (theater.yaml)</span>
-                    </div>
+                <!-- Custom Theater Settings (Expandable Accordion) -->
+                <details class="advanced-config-accordion">
+                    <summary class="advanced-config-summary">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 1.1rem;">⚙️</span>
+                            <div>
+                                <span style="font-weight: 600; font-size: 0.92rem; color: #a5b4fc;">Advanced Theater Configuration</span>
+                                <small style="display: block; color: var(--text-muted); font-size: 0.75rem; font-weight: 400; margin-top: 1px;">
+                                    Customize AI agent behaviors, cooldowns, and orator hotkey (theater.yaml)
+                                </small>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge badge-created" style="font-size: 0.7rem; padding: 2px 8px;">Optional</span>
+                            <span class="accordion-chevron">▼</span>
+                        </div>
+                    </summary>
 
-                    <div
-                        style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 0.75rem;">
-                        <label
-                            style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-primary); cursor: pointer;">
-                            <input type="checkbox" id="cfgAgentProactivity"> Proactive Agent
-                        </label>
-                        <label
-                            style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-primary); cursor: pointer;">
-                            <input type="checkbox" id="cfgAffectiveDialog"> Affective Dialog
-                        </label>
-                    </div>
+                    <div class="advanced-config-body">
+                        <!-- Section 1: Agent Behaviors -->
+                        <div>
+                            <div class="config-section-label">🤖 Agent Behaviors</div>
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                                <label class="checkbox-card">
+                                    <input type="checkbox" id="cfgAgentProactivity">
+                                    <div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Proactive Agent</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Agent initiates prompts & actions autonomously</div>
+                                    </div>
+                                </label>
+                                <label class="checkbox-card">
+                                    <input type="checkbox" id="cfgAffectiveDialog">
+                                    <div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Affective Dialog</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Adapts emotional response tone to context</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
 
-                    <div
-                        style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 0.75rem;">
-                        <div class="form-group">
-                            <label style="font-size: 0.78rem;">Image Cooldown (s)</label>
-                            <input type="number" id="cfgImageCooldown" min="0" value="12"
-                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                        <!-- Section 2: Action Cooldowns -->
+                        <div>
+                            <div class="config-section-label">⏱️ Action Cooldowns (Seconds)</div>
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                                <div class="form-group">
+                                    <label for="cfgImageCooldown" style="font-size: 0.78rem;">Image Cooldown</label>
+                                    <input type="number" id="cfgImageCooldown" min="0" value="12"
+                                        style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cfgMusicCooldown" style="font-size: 0.78rem;">Music Cooldown</label>
+                                    <input type="number" id="cfgMusicCooldown" min="0" value="15"
+                                        style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cfgNotesCooldown" style="font-size: 0.78rem;">Notes Cooldown</label>
+                                    <input type="number" id="cfgNotesCooldown" min="0" value="5"
+                                        style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cfgChatCooldown" style="font-size: 0.78rem;">Chat Cooldown</label>
+                                    <input type="number" id="cfgChatCooldown" min="0" value="15"
+                                        style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label style="font-size: 0.78rem;">Music Cooldown (s)</label>
-                            <input type="number" id="cfgMusicCooldown" min="0" value="15"
-                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
-                        </div>
-                        <div class="form-group">
-                            <label style="font-size: 0.78rem;">Notes Cooldown (s)</label>
-                            <input type="number" id="cfgNotesCooldown" min="0" value="5"
-                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
-                        </div>
-                        <div class="form-group">
-                            <label style="font-size: 0.78rem;">Chat Cooldown (s)</label>
-                            <input type="number" id="cfgChatCooldown" min="0" value="15"
-                                style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
-                        </div>
-                    </div>
 
-                    <div class="form-group">
-                        <label style="font-size: 0.78rem;">Orator Hotkey</label>
-                        <input type="text" id="cfgOratorHotkey" value="<ctrl>+<shift>+["
-                            style="padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                        <!-- Section 3: Controls & Hotkeys -->
+                        <div>
+                            <div class="config-section-label">⌨️ Orator Controls</div>
+                            <div class="form-group">
+                                <label for="cfgOratorHotkey" style="font-size: 0.78rem;">Orator Push-To-Talk Hotkey</label>
+                                <input type="text" id="cfgOratorHotkey" value="<ctrl>+<shift>+["
+                                    style="padding: 0.45rem 0.7rem; font-size: 0.85rem;"
+                                    placeholder="e.g. <ctrl>+<shift>+[">
+                                <small style="color: var(--text-muted); font-size: 0.73rem;">Key combination used to trigger live voice streaming.</small>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                </details>
 
                 <!-- PATH 1: Blank Canvas -->
                 <div id="pathSectionBlank" class="creation-path-section">
