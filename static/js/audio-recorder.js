@@ -5,8 +5,12 @@
 let micStream;
 let _lastMicDetection = 0;
 let _frameCounter = 0;
-const _MIC_DETECT_THRESHOLD = 0.0005; // RMS threshold for "sound detected"
+let _isSpeaking = false;
+let _lastSpeechTime = 0;
+const _MIC_DETECT_THRESHOLD = (typeof window !== "undefined" && window.MIC_DETECT_THRESHOLD !== undefined) ? window.MIC_DETECT_THRESHOLD : 0.01; // RMS threshold for "sound detected"
 const _MIC_DETECT_THROTTLE_MS = 250; // minimum ms between logs
+const _SPEECH_GRACE_PERIOD_MS = 500; // 0.5s grace period before emitting ActivityEnd
+
 
 export async function startAudioRecorderWorklet(audioRecorderHandler) {
   // Create an AudioContext
@@ -45,7 +49,6 @@ export async function startAudioRecorderWorklet(audioRecorderHandler) {
   console.log("AudioContext state after resume:", audioRecorderContext.state);
 
   audioRecorderNode.port.onmessage = (event) => {
-    console.log("EVENT WAS RECEIVED FROM AUDIO WORKLET.");
     // event.data is a Float32Array of samples.
     // Compute RMS to detect when microphone input is present.
     try {
@@ -57,40 +60,65 @@ export async function startAudioRecorderWorklet(audioRecorderHandler) {
       const rms = Math.sqrt(sum / samples.length);
       _frameCounter += 1;
       if (_frameCounter % 20 === 0) {
-        console.log("Audio frame RMS:", rms.toFixed(6), "samples=", samples.length);
+        console.log("Audio frame RMS:", rms.toFixed(6), "samples=", samples.length, "isSpeaking=", _isSpeaking);
       }
       const now = Date.now();
-      if (rms > _MIC_DETECT_THRESHOLD && now - _lastMicDetection > _MIC_DETECT_THROTTLE_MS) {
-        _lastMicDetection = now;
-        const ts = new Date().toISOString();
-        console.log("Microphone input detected (RMS):", rms.toFixed(5), ts);
-        // Send a mic-detection event over the agent WebSocket if available.
+      if (rms > _MIC_DETECT_THRESHOLD) {
+        _lastSpeechTime = now;
+        if (!_isSpeaking) {
+          _isSpeaking = true;
+          console.log("[AudioRecorder] Activity START detected (RMS:", rms.toFixed(5), ")");
+          try {
+            const ws = window.agentWs;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "activity_start", ts: new Date().toISOString() }));
+            }
+          } catch (e) {
+            console.debug("Failed to send activity_start:", e);
+          }
+        }
+        if (now - _lastMicDetection > _MIC_DETECT_THROTTLE_MS) {
+          _lastMicDetection = now;
+          const ts = new Date().toISOString();
+          try {
+            const ws = window.agentWs;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "mic_detect", rms: rms, ts }));
+            }
+          } catch (e) {
+            console.debug("Failed to send mic_detect over agentWs:", e);
+          }
+        }
+      } else if (_isSpeaking && (now - _lastSpeechTime > _SPEECH_GRACE_PERIOD_MS)) {
+        _isSpeaking = false;
+        console.log("[AudioRecorder] Activity END detected (Grace period expired)");
         try {
           const ws = window.agentWs;
           if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "mic_detect", rms: rms, ts }));
-          } else {
-            console.debug('agentWs not open, skipping mic_detect send');
+            ws.send(JSON.stringify({ type: "activity_end", ts: new Date().toISOString() }));
           }
         } catch (e) {
-          // Non-fatal if websocket not available
-          console.debug("Failed to send mic_detect over agentWs:", e);
+          console.debug("Failed to send activity_end:", e);
         }
       }
     } catch (err) {
       console.warn("Failed to compute mic RMS:", err);
     }
 
-    // Convert to 16-bit PCM and forward to handler.
-    const pcmData = convertFloat32ToPCM(event.data);
-    try {
-      if (typeof audioRecorderHandler === 'function') {
-        audioRecorderHandler(pcmData);
-      } else {
-        console.debug('audioRecorderHandler not a function, skipping send');
+    // Only forward PCM audio chunks when speaking or within grace period
+    const now = Date.now();
+    const isWithinGracePeriod = (now - _lastSpeechTime <= _SPEECH_GRACE_PERIOD_MS);
+    if (_isSpeaking || isWithinGracePeriod) {
+      const pcmData = convertFloat32ToPCM(event.data);
+      try {
+        if (typeof audioRecorderHandler === 'function') {
+          audioRecorderHandler(pcmData);
+        } else {
+          console.debug('audioRecorderHandler not a function, skipping send');
+        }
+      } catch (err) {
+        console.warn('audioRecorderHandler threw an error:', err);
       }
-    } catch (err) {
-      console.warn('audioRecorderHandler threw an error:', err);
     }
   };
   return [audioRecorderNode, audioRecorderContext, micStream];
@@ -100,6 +128,17 @@ export async function startAudioRecorderWorklet(audioRecorderHandler) {
  * Stop the microphone.
  */
 export function stopMicrophone(micStream) {
+  if (_isSpeaking) {
+    _isSpeaking = false;
+    try {
+      const ws = window.agentWs;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "activity_end", ts: new Date().toISOString() }));
+      }
+    } catch (e) {
+      console.debug("Failed to send activity_end on stopMicrophone:", e);
+    }
+  }
   micStream.getTracks().forEach((track) => track.stop());
   console.log("stopMicrophone(): Microphone stopped.");
 }

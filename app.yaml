@@ -8,6 +8,8 @@ smtp:
 
 agent_internal:
     model_id: "gemini-3.1-flash-live-preview"
+    enable_tool_injection: false
     compaction:
         trigger_tokens: 20000
         target_tokens: 8000
+

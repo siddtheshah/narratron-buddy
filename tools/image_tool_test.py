@@ -75,6 +75,7 @@ class TestImageTools(BaseTestCase):
         tools._schedule_cooldown_timer = MagicMock()
 
         tools.create_image("a misty forest")
+        tools.join_generation()
 
         self.assertEqual(
             canvas_state_service.set_tool_activity.call_args_list,
@@ -101,11 +102,13 @@ class TestImageTools(BaseTestCase):
         tools.output_dir = self.temp_dir
 
         tools.create_image("a moonlit harbor", display=False)
+        tools.join_generation()
         generated_prompt = mock_genai_client.return_value.models.generate_content.call_args.kwargs["contents"][-1]
         self.assertIn("Style: moody watercolor", generated_prompt)
 
         tools.last_create_time = 0
         tools.create_image("a moonlit harbor in a noir style", display=False)
+        tools.join_generation()
         generated_prompt = mock_genai_client.return_value.models.generate_content.call_args.kwargs["contents"][-1]
         self.assertEqual(generated_prompt, "a moonlit harbor in a noir style")
 
@@ -168,8 +171,9 @@ class TestImageTools(BaseTestCase):
         tools.on_image_created = created_cb
 
         res = tools.create_image("sunset scene", image_name="sunset_01")
-        self.assertIn("Successfully generated and displayed image", res)
+        self.assertIn("Image generation started in background", res)
         self.assertIn("sunset_01", res)
+        tools.join_generation()
         callback.assert_called_once()
         created_cb.assert_called_once()
         self.assertIn("sunset_01", tools.image_aliases)
@@ -197,8 +201,8 @@ class TestImageTools(BaseTestCase):
         tools.on_show_image = callback
 
         res = tools.create_image("sunset scene", image_name="sunset_02", display=False)
-        self.assertIn("Successfully generated image", res)
-        self.assertNotIn("and displayed", res)
+        self.assertIn("Image generation started in background", res)
+        tools.join_generation()
         callback.assert_not_called()
         self.assertIn("sunset_02", tools.image_aliases)
 
@@ -225,7 +229,8 @@ class TestImageTools(BaseTestCase):
         tools._load_references()
 
         res = tools.create_image("a fantasy castle", "castle description", reference_images="style_ref")
-        self.assertIn("Successfully generated and displayed image", res)
+        self.assertIn("Image generation started in background", res)
+        tools.join_generation()
         mock_part_cls.from_bytes.assert_called_once()
 
     @patch("tools.image_tool.genai.Client")
@@ -372,8 +377,9 @@ class TestImageTools(BaseTestCase):
         tools.on_show_image = callback
 
         res = tools.create_image("sunset scene", image_name="sunset_01")
-        self.assertIn("Successfully generated and displayed image", res)
+        self.assertIn("Image generation started in background", res)
         self.assertIn("sunset_01", res)
+        tools.join_generation()
         callback.assert_called_once()
         self.assertIn("sunset_01", tools.image_aliases)
         self.assertTrue(os.path.exists(tools.image_aliases["sunset_01"]))
@@ -400,8 +406,8 @@ class TestImageTools(BaseTestCase):
         tools.on_show_image = callback
 
         res = tools.create_image("sunset scene", image_name="sunset_02", display=False)
-        self.assertIn("Successfully generated image", res)
-        self.assertNotIn("and displayed", res)
+        self.assertIn("Image generation started in background", res)
+        tools.join_generation()
         callback.assert_not_called()
         self.assertIn("sunset_02", tools.image_aliases)
 
@@ -428,7 +434,8 @@ class TestImageTools(BaseTestCase):
         tools._load_references()
 
         res = tools.create_image("a fantasy castle", "castle description", reference_images="style_ref")
-        self.assertIn("Successfully generated and displayed image", res)
+        self.assertIn("Image generation started in background", res)
+        tools.join_generation()
         mock_part_cls.from_bytes.assert_called_once()
 
     @patch("tools.image_tool.types.Part")
@@ -455,6 +462,7 @@ class TestImageTools(BaseTestCase):
 
         # 1. Simple render without reference image -> uses simple_model (gemini-3.1-flash-lite-image)
         tools.create_image("a simple landscape")
+        tools.join_generation()
         mock_client_instance.models.generate_content.assert_called_with(
             model="gemini-3.1-flash-lite-image",
             contents=["a simple landscape"],
@@ -466,6 +474,7 @@ class TestImageTools(BaseTestCase):
 
         # 2. Render with reference image -> uses reference_model (gemini-3.1-flash-image)
         tools.create_image("a castle in style of ref1", reference_images="ref1")
+        tools.join_generation()
         self.assertEqual(
             mock_client_instance.models.generate_content.call_args.kwargs["model"],
             "gemini-3.1-flash-image"
@@ -577,21 +586,22 @@ class TestImageTools(BaseTestCase):
         # Test Case 1
         mock_client_instance.models.generate_content.return_value = mock_response_none_content
         res1 = tools.create_image("prompt 1")
-        self.assertIn("Failed to generate image", res1)
-        self.assertIn("SAFETY", res1)
+        self.assertIn("Image generation started in background", res1)
+        tools.join_generation()
 
         # Test Case 2
         mock_client_instance.models.generate_content.return_value = mock_response_none_parts
         tools.last_create_time = 0.0
         res2 = tools.create_image("prompt 2")
-        self.assertIn("Failed to generate image", res2)
+        self.assertIn("Image generation started in background", res2)
+        tools.join_generation()
 
         # Test Case 3
         mock_client_instance.models.generate_content.return_value = mock_response_text_part
         tools.last_create_time = 0.0
         res3 = tools.create_image("prompt 3")
-        self.assertIn("Failed to generate image", res3)
-        self.assertIn("Model refusal message", res3)
+        self.assertIn("Image generation started in background", res3)
+        tools.join_generation()
 
     @patch("tools.image_tool.genai.Client")
     def test_cooldown_expired_callbacks(self, mock_genai_client):

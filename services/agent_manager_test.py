@@ -1,6 +1,8 @@
+import asyncio
 import time
 import unittest
 from unittest.mock import MagicMock, patch
+
 
 from services.agent_manager import AgentSessionManager, AgentSession, create_agent
 
@@ -320,8 +322,48 @@ class TestAgentSessionManager(unittest.TestCase):
         content = args[0]
         self.assertIn("sample_tool", content.parts[0].text)
 
+    def test_enable_tool_injection_flag_default(self):
+        async def run_test():
+            session_default = AgentSession(
+                theater_id="test_flag_default",
+                agent=MagicMock(),
+                runner=MagicMock(),
+                session_service=MagicMock(),
+                artifact_service=MagicMock(),
+            )
+            self.assertFalse(session_default.enable_tool_injection)
+            session_default.start_background_tasks()
+            self.assertIsNone(session_default.tool_injection_task)
+            if session_default.downstream_task:
+                session_default.downstream_task.cancel()
+            if session_default.refresh_task:
+                session_default.refresh_task.cancel()
+
+            session_enabled = AgentSession(
+                theater_id="test_flag_enabled",
+                agent=MagicMock(),
+                runner=MagicMock(),
+                session_service=MagicMock(),
+                artifact_service=MagicMock(),
+                config={"agent_internal": {"enable_tool_injection": True}},
+            )
+
+            self.assertTrue(session_enabled.enable_tool_injection)
+            session_enabled.start_background_tasks()
+            self.assertIsNotNone(session_enabled.tool_injection_task)
+            if session_enabled.downstream_task:
+                session_enabled.downstream_task.cancel()
+            if session_enabled.refresh_task:
+                session_enabled.refresh_task.cancel()
+            if session_enabled.tool_injection_task:
+                session_enabled.tool_injection_task.cancel()
+
+        asyncio.run(run_test())
+
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

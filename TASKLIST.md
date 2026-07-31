@@ -22,6 +22,11 @@
 
 ## Theaters
 
-- [ ] Give all theaters their own theater.yaml that has settings for that theater.
+- [x] Give all theaters their own theater.yaml that has settings for that theater.
   - Let the user set their theater settings from within the canvas. Settings load is OK to require agent restart.
-  
+
+## Long Context
+
+- [ ] Fix agent disconnections
+  - The agent appears to constantly forget its prior history, and keeps sending "hello" type messages.
+  - The agent appears to self-trigger based on its canvas observability. This is not ideal.

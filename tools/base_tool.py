@@ -157,7 +157,6 @@ class BaseTools:
             desc_text = action_desc or "executing this action again"
             return (
                 f"Error: {tool_name} is on cooldown. "
-                f"Please wait {remaining} more seconds before {desc_text}."
             )
         return None
 

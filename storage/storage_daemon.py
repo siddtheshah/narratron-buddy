@@ -28,7 +28,7 @@ load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [StorageDaemon] %(message)s",
+    format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger("storage_daemon")
 

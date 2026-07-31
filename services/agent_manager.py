@@ -13,6 +13,7 @@ from google.adk.agents import Agent
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig, StreamingMode, ToolThreadPoolConfig
 from google.adk.runners import Runner
+from google.adk.planners import BuiltInPlanner
 from google.adk.sessions import InMemorySessionService
 from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
@@ -36,6 +37,8 @@ from utils.theaters_paths import ensure_theaters_root
 logger = logging.getLogger(__name__)
 
 TOOL_INJECTION_INTERVAL_SECONDS = 30.0
+
+
 
 
 def build_run_config(
@@ -91,12 +94,16 @@ def build_run_config(
             ),
             enable_affective_dialog=affective_dialog if affective_dialog else None,
             realtime_input_config=types.RealtimeInputConfig(
-                activity_handling=types.ActivityHandling.NO_INTERRUPTION
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    disabled=True
+                ),
+                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
             ),
             tool_thread_pool_config=ToolThreadPoolConfig(
                 max_workers=agent_config.get("max_tool_workers", 3)
             ),
             get_session_config=GetSessionConfig(num_recent_events=0),
+            session_resumption=types.SessionResumptionConfig()
         )
     else:
         response_modalities = ["TEXT"]
@@ -140,6 +147,12 @@ class AgentSession:
         self.canvas_state_manager = canvas_state_manager
         self.db = db
         self.owner_user_id = owner_user_id
+        agent_internal = self.config.get("agent_internal", {})
+        self.enable_tool_injection = bool(agent_internal.get("enable_tool_injection", False))
+
+
+
+
         self.images_created_count: int = 0
         self.audio_bytes_received: int = 0
         self.unbilled_images: int = 0
@@ -147,6 +160,7 @@ class AgentSession:
         self.created_at = time.time()
         self.last_active_at = time.time()
         self.status = "ready"  # "ready", "active", "stopped"
+
 
         self.live_request_queue = PriorityLiveRequestQueue(retention_window=0.5)
         self.websockets: Set[WebSocket] = set()
@@ -194,6 +208,22 @@ class AgentSession:
             logger.debug(f"[AgentSession] User disconnected; suppressing realtime input for session {self.theater_id}.")
             return False
         self.live_request_queue.send_realtime(blob)
+        return True
+
+    def send_activity_start(self) -> bool:
+        """Send activity_start to live_request_queue if user is connected."""
+        if not self.websocket_connected:
+            return False
+        if hasattr(self.live_request_queue, "send_activity_start"):
+            self.live_request_queue.send_activity_start()
+        return True
+
+    def send_activity_end(self) -> bool:
+        """Send activity_end to live_request_queue if user is connected."""
+        if not self.websocket_connected:
+            return False
+        if hasattr(self.live_request_queue, "send_activity_end"):
+            self.live_request_queue.send_activity_end()
         return True
 
     def _setup_tool_callbacks(self):
@@ -261,10 +291,11 @@ class AgentSession:
         if self.refresh_task is None or self.refresh_task.done():
             self.refresh_task = asyncio.create_task(self._run_canvas_refresh())
 
-        if self.tool_injection_task is None or self.tool_injection_task.done():
+        if self.enable_tool_injection and (self.tool_injection_task is None or self.tool_injection_task.done()):
             self.tool_injection_task = asyncio.create_task(self._run_tool_injection_loop())
 
         self.send_canvas_state(force=True)
+
 
     async def _run_downstream(self):
         """Task that runs runner.run_live() continuously and broadcasts model events to attached WebSockets."""
@@ -340,7 +371,9 @@ class AgentSession:
         return self.send_content(content)
 
     async def _run_tool_injection_loop(self):
-        """Task that populates the live request queue with tool definitions on a 30s interval."""
+        """Task that populates the live request queue with tool definitions on a 30s interval when enabled."""
+        if not self.enable_tool_injection:
+            return
         try:
             while True:
                 await asyncio.sleep(TOOL_INJECTION_INTERVAL_SECONDS)
@@ -349,6 +382,7 @@ class AgentSession:
                     self.inject_tool_definitions()
         except asyncio.CancelledError:
             return
+
 
     async def add_websocket(self, websocket: WebSocket):
         async with self.ws_lock:
@@ -606,6 +640,9 @@ def create_agent(
         model=model_id,
         instruction=instruction_with_context,
         tools=tool_bundle.tools,
+        planner = BuiltInPlanner(
+            thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_budget=1024)
+        )
     )
 
     return agent

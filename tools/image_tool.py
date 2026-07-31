@@ -215,6 +215,12 @@ class ImageTools(BaseTools):
         # General path resolution
         return resolve_image_path(path_str, [self.get_effective_output_dir(), self.output_dir, self.reference_dir])
 
+    def join_generation(self, timeout: float = 10.0) -> None:
+        """Helper for unit tests or teardown to wait for background image generation thread."""
+        thread = getattr(self, "_last_generation_thread", None)
+        if thread and thread.is_alive():
+            thread.join(timeout=timeout)
+
     @with_cooldown("generating another image")
     def create_image(
         self,
@@ -235,162 +241,153 @@ class ImageTools(BaseTools):
                     shining, sparkle, gleam3, or bendy.
 
         Returns:
-            A string indicating the file path of the saved generated image, or an error message.
+            A string indicating that background image generation has started, or an error message.
         """
         effective_prompt = self._apply_default_style(image_prompt)
         logging.info(f"[create_image_tool] image_prompt: {effective_prompt}, image_name: {image_name}, reference_images: {reference_images}, display: {display}")
-        self._set_canvas_activity(True)
-        try:
-            resolved_refs = []
-            if reference_images:
-                if isinstance(reference_images, str):
-                    ref_list = [r.strip() for r in reference_images.split(",") if r.strip()]
+        
+        resolved_refs = []
+        if reference_images:
+            if isinstance(reference_images, str):
+                ref_list = [r.strip() for r in reference_images.split(",") if r.strip()]
+            else:
+                ref_list = reference_images
+            
+            for ref in ref_list:
+                ref_path = self._find_image_path(ref)
+                if ref_path:
+                    resolved_refs.append((ref, ref_path))
                 else:
-                    ref_list = reference_images
+                    logger.error(f"[create_image tool] Reference image '{ref}' not found.")
+                    res = f"Error: Reference image '{ref}' not found."
+                    self._trigger_after_tool_call("create_image")
+                    return res
+
+        prompt_parts = []
+        if resolved_refs:
+            for ref_key, ref_path in resolved_refs:
+                try:
+                    with open(ref_path, "rb") as f:
+                        img_bytes = f.read()
+                    mime_type = "image/png" if ref_path.lower().endswith(".png") else "image/jpeg"
+                    prompt_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+                except Exception as e:
+                    logger.error(f"[create_image tool] Error loading reference image {ref_path}: {e}")
+                    res = f"Error loading reference image '{ref_key}': {e}"
+                    self._trigger_after_tool_call("create_image")
+                    return res
+            
+            logger.info(f"[create_image tool] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
+
+        prompt_parts.append(effective_prompt)
+        model_name = self.reference_model if resolved_refs else self.simple_model
+
+        self.record_tool_call("create_image")
+
+        def _worker():
+            self._set_canvas_activity(True)
+            try:
+                logger.info(f"[create_image tool] Generating image in background using model '{model_name}' from prompt: {effective_prompt[:100]}...")
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=prompt_parts,
+                )
                 
-                for ref in ref_list:
-                    ref_path = self._find_image_path(ref)
-                    if ref_path:
-                        resolved_refs.append((ref, ref_path))
+                saved_paths = []
+                image_bytes = None
+                text_feedback = []
+                
+                if getattr(response, "candidates", None) and response.candidates:
+                    candidate = response.candidates[0]
+                    content = candidate.get("content") if isinstance(candidate, dict) else getattr(candidate, "content", None)
+                    parts = content.get("parts") if isinstance(content, dict) else (getattr(content, "parts", None) if content else None)
+                    if parts:
+                        for part in parts:
+                            inline_data = part.get("inline_data") if isinstance(part, dict) else getattr(part, "inline_data", None)
+                            text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
+                            
+                            if inline_data:
+                                raw_data = inline_data.get("data") if isinstance(inline_data, dict) else getattr(inline_data, "data", None)
+                                if raw_data:
+                                    if isinstance(raw_data, str):
+                                        try:
+                                            image_bytes = base64.b64decode(raw_data)
+                                        except Exception:
+                                            image_bytes = raw_data.encode("utf-8")
+                                    else:
+                                        image_bytes = raw_data
+                                    break
+                            elif text:
+                                text_feedback.append(str(text))
+                            
+                if image_bytes is not None:
+                    image = Image.open(BytesIO(image_bytes))
+                    if image.mode != "RGB":
+                        image = image.convert("RGB")
+                    
+                    timestamp = int(time.time())
+                    if image_name:
+                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name)
+                        filename = f"{clean_name}_{timestamp}.jpg"
                     else:
-                        logger.error(f"[create_image tool] Reference image '{ref}' not found.")
-                        res = f"Error: Reference image '{ref}' not found."
-                        self._trigger_after_tool_call("create_image")
-                        return res
-
-            prompt_parts = []
-            if resolved_refs:
-                for ref_key, ref_path in resolved_refs:
-                    try:
-                        with open(ref_path, "rb") as f:
-                            img_bytes = f.read()
-                        mime_type = "image/png" if ref_path.lower().endswith(".png") else "image/jpeg"
-                        prompt_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
-                    except Exception as e:
-                        logger.error(f"[create_image tool] Error loading reference image {ref_path}: {e}")
-                        res = f"Error loading reference image '{ref_key}': {e}"
-                        self._trigger_after_tool_call("create_image")
-                        return res
-                
-                logger.info(f"[create_image tool] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
-
-            prompt_parts.append(effective_prompt)
-
-            model_name = self.reference_model if resolved_refs else self.simple_model
-            logger.info(f"[create_image tool] Generating image using model '{model_name}' from prompt: {effective_prompt[:100]}...")
-            
-            response = self.client.models.generate_content(
-                model=model_name,
-                contents=prompt_parts,
-            )
-            
-            saved_paths = []
-            image_bytes = None
-            text_feedback = []
-            
-            if getattr(response, "candidates", None) and response.candidates:
-                candidate = response.candidates[0]
-                content = candidate.get("content") if isinstance(candidate, dict) else getattr(candidate, "content", None)
-                parts = content.get("parts") if isinstance(content, dict) else (getattr(content, "parts", None) if content else None)
-                if parts:
-                    for part in parts:
-                        inline_data = part.get("inline_data") if isinstance(part, dict) else getattr(part, "inline_data", None)
-                        text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
-                        
-                        if inline_data:
-                            raw_data = inline_data.get("data") if isinstance(inline_data, dict) else getattr(inline_data, "data", None)
-                            if raw_data:
-                                if isinstance(raw_data, str):
-                                    try:
-                                        image_bytes = base64.b64decode(raw_data)
-                                    except Exception:
-                                        image_bytes = raw_data.encode("utf-8")
-                                else:
-                                    image_bytes = raw_data
-                                break
-                        elif text:
-                            text_feedback.append(str(text))
-                        
-            if image_bytes is not None:
-                image = Image.open(BytesIO(image_bytes))
-                if image.mode != "RGB":
-                    image = image.convert("RGB")
-                
-                timestamp = int(time.time())
-                if image_name:
-                    clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name)
-                    filename = f"{clean_name}_{timestamp}.jpg"
-                else:
-                    filename = f"image_{timestamp}_0.jpg"
-                
-                out_folder = self.get_effective_output_dir()
-                filepath = os.path.join(out_folder, filename)
-                 
-                exif = image.getexif()
-                embed_image_metadata(exif, effective_prompt)
-                 
-                image.save(filepath, "JPEG", exif=exif, quality=95)
-                saved_paths.append(filepath)
-                
-                # Register alias
-                if image_name:
-                    clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name)
-                    self.image_aliases[image_name] = filepath
-                    self.image_aliases[clean_name] = filepath
-                    self.image_aliases[image_name.lower()] = filepath
-                    self.image_aliases[clean_name.lower()] = filepath
-                
-                logger.info(f"[create_image tool] Saved image to {filepath} (Name alias: {image_name})")
-                if self.on_image_created:
-                    try:
-                        self.on_image_created(filepath)
-                    except TypeError:
+                        filename = f"image_{timestamp}_0.jpg"
+                    
+                    out_folder = self.get_effective_output_dir()
+                    filepath = os.path.join(out_folder, filename)
+                     
+                    exif = image.getexif()
+                    embed_image_metadata(exif, effective_prompt)
+                     
+                    image.save(filepath, "JPEG", exif=exif, quality=95)
+                    saved_paths.append(filepath)
+                    
+                    # Register alias
+                    if image_name:
+                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name)
+                        self.image_aliases[image_name] = filepath
+                        self.image_aliases[clean_name] = filepath
+                        self.image_aliases[image_name.lower()] = filepath
+                        self.image_aliases[clean_name.lower()] = filepath
+                    
+                    logger.info(f"[create_image tool] Saved image in background to {filepath} (Name alias: {image_name})")
+                    if self.on_image_created:
                         try:
-                            self.on_image_created()
+                            self.on_image_created(filepath)
+                        except TypeError:
+                            try:
+                                self.on_image_created()
+                            except Exception as cb_err:
+                                logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
                         except Exception as cb_err:
                             logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
-                    except Exception as cb_err:
-                        logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
-            
-            if not saved_paths:
-                details = ""
-                if text_feedback:
-                    details = f" Details: {' '.join(text_feedback)}"
-                elif getattr(response, "candidates", None) and response.candidates:
-                    cand = response.candidates[0]
-                    finish_reason = cand.get("finish_reason") if isinstance(cand, dict) else getattr(cand, "finish_reason", None)
-                    if finish_reason:
-                        details = f" Finish reason: {finish_reason}"
-                elif getattr(response, "prompt_feedback", None):
-                    pf = getattr(response, "prompt_feedback")
-                    block_reason = pf.get("block_reason") if isinstance(pf, dict) else getattr(pf, "block_reason", None)
-                    if block_reason:
-                        details = f" Prompt block reason: {block_reason}"
-                res = f"Failed to generate image: Model didn't return binary image data.{details}"
-                self._trigger_after_tool_call("create_image")
-                return res
 
-            self.record_tool_call("create_image")
-            show_msg = ""
-            if display:
-                show_res = self.show_image(saved_paths[0], effect=effect)
-                if show_res.startswith("Error:"):
-                    show_msg = f", but could not display: {show_res}"
+                if saved_paths:
+                    if display:
+                        show_res = self.show_image(saved_paths[0], effect=effect)
+                        if show_res.startswith("Error:"):
+                            logger.warning(f"[create_image tool] Generated image but could not display: {show_res}")
                 else:
-                    show_msg = " and displayed"
-            
-            name_msg = f" with alias '{image_name}'" if image_name else ""
-            ref_msg = f" using references {[r[0] for r in resolved_refs]}" if resolved_refs else ""
-            res = f"Successfully generated{show_msg} image{name_msg}{ref_msg} at {saved_paths[0]}"
-            self._trigger_after_tool_call("create_image")
-            return res
-        except Exception as e:
-            error_msg = f"Error generating image: {e}"
-            logger.error(f"[create_image tool] {error_msg}")
-            self._trigger_after_tool_call("create_image")
-            return error_msg
-        finally:
-            self._set_canvas_activity(False)
+                    details = ""
+                    if text_feedback:
+                        details = f" Details: {' '.join(text_feedback)}"
+                    elif getattr(response, "candidates", None) and response.candidates:
+                        cand = response.candidates[0]
+                        finish_reason = cand.get("finish_reason") if isinstance(cand, dict) else getattr(cand, "finish_reason", None)
+                        if finish_reason:
+                            details = f" Finish reason: {finish_reason}"
+                    logger.error(f"[create_image tool] Failed to generate image: Model didn't return binary image data.{details}")
+            except Exception as e:
+                logger.error(f"[create_image tool] Error generating image in background: {e}")
+            finally:
+                self._set_canvas_activity(False)
+                self._trigger_after_tool_call("create_image")
+
+        t = threading.Thread(target=_worker, daemon=True)
+        self._last_generation_thread = t
+        t.start()
+
+        name_msg = f" with alias '{image_name}'" if image_name else ""
+        return f"Image generation started in background{name_msg} for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
 
     @with_cooldown("displaying another image")
     def show_image(

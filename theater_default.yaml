@@ -1,5 +1,5 @@
 agent:
-    proactivity: false
+    proactivity: true
     affective_dialog: false
 
 image_generation:

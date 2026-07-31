@@ -89,7 +89,10 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         while True:
             # 1. Immediate priority for audio chunks
             if not self._audio_queue.empty():
-                return self._audio_queue.get_nowait()
+                req = self._audio_queue.get_nowait()
+                if req.activity_end is not None:
+                    self._last_input_time = None
+                return req
 
             now = time.monotonic()
             is_priority_active = False

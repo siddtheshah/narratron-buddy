@@ -151,6 +151,16 @@ async def handle_live_websocket_connection(
                     if hasattr(agent_session, "record_input_detected"):
                         agent_session.record_input_detected()
 
+                elif msg_type == "activity_start":
+                    logger.info(f"[Activity Start] theater_id={theater_id}")
+                    if hasattr(agent_session, "send_activity_start"):
+                        agent_session.send_activity_start()
+
+                elif msg_type == "activity_end":
+                    logger.info(f"[Activity End] theater_id={theater_id}")
+                    if hasattr(agent_session, "send_activity_end"):
+                        agent_session.send_activity_end()
+
                 elif msg_type == "ping":
                     if agent_session.canvas_state_manager:
                         agent_session.canvas_state_manager.set_tool_activity("live", active=True, recent_seconds=10.0)

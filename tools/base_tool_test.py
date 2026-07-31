@@ -46,7 +46,7 @@ class TestBaseTools(BaseTestCase):
 
         res2 = sample.decorated_tool()
         self.assertIn("decorated_tool is on cooldown", res2)
-        self.assertIn("before doing action", res2)
+
 
 
 if __name__ == "__main__":

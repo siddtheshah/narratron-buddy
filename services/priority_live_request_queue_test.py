@@ -137,6 +137,39 @@ class TestPriorityLiveRequestQueue(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_activity_end_clears_priority_immediately(self):
+        async def run_test():
+            queue = PriorityLiveRequestQueue(retention_window=2.0)
+            system_content = types.Content(parts=[types.Part(text="Immediate system notification")])
+
+            queue.send_activity_start()
+            queue.send_realtime(types.Blob(mime_type="audio/pcm;rate=16000", data=b"speech"))
+            queue.send_activity_end()
+            queue.send_content(system_content)
+
+            # Pop start signal
+            req_start = await queue.get()
+            self.assertIsNotNone(req_start.activity_start)
+
+            # Pop speech audio blob
+            req_audio = await queue.get()
+            self.assertEqual(req_audio.blob.data, b"speech")
+
+            # Pop activity end signal
+            req_end = await queue.get()
+            self.assertIsNotNone(req_end.activity_end)
+
+            # Next get() should return system notification IMMEDIATELY (< 0.05s) without waiting 2.0s retention window
+            start_time = time.monotonic()
+            req_sys = await queue.get()
+            elapsed = time.monotonic() - start_time
+
+            self.assertLess(elapsed, 0.05)
+            self.assertIsNotNone(req_sys.content)
+            self.assertEqual(req_sys.content.parts[0].text, "Immediate system notification")
+
+        asyncio.run(run_test())
+
 
 if __name__ == "__main__":
     unittest.main()

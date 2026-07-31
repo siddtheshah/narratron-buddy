@@ -40,6 +40,10 @@ flags.DEFINE_bool("use_local_test_db", False, "Which database to use (local or l
 
 flags.DEFINE_string("host", "localhost", "Host to run the app on.")
 flags.DEFINE_integer("port", 8000, "Port to run the app on.")
+flags.DEFINE_string("log_prefix", "", "Filter log output to only show records containing this prefix/substring.")
+flags.DEFINE_bool("suppress_polling", True, "Suppress frequent HTTP polling logs (/api/latest, etc.).")
+
+
 
 FLAGS = flags.FLAGS
 sys.argv = FLAGS(sys.argv, known_only=True)
@@ -49,7 +53,21 @@ print("HOST", FLAGS.host)
 print("PORT", FLAGS.port)
 print("====================================================")
 
-# Configure logging
+# Configure logging filter
+class LogFilter(logging.Filter):
+    def __init__(self, prefix: str = "", filter_polling: bool = True):
+        super().__init__()
+        self.prefix = prefix
+        self.filter_polling = filter_polling
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if self.filter_polling and ("/api/latest" in msg or "/agent/status" in msg):
+            return False
+        if self.prefix and (self.prefix not in msg and self.prefix not in record.name):
+            return False
+        return True
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -57,11 +75,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+# Apply filter to root logger and uvicorn access logger
+log_filter = LogFilter(prefix=FLAGS.log_prefix, filter_polling=FLAGS.suppress_polling)
+for handler in logging.getLogger().handlers:
+    handler.addFilter(log_filter)
+
+uvicorn_access = logging.getLogger("uvicorn.access")
+uvicorn_access.addFilter(log_filter)
+
 # Suppress PIL debug clutter
 logging.getLogger("PIL").setLevel(logging.INFO)
 
 # Suppress Pydantic serialization warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
 
 APP_NAME = "narratron-combined"
 
