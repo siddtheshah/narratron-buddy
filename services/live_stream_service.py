@@ -74,8 +74,8 @@ async def handle_live_websocket_connection(
     total_audio_bytes = 0
     last_audio_log_time = time.monotonic()
 
-    TARGET_AUDIO_CHUNK_BYTES = 96000  # 3.0 seconds at 16kHz 16-bit mono PCM (16000 * 2 * 3)
-    TARGET_AUDIO_FLUSH_INTERVAL = 3.0
+    TARGET_AUDIO_CHUNK_BYTES = 960  # 30ms at 16kHz 16-bit mono PCM (16000 * 2 * 0.03)
+    TARGET_AUDIO_FLUSH_INTERVAL = 0.030
     audio_buffer = bytearray()
     last_audio_flush_time = time.monotonic()
 

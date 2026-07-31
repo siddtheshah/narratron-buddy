@@ -1160,7 +1160,7 @@ async def read_canvas(
         )
 
     is_obs = request.query_params.get("obs") == "1" or request.query_params.get("obs") == "true"
-    template_name = "obs.html" if is_obs else "index.html"
+    template_name = "obs.html" if is_obs else "canvas.html"
     template_path = os.path.join(os.path.dirname(__file__), "templates", template_name)
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()

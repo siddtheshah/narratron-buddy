@@ -153,11 +153,6 @@ class AgentSession:
         self.notes_tools = get_bound_tool_instance(agent, "edit_notes")
         self.music_tools = get_bound_tool_instance(agent, "play_playlist")
 
-        if self.image_tools and hasattr(self.image_tools, "active_session_id"):
-            self.image_tools.active_theater_id = theater_id
-        if self.notes_tools and hasattr(self.notes_tools, "active_session_id"):
-            self.notes_tools.active_theater_id = theater_id
-
         self.run_config = run_config or build_run_config(
             agent=agent,
             config=self.config,

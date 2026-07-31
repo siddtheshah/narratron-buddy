@@ -2993,9 +2993,9 @@
             }
         });
 
-        // Audio Recorder Callback with 3-Second Chunking (96,000 bytes @ 16kHz 16-bit PCM mono)
-        const AUDIO_TARGET_CHUNK_BYTES = 96000;
-        const AUDIO_FLUSH_MAX_INTERVAL_MS = 3000;
+        // Audio Recorder Callback with 30-Millisecond Chunking (960 bytes @ 16kHz 16-bit PCM mono)
+        const AUDIO_TARGET_CHUNK_BYTES = 960;
+        const AUDIO_FLUSH_MAX_INTERVAL_MS = 30;
         let clientAudioChunkCount = 0;
         let clientAudioBuffers = [];
         let clientAudioTotalBytes = 0;
@@ -3016,7 +3016,7 @@
                 offset += chunk.byteLength;
             }
             clientAudioChunkCount++;
-            console.log(`[AudioRecorder] Forwarding 3-second PCM audio chunk #${clientAudioChunkCount} (${combined.byteLength} bytes) to Agent WebSocket.`);
+            console.log(`[AudioRecorder] Forwarding 30ms PCM audio chunk #${clientAudioChunkCount} (${combined.byteLength} bytes) to Agent WebSocket.`);
             agentWs.send(combined.buffer);
 
             clientAudioBuffers = [];

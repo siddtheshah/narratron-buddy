@@ -6,8 +6,8 @@ agent:
     proactivity: false
     affective_dialog: false
     compaction:
-        trigger_tokens: 12000
-        target_tokens: 6000
+        trigger_tokens: 20000
+        target_tokens: 8000
 
 image_generation:
     reference_library_folder: "reference_library"
