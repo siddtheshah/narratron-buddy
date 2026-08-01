@@ -29,3 +29,7 @@
 
 - [ ] Agent appears to be reading files in the background, possibly, and going astray.
    - Profile usage of the LoadArtifactsTool. Figure out what's really happening.
+
+## Image Effects
+
+- [ ] Improve gleam a little more. Have it apply contrast instead of a pure brightening.

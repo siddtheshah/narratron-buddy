@@ -3403,31 +3403,11 @@
             shiftKey: true
         };
 
-        // Load saved hotkey from localStorage or fetch server config
+        // Load the browser-specific hotkey preference.
         try {
             const saved = localStorage.getItem('narratron_mic_hotkey');
             if (saved) {
                 currentHotkey = JSON.parse(saved);
-            } else {
-                fetch('/api/orator/config')
-                    .then(r => r.json())
-                    .then(cfg => {
-                        if (cfg && cfg.hotkey) {
-                            const str = cfg.hotkey;
-                            const ctrl = str.includes('<ctrl>') || str.toLowerCase().includes('ctrl');
-                            const alt = str.includes('<alt>') || str.toLowerCase().includes('alt');
-                            const shift = str.includes('<shift>') || str.toLowerCase().includes('shift');
-                            let clean = str.replace(/<ctrl>|<shift>|<alt>|\+| /gi, '');
-                            let code = clean;
-                            let key = clean;
-                            if (clean === '[') { code = 'BracketLeft'; key = '['; }
-                            else if (clean === ']') { code = 'BracketRight'; key = ']'; }
-                            else if (clean.length === 1 && clean.match(/[a-z]/i)) { code = 'Key' + clean.toUpperCase(); key = clean.toLowerCase(); }
-                            else if (clean.length === 1 && clean.match(/[0-9]/)) { code = 'Digit' + clean; key = clean; }
-                            currentHotkey = { code, key, altKey: alt, ctrlKey: ctrl, shiftKey: shift };
-                            updateHotkeyUI();
-                        }
-                    }).catch(() => { });
             }
         } catch (e) { }
 
