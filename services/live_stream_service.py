@@ -73,6 +73,9 @@ async def handle_live_websocket_connection(
     )
 
     await agent_session.add_websocket(websocket, user_id=user_id)
+    # The endpoint admitted this socket only for the active baton holder. Baton
+    # transitions update this value without tearing down the live connection.
+    agent_session.set_active_controller(user_id)
 
     if send_setup_complete_immediately:
         try:
@@ -91,7 +94,10 @@ async def handle_live_websocket_connection(
 
     def _send_audio_blob(chunk_bytes: bytes):
         nonlocal audio_chunk_count, total_audio_bytes, last_audio_log_time
-        if not chunk_bytes:
+        # A baton may change hands after a browser frame has entered this
+        # per-socket buffer. Check again immediately before the shared live
+        # queue receives it so stale partial audio cannot cross the handoff.
+        if not chunk_bytes or not agent_session.can_accept_controller_input(user_id):
             return
         audio_chunk_count += 1
         total_audio_bytes += len(chunk_bytes)
@@ -128,6 +134,8 @@ async def handle_live_websocket_connection(
 
             if "bytes" in message:
                 audio_data = message.get("bytes")
+                if not agent_session.can_accept_controller_input(user_id):
+                    continue
                 if not audio_data or len(audio_data) < 64:
                     continue
                 audio_buffer.extend(audio_data)
@@ -148,6 +156,8 @@ async def handle_live_websocket_connection(
                     continue
 
                 msg_type = json_message.get("type")
+                if msg_type != "ping" and not agent_session.can_accept_controller_input(user_id):
+                    continue
                 if msg_type == "text":
                     user_text = json_message.get("text", "")
                     if user_text and user_text.strip():

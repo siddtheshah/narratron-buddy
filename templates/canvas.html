@@ -1422,20 +1422,12 @@
                     to Orator</button>
             </div>
 
-            <!-- Baton Controls -->
+            <!-- Baton status and controls -->
             <div id="baton-container"
-                style="margin-left: 1rem; display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
-                <span id="baton-status-badge"
+                style="margin-left: 1rem; display: flex; align-items: center; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                <button id="baton-status-badge" type="button" aria-haspopup="dialog"
                     style="font-size: 0.8rem; font-weight: 600; color: #fbbf24; background: rgba(251, 191, 36, 0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(251, 191, 36, 0.3); display: flex; align-items: center; gap: 5px;">
                     👑 Owner is Orator
-                </span>
-                <button id="manage-orators-btn"
-                    style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;">
-                    👥 Manage Orators
-                </button>
-                <button id="take-back-baton-btn"
-                    style="display: none; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;">
-                    👑 Take Back Baton
                 </button>
             </div>
         </header>
@@ -2936,9 +2928,8 @@
         let batonTimerInterval = null;
         let currentUser = null;
 
-        const manageOratorsBtn = document.getElementById('manage-orators-btn');
-        const takeBackBatonBtn = document.getElementById('take-back-baton-btn');
         const batonStatusBadge = document.getElementById('baton-status-badge');
+        const menuTakeBackBatonBtn = document.getElementById('menu-take-back-baton-btn');
         const oratorsModal = document.getElementById('orators-modal');
         const oratorsCloseBtn = document.getElementById('orators-close-btn');
         const acceptBatonBtn = document.getElementById('accept-baton-btn');
@@ -2974,29 +2965,28 @@
             const isOwner = currentUser && batonState.owner && currentUser.id === batonState.owner.id;
             const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
 
-            // Update status badge
+            // This is the single baton control: it identifies the current
+            // holder and opens the owner's assignment menu.
             if (batonStatusBadge) {
-                if (isActiveOrator) {
-                    batonStatusBadge.innerHTML = '🎙️ You hold the Baton';
-                    batonStatusBadge.style.background = 'rgba(34, 197, 94, 0.2)';
-                    batonStatusBadge.style.color = '#4ade80';
-                    batonStatusBadge.style.borderColor = 'rgba(34, 197, 94, 0.4)';
-                } else if (batonState.active_orator) {
-                    const oratorName = batonState.active_orator.username || 'User';
-                    const isOwnerActive = batonState.owner && batonState.active_orator.id === batonState.owner.id;
-                    batonStatusBadge.innerHTML = isOwnerActive ? `👑 Owner (@${oratorName})` : `🎙️ Orator (@${oratorName})`;
-                    batonStatusBadge.style.background = 'rgba(251, 191, 36, 0.15)';
-                    batonStatusBadge.style.color = '#fbbf24';
-                    batonStatusBadge.style.borderColor = 'rgba(251, 191, 36, 0.3)';
-                }
+                const holder = batonState.active_orator || batonState.owner;
+                const holderName = holder && (holder.username || holder.name) || 'Unknown';
+                batonStatusBadge.textContent = `Baton: @${holderName}`;
+                batonStatusBadge.disabled = !isOwner;
+                batonStatusBadge.style.cursor = isOwner ? 'pointer' : 'default';
+                batonStatusBadge.title = isOwner ? 'Open baton menu' : `Baton is held by @${holderName}`;
+                batonStatusBadge.style.background = isActiveOrator ? 'rgba(34, 197, 94, 0.2)' : 'rgba(251, 191, 36, 0.15)';
+                batonStatusBadge.style.color = isActiveOrator ? '#4ade80' : '#fbbf24';
+                batonStatusBadge.style.borderColor = isActiveOrator ? 'rgba(34, 197, 94, 0.4)' : 'rgba(251, 191, 36, 0.3)';
             }
 
-            // Owner control buttons visibility
-            if (manageOratorsBtn) {
-                manageOratorsBtn.style.display = isOwner ? 'inline-flex' : 'none';
+            if (menuTakeBackBatonBtn) {
+                menuTakeBackBatonBtn.style.display = (isOwner && !isActiveOrator) ? 'inline-flex' : 'none';
             }
-            if (takeBackBatonBtn) {
-                takeBackBatonBtn.style.display = (isOwner && !isActiveOrator) ? 'inline-flex' : 'none';
+            // A baton transfer makes the owner a viewer.  Returning to the
+            // viewer URL is redundant and can cause an unnecessary reload;
+            // use "Take Back Baton" to become the active orator again.
+            if (roleToggleBtn) {
+                roleToggleBtn.style.display = isActiveOrator ? 'inline-flex' : 'none';
             }
 
             const wasActiveOrator = window._isActiveOratorState;
@@ -3018,9 +3008,9 @@
                 roleBadge.style.background = 'rgba(99, 102, 241, 0.2)';
                 roleBadge.style.borderColor = 'rgba(99, 102, 241, 0.4)';
                 oratorControls.style.display = 'none';
-                if (agentWs) {
-                    cleanupAgentConnection();
-                }
+                // Keep the live agent socket alive through baton transfers.
+                // The server ignores input from anyone who no longer holds it.
+                if (isRecording) stopMicStream();
             }
 
             // Check pending request targeting local user
@@ -3191,8 +3181,9 @@
             }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
         };
 
-        if (manageOratorsBtn) {
-            manageOratorsBtn.addEventListener('click', () => {
+        if (batonStatusBadge) {
+            batonStatusBadge.addEventListener('click', () => {
+                if (batonStatusBadge.disabled) return;
                 if (oratorsModal) {
                     oratorsModal.classList.add('active');
                     oratorsModal.setAttribute('aria-hidden', 'false');
@@ -3208,8 +3199,8 @@
                 }
             });
         }
-        if (takeBackBatonBtn) {
-            takeBackBatonBtn.addEventListener('click', takeBackBaton);
+        if (menuTakeBackBatonBtn) {
+            menuTakeBackBatonBtn.addEventListener('click', takeBackBaton);
         }
         if (acceptBatonBtn) {
             acceptBatonBtn.addEventListener('click', acceptBatonPass);
@@ -4740,19 +4731,23 @@
         </div>
     </div>
 
-    <!-- Manage Orators Modal -->
+    <!-- Baton Menu -->
     <div id="orators-modal" class="modal-overlay" role="dialog" aria-labelledby="orators-title" aria-hidden="true">
         <div class="modal-card" style="max-width: 500px; width: 90%;">
             <button id="orators-close-btn" class="modal-close-btn" aria-label="Close modal">✕</button>
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
                 <div style="font-size: 1.5rem;">👑</div>
                 <div>
-                    <h3 id="orators-title" style="margin: 0; font-size: 1.2rem; color: #fff;">Baton & Orator Management
+                    <h3 id="orators-title" style="margin: 0; font-size: 1.2rem; color: #fff;">Baton Menu
                     </h3>
-                    <div style="font-size: 0.85rem; color: #94a3b8;">Control who can speak and interact with the AI
-                        Agent</div>
+                    <div style="font-size: 0.85rem; color: #94a3b8;">Assign the baton or manage who can receive it.</div>
                 </div>
             </div>
+
+            <button id="menu-take-back-baton-btn" type="button"
+                style="display: none; width: 100%; margin-bottom: 1.25rem; justify-content: center; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 9px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; font-family: inherit;">
+                Take back baton
+            </button>
 
             <div style="margin-bottom: 1.5rem;">
                 <h4

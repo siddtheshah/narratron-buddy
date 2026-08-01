@@ -78,6 +78,18 @@ class TestCreateAgent(unittest.TestCase):
 
 
 class TestAgentSessionManager(unittest.TestCase):
+    def test_baton_handoff_ends_outgoing_audio_without_closing_session(self):
+        session = AgentSession.__new__(AgentSession)
+        session.active_controller_user_id = 1
+        session.send_activity_end = MagicMock()
+
+        session.set_active_controller(2)
+
+        session.send_activity_end.assert_called_once()
+        self.assertEqual(session.active_controller_user_id, 2)
+        self.assertFalse(session.can_accept_controller_input(1))
+        self.assertTrue(session.can_accept_controller_input(2))
+
     @patch("services.agent_manager.create_tool_bundle_for_session")
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")

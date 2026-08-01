@@ -144,16 +144,21 @@ def can_access_agent_websocket(
     current_user: Optional[dict] = None,
     join_key: Optional[str] = None,
 ) -> bool:
-    """Return True when the request can access the theater's agent websocket."""
+    """Return True when the request may access a theater's protected canvas data.
+
+    Canvas access belongs to the theater owner, the active baton holder, or
+    someone with a valid join key.  Transferring the microphone must not lock
+    the owner out of their own theater.
+    """
     if not deployment:
         return False
 
-    active_orator_id = deployment.get("active_orator_id")
     if current_user:
-        if active_orator_id is not None:
-            if current_user["id"] == active_orator_id:
-                return True
-        elif current_user["id"] == deployment["user_id"]:
+        current_user_id = current_user.get("id")
+        if current_user_id in {
+            deployment.get("user_id"),
+            deployment.get("active_orator_id"),
+        }:
             return True
 
     candidate_key = join_key or _canvas_access_grants(request).get(deployment["theater_id"])

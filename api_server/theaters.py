@@ -32,11 +32,11 @@ logger = logging.getLogger(__name__)
 
 
 async def _sync_agent_controller(theater_id: str, baton_state: dict) -> None:
-    """Disconnect a live agent socket when a baton transfer changes controller."""
+    """Update the controller without disconnecting the live agent session."""
     active_orator = baton_state.get("active_orator") or {}
     active_orator_id = active_orator.get("id")
     if active_orator_id is not None:
-        await agent_manager.revoke_agent_access_except(theater_id, active_orator_id)
+        agent_manager.set_active_controller(theater_id, active_orator_id)
 
 
 class ResolveJoinKeyRequest(BaseModel):

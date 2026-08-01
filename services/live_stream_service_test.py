@@ -92,6 +92,34 @@ class TestLiveStreamServiceAudioChunking(unittest.TestCase):
         blob = mock_session.send_realtime.call_args[0][0]
         self.assertEqual(len(blob.data), 500)
 
+    def test_discards_buffered_audio_after_baton_changes_hands(self):
+        mock_ws = AsyncMock()
+        mock_ws.accept = AsyncMock()
+        from fastapi import WebSocketDisconnect
+        mock_ws.receive = AsyncMock(side_effect=[{"bytes": bytes(500)}, WebSocketDisconnect()])
+
+        mock_session = MagicMock()
+        mock_session.add_websocket = AsyncMock()
+        mock_session.remove_websocket = AsyncMock()
+        # The frame was received while this user held the baton, but the
+        # baton changes before the disconnect flush forwards the partial data.
+        mock_session.can_accept_controller_input.side_effect = [True, False]
+
+        mock_agent_manager = MagicMock()
+        mock_agent_manager.get_or_create_session.return_value = mock_session
+
+        asyncio.run(
+            handle_live_websocket_connection(
+                websocket=mock_ws,
+                theater_id="test_baton_handoff",
+                agent_manager=mock_agent_manager,
+                user_id=1,
+                send_setup_complete_immediately=False,
+            )
+        )
+
+        mock_session.send_realtime.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

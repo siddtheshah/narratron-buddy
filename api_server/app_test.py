@@ -49,12 +49,12 @@ class TestCanAccessAgentWebsocket(unittest.TestCase):
 
         self.assertTrue(can_access_agent_websocket(request, deployment, current_user=current_user))
 
-    def test_rejects_owner_when_co_orator_is_active(self):
+    def test_allows_owner_when_co_orator_is_active(self):
         deployment = {"theater_id": "s1", "user_id": 42, "active_orator_id": 99, "join_key": "KEY-123"}
         request = SimpleNamespace(cookies={}, user=None)
         current_user = {"id": 42}
 
-        self.assertFalse(can_access_agent_websocket(request, deployment, current_user=current_user))
+        self.assertTrue(can_access_agent_websocket(request, deployment, current_user=current_user))
 
 
 class TestCanControlAgentWebsocket(unittest.TestCase):

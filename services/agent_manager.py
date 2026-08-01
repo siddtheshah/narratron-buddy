@@ -165,6 +165,7 @@ class AgentSession:
         self.live_request_queue = PriorityLiveRequestQueue(retention_window=0.5)
         self.websockets: Set[WebSocket] = set()
         self.websocket_user_ids: Dict[WebSocket, Optional[int]] = {}
+        self.active_controller_user_id: Optional[int] = None
         self.ws_lock = asyncio.Lock()
 
         # Retrieve bound tool instances safely
@@ -484,6 +485,27 @@ class AgentSession:
             except (RuntimeError, ConnectionResetError):
                 pass
 
+    def set_active_controller(self, user_id: Optional[int]) -> None:
+        """Hand off live input without disconnecting the agent session.
+
+        The Live API needs the previous audio activity to end before another
+        controller begins one.  Emit that boundary here rather than relying on
+        a browser frame that may arrive after its baton access was revoked.
+        """
+        if (
+            self.active_controller_user_id is not None
+            and self.active_controller_user_id != user_id
+        ):
+            self.send_activity_end()
+        self.active_controller_user_id = user_id
+
+    def can_accept_controller_input(self, user_id: Optional[int]) -> bool:
+        """Return whether this socket's user currently holds the baton."""
+        return (
+            self.active_controller_user_id is None
+            or user_id == self.active_controller_user_id
+        )
+
     @property
     def voice_minutes(self) -> float:
         """Calculate voice minutes from total raw PCM 16kHz audio input bytes (1,920,000 bytes/min)."""
@@ -730,3 +752,9 @@ class AgentSessionManager:
         session = self.get_session(theater_id)
         if session:
             await session.revoke_websockets_except(active_user_id)
+
+    def set_active_controller(self, theater_id: str, user_id: Optional[int]) -> None:
+        """Keep a live theater session connected when the baton changes hands."""
+        session = self.get_session(theater_id)
+        if session:
+            session.set_active_controller(user_id)
