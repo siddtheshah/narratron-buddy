@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from testing.base import BaseTestCase
-from components.canvas_state import CanvasStateManager
+from components.canvas_state import CanvasStateManager, MAX_AGENT_THOUGHT_LENGTH
 
 class TestCanvasStateManager(BaseTestCase):
 
@@ -22,6 +22,14 @@ class TestCanvasStateManager(BaseTestCase):
         manager.add_chat_message("Hello from test", author="user")
         msgs = manager.chat_manager.get_messages()
         self.assertEqual(msgs[-1]["text"], "Hello from test")
+
+        manager.set_agent_thought("I am choosing the next scene.")
+        self.assertEqual(manager.get_agent_thought()["text"], "I am choosing the next scene.")
+        self.assertGreater(manager.get_latest_state()["agent_thought"]["time"], 0)
+
+        manager.set_agent_thought("x" * (MAX_AGENT_THOUGHT_LENGTH + 50))
+        self.assertEqual(len(manager.get_agent_thought()["text"]), MAX_AGENT_THOUGHT_LENGTH)
+        self.assertTrue(manager.get_agent_thought()["text"].endswith("…"))
 
     def test_update_shown_image_empty_folder(self):
         with tempfile.TemporaryDirectory() as empty_dir:

@@ -13,6 +13,8 @@ from utils.theaters_paths import ensure_theaters_root
 
 logger = logging.getLogger(__name__)
 
+MAX_AGENT_THOUGHT_LENGTH = 360
+
 class CanvasStateManager:
     """Encapsulates state for the web canvas UI including music playback, shown images,
     chat manager history, WebSocket connections, and doodle drawings.
@@ -59,6 +61,12 @@ class CanvasStateManager:
         self.notes_activity_until: float = 0.0
         self.live_connection_active: bool = False
         self.live_connection_until: float = 0.0
+
+        # The agent's latest chat-tool update is kept separately from the
+        # public chat transcript. It is intentionally transient so a restarted
+        # theater does not present an outdated status as current.
+        self.current_agent_thought: str = ""
+        self.current_agent_thought_time: float = 0.0
 
         self.load_state_from_disk()
 
@@ -185,6 +193,19 @@ class CanvasStateManager:
 
     def add_chat_message(self, text: str, author: str = "agent"):
         self.chat_manager.add_message({"author": author, "text": text})
+
+    def set_agent_thought(self, text: str):
+        normalized_text = text.strip()
+        if len(normalized_text) > MAX_AGENT_THOUGHT_LENGTH:
+            normalized_text = normalized_text[: MAX_AGENT_THOUGHT_LENGTH - 1].rstrip() + "…"
+        self.current_agent_thought = normalized_text
+        self.current_agent_thought_time = time.time() if self.current_agent_thought else 0.0
+
+    def get_agent_thought(self) -> Dict[str, Any]:
+        return {
+            "text": self.current_agent_thought,
+            "time": self.current_agent_thought_time,
+        }
 
     def register_websocket(self, websocket: WebSocket, user: Optional[Dict[str, Any]] = None):
         if websocket not in self.active_ws_connections:
@@ -327,8 +348,9 @@ class CanvasStateManager:
                             "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
                             "history": formatted_history,
                             "tool_activity": self.get_tool_activity(),
+                            "agent_thought": self.get_agent_thought(),
                         }
-            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history, "tool_activity": self.get_tool_activity()}
+            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history, "tool_activity": self.get_tool_activity(), "agent_thought": self.get_agent_thought()}
             
         basename = os.path.basename(selected_file)
         
@@ -367,6 +389,7 @@ class CanvasStateManager:
             "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
             "history": formatted_history,
             "tool_activity": self.get_tool_activity(),
+            "agent_thought": self.get_agent_thought(),
         }
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, history_len={len(formatted_history)}, playlist={music_state['playlist']}")
         return res

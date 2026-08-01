@@ -135,6 +135,35 @@
             border-radius: 10px;
         }
 
+        .agent-thought-card {
+            margin: 0.7rem 0.8rem 0;
+            padding: 0.65rem 0.75rem;
+            border: 1px solid rgba(168, 85, 247, 0.38);
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(88, 28, 135, 0.34), rgba(30, 41, 59, 0.7));
+        }
+
+        .agent-thought-label {
+            margin-bottom: 0.3rem;
+            color: #e9d5ff;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .agent-thought-text {
+            color: #e2e8f0;
+            font-size: 0.82rem;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-word;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 4;
+            overflow: hidden;
+        }
+
         .chat-message {
             background: rgba(255, 255, 255, 0.05);
             padding: 0.75rem;
@@ -252,6 +281,10 @@
                 placeholder="Your Chat Name..." title="Click to set/change your chat display name">
             <span id="chat-name-badge"
                 style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
+        </div>
+        <div class="agent-thought-card" aria-live="polite">
+            <div class="agent-thought-label">📌 Narratron's current thought</div>
+            <div id="agent-thought-text" class="agent-thought-text">Waiting for Narratron to think…</div>
         </div>
         <div id="chat-messages"></div>
         <form id="chat-form">
@@ -418,6 +451,7 @@
         const chatMessages = document.getElementById('chat-messages');
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
+        const agentThoughtText = document.getElementById('agent-thought-text');
         let lastMsgCount = 0;
 
         async function fetchChat() {
@@ -439,6 +473,8 @@
             try {
                 const res = await fetch('/api/latest' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
                 const data = await res.json();
+                const thought = data.agent_thought && data.agent_thought.text;
+                agentThoughtText.textContent = thought || 'Waiting for Narratron to think…';
                 if (data.prompt) {
                     document.getElementById('popout-prompt-text').textContent = data.prompt;
                 }
