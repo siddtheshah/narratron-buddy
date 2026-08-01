@@ -34,7 +34,7 @@ To get started with GCloud, complete the following steps:
 ### Start the Combined Web Canvas & Bidi Agent (Recommended)
 This runs both the web viewer and the bidi agent WebSocket server on port 8000:
 ```powershell
-python combined_app.py
+python main.py
 ```
 - Open http://localhost:8000 to view the **Narratron Canvas**.
 

@@ -7,40 +7,30 @@ import logging
 import os
 from pathlib import Path
 import re
-import sys
 from typing import List, Optional
 import uuid
 import yaml
 import stripe
 
-from absl import flags
-from fastapi import FastAPI, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import Request, Response, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-import uvicorn
 
-from components.canvas_state_service import CanvasStateService
-from storage.database import DatabaseManager
-from pricing.pricing_controller import PricingController
-from components.theater_manager import TheaterManager, TheaterMetadata, ensure_theaters_root, extract_asset_package
-from utils.config_loader import get_app_config, get_theater_config, save_theater_config, get_theater_default_config
+from components.theater_manager import TheaterMetadata, extract_asset_package
+from object_registry import (
+    FLAGS,
+    agent_manager,
+    app,
+    canvas_states,
+    config,
+    db,
+    pricing_controller,
+    theater_manager,
+)
+from services.live_stream_service import handle_live_websocket_connection
+from utils.config_loader import get_theater_config, get_theater_default_config
 from utils.email_service import send_password_reset_email
-
-flags.DEFINE_boolean(
-    "allow_mock_payments",
-    False,
-    "Whether to allow mock/simulated credit purchases when live gateway key is unconfigured."
-)
-
-flags.DEFINE_boolean(
-    "testing_use_local_database",
-    False,
-    "If true, use the local SQLite database for authentication and deployments."
-)
-
-FLAGS = flags.FLAGS
-sys.argv = FLAGS(sys.argv, known_only=True)
 
 logger = logging.getLogger(__name__)
 
@@ -114,18 +104,9 @@ def render_about_markdown(markdown_source: str) -> str:
     flush_list()
     return "\n".join(blocks)
 
-config = get_app_config()
-
-app = FastAPI()
-
-# Theater workspace and database instances
-theater_manager = TheaterManager()
-
-if FLAGS.testing_use_local_database:
-    db = DatabaseManager.from_local("deployer.db")
-else:
-    db = DatabaseManager.from_live()
-
+# Static assets shared by the canvas templates.
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Playlists folder from config (absolute path resolution)
 playlists_folder = str((Path(__file__).parent / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
@@ -185,9 +166,6 @@ class SaveTheaterConfigRequest(BaseModel):
 
 class MicSensitivityRequest(BaseModel):
     mic_sensitivity: float
-
-
-canvas_states = CanvasStateService(theater_manager)
 
 
 _SAFE_PARAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.() \-]*$')
@@ -313,6 +291,141 @@ def can_access_agent_websocket(
 
     candidate_key = join_key or _canvas_access_grants(request).get(deployment["theater_id"])
     return _valid_join_key(deployment["join_key"], candidate_key)
+
+
+def get_theater_owner_credits(theater_id: str):
+    """Return whether the theater owner can run an agent and their balance."""
+    deployment = db.get_deployment(theater_id)
+    if not deployment:
+        return False, 0.0, None
+    owner_id = deployment.get("user_id")
+    if owner_id is None:
+        return False, 0.0, None
+    owner = db.get_user_by_id(owner_id)
+    if not owner:
+        return False, 0.0, owner_id
+    credits = owner.get("credits", 0.0)
+    return credits > 0.0, credits, owner_id
+
+
+# ========================================
+# Agent lifecycle and live-stream API endpoints
+# ========================================
+
+@app.post("/api/theaters/{theater_id}/agent/start")
+async def start_agent_endpoint(theater_id: str):
+    """Create an in-memory agent session when its owner has credits."""
+    has_credits, credits_bal, _ = get_theater_owner_credits(theater_id)
+    if not has_credits:
+        agent_manager.stop_session(theater_id=theater_id)
+        return JSONResponse(
+            status_code=402,
+            content={
+                "status": "error",
+                "detail": "Insufficient credits (0 or fewer). Please top up credits on the deploy page.",
+                "insufficient_credits": True,
+                "credits": credits_bal,
+                "theater_id": theater_id,
+                "agent_running": False,
+            },
+        )
+    agent_session = agent_manager.get_or_create_session(
+        theater_id=theater_id,
+        canvas_state_service=canvas_states,
+        use_in_memory_artifacts=FLAGS.use_in_memory_artifacts,
+    )
+    return {
+        "status": agent_session.status,
+        "theater_id": theater_id,
+        "agent_running": True,
+        "credits": credits_bal,
+        "insufficient_credits": False,
+    }
+
+
+@app.post("/api/theaters/{theater_id}/agent/stop")
+async def stop_agent_endpoint(theater_id: str):
+    stopped = agent_manager.stop_session(theater_id=theater_id)
+    return {
+        "status": "stopped" if stopped else "not_found",
+        "theater_id": theater_id,
+        "agent_running": False,
+    }
+
+
+@app.get("/api/theaters/{theater_id}/agent/status")
+async def get_agent_status_endpoint(theater_id: str):
+    has_credits, credits_bal, _ = get_theater_owner_credits(theater_id)
+    if not has_credits:
+        session = agent_manager.get_session(theater_id=theater_id)
+        if session and session.status != "stopped":
+            agent_manager.stop_session(theater_id=theater_id)
+        return {
+            "theater_id": theater_id,
+            "agent_running": False,
+            "websocket_connected": False,
+            "status": "stopped",
+            "insufficient_credits": True,
+            "credits": credits_bal,
+        }
+
+    session = agent_manager.get_session(theater_id=theater_id)
+    if not session or session.status == "stopped":
+        return {
+            "theater_id": theater_id,
+            "agent_running": False,
+            "websocket_connected": False,
+            "status": "stopped",
+            "insufficient_credits": False,
+            "credits": credits_bal,
+        }
+    return {
+        "theater_id": theater_id,
+        "agent_running": True,
+        "websocket_connected": session.websocket_connected,
+        "status": session.status,
+        "created_at": session.created_at,
+        "last_active_at": session.last_active_at,
+        "insufficient_credits": False,
+        "credits": credits_bal,
+    }
+
+
+@app.websocket("/ws/{theater_id}/agent")
+@app.websocket("/ws/{user_id}/{theater_id}")
+async def agent_websocket_endpoint(
+    websocket: WebSocket,
+    theater_id: str,
+    user_id: Optional[str] = None,
+) -> None:
+    """Serve bidirectional audio for an authorized theater participant."""
+    current_user = get_current_user(websocket)
+    if not current_user and user_id and user_id.isdigit():
+        current_user = db.get_user_by_id(int(user_id))
+
+    deployment = db.get_deployment(theater_id)
+    if not deployment or not can_access_agent_websocket(websocket, deployment, current_user=current_user):
+        await websocket.close(code=1008)
+        return
+
+    has_credits, credits_bal, _ = get_theater_owner_credits(theater_id)
+    if not has_credits:
+        agent_manager.stop_session(theater_id=theater_id)
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "insufficient_credits",
+            "detail": "Theater owner has <= 0 credits. Agent stopped.",
+            "credits": credits_bal,
+        })
+        await websocket.close(code=1008)
+        return
+
+    await handle_live_websocket_connection(
+        websocket=websocket,
+        theater_id=theater_id,
+        agent_manager=agent_manager,
+    )
+    agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)
 
 
 
@@ -630,7 +743,7 @@ def get_pricing_rates(
     if usd_amount is not None and usd_amount < 0:
         raise HTTPException(status_code=400, detail="usd_amount must be non-negative.")
 
-    pricing = getattr(db, "pricing_controller", None) or PricingController.from_env()
+    pricing = pricing_controller
     rates = pricing.get_rates()
 
     calculation = {}

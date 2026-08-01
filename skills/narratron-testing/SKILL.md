@@ -66,7 +66,7 @@ testing/
 ### Overview
 `evaluate_narration.py` performs automated end-to-end video evaluation:
 1. Transcodes input audio narration to 16kHz mono WAV.
-2. Boots `combined_app.py` FastAPI server on a free port with preloaded test artifacts (`USE_IN_MEMORY_ARTIFACTS=1`).
+2. Boots `main.py` FastAPI server on a free port with preloaded test artifacts (`USE_IN_MEMORY_ARTIFACTS=1`).
 3. Launches a Playwright browser context, opens the Orator Canvas (`http://127.0.0.1:<port>/?role=orator`), and records WebM video.
 4. Streams narration audio chunks via WebSocket.
 5. Muxes video recording with audio.

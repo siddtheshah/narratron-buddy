@@ -20,7 +20,8 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy application source
-COPY combined_app.py .
+COPY object_registry.py .
+COPY main.py .
 COPY web_viewer_app.py .
 COPY evaluate_narration.py .
 COPY app.yaml .
@@ -53,4 +54,4 @@ USER appuser
 EXPOSE 8080
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
-CMD ["sh", "-c", "python combined_app.py --use_cloud_theater_storage --host=0.0.0.0 --port=8080"]
+CMD ["sh", "-c", "python main.py --use_cloud_theater_storage --host=0.0.0.0 --port=8080"]

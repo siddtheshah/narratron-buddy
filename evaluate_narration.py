@@ -394,7 +394,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
     python_exe = sys.executable
     server_cmd = [
         python_exe, "-m", "uvicorn", 
-        "combined_app:app", 
+        "main:app",
         "--host", "127.0.0.1", 
         "--port", str(port),
         "--log-level", "info"
