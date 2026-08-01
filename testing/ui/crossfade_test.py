@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from api_server.shared import PROJECT_ROOT
 from components.theater_manager import TheaterManager
 from testing.ui.base import UITestCase
 
@@ -62,9 +63,7 @@ class TestCrossfade(UITestCase):
             self.assertEqual(state["effect"], effect)
 
     def test_canvas_template_supports_crossfade(self):
-        import web_viewer_app
-
-        template_path = Path(web_viewer_app.__file__).with_name("templates") / "canvas.html"
+        template_path = PROJECT_ROOT / "templates" / "canvas.html"
         content = template_path.read_text(encoding="utf-8")
 
         for selector in (".t-crossfade", ".t-fade"):
@@ -73,9 +72,7 @@ class TestCrossfade(UITestCase):
         self.assertIn("data.transition", content)
 
     def test_canvas_template_contains_agent_activity_indicators(self):
-        import web_viewer_app
-
-        template_path = Path(web_viewer_app.__file__).with_name("templates") / "canvas.html"
+        template_path = PROJECT_ROOT / "templates" / "canvas.html"
         content = template_path.read_text(encoding="utf-8")
         self.assertIn('id="agent-drawing-indicator"', content)
         self.assertIn('id="agent-notes-indicator"', content)

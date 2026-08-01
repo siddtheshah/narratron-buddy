@@ -22,7 +22,6 @@ COPY --from=builder /install /usr/local
 # Copy application source
 COPY object_registry.py .
 COPY main.py .
-COPY web_viewer_app.py .
 COPY evaluate_narration.py .
 COPY app.yaml .
 COPY theater_default.yaml .
@@ -30,6 +29,7 @@ COPY ABOUT.md .
 
 # Copy package directories
 COPY components/ components/
+COPY api_server/ api_server/
 COPY deployer/ deployer/
 COPY storage/ storage/
 COPY services/ services/

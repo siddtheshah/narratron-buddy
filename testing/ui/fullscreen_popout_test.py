@@ -8,7 +8,7 @@ from api_server.app import app
 class TestFullscreenPopout(UITestCase):
     def setUp(self):
         super().setUp()
-        access_patcher = patch("api_server.app._require_canvas_access")
+        access_patcher = patch("api_server.pages._require_canvas_access")
         access_patcher.start()
         self.addCleanup(access_patcher.stop)
         self.client = TestClient(app)

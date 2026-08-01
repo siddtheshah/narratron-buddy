@@ -5,10 +5,12 @@ import shutil
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
-from api_server.app import app, FLAGS, db, theater_manager, _is_mock_payment_mode
+from api_server import app, FLAGS, db, theater_manager
+from api_server.payments import _is_mock_payment_mode
 
 
 class TestPaymentsFlow(BaseTestCase):
@@ -64,6 +66,23 @@ class TestPaymentsFlow(BaseTestCase):
         data = res.json()
         self.assertEqual(data["status"], "ok")
         self.assertEqual(data["credits_added"], 100.0)
+
+    def test_package_checkout_uses_configured_stripe_price_id(self):
+        """Predefined packs must use Stripe Price objects, never ad-hoc prices."""
+        checkout_session = MagicMock(id="cs_pro", url="https://checkout.example/pro")
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
+             patch("api_server.payments.stripe.checkout.Session.create", return_value=checkout_session) as create:
+            FLAGS.allow_mock_payments = False
+            FLAGS.testing_use_local_database = False
+            response = self.client.post("/api/payments/buy-credits", json={
+                "package_id": "pro", "payment_method": "stripe_checkout",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(create.call_args.kwargs["line_items"], [{
+            "price": "price_1TzbisRjBSgVFVM6Jmyk0IcL", "quantity": 1,
+        }])
+        self.assertNotIn("payment_method_types", create.call_args.kwargs)
 
     def test_verify_session_endpoint(self):
         """Verify verify-session endpoint handles mock and unauthenticated calls."""

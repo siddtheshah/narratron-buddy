@@ -1,0 +1,574 @@
+"""Theater deployer, asset routes, baton passing, and theater management API endpoints."""
+
+import asyncio
+import json
+import logging
+import os
+from typing import Optional
+import uuid
+import yaml
+
+from fastapi import Request, Response, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from api_server.shared import (
+    app,
+    db,
+    theater_manager,
+    canvas_states,
+    get_current_user,
+    _require_canvas_access,
+    _safe_path_param,
+    _grant_canvas_access,
+    _valid_join_key,
+)
+from components.theater_manager import TheaterMetadata, extract_asset_package
+from utils.config_loader import get_theater_config, get_theater_default_config
+
+
+logger = logging.getLogger(__name__)
+
+
+class ResolveJoinKeyRequest(BaseModel):
+    join_key: str
+
+class SaveTheaterConfigRequest(BaseModel):
+    config_yaml: str
+
+class AddAllowedOratorRequest(BaseModel):
+    target_user_id: int
+
+class RequestBatonRequest(BaseModel):
+    target_user_id: int
+    timeout_seconds: Optional[int] = 30
+
+
+# ========================================
+# Theater Asset Dynamic Routes
+# ========================================
+
+@app.get("/theaters/{theater_id}/references/{filename}")
+async def serve_theater_reference(request: Request, theater_id: str, filename: str):
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+    _safe_path_param(filename, "filename")
+    file_path = theater_manager.theater(theater_id).references_dir() / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Theater reference file not found")
+    return FileResponse(file_path)
+
+@app.get("/theaters/{theater_id}/playlists/{playlist_name}/{filename}")
+async def serve_theater_playlist_track(request: Request, theater_id: str, playlist_name: str, filename: str):
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+    _safe_path_param(playlist_name, "playlist_name")
+    _safe_path_param(filename, "filename")
+    file_path = theater_manager.theater(theater_id).playlists_dir() / playlist_name / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Theater playlist track not found")
+    return FileResponse(file_path)
+
+@app.get("/theaters/{theater_id}/output/{filename}")
+async def serve_theater_output(request: Request, theater_id: str, filename: str):
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+    _safe_path_param(filename, "filename")
+    output_dir = theater_manager.theater(theater_id).output_dir()
+    file_path = output_dir / filename
+    if not file_path.exists():
+        # Check subdirectories of output directory (e.g. output/images/filename)
+        sub_path = output_dir / "images" / filename
+        if sub_path.exists():
+            file_path = sub_path
+        else:
+            found = list(output_dir.rglob(filename))
+            if found:
+                file_path = found[0]
+            else:
+                raise HTTPException(status_code=404, detail="Theater output file not found")
+    return FileResponse(file_path)
+
+# ========================================
+# Deployer & Theater API Endpoints
+# ========================================
+
+@app.post("/api/theaters/resolve-join-key")
+def resolve_join_key(req: ResolveJoinKeyRequest, request: Request, response: Response):
+    dep = db.get_theater_by_join_key(req.join_key)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Invalid Join Key. No matching active theater found.")
+
+    meta = theater_manager.get_theater(dep["theater_id"])
+    if not meta:
+        db_meta = db.get_theater_metadata_from_db(dep["theater_id"])
+        if not db_meta:
+            raise HTTPException(status_code=404, detail="Theater files no longer exist.")
+        meta = TheaterMetadata(**db_meta)
+
+    _grant_canvas_access(response, request, meta.theater_id, dep["join_key"])
+    return {"status": "ok", "theater_id": meta.theater_id, "name": meta.name, "user_id": dep.get("user_id")}
+
+@app.get("/api/theaters")
+def list_theaters(request: Request):
+    """List all deployed theaters from disk and database without eagerly reconstructing files."""
+    current_user = get_current_user(request)
+    current_user_id = current_user["id"] if current_user else None
+
+    # Get theaters currently on disk
+    disk_theaters = theater_manager.list_theaters()
+    all_theaters_dict = {s.theater_id: s.model_dump() for s in disk_theaters}
+
+    # Add DB theaters that are not on disk yet (without writing files to disk!)
+    for sid in db.get_all_exported_theater_ids():
+        if sid not in all_theaters_dict:
+            db_meta = db.get_theater_metadata_from_db(sid)
+            if db_meta:
+                all_theaters_dict[sid] = db_meta
+
+    # Fetch last_used timestamps map from DB
+    activity_map = db.get_theaters_last_used()
+
+    result = []
+    for sid, s_dict in all_theaters_dict.items():
+        dep = db.get_deployment(sid)
+        owner_id = dep["user_id"] if dep else None
+        is_owner = (current_user_id is not None and owner_id == current_user_id)
+
+        s_dict["is_owner"] = is_owner
+        last_used = activity_map.get(sid) or s_dict.get("created_at") or ""
+        s_dict["last_used_at"] = last_used
+
+        # Hide join_key if not owner
+        if not is_owner:
+            s_dict["join_key"] = "🔒 Owner Only"
+            
+        result.append(s_dict)
+
+    # Sort: owned theaters first, then by last_used_at desc, then created_at desc
+    result.sort(key=lambda x: (x["is_owner"], x.get("last_used_at", "") or x.get("created_at", "")), reverse=True)
+    return result
+
+@app.get("/api/theaters/{theater_id}")
+async def get_theater(theater_id: str, request: Request):
+    """Retrieve metadata and mounted assets for a specific theater."""
+    _require_canvas_access(request, theater_id)
+    theater_dir = theater_manager.theater(theater_id).directory()
+    if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
+        db.reconstruct_theater_from_db(theater_id, theater_dir)
+
+    meta = theater_manager.get_theater(theater_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Theater not found")
+    
+    current_user = get_current_user(request, record_activity=False)
+    dep = db.get_deployment(theater_id)
+    owner_id = dep["user_id"] if dep else None
+    is_owner = (current_user is not None and owner_id == current_user["id"])
+
+    # Analytics must not hold up the canvas reload, especially with a remote DB.
+    client_ip = request.client.host if request.client else None
+    asyncio.create_task(
+        db.record_theater_view_async(
+            theater_id,
+            current_user["id"] if current_user else None,
+            client_ip,
+        )
+    )
+
+    meta_dict = meta.model_dump()
+    meta_dict["is_owner"] = is_owner
+    if not is_owner:
+        meta_dict["join_key"] = "🔒 Owner Only"
+
+    return {
+        "metadata": meta_dict,
+        "references": theater_manager.get_theater_references(theater_id),
+        "playlists": theater_manager.get_theater_playlists(theater_id),
+    }
+
+@app.get("/api/theaters/{theater_id}/config")
+async def get_theater_config_endpoint(theater_id: str, request: Request):
+    """Get raw theater.yaml configuration for a theater session."""
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+
+    base_dir = theater_manager.base_dir
+    theater_dir = theater_manager.theater(theater_id).directory()
+    yaml_path = theater_dir / "theater.yaml"
+
+    if not yaml_path.exists():
+        get_theater_config(theater_id, base_dir=base_dir, db=db)
+
+    if yaml_path.exists():
+        try:
+            content = yaml_path.read_text(encoding="utf-8")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to read theater.yaml: {e}")
+    else:
+        default_config = get_theater_default_config()
+        content = yaml.safe_dump(default_config, default_flow_style=False)
+
+    return {"theater_id": theater_id, "config_yaml": content}
+
+@app.post("/api/theaters/{theater_id}/config")
+async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRequest, request: Request):
+    """Save raw theater.yaml configuration directly to local theater directory and DB."""
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+
+    try:
+        config_data = yaml.safe_load(req.config_yaml)
+        if config_data is None:
+            config_data = {}
+        if not isinstance(config_data, dict):
+            raise HTTPException(status_code=400, detail="Invalid YAML: Root structure must be a mapping/object.")
+    except yaml.YAMLError as err:
+        raise HTTPException(status_code=400, detail=f"YAML Syntax Error: {err}")
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {err}")
+
+    # Save to local theater directory
+    base_dir = theater_manager.base_dir
+    theater_dir = theater_manager.theater(theater_id).directory()
+    theater_dir.mkdir(parents=True, exist_ok=True)
+    yaml_path = theater_dir / "theater.yaml"
+
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        f.write(req.config_yaml)
+
+    # Save to DB
+    if db is not None and hasattr(db, "save_theater_config"):
+        try:
+            db.save_theater_config(theater_id, config_data)
+        except Exception as e:
+            logger.warning(f"[theaters] Warning: Failed to save DB config for {theater_id}: {e}")
+
+    return {
+        "status": "ok",
+        "message": "theater.yaml saved directly to DB and theater directory. Restart your agent to apply changes.",
+        "theater_id": theater_id
+    }
+
+@app.post("/api/theaters/format-yaml")
+async def format_yaml_endpoint(req: SaveTheaterConfigRequest):
+    """Validate and format a YAML string, returning pretty-printed YAML or syntax error details."""
+    try:
+        data = yaml.safe_load(req.config_yaml)
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Invalid YAML: Root structure must be a mapping/object.")
+        formatted = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+        return {"status": "ok", "formatted_yaml": formatted}
+    except yaml.YAMLError as err:
+        raise HTTPException(status_code=400, detail=f"YAML Syntax Error: {err}")
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Failed to format YAML: {err}")
+
+@app.post("/api/theaters/create-and-deploy")
+async def create_and_deploy_theater(request: Request):
+    """API endpoint to handle multi-file asset upload and deploy a theater."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required to deploy theaters.")
+
+    form = await request.form()
+    name = str(form.get("name", "Narratron Theater"))
+    style = str(form.get("style", "")).strip()
+
+    reference_files = []
+    playlists_data = {}
+
+    for key, value in form.multi_items():
+        filename = getattr(value, "filename", None)
+        if filename:
+            content = await value.read()
+            if content:
+                # Check for uploaded ZIP package
+                if key in ("asset_zip", "asset_package") or filename.lower().endswith(".zip"):
+                    try:
+                        zip_refs, zip_playlists, zip_style = extract_asset_package(content)
+                    except ValueError as ve:
+                        raise HTTPException(status_code=400, detail=str(ve))
+                    reference_files.extend(zip_refs)
+                    for pl_name, tracks in zip_playlists.items():
+                        if pl_name not in playlists_data:
+                            playlists_data[pl_name] = []
+                        playlists_data[pl_name].extend(tracks)
+                    if zip_style and not style:
+                        style = zip_style
+                elif key in ("asset_folder_files", "asset_files"):
+                    # Folder upload with relative path info
+                    rel_path = filename.replace("\\", "/")
+                    parts = [p for p in rel_path.split("/") if p]
+                    clean_name = parts[-1] if parts else filename
+
+                    if "references" in parts or (
+                        clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+                        and "playlists" not in parts
+                    ):
+                        reference_files.append((rel_path, content))
+                    elif "playlists" in parts:
+                        idx = parts.index("playlists")
+                        pl_name = parts[idx + 1] if idx + 1 < len(parts) - 1 else "default"
+                        if clean_name.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
+                            if pl_name not in playlists_data:
+                                playlists_data[pl_name] = []
+                            playlists_data[pl_name].append((clean_name, content))
+                    elif clean_name.lower() == "style.txt" and not style:
+                        try:
+                            style = content.decode("utf-8").strip()
+                        except Exception:
+                            pass
+                elif key == "reference_files":
+                    reference_files.append((filename, content))
+                elif key.startswith("playlist_"):
+                    pl_name = key[len("playlist_"):]
+                    if pl_name not in playlists_data:
+                        playlists_data[pl_name] = []
+                    playlists_data[pl_name].append((filename, content))
+
+    raw_config_param = form.get("theater_config")
+    theater_config = None
+    if raw_config_param:
+        try:
+            theater_config = json.loads(raw_config_param) if isinstance(raw_config_param, str) else raw_config_param
+        except Exception:
+            pass
+
+    theater_id = f"theater_{uuid.uuid4().hex[:8]}"
+    metadata = theater_manager.create_theater(
+        name=name,
+        theater_id=theater_id,
+        reference_files=reference_files,
+        playlists_data=playlists_data,
+        theater_config=theater_config,
+        style=style or None,
+    )
+    deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
+
+    # Record deployment & deduct credits (0.0 cost)
+    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0, theater_config=theater_config)
+
+    res_dict = deployed_meta.model_dump()
+    res_dict["is_owner"] = True
+    asyncio.create_task(
+        db.persist_canvas_theater_async(
+            canvas_states,
+            theater_manager,
+            deployed_meta.theater_id,
+            user["id"],
+            deployed_meta.name,
+        )
+    )
+    return {"status": "ok", "theater_id": deployed_meta.theater_id, "theater": res_dict}
+
+@app.post("/api/theaters/{theater_id}/deploy")
+def deploy_existing_theater(theater_id: str, request: Request):
+    """Deploy an existing created theater."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    theater_dir = theater_manager.theater(theater_id).directory()
+    if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
+        db.reconstruct_theater_from_db(theater_id, theater_dir)
+    
+    dep = db.get_deployment(theater_id)
+    if dep and dep["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the theater owner can deploy this theater.")
+
+    # Stop any other currently deployed theaters
+    existing_theaters = theater_manager.list_theaters()
+    for s in existing_theaters:
+        if s.theater_id != theater_id and s.status == "deployed":
+            try:
+                theater_manager.stop_theater(s.theater_id)
+            except Exception:
+                pass
+
+    meta = theater_manager.deploy_theater(theater_id)
+    return {"status": "ok", "theater": meta}
+
+@app.delete("/api/theaters/{theater_id}")
+def destroy_theater(theater_id: str, request: Request):
+    """Remove and clean up a local theater instance. Requires owner login."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required to delete theaters.")
+
+    dep = db.get_deployment(theater_id)
+    if dep and dep.get("user_id") is not None and dep["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can delete this theater.")
+
+    disk_removed = theater_manager.destroy_theater(theater_id)
+    db_deleted = db.delete_deployment(theater_id)
+    canvas_states.states.pop(theater_id, None)
+
+    if not (disk_removed or db_deleted):
+        raise HTTPException(status_code=404, detail="Theater not found or could not be removed")
+
+    return {"status": "ok", "theater_id": theater_id}
+
+# ========================================
+# Baton Passing API Endpoints
+# ========================================
+
+@app.get("/api/theaters/{theater_id}/baton")
+async def get_theater_baton_state(theater_id: str, request: Request):
+    _require_canvas_access(request, theater_id)
+    state = db.get_theater_baton_state(theater_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Theater baton state not found.")
+    
+    cs = canvas_states.get(theater_id)
+    state["active_viewers"] = cs.get_active_viewers()
+    return state
+
+
+@app.post("/api/theaters/{theater_id}/baton/allowed_orators")
+async def add_allowed_orator(theater_id: str, req: AddAllowedOratorRequest, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.add_allowed_orator(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
+        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/theaters/{theater_id}/baton/allowed_orators/{target_user_id}")
+async def remove_allowed_orator(theater_id: str, target_user_id: int, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.remove_allowed_orator(theater_id, owner_id=user["id"], target_user_id=target_user_id)
+        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/theaters/{theater_id}/baton/request")
+async def request_baton_pass(theater_id: str, req: RequestBatonRequest, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.request_baton(
+            theater_id,
+            owner_id=user["id"],
+            target_user_id=req.target_user_id,
+            timeout_seconds=req.timeout_seconds or 30
+        )
+        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/theaters/{theater_id}/baton/accept")
+async def accept_baton_pass(theater_id: str, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.accept_baton(theater_id, target_user_id=user["id"])
+        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/theaters/{theater_id}/baton/decline")
+async def decline_baton_pass(theater_id: str, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.decline_baton(theater_id, target_user_id=user["id"])
+        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/theaters/{theater_id}/baton/takeback")
+async def take_back_baton(theater_id: str, request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    
+    try:
+        updated_state = db.take_back_baton(theater_id, owner_id=user["id"])
+        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        return updated_state
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/theaters/{theater_id}/save", status_code=202)
+async def save_theater_to_db(theater_id: str, request: Request):
+    """Save canvas theater state and image assets to SQLite database on user demand."""
+    meta = theater_manager.get_theater(theater_id)
+    dep = db.get_deployment(theater_id)
+    user_id = dep["user_id"] if dep else None
+    name = meta.name if meta else theater_id
+
+    asyncio.create_task(
+        db.persist_canvas_theater_async(
+            canvas_states,
+            theater_manager,
+            theater_id,
+            user_id,
+            name,
+        )
+    )
+    return {"status": "queued", "theater_id": theater_id}
+
+@app.get("/api/theaters/{theater_id}/export-assets")
+def export_theater_assets(theater_id: str, request: Request):
+    """Package and export all theater assets into a ZIP file."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    theater_dir = theater_manager.theater(theater_id).directory()
+    if not theater_dir.exists():
+        db.reconstruct_theater_from_db(theater_id, theater_dir)
+
+    # Ensure current displayed image is saved into the theater directory
+    cs = canvas_states.get(theater_id)
+    cs.export_theater_data(theater_dir=theater_dir)
+
+    import io
+    import zipfile
+    from fastapi.responses import Response
+
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        if theater_dir.exists():
+            for file_path in theater_dir.rglob("*"):
+                if file_path.is_file():
+                    arc_name = file_path.relative_to(theater_dir)
+                    zip_file.write(file_path, arcname=str(arc_name).replace("\\", "/"))
+
+    zip_buffer.seek(0)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{theater_id}_assets.zip"'
+    }
+    return Response(content=zip_buffer.getvalue(), media_type="application/zip", headers=headers)

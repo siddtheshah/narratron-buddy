@@ -6,6 +6,7 @@ configuration all operate on the same instances.
 """
 
 import sys
+from pathlib import Path
 
 from absl import flags
 from dotenv import load_dotenv
@@ -17,6 +18,12 @@ from pricing.pricing_controller import PricingController
 from services.agent_manager import AgentSessionManager
 from storage.database import DatabaseManager
 from utils.config_loader import get_app_config
+
+
+# Repository-level paths are shared application constants, alongside the
+# service instances below.  Route modules should import this from the registry
+# rather than deriving their own location from ``__file__``.
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 flags.DEFINE_boolean(

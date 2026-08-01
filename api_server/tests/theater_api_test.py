@@ -10,7 +10,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
-from api_server.app import app, theater_manager, db, FLAGS
+from api_server.app import app, theater_manager, db, FLAGS, canvas_states
 
 
 class TestTheaterAPI(BaseTestCase):
@@ -246,6 +246,50 @@ class TestTheaterAPI(BaseTestCase):
         del_res = self.client.delete(f"/api/theaters/{theater_id}")
         self.assertEqual(del_res.status_code, 200)
         self.assertEqual(del_res.json()["status"], "ok")
+
+    def test_theater_output_route_uses_theater_bound_output_directory(self):
+        reg_res = self.client.post("/api/auth/register", json={
+            "username": "output_tester",
+            "email": "output@example.com",
+            "password": "Password123",
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        create_res = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Output Route Test Theater"},
+        )
+        self.assertEqual(create_res.status_code, 200)
+        theater_id = create_res.json()["theater_id"]
+        output_file = theater_manager.theater(theater_id).output_dir() / "test-image.jpg"
+        output_file.write_bytes(b"test-image")
+
+        response = self.client.get(f"/theaters/{theater_id}/output/test-image.jpg")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"test-image")
+
+    def test_theater_owner_can_toggle_viewer_collaboration(self):
+        reg_res = self.client.post("/api/auth/register", json={
+            "username": "collab_owner",
+            "email": "collab@example.com",
+            "password": "Password123",
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        create_res = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Collaboration Test Theater"},
+        )
+        self.assertEqual(create_res.status_code, 200)
+        theater_id = create_res.json()["theater_id"]
+
+        response = self.client.post(
+            f"/api/theaters/{theater_id}/collab",
+            json={"enabled": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["viewer_collab_enabled"])
+        self.assertTrue(canvas_states.get(theater_id).viewer_collab_enabled)
 
     def test_destroy_theater_not_on_disk(self):
         reg_res = self.client.post("/api/auth/register", json={

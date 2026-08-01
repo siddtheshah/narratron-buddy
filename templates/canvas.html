@@ -3320,6 +3320,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
                 });
+                if (!res.ok) {
+                    throw new Error(`Chat request failed: ${res.status}`);
+                }
                 fetchChat();
 
                 // If it was a suggestion, also refresh suggestions
