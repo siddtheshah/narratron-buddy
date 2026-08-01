@@ -152,13 +152,13 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_session_service = MagicMock()
         mock_session_service.get_session = AsyncMock(return_value=None)
         mock_session_service.create_session = AsyncMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = mock_session_service
 
         session = AgentSession(
             theater_id="test_sess",
-            agent=mock_agent,
             runner=mock_runner,
-            session_service=mock_session_service,
-            artifact_service=MagicMock(),
+            tool_bundle=MagicMock(),
         )
 
         asyncio.run(session._run_downstream())
@@ -180,13 +180,13 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
 
         session = AgentSession(
             theater_id="test_suppress",
-            agent=mock_agent,
             runner=mock_runner,
-            session_service=MagicMock(),
-            artifact_service=MagicMock(),
+            tool_bundle=MagicMock(),
         )
 
         session.live_request_queue = MagicMock()
@@ -226,13 +226,13 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
 
         session = AgentSession(
             theater_id="test_reconnect",
-            agent=mock_agent,
             runner=mock_runner,
-            session_service=MagicMock(),
-            artifact_service=MagicMock(),
+            tool_bundle=MagicMock(),
         )
 
         session.live_request_queue = MagicMock()
@@ -247,20 +247,22 @@ class TestAgentSessionManager(unittest.TestCase):
             self.assertTrue(session.websocket_connected)
             mock_send_canvas.assert_called_once_with(force=True)
 
-    def test_usage_tracking_and_db_flushing(self):
+    @patch("services.agent_manager.AgentSession._get_database")
+    def test_usage_tracking_and_db_flushing(self, mock_get_database):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_runner = MagicMock()
         mock_db = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        mock_get_database.return_value = mock_db
+        mock_db.get_deployment.return_value = {"user_id": 123}
+        mock_db.record_user_usage.return_value = {"credits": 1.0}
 
         session = AgentSession(
             theater_id="test_usage",
-            agent=mock_agent,
             runner=mock_runner,
-            session_service=MagicMock(),
-            artifact_service=MagicMock(),
-            db=mock_db,
-            owner_user_id=123,
+            tool_bundle=MagicMock(),
         )
 
         # 1. Record image created -> triggers immediate flush
@@ -302,13 +304,12 @@ class TestAgentSessionManager(unittest.TestCase):
         tool_bundle = ToolBundle([sample_tool])
         mock_agent = MagicMock()
         mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
 
         session = AgentSession(
             theater_id="test_inject",
-            agent=mock_agent,
             runner=mock_runner,
-            session_service=MagicMock(),
-            artifact_service=MagicMock(),
             tool_bundle=tool_bundle,
         )
         session.live_request_queue = MagicMock()
@@ -325,12 +326,13 @@ class TestAgentSessionManager(unittest.TestCase):
 
     def test_enable_tool_injection_flag_default(self):
         async def run_test():
+            default_runner = MagicMock()
+            default_runner.agent = MagicMock()
+            default_runner.session_service = MagicMock()
             session_default = AgentSession(
                 theater_id="test_flag_default",
-                agent=MagicMock(),
-                runner=MagicMock(),
-                session_service=MagicMock(),
-                artifact_service=MagicMock(),
+                runner=default_runner,
+                tool_bundle=MagicMock(),
             )
             self.assertFalse(session_default.enable_tool_injection)
             session_default.start_background_tasks()
@@ -340,12 +342,13 @@ class TestAgentSessionManager(unittest.TestCase):
             if session_default.refresh_task:
                 session_default.refresh_task.cancel()
 
+            enabled_runner = MagicMock()
+            enabled_runner.agent = MagicMock()
+            enabled_runner.session_service = MagicMock()
             session_enabled = AgentSession(
                 theater_id="test_flag_enabled",
-                agent=MagicMock(),
-                runner=MagicMock(),
-                session_service=MagicMock(),
-                artifact_service=MagicMock(),
+                runner=enabled_runner,
+                tool_bundle=MagicMock(),
                 config={"agent_internal": {"enable_tool_injection": True}},
             )
 

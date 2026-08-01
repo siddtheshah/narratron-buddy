@@ -88,7 +88,8 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_depleted")
 
     @patch("services.agent_manager.logger")
-    def test_flush_usage_stops_session_on_credit_exhaustion(self, mock_logger):
+    @patch("services.agent_manager.AgentSession._get_database")
+    def test_flush_usage_stops_session_on_credit_exhaustion(self, mock_get_database, mock_logger):
         from services.agent_manager import AgentSession
 
         mock_runner = MagicMock()
@@ -96,15 +97,15 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         mock_artifact_service = MagicMock()
         mock_agent = MagicMock()
         mock_db = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = mock_session_service
+        mock_get_database.return_value = mock_db
+        mock_db.get_deployment.return_value = {"user_id": 10}
 
         session = AgentSession(
             theater_id="t_exhaust",
-            agent=mock_agent,
             runner=mock_runner,
-            session_service=mock_session_service,
-            artifact_service=mock_artifact_service,
-            db=mock_db,
-            owner_user_id=10,
+            tool_bundle=MagicMock(),
         )
         session.unbilled_audio_bytes = 1920000  # 1 voice minute
         session.close = MagicMock()

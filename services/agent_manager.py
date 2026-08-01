@@ -114,32 +114,22 @@ class AgentSession:
     def __init__(
         self,
         theater_id: str,
-        agent: Any,
         runner: Runner,
-        session_service: InMemorySessionService,
-        artifact_service: Any,
-        run_config: Optional[RunConfig] = None,
+        tool_bundle: Any,
         config: Optional[dict] = None,
         canvas_state_manager: Optional[Any] = None,
-        adk_user_id: Optional[str] = None,
-        adk_session_id: Optional[str] = None,
-        db: Optional[Any] = None,
-        owner_user_id: Optional[int] = None,
-        tool_bundle: Optional[Any] = None,
     ):
         import uuid
         self.theater_id = theater_id
-        self.adk_session_id = adk_session_id or f"adk_{theater_id}_{uuid.uuid4().hex[:8]}"
-        self.adk_user_id = adk_user_id or f"orator_{theater_id}"
-        self.agent = agent
-        self.tool_bundle = tool_bundle or getattr(agent, "tool_bundle", None)
+        self.adk_session_id = f"adk_{theater_id}_{uuid.uuid4().hex[:8]}"
+        self.adk_user_id = f"orator_{theater_id}"
         self.runner = runner
-        self.session_service = session_service
-        self.artifact_service = artifact_service
+        self.agent = runner.agent
+        self.session_service = runner.session_service
+        self.tool_bundle = tool_bundle
         self.config = config or {}
         self.canvas_state_manager = canvas_state_manager
-        self.db = db
-        self.owner_user_id = owner_user_id
+        self.owner_user_id: Optional[int] = None
         agent_internal = self.config.get("agent_internal", {})
         self.enable_tool_injection = bool(agent_internal.get("enable_tool_injection", False))
 
@@ -160,13 +150,13 @@ class AgentSession:
         self.ws_lock = asyncio.Lock()
 
         # Retrieve bound tool instances safely
-        self.image_tools = get_bound_tool_instance(agent, "create_image")
-        self.chat_tools = get_bound_tool_instance(agent, "send_chat_message")
-        self.notes_tools = get_bound_tool_instance(agent, "edit_notes")
-        self.music_tools = get_bound_tool_instance(agent, "play_playlist")
+        self.image_tools = get_bound_tool_instance(self.agent, "create_image")
+        self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
+        self.notes_tools = get_bound_tool_instance(self.agent, "edit_notes")
+        self.music_tools = get_bound_tool_instance(self.agent, "play_playlist")
 
-        self.run_config = run_config or build_run_config(
-            agent=agent,
+        self.run_config = build_run_config(
+            agent=self.agent,
             config=self.config,
         )
 
@@ -334,11 +324,13 @@ class AgentSession:
         try:
             while True:
                 await asyncio.sleep(1.0)
-                if self.db and self.owner_user_id:
+                db_inst = self._get_database()
+                owner_id = self._get_owner_id(db_inst)
+                if db_inst and owner_id:
                     try:
-                        owner = self.db.get_user_by_id(self.owner_user_id)
+                        owner = db_inst.get_user_by_id(owner_id)
                         if owner and owner.get("credits", 0.0) <= 0.0:
-                            logger.warning(f"[AgentSession] Owner user {self.owner_user_id} credit balance <= 0. Auto-stopping agent session for {self.theater_id}.")
+                            logger.warning(f"[AgentSession] Owner user {owner_id} credit balance <= 0. Auto-stopping agent session for {self.theater_id}.")
                             await self.broadcast_text(json.dumps({
                                 "type": "insufficient_credits",
                                 "detail": "Agent stopped because your credit balance reached 0 or less.",
@@ -422,23 +414,8 @@ class AgentSession:
         self.unbilled_audio_bytes = 0
         self.unbilled_images = 0
 
-        db_inst = self.db
-        if db_inst is None:
-            try:
-                from web_viewer_app import db as global_db
-                db_inst = global_db
-            except ImportError:
-                db_inst = None
-
-        owner_id = self.owner_user_id
-        if owner_id is None and db_inst:
-            try:
-                deployment = db_inst.get_deployment(self.theater_id)
-                if deployment:
-                    owner_id = deployment.get("user_id")
-                    self.owner_user_id = owner_id
-            except Exception as e:
-                logger.debug(f"[AgentSession] Could not fetch deployment owner: {e}")
+        db_inst = self._get_database()
+        owner_id = self._get_owner_id(db_inst)
 
         if db_inst and owner_id:
             try:
@@ -477,6 +454,25 @@ class AgentSession:
             "images_created": self.images_created_count,
             "total_audio_bytes": self.audio_bytes_received,
         }
+
+    @staticmethod
+    def _get_database() -> Optional[Any]:
+        """Resolve the application database lazily to avoid an import cycle."""
+        try:
+            from web_viewer_app import db
+            return db
+        except ImportError:
+            return None
+
+    def _get_owner_id(self, db_inst: Optional[Any]) -> Optional[int]:
+        if self.owner_user_id is None and db_inst:
+            try:
+                deployment = db_inst.get_deployment(self.theater_id)
+                if deployment:
+                    self.owner_user_id = deployment.get("user_id")
+            except Exception as e:
+                logger.debug(f"[AgentSession] Could not fetch deployment owner: {e}")
+        return self.owner_user_id
 
     async def remove_websocket(self, websocket: WebSocket):
         async with self.ws_lock:
@@ -550,8 +546,6 @@ class AgentSessionManager:
         canvas_mgr = canvas_state_service.get(theater_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
 
         theater_config = get_theater_config(theater_id)
-        session_run_config = build_run_config(config=theater_config)
-
         tool_bundle = create_tool_bundle_for_session(
             theater_id=theater_id,
             config=theater_config,
@@ -583,14 +577,10 @@ class AgentSessionManager:
 
         agent_session = AgentSession(
             theater_id=theater_id,
-            agent=session_agent,
             runner=runner,
-            session_service=self.shared_session_service,
-            artifact_service=artifact_service,
-            run_config=session_run_config,
+            tool_bundle=tool_bundle,
             config=theater_config,
             canvas_state_manager=canvas_mgr,
-            tool_bundle=tool_bundle,
         )
 
         agent_session.start_background_tasks()
