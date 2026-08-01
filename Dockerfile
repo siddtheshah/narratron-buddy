@@ -30,7 +30,6 @@ COPY ABOUT.md .
 # Copy package directories
 COPY components/ components/
 COPY api_server/ api_server/
-COPY deployer/ deployer/
 COPY storage/ storage/
 COPY services/ services/
 COPY tools/ tools/

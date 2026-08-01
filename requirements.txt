@@ -10,3 +10,5 @@ jinja2
 libsql
 absl-py
 stripe>=7.0.0
+pytest
+pytest-asyncio
