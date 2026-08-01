@@ -776,36 +776,44 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id FROM payment_transactions WHERE stripe_session_id = ?", (stripe_session_id,)
+                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at "
+                "FROM users WHERE id = ?", (user_id,)
             )
-            existing = cursor.fetchone()
-            if existing:
-                cursor.execute(
-                    "SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at "
-                    "FROM users WHERE id = ?", (user_id,)
-                )
-                user = cursor.fetchone()
-                return {"transaction_id": existing[0], "user": dict(user), "credits_added": 0.0,
-                        "amount_usd": usd_amount, "created_at": now_iso, "already_credited": True}
-
-            cursor.execute("UPDATE users SET credits = credits + ? WHERE id = ?", (credits_amount, user_id))
-            if cursor.rowcount == 0:
+            if cursor.fetchone() is None:
                 raise ValueError("User not found.")
+
+            # Claim the Stripe session before changing the user's balance.  The
+            # unique index makes this safe when a Checkout return and webhook
+            # delivery (or webhook retries) arrive concurrently.
             cursor.execute(
-                "INSERT INTO payment_transactions "
+                "INSERT OR IGNORE INTO payment_transactions "
                 "(user_id, amount_usd, credits_added, payment_method, status, created_at, stripe_session_id) "
                 "VALUES (?, ?, ?, ?, 'completed', ?, ?)",
                 (user_id, usd_amount, credits_amount, payment_method, now_iso, stripe_session_id),
             )
-            tx_id = cursor.lastrowid
+            credited = cursor.rowcount == 1
+            if credited:
+                cursor.execute("UPDATE users SET credits = credits + ? WHERE id = ?", (credits_amount, user_id))
+            else:
+                cursor.execute(
+                    "SELECT id, created_at FROM payment_transactions WHERE stripe_session_id = ?",
+                    (stripe_session_id,),
+                )
+                existing = cursor.fetchone()
+                tx_id = existing["id"] if isinstance(existing, dict) else existing[0]
+                created_at = existing["created_at"] if isinstance(existing, dict) else existing[1]
             cursor.execute(
                 "SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at "
                 "FROM users WHERE id = ?", (user_id,)
             )
             updated_user = dict(cursor.fetchone())
-            conn.commit()
-            return {"transaction_id": tx_id, "user": updated_user, "credits_added": credits_amount,
-                    "amount_usd": usd_amount, "created_at": now_iso, "already_credited": False}
+            if credited:
+                tx_id = cursor.lastrowid
+                created_at = now_iso
+            return {"transaction_id": tx_id, "user": updated_user,
+                    "credits_added": credits_amount if credited else 0.0,
+                    "amount_usd": usd_amount, "created_at": created_at,
+                    "already_credited": not credited}
 
     def record_user_usage(
         self,

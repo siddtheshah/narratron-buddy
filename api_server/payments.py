@@ -235,7 +235,9 @@ def verify_stripe_session(session_id: str, request: Request):
             usd_amount = float(meta.get("usd_amount", 0.0))
 
             if meta_user_id == user["id"] and credits_to_add > 0:
-                result = db.add_user_credits(user["id"], credits_to_add, usd_amount, "stripe_checkout")
+                result = db.add_stripe_session_credits(
+                    user["id"], credits_to_add, usd_amount, session_id, "stripe_checkout"
+                )
                 return {"status": "ok", "verified": True, "credits_added": credits_to_add, **result}
             return {"status": "ok", "verified": True, "user": user}
         return {"status": "pending", "verified": False, "detail": "Payment not completed."}
@@ -251,16 +253,18 @@ async def stripe_webhook(request: Request):
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
     event = None
-    if stripe and webhook_secret and sig_header:
-        try:
-            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Webhook signature error: {e}")
-    else:
+    if _is_mock_payment_mode():
         try:
             event = json.loads(payload.decode("utf-8"))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid webhook JSON payload.")
+    else:
+        if not webhook_secret or not sig_header:
+            raise HTTPException(status_code=400, detail="Stripe webhook signature is required.")
+        try:
+            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Webhook signature error: {e}")
 
     event_type = event.get("type") if isinstance(event, dict) else getattr(event, "type", None)
     data_obj = event.get("data", {}).get("object", {}) if isinstance(event, dict) else getattr(getattr(event, "data", None), "object", {})
@@ -271,12 +275,14 @@ async def stripe_webhook(request: Request):
         credits_to_add = metadata.get("credits_to_add")
         usd_amount = metadata.get("usd_amount")
 
-        if user_id and credits_to_add:
-            db.add_user_credits(
+        session_id = data_obj.get("id")
+        if user_id and credits_to_add and session_id:
+            db.add_stripe_session_credits(
                 int(user_id),
                 float(credits_to_add),
                 float(usd_amount or 0.0),
-                "stripe_webhook"
+                session_id,
+                "stripe_webhook",
             )
 
     return {"status": "ok"}
