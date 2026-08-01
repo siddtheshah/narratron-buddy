@@ -171,8 +171,6 @@ class ResolveJoinKeyRequest(BaseModel):
 
 class BuyCreditsRequest(BaseModel):
     package_id: Optional[str] = None
-    custom_credits: Optional[float] = None
-    custom_usd: Optional[float] = None
     payment_method: Optional[str] = "card_mock"
     card_number: Optional[str] = None
     card_exp: Optional[str] = None
@@ -428,9 +426,9 @@ def reset_password(req: ResetPasswordRequest):
 # ========================================
 
 CREDIT_PACKAGES = {
-    "starter": {"credits": 100.0, "amount_usd": 5.00, "name": "Starter Pack"},
-    "pro": {"credits": 400.0, "amount_usd": 18.00, "name": "Pro Pack"},
-    "ultra": {"credits": 1000.0, "amount_usd": 40.00, "name": "Ultra Pack"},
+    "starter": {"credits": 100.0, "amount_usd": 5.00, "name": "Starter Pack", "price_id" : "price_1TzbWlRjBSgVFVM6b6ByPtVn"},
+    "pro": {"credits": 400.0, "amount_usd": 18.00, "name": "Pro Pack", "price_id" : "price_1TzbisRjBSgVFVM6Jmyk0IcL"},
+    "ultra": {"credits": 1000.0, "amount_usd": 40.00, "name": "Ultra Pack", "price_id" : "price_1TzbjORjBSgVFVM6cWJZy8xb"},
 }
 
 def _is_mock_payment_mode(payment_method: Optional[str] = None) -> bool:
@@ -452,9 +450,6 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
         pkg = CREDIT_PACKAGES[req.package_id]
         credits_to_add = pkg["credits"]
         usd_amount = pkg["amount_usd"]
-    elif req.custom_credits and req.custom_credits > 0 and req.custom_usd and req.custom_usd > 0:
-        credits_to_add = req.custom_credits
-        usd_amount = req.custom_usd
     elif req.package_id is None and req.custom_credits is None:
         pkg = CREDIT_PACKAGES["starter"]
         credits_to_add = pkg["credits"]
@@ -513,13 +508,8 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
 
     try:
         session = stripe.checkout.Session.create(
-                payment_method_types=["card"],
                 line_items=[{
-                    "price_data": {
-                        "currency": "usd",
-                        "product_data": {"name": f"Narratron Credits - {credits_to_add:.0f} Cr"},
-                        "unit_amount": int(round(usd_amount * 100)),
-                    },
+                    "price": pkg["price_id"],
                     "quantity": 1,
                 }],
                 mode="payment",

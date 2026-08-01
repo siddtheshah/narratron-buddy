@@ -132,7 +132,7 @@
 
         .packages-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 10px;
             margin: 1.25rem 0;
         }
@@ -893,7 +893,7 @@
         }
 
         /* Replaced by the YAML editor; retained markup can be removed in a later UI cleanup. */
-        .advanced-config-body > div {
+        .advanced-config-body>div {
             display: none;
         }
 
@@ -1426,36 +1426,6 @@
                     <div class="package-price">$40.00</div>
                     <div class="package-subtext">$0.04 / credit</div>
                 </div>
-
-                <div class="package-card" id="pkgCustom" onclick="selectCreditPackage('custom', null, null)">
-                    <div class="package-title">Custom</div>
-                    <div class="package-credits">⚡ Flex</div>
-                    <div class="package-price">One-Off</div>
-                    <div class="package-subtext">Custom Amount</div>
-                </div>
-            </div>
-
-            <!-- Custom One-Off Amount Input Section -->
-            <div id="customAmountSection"
-                style="display: none; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
-                <div
-                    style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">
-                    ⚡ One-Off Custom Transaction</div>
-                <div style="display: flex; gap: 12px; align-items: center;">
-                    <div style="flex: 1;">
-                        <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8;">USD Amount ($)</label>
-                        <input type="number" id="customUsdInput" min="1" max="1000" step="1" value="10"
-                            style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; margin-top: 4px;"
-                            oninput="updateCustomAmountCalculation()">
-                    </div>
-                    <div style="font-size: 1.2rem; color: #64748b; font-weight: 700; margin-top: 16px;">=</div>
-                    <div style="flex: 1;">
-                        <label style="font-size: 0.75rem; font-weight: 600; color: #94a3b8;">Credits Added</label>
-                        <div id="customCreditsDisplay"
-                            style="font-size: 1.1rem; font-weight: 800; color: #34d399; margin-top: 6px;">⚡ 200.0 Cr
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <div
@@ -1469,15 +1439,13 @@
                         <input type="radio" name="paymentMethod" value="stripe_checkout" checked
                             onclick="toggleCardFields(false)"> 💳 Credit / Debit Card via Stripe Checkout
                     </label>
-                    <label
-                        style="display: none;">
+                    <label style="display: none;">
                         <input type="radio" name="paymentMethod" value="paypal_mock" onclick="toggleCardFields(false)">
                         🅿️ PayPal
                     </label>
                 </div>
                 <!-- Simulated Card Input Fields -->
-                <div id="cardFieldsContainer"
-                    style="display: none;">
+                <div id="cardFieldsContainer" style="display: none;">
                     <input type="text" id="cardHolderName" placeholder="Cardholder Name" autocomplete="cc-name"
                         style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem;">
                     <input type="text" id="cardNumber" placeholder="Card Number (•••• •••• •••• 4242)"
@@ -1748,56 +1716,23 @@
             }
         }
 
-        function updateCustomAmountCalculation() {
-            const usdInput = document.getElementById('customUsdInput');
-            const display = document.getElementById('customCreditsDisplay');
-            let usd = parseFloat(usdInput.value) || 0;
-            if (usd < 1) usd = 1;
-            const credits = usd * 20;
-            if (display) {
-                display.innerText = `⚡ ${credits.toFixed(1)} Cr`;
-            }
-            if (selectedPackage && selectedPackage.id === 'custom') {
-                selectedPackage.usd = usd;
-                selectedPackage.credits = credits;
-                const payBtn = document.getElementById('btnCompletePurchase');
-                if (payBtn) {
-                    payBtn.innerText = `Pay $${usd.toFixed(2)} & Add ${credits.toFixed(1)} Credits`;
-                }
-            }
-        }
 
         function selectCreditPackage(pkgId, credits, usd) {
-            const customSection = document.getElementById('customAmountSection');
 
-            ['pkgStarter', 'pkgPro', 'pkgUltra', 'pkgCustom'].forEach(id => {
+            ['pkgStarter', 'pkgPro', 'pkgUltra'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('selected');
             });
 
-            if (pkgId === 'custom') {
-                if (customSection) customSection.style.display = 'block';
-                const usdVal = parseFloat(document.getElementById('customUsdInput').value) || 10;
-                const creditsVal = usdVal * 20;
-                selectedPackage = { id: 'custom', credits: creditsVal, usd: usdVal };
-                const customEl = document.getElementById('pkgCustom');
-                if (customEl) customEl.classList.add('selected');
 
-                const payBtn = document.getElementById('btnCompletePurchase');
-                if (payBtn) {
-                    payBtn.innerText = `Pay $${usdVal.toFixed(2)} & Add ${creditsVal.toFixed(1)} Credits`;
-                }
-            } else {
-                if (customSection) customSection.style.display = 'none';
-                selectedPackage = { id: pkgId, credits: credits, usd: usd };
-                const currentId = pkgId === 'starter' ? 'pkgStarter' : (pkgId === 'pro' ? 'pkgPro' : 'pkgUltra');
-                const currentEl = document.getElementById(currentId);
-                if (currentEl) currentEl.classList.add('selected');
+            selectedPackage = { id: pkgId, credits: credits, usd: usd };
+            const currentId = pkgId === 'starter' ? 'pkgStarter' : (pkgId === 'pro' ? 'pkgPro' : 'pkgUltra');
+            const currentEl = document.getElementById(currentId);
+            if (currentEl) currentEl.classList.add('selected');
 
-                const payBtn = document.getElementById('btnCompletePurchase');
-                if (payBtn) {
-                    payBtn.innerText = `Pay $${usd.toFixed(2)} & Add ${credits} Credits`;
-                }
+            const payBtn = document.getElementById('btnCompletePurchase');
+            if (payBtn) {
+                payBtn.innerText = `Pay $${usd.toFixed(2)} & Add ${credits} Credits`;
             }
         }
 
@@ -1853,12 +1788,7 @@
             payBtn.innerText = 'Processing One-Off Payment...';
 
             try {
-                if (selectedPackage.id === 'custom') {
-                    bodyPayload.custom_credits = selectedPackage.credits;
-                    bodyPayload.custom_usd = selectedPackage.usd;
-                } else {
-                    bodyPayload.package_id = selectedPackage.id;
-                }
+                bodyPayload.package_id = selectedPackage.id;
 
                 const res = await fetch('/api/payments/buy-credits', {
                     method: 'POST',
