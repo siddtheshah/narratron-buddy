@@ -926,6 +926,19 @@
             color: #fff;
         }
 
+        .suggestion-visibility-btn {
+            width: 30px;
+            height: 28px;
+            justify-content: center;
+            padding: 0;
+            font-size: 0.9rem;
+        }
+
+        .suggestion-visibility-btn.is-hidden {
+            background: rgba(251, 191, 36, 0.16);
+            border-color: rgba(251, 191, 36, 0.4);
+        }
+
         /* --- Cinematic Fullscreen Mode --- */
         body.fullscreen-cinematic {
             padding: 0 !important;
@@ -1154,6 +1167,83 @@
         #chat-form button:hover {
             opacity: 0.9;
             transform: scale(1.05);
+        }
+
+        /* Viewer Suggestion Messages */
+        .chat-message.suggestion-message {
+            background: rgba(251, 191, 36, 0.10);
+            border: 1px solid rgba(251, 191, 36, 0.25);
+            border-radius: 10px;
+            padding: 8px 12px;
+            margin: 4px 0;
+            position: relative;
+        }
+        #chat-messages.suggestions-hidden .suggestion-message {
+            display: none;
+        }
+        .suggestion-prefix {
+            color: #fbbf24;
+            font-weight: 700;
+            margin-right: 6px;
+        }
+        .suggestion-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 5px;
+        }
+        .suggestion-upvote-btn, .suggestion-withdraw-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #e2e8f0;
+            border-radius: 14px;
+            padding: 2px 10px;
+            font-size: 0.72rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Outfit', sans-serif;
+        }
+        .suggestion-upvote-btn:hover {
+            background: rgba(251, 191, 36, 0.2);
+            border-color: rgba(251, 191, 36, 0.4);
+            color: #fbbf24;
+        }
+        .suggestion-upvote-btn.voted {
+            background: rgba(251, 191, 36, 0.2);
+            border-color: rgba(251, 191, 36, 0.4);
+            color: #fbbf24;
+        }
+        .suggestion-withdraw-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #f87171;
+        }
+        .suggestion-vote-count {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+        /* Orator Collab Toggle */
+        .collab-toggle-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--glass-border);
+            color: #94a3b8;
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.3s;
+            font-family: 'Outfit', sans-serif;
+        }
+        .collab-toggle-btn.active {
+            background: rgba(251, 191, 36, 0.2);
+            border-color: rgba(251, 191, 36, 0.4);
+            color: #fbbf24;
+            box-shadow: 0 0 12px rgba(251, 191, 36, 0.15);
         }
 
         #doodle-canvas {
@@ -1458,6 +1548,12 @@
                     <button id="clear-doodle-btn">Clear</button>
                 </div>
             </div>
+            <div id="collab-section"
+                style="display: none; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+                <button id="viewer-collab-toggle-btn" class="collab-toggle-btn" title="Toggle Viewer Collaboration Mode">
+                    👥 Collab: Off
+                </button>
+            </div>
         </div>
     </div>
 
@@ -1486,6 +1582,12 @@
         <div class="panel-header">
             <span class="panel-title">Chat</span>
             <div class="panel-actions">
+                <button class="panel-btn" id="viewer-collab-guide-btn" title="How to collaborate" style="display: none;">
+                    ✨ Collaborate
+                </button>
+                <button class="panel-btn suggestion-visibility-btn" id="hide-suggestions-btn" aria-label="Hide viewer suggestions" title="Hide viewer suggestions from this chat" style="display: none;">
+                    🙈
+                </button>
                 <button class="panel-btn" id="popout-window-btn" title="Pop out into separate window">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
@@ -1592,6 +1694,50 @@
             const displayAuthor = isNarratron ? 'Narratron' : rawAuthor;
             const color = getAuthorColor(displayAuthor);
 
+            // Suggestion-type messages get special rendering
+            if (msg.type === 'suggestion') {
+                div.classList.add('suggestion-message');
+                div.dataset.suggestionAuthor = rawAuthor;
+
+                const prefixSpan = document.createElement('span');
+                prefixSpan.className = 'suggestion-prefix';
+                prefixSpan.textContent = `💡 ${displayAuthor} suggests:`;
+                div.appendChild(prefixSpan);
+
+                const textSpan = document.createElement('span');
+                textSpan.className = 'chat-text';
+                textSpan.textContent = msg.text;
+                div.appendChild(textSpan);
+
+                // Action row: upvote + vote count + withdraw
+                const actions = document.createElement('div');
+                actions.className = 'suggestion-actions';
+
+                const upvoteBtn = document.createElement('button');
+                upvoteBtn.className = 'suggestion-upvote-btn';
+                upvoteBtn.textContent = '👍 +1';
+                upvoteBtn.addEventListener('click', () => upvoteSuggestion(rawAuthor));
+                actions.appendChild(upvoteBtn);
+
+                const countSpan = document.createElement('span');
+                countSpan.className = 'suggestion-vote-count';
+                countSpan.dataset.voteCountFor = rawAuthor;
+                countSpan.textContent = '';
+                actions.appendChild(countSpan);
+
+                // Show withdraw button only for the suggestion author
+                if (rawAuthor === currentChatUsername) {
+                    const withdrawBtn = document.createElement('button');
+                    withdrawBtn.className = 'suggestion-withdraw-btn';
+                    withdrawBtn.textContent = '✕ Withdraw';
+                    withdrawBtn.addEventListener('click', () => withdrawMySuggestion());
+                    actions.appendChild(withdrawBtn);
+                }
+
+                div.appendChild(actions);
+                return div;
+            }
+
             const prefixSpan = document.createElement('span');
             prefixSpan.className = 'chat-prefix';
             prefixSpan.style.color = color;
@@ -1606,6 +1752,59 @@
             div.appendChild(prefixSpan);
             div.appendChild(textSpan);
             return div;
+        }
+
+        // --- Suggestion helpers ---
+        async function upvoteSuggestion(targetAuthor) {
+            try {
+                await fetch('/api/suggestions/upvote' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ voter: currentChatUsername, target_author: targetAuthor })
+                });
+                fetchSuggestions();
+            } catch (err) {
+                console.error('Failed to upvote suggestion:', err);
+            }
+        }
+
+        async function withdrawMySuggestion() {
+            try {
+                await fetch('/api/suggestions/withdraw' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ author: currentChatUsername })
+                });
+                fetchChat();
+                fetchSuggestions();
+            } catch (err) {
+                console.error('Failed to withdraw suggestion:', err);
+            }
+        }
+
+        async function fetchSuggestions() {
+            try {
+                const res = await fetch('/api/suggestions' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
+                const suggestions = await res.json();
+                const activeAuthors = new Set(suggestions.map(s => s.author));
+                document.querySelectorAll('.suggestion-message').forEach(el => {
+                    if (!activeAuthors.has(el.dataset.suggestionAuthor)) el.remove();
+                });
+                // Update vote counts on rendered suggestion messages
+                for (const s of suggestions) {
+                    const countEls = document.querySelectorAll(`[data-vote-count-for="${CSS.escape(s.author)}"]`);
+                    countEls.forEach(el => {
+                        el.textContent = s.upvote_count > 0 ? `${s.upvote_count} vote${s.upvote_count !== 1 ? 's' : ''}` : '';
+                    });
+                    // Highlight upvote buttons if current user has voted
+                    if (s.upvoters && s.upvoters.includes(currentChatUsername)) {
+                        document.querySelectorAll(`.suggestion-message[data-suggestion-author="${CSS.escape(s.author)}"] .suggestion-upvote-btn`)
+                            .forEach(btn => btn.classList.add('voted'));
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch suggestions:', err);
+            }
         }
 
         let currentChatUsername = "";
@@ -1668,6 +1867,8 @@
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
         const urlParams = new URLSearchParams(window.location.search);
         const theaterId = urlParams.get('theater_id');
+        const suggestionsHiddenStorageKey = `narratron-suggestions-hidden:${theaterId || 'default'}`;
+        let suggestionsHidden = false;
         if (!theaterId) {
             console.error("Theater ID missing from URL parameters.");
             const container = document.getElementById('image-container');
@@ -2211,6 +2412,14 @@
                 const data = await response.json();
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
+                if (data.viewer_collab_enabled !== undefined && data.viewer_collab_enabled !== viewerCollabEnabled) {
+                    viewerCollabEnabled = Boolean(data.viewer_collab_enabled);
+                    if (viewerCollabToggleBtn) {
+                        viewerCollabToggleBtn.textContent = viewerCollabEnabled ? '👥 Collab: On' : '👥 Collab: Off';
+                        viewerCollabToggleBtn.classList.toggle('active', viewerCollabEnabled);
+                    }
+                }
+                updateViewerCollabStatus(viewerCollabEnabled);
 
                 // Process music payload
                 if (data.music && data.music.time > lastPlaylistTime) {
@@ -2369,19 +2578,20 @@
             }
         });
 
-        let lastMessageCount = 0;
+        let lastChatFingerprint = '';
         let lastAgentThought = null;
         async function fetchChat() {
             try {
                 const response = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
                 const messages = await response.json();
-                if (messages.length !== lastMessageCount) {
+                const fingerprint = JSON.stringify(messages);
+                if (fingerprint !== lastChatFingerprint) {
                     chatMessages.innerHTML = '';
                     messages.forEach(msg => {
                         chatMessages.appendChild(renderChatMessage(msg));
                     });
                     chatMessages.scrollTop = chatMessages.scrollHeight;
-                    lastMessageCount = messages.length;
+                    lastChatFingerprint = fingerprint;
                 }
             } catch (err) {
                 console.error("Failed to fetch chat:", err);
@@ -2580,8 +2790,10 @@
 
         setInterval(fetchLatestImage, 1000);
         setInterval(fetchChat, 1000);
+        setInterval(fetchSuggestions, 2000);
         fetchLatestImage();
         fetchChat();
+        fetchSuggestions();
 
         // ========================================
         // Orator vs Viewer Logic
@@ -2594,6 +2806,46 @@
         const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
         const agentConnectBtn = document.getElementById('agent-connect-btn');
         const statusIndicator = document.getElementById('status-indicator');
+        const viewerCollabToggleBtn = document.getElementById('viewer-collab-toggle-btn');
+        const collabSection = document.getElementById('collab-section');
+        const hideSuggestionsBtn = document.getElementById('hide-suggestions-btn');
+        const viewerCollabGuideBtn = document.getElementById('viewer-collab-guide-btn');
+        let viewerCollabEnabled = false;
+
+        function setSuggestionsHidden(hidden, persist = true) {
+            suggestionsHidden = Boolean(hidden);
+            chatMessages.classList.toggle('suggestions-hidden', suggestionsHidden);
+            if (hideSuggestionsBtn) {
+                hideSuggestionsBtn.textContent = suggestionsHidden ? '👁' : '🙈';
+                hideSuggestionsBtn.setAttribute('aria-label', suggestionsHidden ? 'Show viewer suggestions' : 'Hide viewer suggestions');
+                hideSuggestionsBtn.classList.toggle('is-hidden', suggestionsHidden);
+                hideSuggestionsBtn.title = suggestionsHidden
+                    ? 'Show viewer suggestions in this chat'
+                    : 'Hide viewer suggestions from this chat';
+            }
+            if (persist) localStorage.setItem(suggestionsHiddenStorageKey, String(suggestionsHidden));
+        }
+
+        // Viewer Collab Mode toggle
+        if (viewerCollabToggleBtn) {
+            viewerCollabToggleBtn.addEventListener('click', async () => {
+                const requestedState = !viewerCollabEnabled;
+                try {
+                    const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/collab`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabled: requestedState })
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const result = await response.json();
+                    viewerCollabEnabled = Boolean(result.viewer_collab_enabled);
+                    viewerCollabToggleBtn.textContent = viewerCollabEnabled ? '👥 Collab: On' : '👥 Collab: Off';
+                    viewerCollabToggleBtn.classList.toggle('active', viewerCollabEnabled);
+                } catch (err) {
+                    console.error('Failed to toggle viewer collab mode:', err);
+                }
+            });
+        }
 
         // State variables
         let agentWs = null;
@@ -2614,6 +2866,12 @@
             roleToggleBtn.textContent = 'Switch to Viewer';
             oratorControls.style.display = 'flex';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
+            if (collabSection) collabSection.style.display = 'flex';
+            if (hideSuggestionsBtn) {
+                hideSuggestionsBtn.style.display = 'inline-flex';
+                hideSuggestionsBtn.addEventListener('click', () => setSuggestionsHidden(!suggestionsHidden));
+            }
+            setSuggestionsHidden(localStorage.getItem(suggestionsHiddenStorageKey) === 'true', false);
             statusIndicator.classList.add('disconnected'); // Start red
 
             // Show Orator How-To popup automatically on first visit
@@ -2626,6 +2884,16 @@
             roleToggleBtn.textContent = 'Switch to Orator';
             oratorControls.style.display = 'none';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
+            if (collabSection) collabSection.style.display = 'none';
+            if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
+            if (viewerCollabGuideBtn) {
+                viewerCollabGuideBtn.style.display = 'inline-flex';
+                viewerCollabGuideBtn.addEventListener('click', openViewerCollabGuide);
+            }
+            const viewerGuideStorageKey = `narratron_viewer_collab_guide_seen:${theaterId}`;
+            if (!localStorage.getItem(viewerGuideStorageKey)) {
+                setTimeout(openViewerCollabGuide, 400);
+            }
             statusIndicator.classList.remove('disconnected'); // Viewer always green/default
         }
 
@@ -3046,16 +3314,22 @@
 
             chatInput.value = '';
             try {
-                // Post to chat_manager first
-                await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
+                // Post to chat_manager (backend auto-detects /suggest prefix)
+                const res = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
                 });
                 fetchChat();
 
-                // Send to agent if connected
-                if (isOrator && agentWs && agentWs.readyState === WebSocket.OPEN) {
+                // If it was a suggestion, also refresh suggestions
+                const result = await res.json();
+                if (result.type === 'suggestion') {
+                    fetchSuggestions();
+                }
+
+                // Send to agent if connected (only non-suggestion messages)
+                if (result.type !== 'suggestion' && isOrator && agentWs && agentWs.readyState === WebSocket.OPEN) {
                     agentWs.send(JSON.stringify({
                         type: "text",
                         text: text
@@ -4007,12 +4281,59 @@
             });
         }
 
+        // ========================================
+        // Viewer Collaboration Guide Modal Logic
+        // ========================================
+        const viewerCollabGuideModal = document.getElementById('viewer-collab-guide-modal');
+        const viewerCollabGuideCloseBtn = document.getElementById('viewer-collab-guide-close-btn');
+        const viewerCollabGuideAckBtn = document.getElementById('viewer-collab-guide-ack-btn');
+        const viewerCollabStatus = document.getElementById('viewer-collab-status');
+
+        function updateViewerCollabStatus(enabled) {
+            if (!viewerCollabStatus) return;
+            if (enabled) {
+                viewerCollabStatus.textContent = '🟢 Collaboration Mode is on. Narratron will receive the top viewer suggestion and the doodled canvas on its next update.';
+                viewerCollabStatus.style.background = 'rgba(34, 197, 94, 0.12)';
+                viewerCollabStatus.style.borderColor = 'rgba(74, 222, 128, 0.4)';
+                viewerCollabStatus.style.color = '#bbf7d0';
+            } else {
+                viewerCollabStatus.textContent = '⚪ Collaboration Mode is currently off. You can still doodle, suggest, and vote so everything is ready when the orator turns it on.';
+                viewerCollabStatus.style.background = 'rgba(148, 163, 184, 0.1)';
+                viewerCollabStatus.style.borderColor = 'rgba(148, 163, 184, 0.35)';
+                viewerCollabStatus.style.color = '#cbd5e1';
+            }
+        }
+
+        function openViewerCollabGuide() {
+            if (!viewerCollabGuideModal) return;
+            updateViewerCollabStatus(viewerCollabEnabled);
+            viewerCollabGuideModal.classList.add('active');
+            viewerCollabGuideModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeViewerCollabGuide() {
+            if (!viewerCollabGuideModal) return;
+            viewerCollabGuideModal.classList.remove('active');
+            viewerCollabGuideModal.setAttribute('aria-hidden', 'true');
+            localStorage.setItem(`narratron_viewer_collab_guide_seen:${theaterId}`, 'true');
+        }
+
+        if (viewerCollabGuideCloseBtn) viewerCollabGuideCloseBtn.addEventListener('click', closeViewerCollabGuide);
+        if (viewerCollabGuideAckBtn) viewerCollabGuideAckBtn.addEventListener('click', closeViewerCollabGuide);
+        if (viewerCollabGuideModal) {
+            viewerCollabGuideModal.addEventListener('click', (e) => {
+                if (e.target === viewerCollabGuideModal) closeViewerCollabGuide();
+            });
+        }
+
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 if (pulloutOverlay && pulloutOverlay.classList.contains('active')) {
                     closePulloutMenu();
                 } else if (oratorHowtoModal && oratorHowtoModal.classList.contains('active')) {
                     closeOratorHowtoModal();
+                } else if (viewerCollabGuideModal && viewerCollabGuideModal.classList.contains('active')) {
+                    closeViewerCollabGuide();
                 } else if (theaterConfigModal && theaterConfigModal.classList.contains('active')) {
                     closeTheaterConfigModal();
                 }
@@ -4370,6 +4691,50 @@
 
             <div class="howto-footer">
                 <button id="howto-ack-btn" class="howto-ack-btn">Got it, let's start!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Viewer Collaboration Guide Modal -->
+    <div id="viewer-collab-guide-modal" class="modal-overlay" role="dialog" aria-labelledby="viewer-collab-guide-title" aria-hidden="true">
+        <div class="modal-card">
+            <button id="viewer-collab-guide-close-btn" class="modal-close-btn" aria-label="Close collaboration guide">✕</button>
+            <div class="howto-header">
+                <div class="howto-icon-badge">✨</div>
+                <div>
+                    <h3 id="viewer-collab-guide-title" class="howto-title-text">Collaborate with Narratron</h3>
+                    <div class="howto-subtitle">Your ideas can help shape the next moment.</div>
+                </div>
+            </div>
+
+            <div id="viewer-collab-status" style="margin-bottom: 1rem; padding: 10px 12px; border-radius: 12px; font-size: 0.85rem; line-height: 1.4; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(148, 163, 184, 0.1); color: #cbd5e1;"></div>
+
+            <div class="howto-steps">
+                <div class="howto-step-card">
+                    <div class="step-num">1</div>
+                    <div class="step-content">
+                        <div class="step-title">Doodle on the canvas <span class="step-badge">✏️ Draw</span></div>
+                        <div class="step-desc">Use the colors and brush controls in the bottom bar to point, circle, sketch, or add a visual twist to the scene.</div>
+                    </div>
+                </div>
+                <div class="howto-step-card">
+                    <div class="step-num">2</div>
+                    <div class="step-content">
+                        <div class="step-title">Offer a suggestion <span class="step-badge">💡 /suggest</span></div>
+                        <div class="step-desc">Type <code style="color:#fbbf24;">/suggest your idea</code> in chat. Other viewers can give it a +1; the top idea is selected first.</div>
+                    </div>
+                </div>
+                <div class="howto-step-card">
+                    <div class="step-num">3</div>
+                    <div class="step-content">
+                        <div class="step-title">Watch for the moment</div>
+                        <div class="step-desc">You can suggest, vote, and doodle anytime. When the orator enables collaboration, Narratron receives the leading suggestion and the annotated canvas.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="howto-footer">
+                <button id="viewer-collab-guide-ack-btn" class="howto-ack-btn">Let's collaborate</button>
             </div>
         </div>
     </div>

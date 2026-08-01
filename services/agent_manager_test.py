@@ -318,6 +318,41 @@ class TestAgentSessionManager(unittest.TestCase):
             self.assertTrue(session.send_canvas_state())
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
+    def test_doodle_snapshot_is_rendered_off_the_event_loop(self):
+        async def run_test():
+            mock_agent = MagicMock()
+            mock_agent.tools = []
+            mock_runner = MagicMock()
+            mock_runner.agent = mock_agent
+            mock_runner.session_service = MagicMock()
+            session = AgentSession(
+                theater_id="test_async_doodle_snapshot",
+                runner=mock_runner,
+                tool_bundle=MagicMock(),
+                config={},
+            )
+            session.live_request_queue = MagicMock()
+            session.websockets.add(MagicMock())
+            canvas = MagicMock()
+            canvas.viewer_collab_enabled = True
+            canvas.shown_image_path = None
+            canvas.shown_image_prompt = None
+            canvas.current_playlist = None
+            canvas.get_doodle_snapshot_data.return_value = [{"type": "draw"}]
+            canvas.get_doodle_snapshot_png.return_value = b"fake-png"
+            session.canvas_state_manager = canvas
+            session._event_loop = asyncio.get_running_loop()
+
+            self.assertTrue(session.send_canvas_state())
+            # The regular observability text is sent immediately; the image is
+            # produced in a worker and delivered separately.
+            self.assertEqual(session.live_request_queue.send_content.call_count, 1)
+            await asyncio.sleep(0.05)
+            self.assertEqual(canvas.get_doodle_snapshot_png.call_count, 1)
+            self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+
+        asyncio.run(run_test())
+
     @patch("services.agent_manager.AgentSession._get_database")
     def test_usage_tracking_and_db_flushing(self, mock_get_database):
         mock_agent = MagicMock()

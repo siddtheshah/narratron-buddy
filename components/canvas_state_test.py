@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from PIL import Image
+
 from testing.base import BaseTestCase
 from components.canvas_state import CanvasStateManager, MAX_AGENT_THOUGHT_LENGTH
 
@@ -52,6 +54,7 @@ class TestCanvasStateManager(BaseTestCase):
     def test_doodles_enabled_state_and_persistence(self):
         manager = CanvasStateManager(theater_id="test_doodles_theater")
         self.assertTrue(manager.doodles_enabled)
+        self.assertFalse(manager.viewer_collab_enabled)
 
         latest_state = manager.get_latest_state()
         self.assertTrue(latest_state.get("doodles_enabled"))
@@ -64,6 +67,26 @@ class TestCanvasStateManager(BaseTestCase):
 
         exported_state, _ = manager.export_theater_data()
         self.assertFalse(exported_state["canvas_state"]["doodles_enabled"])
+        self.assertFalse(exported_state["canvas_state"]["viewer_collab_enabled"])
+
+    def test_doodle_snapshot_composites_normalized_stroke(self):
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            image_path = tmp_file.name
+        try:
+            Image.new("RGB", (100, 100), "black").save(image_path)
+            manager = CanvasStateManager(theater_id="snapshot_theater")
+            manager.shown_image_path = image_path
+            manager.doodles_state = [{
+                "type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1,
+                "color": "#ff0000", "size": 8,
+            }]
+            snapshot = manager.get_doodle_snapshot_png()
+            self.assertIsNotNone(snapshot)
+            with Image.open(__import__("io").BytesIO(snapshot)) as rendered:
+                self.assertGreater(rendered.getpixel((50, 50))[0], 150)
+        finally:
+            if os.path.exists(image_path):
+                os.remove(image_path)
 
     def test_shown_images_history_capping(self):
         manager = CanvasStateManager(theater_id="test_history_theater")

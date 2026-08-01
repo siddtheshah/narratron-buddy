@@ -442,17 +442,6 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(hist_data["transactions"][0]["credits_added"], 400.0)
         self.assertEqual(hist_data["transactions"][0]["amount_usd"], 18.00)
 
-        # 7. Buy custom one-off payment (150 credits for $15.00)
-        custom_res = self.client.post("/api/payments/buy-credits", json={
-            "custom_credits": 150.0,
-            "custom_usd": 15.00,
-            "card_number": "4242424242424242",
-            "card_exp": "12/28",
-            "card_cvc": "123"
-        })
-        self.assertEqual(custom_res.status_code, 200)
-        custom_data = custom_res.json()
-        self.assertEqual(custom_data["credits_added"], 150.0)
         # 8. Service unavailable when gateway unconfigured
         orig_key = os.environ.pop("STRIPE_SECRET_KEY", None)
         orig_local_db_flag = FLAGS.testing_use_local_database

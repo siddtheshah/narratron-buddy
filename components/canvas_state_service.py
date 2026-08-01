@@ -97,6 +97,29 @@ class CanvasStateService:
     def chat_messages(self, theater_id: Optional[str] = None) -> list[dict[str, Any]]:
         return self.get(theater_id).chat_manager.get_messages()
 
+    # ------------------------------------------------------------------
+    # Viewer Collaboration — suggestion management
+    # ------------------------------------------------------------------
+
+    def add_suggestion(self, author: str, text: str, theater_id: Optional[str] = None) -> dict:
+        return self.get(theater_id).chat_manager.add_suggestion(author, text)
+
+    def withdraw_suggestion(self, author: str, theater_id: Optional[str] = None) -> bool:
+        return self.get(theater_id).chat_manager.withdraw_suggestion(author)
+
+    def upvote_suggestion(self, voter: str, target_author: str, theater_id: Optional[str] = None) -> bool:
+        return self.get(theater_id).chat_manager.upvote_suggestion(voter, target_author)
+
+    def get_suggestions(self, theater_id: Optional[str] = None) -> list[dict]:
+        return self.get(theater_id).chat_manager.get_suggestions()
+
+    def consume_top_suggestion(self, theater_id: Optional[str] = None) -> dict | None:
+        return self.get(theater_id).chat_manager.consume_top_suggestion()
+
+    def set_viewer_collab_enabled(self, enabled: bool, theater_id: Optional[str] = None) -> None:
+        self.get(theater_id).set_viewer_collab_enabled(enabled)
+
+
     async def connect_doodle_websocket(
         self, websocket: WebSocket, theater_id: Optional[str] = None, user: Optional[dict] = None
     ) -> CanvasStateManager:

@@ -183,6 +183,8 @@ class AgentSession:
         self.observability_available_at = time.monotonic() + self.observability_startup_delay
         self.last_canvas_state_sent: Optional[float] = None
         self.state_lock = threading.Lock()
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._doodle_snapshot_task: Optional[asyncio.Task] = None
 
     @staticmethod
     def _get_nonnegative_config_seconds(value: Any, setting_name: str) -> float:
@@ -294,11 +296,50 @@ class AgentSession:
                 logger.error(f"[AgentSession] Failed to send canvas observability update: {e}", exc_info=True)
                 return False
             self.last_canvas_state_sent = now
+        self._schedule_doodle_snapshot()
         logger.info("[AgentSession] Canvas state update: %s", msg.replace("\n", " | "))
         return True
 
+    def _schedule_doodle_snapshot(self) -> None:
+        """Schedule one composite doodle render without blocking the event loop."""
+        if not (
+            self.websocket_connected
+            and self.canvas_state_manager
+            and getattr(self.canvas_state_manager, "viewer_collab_enabled", False)
+            and self.canvas_state_manager.get_doodle_snapshot_data()
+        ):
+            return
+
+        def start_render() -> None:
+            if self._doodle_snapshot_task and not self._doodle_snapshot_task.done():
+                return
+            self._doodle_snapshot_task = asyncio.create_task(self._send_doodle_snapshot())
+
+        loop = self._event_loop
+        if loop and loop.is_running():
+            loop.call_soon_threadsafe(start_render)
+            return
+        try:
+            asyncio.get_running_loop().call_soon(start_render)
+        except RuntimeError:
+            logger.debug("No running event loop available for doodle snapshot in theater %s", self.theater_id)
+
+    async def _send_doodle_snapshot(self) -> None:
+        """Render the composite PNG in a worker, then enqueue it for the agent."""
+        try:
+            snapshot = await asyncio.to_thread(self.canvas_state_manager.get_doodle_snapshot_png)
+            if snapshot and self.websocket_connected:
+                content = types.Content(parts=[
+                    types.Part(text="[Viewer Doodles]: A composite canvas image with audience doodles is attached."),
+                    types.Part(inline_data=types.Blob(mime_type="image/png", data=snapshot)),
+                ])
+                self.send_content(content)
+        except Exception:
+            logger.exception("Failed to render viewer doodle snapshot for theater %s", self.theater_id)
+
     def start_background_tasks(self):
         """Start long-running downstream_task (runner.run_live), canvas refresh loop, and tool injection loop."""
+        self._event_loop = asyncio.get_running_loop()
         if self.downstream_task is None or self.downstream_task.done():
             self.downstream_task = asyncio.create_task(self._run_downstream())
 
@@ -551,6 +592,8 @@ class AgentSession:
             self.refresh_task.cancel()
         if self.tool_injection_task and not self.tool_injection_task.done():
             self.tool_injection_task.cancel()
+        if self._doodle_snapshot_task and not self._doodle_snapshot_task.done():
+            self._doodle_snapshot_task.cancel()
         try:
             self.live_request_queue.close()
         except Exception as e:

@@ -1273,8 +1273,66 @@ def get_chat(request: Request, theater_id: Optional[str] = None):
 def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
+
+    # Detect /suggest prefix and route to the suggestion engine
+    stripped = msg.text.strip()
+    if stripped.lower().startswith("/suggest"):
+        suggestion_text = stripped[len("/suggest"):].strip()
+        if not suggestion_text:
+            raise HTTPException(status_code=400, detail="Suggestion text must not be empty after /suggest.")
+        canvas_states.add_suggestion(msg.author, suggestion_text, theater_id=theater_id)
+        return {"status": "ok", "type": "suggestion"}
+
     canvas_states.add_chat_message(msg.text, author=msg.author, theater_id=theater_id)
     return {"status": "ok"}
+
+# ========================================
+# Viewer Collaboration / Suggestion API
+# ========================================
+
+class SuggestionUpvoteRequest(BaseModel):
+    voter: str
+    target_author: str
+
+class SuggestionWithdrawRequest(BaseModel):
+    author: str
+
+class ViewerCollabToggleRequest(BaseModel):
+    enabled: bool
+
+@app.get("/api/suggestions")
+def get_suggestions(request: Request, theater_id: Optional[str] = None):
+    if theater_id:
+        _require_canvas_access(request, theater_id)
+    return canvas_states.get_suggestions(theater_id)
+
+@app.post("/api/suggestions/upvote")
+def upvote_suggestion(req: SuggestionUpvoteRequest, request: Request, theater_id: Optional[str] = None):
+    if theater_id:
+        _require_canvas_access(request, theater_id)
+    success = canvas_states.upvote_suggestion(req.voter, req.target_author, theater_id=theater_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Cannot upvote: suggestion not found or self-vote attempted.")
+    return {"status": "ok"}
+
+@app.post("/api/suggestions/withdraw")
+def withdraw_suggestion(req: SuggestionWithdrawRequest, request: Request, theater_id: Optional[str] = None):
+    if theater_id:
+        _require_canvas_access(request, theater_id)
+    removed = canvas_states.withdraw_suggestion(req.author, theater_id=theater_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="No active suggestion found for this author.")
+    return {"status": "ok"}
+
+@app.post("/api/theaters/{theater_id}/collab")
+def toggle_viewer_collab(theater_id: str, req: ViewerCollabToggleRequest, request: Request):
+    deployment = _require_canvas_access(request, theater_id)
+    user = get_current_user(request)
+    active_orator_id = deployment.get("active_orator_id") or deployment.get("user_id")
+    if not user or user["id"] != active_orator_id:
+        raise HTTPException(status_code=403, detail="Only the active orator can change Viewer Collab Mode.")
+    canvas_states.set_viewer_collab_enabled(req.enabled, theater_id=theater_id)
+    return {"status": "ok", "viewer_collab_enabled": req.enabled}
 
 @app.get("/api/stats")
 def get_stats_api():

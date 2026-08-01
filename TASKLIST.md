@@ -26,6 +26,16 @@
 - [ ] Refactor deployer/ out of existence, move logic.
 
 
+## Viewer Collaboration
+- [ ] Suggestions from chat
+  - Let every viewer have a suggestion. It can be upvoted by others. 
+  - Top voted suggestion is consumed on next observability update.
+- [ ] Doodle visibility
+  - If enabled, the agent will see the doodled on image.
+- [ ] Replace canvas chat and suggestion polling with a dedicated canvas-events WebSocket.
+  - Keep `/ws/doodle` focused on drawing, canvas controls, and baton events.
+  - Use a slow HTTP reconciliation poll only as a reconnect fallback.
+
 ## Image Effects
 
 - [ ] Improve gleam a little more. Have it apply contrast instead of a pure brightening.

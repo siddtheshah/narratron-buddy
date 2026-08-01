@@ -1,4 +1,5 @@
 import glob
+import io
 import logging
 import os
 from pathlib import Path
@@ -54,6 +55,10 @@ class CanvasStateManager:
         self.doodles_state: List[Dict[str, Any]] = []
         self.doodles_enabled: bool = True
 
+        # Viewer collaboration mode — when enabled, the top audience suggestion
+        # is fed to the Narratron agent on each observability cycle.
+        self.viewer_collab_enabled: bool = False
+
         # Transient agent tool activity. This is intentionally not persisted: a
         # reconnect should not show an activity indicator left over from a
         # previous server process.
@@ -95,9 +100,11 @@ class CanvasStateManager:
                     self.music_paused = c_state.get("music_paused", False)
                     self.doodles_state = c_state.get("doodles", [])
                     self.doodles_enabled = c_state.get("doodles_enabled", True)
+                    self.viewer_collab_enabled = c_state.get("viewer_collab_enabled", False)
                     chat_msgs = c_state.get("chat_messages", [])
                     if chat_msgs:
                         self.chat_manager.messages = chat_msgs
+                    self.chat_manager.load_suggestions(c_state.get("suggestions", []))
                     logger.info(f"Loaded canvas state from {target_file.name} for theater '{self.theater_id}'.")
             except Exception as e:
                 logger.warning(f"Failed to load canvas state for {self.theater_id}: {e}")
@@ -254,6 +261,49 @@ class CanvasStateManager:
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
 
+    def set_viewer_collab_enabled(self, enabled: bool):
+        """Toggle viewer collaboration mode on or off."""
+        self.viewer_collab_enabled = bool(enabled)
+        sess_dir = (self.theaters_dir / self.theater_id).resolve()
+        if sess_dir.exists():
+            self.export_theater_data(theater_dir=sess_dir)
+
+    def get_doodle_snapshot_data(self) -> List[Dict[str, Any]]:
+        """Return the current doodle stroke data for agent observability."""
+        return list(self.doodles_state)
+
+    def get_doodle_snapshot_png(self) -> Optional[bytes]:
+        """Render the current image with normalized doodle strokes as a PNG."""
+        if not self.shown_image_path or not self.doodles_state:
+            return None
+        try:
+            from PIL import Image, ImageDraw
+
+            with Image.open(self.shown_image_path) as source:
+                image = source.convert("RGBA")
+            image.thumbnail((1600, 1600))
+            draw = ImageDraw.Draw(image)
+            width, height = image.size
+            scale = max(1.0, min(width, height) / 900)
+            for action in self.doodles_state:
+                if action.get("type") != "draw":
+                    continue
+                try:
+                    points = (float(action["x0"]) * width, float(action["y0"]) * height,
+                              float(action["x1"]) * width, float(action["y1"]) * height)
+                    draw.line(points, fill=action.get("color", "#ffffff"),
+                              width=max(1, round(float(action.get("size", 3)) * scale)))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            output = io.BytesIO()
+            # This image is an ephemeral agent-observability payload. Favor
+            # quick encoding over expensive PNG optimization.
+            image.convert("RGB").save(output, format="PNG", compress_level=1)
+            return output.getvalue()
+        except Exception as exc:
+            logger.warning("Failed to render viewer doodle snapshot: %s", exc)
+            return None
+
     def set_tool_activity(self, tool: str, active: bool = True, recent_seconds: float = 5.0):
         """Update transient canvas indicators for agent tool use."""
         if tool == "image":
@@ -344,13 +394,14 @@ class CanvasStateManager:
                             "prompt": ref_prompt,
                             "music": music_state,
                             "doodles_enabled": self.doodles_enabled,
+                            "viewer_collab_enabled": self.viewer_collab_enabled,
                             "transition": getattr(self, "shown_image_transition", "fade") or "fade",
                             "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
                             "history": formatted_history,
                             "tool_activity": self.get_tool_activity(),
                             "agent_thought": self.get_agent_thought(),
                         }
-            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history, "tool_activity": self.get_tool_activity(), "agent_thought": self.get_agent_thought()}
+            return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "viewer_collab_enabled": self.viewer_collab_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history, "tool_activity": self.get_tool_activity(), "agent_thought": self.get_agent_thought()}
             
         basename = os.path.basename(selected_file)
         
@@ -385,6 +436,7 @@ class CanvasStateManager:
             "prompt": prompt_text,
             "music": music_state,
             "doodles_enabled": self.doodles_enabled,
+            "viewer_collab_enabled": self.viewer_collab_enabled,
             "transition": getattr(self, "shown_image_transition", "fade") or "fade",
             "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
             "history": formatted_history,
@@ -417,6 +469,8 @@ class CanvasStateManager:
             "music_paused": self.music_paused,
             "doodles": list(self.doodles_state),
             "doodles_enabled": self.doodles_enabled,
+            "viewer_collab_enabled": self.viewer_collab_enabled,
+            "suggestions": self.chat_manager.export_suggestions(),
             "chat_messages": self.chat_manager.get_messages(),
         }
 

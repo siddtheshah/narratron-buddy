@@ -19,14 +19,25 @@ from components.canvas_state import CanvasStateManager
 
 logger = logging.getLogger(__name__)
 
-
 def format_canvas_state(canvas_state_manager: Optional[CanvasStateManager]) -> str:
     """Format the compact canvas state injected into the live agent context."""
     image_path = getattr(canvas_state_manager, "shown_image_path", None)
     image_name = Path(image_path).name if image_path else "none"
     image_prompt = getattr(canvas_state_manager, "shown_image_prompt", None) or "none"
     playlist = getattr(canvas_state_manager, "current_playlist", None) or "none"
-    return f"[Canvas Image]: {image_name}, {image_prompt}\n[Canvas music]: {playlist}"
+    parts = [f"[Canvas Image]: {image_name}, {image_prompt}", f"[Canvas music]: {playlist}"]
+
+    # Viewer Collaboration Mode: inject one ranked suggestion for the agent.
+    if getattr(canvas_state_manager, "viewer_collab_enabled", False) and canvas_state_manager is not None:
+        suggestion = canvas_state_manager.chat_manager.consume_top_suggestion()
+        if suggestion:
+            parts.append(
+                f"[Viewer Suggestion]: {suggestion['text']} "
+                f"(by {suggestion['author']}, {suggestion['upvote_count']} upvotes)"
+            )
+
+    return "\n".join(parts)
+
 
 
 def get_bound_tool_instance(agent: object, tool_name: str) -> object:
