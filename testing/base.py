@@ -12,13 +12,13 @@ class BaseTestCase(unittest.TestCase):
         self.addCleanup(self.cleanup_theater_directories)
         from utils.email_service import FLAGS
         FLAGS.send_emails = False
-        from web_viewer_app import FLAGS as WEB_FLAGS
+        from api_server.app import FLAGS as WEB_FLAGS
         WEB_FLAGS.allow_mock_payments = False
 
     def cleanup_theater_directories(self):
         # 1. Clear the shared canvas-state cache if loaded
         try:
-            from web_viewer_app import canvas_states
+            from api_server.app import canvas_states
             canvas_states.states.clear()
         except Exception:
             pass

@@ -28,11 +28,11 @@ class UITestCase(unittest.TestCase):
         )
 
     def isolate_canvas_state_service(self) -> CanvasStateService:
-        """Replace the web app's shared state service with a temporary one."""
-        import web_viewer_app
+        """Replace the registry's shared state service with a temporary one."""
+        import object_registry
 
         service = CanvasStateService(TheaterManager(base_theaters_dir=self.theaters_dir))
-        patcher = patch.object(web_viewer_app, "canvas_states", service)
+        patcher = patch.object(object_registry, "canvas_states", service)
         patcher.start()
         self.addCleanup(patcher.stop)
         return service

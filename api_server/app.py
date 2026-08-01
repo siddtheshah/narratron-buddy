@@ -18,12 +18,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from components.theater_manager import TheaterMetadata, extract_asset_package
-from object_registry import (
+import object_registry
+from api_server.dependencies import (
     FLAGS,
     agent_manager,
-    app,
     canvas_states,
-    config,
     db,
     pricing_controller,
     theater_manager,
@@ -32,7 +31,11 @@ from services.live_stream_service import handle_live_websocket_connection
 from utils.config_loader import get_theater_config, get_theater_default_config
 from utils.email_service import send_password_reset_email
 
+app = object_registry.app
+config = object_registry.config
+
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _format_about_inline(text: str) -> str:
@@ -105,21 +108,21 @@ def render_about_markdown(markdown_source: str) -> str:
     return "\n".join(blocks)
 
 # Static assets shared by the canvas templates.
-static_dir = Path(__file__).parent / "static"
+static_dir = PROJECT_ROOT / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Playlists folder from config (absolute path resolution)
-playlists_folder = str((Path(__file__).parent / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
+playlists_folder = str((PROJECT_ROOT / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
 os.makedirs(playlists_folder, exist_ok=True)
 app.mount("/playlists", StaticFiles(directory=playlists_folder), name="playlists")
 
 # Reference library folder (absolute path resolution)
-ref_library_folder = str((Path(__file__).parent / "reference_library").resolve())
+ref_library_folder = str((PROJECT_ROOT / "reference_library").resolve())
 os.makedirs(ref_library_folder, exist_ok=True)
 app.mount("/reference_library", StaticFiles(directory=ref_library_folder), name="reference_library")
 
 # Artwork used by the public join-page background carousel.
-carousel_folder = str((Path(__file__).parent / "templates" / "carousel").resolve())
+carousel_folder = str((PROJECT_ROOT / "templates" / "carousel").resolve())
 app.mount("/carousel", StaticFiles(directory=carousel_folder), name="carousel")
 
 class ChatMessage(BaseModel):
@@ -872,7 +875,7 @@ def list_theaters(request: Request):
 async def get_default_theater_config_endpoint(request: Request):
     """Return the source YAML used as the default for newly created theaters."""
     get_current_user(request)
-    config_path = Path(__file__).resolve().parent / "theater_default.yaml"
+    config_path = PROJECT_ROOT / "theater_default.yaml"
     try:
         content = config_path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -1455,7 +1458,7 @@ def get_stats_api():
 def read_favicon():
     """Serve the shared browser-tab icon."""
     return FileResponse(
-        Path(__file__).parent / "templates" / "narratron favicon.png",
+        PROJECT_ROOT / "templates" / "narratron favicon.png",
         media_type="image/png",
     )
 
@@ -1463,21 +1466,21 @@ def read_favicon():
 @app.get("/join", response_class=HTMLResponse)
 def read_join_splash():
     """Serve the public Join Splash Page."""
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "join_splash.html")
+    template_path = PROJECT_ROOT / "templates" / "join_splash.html"
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
 @app.get("/deploy", response_class=HTMLResponse)
 def read_deployer():
     """Serve the Theater Creation & App Deployer Dashboard."""
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "theater_creation.html")
+    template_path = PROJECT_ROOT / "templates" / "theater_creation.html"
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
 @app.get("/about", response_class=HTMLResponse)
 def read_about():
     """Serve the About page from the repository's ABOUT.md source."""
-    project_root = Path(__file__).parent
+    project_root = PROJECT_ROOT
     about_content = render_about_markdown(
         (project_root / "ABOUT.md").read_text(encoding="utf-8")
     )
@@ -1489,7 +1492,7 @@ def read_about():
 @app.get("/stats", response_class=HTMLResponse)
 def read_stats():
     """Serve the System Stats Dashboard Page."""
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "stats.html")
+    template_path = PROJECT_ROOT / "templates" / "stats.html"
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
@@ -1504,7 +1507,7 @@ def read_popout(request: Request, theater_id: Optional[str] = None, join_key: Op
             )
             _grant_canvas_access(response, request, theater_id, join_key)
             return response
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "popout.html")
+    template_path = PROJECT_ROOT / "templates" / "popout.html"
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
@@ -1540,7 +1543,7 @@ async def read_obs_canvas(
             )
         )
 
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "obs.html")
+    template_path = PROJECT_ROOT / "templates" / "obs.html"
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
@@ -1579,6 +1582,6 @@ async def read_canvas(
 
     is_obs = request.query_params.get("obs") == "1" or request.query_params.get("obs") == "true"
     template_name = "obs.html" if is_obs else "canvas.html"
-    template_path = os.path.join(os.path.dirname(__file__), "templates", template_name)
+    template_path = PROJECT_ROOT / "templates" / template_name
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()

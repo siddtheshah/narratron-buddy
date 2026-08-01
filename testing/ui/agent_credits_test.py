@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
-from web_viewer_app import app, get_theater_owner_credits, agent_manager
+from api_server.app import app, get_theater_owner_credits
 from storage.database import DatabaseManager
 
 
@@ -10,7 +10,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    @patch("web_viewer_app.db")
+    @patch("object_registry.db")
     def test_get_theater_owner_credits_positive(self, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_1", "user_id": 42}
         mock_db.get_user_by_id.return_value = {"id": 42, "credits": 50.0}
@@ -20,7 +20,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertEqual(balance, 50.0)
         self.assertEqual(owner_id, 42)
 
-    @patch("web_viewer_app.db")
+    @patch("object_registry.db")
     def test_get_theater_owner_credits_zero_or_negative(self, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_1", "user_id": 42}
         mock_db.get_user_by_id.return_value = {"id": 42, "credits": 0.0}
@@ -35,7 +35,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertFalse(has_credits_neg)
         self.assertEqual(balance_neg, -5.0)
 
-    @patch("web_viewer_app.db")
+    @patch("object_registry.db")
     def test_get_theater_owner_credits_missing_records(self, mock_db):
         mock_db.get_deployment.return_value = None
         has_credits, balance, owner_id = get_theater_owner_credits("non_existent_theater")
@@ -43,8 +43,8 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertEqual(balance, 0.0)
         self.assertIsNone(owner_id)
 
-    @patch("web_viewer_app.db")
-    @patch("web_viewer_app.agent_manager")
+    @patch("object_registry.db")
+    @patch("object_registry.agent_manager")
     def test_start_agent_blocked_when_credits_le_zero(self, mock_agent_mgr, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_poor", "user_id": 99}
         mock_db.get_user_by_id.return_value = {"id": 99, "credits": 0.0}
@@ -56,8 +56,8 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertEqual(json_data.get("agent_running"), False)
         mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_poor")
 
-    @patch("web_viewer_app.db")
-    @patch("web_viewer_app.agent_manager")
+    @patch("object_registry.db")
+    @patch("object_registry.agent_manager")
     def test_start_agent_allowed_when_credits_positive(self, mock_agent_mgr, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_rich", "user_id": 88}
         mock_db.get_user_by_id.return_value = {"id": 88, "credits": 20.0}
@@ -71,8 +71,8 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertFalse(json_data.get("insufficient_credits"))
         self.assertTrue(json_data.get("agent_running"))
 
-    @patch("web_viewer_app.db")
-    @patch("web_viewer_app.agent_manager")
+    @patch("object_registry.db")
+    @patch("object_registry.agent_manager")
     def test_get_agent_status_stops_session_when_credits_le_zero(self, mock_agent_mgr, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_depleted", "user_id": 77}
         mock_db.get_user_by_id.return_value = {"id": 77, "credits": -1.0}

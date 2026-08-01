@@ -3,7 +3,7 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from web_viewer_app import can_access_agent_websocket
+from api_server.app import can_access_agent_websocket
 
 
 class TestCanAccessAgentWebsocket(unittest.TestCase):

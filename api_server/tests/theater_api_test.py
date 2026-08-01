@@ -10,7 +10,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
-from web_viewer_app import app, theater_manager, db, FLAGS
+from api_server.app import app, theater_manager, db, FLAGS
 
 
 class TestTheaterAPI(BaseTestCase):
@@ -280,7 +280,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_export_assets_no_duplication(self):
         import zipfile
-        from web_viewer_app import canvas_states
+        from api_server.app import canvas_states
 
         # Register and log in
         reg_res = self.client.post("/api/auth/register", json={

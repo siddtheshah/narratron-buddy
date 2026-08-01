@@ -544,7 +544,7 @@ class AgentSession:
     def _get_database() -> Optional[Any]:
         """Resolve the application database lazily to avoid an import cycle."""
         try:
-            from web_viewer_app import db
+            from api_server.app import db
             return db
         except ImportError:
             return None

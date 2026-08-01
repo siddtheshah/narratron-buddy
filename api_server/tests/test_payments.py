@@ -8,7 +8,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
-from web_viewer_app import app, FLAGS, db, theater_manager, _is_mock_payment_mode
+from api_server.app import app, FLAGS, db, theater_manager, _is_mock_payment_mode
 
 
 class TestPaymentsFlow(BaseTestCase):

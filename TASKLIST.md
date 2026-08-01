@@ -23,7 +23,6 @@
 ## Refactors
 
 - [ ] Refactor web_viewer_app into api_server folder.
-- [ ] Refactor deployer/ out of existence, move logic.
 - [ ] Refactor canvas.html to be more modular.
 - [ ] Refactor database definitions to live as an external SQL schema, not baked in python code.
 
