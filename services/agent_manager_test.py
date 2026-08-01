@@ -4,12 +4,13 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 
-from services.agent_manager import AgentSessionManager, AgentSession, create_agent
+from services.agent import create_agent
+from services.agent_manager import AgentSessionManager, AgentSession
 
 
 class TestCreateAgent(unittest.TestCase):
-    @patch("services.agent_manager.create_tool_bundle_for_session")
-    @patch("services.agent_manager.Agent")
+    @patch("services.agent.create_tool_bundle_for_session")
+    @patch("services.agent.Agent")
     def test_create_agent_calls_list_references_on_init(
         self, mock_agent_cls, mock_bundle_fn
     ):
@@ -43,11 +44,11 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("/path/to/hero_character.png", kwargs["instruction"])
         self.assertIs(agent_inst, mock_agent_cls.return_value)
 
-    @patch("services.agent_manager.ImageTools")
-    @patch("services.agent_manager.ChatTools")
-    @patch("services.agent_manager.NotesTools")
-    @patch("services.agent_manager.MusicTools")
-    @patch("services.agent_manager.Agent")
+    @patch("services.agent.ImageTools")
+    @patch("services.agent.ChatTools")
+    @patch("services.agent.NotesTools")
+    @patch("services.agent.MusicTools")
+    @patch("services.agent.Agent")
     def test_create_agent_passes_canvas_state_service_to_every_tool(
         self, mock_agent_cls, mock_music_cls, mock_notes_cls, mock_chat_cls, mock_image_cls
     ):

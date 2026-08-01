@@ -20,13 +20,12 @@
   - If the image is on canvas, it'll be faded in. 
   - Otherwise, the adapted image will simply remain available to be pulled in.
 
-## Theaters
+## Refactors
 
-- [x] Give all theaters their own theater.yaml that has settings for that theater.
-  - Let the user set their theater settings from within the canvas. Settings load is OK to require agent restart.
+- [ ] Refactor web_viewer_app into api_server folder.
+- [ ] Refactor deployer/ out of existence, move logic.
 
 ## Long Context
 
-- [x] Fix agent disconnections
-  - The agent appears to constantly forget its prior history, and keeps sending "hello" type messages.
-  - The agent appears to self-trigger based on its canvas observability. This is not ideal.
+- [ ] Agent appears to be reading files in the background, possibly, and going astray.
+   - Profile usage of the LoadArtifactsTool. Figure out what's really happening.
