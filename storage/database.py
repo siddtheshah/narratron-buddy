@@ -1023,6 +1023,38 @@ class DatabaseManager:
             """)
             return [row["theater_id"] for row in cursor.fetchall() if row["theater_id"]]
 
+    def get_theaters_last_used(self) -> Dict[str, str]:
+        """Return a mapping of theater_id to its most recent activity timestamp (ISO string)."""
+        activity_map: Dict[str, str] = {}
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. canvas_deployments created_at / last_billed_at
+            cursor.execute("SELECT theater_id, created_at, last_billed_at FROM canvas_deployments")
+            for row in cursor.fetchall():
+                tid = row["theater_id"]
+                if tid:
+                    ts = row["last_billed_at"] or row["created_at"]
+                    if ts and (tid not in activity_map or ts > activity_map[tid]):
+                        activity_map[tid] = ts
+
+            # 2. exported_theaters exported_at
+            cursor.execute("SELECT theater_id, exported_at FROM exported_theaters")
+            for row in cursor.fetchall():
+                tid = row["theater_id"]
+                ts = row["exported_at"]
+                if tid and ts and (tid not in activity_map or ts > activity_map[tid]):
+                    activity_map[tid] = ts
+
+            # 3. theater_views viewed_at
+            cursor.execute("SELECT theater_id, MAX(viewed_at) as last_viewed FROM theater_views GROUP BY theater_id")
+            for row in cursor.fetchall():
+                tid = row["theater_id"]
+                ts = row["last_viewed"]
+                if tid and ts and (tid not in activity_map or ts > activity_map[tid]):
+                    activity_map[tid] = ts
+
+        return activity_map
+
     def get_theater_metadata_from_db(self, theater_id: str) -> Optional[Dict]:
         """Extract metadata dictionary for a theater stored in database without reconstructing disk files."""
         import json

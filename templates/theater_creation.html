@@ -2497,20 +2497,41 @@
             }
         }
 
-        // Active Theaters List
+        // Active Theaters / Personal Sessions List
         async function loadTheaters() {
             const body = document.getElementById('theatersTableBody');
+            const panelTitle = document.getElementById('theatersPanelTitle');
             try {
                 const res = await fetch('/api/theaters');
                 const theaters = await res.json();
 
-                if (!theaters || theaters.length === 0) {
-                    body.innerHTML = `<tr><td colspan="6" class="empty-state">No theaters deployed yet. Create your first theater above!</td></tr>`;
+                if (currentUser) {
+                    if (panelTitle) panelTitle.innerHTML = `<span>👤</span> Personal Sessions`;
+                } else {
+                    if (panelTitle) panelTitle.innerHTML = `<span>🌐</span> Global Theaters`;
+                }
+
+                let displayTheaters = theaters || [];
+                if (currentUser) {
+                    displayTheaters = displayTheaters.filter(s => s.is_owner);
+                }
+
+                displayTheaters.sort((a, b) => {
+                    const timeA = a.last_used_at || a.created_at || '';
+                    const timeB = b.last_used_at || b.created_at || '';
+                    return timeB.localeCompare(timeA);
+                });
+
+                if (displayTheaters.length === 0) {
+                    const emptyMsg = currentUser 
+                        ? 'No personal sessions found. Create your first theater above!' 
+                        : 'No global theaters deployed yet.';
+                    body.innerHTML = `<tr><td colspan="6" class="empty-state">${emptyMsg}</td></tr>`;
                     return;
                 }
 
                 body.innerHTML = '';
-                theaters.forEach(s => {
+                displayTheaters.forEach(s => {
                     const tr = document.createElement('tr');
                     const badgeClass = s.status === 'deployed' ? 'badge-deployed' : (s.status === 'created' ? 'badge-created' : 'badge-stopped');
 
@@ -2763,12 +2784,15 @@
         }
 
         // Initialize on load
-        playlistsData['default'] = [];
-        renderPlaylists();
-        checkAuthStatus();
-        loadTheaters();
-        checkResetTokenInURL();
-        checkPaymentStatusInURL();
+        async function initPage() {
+            playlistsData['default'] = [];
+            renderPlaylists();
+            await checkAuthStatus();
+            await loadTheaters();
+            checkResetTokenInURL();
+            checkPaymentStatusInURL();
+        }
+        initPage();
     </script>
 </body>
 

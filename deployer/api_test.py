@@ -247,6 +247,37 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(del_res.status_code, 200)
         self.assertEqual(del_res.json()["status"], "ok")
 
+    def test_destroy_theater_not_on_disk(self):
+        reg_res = self.client.post("/api/auth/register", json={
+            "username": "db_delete_user",
+            "email": "db_delete@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "DB Only Theater", "style": "cyberpunk"},
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+
+        # Simulate theater not being on disk (e.g. not launched recently / cold server)
+        import shutil
+        t_dir = local_deployer._get_theater_dir(theater_id)
+        if t_dir.exists():
+            shutil.rmtree(t_dir)
+
+        self.assertFalse(t_dir.exists())
+
+        # Attempt deleting theater
+        del_res = self.client.delete(f"/api/theaters/{theater_id}")
+        self.assertEqual(del_res.status_code, 200)
+        self.assertEqual(del_res.json()["status"], "ok")
+
+        # Verify deployment is removed from DB
+        self.assertIsNone(db.get_deployment(theater_id))
+
     def test_export_assets_no_duplication(self):
         import zipfile
         from web_viewer_app import canvas_states

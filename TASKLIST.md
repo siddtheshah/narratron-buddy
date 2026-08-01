@@ -27,6 +27,6 @@
 
 ## Long Context
 
-- [ ] Fix agent disconnections
+- [x] Fix agent disconnections
   - The agent appears to constantly forget its prior history, and keeps sending "hello" type messages.
   - The agent appears to self-trigger based on its canvas observability. This is not ideal.
