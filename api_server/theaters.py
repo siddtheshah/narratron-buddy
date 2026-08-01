@@ -523,8 +523,17 @@ async def take_back_baton(theater_id: str, request: Request):
 @app.post("/api/theaters/{theater_id}/save", status_code=202)
 async def save_theater_to_db(theater_id: str, request: Request):
     """Save canvas theater state and image assets to SQLite database on user demand."""
-    meta = theater_manager.get_theater(theater_id)
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
     dep = db.get_deployment(theater_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Active theater not found.")
+    if dep["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the theater owner can save this theater.")
+
+    meta = theater_manager.get_theater(theater_id)
     user_id = dep["user_id"] if dep else None
     name = meta.name if meta else theater_id
 
@@ -545,6 +554,12 @@ def export_theater_assets(theater_id: str, request: Request):
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
+
+    dep = db.get_deployment(theater_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Active theater not found.")
+    if dep["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the theater owner can export this theater.")
 
     theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists():

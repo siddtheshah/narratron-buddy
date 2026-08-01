@@ -78,13 +78,6 @@ def get_current_user(request: Request | WebSocket, *, record_activity: bool = Tr
         if user:
             return user
 
-    if hasattr(request, "query_params") and request.query_params:
-        uid_str = request.query_params.get("user_id") or request.query_params.get("user")
-        if uid_str and uid_str.isdigit():
-            user = db.get_user_by_id(int(uid_str))
-            if user:
-                return user
-
     return None
 
 

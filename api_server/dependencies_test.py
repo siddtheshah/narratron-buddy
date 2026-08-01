@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import object_registry
 from api_server import app
 from api_server.app import get_current_user, get_theater_owner_credits
+from api_server.dependencies import RegistryDependency
 
 
 def test_current_user_uses_a_database_replaced_in_the_object_registry():
@@ -40,3 +41,30 @@ def test_missing_registry_deployment_is_reported_as_no_available_credits():
 
     with patch.object(object_registry, "db", replacement_db):
         assert get_theater_owner_credits("missing") == (False, 0.0, None)
+
+
+def test_dependency_looks_up_replaced_registry_target_for_every_access():
+    first = MagicMock(name="first")
+    first.answer = 1
+    second = MagicMock(name="second")
+    second.answer = 2
+    dependency = RegistryDependency("db")
+
+    with patch.object(object_registry, "db", first):
+        assert dependency.answer == 1
+        assert dependency.target is first
+    with patch.object(object_registry, "db", second):
+        assert dependency.answer == 2
+        assert dependency.target is second
+
+
+def test_dependency_assignment_updates_the_current_registry_target():
+    replacement_db = MagicMock()
+    dependency = RegistryDependency("db")
+    with patch.object(object_registry, "db", replacement_db):
+        dependency.timeout = 30
+    assert replacement_db.timeout == 30
+
+
+def test_dependency_representation_identifies_its_registry_entry():
+    assert repr(RegistryDependency("canvas_states")) == "RegistryDependency('canvas_states')"

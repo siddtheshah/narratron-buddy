@@ -1,9 +1,14 @@
 import base64
+import asyncio
+import importlib
 import json
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import object_registry
 from api_server.app import can_access_agent_websocket
+app_module = importlib.import_module("api_server.app")
 
 
 class TestCanAccessAgentWebsocket(unittest.TestCase):
@@ -50,6 +55,36 @@ class TestCanAccessAgentWebsocket(unittest.TestCase):
         current_user = {"id": 42}
 
         self.assertFalse(can_access_agent_websocket(request, deployment, current_user=current_user))
+
+
+def test_start_agent_stops_registry_session_when_owner_has_no_credits():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11}
+    registry_db.get_user_by_id.return_value = {"id": 11, "credits": 0}
+    manager = MagicMock()
+
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "agent_manager", manager):
+        response = asyncio.run(app_module.start_agent_endpoint("stage"))
+
+    assert response.status_code == 402
+    manager.stop_session.assert_called_once_with(theater_id="stage")
+
+
+def test_agent_status_reads_active_session_from_registry_manager():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11}
+    registry_db.get_user_by_id.return_value = {"id": 11, "credits": 3.5}
+    manager = MagicMock()
+    manager.get_session.return_value = SimpleNamespace(
+        status="running", websocket_connected=True, created_at="now", last_active_at="later"
+    )
+
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "agent_manager", manager):
+        result = asyncio.run(app_module.get_agent_status_endpoint("stage"))
+
+    assert result["agent_running"] is True
+    assert result["websocket_connected"] is True
+    assert result["credits"] == 3.5
 
 
 if __name__ == "__main__":

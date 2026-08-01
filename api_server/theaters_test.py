@@ -7,10 +7,15 @@ import shutil
 import tempfile
 import unittest
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
 from api_server.app import app, theater_manager, db, FLAGS, canvas_states
+import object_registry
+import api_server.theaters as theaters
+from unittest.mock import MagicMock, patch
 
 
 class TestTheaterAPI(BaseTestCase):
@@ -508,4 +513,55 @@ class TestTheaterAPI(BaseTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_list_theaters_reads_disk_and_database_metadata_from_registry():
+    metadata = MagicMock()
+    metadata.theater_id = "disk-stage"
+    metadata.model_dump.return_value = {"theater_id": "disk-stage", "join_key": "DISK"}
+    manager = MagicMock()
+    manager.list_theaters.return_value = [metadata]
+    registry_db = MagicMock()
+    registry_db.get_all_exported_theater_ids.return_value = ["disk-stage", "db-stage"]
+    registry_db.get_theater_metadata_from_db.return_value = {"theater_id": "db-stage", "join_key": "DB"}
+    registry_db.get_theaters_last_used.return_value = {"db-stage": "2026-01-01"}
+    registry_db.get_deployment.side_effect = lambda theater_id: {"user_id": 1} if theater_id == "disk-stage" else {"user_id": 2}
+
+    with patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user", return_value={"id": 1}):
+        result = theaters.list_theaters(MagicMock())
+
+    by_id = {item["theater_id"]: item for item in result}
+    assert by_id["disk-stage"]["is_owner"] is True
+    assert by_id["db-stage"]["join_key"] == "\U0001f512 Owner Only"
+
+
+def test_resolve_join_key_uses_registry_database_and_grants_verified_access():
+    registry_db = MagicMock()
+    registry_db.get_theater_by_join_key.return_value = {"theater_id": "stage", "join_key": "JOIN", "user_id": 2}
+    manager = MagicMock()
+    metadata = type("Metadata", (), {"theater_id": "stage", "name": "Mock Theater"})()
+    manager.get_theater.return_value = metadata
+    response = MagicMock()
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "theater_manager", manager), patch.object(theaters, "_grant_canvas_access") as grant:
+        result = theaters.resolve_join_key(theaters.ResolveJoinKeyRequest(join_key="JOIN"), MagicMock(), response)
+    assert result == {"status": "ok", "theater_id": "stage", "name": "Mock Theater", "user_id": 2}
+    grant.assert_called_once_with(response, __import__("unittest.mock").mock.ANY, "stage", "JOIN")
+
+
+@pytest.mark.asyncio
+async def test_save_theater_requires_the_registry_deployment_owner():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 2}
+    with patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user", return_value={"id": 3}), pytest.raises(HTTPException) as error:
+        await theaters.save_theater_to_db("stage", MagicMock())
+    assert error.value.status_code == 403
+    registry_db.persist_canvas_theater_async.assert_not_called()
+
+
+def test_export_theater_requires_the_registry_deployment_owner():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 2}
+    with patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user", return_value={"id": 3}), pytest.raises(HTTPException) as error:
+        theaters.export_theater_assets("stage", MagicMock())
+    assert error.value.status_code == 403
 

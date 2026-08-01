@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from testing.base import BaseTestCase
 from api_server import app, FLAGS, db, theater_manager
 from api_server.payments import _is_mock_payment_mode
+import api_server.payments as payments
+import object_registry
 
 
 class TestPaymentsFlow(BaseTestCase):
@@ -115,3 +117,13 @@ class TestPaymentsFlow(BaseTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_payment_history_reads_transactions_from_registry_database():
+    registry_db = MagicMock()
+    registry_db.get_user_transactions.return_value = [{"credits_added": 100.0}]
+    request = MagicMock()
+    with patch.object(object_registry, "db", registry_db), patch.object(payments, "get_current_user", return_value={"id": 7}):
+        result = payments.get_payment_history(request)
+    assert result == {"status": "ok", "transactions": [{"credits_added": 100.0}]}
+    registry_db.get_user_transactions.assert_called_once_with(7)
