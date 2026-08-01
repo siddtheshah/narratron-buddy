@@ -795,6 +795,9 @@ def list_theaters(request: Request):
             if db_meta:
                 all_theaters_dict[sid] = db_meta
 
+    # Fetch last_used timestamps map from DB
+    activity_map = db.get_theaters_last_used()
+
     result = []
     for sid, s_dict in all_theaters_dict.items():
         dep = db.get_deployment(sid)
@@ -802,15 +805,17 @@ def list_theaters(request: Request):
         is_owner = (current_user_id is not None and owner_id == current_user_id)
 
         s_dict["is_owner"] = is_owner
-        
+        last_used = activity_map.get(sid) or s_dict.get("created_at") or ""
+        s_dict["last_used_at"] = last_used
+
         # Hide join_key if not owner
         if not is_owner:
             s_dict["join_key"] = "🔒 Owner Only"
             
         result.append(s_dict)
 
-    # Sort: owned theaters first, then by created_at desc
-    result.sort(key=lambda x: (not x["is_owner"], x.get("created_at", "")), reverse=False)
+    # Sort: owned theaters first, then by last_used_at desc, then created_at desc
+    result.sort(key=lambda x: (x["is_owner"], x.get("last_used_at", "") or x.get("created_at", "")), reverse=True)
     return result
 
 @app.get("/api/theaters/{theater_id}")
@@ -1067,13 +1072,16 @@ def destroy_theater(theater_id: str, request: Request):
         raise HTTPException(status_code=401, detail="Authentication required to delete theaters.")
 
     dep = db.get_deployment(theater_id)
-    if dep and dep["user_id"] != user["id"]:
+    if dep and dep.get("user_id") is not None and dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can delete this theater.")
 
-    success = local_deployer.destroy_theater(theater_id)
-    if not success:
+    disk_removed = local_deployer.destroy_theater(theater_id)
+    db_deleted = db.delete_deployment(theater_id)
+    canvas_states.states.pop(theater_id, None)
+
+    if not (disk_removed or db_deleted):
         raise HTTPException(status_code=404, detail="Theater not found or could not be removed")
-    db.delete_deployment(theater_id)
+
     return {"status": "ok", "theater_id": theater_id}
 
 # ========================================
