@@ -1053,6 +1053,39 @@
             border-radius: 10px;
         }
 
+        .agent-thought-card {
+            margin: 0.75rem 0.75rem 0;
+            padding: 0.7rem 0.8rem;
+            border: 1px solid rgba(168, 85, 247, 0.38);
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(88, 28, 135, 0.34), rgba(30, 41, 59, 0.7));
+            box-shadow: 0 5px 16px rgba(0, 0, 0, 0.18);
+        }
+
+        .agent-thought-label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0.35rem;
+            color: #e9d5ff;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .agent-thought-text {
+            color: #e2e8f0;
+            font-size: 0.83rem;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-word;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 4;
+            overflow: hidden;
+        }
+
         .chat-message {
             background: rgba(255, 255, 255, 0.05);
             padding: 0.75rem;
@@ -1490,6 +1523,10 @@
                 <span id="chat-name-badge"
                     style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
             </div>
+            <div id="agent-thought-card" class="agent-thought-card" aria-live="polite">
+                <div class="agent-thought-label">📌 Narratron's current thought</div>
+                <div id="agent-thought-text" class="agent-thought-text">Waiting for Narratron to think…</div>
+            </div>
             <div id="chat-messages"></div>
             <form id="chat-form">
                 <input type="text" id="chat-input" placeholder="Type an idea..." autocomplete="off" required>
@@ -1520,6 +1557,7 @@
         const chatMessages = document.getElementById('chat-messages');
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
+        const agentThoughtText = document.getElementById('agent-thought-text');
 
         const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
         const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
@@ -2170,6 +2208,7 @@
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 updateAgentActivity(data.tool_activity);
+                updateAgentThought(data.agent_thought);
 
                 // Process music payload
                 if (data.music && data.music.time > lastPlaylistTime) {
@@ -2329,6 +2368,7 @@
         });
 
         let lastMessageCount = 0;
+        let lastAgentThought = null;
         async function fetchChat() {
             try {
                 const response = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
@@ -2344,6 +2384,13 @@
             } catch (err) {
                 console.error("Failed to fetch chat:", err);
             }
+        }
+
+        function updateAgentThought(thought) {
+            const text = thought && thought.text ? thought.text.trim() : '';
+            if (text === lastAgentThought) return;
+            agentThoughtText.textContent = text || 'Waiting for Narratron to think…';
+            lastAgentThought = text;
         }
 
         // Doodle Logic with Full HiDPI Persistence & Replay

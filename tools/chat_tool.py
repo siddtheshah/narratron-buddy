@@ -17,21 +17,21 @@ class ChatTools(BaseTools):
 
     @with_cooldown("sending chat message")
     def send_chat_message(self, text: str) -> str:
-        """Sends a text message/response to the user chat window.
+        """Updates Narratron's pinned current-thought panel.
 
         Args:
-            text: The text message to send to the user.
+            text: The current thought or status to show to viewers.
 
         Returns:
             A status message indicating success or failure.
         """
         try:
-            logger.info(f"[chat_tool] Sending chat message: {text}")
+            logger.info(f"[chat_tool] Updating agent thought: {text}")
             if self.canvas_state_service:
-                self.canvas_state_service.add_chat_message(text, author="agent", theater_id=self.theater_id)
+                self.canvas_state_service.set_agent_thought(text, theater_id=self.theater_id)
             if self.on_send_chat_message:
                 self.on_send_chat_message(text)
-            return f"Successfully sent chat message to the user: {text}"
+            return f"Successfully updated the Narratron thought panel: {text}"
         except Exception as e:
             logger.error(f"[chat_tool] Error sending chat message: {e}")
             return f"Error sending chat message: {e}"

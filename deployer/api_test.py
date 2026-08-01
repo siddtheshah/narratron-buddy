@@ -424,6 +424,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(custom_data["credits_added"], 150.0)
         # 8. Service unavailable when gateway unconfigured
         FLAGS.allow_mock_payments = False
+        key_var = os.environ.pop("STRIPE_SECRET_KEY", None)
         unavail_res = self.client.post("/api/payments/buy-credits", json={
             "package_id": "starter",
             "card_number": "4242424242424242",
@@ -432,6 +433,8 @@ class TestTheaterAPI(BaseTestCase):
         })
         self.assertEqual(unavail_res.status_code, 503)
         self.assertEqual(unavail_res.json()["detail"], "Payment service unavailable")
+        if key_var is not None:
+            os.environ["STRIPE_SECRET_KEY"] = key_var
 
 
 if __name__ == "__main__":

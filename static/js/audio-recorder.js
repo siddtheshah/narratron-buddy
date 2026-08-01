@@ -35,7 +35,7 @@ export async function startAudioRecorderWorklet(audioRecorderHandler) {
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       channelCount: 1,
-      echoCancellation: true,
+      // echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     },

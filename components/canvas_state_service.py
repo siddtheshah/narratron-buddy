@@ -79,6 +79,9 @@ class CanvasStateService:
     def add_chat_message(self, text: str, author: str = "agent", theater_id: Optional[str] = None) -> None:
         self.get(theater_id).add_chat_message(text, author=author)
 
+    def set_agent_thought(self, text: str, theater_id: Optional[str] = None) -> None:
+        self.get(theater_id).set_agent_thought(text)
+
     def set_tool_activity(
         self,
         tool: str,
