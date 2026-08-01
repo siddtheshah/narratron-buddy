@@ -20,7 +20,6 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy application source
-COPY agent.py .
 COPY combined_app.py .
 COPY web_viewer_app.py .
 COPY evaluate_narration.py .

@@ -19,8 +19,6 @@ from components.canvas_state import CanvasStateManager
 
 logger = logging.getLogger(__name__)
 
-CANVAS_STATE_REFRESH_SECONDS = 45.0
-
 
 def format_canvas_state(canvas_state_manager: Optional[CanvasStateManager]) -> str:
     """Format the compact canvas state injected into the live agent context."""

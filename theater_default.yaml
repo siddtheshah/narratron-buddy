@@ -1,5 +1,5 @@
 agent:
-    proactivity: true
+    proactivity: false
     affective_dialog: false
 
 image_generation:
@@ -15,8 +15,4 @@ notes:
     cooldown_duration: 5
 
 chat:
-    cooldown_duration: 15
-
-email:
-    enabled: false
-
+    cooldown_duration: 12

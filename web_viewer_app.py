@@ -372,12 +372,10 @@ def logout_user(request: Request, response: Response):
 
 @app.get("/api/auth/me")
 def get_auth_me(request: Request):
-    app_cfg = get_app_config()
-    use_ricky = app_cfg.get("audio", {}).get("use_ricky0123_vad", True)
     user = get_current_user(request)
     if not user:
-        return {"authenticated": False, "user": None, "use_ricky0123_vad": use_ricky}
-    return {"authenticated": True, "user": user, "use_ricky0123_vad": use_ricky}
+        return {"authenticated": False, "user": None}
+    return {"authenticated": True, "user": user}
 
 @app.post("/api/auth/mic-sensitivity")
 def update_mic_sensitivity_endpoint(req: MicSensitivityRequest, request: Request):
@@ -818,6 +816,19 @@ def list_theaters(request: Request):
     result.sort(key=lambda x: (x["is_owner"], x.get("last_used_at", "") or x.get("created_at", "")), reverse=True)
     return result
 
+@app.get("/api/theaters/default-config")
+async def get_default_theater_config_endpoint(request: Request):
+    """Return the source YAML used as the default for newly created theaters."""
+    get_current_user(request)
+    config_path = Path(__file__).resolve().parent / "theater_default.yaml"
+    try:
+        content = config_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="theater_default.yaml is unavailable.")
+    except OSError as err:
+        raise HTTPException(status_code=500, detail=f"Failed to read theater_default.yaml: {err}")
+    return {"config_yaml": content}
+
 @app.get("/api/theaters/{theater_id}")
 async def get_theater(theater_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific theater."""
@@ -1002,13 +1013,21 @@ async def create_and_deploy_theater(request: Request):
                         playlists_data[pl_name] = []
                     playlists_data[pl_name].append((filename, content))
 
+    raw_config_yaml = form.get("theater_config_yaml")
     raw_config_param = form.get("theater_config")
     theater_config = None
-    if raw_config_param:
+    if raw_config_yaml:
+        try:
+            theater_config = yaml.safe_load(str(raw_config_yaml)) or {}
+        except yaml.YAMLError as err:
+            raise HTTPException(status_code=400, detail=f"Invalid theater YAML: {err}")
+        if not isinstance(theater_config, dict):
+            raise HTTPException(status_code=400, detail="Invalid theater YAML: root must be a mapping/object.")
+    elif raw_config_param:
         try:
             theater_config = json.loads(raw_config_param) if isinstance(raw_config_param, str) else raw_config_param
         except Exception:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid theater configuration.")
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = local_deployer.create_theater(

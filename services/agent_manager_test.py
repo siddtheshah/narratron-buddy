@@ -1,6 +1,7 @@
 import asyncio
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 
@@ -246,6 +247,46 @@ class TestAgentSessionManager(unittest.TestCase):
             asyncio.run(session.add_websocket(mock_ws))
             self.assertTrue(session.websocket_connected)
             mock_send_canvas.assert_called_once_with(force=True)
+
+    def test_canvas_observability_respects_startup_delay_and_interval(self):
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(
+            theater_id="test_observability_timing",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            config={
+                "agent_internal": {
+                    "observability_startup_delay": 10,
+                    "observability_interval": 30,
+                }
+            },
+        )
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+        session.canvas_state_manager = SimpleNamespace(
+            shown_image_path=None,
+            shown_image_prompt=None,
+            current_playlist=None,
+        )
+
+        session.observability_available_at = 110.0
+        with patch("services.agent_manager.time.monotonic", return_value=100.0):
+            self.assertFalse(session.send_canvas_state(force=True))
+
+        with patch("services.agent_manager.time.monotonic", return_value=110.0):
+            self.assertTrue(session.send_canvas_state())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 1)
+
+        with patch("services.agent_manager.time.monotonic", return_value=139.0):
+            self.assertFalse(session.send_canvas_state())
+
+        with patch("services.agent_manager.time.monotonic", return_value=140.0):
+            self.assertTrue(session.send_canvas_state())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
     @patch("services.agent_manager.AgentSession._get_database")
     def test_usage_tracking_and_db_flushing(self, mock_get_database):

@@ -1,239 +1,96 @@
 /**
- * Audio Recorder Worklet
+ * Microphone capture for the live agent.
+ *
+ * `record-pcm` owns the complete capture/VAD pipeline.  Keeping capture in one
+ * place prevents duplicate microphone streams and duplicate PCM uploads.
  */
+import { listenForSpeech } from "https://cdn.jsdelivr.net/npm/record-pcm@1.1.3/dist/index.mjs";
 
-import { startRickyVadRecorder, stopRickyVadRecorder } from "./ricky-vad.js";
+const SAMPLE_RATE = 16000;
+const DEFAULT_VAD_THRESHOLD = 0.01;
+const DEFAULT_SILENCE_MS = 600;
+const DEFAULT_MIN_SPEECH_MS = 180;
 
-let micStream;
-let _lastMicDetection = 0;
-let _frameCounter = 0;
-let _isSpeaking = false;
-let _lastSpeechTime = 0;
-let _currentVadInstance = null;
+let stopListening = null;
+let speechActive = false;
 
-function getMicDetectThreshold() {
-  if (typeof window !== "undefined" && window.MIC_DETECT_THRESHOLD !== undefined) {
-    return window.MIC_DETECT_THRESHOLD;
-  }
-  return 0.01;
+function vadThreshold() {
+  const threshold = Number(window.MIC_DETECT_THRESHOLD);
+  return Number.isFinite(threshold) && threshold > 0
+    ? threshold
+    : DEFAULT_VAD_THRESHOLD;
 }
 
-const _MIC_DETECT_THROTTLE_MS = 250; // minimum ms between logs
-const _SPEECH_GRACE_PERIOD_MS = 500; // 0.5s grace period before emitting ActivityEnd
-
-
-export async function startAudioRecorderWorklet(audioRecorderHandler) {
-  // Create an AudioContext
-  const audioRecorderContext = new AudioContext({ sampleRate: 16000 });
-  console.log("AudioContext sample rate:", audioRecorderContext.sampleRate);
-
-  // Load the AudioWorklet module
-  const workletURL = new URL("./pcm-recorder-processor.js", import.meta.url);
-  await audioRecorderContext.audioWorklet.addModule(workletURL);
-
-  // Request access to the microphone with Acoustic Echo Cancellation (AEC) and Noise Suppression
-  micStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      channelCount: 1,
-      // echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-  });
-  const source = audioRecorderContext.createMediaStreamSource(micStream);
-
-  // Create an input-only AudioWorkletNode for the PCMProcessor.
-  const audioRecorderNode = new AudioWorkletNode(audioRecorderContext, "pcm-recorder-processor", {
-    numberOfInputs: 1,
-    numberOfOutputs: 0,
-    channelCount: 1,
-    channelCountMode: 'explicit',
-    channelInterpretation: 'speakers',
-  });
-  console.log("AudioWorkletNode created:", {
-    numberOfInputs: audioRecorderNode.numberOfInputs,
-    numberOfOutputs: audioRecorderNode.numberOfOutputs,
-    channelCount: audioRecorderNode.channelCount,
-    channelCountMode: audioRecorderNode.channelCountMode,
-    state: audioRecorderContext.state,
-  });
-
-  // Connect the microphone source to the worklet.
-  source.connect(audioRecorderNode);
-  await audioRecorderContext.resume();
-  console.log("AudioContext state after resume:", audioRecorderContext.state);
-
-  // Determine initial Silero VAD thresholds from window or default 0.50
-  const posThreshold = typeof window !== "undefined" && window.VAD_POSITIVE_THRESHOLD !== undefined
-    ? window.VAD_POSITIVE_THRESHOLD
-    : 0.5;
-  const negThreshold = typeof window !== "undefined" && window.VAD_NEGATIVE_THRESHOLD !== undefined
-    ? window.VAD_NEGATIVE_THRESHOLD
-    : Math.max(0.05, posThreshold - 0.15);
-
-  const useRickyVad = typeof window === "undefined" || window.USE_RICKY0123_VAD !== false;
-
-  // Initialize @ricky0123/vad-web via ricky-vad.js if enabled
-  if (useRickyVad && typeof window !== "undefined" && window.vad && window.vad.MicVAD) {
-    try {
-      _currentVadInstance = await startRickyVadRecorder({
-        micStream,
-        positiveSpeechThreshold: posThreshold,
-        negativeSpeechThreshold: negThreshold,
-        onSpeechStart: () => {
-          console.log("[AudioRecorder] Speech START detected");
-          _isSpeaking = true;
-          _lastSpeechTime = Date.now();
-          try {
-            const ws = window.agentWs;
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: "activity_start", ts: new Date().toISOString() }));
-            }
-          } catch (e) {
-            console.debug("Failed to send activity_start:", e);
-          }
-        },
-        onSpeechEnd: (audio) => {
-          console.log("[AudioRecorder] Speech END detected. Forwarding VAD audio buffer (samples: " + (audio ? audio.length : 0) + ")");
-          _isSpeaking = false;
-          if (audio && audio.length > 0 && typeof audioRecorderHandler === 'function') {
-            try {
-              const pcmData = convertFloat32ToPCM(audio);
-              audioRecorderHandler(pcmData);
-            } catch (err) {
-              console.warn("Failed to forward VAD audio payload:", err);
-            }
-          }
-          try {
-            const ws = window.agentWs;
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: "activity_end", ts: new Date().toISOString() }));
-            }
-          } catch (e) {
-            console.debug("Failed to send activity_end:", e);
-          }
-        }
-      });
-    } catch (vadErr) {
-      console.warn("[AudioRecorder] Failed to start ricky-vad, using RMS fallback:", vadErr);
-      _currentVadInstance = null;
-    }
-  } else {
-    console.log("[AudioRecorder] ricky-vad disabled or library not loaded, using RMS fallback.");
+function sendControlMessage(type) {
+  const ws = window.agentWs;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type, ts: new Date().toISOString() }));
   }
+}
 
-  audioRecorderNode.port.onmessage = (event) => {
-    // Process audio frame
-    try {
-      const samples = event.data;
-      let sum = 0.0;
-      for (let i = 0; i < samples.length; i++) {
-        sum += samples[i] * samples[i];
-      }
-      const rms = Math.sqrt(sum / samples.length);
-      _frameCounter += 1;
-      if (_frameCounter % 20 === 0) {
-        console.log("Audio frame RMS:", rms.toFixed(6), "samples=", samples.length, "isSpeaking=", _isSpeaking, "VAD active=", !!_currentVadInstance);
-      }
+function emitVadEvent(phase) {
+  // These browser events make VAD state available to UI integrations and tests.
+  const detail = { ts: new Date().toISOString() };
+  window.dispatchEvent(new CustomEvent(phase === "start" ? "vadstart" : "vadstop", { detail }));
+  window.dispatchEvent(new CustomEvent(`narratron:vad-${phase}`, { detail }));
 
-      // If Silero VAD is NOT active, use RMS fallback threshold
-      if (!_currentVadInstance) {
-        const now = Date.now();
-        const currentThreshold = getMicDetectThreshold();
-        if (rms > currentThreshold) {
-          _lastSpeechTime = now;
-          if (!_isSpeaking) {
-            _isSpeaking = true;
-            console.log("[AudioRecorder] (RMS Fallback) Activity START detected (RMS:", rms.toFixed(5), ")");
-            try {
-              const ws = window.agentWs;
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "activity_start", ts: new Date().toISOString() }));
-              }
-            } catch (e) {
-              console.debug("Failed to send activity_start:", e);
-            }
-          }
-          if (now - _lastMicDetection > _MIC_DETECT_THROTTLE_MS) {
-            _lastMicDetection = now;
-            const ts = new Date().toISOString();
-            try {
-              const ws = window.agentWs;
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "mic_detect", rms: rms, ts }));
-              }
-            } catch (e) {
-              console.debug("Failed to send mic_detect over agentWs:", e);
-            }
-          }
-        } else if (_isSpeaking && (now - _lastSpeechTime > _SPEECH_GRACE_PERIOD_MS)) {
-          _isSpeaking = false;
-          console.log("[AudioRecorder] (RMS Fallback) Activity END detected");
-          try {
-            const ws = window.agentWs;
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: "activity_end", ts: new Date().toISOString() }));
-            }
-          } catch (e) {
-            console.debug("Failed to send activity_end:", e);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to compute mic audio frame:", err);
-    }
-
-    // Forward PCM audio chunks when speaking or within grace period
-    const now = Date.now();
-    const isWithinGracePeriod = (now - _lastSpeechTime <= _SPEECH_GRACE_PERIOD_MS);
-    if (_isSpeaking || isWithinGracePeriod) {
-      const pcmData = convertFloat32ToPCM(event.data);
-      try {
-        if (typeof audioRecorderHandler === 'function') {
-          audioRecorderHandler(pcmData);
-        } else {
-          console.debug('audioRecorderHandler not a function, skipping send');
-        }
-      } catch (err) {
-        console.warn('audioRecorderHandler threw an error:', err);
-      }
-    }
-  };
-  return [audioRecorderNode, audioRecorderContext, micStream];
+  // The live-agent protocol represents VAD boundaries as activity boundaries.
+  sendControlMessage(phase === "start" ? "activity_start" : "activity_end");
 }
 
 /**
- * Stop the microphone.
+ * Starts one PCM stream, gated by record-pcm's RMS VAD.
+ *
+ * The return shape intentionally matches the previous canvas integration.
  */
-export function stopMicrophone(micStream) {
-  stopRickyVadRecorder();
-  _currentVadInstance = null;
+export async function startAudioRecorderWorklet(audioRecorderHandler) {
+  stopMicrophone();
 
-  if (_isSpeaking) {
-    _isSpeaking = false;
-    try {
-      const ws = window.agentWs;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "activity_end", ts: new Date().toISOString() }));
+  speechActive = false;
+  stopListening = listenForSpeech({
+    sampleRate: SAMPLE_RATE,
+    vadThreshold: vadThreshold(),
+    vadSilenceDuration: DEFAULT_SILENCE_MS,
+    vadMinRecordingTime: DEFAULT_MIN_SPEECH_MS,
+    continuous: true,
+    onData: ({ pcm }) => {
+      if (!speechActive || typeof audioRecorderHandler !== "function") return;
+      // record-pcm supplies little-endian, signed 16-bit mono PCM bytes.
+      audioRecorderHandler(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength));
+    },
+    onSpeechStart: () => {
+      if (speechActive) return;
+      speechActive = true;
+      emitVadEvent("start");
+    },
+    onSpeechEnd: () => {
+      if (!speechActive) return;
+      speechActive = false;
+      emitVadEvent("stop");
+    },
+    onError: (error) => {
+      console.error("[AudioRecorder] record-pcm microphone capture failed:", error);
+      if (speechActive) {
+        speechActive = false;
+        emitVadEvent("stop");
       }
-    } catch (e) {
-      console.debug("Failed to send activity_end on stopMicrophone:", e);
-    }
-  }
-  if (micStream && micStream.getTracks) {
-    micStream.getTracks().forEach((track) => track.stop());
-  }
-  console.log("stopMicrophone(): Microphone stopped.");
+    },
+  });
+
+  // record-pcm opens the stream asynchronously.  There are no public worklet,
+  // context, or MediaStream handles to expose; the canvas only stores these for
+  // cleanup and calls stopMicrophone below.
+  return [null, null, null];
 }
 
-// Convert Float32 samples to 16-bit PCM.
-function convertFloat32ToPCM(inputData) {
-  // Create an Int16Array of the same length.
-  const pcm16 = new Int16Array(inputData.length);
-  for (let i = 0; i < inputData.length; i++) {
-    // Multiply by 0x7fff (32767) to scale the float value to 16-bit PCM range.
-    pcm16[i] = inputData[i] * 0x7fff;
+/** Stops capture and emits the final VAD boundary when speech was active. */
+export function stopMicrophone() {
+  const stop = stopListening;
+  stopListening = null;
+  if (typeof stop === "function") stop();
+
+  if (speechActive) {
+    speechActive = false;
+    emitVadEvent("stop");
   }
-  // Return the underlying ArrayBuffer.
-  return pcm16.buffer;
 }

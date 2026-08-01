@@ -8,8 +8,6 @@
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/image-effects.css">
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web/dist/bundle.min.js"></script>
     <style>
         :root {
             --bg-color: #0f1115;
@@ -3909,22 +3907,9 @@
             if (micSensValDisplay) micSensValDisplay.textContent = `${val}%`;
 
             const s = val / 100.0;
-            // Map sensitivity to Silero VAD positiveSpeechThreshold:
-            // 50% -> 0.50 (standard default); 100% -> 0.10 (whisper mode); 0% -> 0.90 (strict noise filter)
-            const posThreshold = Math.max(0.1, Math.min(0.9, 0.9 - (s * 0.8)));
-            const negThreshold = Math.max(0.05, posThreshold - 0.15);
-
-            window.VAD_POSITIVE_THRESHOLD = posThreshold;
-            window.VAD_NEGATIVE_THRESHOLD = negThreshold;
-
-            // RMS fallback threshold mapping
+            // record-pcm uses RMS VAD.  Higher sensitivity lowers the threshold.
             window.MIC_DETECT_THRESHOLD = 0.01 * Math.pow(10, (0.5 - s) * 2);
             window.MIC_SENSITIVITY = s;
-
-            // Update active MicVAD instance threshold dynamically via ricky-vad module
-            import('/static/js/ricky-vad.js').then(m => {
-                m.updateRickyVadThresholds(posThreshold, negThreshold);
-            }).catch(() => {});
 
             try {
                 localStorage.setItem('narratron_mic_sensitivity', val.toString());
@@ -3960,9 +3945,6 @@
             fetch('/api/auth/me')
                 .then(res => res.json())
                 .then(data => {
-                    if (data && data.use_ricky0123_vad !== undefined) {
-                        window.USE_RICKY0123_VAD = data.use_ricky0123_vad;
-                    }
                     if (data && data.authenticated && data.user && data.user.mic_sensitivity !== undefined && data.user.mic_sensitivity !== null) {
                         const userVal = Math.round(data.user.mic_sensitivity * 100);
                         setMicSensitivity(userVal, false);

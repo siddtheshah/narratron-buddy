@@ -892,6 +892,11 @@
             gap: 1.1rem;
         }
 
+        /* Replaced by the YAML editor; retained markup can be removed in a later UI cleanup. */
+        .advanced-config-body > div {
+            display: none;
+        }
+
         .config-section-label {
             font-size: 0.78rem;
             font-weight: 700;
@@ -999,7 +1004,7 @@
                 </div>
 
                 <!-- Custom Theater Settings (Expandable Accordion) -->
-                <details class="advanced-config-accordion">
+                <details id="advancedConfig" class="advanced-config-accordion">
                     <summary class="advanced-config-summary">
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <span style="font-size: 1.1rem;">⚙️</span>
@@ -1008,7 +1013,7 @@
                                     Configuration</span>
                                 <small
                                     style="display: block; color: var(--text-muted); font-size: 0.75rem; font-weight: 400; margin-top: 1px;">
-                                    Customize AI agent behaviors, cooldowns, and orator hotkey (theater.yaml)
+                                    Edit the configuration inherited from theater_default.yaml
                                 </small>
                             </div>
                         </div>
@@ -1020,6 +1025,15 @@
                     </summary>
 
                     <div class="advanced-config-body">
+                        <section class="theater-yaml-editor">
+                            <label for="theaterConfigEditor" class="config-section-label">Theater YAML</label>
+                            <textarea id="theaterConfigEditor" rows="18" spellcheck="false"
+                                placeholder="Open Advanced Theater Configuration to load theater_default.yaml"
+                                style="width: 100%; resize: vertical; box-sizing: border-box; min-height: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.78rem; line-height: 1.45;"></textarea>
+                            <small id="theaterConfigEditorStatus" style="color: var(--text-muted); font-size: 0.73rem;">
+                                Loaded from theater_default.yaml. Changes apply only to this new theater.
+                            </small>
+                        </section>
                         <!-- Section 1: Agent Behaviors -->
                         <div>
                             <div class="config-section-label">🤖 Agent Behaviors</div>
@@ -1029,8 +1043,8 @@
                                     <div>
                                         <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
                                             Proactive Agent</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Agent initiates
-                                            prompts & actions autonomously</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Agent will be
+                                            hyper-focused (can drift)</div>
                                     </div>
                                 </label>
                                 <label class="checkbox-card">
@@ -2400,6 +2414,46 @@
             }
         }
 
+        let theaterDefaultConfigLoaded = false;
+        let theaterDefaultConfigRequest = null;
+
+        async function loadTheaterDefaultConfig() {
+            if (theaterDefaultConfigLoaded) return;
+            if (theaterDefaultConfigRequest) return theaterDefaultConfigRequest;
+
+            const editor = document.getElementById('theaterConfigEditor');
+            const status = document.getElementById('theaterConfigEditorStatus');
+            if (!editor) return;
+
+            theaterDefaultConfigRequest = (async () => {
+                editor.value = 'Loading theater_default.yaml...';
+                editor.disabled = true;
+                if (status) status.textContent = 'Loading theater_default.yaml...';
+
+                try {
+                    const response = await fetch('/api/theaters/default-config');
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Failed to load theater_default.yaml');
+                    }
+                    editor.value = data.config_yaml || '';
+                    theaterDefaultConfigLoaded = true;
+                    if (status) status.textContent = 'Loaded from theater_default.yaml. Changes apply only to this new theater.';
+                } catch (error) {
+                    editor.value = '';
+                    if (status) status.textContent = error.message || 'Could not load theater_default.yaml.';
+                } finally {
+                    editor.disabled = false;
+                    theaterDefaultConfigRequest = null;
+                }
+            })();
+            return theaterDefaultConfigRequest;
+        }
+
+        document.getElementById('advancedConfig')?.addEventListener('toggle', (event) => {
+            if (event.currentTarget.open) loadTheaterDefaultConfig();
+        });
+
         // Deploy Theater
         async function deployNewTheater() {
             if (!currentUser) {
@@ -2418,40 +2472,15 @@
             deployBtnText.innerText = 'Deploying Theater...';
 
             try {
+                if (theaterDefaultConfigRequest) await theaterDefaultConfigRequest;
                 const formData = new FormData();
                 formData.append('name', name);
                 formData.append('style', style);
 
-                const proactivity = document.getElementById('cfgAgentProactivity') ? document.getElementById('cfgAgentProactivity').checked : false;
-                const affectiveDialog = document.getElementById('cfgAffectiveDialog') ? document.getElementById('cfgAffectiveDialog').checked : false;
-                const imgCooldown = parseInt(document.getElementById('cfgImageCooldown') ? document.getElementById('cfgImageCooldown').value : 12, 10);
-                const musicCooldown = parseInt(document.getElementById('cfgMusicCooldown') ? document.getElementById('cfgMusicCooldown').value : 15, 10);
-                const notesCooldown = parseInt(document.getElementById('cfgNotesCooldown') ? document.getElementById('cfgNotesCooldown').value : 5, 10);
-                const chatCooldown = parseInt(document.getElementById('cfgChatCooldown') ? document.getElementById('cfgChatCooldown').value : 15, 10);
-                const hotkey = document.getElementById('cfgOratorHotkey') ? document.getElementById('cfgOratorHotkey').value : "<ctrl>+<shift>+[";
-
-                const theaterConfig = {
-                    agent: {
-                        proactivity: proactivity,
-                        affective_dialog: affectiveDialog
-                    },
-                    image_generation: {
-                        cooldown_duration: isNaN(imgCooldown) ? 12 : imgCooldown
-                    },
-                    music: {
-                        cooldown_duration: isNaN(musicCooldown) ? 15 : musicCooldown
-                    },
-                    notes: {
-                        cooldown_duration: isNaN(notesCooldown) ? 5 : notesCooldown
-                    },
-                    chat: {
-                        cooldown_duration: isNaN(chatCooldown) ? 15 : chatCooldown
-                    },
-                    orator: {
-                        hotkey: hotkey
-                    }
-                };
-                formData.append('theater_config', JSON.stringify(theaterConfig));
+                const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
+                if (theaterConfigYaml) {
+                    formData.append('theater_config_yaml', theaterConfigYaml);
+                }
 
                 if (currentCreationPath === 'folder') {
                     if (mountedZipFile) {
@@ -2523,8 +2552,8 @@
                 });
 
                 if (displayTheaters.length === 0) {
-                    const emptyMsg = currentUser 
-                        ? 'No personal sessions found. Create your first theater above!' 
+                    const emptyMsg = currentUser
+                        ? 'No personal sessions found. Create your first theater above!'
                         : 'No global theaters deployed yet.';
                     body.innerHTML = `<tr><td colspan="6" class="empty-state">${emptyMsg}</td></tr>`;
                     return;

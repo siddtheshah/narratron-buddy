@@ -9,10 +9,10 @@ smtp:
 agent_internal:
     model_id: "gemini-3.1-flash-live-preview"
     enable_tool_injection: false
+    # Delay state-observability messages so the live agent can receive initial user input.
+    observability_startup_delay: 300
+    observability_interval: 300
     compaction:
         trigger_tokens: 20000
         target_tokens: 8000
-
-audio:
-    use_ricky0123_vad: true
 

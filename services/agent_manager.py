@@ -18,7 +18,6 @@ from google.genai import types
 
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import (
-    CANVAS_STATE_REFRESH_SECONDS,
     format_canvas_state,
     get_bound_tool_instance,
 )
@@ -30,6 +29,8 @@ from utils.theaters_paths import ensure_theaters_root
 logger = logging.getLogger(__name__)
 
 TOOL_INJECTION_INTERVAL_SECONDS = 30.0
+DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
+DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
 
 
 
@@ -90,7 +91,7 @@ def build_run_config(
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     disabled=True
                 ),
-                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+                activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
             ),
             tool_thread_pool_config=ToolThreadPoolConfig(
                 max_workers=agent_config.get("max_tool_workers", 3)
@@ -132,6 +133,20 @@ class AgentSession:
         self.owner_user_id: Optional[int] = None
         agent_internal = self.config.get("agent_internal", {})
         self.enable_tool_injection = bool(agent_internal.get("enable_tool_injection", False))
+        self.observability_startup_delay = self._get_nonnegative_config_seconds(
+            agent_internal.get(
+                "observability_startup_delay",
+                DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS,
+            ),
+            "observability_startup_delay",
+        )
+        self.observability_interval = self._get_nonnegative_config_seconds(
+            agent_internal.get(
+                "observability_interval",
+                DEFAULT_OBSERVABILITY_INTERVAL_SECONDS,
+            ),
+            "observability_interval",
+        )
 
 
 
@@ -165,8 +180,18 @@ class AgentSession:
         self.downstream_task: Optional[asyncio.Task] = None
         self.refresh_task: Optional[asyncio.Task] = None
         self.tool_injection_task: Optional[asyncio.Task] = None
-        self.last_canvas_state_sent = time.monotonic()
+        self.observability_available_at = time.monotonic() + self.observability_startup_delay
+        self.last_canvas_state_sent: Optional[float] = None
         self.state_lock = threading.Lock()
+
+    @staticmethod
+    def _get_nonnegative_config_seconds(value: Any, setting_name: str) -> float:
+        """Return a non-negative duration, falling back safely for malformed settings."""
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            logger.warning("Invalid %s value %r; using 0 seconds.", setting_name, value)
+            return 0.0
 
     @property
     def websocket_connected(self) -> bool:
@@ -254,7 +279,13 @@ class AgentSession:
             return False
         now = time.monotonic()
         with self.state_lock:
-            if not force and now - self.last_canvas_state_sent < CANVAS_STATE_REFRESH_SECONDS:
+            if now < self.observability_available_at:
+                return False
+            if (
+                not force
+                and self.last_canvas_state_sent is not None
+                and now - self.last_canvas_state_sent < self.observability_interval
+            ):
                 return False
             msg = format_canvas_state(self.canvas_state_manager)
             try:
@@ -277,7 +308,8 @@ class AgentSession:
         if self.enable_tool_injection and (self.tool_injection_task is None or self.tool_injection_task.done()):
             self.tool_injection_task = asyncio.create_task(self._run_tool_injection_loop())
 
-        self.send_canvas_state(force=True)
+        # Canvas observability begins after the configured startup delay.
+        self.send_canvas_state()
 
 
     async def _run_downstream(self):
