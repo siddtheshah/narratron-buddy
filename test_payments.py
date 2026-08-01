@@ -8,7 +8,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
-from web_viewer_app import app, FLAGS, db, local_deployer, _is_mock_payment_mode
+from web_viewer_app import app, FLAGS, db, theater_manager, _is_mock_payment_mode
 
 
 class TestPaymentsFlow(BaseTestCase):
@@ -17,8 +17,8 @@ class TestPaymentsFlow(BaseTestCase):
         FLAGS.allow_mock_payments = True
         FLAGS.testing_use_local_database = True
         self.test_dir = tempfile.mkdtemp()
-        local_deployer.base_dir = Path(self.test_dir).resolve()
-        local_deployer.base_dir.mkdir(parents=True, exist_ok=True)
+        theater_manager.base_dir = Path(self.test_dir).resolve()
+        theater_manager.base_dir.mkdir(parents=True, exist_ok=True)
         db.is_live = False
         db.db_path = Path(self.test_dir) / "test_payments.db"
         db._init_db()

@@ -23,8 +23,7 @@ import uvicorn
 from components.canvas_state_service import CanvasStateService
 from storage.database import DatabaseManager
 from pricing.pricing_controller import PricingController
-from deployer.deployer import LocalDeployer, TheaterMetadata, extract_asset_package
-from deployer.theater_manager import TheaterManager
+from components.theater_manager import TheaterManager, TheaterMetadata, extract_asset_package
 from utils.config_loader import get_app_config, get_theater_config, save_theater_config, get_theater_default_config
 from utils.email_service import send_password_reset_email
 from utils.theaters_paths import ensure_theaters_root
@@ -120,9 +119,8 @@ config = get_app_config()
 
 app = FastAPI()
 
-# Deployer, Database, and Theater Manager instances
-local_deployer = LocalDeployer()
-theater_manager = TheaterManager(deployer=local_deployer)
+# Theater workspace and database instances
+theater_manager = TheaterManager()
 
 if FLAGS.testing_use_local_database:
     db = DatabaseManager.from_local("deployer.db")
@@ -192,7 +190,7 @@ class MicSensitivityRequest(BaseModel):
     mic_sensitivity: float
 
 
-canvas_states = CanvasStateService(local_deployer)
+canvas_states = CanvasStateService(theater_manager)
 
 
 _SAFE_PARAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.() \-]*$')
@@ -710,7 +708,7 @@ def resolve_join_key(req: ResolveJoinKeyRequest, request: Request, response: Res
     if not dep:
         raise HTTPException(status_code=404, detail="Invalid Join Key. No matching active theater found.")
 
-    meta = local_deployer.get_theater(dep["theater_id"])
+    meta = theater_manager.get_theater(dep["theater_id"])
     if not meta:
         db_meta = db.get_theater_metadata_from_db(dep["theater_id"])
         if not db_meta:
@@ -727,7 +725,7 @@ def list_theaters(request: Request):
     current_user_id = current_user["id"] if current_user else None
 
     # Get theaters currently on disk
-    disk_theaters = local_deployer.list_theaters()
+    disk_theaters = theater_manager.list_theaters()
     all_theaters_dict = {s.theater_id: s.model_dump() for s in disk_theaters}
 
     # Add DB theaters that are not on disk yet (without writing files to disk!)
@@ -777,11 +775,11 @@ async def get_default_theater_config_endpoint(request: Request):
 async def get_theater(theater_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific theater."""
     _require_canvas_access(request, theater_id)
-    theater_dir = local_deployer._get_theater_dir(theater_id)
+    theater_dir = theater_manager.get_theater_dir(theater_id)
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
 
-    meta = local_deployer.get_theater(theater_id)
+    meta = theater_manager.get_theater(theater_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Theater not found")
     
@@ -817,8 +815,8 @@ async def get_theater_config_endpoint(theater_id: str, request: Request):
     _require_canvas_access(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
-    base_dir = local_deployer.base_dir
-    theater_dir = local_deployer._get_theater_dir(theater_id)
+    base_dir = theater_manager.base_dir
+    theater_dir = theater_manager.get_theater_dir(theater_id)
     yaml_path = theater_dir / "theater.yaml"
 
     if not yaml_path.exists():
@@ -855,8 +853,8 @@ async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRe
         raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {err}")
 
     # Save to local theater directory
-    base_dir = local_deployer.base_dir
-    theater_dir = local_deployer._get_theater_dir(theater_id)
+    base_dir = theater_manager.base_dir
+    theater_dir = theater_manager.get_theater_dir(theater_id)
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"
 
@@ -974,7 +972,7 @@ async def create_and_deploy_theater(request: Request):
             raise HTTPException(status_code=400, detail="Invalid theater configuration.")
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
-    metadata = local_deployer.create_theater(
+    metadata = theater_manager.create_theater(
         name=name,
         theater_id=theater_id,
         reference_files=reference_files,
@@ -982,7 +980,7 @@ async def create_and_deploy_theater(request: Request):
         theater_config=theater_config,
         style=style or None,
     )
-    deployed_meta = local_deployer.deploy_theater(metadata.theater_id)
+    deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
 
     # Record deployment & deduct credits (0.0 cost)
     db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0, theater_config=theater_config)
@@ -992,7 +990,7 @@ async def create_and_deploy_theater(request: Request):
     asyncio.create_task(
         db.persist_canvas_theater_async(
             canvas_states,
-            local_deployer,
+            theater_manager,
             deployed_meta.theater_id,
             user["id"],
             deployed_meta.name,
@@ -1007,7 +1005,7 @@ def deploy_existing_theater(theater_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    theater_dir = local_deployer._get_theater_dir(theater_id)
+    theater_dir = theater_manager.get_theater_dir(theater_id)
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
     
@@ -1016,15 +1014,15 @@ def deploy_existing_theater(theater_id: str, request: Request):
         raise HTTPException(status_code=403, detail="Only the theater owner can deploy this theater.")
 
     # Stop any other currently deployed theaters
-    existing_theaters = local_deployer.list_theaters()
+    existing_theaters = theater_manager.list_theaters()
     for s in existing_theaters:
         if s.theater_id != theater_id and s.status == "deployed":
             try:
-                local_deployer.stop_theater(s.theater_id)
+                theater_manager.stop_theater(s.theater_id)
             except Exception:
                 pass
 
-    meta = local_deployer.deploy_theater(theater_id)
+    meta = theater_manager.deploy_theater(theater_id)
     return {"status": "ok", "theater": meta}
 
 @app.delete("/api/theaters/{theater_id}")
@@ -1038,7 +1036,7 @@ def destroy_theater(theater_id: str, request: Request):
     if dep and dep.get("user_id") is not None and dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can delete this theater.")
 
-    disk_removed = local_deployer.destroy_theater(theater_id)
+    disk_removed = theater_manager.destroy_theater(theater_id)
     db_deleted = db.delete_deployment(theater_id)
     canvas_states.states.pop(theater_id, None)
 
@@ -1189,7 +1187,7 @@ async def take_back_baton(theater_id: str, request: Request):
 @app.post("/api/theaters/{theater_id}/save", status_code=202)
 async def save_theater_to_db(theater_id: str, request: Request):
     """Save canvas theater state and image assets to SQLite database on user demand."""
-    meta = local_deployer.get_theater(theater_id)
+    meta = theater_manager.get_theater(theater_id)
     dep = db.get_deployment(theater_id)
     user_id = dep["user_id"] if dep else None
     name = meta.name if meta else theater_id
@@ -1197,7 +1195,7 @@ async def save_theater_to_db(theater_id: str, request: Request):
     asyncio.create_task(
         db.persist_canvas_theater_async(
             canvas_states,
-            local_deployer,
+            theater_manager,
             theater_id,
             user_id,
             name,
@@ -1212,7 +1210,7 @@ def export_theater_assets(theater_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    theater_dir = local_deployer._get_theater_dir(theater_id)
+    theater_dir = theater_manager.get_theater_dir(theater_id)
     if not theater_dir.exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
 
@@ -1258,7 +1256,7 @@ async def trigger_orator_mic_toggle(request: Request, theater_id: Optional[str] 
 def get_latest_image(request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
-        theater_dir = local_deployer._get_theater_dir(theater_id)
+        theater_dir = theater_manager.get_theater_dir(theater_id)
         if not theater_dir.exists():
             db.reconstruct_theater_from_db(theater_id, theater_dir)
     return canvas_states.latest_state(theater_id)
@@ -1416,7 +1414,7 @@ async def read_obs_canvas(
             )
             _grant_canvas_access(response, request, theater_id, join_key)
             return response
-        theater_dir = local_deployer._get_theater_dir(theater_id)
+        theater_dir = theater_manager.get_theater_dir(theater_id)
         if not theater_dir.exists():
             db.reconstruct_theater_from_db(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"
@@ -1452,7 +1450,7 @@ async def read_canvas(
             _grant_canvas_access(response, request, theater_id, join_key)
             return response
 
-        theater_dir = local_deployer._get_theater_dir(theater_id)
+        theater_dir = theater_manager.get_theater_dir(theater_id)
         if not theater_dir.exists():
             db.reconstruct_theater_from_db(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"

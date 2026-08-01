@@ -661,7 +661,7 @@ class TestDatabaseDaemonLogic(BaseTestCase):
             pass
         super().tearDown()
 
-    def test_run_database_daemon_with_naive_datetime_and_local_deployer(self):
+    def test_run_database_daemon_with_naive_datetime_and_theater_manager(self):
         now_naive = datetime.datetime.now()
 
         # Non-persistent theater older than 1 hour
@@ -677,9 +677,9 @@ class TestDatabaseDaemonLogic(BaseTestCase):
         mock_deployer = MagicMock()
         mock_deployer.destroy_theater.side_effect = Exception("File locked error")
 
-        # Running database daemon with naive current_time and mock local_deployer
+        # Running database daemon with naive current_time and mock theater manager.
         res = self.db.storage_daemon(
-            local_deployer=mock_deployer,
+            theater_manager=mock_deployer,
             ttl_seconds=3600.0,
             hourly_cost=1.0,
             current_time=now_naive
@@ -741,10 +741,10 @@ class TestAsyncDatabaseMethods(BaseTestCase):
             mock_canvas_states = {
                 "async_theater": MagicMock(export_theater_data=MagicMock(return_value=({"prompt": "p"}, [])))
             }
-            mock_deployer = MagicMock(_get_theater_dir=MagicMock(return_value=Path(self.temp_dir.name)))
+            mock_deployer = MagicMock(get_theater_dir=MagicMock(return_value=Path(self.temp_dir.name)))
             persist_ok = await self.db.persist_canvas_theater_async(
                 canvas_states=mock_canvas_states,
-                local_deployer=mock_deployer,
+                theater_manager=mock_deployer,
                 theater_id="async_theater",
                 user_id=user["id"],
                 name="Async Theater"

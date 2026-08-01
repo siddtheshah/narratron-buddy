@@ -10,7 +10,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
-from web_viewer_app import app, local_deployer, db, FLAGS
+from web_viewer_app import app, theater_manager, db, FLAGS
 
 
 class TestTheaterAPI(BaseTestCase):
@@ -22,8 +22,8 @@ class TestTheaterAPI(BaseTestCase):
         self._original_db_is_live = db.is_live
         self._original_db_path = db.db_path
         self.test_dir = tempfile.mkdtemp()
-        local_deployer.base_dir = Path(self.test_dir).resolve()
-        local_deployer.base_dir.mkdir(parents=True, exist_ok=True)
+        theater_manager.base_dir = Path(self.test_dir).resolve()
+        theater_manager.base_dir.mkdir(parents=True, exist_ok=True)
         # The app module is already imported when these tests run, so switch its
         # shared manager to the local database selected by the testing flag.
         db.is_live = False
@@ -167,7 +167,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn("Restart your agent", res_json["message"])
 
         # 4. Verify file on disk
-        yaml_disk_path = local_deployer.base_dir / "config_theater" / "theater.yaml"
+        yaml_disk_path = theater_manager.base_dir / "config_theater" / "theater.yaml"
         self.assertTrue(yaml_disk_path.exists())
         self.assertEqual(yaml_disk_path.read_text(encoding="utf-8"), new_yaml)
 
@@ -233,7 +233,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIsNotNone(theater_id)
         self.assertIsNotNone(join_key)
         self.assertEqual(
-            (local_deployer._get_theater_dir(theater_id) / "style.txt").read_text(encoding="utf-8"),
+            (theater_manager.get_theater_dir(theater_id) / "style.txt").read_text(encoding="utf-8"),
             "storybook watercolor",
         )
 
@@ -264,7 +264,7 @@ class TestTheaterAPI(BaseTestCase):
 
         # Simulate theater not being on disk (e.g. not launched recently / cold server)
         import shutil
-        t_dir = local_deployer._get_theater_dir(theater_id)
+        t_dir = theater_manager.get_theater_dir(theater_id)
         if t_dir.exists():
             shutil.rmtree(t_dir)
 
@@ -298,7 +298,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
 
-        theater_dir = local_deployer._get_theater_dir(theater_id)
+        theater_dir = theater_manager.get_theater_dir(theater_id)
         out_dir = theater_dir / "output"
         images_dir = out_dir / "images"
         images_dir.mkdir(parents=True, exist_ok=True)

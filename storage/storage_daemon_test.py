@@ -9,7 +9,7 @@ from pathlib import Path
 
 from storage.database import DatabaseManager
 from storage.storage_daemon import StorageDaemon
-from deployer.deployer import LocalDeployer
+from components.theater_manager import TheaterManager
 
 
 class TestStorageDaemonAndPersistence(unittest.TestCase):
@@ -21,11 +21,11 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         self.theaters_dir.mkdir(parents=True, exist_ok=True)
 
         self.db = DatabaseManager.from_local(str(self.db_path))
-        self.deployer = LocalDeployer(base_theaters_dir=str(self.theaters_dir))
+        self.theater_manager = TheaterManager(base_theaters_dir=self.theaters_dir)
 
         self.daemon = StorageDaemon(
             db=self.db,
-            local_deployer=self.deployer,
+            theater_manager=self.theater_manager,
             interval_seconds=1.0,
             ttl_seconds=3600.0,
             hourly_cost=2.0,
@@ -142,7 +142,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         user_id = user["id"]
 
         # Create a theater folder
-        theater_meta = self.deployer.create_theater("Temp Theater", "theater_daemon_1")
+        theater_meta = self.theater_manager.create_theater("Temp Theater", "theater_daemon_1")
         self.db.record_deployment("theater_daemon_1", user_id, theater_meta.join_key, cost=0.0, is_persistent=False)
 
         # Set created_at to 2 hours ago (exceeding 1 hour TTL)
@@ -164,7 +164,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         user = self.db.register_user("persistent_user", "per@example.com", "Password123")
         user_id = user["id"]
 
-        theater_meta = self.deployer.create_theater("Persistent Theater", "theater_daemon_2")
+        theater_meta = self.theater_manager.create_theater("Persistent Theater", "theater_daemon_2")
         self.db.record_deployment("theater_daemon_2", user_id, theater_meta.join_key, cost=0.0, is_persistent=True)
 
         two_hours_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)).isoformat()
@@ -190,12 +190,12 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         # Verify default daemon accrual rate aligns with PRICING.md (0.1 Credits/day flat rate = 0.004167 Credits/hr)
         default_daemon = StorageDaemon(
             db=self.db,
-            local_deployer=self.deployer,
+            theater_manager=self.theater_manager,
         )
         user = self.db.register_user("pricing_user", "pricing@example.com", "Password123")
         user_id = user["id"]
 
-        theater_meta = self.deployer.create_theater("Pricing Theater", "theater_pricing_1")
+        theater_meta = self.theater_manager.create_theater("Pricing Theater", "theater_pricing_1")
         self.db.record_deployment("theater_pricing_1", user_id, theater_meta.join_key, cost=0.0, is_persistent=True)
 
         one_day_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)).isoformat()

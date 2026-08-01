@@ -939,14 +939,14 @@ class DatabaseManager:
 
     def storage_daemon(
         self,
-        local_deployer: Any = None,
+        theater_manager: Any = None,
         ttl_seconds: float = 604800.0,
         hourly_cost: float = 0.004167,
         current_time: Optional[datetime.datetime] = None,
     ) -> Dict[str, Any]:
         """Alias for run_database_daemon: process non-persistent storage cleanup and persistent session billing."""
         return self.run_database_daemon(
-            local_deployer=local_deployer,
+            theater_manager=theater_manager,
             ttl_seconds=ttl_seconds,
             hourly_cost=hourly_cost,
             current_time=current_time,
@@ -954,7 +954,7 @@ class DatabaseManager:
 
     def run_database_daemon(
         self,
-        local_deployer: Any = None,
+        theater_manager: Any = None,
         ttl_seconds: float = 604800.0,
         hourly_cost: float = 0.004167,
         current_time: Optional[datetime.datetime] = None,
@@ -993,9 +993,9 @@ class DatabaseManager:
                         logger.info(f"[DatabaseDaemon] Auto-cleaning expired non-persistent theater_id={theater_id}")
                         cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
                         cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
-                        if local_deployer:
+                        if theater_manager:
                             try:
-                                local_deployer.destroy_theater(theater_id)
+                                theater_manager.destroy_theater(theater_id)
                             except Exception as e:
                                 logger.warning(f"[DatabaseDaemon] Error destroying theater files for {theater_id}: {e}")
                         cleaned_up_sessions.append(theater_id)
@@ -1035,9 +1035,9 @@ class DatabaseManager:
                             logger.warning(f"[DatabaseDaemon] User user_id={user_id} has insufficient credits ({user_credits}) for persistent theater_id={theater_id}. Expiring session.")
                             cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
                             cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
-                            if local_deployer:
+                            if theater_manager:
                                 try:
-                                    local_deployer.destroy_theater(theater_id)
+                                    theater_manager.destroy_theater(theater_id)
                                 except Exception as e:
                                     logger.warning(f"[DatabaseDaemon] Error destroying theater files for {theater_id}: {e}")
                             cleaned_up_sessions.append(theater_id)
@@ -1330,12 +1330,12 @@ class DatabaseManager:
             return False
 
     async def persist_canvas_theater_async(
-        self, canvas_states: Any, local_deployer: Any, theater_id: str, user_id: Optional[int], name: str
+        self, canvas_states: Any, theater_manager: Any, theater_id: str, user_id: Optional[int], name: str
     ) -> bool:
         """Snapshot canvas state and save assets to database asynchronously."""
         try:
             def _export_and_save():
-                theater_dir = local_deployer._get_theater_dir(theater_id)
+                theater_dir = theater_manager.get_theater_dir(theater_id)
                 state_data, image_files = canvas_states.get(theater_id).export_theater_data(
                     theater_dir=theater_dir
                 )

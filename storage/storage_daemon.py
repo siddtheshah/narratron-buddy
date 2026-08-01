@@ -22,7 +22,7 @@ if str(project_root) not in sys.path:
 
 from dotenv import load_dotenv
 from storage.database import DatabaseManager
-from deployer.deployer import LocalDeployer
+from components.theater_manager import TheaterManager
 
 load_dotenv()
 
@@ -39,7 +39,7 @@ class StorageDaemon:
     def __init__(
         self,
         db: Optional[DatabaseManager] = None,
-        local_deployer: Optional[LocalDeployer] = None,
+        theater_manager: Optional[TheaterManager] = None,
         interval_seconds: float = 60.0,
         ttl_seconds: float = 604800.0,
         hourly_cost: float = 0.004167,
@@ -60,11 +60,11 @@ class StorageDaemon:
                 logger.info(f"Initializing DatabaseManager in LOCAL mode with db_path={db_path}.")
                 self.db = DatabaseManager.from_local(db_path)
 
-        if local_deployer is not None:
-            self.deployer = local_deployer
+        if theater_manager is not None:
+            self.theater_manager = theater_manager
         else:
             theaters_dir = os.getenv("THEATERS_DIR")
-            self.deployer = LocalDeployer(base_theaters_dir=theaters_dir)
+            self.theater_manager = TheaterManager(base_theaters_dir=theaters_dir)
 
         self._running = False
 
@@ -72,7 +72,7 @@ class StorageDaemon:
         """Perform a single iteration of the storage cleanup and billing cycle."""
         logger.info("Starting storage cleanup and billing cycle...")
         result = self.db.storage_daemon(
-            local_deployer=self.deployer,
+            theater_manager=self.theater_manager,
             ttl_seconds=self.ttl_seconds,
             hourly_cost=self.hourly_cost,
         )

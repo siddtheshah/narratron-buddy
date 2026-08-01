@@ -13,7 +13,7 @@ class _TheaterMetadata(Protocol):
     status: str
 
 
-class CanvasStateDeployer(Protocol):
+class TheaterWorkspace(Protocol):
     base_dir: Path
 
     def list_theaters(self) -> list[_TheaterMetadata]: ...
@@ -27,15 +27,15 @@ class CanvasStateService:
     handlers and agent callbacks do not coordinate a module-level dictionary.
     """
 
-    def __init__(self, deployer: CanvasStateDeployer):
-        self.deployer = deployer
+    def __init__(self, theater_manager: TheaterWorkspace):
+        self.theater_manager = theater_manager
         self.states: dict[str, CanvasStateManager] = {}
 
     def _resolve_theater_id(self, theater_id: Optional[str]) -> str:
         if theater_id:
             return theater_id
 
-        deployed = [theater for theater in self.deployer.list_theaters() if theater.status == "deployed"]
+        deployed = [theater for theater in self.theater_manager.list_theaters() if theater.status == "deployed"]
         if deployed:
             return deployed[0].theater_id
 
@@ -48,7 +48,7 @@ class CanvasStateService:
         if resolved_theater_id not in self.states:
             self.states[resolved_theater_id] = CanvasStateManager(
                 theater_id=resolved_theater_id,
-                base_theaters_dir=self.deployer.base_dir,
+                base_theaters_dir=self.theater_manager.base_dir,
             )
         return self.states[resolved_theater_id]
 

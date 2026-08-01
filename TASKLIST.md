@@ -24,14 +24,11 @@
 
 - [ ] Refactor web_viewer_app into api_server folder.
 - [ ] Refactor deployer/ out of existence, move logic.
+- [ ] Refactor canvas.html to be more modular.
+- [ ] Refactor database definitions to live as an external SQL schema, not baked in python code.
 
 
 ## Viewer Collaboration
-- [ ] Suggestions from chat
-  - Let every viewer have a suggestion. It can be upvoted by others. 
-  - Top voted suggestion is consumed on next observability update.
-- [ ] Doodle visibility
-  - If enabled, the agent will see the doodled on image.
 - [ ] Replace canvas chat and suggestion polling with a dedicated canvas-events WebSocket.
   - Keep `/ws/doodle` focused on drawing, canvas controls, and baton events.
   - Use a slow HTTP reconciliation poll only as a reconnect fallback.
