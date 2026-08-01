@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import os
 import shutil
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,32 @@ class TestDictCursorAndReusableConnection(unittest.TestCase):
         mock_cursor.lastrowid = 42
         cursor = _DictCursor(mock_cursor)
         self.assertEqual(cursor.lastrowid, 42)
+
+    def test_dict_cursor_retries_read_on_a_fresh_connection(self):
+        failed_cursor = MagicMock()
+        failed_cursor.execute.side_effect = sqlite3.InterfaceError("bad parameter or other API misuse")
+        replacement_cursor = MagicMock()
+        replacement_cursor.description = None
+        replacement_cursor.fetchone.return_value = (1,)
+        retry_factory = MagicMock(return_value=replacement_cursor)
+
+        cursor = _DictCursor(failed_cursor, retry_cursor_factory=retry_factory)
+        cursor.execute("SELECT 1")
+
+        retry_factory.assert_called_once_with()
+        replacement_cursor.execute.assert_called_once_with("SELECT 1", ())
+        self.assertEqual(cursor.fetchone(), (1,))
+
+    def test_dict_cursor_does_not_retry_write_with_unknown_outcome(self):
+        failed_cursor = MagicMock()
+        failed_cursor.execute.side_effect = TimeoutError("timed out")
+        retry_factory = MagicMock()
+        cursor = _DictCursor(failed_cursor, retry_cursor_factory=retry_factory)
+
+        with self.assertRaises(TimeoutError):
+            cursor.execute("INSERT INTO users (username) VALUES (?)", ("alice",))
+
+        retry_factory.assert_not_called()
 
     def test_reusable_connection_context_manager_normal(self):
         mock_conn = MagicMock()

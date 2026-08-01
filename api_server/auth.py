@@ -1,11 +1,17 @@
 """Authentication API endpoints."""
 
+import logging
+import time
+
 from fastapi import Request, Response, HTTPException
 from pydantic import BaseModel
 
 from api_server.shared import app, db, get_current_user
 from utils.config_loader import get_app_config
 from utils.email_service import send_password_reset_email
+
+
+logger = logging.getLogger(__name__)
 
 
 class RegisterRequest(BaseModel):
@@ -34,13 +40,20 @@ class MicSensitivityRequest(BaseModel):
 
 @app.post("/api/auth/register")
 def register_user(req: RegisterRequest, response: Response):
+    started_at = time.monotonic()
+    logger.info("Registration request started (username_length=%d).", len(req.username.strip()))
     try:
         user = db.register_user(req.username, req.email, req.password)
         token = db.create_auth_session(user["id"])
         response.set_cookie(key="auth_token", value=token, httponly=True, max_age=604800)
+        logger.info("Registration request completed in %.2fs.", time.monotonic() - started_at)
         return {"status": "ok", "user": user}
     except ValueError as e:
+        logger.info("Registration request rejected after %.2fs: %s", time.monotonic() - started_at, e)
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Registration request failed after %.2fs.", time.monotonic() - started_at)
+        raise
 
 @app.post("/api/auth/login")
 def login_user(req: LoginRequest, response: Response):

@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 import sqlite3
 import secrets
+import threading
+import time
 from typing import Any, Dict, List, Optional
 import logging
 import libsql
@@ -26,11 +28,21 @@ class _DictCursor:
     to map tuple positions to column names after each query.
     """
 
-    def __init__(self, cursor):
+    def __init__(self, cursor, retry_cursor_factory=None):
         self._cursor = cursor
+        self._retry_cursor_factory = retry_cursor_factory
 
     def execute(self, sql, params=()):
-        self._cursor.execute(sql, params)
+        try:
+            self._cursor.execute(sql, params)
+        except Exception as exc:
+            # A response timeout can leave a remote libsql connection unusable.
+            # Retrying reads is safe; retrying a write after an unknown outcome
+            # could duplicate a credit charge or another state change.
+            if not self._retry_cursor_factory or not _is_retryable_read_error(sql, exc):
+                raise
+            self._cursor = self._retry_cursor_factory()
+            self._cursor.execute(sql, params)
         return self
 
     def fetchone(self):
@@ -52,16 +64,35 @@ class _DictCursor:
         return getattr(self._cursor, name)
 
 
+def _is_retryable_read_error(sql: str, exc: Exception) -> bool:
+    """Return whether a failed idempotent query may use a fresh libsql connection."""
+    statement = sql.lstrip().upper()
+    if not statement.startswith(("SELECT", "PRAGMA", "EXPLAIN")):
+        return False
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError, sqlite3.InterfaceError)):
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in ("timeout", "connection", "network", "transport"))
+
+
 class _ReusableConnection:
     """Wraps a DB-API connection so context managers commit or rollback without closing the underlying connection."""
 
-    def __init__(self, conn, is_dict_cursor: bool = False):
+    def __init__(
+        self,
+        conn,
+        is_dict_cursor: bool = False,
+        lock: Optional[Any] = None,
+        retry_cursor_factory=None,
+    ):
         self._conn = conn
         self._is_dict_cursor = is_dict_cursor
+        self._lock = lock
+        self._retry_cursor_factory = retry_cursor_factory
 
     def cursor(self):
         if self._is_dict_cursor:
-            return _DictCursor(self._conn.cursor())
+            return _DictCursor(self._conn.cursor(), self._retry_cursor_factory)
         return self._conn.cursor()
 
     def commit(self):
@@ -80,13 +111,23 @@ class _ReusableConnection:
             pass
 
     def __enter__(self):
+        if self._lock:
+            started_at = time.monotonic()
+            self._lock.acquire()
+            wait_seconds = time.monotonic() - started_at
+            if wait_seconds >= 0.5:
+                logger.warning("Waited %.2fs for the shared database connection.", wait_seconds)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
-            self.rollback()
-        else:
-            self.commit()
+        try:
+            if exc_type is not None:
+                self.rollback()
+            else:
+                self.commit()
+        finally:
+            if self._lock:
+                self._lock.release()
         return False
 
     def __getattr__(self, name):
@@ -102,7 +143,21 @@ class DatabaseManager:
         self._conn = None
         self._cached_db_path = None
         self._cached_is_live = None
+        # libsql's Python client connection is not safe to share between the
+        # synchronous request worker threads and the application's async routes.
+        # Keep a single operation on the cached connection at a time.
+        self._connection_lock = threading.RLock()
+        self._live_connection_timeout = self._get_live_connection_timeout()
         self.pricing_controller = pricing_controller or PricingController.from_env()
+
+    @staticmethod
+    def _get_live_connection_timeout() -> float:
+        """Read a bounded libsql timeout without allowing an invalid env value."""
+        try:
+            timeout = float(os.environ.get("LIBSQL_CONNECTION_TIMEOUT_SECONDS", "5"))
+        except ValueError:
+            timeout = 5.0
+        return max(0.1, timeout)
 
     def get_pricing_rates(self) -> Dict[str, float]:
         """Return current pricing rates dictionary for polling."""
@@ -118,43 +173,85 @@ class DatabaseManager:
 
     def close(self) -> None:
         """Close the active cached database connection if open."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-        self._cached_db_path = None
-        self._cached_is_live = None
+        with self._connection_lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+            self._cached_db_path = None
+            self._cached_is_live = None
 
     def _get_connection(self):
-        str_db_path = str(self.db_path) if self.db_path is not None else None
-        if (
-            self._conn is not None
-            and (self._cached_db_path != str_db_path or self._cached_is_live != self.is_live)
-        ):
-            self.close()
+        with self._connection_lock:
+            str_db_path = str(self.db_path) if self.db_path is not None else None
+            if (
+                self._conn is not None
+                and (self._cached_db_path != str_db_path or self._cached_is_live != self.is_live)
+            ):
+                self.close()
 
-        if self._conn is None:
-            if not self.is_live:
-                db_file = str(self.db_path or "deployer.db")
-                conn = sqlite3.connect(db_file, check_same_thread=False)
-                conn.row_factory = sqlite3.Row
-                conn.execute("PRAGMA journal_mode=WAL")
-                self._conn = _ReusableConnection(conn, is_dict_cursor=False)
-                self._ensure_tables_exist()
-            else:
-                turso_url = os.environ.get("TURSO_DATABASE_URL")
-                turso_token = os.environ.get("TURSO_DB_TOKEN")
-                if not turso_url or not turso_token:
-                    raise ValueError("Missing Turso database credentials.")
-                conn = libsql.connect(
-                    database=turso_url,
-                    auth_token=turso_token
-                )
-                self._conn = _ReusableConnection(conn, is_dict_cursor=True)
-                self._ensure_tables_exist()
-            self._cached_db_path = str_db_path
-            self._cached_is_live = self.is_live
+            if self._conn is None:
+                if not self.is_live:
+                    db_file = str(self.db_path or "deployer.db")
+                    conn = sqlite3.connect(db_file, check_same_thread=False)
+                    conn.row_factory = sqlite3.Row
+                    conn.execute("PRAGMA journal_mode=WAL")
+                    self._conn = _ReusableConnection(conn, is_dict_cursor=False, lock=self._connection_lock)
+                    self._ensure_tables_exist()
+                else:
+                    turso_url = os.environ.get("TURSO_DATABASE_URL")
+                    turso_token = os.environ.get("TURSO_DB_TOKEN")
+                    if not turso_url or not turso_token:
+                        raise ValueError("Missing Turso database credentials.")
+                    logger.info(
+                        "Opening live libsql connection (timeout=%.1fs).",
+                        self._live_connection_timeout,
+                    )
+                    conn = libsql.connect(
+                        database=turso_url,
+                        auth_token=turso_token,
+                        timeout=self._live_connection_timeout,
+                    )
+                    self._conn = _ReusableConnection(
+                        conn,
+                        is_dict_cursor=True,
+                        lock=self._connection_lock,
+                        retry_cursor_factory=self._reconnect_live_cursor,
+                    )
+                    self._ensure_tables_exist()
+                self._cached_db_path = str_db_path
+                self._cached_is_live = self.is_live
 
-        return self._conn
+            return self._conn
+
+    def _reconnect_live_cursor(self):
+        """Replace a failed live connection and return a cursor from the replacement.
+
+        This is called only by ``_DictCursor`` after an idempotent read fails.
+        The enclosing connection context holds ``_connection_lock``, preventing
+        another request from using the old connection while it is replaced.
+        """
+        if not self.is_live or self._conn is None:
+            raise RuntimeError("Cannot reconnect a missing or local database connection.")
+
+        with self._connection_lock:
+            turso_url = os.environ.get("TURSO_DATABASE_URL")
+            turso_token = os.environ.get("TURSO_DB_TOKEN")
+            if not turso_url or not turso_token:
+                raise ValueError("Missing Turso database credentials.")
+
+            logger.warning("Retrying a failed libsql read with a new connection.")
+            replacement = libsql.connect(
+                database=turso_url,
+                auth_token=turso_token,
+                timeout=self._live_connection_timeout,
+            )
+            old_connection = self._conn._conn
+            self._conn._conn = replacement
+            try:
+                old_connection.close()
+            except Exception:
+                pass
+            return replacement.cursor()
 
     def _ensure_tables_exist(self) -> None:
         if getattr(self, "_initializing_tables", False):
