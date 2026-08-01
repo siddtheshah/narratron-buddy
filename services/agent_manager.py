@@ -351,6 +351,18 @@ class AgentSession:
             logger.debug(f"[AgentSession] downstream_task cancelled for theater_id={self.theater_id}")
         except Exception as e:
             logger.error(f"[AgentSession] Exception in downstream_task for theater_id={self.theater_id}: {e}", exc_info=True)
+            if self.canvas_state_manager:
+                try:
+                    self.canvas_state_manager.set_agent_thought("wandering")
+                except Exception:
+                    logger.exception("[AgentSession] Could not update failed agent thought for theater_id=%s", self.theater_id)
+            try:
+                await self.broadcast_text(json.dumps({
+                    "type": "agent_failed",
+                    "detail": "Narratron lost its train of thought and stopped.",
+                }))
+            finally:
+                self.close()
 
     async def _run_canvas_refresh(self):
         try:

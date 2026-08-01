@@ -1084,6 +1084,10 @@
             overflow: hidden;
         }
 
+        .agent-thought-text.is-wandering {
+            font-style: italic;
+        }
+
         .chat-message {
             background: rgba(255, 255, 255, 0.05);
             padding: 0.75rem;
@@ -2388,6 +2392,7 @@
             const text = thought && thought.text ? thought.text.trim() : '';
             if (text === lastAgentThought) return;
             agentThoughtText.textContent = text || 'Waiting for Narratron to think…';
+            agentThoughtText.classList.toggle('is-wandering', text.toLowerCase() === 'wandering');
             lastAgentThought = text;
         }
 
@@ -3285,6 +3290,10 @@
                             cleanupAgentConnection();
                             setAgentStartedUI(false);
                             showInsufficientCreditsModal(data.detail || "Your agent was stopped because your credit balance is 0 or less.");
+                        } else if (data.type === 'agent_failed') {
+                            updateAgentThought({ text: 'wandering' });
+                            cleanupAgentConnection();
+                            setAgentStartedUI(false);
                         } else if (data.setupComplete || data.type === 'pong') {
                             window.isSetupComplete = true;
                             if (typeof updateAgentActivity === 'function') {
@@ -3341,6 +3350,7 @@
                     throw new Error("Agent WebSocket is not ready for audio forwarding.");
                 }
 
+                await refreshMicrophoneDevices(true);
                 const [node, context, stream] = await startAudioRecorderWorklet(audioRecorderHandler);
                 audioRecorderNode = node;
                 audioRecorderContext = context;
@@ -3877,6 +3887,35 @@
             });
         }
 
+        // Microphone device selection
+        const micDeviceSelect = document.getElementById('menu-mic-device-select');
+        const micDeviceRefresh = document.getElementById('menu-mic-device-refresh');
+        const micDeviceHint = document.getElementById('menu-mic-device-hint');
+        async function refreshMicrophoneDevices(requestPermission = false) {
+            if (!navigator.mediaDevices?.enumerateDevices || !micDeviceSelect) return;
+            try {
+                if (requestPermission) {
+                    const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    permissionStream.getTracks().forEach(track => track.stop());
+                }
+                const selected = localStorage.getItem('narratron_mic_device_id') || '';
+                const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
+                micDeviceSelect.replaceChildren(new Option('System default microphone', ''));
+                devices.forEach((device, index) => micDeviceSelect.add(new Option(device.label || `Microphone ${index + 1} (allow access to identify)`, device.deviceId)));
+                micDeviceSelect.value = [...micDeviceSelect.options].some(option => option.value === selected) ? selected : '';
+                window.NARRATRON_MIC_DEVICE_ID = micDeviceSelect.value;
+                if (micDeviceHint) micDeviceHint.textContent = devices.some(device => device.label) ? 'Your selection is used when you connect.' : 'Refresh and allow microphone access to identify devices.';
+            } catch (error) { if (micDeviceHint) micDeviceHint.textContent = 'Unable to list microphones. Check browser permissions.'; }
+        }
+        if (micDeviceRefresh) micDeviceRefresh.addEventListener('click', () => refreshMicrophoneDevices(true));
+        if (micDeviceSelect) micDeviceSelect.addEventListener('change', () => {
+            window.NARRATRON_MIC_DEVICE_ID = micDeviceSelect.value;
+            localStorage.setItem('narratron_mic_device_id', micDeviceSelect.value);
+            if (micDeviceHint) micDeviceHint.textContent = 'Saved in this browser. Reconnect to use this microphone.';
+        });
+        navigator.mediaDevices?.addEventListener('devicechange', () => refreshMicrophoneDevices());
+        refreshMicrophoneDevices();
+
         // Microphone Sensitivity Slider Logic
         const micSensSlider = document.getElementById('menu-mic-sensitivity-slider');
         const micSensValDisplay = document.getElementById('menu-mic-sensitivity-val');
@@ -4220,6 +4259,14 @@
                             <span class="pullout-item-icon">⌨️</span>
                             <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
                         </button>
+                        <div class="pullout-menu-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                                <span>Microphone</span>
+                                <button id="menu-mic-device-refresh" type="button" style="padding: 3px 7px; font-size: .72rem; cursor: pointer;">Refresh</button>
+                            </div>
+                            <select id="menu-mic-device-select" style="width: 100%; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 5px; padding: 6px;"><option value="">System default microphone</option></select>
+                            <span id="menu-mic-device-hint" style="font-size: .7rem; color: #94a3b8;">Choose the microphone to use when connecting.</span>
+                        </div>
                         <div class="pullout-menu-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;" title="Adjust microphone voice activity detection sensitivity">
                             <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; font-weight: 500; width: 100%;">
                                 <span style="display: flex; align-items: center; gap: 12px;">

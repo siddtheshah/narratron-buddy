@@ -4,7 +4,7 @@
  * `record-pcm` owns the complete capture/VAD pipeline.  Keeping capture in one
  * place prevents duplicate microphone streams and duplicate PCM uploads.
  */
-import { listenForSpeech } from "https://cdn.jsdelivr.net/npm/record-pcm@1.1.3/dist/index.mjs";
+import { listenForSpeech } from "/static/js/device-aware-pcm.js";
 
 const SAMPLE_RATE = 16000;
 const DEFAULT_VAD_THRESHOLD = 0.01;
@@ -47,7 +47,8 @@ export async function startAudioRecorderWorklet(audioRecorderHandler) {
   stopMicrophone();
 
   speechActive = false;
-  stopListening = listenForSpeech({
+  stopListening = await listenForSpeech({
+    deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
     sampleRate: SAMPLE_RATE,
     vadThreshold: vadThreshold(),
     vadSilenceDuration: DEFAULT_SILENCE_MS,

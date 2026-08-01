@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 import unittest
 from types import SimpleNamespace
@@ -175,6 +176,35 @@ class TestAgentSessionManager(unittest.TestCase):
             session_id=session.adk_session_id,
         )
         mock_runner.run_live.assert_called_once()
+
+    def test_run_downstream_failure_notifies_ui_and_marks_thought_wandering(self):
+        from unittest.mock import AsyncMock
+
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+        mock_runner.app_name = "test_app"
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        mock_runner.session_service.get_session = AsyncMock(side_effect=RuntimeError("connection lost"))
+        canvas_state_manager = MagicMock()
+
+        session = AgentSession(
+            theater_id="test_failure",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            canvas_state_manager=canvas_state_manager,
+        )
+        session.broadcast_text = AsyncMock()
+
+        asyncio.run(session._run_downstream())
+
+        canvas_state_manager.set_agent_thought.assert_called_once_with("wandering")
+        session.broadcast_text.assert_awaited_once_with(json.dumps({
+            "type": "agent_failed",
+            "detail": "Narratron lost its train of thought and stopped.",
+        }))
+        self.assertEqual(session.status, "stopped")
 
     def test_suppress_inputs_when_disconnected(self):
         import asyncio

@@ -164,6 +164,10 @@
             overflow: hidden;
         }
 
+        .agent-thought-text.is-wandering {
+            font-style: italic;
+        }
+
         .chat-message {
             background: rgba(255, 255, 255, 0.05);
             padding: 0.75rem;
@@ -475,6 +479,7 @@
                 const data = await res.json();
                 const thought = data.agent_thought && data.agent_thought.text;
                 agentThoughtText.textContent = thought || 'Waiting for Narratron to think…';
+                agentThoughtText.classList.toggle('is-wandering', (thought || '').trim().toLowerCase() === 'wandering');
                 if (data.prompt) {
                     document.getElementById('popout-prompt-text').textContent = data.prompt;
                 }
