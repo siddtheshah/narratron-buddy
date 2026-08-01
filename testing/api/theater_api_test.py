@@ -233,7 +233,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIsNotNone(theater_id)
         self.assertIsNotNone(join_key)
         self.assertEqual(
-            (theater_manager.get_theater_dir(theater_id) / "style.txt").read_text(encoding="utf-8"),
+            (theater_manager.theater(theater_id).directory() / "style.txt").read_text(encoding="utf-8"),
             "storybook watercolor",
         )
 
@@ -264,7 +264,7 @@ class TestTheaterAPI(BaseTestCase):
 
         # Simulate theater not being on disk (e.g. not launched recently / cold server)
         import shutil
-        t_dir = theater_manager.get_theater_dir(theater_id)
+        t_dir = theater_manager.theater(theater_id).directory()
         if t_dir.exists():
             shutil.rmtree(t_dir)
 
@@ -298,7 +298,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
 
-        theater_dir = theater_manager.get_theater_dir(theater_id)
+        theater_dir = theater_manager.theater(theater_id).directory()
         out_dir = theater_dir / "output"
         images_dir = out_dir / "images"
         images_dir.mkdir(parents=True, exist_ok=True)

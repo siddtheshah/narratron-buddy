@@ -23,6 +23,7 @@ from web_viewer_app import (
     db,
     get_current_user,
     can_access_agent_websocket,
+    theater_manager,
 )
 
 # Load environment variables
@@ -99,7 +100,11 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 use_in_memory_artifacts = FLAGS.use_in_memory_artifacts
 
 # Global Agent Session Manager
-agent_manager = AgentSessionManager(app_name=APP_NAME, config=config)
+agent_manager = AgentSessionManager(
+    app_name=APP_NAME,
+    config=config,
+    theater_manager=theater_manager,
+)
 
 
 def get_theater_owner_credits(theater_id: str):

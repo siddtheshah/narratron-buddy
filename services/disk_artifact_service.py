@@ -5,7 +5,7 @@ from typing import Any, Optional, Union
 from google.genai import types
 from google.adk.artifacts.base_artifact_service import BaseArtifactService, ArtifactVersion, ensure_part
 from google.adk.errors.input_validation_error import InputValidationError
-from utils.theaters_paths import ensure_theaters_root
+from components.theater_manager import ensure_theaters_root
 
 class DiskArtifactService(BaseArtifactService):
     """A disk-file based implementation of ADK's artifact service.

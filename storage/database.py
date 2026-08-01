@@ -1335,7 +1335,7 @@ class DatabaseManager:
         """Snapshot canvas state and save assets to database asynchronously."""
         try:
             def _export_and_save():
-                theater_dir = theater_manager.get_theater_dir(theater_id)
+                theater_dir = theater_manager.theater(theater_id).directory()
                 state_data, image_files = canvas_states.get(theater_id).export_theater_data(
                     theater_dir=theater_dir
                 )

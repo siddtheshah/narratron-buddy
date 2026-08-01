@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
-from utils.theaters_paths import ensure_theaters_root
+from components.theater_manager import ensure_theaters_root
 
 _APP_CONFIG_CACHE: Dict[str, Any] | None = None
 _THEATER_DEFAULT_CACHE: Dict[str, Any] | None = None

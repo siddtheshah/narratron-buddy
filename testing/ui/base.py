@@ -3,11 +3,11 @@
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from components.canvas_state import CanvasStateManager
 from components.canvas_state_service import CanvasStateService
+from components.theater_manager import TheaterManager
 
 
 class UITestCase(unittest.TestCase):
@@ -22,17 +22,16 @@ class UITestCase(unittest.TestCase):
         self.addCleanup(self._temporary_directory.cleanup)
 
     def make_canvas_state(self, theater_id: str) -> CanvasStateManager:
-        return CanvasStateManager(theater_id=theater_id, base_theaters_dir=self.theaters_dir)
+        return CanvasStateManager(
+            theater_id=theater_id,
+            theater_manager=TheaterManager(base_theaters_dir=self.theaters_dir),
+        )
 
     def isolate_canvas_state_service(self) -> CanvasStateService:
         """Replace the web app's shared state service with a temporary one."""
         import web_viewer_app
 
-        deployer = SimpleNamespace(
-            base_dir=self.theaters_dir,
-            list_theaters=lambda: [],
-        )
-        service = CanvasStateService(deployer)
+        service = CanvasStateService(TheaterManager(base_theaters_dir=self.theaters_dir))
         patcher = patch.object(web_viewer_app, "canvas_states", service)
         patcher.start()
         self.addCleanup(patcher.stop)

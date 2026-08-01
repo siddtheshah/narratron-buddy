@@ -6,12 +6,18 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from tools.base_tool import BaseTools, with_cooldown
-from utils.theaters_paths import ensure_theaters_root
+from components.theater_manager import TheaterManager
 
 logger = logging.getLogger(__name__)
 
 class MusicTools(BaseTools):
-    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
+    def __init__(
+        self,
+        config: dict,
+        theater_id: str,
+        theater_manager: TheaterManager,
+        canvas_state_service: Any = None,
+    ):
         raw_config = config or {}
         subconfig = raw_config.get("music", raw_config) if "music" in raw_config else raw_config
         super().__init__(
@@ -20,8 +26,9 @@ class MusicTools(BaseTools):
             canvas_state_service=canvas_state_service,
             default_cooldown=60.0,
         )
-        theaters_root = ensure_theaters_root()
-        self.theater_playlists_dir = str((theaters_root / self.active_theater_id / "playlists").resolve())
+        self.theater_manager = theater_manager
+        self.theater = theater_manager.theater(self.active_theater_id)
+        self.theater_playlists_dir = str(self.theater.playlists_dir())
         os.makedirs(self.theater_playlists_dir, exist_ok=True)
 
         self.on_play_playlist: Optional[Callable[[str, List[str]], None]] = None

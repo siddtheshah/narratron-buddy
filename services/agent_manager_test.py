@@ -5,7 +5,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-
+from components.theater_manager import TheaterManager
 from services.agent import create_agent
 from services.agent_manager import AgentSessionManager, AgentSession
 
@@ -69,24 +69,24 @@ class TestCreateAgent(unittest.TestCase):
             "theater_id": theater_id,
             "canvas_state_service": canvas_state_service,
         }
-        mock_image_cls.assert_called_once_with(config.get("image_generation", {}), **expected_kwargs)
+        expected_manager = mock_image_cls.call_args.kwargs["theater_manager"]
+        managed_tool_kwargs = {**expected_kwargs, "theater_manager": expected_manager}
+        mock_image_cls.assert_called_once_with(config.get("image_generation", {}), **managed_tool_kwargs)
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
-        mock_notes_cls.assert_called_once_with(config.get("notes", {}), **expected_kwargs)
-        mock_music_cls.assert_called_once_with(config.get("music", {}), **expected_kwargs)
+        mock_notes_cls.assert_called_once_with(config.get("notes", {}), **managed_tool_kwargs)
+        mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)
 
 
 class TestAgentSessionManager(unittest.TestCase):
     @patch("services.agent_manager.create_tool_bundle_for_session")
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
-    @patch("services.agent_manager.ensure_theaters_root")
-    def test_get_or_create_session(self, mock_ensure_root, mock_create_agent, mock_tasks, mock_create_bundle):
-        mock_ensure_root.return_value = MagicMock()
+    def test_get_or_create_session(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager()
+        manager = AgentSessionManager(theater_manager=TheaterManager())
         session1 = manager.get_or_create_session(theater_id="s1")
 
         self.assertIsNotNone(session1)
@@ -100,14 +100,12 @@ class TestAgentSessionManager(unittest.TestCase):
     @patch("services.agent_manager.create_tool_bundle_for_session")
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
-    @patch("services.agent_manager.ensure_theaters_root")
-    def test_stop_session(self, mock_ensure_root, mock_create_agent, mock_tasks, mock_create_bundle):
-        mock_ensure_root.return_value = MagicMock()
+    def test_stop_session(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager()
+        manager = AgentSessionManager(theater_manager=TheaterManager())
         manager.get_or_create_session(theater_id="s2")
         self.assertIsNotNone(manager.get_session("s2"))
 
@@ -121,14 +119,12 @@ class TestAgentSessionManager(unittest.TestCase):
     @patch("services.agent_manager.create_tool_bundle_for_session")
     @patch("services.agent_manager.AgentSession.start_background_tasks")
     @patch("services.agent_manager.create_agent")
-    @patch("services.agent_manager.ensure_theaters_root")
-    def test_cleanup_idle_sessions(self, mock_ensure_root, mock_create_agent, mock_tasks, mock_create_bundle):
-        mock_ensure_root.return_value = MagicMock()
+    def test_cleanup_idle_sessions(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager()
+        manager = AgentSessionManager(theater_manager=TheaterManager())
         session = manager.get_or_create_session(theater_id="s3")
         # Set last active to 10 minutes ago (600s)
         session.last_active_at = time.time() - 600.0

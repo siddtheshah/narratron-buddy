@@ -6,13 +6,17 @@ from pathlib import Path
 
 from PIL import Image
 
+from components.theater_manager import TheaterManager
 from testing.base import BaseTestCase
 from components.canvas_state import CanvasStateManager, MAX_AGENT_THOUGHT_LENGTH
 
 class TestCanvasStateManager(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.theater_manager = TheaterManager()
 
     def test_canvas_state_manager(self):
-        manager = CanvasStateManager(theater_id="test_theater")
+        manager = CanvasStateManager(theater_id="test_theater", theater_manager=self.theater_manager)
         manager.update_current_playlist("test_playlist", ["/playlists/test/1.mp3"])
         self.assertEqual(manager.current_playlist, "test_playlist")
         self.assertFalse(manager.music_paused)
@@ -40,7 +44,7 @@ class TestCanvasStateManager(BaseTestCase):
                 tmp_path = tmp_file.name
 
             try:
-                manager = CanvasStateManager(theater_id="test_theater")
+                manager = CanvasStateManager(theater_id="test_theater", theater_manager=self.theater_manager)
                 manager.update_shown_image(tmp_path)
 
                 state = manager.get_latest_state()
@@ -52,7 +56,7 @@ class TestCanvasStateManager(BaseTestCase):
                     os.remove(tmp_path)
 
     def test_doodles_enabled_state_and_persistence(self):
-        manager = CanvasStateManager(theater_id="test_doodles_theater")
+        manager = CanvasStateManager(theater_id="test_doodles_theater", theater_manager=self.theater_manager)
         self.assertTrue(manager.doodles_enabled)
         self.assertFalse(manager.viewer_collab_enabled)
 
@@ -74,7 +78,7 @@ class TestCanvasStateManager(BaseTestCase):
             image_path = tmp_file.name
         try:
             Image.new("RGB", (100, 100), "black").save(image_path)
-            manager = CanvasStateManager(theater_id="snapshot_theater")
+            manager = CanvasStateManager(theater_id="snapshot_theater", theater_manager=self.theater_manager)
             manager.shown_image_path = image_path
             manager.doodles_state = [{
                 "type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1,
@@ -89,7 +93,7 @@ class TestCanvasStateManager(BaseTestCase):
                 os.remove(image_path)
 
     def test_shown_images_history_capping(self):
-        manager = CanvasStateManager(theater_id="test_history_theater")
+        manager = CanvasStateManager(theater_id="test_history_theater", theater_manager=self.theater_manager)
         # Add 120 images
         for i in range(120):
             fake_path = f"/path/to/image_{i}.png"
@@ -103,7 +107,7 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertIn("image_20.png", first_entry["path"])
 
     def test_get_latest_state_returns_history(self):
-        manager = CanvasStateManager(theater_id="test_history_payload")
+        manager = CanvasStateManager(theater_id="test_history_payload", theater_manager=self.theater_manager)
         manager.update_shown_image("/path/to/scene1.png")
         manager.update_shown_image("/path/to/scene2.png")
 
@@ -114,7 +118,7 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertEqual(state["history"][1]["path"], "/path/to/scene2.png")
 
     def test_tool_activity_is_transient_and_exposed_in_latest_state(self):
-        manager = CanvasStateManager(theater_id="tool_activity")
+        manager = CanvasStateManager(theater_id="tool_activity", theater_manager=self.theater_manager)
         manager.set_tool_activity("image", True)
         manager.set_tool_activity("notes", recent_seconds=5)
         manager.set_tool_activity("live", True)

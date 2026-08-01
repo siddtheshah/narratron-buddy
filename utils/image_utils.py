@@ -66,38 +66,3 @@ def embed_image_metadata(exif_obj, image_prompt: str):
     exif_obj[0x010e] = image_prompt
     # 0x9286: UserComment
     exif_obj[0x9c9b] = image_prompt.encode("utf-16le")
-
-
-def resolve_image_path(path_str: str, candidate_dirs: Optional[List[str]] = None) -> Optional[str]:
-    """Resolves an image filename, path, or alias against direct existence and candidate directories."""
-    if not path_str:
-        return None
-    
-    if os.path.exists(path_str):
-        return path_str
-
-    base_name = os.path.basename(path_str)
-    root_dir = Path(__file__).parent.parent.resolve()
-
-    default_dirs = [
-        str(root_dir / "testing" / "testdata" / "images"),
-        str(root_dir / "testing" / "testdata"),
-    ]
-
-    search_dirs = candidate_dirs or []
-    for d in default_dirs:
-        if d not in search_dirs:
-            search_dirs.append(d)
-
-    for directory in search_dirs:
-        candidates = [
-            os.path.join(directory, path_str),
-            os.path.join(directory, base_name),
-            os.path.join(directory, f"{path_str}.jpg"),
-            os.path.join(directory, f"{path_str}.png"),
-        ]
-        for candidate in candidates:
-            if os.path.exists(candidate):
-                return candidate
-
-    return None

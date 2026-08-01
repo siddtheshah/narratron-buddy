@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from components.theater_manager import TheaterManager
 from testing.ui.base import UITestCase
 
 
@@ -25,13 +26,13 @@ class TestCrossfade(UITestCase):
         from tools.image_tool import ImageTools
 
         with (
-            patch("tools.image_tool.ensure_theaters_root", return_value=self.theaters_dir),
             patch("tools.image_tool.genai.Client"),
             patch.object(ImageTools, "_client_cache", None),
         ):
             tool = ImageTools(
                 config={"image_generation": {"cooldown_duration": 0}},
                 theater_id="image_tool_transition",
+                theater_manager=TheaterManager(base_theaters_dir=self.theaters_dir),
             )
 
         image = Path(tool.output_dir) / "test_image.jpg"

@@ -10,7 +10,7 @@ from fastapi import WebSocket
 
 from components.chat_manager import ChatManager
 from utils.image_utils import extract_image_prompt
-from utils.theaters_paths import ensure_theaters_root
+from components.theater_manager import TheaterManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +20,11 @@ class CanvasStateManager:
     """Encapsulates state for the web canvas UI including music playback, shown images,
     chat manager history, WebSocket connections, and doodle drawings.
     """
-    @property
-    def theaters_dir(self) -> Path:
-        if getattr(self, "base_theaters_dir", None) is not None:
-            return self.base_theaters_dir
-        return ensure_theaters_root()
-
-    def __init__(self, theater_id: str, base_theaters_dir: Optional[Path] = None):
+    def __init__(self, theater_id: str, theater_manager: TheaterManager):
         self.theater_id = theater_id
-        if base_theaters_dir is not None:
-            self.base_theaters_dir = Path(base_theaters_dir).resolve()
-        else:
-            self.base_theaters_dir = ensure_theaters_root()
-        chat_output_dir = str(self.theaters_dir / theater_id / "output" / "chats")
+        self.theater_manager = theater_manager
+        self.theater = theater_manager.theater(theater_id)
+        chat_output_dir = str(self.theater.output_dir() / "chats")
         self.chat_manager = ChatManager(output_dir=chat_output_dir)
         self.current_image_basename: Optional[str] = None  
         
@@ -78,7 +70,7 @@ class CanvasStateManager:
     def load_state_from_disk(self):
         """Restore canvas state from local theater.json if available."""
         import json
-        sess_dir = (self.theaters_dir / self.theater_id).resolve()
+        sess_dir = self.theater.directory()
         theater_file = sess_dir / "theater.json"
         legacy_state_file = sess_dir / "theater_state.json"
         
@@ -183,7 +175,7 @@ class CanvasStateManager:
         # Automatically copy shown image into theater output directory if outside theater output dir
         target_theater = theater_id or self.theater_id
         if target_theater and file_path and os.path.exists(file_path):
-            sess_out_dir = (self.theaters_dir / target_theater / "output").resolve()
+            sess_out_dir = self.theater_manager.theater(target_theater).output_dir()
             sess_out_dir.mkdir(parents=True, exist_ok=True)
             file_path_obj = Path(file_path).resolve()
             try:
@@ -251,20 +243,20 @@ class CanvasStateManager:
             self.doodles_state.clear()
         else:
             self.doodles_state.append(doodle)
-        sess_dir = (self.theaters_dir / self.theater_id).resolve()
+        sess_dir = self.theater.directory()
         sess_dir.mkdir(parents=True, exist_ok=True)
         self.export_theater_data(theater_dir=sess_dir)
 
     def set_doodles_enabled(self, enabled: bool):
         self.doodles_enabled = bool(enabled)
-        sess_dir = (self.theaters_dir / self.theater_id).resolve()
+        sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
 
     def set_viewer_collab_enabled(self, enabled: bool):
         """Toggle viewer collaboration mode on or off."""
         self.viewer_collab_enabled = bool(enabled)
-        sess_dir = (self.theaters_dir / self.theater_id).resolve()
+        sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
 
@@ -326,7 +318,7 @@ class CanvasStateManager:
         }
 
     def get_latest_state(self) -> Dict[str, Any]:
-        image_folder = str(self.theaters_dir / self.theater_id / "output")
+        image_folder = str(self.theater.output_dir())
 
         music_state = {
             "playlist": self.current_playlist,
@@ -373,7 +365,7 @@ class CanvasStateManager:
         # 2. If no image selected, fallback to theater references
         if not selected_file:
             if self.theater_id:
-                theater_ref_dir = (self.theaters_dir / self.theater_id / "references").resolve()
+                theater_ref_dir = self.theater.references_dir()
                 if theater_ref_dir.exists():
                     ref_images = [f for f in theater_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
                     if ref_images:

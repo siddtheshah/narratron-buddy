@@ -7,17 +7,40 @@ import logging
 from pathlib import Path
 import secrets
 import shutil
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import zipfile
 
 from pydantic import BaseModel, Field
 
-from utils.config_loader import deep_merge, get_theater_default_config, save_theater_config
-from utils.theaters_paths import ensure_theaters_root
+from absl import flags
 
 logger = logging.getLogger(__name__)
 
 MAX_ZIP_BYTES = 10 * 1024 * 1024
+
+
+flags.DEFINE_boolean(
+    "use_cloud_theater_storage",
+    False,
+    "Store theater files under /tmp/theaters instead of the workspace theaters directory.",
+)
+
+FLAGS = flags.FLAGS
+
+
+def get_theaters_root() -> Path:
+    """Return the theater-data root for the selected runtime environment."""
+    if FLAGS["use_cloud_theater_storage"].value:
+        return Path("/tmp/theaters")
+    return Path(__file__).parent.parent / "theaters"
+
+
+def ensure_theaters_root() -> Path:
+    """Return and create the selected theater-data root."""
+    theaters_root = get_theaters_root().resolve()
+    theaters_root.mkdir(parents=True, exist_ok=True)
+    return theaters_root
 
 
 class TheaterMetadata(BaseModel):
@@ -35,6 +58,57 @@ class TheaterMetadata(BaseModel):
     allowed_orators: List[int] = Field(default_factory=list)
     active_orator_id: Optional[int] = None
     baton_request: Optional[Dict] = None
+
+
+@dataclass(frozen=True)
+class Theater:
+    """A theater-bound filesystem and lifecycle interface."""
+
+    manager: "TheaterManager"
+    theater_id: str
+
+    def directory(self) -> Path:
+        return self.manager._get_theater_dir(self.theater_id)
+
+    def references_dir(self) -> Path:
+        return self.manager._get_theater_reference_dir(self.theater_id)
+
+    def playlists_dir(self) -> Path:
+        return self.manager._get_theater_playlists_dir(self.theater_id)
+
+    def output_dir(self) -> Path:
+        return self.manager._get_theater_output_dir(self.theater_id)
+
+    def artifacts_dir(self) -> Path:
+        return self.manager._get_theater_artifacts_dir(self.theater_id)
+
+    def image_artifacts_dir(self) -> Path:
+        return self.manager._get_theater_image_artifacts_dir(self.theater_id)
+
+    def notes_artifacts_dir(self) -> Path:
+        return self.manager._get_theater_notes_artifacts_dir(self.theater_id)
+
+    def style_path(self) -> Path:
+        return self.directory() / "style.txt"
+
+    @property
+    def metadata(self) -> Optional[TheaterMetadata]:
+        return self.manager.get_theater(self.theater_id)
+
+    def deploy(self) -> TheaterMetadata:
+        return self.manager.deploy_theater(self.theater_id)
+
+    def stop(self) -> TheaterMetadata:
+        return self.manager.stop_theater(self.theater_id)
+
+    def destroy(self) -> bool:
+        return self.manager.destroy_theater(self.theater_id)
+
+    def references(self) -> List[Dict[str, str]]:
+        return self.manager.get_theater_references(self.theater_id)
+
+    def playlists(self) -> Dict[str, List[Dict[str, str]]]:
+        return self.manager.get_theater_playlists(self.theater_id)
 
 
 def extract_asset_package(
@@ -85,35 +159,51 @@ class TheaterManager:
         self.base_dir = Path(base_theaters_dir).resolve() if base_theaters_dir else ensure_theaters_root()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def get_theater_dir(self, theater_id: str) -> Path:
+    def _get_theater_dir(self, theater_id: str) -> Path:
         return self.base_dir / theater_id
 
-    def get_theater_reference_dir(self, theater_id: str) -> Path:
-        return self.get_theater_dir(theater_id) / "references"
+    def theater(self, theater_id: str) -> Theater:
+        """Return a theater-bound interface without creating its workspace."""
+        return Theater(manager=self, theater_id=theater_id)
 
-    def get_theater_playlists_dir(self, theater_id: str) -> Path:
-        return self.get_theater_dir(theater_id) / "playlists"
+    def _get_theater_reference_dir(self, theater_id: str) -> Path:
+        return self._get_theater_dir(theater_id) / "references"
 
-    def get_theater_output_dir(self, theater_id: str) -> Path:
-        return self.get_theater_dir(theater_id) / "output"
+    def _get_theater_playlists_dir(self, theater_id: str) -> Path:
+        return self._get_theater_dir(theater_id) / "playlists"
+
+    def _get_theater_output_dir(self, theater_id: str) -> Path:
+        return self._get_theater_dir(theater_id) / "output"
+
+    def _get_theater_artifacts_dir(self, theater_id: str) -> Path:
+        return self._get_theater_output_dir(theater_id) / "artifacts"
+
+    def _get_theater_image_artifacts_dir(self, theater_id: str) -> Path:
+        return self._get_theater_artifacts_dir(theater_id) / "images"
+
+    def _get_theater_notes_artifacts_dir(self, theater_id: str) -> Path:
+        return self._get_theater_artifacts_dir(theater_id) / "notes"
 
     def _metadata_path(self, theater_id: str) -> Path:
-        return self.get_theater_dir(theater_id) / "theater.json"
+        return self._get_theater_dir(theater_id) / "theater.json"
 
     def _save_metadata(self, metadata: TheaterMetadata) -> None:
-        theater_dir = self.get_theater_dir(metadata.theater_id)
+        theater_dir = self._get_theater_dir(metadata.theater_id)
         theater_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_path(metadata.theater_id).write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
 
     def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, theater_config: Optional[Dict] = None, style: Optional[str] = None) -> TheaterMetadata:
-        theater_dir = self.get_theater_dir(theater_id)
+        # Import lazily so config loading can reuse the theater-root helper.
+        from utils.config_loader import deep_merge, get_theater_default_config, save_theater_config
+
+        theater_dir = self._get_theater_dir(theater_id)
         if theater_dir.exists():
             raise ValueError(f"Theater with ID '{theater_id}' already exists.")
-        reference_dir = self.get_theater_reference_dir(theater_id)
-        playlists_dir = self.get_theater_playlists_dir(theater_id)
+        reference_dir = self._get_theater_reference_dir(theater_id)
+        playlists_dir = self._get_theater_playlists_dir(theater_id)
         reference_dir.mkdir(parents=True)
         playlists_dir.mkdir()
-        self.get_theater_output_dir(theater_id).mkdir()
+        self._get_theater_output_dir(theater_id).mkdir()
         if style and style.strip():
             (theater_dir / "style.txt").write_text(style.strip(), encoding="utf-8")
 
@@ -183,20 +273,20 @@ class TheaterManager:
         return metadata
 
     def destroy_theater(self, theater_id: str) -> bool:
-        theater_dir = self.get_theater_dir(theater_id)
+        theater_dir = self._get_theater_dir(theater_id)
         if not theater_dir.exists():
             return False
         shutil.rmtree(theater_dir)
         return True
 
     def get_theater_references(self, theater_id: str) -> List[Dict[str, str]]:
-        reference_dir = self.get_theater_reference_dir(theater_id)
+        reference_dir = self._get_theater_reference_dir(theater_id)
         if not reference_dir.exists():
             return []
         return [{"name": file.stem, "filename": file.name, "url": f"/theaters/{theater_id}/references/{file.name}", "size_bytes": file.stat().st_size} for file in reference_dir.iterdir() if file.is_file() and file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}]
 
     def get_theater_playlists(self, theater_id: str) -> Dict[str, List[Dict[str, str]]]:
-        playlists_dir = self.get_theater_playlists_dir(theater_id)
+        playlists_dir = self._get_theater_playlists_dir(theater_id)
         if not playlists_dir.exists():
             return {}
         return {directory.name: [{"filename": track.name, "url": f"/theaters/{theater_id}/playlists/{directory.name}/{track.name}", "size_bytes": track.stat().st_size} for track in directory.iterdir() if track.is_file() and track.suffix.lower() in {".mp3", ".wav", ".ogg", ".m4a"}] for directory in playlists_dir.iterdir() if directory.is_dir()}

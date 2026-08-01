@@ -24,7 +24,7 @@ from services.live_stream_service import (
 from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 from utils.config_loader import get_app_config, get_theater_config
-from utils.theaters_paths import ensure_theaters_root
+from components.theater_manager import TheaterManager
 
 logger = logging.getLogger(__name__)
 
@@ -603,9 +603,15 @@ from services.agent import create_agent, create_tool_bundle_for_session
 
 
 class AgentSessionManager:
-    def __init__(self, app_name: str = "narratron-combined", config: Optional[dict] = None):
+    def __init__(
+        self,
+        theater_manager: TheaterManager,
+        app_name: str = "narratron-combined",
+        config: Optional[dict] = None,
+    ):
         self.app_name = app_name
         self.config = config or {}
+        self.theater_manager = theater_manager
         self._sessions: Dict[str, AgentSession] = {}
         self.shared_session_service = InMemorySessionService()
 
@@ -632,11 +638,12 @@ class AgentSessionManager:
 
         canvas_mgr = canvas_state_service.get(theater_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
 
-        theater_config = get_theater_config(theater_id)
+        theater_config = get_theater_config(theater_id, base_dir=self.theater_manager.base_dir)
         tool_bundle = create_tool_bundle_for_session(
             theater_id=theater_id,
             config=theater_config,
             canvas_state_service=canvas_state_service,
+            theater_manager=self.theater_manager,
         )
 
         session_agent = create_agent(
@@ -644,9 +651,10 @@ class AgentSessionManager:
             config=theater_config,
             canvas_state_service=canvas_state_service,
             tool_bundle=tool_bundle,
+            theater_manager=self.theater_manager,
         )
 
-        disk_service_path = ensure_theaters_root() / theater_id / "output" / "artifacts"
+        disk_service_path = self.theater_manager.theater(theater_id).artifacts_dir()
         if use_in_memory_artifacts:
             artifact_service = PreloadedInMemoryArtifactService()
             test_data_dir = Path(__file__).parent.parent / "testing" / "testdata"

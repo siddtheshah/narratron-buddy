@@ -6,7 +6,21 @@ import tempfile
 import unittest
 import zipfile
 
-from components.theater_manager import TheaterManager, extract_asset_package
+from absl.testing import flagsaver
+
+from components.theater_manager import TheaterManager, extract_asset_package, get_theaters_root
+
+
+class TestTheaterRootSelection(unittest.TestCase):
+    def test_local_root_defaults_to_workspace_theaters_directory(self):
+        self.assertEqual(
+            get_theaters_root().resolve(),
+            (Path(__file__).parent.parent / "theaters").resolve(),
+        )
+
+    @flagsaver.flagsaver(use_cloud_theater_storage=True)
+    def test_cloud_root_uses_tmp_theaters(self):
+        self.assertEqual(get_theaters_root(), Path("/tmp/theaters"))
 
 
 class TestTheaterManager(unittest.TestCase):
@@ -40,7 +54,18 @@ class TestTheaterManager(unittest.TestCase):
     def test_asset_reads_do_not_create_a_missing_theater_workspace(self):
         self.assertEqual(self.manager.get_theater_references("missing"), [])
         self.assertEqual(self.manager.get_theater_playlists("missing"), {})
-        self.assertFalse(self.manager.get_theater_dir("missing").exists())
+        self.assertFalse(self.manager.theater("missing").directory().exists())
+
+    def test_theater_binds_workspace_paths_and_lifecycle_operations(self):
+        self.manager.create_theater(name="Bound Theater", theater_id="bound")
+        theater = self.manager.theater("bound")
+
+        self.assertEqual(theater.directory(), Path(self.temp_dir.name) / "bound")
+        self.assertEqual(theater.references_dir(), theater.directory() / "references")
+        self.assertEqual(theater.image_artifacts_dir(), theater.directory() / "output" / "artifacts" / "images")
+        self.assertEqual(theater.metadata.name, "Bound Theater")
+        self.assertEqual(theater.deploy().status, "deployed")
+        self.assertTrue(theater.destroy())
 
     def test_extract_asset_package_groups_assets_and_rejects_oversize_input(self):
         archive = io.BytesIO()

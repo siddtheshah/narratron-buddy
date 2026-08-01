@@ -3,12 +3,18 @@ import logging
 import os
 from typing import Any, Optional
 from tools.base_tool import BaseTools, with_cooldown
-from utils.theaters_paths import ensure_theaters_root
+from components.theater_manager import TheaterManager
 
 logger = logging.getLogger(__name__)
 
 class NotesTools(BaseTools):
-    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
+    def __init__(
+        self,
+        config: dict,
+        theater_id: str,
+        theater_manager: TheaterManager,
+        canvas_state_service: Any = None,
+    ):
         raw_config = config or {}
         subconfig = raw_config.get("notes", raw_config) if "notes" in raw_config else raw_config
         super().__init__(
@@ -17,12 +23,10 @@ class NotesTools(BaseTools):
             canvas_state_service=canvas_state_service,
         )
 
-        self.notes_dir = str((ensure_theaters_root() / self.active_theater_id / "output" / "artifacts" / "notes").resolve())
+        self.theater_manager = theater_manager
+        self.theater = theater_manager.theater(self.active_theater_id)
+        self.notes_dir = str(self.theater.notes_artifacts_dir())
         os.makedirs(self.notes_dir, exist_ok=True)
-
-    def get_effective_notes_dir(self) -> str:
-        """Return active theater notes directory."""
-        return self.notes_dir
 
     @with_cooldown("editing notes")
     def edit_notes(self, note_name: str, content: str) -> str:
@@ -42,8 +46,7 @@ class NotesTools(BaseTools):
             
             # Guard against directory traversal
             filename = os.path.basename(filename)
-            effective_dir = self.get_effective_notes_dir()
-            filepath = os.path.join(effective_dir, filename)
+            filepath = os.path.join(self.notes_dir, filename)
             
             # Write content
             with open(filepath, "w", encoding="utf-8") as f:
@@ -75,8 +78,7 @@ class NotesTools(BaseTools):
                 filename += ".txt"
             
             filename = os.path.basename(filename)
-            effective_dir = self.get_effective_notes_dir()
-            filepath = os.path.join(effective_dir, filename)
+            filepath = os.path.join(self.notes_dir, filename)
             
             if os.path.exists(filepath):
                 os.remove(filepath)

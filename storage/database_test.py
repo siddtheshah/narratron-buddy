@@ -741,7 +741,8 @@ class TestAsyncDatabaseMethods(BaseTestCase):
             mock_canvas_states = {
                 "async_theater": MagicMock(export_theater_data=MagicMock(return_value=({"prompt": "p"}, [])))
             }
-            mock_deployer = MagicMock(get_theater_dir=MagicMock(return_value=Path(self.temp_dir.name)))
+            mock_deployer = MagicMock()
+            mock_deployer.theater.return_value.directory.return_value = Path(self.temp_dir.name)
             persist_ok = await self.db.persist_canvas_theater_async(
                 canvas_states=mock_canvas_states,
                 theater_manager=mock_deployer,

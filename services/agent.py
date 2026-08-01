@@ -7,6 +7,7 @@ from google.adk.planners import BuiltInPlanner
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.genai import types
 
+from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.music_tool import MusicTools
@@ -85,12 +86,14 @@ def create_tool_bundle_for_session(
     theater_id: str,
     config: dict,
     canvas_state_service: Optional[Any] = None,
+    theater_manager: Optional[TheaterManager] = None,
 ) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
-    image_tools = ImageTools(config.get("image_generation", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
+    theater_manager = theater_manager or TheaterManager()
+    image_tools = ImageTools(config.get("image_generation", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
     chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
-    notes_tools = NotesTools(config.get("notes", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
-    music_tools = MusicTools(config.get("music", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
+    notes_tools = NotesTools(config.get("notes", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
+    music_tools = MusicTools(config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
 
     return ToolBundle([
         image_tools.list_references,
@@ -114,12 +117,13 @@ def create_agent(
     config: Optional[dict] = None,
     canvas_state_service: Optional[Any] = None,
     tool_bundle: Optional[ToolBundle] = None,
+    theater_manager: Optional[TheaterManager] = None,
 ) -> Agent:
     """Create a session-scoped agent whose tools write through canvas state service."""
     if config is None:
         config = get_theater_config(theater_id)
     if tool_bundle is None:
-        tool_bundle = create_tool_bundle_for_session(theater_id, config, canvas_state_service)
+        tool_bundle = create_tool_bundle_for_session(theater_id, config, canvas_state_service, theater_manager)
 
     ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\nNo preloaded reference images found."
     for tool in tool_bundle.tools:

@@ -19,9 +19,8 @@ from utils.image_utils import (
     embed_image_metadata,
     extract_image_metadata_description,
     extract_image_prompt,
-    resolve_image_path,
 )
-from utils.theaters_paths import ensure_theaters_root
+from components.theater_manager import TheaterManager
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,13 @@ class ImageTools(BaseTools):
     _references_cache: Dict[str, dict] = {}
     _reference_dir_cached: Optional[str] = None
 
-    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
+    def __init__(
+        self,
+        config: dict,
+        theater_id: str,
+        theater_manager: TheaterManager,
+        canvas_state_service: Any = None,
+    ):
         raw_config = config or {}
         subconfig = raw_config.get("image_generation", raw_config) if "image_generation" in raw_config else raw_config
         super().__init__(
@@ -40,13 +45,14 @@ class ImageTools(BaseTools):
             default_cooldown=60.0,
         )
 
-        theaters_root = ensure_theaters_root()
-        self.style_path = theaters_root / self.active_theater_id / "style.txt"
+        self.theater_manager = theater_manager
+        self.theater = theater_manager.theater(self.active_theater_id)
+        self.style_path = self.theater.style_path()
         self.default_style = self._load_default_style()
-        self.output_dir = str((theaters_root / self.active_theater_id / "output" / "artifacts" / "images").resolve())
+        self.output_dir = str(self.theater.image_artifacts_dir())
         os.makedirs(self.output_dir, exist_ok=True)
         
-        self.reference_dir = str((theaters_root / self.active_theater_id / "references").resolve())
+        self.reference_dir = str(self.theater.references_dir())
         os.makedirs(self.reference_dir, exist_ok=True)
         
         # Reuse shared genai Client instance across theater re-initializations
@@ -96,10 +102,6 @@ class ImageTools(BaseTools):
         if self.default_style and not re.search(r"\bstyle\b", image_prompt, flags=re.IGNORECASE):
             return f"{image_prompt}\n\nStyle: {self.default_style}"
         return image_prompt
-
-    def get_effective_output_dir(self) -> str:
-        """Return active theater output directory."""
-        return self.output_dir
 
     def get_current_canvas_image_info(self) -> Dict[str, Any]:
         """Returns details about the image currently displayed on the canvas, including its transition and effect."""
@@ -212,8 +214,25 @@ class ImageTools(BaseTools):
         if clean_input.lower() in self.references_manifest:
             return self.references_manifest[clean_input.lower()]["path"]
 
-        # General path resolution
-        return resolve_image_path(path_str, [self.get_effective_output_dir(), self.output_dir, self.reference_dir])
+
+        base_name = os.path.basename(path_str)
+        search_dirs = [
+            self.reference_dir,
+            self.output_dir,
+        ]
+
+        for directory in search_dirs:
+            candidates = [
+                os.path.join(directory, path_str),
+                os.path.join(directory, base_name),
+                os.path.join(directory, f"{path_str}.jpg"),
+                os.path.join(directory, f"{path_str}.png"),
+            ]
+            for candidate in candidates:
+                if os.path.exists(candidate):
+                    return candidate
+
+            return None
 
     def join_generation(self, timeout: float = 10.0) -> None:
         """Helper for unit tests or teardown to wait for background image generation thread."""
@@ -332,7 +351,7 @@ class ImageTools(BaseTools):
                     else:
                         filename = f"image_{timestamp}_0.jpg"
                     
-                    out_folder = self.get_effective_output_dir()
+                    out_folder = self.output_dir
                     filepath = os.path.join(out_folder, filename)
                      
                     exif = image.getexif()
@@ -471,10 +490,8 @@ class ImageTools(BaseTools):
                     images.append(full_p)
 
             search_dirs = [
-                self.get_effective_output_dir(),
                 self.output_dir,
                 self.reference_dir,
-                str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
             ]
             for d in search_dirs:
                 if os.path.exists(d):
@@ -517,10 +534,8 @@ class ImageTools(BaseTools):
 
             # Search directories for EXIF / PNG metadata
             search_dirs = [
-                self.get_effective_output_dir(),
                 self.output_dir,
                 self.reference_dir,
-                str(Path(__file__).parent.parent / "testing" / "testdata" / "images"),
             ]
             for d in search_dirs:
                 if not os.path.exists(d):

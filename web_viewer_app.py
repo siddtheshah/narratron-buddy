@@ -23,10 +23,9 @@ import uvicorn
 from components.canvas_state_service import CanvasStateService
 from storage.database import DatabaseManager
 from pricing.pricing_controller import PricingController
-from components.theater_manager import TheaterManager, TheaterMetadata, extract_asset_package
+from components.theater_manager import TheaterManager, TheaterMetadata, ensure_theaters_root, extract_asset_package
 from utils.config_loader import get_app_config, get_theater_config, save_theater_config, get_theater_default_config
 from utils.email_service import send_password_reset_email
-from utils.theaters_paths import ensure_theaters_root
 
 flags.DEFINE_boolean(
     "allow_mock_payments",
@@ -127,8 +126,6 @@ if FLAGS.testing_use_local_database:
 else:
     db = DatabaseManager.from_live()
 
-# Theaters folder (absolute path resolution)
-theaters_folder = str(ensure_theaters_root())
 
 # Playlists folder from config (absolute path resolution)
 playlists_folder = str((Path(__file__).parent / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
@@ -663,7 +660,7 @@ async def serve_theater_reference(request: Request, theater_id: str, filename: s
     _require_canvas_access(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
     _safe_path_param(filename, "filename")
-    file_path = theater_manager.get_theater_reference_dir(theater_id) / filename
+    file_path = theater_manager.theater(theater_id).references_dir() / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Theater reference file not found")
     return FileResponse(file_path)
@@ -674,7 +671,7 @@ async def serve_theater_playlist_track(request: Request, theater_id: str, playli
     _safe_path_param(theater_id, "theater_id")
     _safe_path_param(playlist_name, "playlist_name")
     _safe_path_param(filename, "filename")
-    file_path = theater_manager.get_theater_playlists_dir(theater_id) / playlist_name / filename
+    file_path = theater_manager.theater(theater_id).playlists_dir() / playlist_name / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Theater playlist track not found")
     return FileResponse(file_path)
@@ -684,14 +681,14 @@ async def serve_theater_output(request: Request, theater_id: str, filename: str)
     _require_canvas_access(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
     _safe_path_param(filename, "filename")
-    file_path = theater_manager.get_theater_output_dir(theater_id) / filename
+    file_path = theater_manager.theater(theater_id).output_dir() / filename
     if not file_path.exists():
         # Check subdirectories of output directory (e.g. output/images/filename)
-        sub_path = theater_manager.get_theater_output_dir(theater_id) / "images" / filename
+        sub_path = theater_manager.theater(theater_id).output_dir() / "images" / filename
         if sub_path.exists():
             file_path = sub_path
         else:
-            found = list(theater_manager.get_theater_output_dir(theater_id).rglob(filename))
+            found = list(theater_manager.theater(theater_id).output_dir().rglob(filename))
             if found:
                 file_path = found[0]
             else:
@@ -775,7 +772,7 @@ async def get_default_theater_config_endpoint(request: Request):
 async def get_theater(theater_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific theater."""
     _require_canvas_access(request, theater_id)
-    theater_dir = theater_manager.get_theater_dir(theater_id)
+    theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
 
@@ -816,7 +813,7 @@ async def get_theater_config_endpoint(theater_id: str, request: Request):
     _safe_path_param(theater_id, "theater_id")
 
     base_dir = theater_manager.base_dir
-    theater_dir = theater_manager.get_theater_dir(theater_id)
+    theater_dir = theater_manager.theater(theater_id).directory()
     yaml_path = theater_dir / "theater.yaml"
 
     if not yaml_path.exists():
@@ -854,7 +851,7 @@ async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRe
 
     # Save to local theater directory
     base_dir = theater_manager.base_dir
-    theater_dir = theater_manager.get_theater_dir(theater_id)
+    theater_dir = theater_manager.theater(theater_id).directory()
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"
 
@@ -1005,7 +1002,7 @@ def deploy_existing_theater(theater_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    theater_dir = theater_manager.get_theater_dir(theater_id)
+    theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
     
@@ -1210,7 +1207,7 @@ def export_theater_assets(theater_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    theater_dir = theater_manager.get_theater_dir(theater_id)
+    theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
 
@@ -1256,7 +1253,7 @@ async def trigger_orator_mic_toggle(request: Request, theater_id: Optional[str] 
 def get_latest_image(request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
-        theater_dir = theater_manager.get_theater_dir(theater_id)
+        theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
             db.reconstruct_theater_from_db(theater_id, theater_dir)
     return canvas_states.latest_state(theater_id)
@@ -1414,7 +1411,7 @@ async def read_obs_canvas(
             )
             _grant_canvas_access(response, request, theater_id, join_key)
             return response
-        theater_dir = theater_manager.get_theater_dir(theater_id)
+        theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
             db.reconstruct_theater_from_db(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"
@@ -1450,7 +1447,7 @@ async def read_canvas(
             _grant_canvas_access(response, request, theater_id, join_key)
             return response
 
-        theater_dir = theater_manager.get_theater_dir(theater_id)
+        theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
             db.reconstruct_theater_from_db(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"

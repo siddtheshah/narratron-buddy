@@ -5,6 +5,7 @@ import time
 import unittest
 from unittest.mock import MagicMock
 
+from components.theater_manager import TheaterManager
 from testing.base import BaseTestCase
 from tools.music_tool import MusicTools
 
@@ -12,6 +13,7 @@ class TestMusicTools(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.temp_dir = tempfile.mkdtemp()
+        self.theater_manager = TheaterManager(base_theaters_dir=self.temp_dir)
         self.config = {
             "music": {
                 "playlists_folder": self.temp_dir,
@@ -34,7 +36,7 @@ class TestMusicTools(BaseTestCase):
         with open(os.path.join(self.combat_dir, "battle.mp3"), "w") as f:
             f.write("dummy audio")
 
-        self.music_tools = MusicTools(self.config, theater_id="test_theater")
+        self.music_tools = MusicTools(self.config, theater_id="test_theater", theater_manager=self.theater_manager)
         self.music_tools.playlists_folder = self.temp_dir
 
     def tearDown(self):

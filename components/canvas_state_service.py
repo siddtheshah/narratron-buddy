@@ -1,22 +1,11 @@
 """Application-level lifecycle and operations for theater canvas state."""
 
-from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Optional
 
 from fastapi import WebSocket
 
 from components.canvas_state import CanvasStateManager
-
-
-class _TheaterMetadata(Protocol):
-    theater_id: str
-    status: str
-
-
-class TheaterWorkspace(Protocol):
-    base_dir: Path
-
-    def list_theaters(self) -> list[_TheaterMetadata]: ...
+from components.theater_manager import TheaterManager
 
 
 class CanvasStateService:
@@ -27,7 +16,7 @@ class CanvasStateService:
     handlers and agent callbacks do not coordinate a module-level dictionary.
     """
 
-    def __init__(self, theater_manager: TheaterWorkspace):
+    def __init__(self, theater_manager: TheaterManager):
         self.theater_manager = theater_manager
         self.states: dict[str, CanvasStateManager] = {}
 
@@ -48,7 +37,7 @@ class CanvasStateService:
         if resolved_theater_id not in self.states:
             self.states[resolved_theater_id] = CanvasStateManager(
                 theater_id=resolved_theater_id,
-                base_theaters_dir=self.theater_manager.base_dir,
+                theater_manager=self.theater_manager,
             )
         return self.states[resolved_theater_id]
 
