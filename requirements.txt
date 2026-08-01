@@ -9,3 +9,4 @@ python-dotenv>=1.0.1
 jinja2
 libsql
 absl-py
+stripe>=7.0.0

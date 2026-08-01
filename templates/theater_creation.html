@@ -1855,8 +1855,14 @@
                 if (!res.ok || data.status !== 'ok') {
                     err.innerText = data.detail || 'Payment failed. Please try again.';
                     err.style.display = 'block';
+                } else if (data.mode === 'stripe_checkout' && data.checkout_url) {
+                    succ.innerText = '🚀 Redirecting to secure Stripe Checkout...';
+                    succ.style.display = 'block';
+                    setTimeout(() => {
+                        window.location.href = data.checkout_url;
+                    }, 600);
                 } else {
-                    succ.innerText = `🎉 One-Off Payment successful! Added +${data.credits_added.toFixed(1)} Credits.`;
+                    succ.innerText = `🎉 Payment successful! Added +${data.credits_added.toFixed(1)} Credits.`;
                     succ.style.display = 'block';
 
                     if (currentUser) {
@@ -2736,12 +2742,33 @@
             }
         });
 
+        async function checkPaymentStatusInURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentStatus = urlParams.get('payment');
+            const sessionId = urlParams.get('session_id');
+
+            if (paymentStatus === 'success' && sessionId) {
+                try {
+                    const res = await fetch(`/api/payments/verify-session?session_id=${encodeURIComponent(sessionId)}`);
+                    const data = await res.json();
+                    if (res.ok && data.verified) {
+                        await checkAuthStatus();
+                        alert(`🎉 Payment Successful! Added +${data.credits_added || 0} Credits to your account.`);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                } catch (e) {
+                    console.error('Error verifying Stripe session:', e);
+                }
+            }
+        }
+
         // Initialize on load
         playlistsData['default'] = [];
         renderPlaylists();
         checkAuthStatus();
         loadTheaters();
         checkResetTokenInURL();
+        checkPaymentStatusInURL();
     </script>
 </body>
 
