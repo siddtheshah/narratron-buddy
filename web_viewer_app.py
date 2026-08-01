@@ -434,15 +434,10 @@ CREDIT_PACKAGES = {
 }
 
 def _is_mock_payment_mode(payment_method: Optional[str] = None) -> bool:
-    """Determine whether payment should be processed via mock flow or live Stripe gateway."""
+    """Return whether an explicitly enabled test environment may simulate payments."""
     if getattr(FLAGS, "allow_mock_payments", False):
         return True
     if getattr(FLAGS, "testing_use_local_database", False):
-        return True
-    if payment_method == "card_mock":
-        return True
-    stripe_key = os.getenv("STRIPE_SECRET_KEY")
-    if not stripe_key or stripe_key.strip() in ("", "mock", "none", "dummy_key"):
         return True
     return False
 
@@ -467,7 +462,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
     else:
         raise HTTPException(status_code=400, detail="Invalid package or credit amount specified.")
 
-    payment_method = req.payment_method or "card_mock"
+    payment_method = req.payment_method or "stripe_checkout"
 
     # Automated Mock Flow (for unit tests, mock flags, or unconfigured gateway)
     if _is_mock_payment_mode(payment_method):
@@ -504,9 +499,8 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
         result = db.add_user_credits(user["id"], credits_to_add, usd_amount, payment_method)
         return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
 
-    # ========================================
-    # Live Real Stripe Gateway Flow (Default)
-    # ========================================
+    # Live purchases must use Stripe-hosted Checkout. Card numbers and CVCs
+    # must never be sent through this application server.
     stripe_key = os.getenv("STRIPE_SECRET_KEY")
     if not stripe_key:
         raise HTTPException(status_code=503, detail="Payment service unavailable")
@@ -517,10 +511,8 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
     stripe.api_key = stripe_key
     base_url = str(request.base_url).rstrip("/")
 
-    # Stripe Checkout Session (Redirect flow)
-    if req.checkout_mode or payment_method in ("stripe_checkout", "stripe"):
-        try:
-            session = stripe.checkout.Session.create(
+    try:
+        session = stripe.checkout.Session.create(
                 payment_method_types=["card"],
                 line_items=[{
                     "price_data": {
@@ -539,55 +531,15 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
                 },
                 success_url=f"{base_url}/deploy?payment=success&session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{base_url}/deploy?payment=cancelled",
-            )
-            return {
-                "status": "ok",
-                "mode": "stripe_checkout",
-                "checkout_url": session.url,
-                "session_id": session.id,
-                "credits_added": credits_to_add,
-                "message": "Stripe Checkout session created successfully."
-            }
-        except Exception as err:
-            logger.error(f"Stripe Checkout Error: {err}")
-            raise HTTPException(status_code=400, detail=f"Stripe Checkout Error: {err}")
-
-    # Direct card payment processing via Stripe PaymentIntent API
-    card_num = (req.card_number or "").replace(" ", "").replace("-", "")
-    if not card_num:
-        raise HTTPException(status_code=400, detail="Credit card number is required.")
-
-    try:
-        exp_parts = req.card_exp.split("/") if req.card_exp and "/" in req.card_exp else ["12", "30"]
-        exp_month = int(exp_parts[0])
-        exp_year = int("20" + exp_parts[1] if len(exp_parts[1]) == 2 else exp_parts[1])
-
-        pm = stripe.PaymentMethod.create(
-            type="card",
-            card={
-                "number": card_num,
-                "exp_month": exp_month,
-                "exp_year": exp_year,
-                "cvc": (req.card_cvc or "").strip(),
-            },
-            billing_details={"name": req.card_name or user.get("username", "Customer")},
         )
-        intent = stripe.PaymentIntent.create(
-            amount=int(round(usd_amount * 100)),
-            currency="usd",
-            payment_method=pm.id,
-            confirm=True,
-            automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
-            metadata={"user_id": str(user["id"]), "credits_to_add": str(credits_to_add)},
-        )
-        if intent.status == "succeeded":
-            result = db.add_user_credits(user["id"], credits_to_add, usd_amount, "stripe_live")
-            return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
-        else:
-            raise HTTPException(status_code=400, detail=f"Stripe payment status: {intent.status}")
-    except Exception as e:
-        logger.error(f"Stripe Direct Charge Error: {e}")
-        raise HTTPException(status_code=400, detail=f"Stripe Payment Failed: {e}")
+        return {
+            "status": "ok", "mode": "stripe_checkout", "checkout_url": session.url,
+            "session_id": session.id, "credits_added": credits_to_add,
+            "message": "Stripe Checkout session created successfully."
+        }
+    except Exception as err:
+        logger.error("Stripe Checkout Error: %s", err)
+        raise HTTPException(status_code=400, detail="Unable to create Stripe Checkout session.")
 
 
 @app.get("/api/payments/verify-session")
@@ -617,7 +569,9 @@ def verify_stripe_session(session_id: str, request: Request):
             usd_amount = float(meta.get("usd_amount", 0.0))
 
             if meta_user_id == user["id"] and credits_to_add > 0:
-                result = db.add_user_credits(user["id"], credits_to_add, usd_amount, "stripe_checkout")
+                result = db.add_stripe_session_credits(
+                    user["id"], credits_to_add, usd_amount, session.id, "stripe_checkout"
+                )
                 return {"status": "ok", "verified": True, "credits_added": credits_to_add, **result}
             return {"status": "ok", "verified": True, "user": user}
         return {"status": "pending", "verified": False, "detail": "Payment not completed."}
@@ -639,6 +593,8 @@ async def stripe_webhook(request: Request):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Webhook signature error: {e}")
     else:
+        if not _is_mock_payment_mode():
+            raise HTTPException(status_code=503, detail="Stripe webhook signing is not configured.")
         try:
             event = json.loads(payload.decode("utf-8"))
         except Exception:
@@ -653,12 +609,10 @@ async def stripe_webhook(request: Request):
         credits_to_add = metadata.get("credits_to_add")
         usd_amount = metadata.get("usd_amount")
 
-        if user_id and credits_to_add:
-            db.add_user_credits(
-                int(user_id),
-                float(credits_to_add),
-                float(usd_amount or 0.0),
-                "stripe_webhook"
+        session_id = data_obj.get("id") if isinstance(data_obj, dict) else getattr(data_obj, "id", None)
+        if user_id and credits_to_add and session_id:
+            db.add_stripe_session_credits(
+                int(user_id), float(credits_to_add), float(usd_amount or 0.0), session_id, "stripe_webhook"
             )
 
     return {"status": "ok"}

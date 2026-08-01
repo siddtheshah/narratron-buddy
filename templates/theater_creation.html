@@ -1462,22 +1462,22 @@
                 style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
                 <div
                     style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem;">
-                    Payment Method</div>
+                    Secure Payment</div>
                 <div style="display: flex; gap: 1rem; margin-bottom: 0.75rem;">
                     <label
                         style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.88rem; color: #f8fafc;">
-                        <input type="radio" name="paymentMethod" value="card_mock" checked
-                            onclick="toggleCardFields(true)"> 💳 Credit / Debit Card
+                        <input type="radio" name="paymentMethod" value="stripe_checkout" checked
+                            onclick="toggleCardFields(false)"> 💳 Credit / Debit Card via Stripe Checkout
                     </label>
                     <label
-                        style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.88rem; color: #94a3b8;">
+                        style="display: none;">
                         <input type="radio" name="paymentMethod" value="paypal_mock" onclick="toggleCardFields(false)">
                         🅿️ PayPal
                     </label>
                 </div>
                 <!-- Simulated Card Input Fields -->
                 <div id="cardFieldsContainer"
-                    style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
+                    style="display: none;">
                     <input type="text" id="cardHolderName" placeholder="Cardholder Name" autocomplete="cc-name"
                         style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 7px 10px; color: white; font-size: 0.85rem;">
                     <input type="text" id="cardNumber" placeholder="Card Number (•••• •••• •••• 4242)"
@@ -1809,10 +1809,11 @@
             succ.style.display = 'none';
 
             const methodEl = document.querySelector('input[name="paymentMethod"]:checked');
-            const paymentMethod = methodEl ? methodEl.value : 'card_mock';
+            const paymentMethod = methodEl ? methodEl.value : 'stripe_checkout';
 
             const bodyPayload = {
-                payment_method: paymentMethod
+                payment_method: paymentMethod,
+                checkout_mode: true
             };
 
             if (paymentMethod.startsWith('card')) {

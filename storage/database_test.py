@@ -135,29 +135,6 @@ class TestDatabaseManagerConnectionAndMigration(BaseTestCase):
         conn3 = self.db._get_connection()
         self.assertIsNot(conn1, conn3)
 
-    def test_live_connection_fallback_missing_credentials(self):
-        live_db = DatabaseManager.from_live()
-        live_db.db_path = str(Path(self.temp_dir.name) / "fallback.db")
-        with patch.dict(os.environ, {}, clear=True):
-            conn = live_db._get_connection()
-            self.assertIsNotNone(conn)
-            # Should have fallen back to local SQLite connection
-            self.assertFalse(conn._is_dict_cursor)
-        live_db.close()
-
-    def test_live_connection_fallback_libsql_exception(self):
-        live_db = DatabaseManager.from_live()
-        live_db.db_path = str(Path(self.temp_dir.name) / "fallback2.db")
-        env_vars = {
-            "TURSO_DATABASE_URL": "libsql://fake-db.turso.io",
-            "TURSO_DB_TOKEN": "fake-token",
-        }
-        with patch.dict(os.environ, env_vars), patch("libsql.connect", side_effect=RuntimeError("Connection refused")):
-            conn = live_db._get_connection()
-            self.assertIsNotNone(conn)
-            self.assertFalse(conn._is_dict_cursor)
-        live_db.close()
-
     def test_migration_recreates_users_table_if_missing_id(self):
         # Create an old schema 'users' table without 'id'
         with self.db._get_connection() as conn:

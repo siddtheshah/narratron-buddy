@@ -141,25 +141,16 @@ class DatabaseManager:
                 self._conn = _ReusableConnection(conn, is_dict_cursor=False)
                 self._ensure_tables_exist()
             else:
-                try:
-                    turso_url = os.environ.get("TURSO_DATABASE_URL")
-                    turso_token = os.environ.get("TURSO_DB_TOKEN")
-                    if not turso_url or not turso_token:
-                        raise ValueError("Missing Turso database credentials.")
-                    conn = libsql.connect(
-                        database=turso_url,
-                        auth_token=turso_token
-                    )
-                    self._conn = _ReusableConnection(conn, is_dict_cursor=True)
-                    self._ensure_tables_exist()
-                except BaseException as e:
-                    logger.warning("Live database connection unavailable (%s), falling back to local SQLite.", e)
-                    db_file = str(self.db_path or "deployer.db")
-                    conn = sqlite3.connect(db_file, check_same_thread=False)
-                    conn.row_factory = sqlite3.Row
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    self._conn = _ReusableConnection(conn, is_dict_cursor=False)
-                    self._ensure_tables_exist()
+                turso_url = os.environ.get("TURSO_DATABASE_URL")
+                turso_token = os.environ.get("TURSO_DB_TOKEN")
+                if not turso_url or not turso_token:
+                    raise ValueError("Missing Turso database credentials.")
+                conn = libsql.connect(
+                    database=turso_url,
+                    auth_token=turso_token
+                )
+                self._conn = _ReusableConnection(conn, is_dict_cursor=True)
+                self._ensure_tables_exist()
             self._cached_db_path = str_db_path
             self._cached_is_live = self.is_live
 
@@ -348,6 +339,15 @@ class DatabaseManager:
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             """)
+
+            
+            transaction_cols = set(_get_cols(cursor, "payment_transactions"))
+            if "stripe_session_id" not in transaction_cols:
+                cursor.execute("ALTER TABLE payment_transactions ADD COLUMN stripe_session_id TEXT")
+            cursor.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_transactions_stripe_session "
+                "ON payment_transactions(stripe_session_id) WHERE stripe_session_id IS NOT NULL"
+            )
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -761,6 +761,51 @@ class DatabaseManager:
                 "amount_usd": usd_amount,
                 "created_at": now_iso
             }
+
+    def add_stripe_session_credits(
+        self, user_id: int, credits_amount: float, usd_amount: float, stripe_session_id: str,
+        payment_method: str = "stripe_checkout"
+    ) -> Dict[str, Any]:
+        """Credit a paid Stripe Checkout session exactly once."""
+        if not stripe_session_id:
+            raise ValueError("Stripe Checkout session ID is required.")
+        if credits_amount <= 0:
+            raise ValueError("Credit amount must be positive.")
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM payment_transactions WHERE stripe_session_id = ?", (stripe_session_id,)
+            )
+            existing = cursor.fetchone()
+            if existing:
+                cursor.execute(
+                    "SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at "
+                    "FROM users WHERE id = ?", (user_id,)
+                )
+                user = cursor.fetchone()
+                return {"transaction_id": existing[0], "user": dict(user), "credits_added": 0.0,
+                        "amount_usd": usd_amount, "created_at": now_iso, "already_credited": True}
+
+            cursor.execute("UPDATE users SET credits = credits + ? WHERE id = ?", (credits_amount, user_id))
+            if cursor.rowcount == 0:
+                raise ValueError("User not found.")
+            cursor.execute(
+                "INSERT INTO payment_transactions "
+                "(user_id, amount_usd, credits_added, payment_method, status, created_at, stripe_session_id) "
+                "VALUES (?, ?, ?, ?, 'completed', ?, ?)",
+                (user_id, usd_amount, credits_amount, payment_method, now_iso, stripe_session_id),
+            )
+            tx_id = cursor.lastrowid
+            cursor.execute(
+                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at "
+                "FROM users WHERE id = ?", (user_id,)
+            )
+            updated_user = dict(cursor.fetchone())
+            conn.commit()
+            return {"transaction_id": tx_id, "user": updated_user, "credits_added": credits_amount,
+                    "amount_usd": usd_amount, "created_at": now_iso, "already_credited": False}
 
     def record_user_usage(
         self,
