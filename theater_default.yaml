@@ -18,10 +18,6 @@ notes:
 chat:
     cooldown_duration: 15
 
-orator:
-    hotkey: "<ctrl>+<shift>+["
-    server_url: "http://127.0.0.1:8000/api/orator/toggle_mic"
-
 email:
     enabled: false
 

@@ -1291,13 +1291,6 @@ async def trigger_orator_mic_toggle(request: Request, theater_id: Optional[str] 
     return {"status": "ok", "broadcasted_to": count}
 
 
-@app.get("/api/orator/config")
-def get_orator_config():
-    return config.get("orator", {
-        "hotkey": "<ctrl>+<shift>+[",
-        "server_url": "http://127.0.0.1:8000/api/orator/toggle_mic"
-    })
-
 @app.get("/api/latest")
 def get_latest_image(request: Request, theater_id: Optional[str] = None):
     if theater_id:
