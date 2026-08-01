@@ -2973,18 +2973,39 @@
 
         const shareTheaterBtn = document.getElementById('share-theater-btn');
         if (shareTheaterBtn) {
-            shareTheaterBtn.addEventListener('click', () => {
-                const currentUrl = new URL(window.location.href);
-                const shareUrl = currentUrl.toString();
+            shareTheaterBtn.addEventListener('click', async () => {
+                if (!theaterId) return;
+
+                try {
+                    const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}`);
+                    const data = await response.json();
+                    const metadata = data && data.metadata;
+                    if (!response.ok || !metadata) {
+                        throw new Error(data.detail || 'Unable to load theater sharing details.');
+                    }
+
+                    // The API returns the actual key only for owners. Viewers
+                    // receive the public join splash link instead.
+                    const shareUrl = metadata.is_owner
+                        ? new URL('/canvas', window.location.origin)
+                        : new URL('/join', window.location.origin);
+                    if (metadata.is_owner) {
+                        shareUrl.searchParams.set('theater_id', theaterId);
+                        shareUrl.searchParams.set('join_key', metadata.join_key);
+                    }
 
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(shareUrl).then(() => {
+                    navigator.clipboard.writeText(shareUrl.toString()).then(() => {
                         showShareToast("✨ Share link copied to clipboard!");
                     }).catch(() => {
                         showShareToast("🔗 Link ready to share!");
                     });
                 } else {
                     showShareToast("🔗 Link ready to share!");
+                }
+                } catch (err) {
+                    console.error('Failed to create theater share link:', err);
+                    showShareToast('Unable to create share link.');
                 }
             });
         }
