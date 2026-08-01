@@ -69,4 +69,5 @@ agent_manager = AgentSessionManager(
     app_name="narratron-combined",
     config=config,
     theater_manager=theater_manager,
+    database_manager=db,
 )

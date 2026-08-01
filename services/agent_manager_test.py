@@ -86,11 +86,15 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager(theater_manager=TheaterManager())
+        mock_database_manager = MagicMock()
+        manager = AgentSessionManager(
+            theater_manager=TheaterManager(), database_manager=mock_database_manager
+        )
         session1 = manager.get_or_create_session(theater_id="s1")
 
         self.assertIsNotNone(session1)
         self.assertEqual(session1.theater_id, "s1")
+        self.assertIs(session1.database_manager, mock_database_manager)
         self.assertTrue(session1.adk_session_id.startswith("adk_s1_"))
 
         # Retrieving existing session returns the same instance
@@ -105,7 +109,9 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager(theater_manager=TheaterManager())
+        manager = AgentSessionManager(
+            theater_manager=TheaterManager(), database_manager=MagicMock()
+        )
         manager.get_or_create_session(theater_id="s2")
         self.assertIsNotNone(manager.get_session("s2"))
 
@@ -124,7 +130,9 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager(theater_manager=TheaterManager())
+        manager = AgentSessionManager(
+            theater_manager=TheaterManager(), database_manager=MagicMock()
+        )
         session = manager.get_or_create_session(theater_id="s3")
         # Set last active to 10 minutes ago (600s)
         session.last_active_at = time.time() - 600.0
@@ -349,15 +357,13 @@ class TestAgentSessionManager(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    @patch("services.agent_manager.AgentSession._get_database")
-    def test_usage_tracking_and_db_flushing(self, mock_get_database):
+    def test_usage_tracking_and_db_flushing(self):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_runner = MagicMock()
         mock_db = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        mock_get_database.return_value = mock_db
         mock_db.get_deployment.return_value = {"user_id": 123}
         mock_db.record_user_usage.return_value = {"credits": 1.0}
 
@@ -365,6 +371,7 @@ class TestAgentSessionManager(unittest.TestCase):
             theater_id="test_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
+            database_manager=mock_db,
         )
 
         # 1. Record image created -> triggers immediate flush

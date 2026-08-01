@@ -117,6 +117,7 @@ class AgentSession:
         theater_id: str,
         runner: Runner,
         tool_bundle: Any,
+        database_manager: Optional[Any] = None,
         config: Optional[dict] = None,
         canvas_state_manager: Optional[Any] = None,
     ):
@@ -128,6 +129,7 @@ class AgentSession:
         self.agent = runner.agent
         self.session_service = runner.session_service
         self.tool_bundle = tool_bundle
+        self.database_manager = database_manager
         self.config = config or {}
         self.canvas_state_manager = canvas_state_manager
         self.owner_user_id: Optional[int] = None
@@ -540,14 +542,9 @@ class AgentSession:
             "total_audio_bytes": self.audio_bytes_received,
         }
 
-    @staticmethod
-    def _get_database() -> Optional[Any]:
-        """Resolve the application database lazily to avoid an import cycle."""
-        try:
-            from api_server.app import db
-            return db
-        except ImportError:
-            return None
+    def _get_database(self) -> Optional[Any]:
+        """Return the database manager supplied by the session manager."""
+        return self.database_manager
 
     def _get_owner_id(self, db_inst: Optional[Any]) -> Optional[int]:
         if self.owner_user_id is None and db_inst:
@@ -606,12 +603,14 @@ class AgentSessionManager:
     def __init__(
         self,
         theater_manager: TheaterManager,
+        database_manager: Any,
         app_name: str = "narratron-combined",
         config: Optional[dict] = None,
     ):
         self.app_name = app_name
         self.config = config or {}
         self.theater_manager = theater_manager
+        self.database_manager = database_manager
         self._sessions: Dict[str, AgentSession] = {}
         self.shared_session_service = InMemorySessionService()
 
@@ -674,6 +673,7 @@ class AgentSessionManager:
             theater_id=theater_id,
             runner=runner,
             tool_bundle=tool_bundle,
+            database_manager=self.database_manager,
             config=theater_config,
             canvas_state_manager=canvas_mgr,
         )
