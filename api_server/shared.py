@@ -160,6 +160,23 @@ def can_access_agent_websocket(
     return _valid_join_key(deployment["join_key"], candidate_key)
 
 
+def can_control_agent_websocket(
+    deployment: dict,
+    *,
+    current_user: Optional[dict] = None,
+) -> bool:
+    """Return whether the authenticated holder of the baton may control the agent.
+
+    A join key grants access to the canvas, but never permission to send live
+    microphone input to the agent.  Until a baton transfer is accepted, the
+    theater owner is the active orator.
+    """
+    if not deployment or not current_user:
+        return False
+    active_orator_id = deployment.get("active_orator_id") or deployment.get("user_id")
+    return current_user.get("id") == active_orator_id
+
+
 
 
 def _require_canvas_access(

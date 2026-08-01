@@ -164,6 +164,7 @@ class AgentSession:
 
         self.live_request_queue = PriorityLiveRequestQueue(retention_window=0.5)
         self.websockets: Set[WebSocket] = set()
+        self.websocket_user_ids: Dict[WebSocket, Optional[int]] = {}
         self.ws_lock = asyncio.Lock()
 
         # Retrieve bound tool instances safely
@@ -456,10 +457,11 @@ class AgentSession:
             return
 
 
-    async def add_websocket(self, websocket: WebSocket):
+    async def add_websocket(self, websocket: WebSocket, user_id: Optional[int] = None):
         async with self.ws_lock:
             was_disconnected = len(self.websockets) == 0
             self.websockets.add(websocket)
+            self.websocket_user_ids[websocket] = user_id
             self.status = "active"
             self.last_active_at = time.time()
             logger.info(f"[AgentSession] WebSocket attached to session {self.theater_id} (total={len(self.websockets)})")
@@ -467,6 +469,20 @@ class AgentSession:
         if was_disconnected:
             logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state(force=True)
+
+    async def revoke_websockets_except(self, active_user_id: int) -> None:
+        """Close agent-control sockets belonging to a previous baton holder."""
+        async with self.ws_lock:
+            sockets_to_close = [
+                websocket
+                for websocket in self.websockets
+                if self.websocket_user_ids.get(websocket) != active_user_id
+            ]
+        for websocket in sockets_to_close:
+            try:
+                await websocket.close(code=1008)
+            except (RuntimeError, ConnectionResetError):
+                pass
 
     @property
     def voice_minutes(self) -> float:
@@ -559,6 +575,7 @@ class AgentSession:
     async def remove_websocket(self, websocket: WebSocket):
         async with self.ws_lock:
             self.websockets.discard(websocket)
+            self.websocket_user_ids.pop(websocket, None)
             self.last_active_at = time.time()
             is_now_disconnected = len(self.websockets) == 0
             if is_now_disconnected:
@@ -578,6 +595,7 @@ class AgentSession:
                 except (WebSocketDisconnect, RuntimeError, ConnectionResetError) as err:
                     logger.debug(f"[AgentSession] broadcast_text skipped (closed): {err}")
                     self.websockets.discard(ws)
+                    self.websocket_user_ids.pop(ws, None)
 
     def close(self):
         """Close LiveRequestQueue and cancel background tasks."""
@@ -706,3 +724,9 @@ class AgentSessionManager:
             self.stop_session(sid)
 
         return expired_ids
+
+    async def revoke_agent_access_except(self, theater_id: str, active_user_id: int) -> None:
+        """Disconnect any live controller that no longer holds this theater's baton."""
+        session = self.get_session(theater_id)
+        if session:
+            await session.revoke_websockets_except(active_user_id)

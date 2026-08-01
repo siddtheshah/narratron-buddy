@@ -10,6 +10,7 @@ from api_server.shared import (  # noqa: F401
     theaters_folder,
     get_current_user,
     can_access_agent_websocket,
+    can_control_agent_websocket,
     _require_canvas_access,
     _safe_path_param,
     _valid_join_key,

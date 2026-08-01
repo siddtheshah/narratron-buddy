@@ -62,6 +62,7 @@ async def handle_live_websocket_connection(
     websocket: WebSocket,
     theater_id: str,
     agent_manager: Any,
+    user_id: Optional[int] = None,
     send_setup_complete_immediately: bool = True,
 ) -> None:
     """Handles WebSocket attachment and upstream audio/text/image frames forwarding to AgentSession."""
@@ -71,7 +72,7 @@ async def handle_live_websocket_connection(
         theater_id=theater_id
     )
 
-    await agent_session.add_websocket(websocket)
+    await agent_session.add_websocket(websocket, user_id=user_id)
 
     if send_setup_complete_immediately:
         try:

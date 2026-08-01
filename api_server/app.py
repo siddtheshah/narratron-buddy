@@ -22,6 +22,7 @@ from api_server import (
     theater_manager,
     get_current_user,
     can_access_agent_websocket,
+    can_control_agent_websocket,
 )
 from api_server.dependencies import agent_manager
 
@@ -187,12 +188,13 @@ async def agent_websocket_endpoint(
     """WebSocket endpoint for bidirectional streaming with ADK.
     Retrieves or creates the in-memory AgentSession instance for stream handling.
     """
+    # ``user_id`` remains in the legacy URL for client compatibility, but it
+    # must never establish identity.  Agent control follows the authenticated
+    # holder of the theater baton.
     current_user = get_current_user(websocket)
-    if not current_user and user_id and user_id.isdigit():
-        current_user = db.get_user_by_id(int(user_id))
 
     deployment = db.get_deployment(theater_id)
-    if not deployment or not can_access_agent_websocket(websocket, deployment, current_user=current_user):
+    if not can_control_agent_websocket(deployment, current_user=current_user):
         await websocket.close(code=1008)
         return
 
@@ -212,6 +214,7 @@ async def agent_websocket_endpoint(
         websocket=websocket,
         theater_id=theater_id,
         agent_manager=agent_manager,
+        user_id=current_user["id"],
     )
     # Perform periodic cleanup of old idle sessions
     agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)

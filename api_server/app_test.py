@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import object_registry
-from api_server.app import can_access_agent_websocket
+from api_server.app import can_control_agent_websocket, can_access_agent_websocket
 app_module = importlib.import_module("api_server.app")
 
 
@@ -55,6 +55,22 @@ class TestCanAccessAgentWebsocket(unittest.TestCase):
         current_user = {"id": 42}
 
         self.assertFalse(can_access_agent_websocket(request, deployment, current_user=current_user))
+
+
+class TestCanControlAgentWebsocket(unittest.TestCase):
+    def test_allows_owner_when_no_baton_transfer_is_active(self):
+        deployment = {"theater_id": "s1", "user_id": 42, "join_key": "KEY-123"}
+        self.assertTrue(can_control_agent_websocket(deployment, current_user={"id": 42}))
+
+    def test_allows_only_active_orator_after_baton_transfer(self):
+        deployment = {"theater_id": "s1", "user_id": 42, "active_orator_id": 99, "join_key": "KEY-123"}
+        self.assertTrue(can_control_agent_websocket(deployment, current_user={"id": 99}))
+        self.assertFalse(can_control_agent_websocket(deployment, current_user={"id": 42}))
+        self.assertFalse(can_control_agent_websocket(deployment, current_user={"id": 7}))
+
+    def test_rejects_join_key_holder_without_authenticated_baton(self):
+        deployment = {"theater_id": "s1", "user_id": 42, "join_key": "KEY-123"}
+        self.assertFalse(can_control_agent_websocket(deployment, current_user=None))
 
 
 def test_start_agent_stops_registry_session_when_owner_has_no_credits():

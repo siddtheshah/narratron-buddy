@@ -23,11 +23,20 @@ from api_server.shared import (
     _grant_canvas_access,
     _valid_join_key,
 )
+from api_server.dependencies import agent_manager
 from components.theater_manager import TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
 
 
 logger = logging.getLogger(__name__)
+
+
+async def _sync_agent_controller(theater_id: str, baton_state: dict) -> None:
+    """Disconnect a live agent socket when a baton transfer changes controller."""
+    active_orator = baton_state.get("active_orator") or {}
+    active_orator_id = active_orator.get("id")
+    if active_orator_id is not None:
+        await agent_manager.revoke_agent_access_except(theater_id, active_orator_id)
 
 
 class ResolveJoinKeyRequest(BaseModel):
@@ -453,6 +462,7 @@ async def remove_allowed_orator(theater_id: str, target_user_id: int, request: R
     
     try:
         updated_state = db.remove_allowed_orator(theater_id, owner_id=user["id"], target_user_id=target_user_id)
+        await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
@@ -486,6 +496,7 @@ async def accept_baton_pass(theater_id: str, request: Request):
     
     try:
         updated_state = db.accept_baton(theater_id, target_user_id=user["id"])
+        await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
@@ -514,6 +525,7 @@ async def take_back_baton(theater_id: str, request: Request):
     
     try:
         updated_state = db.take_back_baton(theater_id, owner_id=user["id"])
+        await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
