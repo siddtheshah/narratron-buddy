@@ -9,6 +9,7 @@ from api_server.shared import app, db, get_current_user
 class ProfileUpdate(BaseModel):
     bio: str = ""
     stats_visible: bool = False
+    profile_color: str = "#818cf8"
 
 
 def _profile_or_404(username: str, request: Request):
@@ -30,7 +31,7 @@ def update_my_profile(payload: ProfileUpdate, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     try:
-        db.update_user_profile(user["id"], payload.bio, payload.stats_visible)
+        db.update_user_profile(user["id"], payload.bio, payload.stats_visible, payload.profile_color)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _profile_or_404(user["username"], request)

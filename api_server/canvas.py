@@ -113,6 +113,7 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
     user = get_current_user(request, record_activity=False)
     author = user["username"] if user else msg.author.strip()
     profile_username = user["username"] if user else None
+    profile_color = user.get("profile_color") if user else None
     command_parts = msg.text.strip().split(maxsplit=1)
     if command_parts and command_parts[0].lower() == "/suggest":
         suggestion_text = command_parts[1] if len(command_parts) > 1 else ""
@@ -122,6 +123,8 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
             suggestion_kwargs = {"theater_id": theater_id}
             if profile_username:
                 suggestion_kwargs["profile_username"] = profile_username
+                if profile_color:
+                    suggestion_kwargs["profile_color"] = profile_color
             suggestion = canvas_states.add_suggestion(author, suggestion_text, **suggestion_kwargs)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -130,6 +133,8 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
     chat_kwargs = {"author": author, "theater_id": theater_id}
     if profile_username:
         chat_kwargs["profile_username"] = profile_username
+        if profile_color:
+            chat_kwargs["profile_color"] = profile_color
     canvas_states.add_chat_message(msg.text, **chat_kwargs)
     return {"status": "ok", "type": "chat"}
 

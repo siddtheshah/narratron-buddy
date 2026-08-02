@@ -1,9 +1,49 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Narratron Profile</title><link rel="icon" href="/favicon.png"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet"><style>
-:root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}header{padding:1.25rem 7vw;border-bottom:1px solid var(--border)}.brand{color:inherit;text-decoration:none;font-size:1.25rem;font-weight:700}main{max-width:760px;margin:4rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin:0}.section{font-size:1rem;margin:2rem 0 .6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}p{line-height:1.55;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem}.stat{padding:1rem;border-radius:12px;background:rgba(255,255,255,.045)}.stat b{display:block;font-size:1.45rem}.stat span,label{color:var(--muted);font-size:.88rem}textarea{width:100%;min-height:130px;padding:.8rem;resize:vertical;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer}#status{margin-left:.75rem;color:#86efac}
-</style></head><body><header><a class="brand" href="/deploy">✦ Narratron</a></header><main><div class="card" id="profile"><p class="empty">Loading profile…</p></div></main><script>
-const username=decodeURIComponent(location.pathname.split('/').pop()),el=document.getElementById('profile');
-const esc=v=>String(v||'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-async function load(){const r=await fetch(`/api/users/${encodeURIComponent(username)}/profile`);if(!r.ok){el.innerHTML='<h1>Profile not found</h1><p class="empty">This user does not exist.</p>';return}const p=await r.json(),bio=p.bio?esc(p.bio):'<span class="empty">This user has not written a bio yet.</span>';let stats='<p class="private">This user keeps their stats private.</p>';if(p.stats)stats=`<div class="stats"><div class="stat"><b>${Number(p.stats.lifetime_credits_used).toFixed(1)}</b><span>Credits used</span></div><div class="stat"><b>${p.stats.theater_views}</b><span>Theater views</span></div></div>`;let edit='';if(p.is_owner)edit=`<h2 class="section">Edit profile</h2><textarea id="bio" maxlength="1000" placeholder="Tell people about yourself">${esc(p.bio)}</textarea><label><input id="visible" type="checkbox" ${p.stats_visible?'checked':''}> Show my stats publicly</label><button id="save">Save profile</button><span id="status"></span>`;el.innerHTML=`<h1>${esc(p.username)}</h1><h2 class="section">Bio</h2><p>${bio}</p><h2 class="section">Stats</h2>${stats}${edit}`;const save=document.getElementById('save');if(save)save.onclick=async()=>{const out=await fetch('/api/users/me/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({bio:document.getElementById('bio').value,stats_visible:document.getElementById('visible').checked})});document.getElementById('status').textContent=out.ok?'Saved':'Could not save';if(out.ok)load()}}
-load();
-</script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Profile</title><link rel="icon" href="/favicon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/monolith.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
+  <style>
+    :root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}header{padding:1.25rem 7vw;border-bottom:1px solid var(--border)}.brand{color:inherit;text-decoration:none;font-size:1.25rem;font-weight:700}main{max-width:760px;margin:4rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin:0}.identity{display:flex;align-items:center;gap:.7rem}.swatch{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.7)}.section{font-size:1rem;margin:2rem 0 .6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}p{line-height:1.55;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem}.stat{padding:1rem;border-radius:12px;background:rgba(255,255,255,.045)}.stat b{display:block;font-size:1.45rem}.stat span,label{color:var(--muted);font-size:.88rem}textarea{width:100%;min-height:130px;padding:.8rem;resize:vertical;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer}#status{margin-left:.75rem;color:#86efac}
+  </style>
+</head>
+<body>
+  <header><a class="brand" href="/deploy">✦ Narratron</a></header>
+  <main><div class="card" id="profile"><p class="empty">Loading profile…</p></div></main>
+  <script>
+    const username = decodeURIComponent(location.pathname.split('/').pop());
+    const el = document.getElementById('profile');
+    let profilePicker = null;
+    let selectedProfileColor = '#818cf8';
+    const esc = value => String(value || '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+
+    async function load() {
+      const response = await fetch(`/api/users/${encodeURIComponent(username)}/profile`);
+      if (!response.ok) { el.innerHTML = '<h1>Profile not found</h1><p class="empty">This user does not exist.</p>'; return; }
+      const profile = await response.json();
+      const color = /^#[0-9a-fA-F]{6}$/.test(profile.profile_color || '') ? profile.profile_color : '#818cf8';
+      const bio = profile.bio ? esc(profile.bio) : '<span class="empty">This user has not written a bio yet.</span>';
+      const stats = profile.stats ? `<div class="stats"><div class="stat"><b>${Number(profile.stats.lifetime_credits_used).toFixed(1)}</b><span>Credits used</span></div><div class="stat"><b>${profile.stats.theater_views}</b><span>Theater views</span></div></div>` : '<p class="private">This user keeps their stats private.</p>';
+      const editor = profile.is_owner ? `<h2 class="section">Edit profile</h2><textarea id="bio" maxlength="1000" placeholder="Tell people about yourself">${esc(profile.bio)}</textarea><label>Name color <span id="color-picker"></span></label><label><input id="visible" type="checkbox" ${profile.stats_visible ? 'checked' : ''}> Show my stats publicly</label><button id="save">Save profile</button><span id="status"></span>` : '';
+      el.innerHTML = `<div class="identity"><span class="swatch" style="background:${color}"></span><h1 style="color:${color}">${esc(profile.username)}</h1></div><h2 class="section">Bio</h2><p>${bio}</p><h2 class="section">Stats</h2>${stats}${editor}`;
+      if (profilePicker) profilePicker.destroyAndRemove();
+      selectedProfileColor = color;
+      if (profile.is_owner && window.Pickr) {
+        profilePicker = Pickr.create({el:'#color-picker',theme:'monolith',default:color,components:{preview:true,opacity:false,hue:true,interaction:{hex:true,input:true,save:true}}})
+          .on('change', picked => { selectedProfileColor = picked.toHEXA().toString(); })
+          .on('save', picked => { selectedProfileColor = picked.toHEXA().toString(); profilePicker.hide(); });
+      }
+      const save = document.getElementById('save');
+      if (save) save.onclick = async () => {
+        const result = await fetch('/api/users/me/profile', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({bio:document.getElementById('bio').value,stats_visible:document.getElementById('visible').checked,profile_color:selectedProfileColor})});
+        document.getElementById('status').textContent = result.ok ? 'Saved' : 'Could not save';
+        if (result.ok) load();
+      };
+    }
+    load();
+  </script>
+</body>
+</html>

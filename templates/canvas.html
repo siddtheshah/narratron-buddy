@@ -1684,7 +1684,9 @@
             const rawAuthor = msg.author || 'Narratron';
             const isNarratron = (rawAuthor.toLowerCase() === 'agent' || rawAuthor.toLowerCase() === 'narratron');
             const displayAuthor = isNarratron ? 'Narratron' : rawAuthor;
-            const color = getAuthorColor(displayAuthor);
+            const color = (!isNarratron && /^#[0-9a-fA-F]{6}$/.test(msg.profile_color || ''))
+                ? msg.profile_color
+                : getAuthorColor(displayAuthor);
 
             function makeAuthorElement(className) {
                 const element = msg.profile_username ? document.createElement('a') : document.createElement('span');

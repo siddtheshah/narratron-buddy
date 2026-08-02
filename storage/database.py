@@ -12,6 +12,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 import logging
+import re
 import libsql
 from dotenv import load_dotenv
 from pricing.pricing_controller import PricingController
@@ -301,6 +302,7 @@ class DatabaseManager:
                     bio TEXT DEFAULT '',
                     stats_visible INTEGER DEFAULT 0,
                     lifetime_credits_used REAL DEFAULT 0.0,
+                    profile_color TEXT DEFAULT '#818cf8',
                     created_at TEXT NOT NULL,
                     last_active_at TEXT
                 )
@@ -342,6 +344,8 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE users ADD COLUMN stats_visible INTEGER DEFAULT 0")
             if "lifetime_credits_used" not in user_cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN lifetime_credits_used REAL DEFAULT 0.0")
+            if "profile_color" not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN profile_color TEXT DEFAULT '#818cf8'")
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -549,7 +553,7 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, username, bio, stats_visible, lifetime_credits_used FROM users WHERE LOWER(username) = LOWER(?)",
+                "SELECT id, username, bio, stats_visible, lifetime_credits_used, profile_color FROM users WHERE LOWER(username) = LOWER(?)",
                 (username.strip(),),
             )
             user = cursor.fetchone()
@@ -580,15 +584,17 @@ class DatabaseManager:
                 profile["stats"] = None
             return profile
 
-    def update_user_profile(self, user_id: int, bio: str, stats_visible: bool) -> bool:
+    def update_user_profile(self, user_id: int, bio: str, stats_visible: bool, profile_color: str) -> bool:
         """Update the owner-controlled public fields of a profile."""
         if len(bio) > 1_000:
             raise ValueError("Bio must be 1,000 characters or fewer.")
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", profile_color):
+            raise ValueError("Profile color must be a six-digit hex color.")
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE users SET bio = ?, stats_visible = ? WHERE id = ?",
-                (bio.strip(), int(stats_visible), user_id),
+                "UPDATE users SET bio = ?, stats_visible = ?, profile_color = ? WHERE id = ?",
+                (bio.strip(), int(stats_visible), profile_color.lower(), user_id),
             )
             return cursor.rowcount > 0
 
@@ -616,7 +622,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.mic_sensitivity, u.created_at, s.expires_at
+                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.mic_sensitivity, u.profile_color, u.created_at, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE s.token = ?

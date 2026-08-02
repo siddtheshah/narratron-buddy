@@ -24,11 +24,11 @@ def test_post_chat_uses_registry_canvas_service_for_regular_message():
 
 def test_post_chat_uses_verified_identity_for_profile_link():
     service = MagicMock()
-    with patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user", return_value={"id": 3, "username": "Ada"}):
+    with patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user", return_value={"id": 3, "username": "Ada", "profile_color": "#f97316"}):
         result = canvas.post_chat(canvas.ChatMessage(author="Imposter", text="hello"), request())
     assert result == {"status": "ok", "type": "chat"}
     service.add_chat_message.assert_called_once_with(
-        "hello", author="Ada", theater_id=None, profile_username="Ada"
+        "hello", author="Ada", theater_id=None, profile_username="Ada", profile_color="#f97316"
     )
 
 

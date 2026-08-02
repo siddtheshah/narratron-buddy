@@ -29,7 +29,7 @@
 - [x] Special instructions for the agent in theater.yaml.
 
 ## User Profiles
-- [ ] Create a user profile page showing lifetime credits used, and theater views. Let them write a bio.
+- [x] Create a user profile page showing lifetime credits used, and theater views. Let them write a bio.
 - [ ] Implement proper account deletion.
     - Create script to delete user data from DB and Cloud Storage.
     - Consider a soft-delete approach for auditability if needed, but user-facing must be complete removal.
@@ -39,6 +39,8 @@
 - [ ] Speed up page loads and toggles in the canvas.
    - Optimistic updates on UI toggles.
    - Simple time based cache for authorization. Investigate Redis and avoid tech debt here.
+- [ ] Optimize doodles. Use full strokes rather than real time.
+- [ ] Optimize chat polling. Should use 
 
 ## Policy Pages
 - [ ] Page for terms of use.

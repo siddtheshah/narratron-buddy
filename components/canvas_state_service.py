@@ -65,8 +65,8 @@ class CanvasStateService:
             effect=effect,
         )
 
-    def add_chat_message(self, text: str, author: str = "agent", theater_id: Optional[str] = None, profile_username: Optional[str] = None) -> None:
-        self.get(theater_id).add_chat_message(text, author=author, profile_username=profile_username)
+    def add_chat_message(self, text: str, author: str = "agent", theater_id: Optional[str] = None, profile_username: Optional[str] = None, profile_color: Optional[str] = None) -> None:
+        self.get(theater_id).add_chat_message(text, author=author, profile_username=profile_username, profile_color=profile_color)
 
     def set_agent_thought(self, text: str, theater_id: Optional[str] = None) -> None:
         self.get(theater_id).set_agent_thought(text)
@@ -90,8 +90,8 @@ class CanvasStateService:
     # Viewer Collaboration — suggestion management
     # ------------------------------------------------------------------
 
-    def add_suggestion(self, author: str, text: str, theater_id: Optional[str] = None, profile_username: Optional[str] = None) -> dict:
-        return self.get(theater_id).chat_manager.add_suggestion(author, text, profile_username=profile_username)
+    def add_suggestion(self, author: str, text: str, theater_id: Optional[str] = None, profile_username: Optional[str] = None, profile_color: Optional[str] = None) -> dict:
+        return self.get(theater_id).chat_manager.add_suggestion(author, text, profile_username=profile_username, profile_color=profile_color)
 
     def withdraw_suggestion(self, author: str, theater_id: Optional[str] = None) -> bool:
         return self.get(theater_id).chat_manager.withdraw_suggestion(author)

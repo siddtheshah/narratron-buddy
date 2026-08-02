@@ -26,7 +26,7 @@ class ChatManager:
     # Suggestion engine
     # ------------------------------------------------------------------
 
-    def add_suggestion(self, author: str, text: str, profile_username: Optional[str] = None) -> dict:
+    def add_suggestion(self, author: str, text: str, profile_username: Optional[str] = None, profile_color: Optional[str] = None) -> dict:
         """Add or replace the author's active suggestion.
 
         Returns the stored suggestion dict (with ``upvote_count`` instead of
@@ -55,6 +55,8 @@ class ChatManager:
         }
         if profile_username:
             message["profile_username"] = profile_username
+        if profile_color:
+            message["profile_color"] = profile_color
         self.add_message(message)
         return self._serialize_suggestion(suggestion)
 

@@ -40,4 +40,4 @@ def test_update_profile_requires_login_and_updates_owner_settings():
     with patch.object(object_registry, "db", registry_db), patch.object(profiles, "get_current_user", return_value={"id": 8, "username": "Ada"}):
         result = profiles.update_my_profile(profiles.ProfileUpdate(bio="Hi", stats_visible=True), request())
     assert result["username"] == "Ada"
-    registry_db.update_user_profile.assert_called_once_with(8, "Hi", True)
+    registry_db.update_user_profile.assert_called_once_with(8, "Hi", True, "#818cf8")
