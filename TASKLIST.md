@@ -25,8 +25,8 @@
 - [ ] Refactor database definitions to live as an external SQL schema, not baked in python code.
 
 ## Customization
-- [ ] Move style.txt into theater.yaml
-- [ ] Special instructions for the agent in theater.yaml.
+- [x] Move style.txt into theater.yaml
+- [x] Special instructions for the agent in theater.yaml.
 
 ## User Profiles
 - [ ] Create a user profile page showing lifetime credits used, and theater views. Let them write a bio.

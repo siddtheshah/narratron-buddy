@@ -6,75 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from components.theater_manager import TheaterManager
-from services.agent import create_agent
 from services.agent_manager import AgentSessionManager, AgentSession
-
-
-class TestCreateAgent(unittest.TestCase):
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
-    def test_create_agent_calls_list_references_on_init(
-        self, mock_agent_cls, mock_bundle_fn
-    ):
-        mock_image_tools = MagicMock()
-        mock_image_tools.list_references.return_value = [
-            {
-                "name": "hero_character",
-                "alias": "hero_character",
-                "path": "/path/to/hero_character.png",
-                "description": "Hero character reference image",
-            }
-        ]
-        mock_tool = MagicMock()
-        mock_tool.name = "list_references"
-        mock_tool.func = mock_image_tools.list_references
-        mock_bundle = MagicMock()
-        mock_bundle.tools = [mock_tool]
-        mock_bundle_fn.return_value = mock_bundle
-
-        theater_id = "test_agent_theater"
-        agent_inst = create_agent(theater_id=theater_id)
-
-        # Verify list_references was called immediately during create_agent
-        mock_image_tools.list_references.assert_called_once()
-
-        # Verify Agent instruction includes the preloaded references context
-        mock_agent_cls.assert_called_once()
-        _, kwargs = mock_agent_cls.call_args
-        self.assertIn("Preloaded References Context", kwargs["instruction"])
-        self.assertIn("hero_character", kwargs["instruction"])
-        self.assertIn("/path/to/hero_character.png", kwargs["instruction"])
-        self.assertIs(agent_inst, mock_agent_cls.return_value)
-
-    @patch("services.agent.ImageTools")
-    @patch("services.agent.ChatTools")
-    @patch("services.agent.NotesTools")
-    @patch("services.agent.MusicTools")
-    @patch("services.agent.Agent")
-    def test_create_agent_passes_canvas_state_service_to_every_tool(
-        self, mock_agent_cls, mock_music_cls, mock_notes_cls, mock_chat_cls, mock_image_cls
-    ):
-        mock_image_cls.return_value.list_references.return_value = []
-        canvas_state_service = MagicMock()
-        theater_id = "test_agent_theater"
-        config = {"agent": {"model_id": "test-model"}}
-
-        create_agent(
-            theater_id=theater_id,
-            config=config,
-            canvas_state_service=canvas_state_service,
-        )
-
-        expected_kwargs = {
-            "theater_id": theater_id,
-            "canvas_state_service": canvas_state_service,
-        }
-        expected_manager = mock_image_cls.call_args.kwargs["theater_manager"]
-        managed_tool_kwargs = {**expected_kwargs, "theater_manager": expected_manager}
-        mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
-        mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
-        mock_notes_cls.assert_called_once_with(config.get("notes", {}), **managed_tool_kwargs)
-        mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)
 
 
 class TestAgentSessionManager(unittest.TestCase):

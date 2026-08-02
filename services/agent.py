@@ -6,6 +6,7 @@ from google.adk.agents import Agent
 from google.adk.planners import BuiltInPlanner
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.genai import types
+from jinja2 import StrictUndefined, Template
 
 from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
@@ -15,7 +16,7 @@ from tools.notes_tool import NotesTools
 from tools.tool_bundle import ToolBundle
 from utils.config_loader import get_app_config, get_theater_config
 
-INSTRUCTIONS = """
+AGENT_INSTRUCTION_TEMPLATE = """
 # Objective
 
 You are a narrative agent (narratron) that has been given the special ability to use image generation and management tools.
@@ -79,6 +80,18 @@ When a story begins or a scene/mood is described, invoke `play_playlist` immedia
 * play_playlist <playlist_name>: Choose a playlist to play. This sends a signal to play the music on the canvas.
 * pause_playlist: Pause the current music playlist playing on the canvas.
 * resume_playlist: Resume the paused music playlist playing on the canvas.
+
+{{ ref_context }}
+
+{% if special_instructions %}
+## SPECIAL INSTRUCTIONS Directly from your Orator
+{{ special_instructions }}
+{% endif %}
+
+## Startup
+Be sure to greet the user in a chat message to begin with, to show you are there and listening.
+
+Cooldowns are now lifted. GO!
 """
 
 
@@ -140,16 +153,19 @@ def create_agent(
             break
 
     special_instructions = str(config.get("agent", {}).get("special_instructions", "")).strip()
-    custom_instructions = (
-        f"\n\n## Theater-specific instructions\n{special_instructions}"
-        if special_instructions else ""
-    )
-    instruction = INSTRUCTIONS + ref_context + custom_instructions + """
-        ## Startup
-        Be sure to greet the user in a chat message to begin with, to show you are there and listening.
-
-        Cooldowns are now lifted. GO!
-    """.strip()
+    theater_manager = theater_manager or TheaterManager()
+    theater = theater_manager.get_theater(theater_id)
+    instruction = Template(
+        AGENT_INSTRUCTION_TEMPLATE,
+        undefined=StrictUndefined,
+    ).render(
+        ref_context=ref_context,
+        special_instructions=special_instructions,
+        theater_id=theater_id,
+        theater_name=theater.name if theater else theater_id,
+        config=config,
+        agent=config.get("agent", {}),
+    ).strip()
     app_internal = get_app_config().get("agent_internal", {})
     model_id = app_internal.get("model_id") or app_internal.get("model", "gemini-3.1-flash-live-preview")
     return Agent(
