@@ -190,8 +190,11 @@ class CanvasStateManager:
                     except Exception as e:
                         logger.warning(f"Failed to copy shown image to theater output dir: {e}")
 
-    def add_chat_message(self, text: str, author: str = "agent"):
-        self.chat_manager.add_message({"author": author, "text": text})
+    def add_chat_message(self, text: str, author: str = "agent", profile_username: Optional[str] = None):
+        message = {"author": author, "text": text}
+        if profile_username:
+            message["profile_username"] = profile_username
+        self.chat_manager.add_message(message)
 
     def set_agent_thought(self, text: str):
         normalized_text = text.strip()

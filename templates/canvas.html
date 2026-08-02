@@ -1686,13 +1686,22 @@
             const displayAuthor = isNarratron ? 'Narratron' : rawAuthor;
             const color = getAuthorColor(displayAuthor);
 
+            function makeAuthorElement(className) {
+                const element = msg.profile_username ? document.createElement('a') : document.createElement('span');
+                element.className = className;
+                if (msg.profile_username) {
+                    element.href = `/users/${encodeURIComponent(msg.profile_username)}`;
+                    element.title = `View ${displayAuthor}'s profile`;
+                }
+                return element;
+            }
+
             // Suggestion-type messages get special rendering
             if (msg.type === 'suggestion') {
                 div.classList.add('suggestion-message');
                 div.dataset.suggestionAuthor = rawAuthor;
 
-                const prefixSpan = document.createElement('span');
-                prefixSpan.className = 'suggestion-prefix';
+                const prefixSpan = makeAuthorElement('suggestion-prefix');
                 prefixSpan.textContent = `💡 ${displayAuthor} suggests:`;
                 div.appendChild(prefixSpan);
 
@@ -1730,8 +1739,7 @@
                 return div;
             }
 
-            const prefixSpan = document.createElement('span');
-            prefixSpan.className = 'chat-prefix';
+            const prefixSpan = makeAuthorElement('chat-prefix');
             prefixSpan.style.color = color;
             prefixSpan.style.fontWeight = '600';
             prefixSpan.style.marginRight = '6px';

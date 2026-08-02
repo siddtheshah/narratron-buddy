@@ -218,6 +218,7 @@
         .user-pill {
             background: rgba(99, 102, 241, 0.15);
             border: 1px solid rgba(99, 102, 241, 0.3);
+            text-decoration: none;
             color: #c084fc;
             padding: 6px 14px;
             border-radius: 999px;
@@ -1690,7 +1691,7 @@
                             ⚡ ${data.user.credits.toFixed(1)} Credits
                             <span class="buy-credits-plus-btn">+ Buy</span>
                         </div>
-                        <div class="user-pill">👤 ${data.user.username}</div>
+                        <a class="user-pill" href="/users/${encodeURIComponent(data.user.username)}">👤 ${data.user.username}</a>
                         <button class="btn btn-secondary btn-sm" onclick="submitLogout()">Logout</button>
                     `;
                 } else {

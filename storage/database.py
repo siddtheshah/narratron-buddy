@@ -298,6 +298,9 @@ class DatabaseManager:
                     total_voice_minutes REAL DEFAULT 0.0,
                     total_images_created INTEGER DEFAULT 0,
                     mic_sensitivity REAL DEFAULT 0.5,
+                    bio TEXT DEFAULT '',
+                    stats_visible INTEGER DEFAULT 0,
+                    lifetime_credits_used REAL DEFAULT 0.0,
                     created_at TEXT NOT NULL,
                     last_active_at TEXT
                 )
@@ -333,6 +336,12 @@ class DatabaseManager:
                     cursor.execute("ALTER TABLE users ADD COLUMN mic_sensitivity REAL DEFAULT 0.5")
                 except Exception:
                     pass
+            if "bio" not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
+            if "stats_visible" not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN stats_visible INTEGER DEFAULT 0")
+            if "lifetime_credits_used" not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN lifetime_credits_used REAL DEFAULT 0.0")
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -534,6 +543,54 @@ class DatabaseManager:
             cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, mic_sensitivity, created_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    def get_user_profile(self, username: str, viewer_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Return a public profile, exposing stats only to its owner when private."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, username, bio, stats_visible, lifetime_credits_used FROM users WHERE LOWER(username) = LOWER(?)",
+                (username.strip(),),
+            )
+            user = cursor.fetchone()
+            if not user:
+                return None
+            profile = dict(user)
+            profile_user_id = profile.pop("id")
+            is_owner = profile_user_id == viewer_user_id
+            stats_visible = bool(profile.pop("stats_visible", False))
+            profile["is_owner"] = is_owner
+            profile["stats_visible"] = stats_visible
+            if is_owner or stats_visible:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM theater_views views
+                    JOIN canvas_deployments deployments ON deployments.theater_id = views.theater_id
+                    WHERE deployments.user_id = ?
+                    """,
+                    (profile_user_id,),
+                )
+                profile["stats"] = {
+                    "lifetime_credits_used": profile.pop("lifetime_credits_used", 0.0),
+                    "theater_views": cursor.fetchone()["count"],
+                }
+            else:
+                profile.pop("lifetime_credits_used", None)
+                profile["stats"] = None
+            return profile
+
+    def update_user_profile(self, user_id: int, bio: str, stats_visible: bool) -> bool:
+        """Update the owner-controlled public fields of a profile."""
+        if len(bio) > 1_000:
+            raise ValueError("Bio must be 1,000 characters or fewer.")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET bio = ?, stats_visible = ? WHERE id = ?",
+                (bio.strip(), int(stats_visible), user_id),
+            )
+            return cursor.rowcount > 0
 
     def create_auth_session(self, user_id: int, days_valid: int = 7) -> str:
         """Create a new session token for a user."""
@@ -814,8 +871,8 @@ class DatabaseManager:
                 raise ValueError("Insufficient credits for theater deployment.")
 
             cursor.execute(
-                "UPDATE users SET credits = credits - ? WHERE id = ?",
-                (cost, user_id)
+                "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
+                (cost, cost, user_id)
             )
             persistent_val = 1 if is_persistent else 0
             last_billed_val = now_iso if is_persistent else None
@@ -940,10 +997,11 @@ class DatabaseManager:
                 UPDATE users
                 SET total_voice_minutes = total_voice_minutes + ?,
                     total_images_created = total_images_created + ?,
-                    credits = credits - ?
+                    credits = credits - ?,
+                    lifetime_credits_used = lifetime_credits_used + ?
                 WHERE id = ?
                 """,
-                (voice_minutes, images_created, credit_cost, user_id),
+                (voice_minutes, images_created, credit_cost, credit_cost, user_id),
             )
             if cursor.rowcount == 0:
                 raise ValueError("User not found.")
@@ -1127,7 +1185,10 @@ class DatabaseManager:
 
                         if user_credits >= charge_amount:
                             new_last_billed = (last_billed_dt + datetime.timedelta(hours=hours_to_bill)).isoformat()
-                            cursor.execute("UPDATE users SET credits = credits - ? WHERE id = ?", (charge_amount, user_id))
+                            cursor.execute(
+                                "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
+                                (charge_amount, charge_amount, user_id),
+                            )
                             cursor.execute("UPDATE canvas_deployments SET last_billed_at = ? WHERE theater_id = ?", (new_last_billed, theater_id))
                             accrued_charges.append({
                                 "theater_id": theater_id,

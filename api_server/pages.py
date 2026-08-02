@@ -119,6 +119,12 @@ def read_deployer():
     with open(template_path, "r", encoding="utf-8") as f:
         return f.read()
 
+@app.get("/users/{username}", response_class=HTMLResponse)
+def read_user_profile(username: str):
+    """Serve the client-rendered public user profile page."""
+    template_path = PROJECT_ROOT / "templates" / "profile.html"
+    return template_path.read_text(encoding="utf-8")
+
 @app.get("/about", response_class=HTMLResponse)
 def read_about():
     """Serve the About page from the repository's ABOUT.md source."""

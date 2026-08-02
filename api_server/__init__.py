@@ -24,6 +24,7 @@ import api_server.auth  # noqa: F401
 import api_server.payments  # noqa: F401
 import api_server.theaters  # noqa: F401
 import api_server.canvas  # noqa: F401
+import api_server.profiles  # noqa: F401
 import api_server.pages  # noqa: F401
 
 # Re-export symbols that external code imports by name
