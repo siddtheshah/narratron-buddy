@@ -1178,21 +1178,26 @@
             margin: 4px 0;
             position: relative;
         }
+
         #chat-messages.suggestions-hidden .suggestion-message {
             display: none;
         }
+
         .suggestion-prefix {
             color: #fbbf24;
             font-weight: 700;
             margin-right: 6px;
         }
+
         .suggestion-actions {
             display: flex;
             align-items: center;
             gap: 6px;
             margin-top: 5px;
         }
-        .suggestion-upvote-btn, .suggestion-withdraw-btn {
+
+        .suggestion-upvote-btn,
+        .suggestion-withdraw-btn {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.15);
             color: #e2e8f0;
@@ -1203,26 +1208,31 @@
             transition: all 0.2s;
             font-family: 'Outfit', sans-serif;
         }
+
         .suggestion-upvote-btn:hover {
             background: rgba(251, 191, 36, 0.2);
             border-color: rgba(251, 191, 36, 0.4);
             color: #fbbf24;
         }
+
         .suggestion-upvote-btn.voted {
             background: rgba(251, 191, 36, 0.2);
             border-color: rgba(251, 191, 36, 0.4);
             color: #fbbf24;
         }
+
         .suggestion-withdraw-btn:hover {
             background: rgba(239, 68, 68, 0.2);
             border-color: rgba(239, 68, 68, 0.4);
             color: #f87171;
         }
+
         .suggestion-vote-count {
             font-size: 0.72rem;
             color: #94a3b8;
             font-weight: 500;
         }
+
         /* Orator Collab Toggle */
         .collab-toggle-btn {
             background: rgba(255, 255, 255, 0.08);
@@ -1239,6 +1249,7 @@
             transition: all 0.3s;
             font-family: 'Outfit', sans-serif;
         }
+
         .collab-toggle-btn.active {
             background: rgba(251, 191, 36, 0.2);
             border-color: rgba(251, 191, 36, 0.4);
@@ -1542,7 +1553,8 @@
             </div>
             <div id="collab-section"
                 style="display: none; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
-                <button id="viewer-collab-toggle-btn" class="collab-toggle-btn" title="Toggle Viewer Collaboration Mode">
+                <button id="viewer-collab-toggle-btn" class="collab-toggle-btn"
+                    title="Toggle Viewer Collaboration Mode">
                     👥 Collab: Off
                 </button>
             </div>
@@ -1574,10 +1586,13 @@
         <div class="panel-header">
             <span class="panel-title">Chat</span>
             <div class="panel-actions">
-                <button class="panel-btn" id="viewer-collab-guide-btn" title="How to collaborate" style="display: none;">
+                <button class="panel-btn" id="viewer-collab-guide-btn" title="How to collaborate"
+                    style="display: none;">
                     ✨ Collaborate
                 </button>
-                <button class="panel-btn suggestion-visibility-btn" id="hide-suggestions-btn" aria-label="Hide viewer suggestions" title="Hide viewer suggestions from this chat" style="display: none;">
+                <button class="panel-btn suggestion-visibility-btn" id="hide-suggestions-btn"
+                    aria-label="Hide viewer suggestions" title="Hide viewer suggestions from this chat"
+                    style="display: none;">
                     🙈
                 </button>
                 <button class="panel-btn" id="popout-window-btn" title="Pop out into separate window">
@@ -1634,6 +1649,7 @@
     <script type="module">
         let startAudioRecorderWorklet;
         let stopMicrophone;
+        let listenForSpeech;
         import(`/static/js/audio-recorder.js?cache_bust=${Date.now()}`)
             .then((module) => {
                 startAudioRecorderWorklet = module.startAudioRecorderWorklet;
@@ -1641,6 +1657,13 @@
             })
             .catch((err) => {
                 console.error("Failed to load audio-recorder.js:", err);
+            });
+        import(`/static/js/device-aware-pcm.js?cache_bust=${Date.now()}`)
+            .then((module) => {
+                listenForSpeech = module.listenForSpeech;
+            })
+            .catch((err) => {
+                console.error("Failed to load device-aware-pcm.js:", err);
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js";
 
@@ -3264,15 +3287,15 @@
                         shareUrl.searchParams.set('join_key', metadata.join_key);
                     }
 
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(shareUrl.toString()).then(() => {
-                        showShareToast("✨ Share link copied to clipboard!");
-                    }).catch(() => {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(shareUrl.toString()).then(() => {
+                            showShareToast("✨ Share link copied to clipboard!");
+                        }).catch(() => {
+                            showShareToast("🔗 Link ready to share!");
+                        });
+                    } else {
                         showShareToast("🔗 Link ready to share!");
-                    });
-                } else {
-                    showShareToast("🔗 Link ready to share!");
-                }
+                    }
                 } catch (err) {
                     console.error('Failed to create theater share link:', err);
                     showShareToast('Unable to create share link.');
@@ -4192,6 +4215,124 @@
         navigator.mediaDevices?.addEventListener('devicechange', () => refreshMicrophoneDevices());
         refreshMicrophoneDevices();
 
+        // Microphone test: capture selected-device audio with the same 16 kHz,
+        // signed 16-bit PCM pipeline used for live narration, then play it locally.
+        const micTestRecordBtn = document.getElementById('menu-mic-test-record');
+        const micTestPlayBtn = document.getElementById('menu-mic-test-play');
+        const micTestStatus = document.getElementById('menu-mic-test-status');
+        const MIC_TEST_SAMPLE_RATE = 16000;
+        const MIC_TEST_MAX_MS = 10000;
+        let stopMicTestCapture = null;
+        let micTestStarting = false;
+        let micTestChunks = [];
+        let micTestBytes = 0;
+        let micTestTimer = null;
+        let micTestPlayback = null;
+        let micTestPlaybackContext = null;
+
+        function setMicTestStatus(message) {
+            if (micTestStatus) micTestStatus.textContent = message;
+        }
+
+        function setMicTestRecordingUI(recording) {
+            if (!micTestRecordBtn) return;
+            micTestRecordBtn.textContent = recording ? 'Stop recording' : 'Record test';
+            micTestRecordBtn.setAttribute('aria-pressed', String(recording));
+        }
+
+        function stopMicTestRecording(message = 'Recording ready. Play it back to verify your microphone.') {
+            if (micTestTimer) window.clearTimeout(micTestTimer);
+            micTestTimer = null;
+            const stop = stopMicTestCapture;
+            stopMicTestCapture = null;
+            if (typeof stop === 'function') stop();
+            setMicTestRecordingUI(false);
+            if (micTestPlayBtn) micTestPlayBtn.disabled = micTestBytes === 0;
+            setMicTestStatus(micTestBytes ? message : 'No audio was captured. Check browser microphone permission and try again.');
+        }
+
+        async function startMicTestRecording() {
+            if (micTestStarting) return;
+            if (stopMicTestCapture) {
+                stopMicTestRecording();
+                return;
+            }
+            if (isRecording) {
+                setMicTestStatus('Disconnect the live microphone before running a local mic test.');
+                return;
+            }
+            if (typeof listenForSpeech !== 'function') {
+                setMicTestStatus('Audio capture is still loading. Please try again in a moment.');
+                return;
+            }
+
+            micTestStarting = true;
+            micTestChunks = [];
+            micTestBytes = 0;
+            if (micTestPlayBtn) micTestPlayBtn.disabled = true;
+            setMicTestRecordingUI(true);
+            setMicTestStatus('Recording from the selected microphone… speak now (up to 10 seconds).');
+            try {
+                // A zero threshold deliberately includes quiet samples: this is a
+                // recording diagnostic, not a VAD test.
+                const stop = await listenForSpeech({
+                    deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
+                    sampleRate: MIC_TEST_SAMPLE_RATE,
+                    vadThreshold: 0,
+                    continuous: true,
+                    onData: ({ pcm }) => {
+                        const chunk = new Uint8Array(pcm);
+                        micTestChunks.push(chunk);
+                        micTestBytes += chunk.byteLength;
+                    },
+                    onError: (error) => setMicTestStatus(`Microphone test failed: ${error.message}`),
+                });
+                stopMicTestCapture = stop;
+                micTestTimer = window.setTimeout(
+                    () => stopMicTestRecording('10-second recording ready. Play it back to verify your microphone.'),
+                    MIC_TEST_MAX_MS,
+                );
+            } catch (error) {
+                setMicTestRecordingUI(false);
+                setMicTestStatus(`Could not start microphone test: ${error.message}`);
+            } finally {
+                micTestStarting = false;
+            }
+        }
+
+        async function playMicTestRecording() {
+            if (!micTestBytes) return;
+            if (micTestPlayback) micTestPlayback.stop();
+            if (micTestPlaybackContext?.state !== 'closed') await micTestPlaybackContext.close();
+
+            const pcm = new Uint8Array(micTestBytes);
+            let offset = 0;
+            micTestChunks.forEach((chunk) => { pcm.set(chunk, offset); offset += chunk.byteLength; });
+            const context = new AudioContext({ sampleRate: MIC_TEST_SAMPLE_RATE });
+            const audioBuffer = context.createBuffer(1, pcm.byteLength / 2, MIC_TEST_SAMPLE_RATE);
+            const samples = audioBuffer.getChannelData(0);
+            const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+            for (let index = 0; index < samples.length; index += 1) samples[index] = view.getInt16(index * 2, true) / 32768;
+            const source = context.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(context.destination);
+            source.onended = () => {
+                if (micTestPlayback === source) {
+                    micTestPlayback = null;
+                    setMicTestStatus('Playback finished. If you heard yourself clearly, your mic and PCM path are working.');
+                }
+                if (context.state !== 'closed') context.close();
+            };
+            micTestPlaybackContext = context;
+            micTestPlayback = source;
+            await context.resume();
+            source.start();
+            setMicTestStatus('Playing your PCM microphone test…');
+        }
+
+        if (micTestRecordBtn) micTestRecordBtn.addEventListener('click', startMicTestRecording);
+        if (micTestPlayBtn) micTestPlayBtn.addEventListener('click', playMicTestRecording);
+
         // Microphone Sensitivity Slider Logic
         const micSensSlider = document.getElementById('menu-mic-sensitivity-slider');
         const micSensValDisplay = document.getElementById('menu-mic-sensitivity-val');
@@ -4208,7 +4349,7 @@
 
             try {
                 localStorage.setItem('narratron_mic_sensitivity', val.toString());
-            } catch (e) {}
+            } catch (e) { }
 
             if (saveDb) {
                 fetch('/api/auth/mic-sensitivity', {
@@ -4235,7 +4376,7 @@
                 if (stored !== null && !isNaN(parseInt(stored, 10))) {
                     initialVal = parseInt(stored, 10);
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             fetch('/api/auth/me')
                 .then(res => res.json())
@@ -4549,10 +4690,6 @@
                             <span class="pullout-item-icon">🎙️</span>
                             <span>Orator How-To Guide</span>
                         </button>
-                        <a href="/about" class="pullout-menu-item">
-                            <span class="pullout-item-icon">ℹ️</span>
-                            <span>About Narratron Buddy</span>
-                        </a>
                     </div>
                 </div>
 
@@ -4567,10 +4704,6 @@
                             <span class="pullout-item-icon">🚀</span>
                             <span>Deploy & Manage Theaters</span>
                         </a>
-                        <a href="/stats" class="pullout-menu-item">
-                            <span class="pullout-item-icon">📊</span>
-                            <span>Theater Analytics</span>
-                        </a>
                     </div>
                 </div>
 
@@ -4582,25 +4715,54 @@
                             <span class="pullout-item-icon">⌨️</span>
                             <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
                         </button>
-                        <div class="pullout-menu-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
-                            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <div class="pullout-menu-item"
+                            style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div
+                                style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                                 <span>Microphone</span>
-                                <button id="menu-mic-device-refresh" type="button" style="padding: 3px 7px; font-size: .72rem; cursor: pointer;">Refresh</button>
+                                <button id="menu-mic-device-refresh" type="button"
+                                    style="padding: 3px 7px; font-size: .72rem; cursor: pointer;">Refresh</button>
                             </div>
-                            <select id="menu-mic-device-select" style="width: 100%; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 5px; padding: 6px;"><option value="">System default microphone</option></select>
-                            <span id="menu-mic-device-hint" style="font-size: .7rem; color: #94a3b8;">Choose the microphone to use when connecting.</span>
+                            <select id="menu-mic-device-select"
+                                style="width: 100%; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 5px; padding: 6px;">
+                                <option value="">System default microphone</option>
+                            </select>
+                            <span id="menu-mic-device-hint" style="font-size: .7rem; color: #94a3b8;">Choose the
+                                microphone to use when connecting.</span>
                         </div>
-                        <div class="pullout-menu-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;" title="Adjust microphone voice activity detection sensitivity">
-                            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; font-weight: 500; width: 100%;">
+                        <div class="pullout-menu-item"
+                            style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div
+                                style="display: flex; align-items: center; gap: 12px; font-size: 0.9rem; font-weight: 500; width: 100%;">
+                                <span class="pullout-item-icon">🎧</span>
+                                <span>Test microphone</span>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button id="menu-mic-test-record" type="button" aria-pressed="false"
+                                    style="flex: 1; padding: 6px 8px; cursor: pointer;">Record test</button>
+                                <button id="menu-mic-test-play" type="button" disabled
+                                    style="flex: 1; padding: 6px 8px; cursor: pointer;">Play back</button>
+                            </div>
+                            <span id="menu-mic-test-status" aria-live="polite"
+                                style="font-size: .7rem; color: #94a3b8;">Record with pauses to test detection. Agent
+                                hears like so.</span>
+                        </div>
+                        <div class="pullout-menu-item"
+                            style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;"
+                            title="Adjust microphone voice activity detection sensitivity">
+                            <div
+                                style="display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; font-weight: 500; width: 100%;">
                                 <span style="display: flex; align-items: center; gap: 12px;">
                                     <span class="pullout-item-icon">🎚️</span>
                                     <span>Mic Sensitivity</span>
                                 </span>
-                                <span id="menu-mic-sensitivity-val" style="color: #a5b4fc; font-weight: 600; font-family: monospace; font-size: 0.85rem;">50%</span>
+                                <span id="menu-mic-sensitivity-val"
+                                    style="color: #a5b4fc; font-weight: 600; font-family: monospace; font-size: 0.85rem;">50%</span>
                             </div>
                             <input type="range" id="menu-mic-sensitivity-slider" min="0" max="100" value="50"
                                 style="width: 100%; accent-color: #6366f1; cursor: pointer; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.15); outline: none;">
-                            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #64748b; font-weight: 500; width: 100%;">
+                            <div
+                                style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #64748b; font-weight: 500; width: 100%;">
                                 <span>Strict Noise (Low)</span>
                                 <span>Whisper (High)</span>
                             </div>
@@ -4660,7 +4822,8 @@
                         <div class="step-desc">
                             Click <strong>Connect Agent</strong> (or press hotkey <code
                                 style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;">Ctrl+Shift+[</code>)
-                            to connect your canvas theater to the Narratron AI agent and start real-time microphone streaming.
+                            to connect your canvas theater to the Narratron AI agent and start real-time microphone
+                            streaming.
                         </div>
                     </div>
                 </div>
@@ -4673,7 +4836,8 @@
                             <span class="step-badge mic-badge">🔌 Connect ➔ 🎙️ Disconnect</span>
                         </div>
                         <div class="step-desc">
-                            Speak to the agent in real time while using the bottom toolbar to doodle on canvas. Press the hotkey again (or click <strong>Disconnect</strong>) to end the session.
+                            Speak to the agent in real time while using the bottom toolbar to doodle on canvas. Press
+                            the hotkey again (or click <strong>Disconnect</strong>) to end the session.
                         </div>
                     </div>
                 </div>
@@ -4698,9 +4862,11 @@
     </div>
 
     <!-- Viewer Collaboration Guide Modal -->
-    <div id="viewer-collab-guide-modal" class="modal-overlay" role="dialog" aria-labelledby="viewer-collab-guide-title" aria-hidden="true">
+    <div id="viewer-collab-guide-modal" class="modal-overlay" role="dialog" aria-labelledby="viewer-collab-guide-title"
+        aria-hidden="true">
         <div class="modal-card">
-            <button id="viewer-collab-guide-close-btn" class="modal-close-btn" aria-label="Close collaboration guide">✕</button>
+            <button id="viewer-collab-guide-close-btn" class="modal-close-btn"
+                aria-label="Close collaboration guide">✕</button>
             <div class="howto-header">
                 <div class="howto-icon-badge">✨</div>
                 <div>
@@ -4709,28 +4875,33 @@
                 </div>
             </div>
 
-            <div id="viewer-collab-status" style="margin-bottom: 1rem; padding: 10px 12px; border-radius: 12px; font-size: 0.85rem; line-height: 1.4; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(148, 163, 184, 0.1); color: #cbd5e1;"></div>
+            <div id="viewer-collab-status"
+                style="margin-bottom: 1rem; padding: 10px 12px; border-radius: 12px; font-size: 0.85rem; line-height: 1.4; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(148, 163, 184, 0.1); color: #cbd5e1;">
+            </div>
 
             <div class="howto-steps">
                 <div class="howto-step-card">
                     <div class="step-num">1</div>
                     <div class="step-content">
                         <div class="step-title">Doodle on the canvas <span class="step-badge">✏️ Draw</span></div>
-                        <div class="step-desc">Use the colors and brush controls in the bottom bar to point, circle, sketch, or add a visual twist to the scene.</div>
+                        <div class="step-desc">Use the colors and brush controls in the bottom bar to point, circle,
+                            sketch, or add a visual twist to the scene.</div>
                     </div>
                 </div>
                 <div class="howto-step-card">
                     <div class="step-num">2</div>
                     <div class="step-content">
                         <div class="step-title">Offer a suggestion <span class="step-badge">💡 /suggest</span></div>
-                        <div class="step-desc">Type <code style="color:#fbbf24;">/suggest your idea</code> in chat. Other viewers can give it a +1; the top idea is selected first.</div>
+                        <div class="step-desc">Type <code style="color:#fbbf24;">/suggest your idea</code> in chat.
+                            Other viewers can give it a +1; the top idea is selected first.</div>
                     </div>
                 </div>
                 <div class="howto-step-card">
                     <div class="step-num">3</div>
                     <div class="step-content">
                         <div class="step-title">Watch for the moment</div>
-                        <div class="step-desc">You can suggest, vote, and doodle anytime. When the orator enables collaboration, Narratron receives the leading suggestion and the annotated canvas.</div>
+                        <div class="step-desc">You can suggest, vote, and doodle anytime. When the orator enables
+                            collaboration, Narratron receives the leading suggestion and the annotated canvas.</div>
                     </div>
                 </div>
             </div>
@@ -4750,7 +4921,8 @@
                 <div>
                     <h3 id="orators-title" style="margin: 0; font-size: 1.2rem; color: #fff;">Baton Menu
                     </h3>
-                    <div style="font-size: 0.85rem; color: #94a3b8;">Assign the baton or manage who can receive it.</div>
+                    <div style="font-size: 0.85rem; color: #94a3b8;">Assign the baton or manage who can receive it.
+                    </div>
                 </div>
             </div>
 
@@ -4821,13 +4993,18 @@
     </div>
 
     <!-- Insufficient Credits / Agent Stopped Popup Modal -->
-    <div id="insufficient-credits-modal" class="modal-overlay" role="dialog" aria-labelledby="credits-modal-title" aria-hidden="true" style="z-index: 10000;">
-        <div class="modal-card" style="max-width: 440px; width: 90%; text-align: center; border: 1px solid rgba(239, 68, 68, 0.6); box-shadow: 0 0 35px rgba(239, 68, 68, 0.25);">
+    <div id="insufficient-credits-modal" class="modal-overlay" role="dialog" aria-labelledby="credits-modal-title"
+        aria-hidden="true" style="z-index: 10000;">
+        <div class="modal-card"
+            style="max-width: 440px; width: 90%; text-align: center; border: 1px solid rgba(239, 68, 68, 0.6); box-shadow: 0 0 35px rgba(239, 68, 68, 0.25);">
             <button id="credits-modal-close-btn" class="modal-close-btn" aria-label="Close modal">✕</button>
             <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">⚡</div>
-            <h3 id="credits-modal-title" style="margin: 0 0 8px 0; font-size: 1.35rem; color: #fff; font-weight: 700;">Insufficient Credits</h3>
-            <div id="credits-modal-message" style="font-size: 0.95rem; color: #cbd5e1; margin-bottom: 1.25rem; line-height: 1.5;">
-                Your agent has been stopped because your account credit balance is 0 or less. Please top up your credits on the Deploy page to resume agent features.
+            <h3 id="credits-modal-title" style="margin: 0 0 8px 0; font-size: 1.35rem; color: #fff; font-weight: 700;">
+                Insufficient Credits</h3>
+            <div id="credits-modal-message"
+                style="font-size: 0.95rem; color: #cbd5e1; margin-bottom: 1.25rem; line-height: 1.5;">
+                Your agent has been stopped because your account credit balance is 0 or less. Please top up your credits
+                on the Deploy page to resume agent features.
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -4844,21 +5021,31 @@
     </div>
 
     <!-- Theater YAML Configuration Editor Modal -->
-    <div id="theater-config-modal" class="modal-overlay" role="dialog" aria-labelledby="theater-config-title" aria-hidden="true" style="z-index: 9999;">
-        <div class="modal-card" style="max-width: 640px; width: 90%; text-align: left; border: 1px solid rgba(168, 85, 247, 0.4); box-shadow: 0 0 35px rgba(168, 85, 247, 0.2);">
-            <button id="config-modal-close-btn" class="modal-close-btn" aria-label="Close configuration editor">✕</button>
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.8rem;">
-                <div style="font-size: 1.6rem; background: rgba(168, 85, 247, 0.2); width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(168, 85, 247, 0.4);">⚙️</div>
+    <div id="theater-config-modal" class="modal-overlay" role="dialog" aria-labelledby="theater-config-title"
+        aria-hidden="true" style="z-index: 9999;">
+        <div class="modal-card"
+            style="max-width: 640px; width: 90%; text-align: left; border: 1px solid rgba(168, 85, 247, 0.4); box-shadow: 0 0 35px rgba(168, 85, 247, 0.2);">
+            <button id="config-modal-close-btn" class="modal-close-btn"
+                aria-label="Close configuration editor">✕</button>
+            <div
+                style="display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.8rem;">
+                <div
+                    style="font-size: 1.6rem; background: rgba(168, 85, 247, 0.2); width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(168, 85, 247, 0.4);">
+                    ⚙️</div>
                 <div>
-                    <h3 id="theater-config-title" style="margin: 0; font-size: 1.25rem; color: #fff; font-weight: 600;">Theater Configuration (theater.yaml)</h3>
-                    <div style="font-size: 0.85rem; color: #94a3b8;">Directly edit session parameters and AI agent settings</div>
+                    <h3 id="theater-config-title" style="margin: 0; font-size: 1.25rem; color: #fff; font-weight: 600;">
+                        Theater Configuration (theater.yaml)</h3>
+                    <div style="font-size: 0.85rem; color: #94a3b8;">Directly edit session parameters and AI agent
+                        settings</div>
                 </div>
             </div>
 
             <!-- Warning Banner -->
-            <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; padding: 10px 14px; border-radius: 12px; font-size: 0.85rem; font-weight: 500; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+            <div
+                style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; padding: 10px 14px; border-radius: 12px; font-size: 0.85rem; font-weight: 500; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
                 <span>⚠️</span>
-                <span><strong>Note:</strong> You need to restart your agent to apply changes FROM <code>theater.yaml</code>.</span>
+                <span><strong>Note:</strong> You need to restart your agent to apply changes FROM
+                    <code>theater.yaml</code>.</span>
             </div>
 
             <div style="margin-bottom: 1rem; position: relative;">
@@ -4866,7 +5053,9 @@
                     style="width: 100%; height: 320px; background: rgba(10, 12, 18, 0.95); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; color: #a5b4fc; font-family: 'Fira Code', 'Courier New', monospace; font-size: 0.88rem; line-height: 1.5; padding: 12px; box-sizing: border-box; outline: none; resize: vertical; tab-size: 2; transition: border-color 0.2s;"></textarea>
             </div>
 
-            <div id="theater-config-status" style="display: none; font-size: 0.85rem; padding: 8px 12px; border-radius: 8px; margin-bottom: 1rem; text-align: left;"></div>
+            <div id="theater-config-status"
+                style="display: none; font-size: 0.85rem; padding: 8px 12px; border-radius: 8px; margin-bottom: 1rem; text-align: left;">
+            </div>
 
             <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
                 <button id="config-modal-format-btn" title="Format and check YAML syntax"
