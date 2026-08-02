@@ -110,13 +110,14 @@ class Theater:
 
 def extract_asset_package(
     zip_bytes: bytes, max_bytes: int = MAX_ZIP_BYTES,
-) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]]]:
-    """Read supported reference images and playlists from a bounded ZIP archive."""
+) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]], Optional[str]]:
+    """Read supported assets and an optional ``theater.yaml`` from a ZIP archive."""
     if len(zip_bytes) > max_bytes:
         raise ValueError(f"ZIP archive exceeds max allowed size of {max_bytes // (1024 * 1024)}MB.")
 
     reference_files: List[Tuple[str, bytes]] = []
     playlists_data: Dict[str, List[Tuple[str, bytes]]] = {}
+    theater_config_yaml: Optional[str] = None
     total_uncompressed = 0
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as archive:
@@ -136,11 +137,16 @@ def extract_asset_package(
                     index = parts.index("playlists")
                     playlist = parts[index + 1] if index + 1 < len(parts) - 1 else "default"
                     playlists_data.setdefault(playlist, []).append((filename, content))
+                elif filename.lower() == "theater.yaml":
+                    try:
+                        theater_config_yaml = content.decode("utf-8")
+                    except UnicodeDecodeError:
+                        raise ValueError("theater.yaml must be UTF-8 encoded.")
     except ValueError:
         raise
     except Exception as error:
         logger.error("Error parsing asset ZIP package: %s", error)
-    return reference_files, playlists_data
+    return reference_files, playlists_data, theater_config_yaml
 
 
 class TheaterManager:

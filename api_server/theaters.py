@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 import uuid
 import yaml
@@ -23,6 +24,7 @@ from api_server.shared import (
     _safe_path_param,
     _grant_canvas_access,
     _valid_join_key,
+    PROJECT_ROOT
 )
 from api_server.dependencies import agent_manager
 from components.theater_manager import TheaterMetadata, extract_asset_package
@@ -161,11 +163,8 @@ def list_theaters(request: Request):
 
 @app.get("/api/theaters/default-config")
 async def get_default_theater_config():
-    """Return the creation-editor baseline without duplicating simple agent fields."""
+    """Return the complete creation-editor baseline from theater_default.yaml."""
     config = deepcopy(get_theater_default_config())
-    agent = config.setdefault("agent", {})
-    agent["style"] = ""
-    agent["special_instructions"] = ""
     return {"config_yaml": yaml.safe_dump(config, default_flow_style=False, sort_keys=False)}
 
 @app.get("/api/theaters/{theater_id}")
@@ -300,9 +299,19 @@ async def create_and_deploy_theater(request: Request):
     name = str(form.get("name", "Narratron Theater"))
     style = str(form.get("agent_style", "")).strip()
     special_instructions = str(form.get("agent_special_instructions", "")).strip()
+    advanced_config_canonical = str(form.get("advanced_config_canonical", "")).lower() == "true"
+    creation_mode = str(form.get("creation_mode", "blank"))
+    folder_config_yaml = form.get("folder_theater_config_yaml")
 
     reference_files = []
     playlists_data = {}
+
+    # Important to provide music for first time experience. Blank theater will not have any music tracks by default
+    # otherwise.
+    if creation_mode == "blank":
+        quick_deploy_track = PROJECT_ROOT / "playlists" / "default" / "new story.mp3"
+        if quick_deploy_track.is_file():
+            playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]
 
     for key, value in form.multi_items():
         filename = getattr(value, "filename", None)
@@ -312,7 +321,7 @@ async def create_and_deploy_theater(request: Request):
                 # Check for uploaded ZIP package
                 if key in ("asset_zip", "asset_package") or filename.lower().endswith(".zip"):
                     try:
-                        zip_refs, zip_playlists = extract_asset_package(content)
+                        zip_refs, zip_playlists, zip_config_yaml = extract_asset_package(content)
                     except ValueError as ve:
                         raise HTTPException(status_code=400, detail=str(ve))
                     reference_files.extend(zip_refs)
@@ -320,6 +329,8 @@ async def create_and_deploy_theater(request: Request):
                         if pl_name not in playlists_data:
                             playlists_data[pl_name] = []
                         playlists_data[pl_name].extend(tracks)
+                    if creation_mode == "folder" and zip_config_yaml:
+                        folder_config_yaml = zip_config_yaml
                 elif key in ("asset_folder_files", "asset_files"):
                     # Folder upload with relative path info
                     rel_path = filename.replace("\\", "/")
@@ -346,7 +357,13 @@ async def create_and_deploy_theater(request: Request):
                         playlists_data[pl_name] = []
                     playlists_data[pl_name].append((filename, content))
 
-    raw_config_param = form.get("theater_config_yaml") or form.get("theater_config")
+    raw_config_param = (
+        folder_config_yaml
+        if creation_mode == "folder"
+        else form.get("theater_config_yaml") or form.get("theater_config")
+    )
+    if creation_mode == "folder" and not raw_config_param:
+        raise HTTPException(status_code=400, detail="Folder uploads must include a theater.yaml file.")
     theater_config = None
     if raw_config_param:
         try:
@@ -357,11 +374,14 @@ async def create_and_deploy_theater(request: Request):
             raise HTTPException(status_code=400, detail=f"Invalid theater configuration: {error}")
 
     theater_config = theater_config or {}
-    agent_config = theater_config.setdefault("agent", {})
-    if not isinstance(agent_config, dict):
-        raise HTTPException(status_code=400, detail="Invalid theater configuration: agent must be a mapping.")
-    agent_config["style"] = style
-    agent_config["special_instructions"] = special_instructions
+    if creation_mode != "folder" and not advanced_config_canonical:
+        agent_config = theater_config.setdefault("agent", {})
+        if not isinstance(agent_config, dict):
+            raise HTTPException(status_code=400, detail="Invalid theater configuration: agent must be a mapping.")
+        if style:
+            agent_config["style"] = style
+        if special_instructions:
+            agent_config["special_instructions"] = special_instructions
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = theater_manager.create_theater(

@@ -71,9 +71,11 @@ class TestTheaterManager(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as zip_file:
             zip_file.writestr("assets/references/hero.png", b"image")
             zip_file.writestr("assets/playlists/ambient/rain.mp3", b"audio")
+            zip_file.writestr("assets/theater.yaml", "agent:\n  style: folder style\n")
 
-        references, playlists = extract_asset_package(archive.getvalue())
+        references, playlists, theater_config_yaml = extract_asset_package(archive.getvalue())
         self.assertEqual(references, [("assets/references/hero.png", b"image")])
         self.assertEqual(playlists, {"ambient": [("rain.mp3", b"audio")]})
+        self.assertEqual(theater_config_yaml, "agent:\n  style: folder style\n")
         with self.assertRaises(ValueError):
             extract_asset_package(b"0" * (10 * 1024 * 1024 + 1))

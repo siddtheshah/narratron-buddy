@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 import pytest
+import yaml
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -15,6 +16,7 @@ from testing.base import BaseTestCase
 from api_server.app import app, theater_manager, db, FLAGS, canvas_states
 import object_registry
 import api_server.theaters as theaters
+from utils.config_loader import get_theater_default_config
 from unittest.mock import MagicMock, patch
 
 
@@ -193,6 +195,16 @@ class TestTheaterAPI(BaseTestCase):
         fmt_invalid = self.client.post("/api/theaters/format-yaml", json={"config_yaml": "invalid: yaml: :"})
         self.assertEqual(fmt_invalid.status_code, 400)
 
+    def test_default_config_exposes_agent_defaults(self):
+        response = self.client.get("/api/theaters/default-config")
+        self.assertEqual(response.status_code, 200)
+        config = yaml.safe_load(response.json()["config_yaml"])
+        self.assertEqual(config["agent"]["style"], get_theater_default_config()["agent"]["style"])
+        self.assertEqual(
+            config["agent"]["special_instructions"],
+            get_theater_default_config()["agent"]["special_instructions"],
+        )
+
     def test_auth_registration_and_login_flow(self):
         # Register
         reg_res = self.client.post("/api/auth/register", json={
@@ -250,6 +262,63 @@ class TestTheaterAPI(BaseTestCase):
         del_res = self.client.delete(f"/api/theaters/{theater_id}")
         self.assertEqual(del_res.status_code, 200)
         self.assertEqual(del_res.json()["status"], "ok")
+
+    def test_advanced_yaml_is_canonical_over_quick_agent_fields(self):
+        self.client.post("/api/auth/register", json={
+            "username": "advanced_config_user",
+            "email": "advanced-config@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Advanced Config Theater",
+                "agent_style": "quick style",
+                "agent_special_instructions": "quick instructions",
+                "advanced_config_canonical": "true",
+                "theater_config_yaml": (
+                    "agent:\n"
+                    "  style: advanced style\n"
+                    "  special_instructions: advanced instructions\n"
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        config = yaml.safe_load(
+            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(config["agent"]["style"], "advanced style")
+        self.assertEqual(config["agent"]["special_instructions"], "advanced instructions")
+
+    def test_folder_upload_requires_theater_yaml(self):
+        self.client.post("/api/auth/register", json={
+            "username": "folder_config_user",
+            "email": "folder-config@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Incomplete Folder", "creation_mode": "folder"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("theater.yaml", response.json()["detail"])
+
+    def test_quick_deploy_adds_default_story_track(self):
+        self.client.post("/api/auth/register", json={
+            "username": "quick_deploy_user",
+            "email": "quick-deploy@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Quick Theater", "creation_mode": "blank"},
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        track = theater_manager.theater(theater_id).playlists_dir() / "default" / "new_story.mp3"
+        self.assertTrue(track.is_file())
 
     def test_theater_output_route_uses_theater_bound_output_directory(self):
         reg_res = self.client.post("/api/auth/register", json={
