@@ -90,7 +90,7 @@ def create_tool_bundle_for_session(
 ) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
     theater_manager = theater_manager or TheaterManager()
-    image_tools = ImageTools(config.get("image_generation", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
+    image_tools = ImageTools(config, theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
     chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
     notes_tools = NotesTools(config.get("notes", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
     music_tools = MusicTools(config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
@@ -139,7 +139,12 @@ def create_agent(
                 ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + "\n".join(lines)
             break
 
-    instruction = INSTRUCTIONS + ref_context + """
+    special_instructions = str(config.get("agent", {}).get("special_instructions", "")).strip()
+    custom_instructions = (
+        f"\n\n## Theater-specific instructions\n{special_instructions}"
+        if special_instructions else ""
+    )
+    instruction = INSTRUCTIONS + ref_context + custom_instructions + """
         ## Startup
         Be sure to greet the user in a chat message to begin with, to show you are there and listening.
 

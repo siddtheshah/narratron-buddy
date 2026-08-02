@@ -71,7 +71,7 @@ class TestCreateAgent(unittest.TestCase):
         }
         expected_manager = mock_image_cls.call_args.kwargs["theater_manager"]
         managed_tool_kwargs = {**expected_kwargs, "theater_manager": expected_manager}
-        mock_image_cls.assert_called_once_with(config.get("image_generation", {}), **managed_tool_kwargs)
+        mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
         mock_notes_cls.assert_called_once_with(config.get("notes", {}), **managed_tool_kwargs)
         mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)

@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
@@ -41,7 +42,7 @@ def get_theater_default_config() -> Dict[str, Any]:
     """Loads default configuration for theater sessions from theater_default.yaml."""
     global _THEATER_DEFAULT_CACHE
     if _THEATER_DEFAULT_CACHE is not None:
-        return dict(_THEATER_DEFAULT_CACHE)
+        return deepcopy(_THEATER_DEFAULT_CACHE)
 
     root_dir = Path(__file__).parent.parent.resolve()
     config_path = root_dir / "theater_default.yaml"
@@ -55,7 +56,7 @@ def get_theater_default_config() -> Dict[str, Any]:
             print(f"[config_loader] Warning: Failed to load {config_path}: {e}")
 
     _THEATER_DEFAULT_CACHE = config_data
-    return dict(config_data)
+    return deepcopy(config_data)
 
 
 def get_theater_config(

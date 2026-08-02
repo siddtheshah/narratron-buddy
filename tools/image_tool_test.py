@@ -90,10 +90,7 @@ class TestImageTools(BaseTestCase):
     @patch("tools.image_tool.genai.Client")
     def test_default_style_is_loaded_and_appended_only_when_needed(self, mock_genai_client):
         theater_id = "theater_default_style"
-        theater_dir = Path(__file__).resolve().parent.parent / "theaters" / theater_id
-        theater_dir.mkdir(parents=True, exist_ok=True)
-        self.addCleanup(shutil.rmtree, theater_dir, True)
-        (theater_dir / "style.txt").write_text("moody watercolor", encoding="utf-8")
+        self.config["agent"] = {"style": "moody watercolor"}
 
         mock_part = MagicMock()
         mock_part.inline_data.data = create_fake_image_bytes()

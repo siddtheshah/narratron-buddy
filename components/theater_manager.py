@@ -88,9 +88,6 @@ class Theater:
     def notes_artifacts_dir(self) -> Path:
         return self.manager._get_theater_notes_artifacts_dir(self.theater_id)
 
-    def style_path(self) -> Path:
-        return self.directory() / "style.txt"
-
     @property
     def metadata(self) -> Optional[TheaterMetadata]:
         return self.manager.get_theater(self.theater_id)
@@ -113,14 +110,13 @@ class Theater:
 
 def extract_asset_package(
     zip_bytes: bytes, max_bytes: int = MAX_ZIP_BYTES,
-) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]], Optional[str]]:
-    """Read supported assets and ``style.txt`` from a bounded ZIP archive."""
+) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]]]:
+    """Read supported reference images and playlists from a bounded ZIP archive."""
     if len(zip_bytes) > max_bytes:
         raise ValueError(f"ZIP archive exceeds max allowed size of {max_bytes // (1024 * 1024)}MB.")
 
     reference_files: List[Tuple[str, bytes]] = []
     playlists_data: Dict[str, List[Tuple[str, bytes]]] = {}
-    style: Optional[str] = None
     total_uncompressed = 0
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as archive:
@@ -140,16 +136,11 @@ def extract_asset_package(
                     index = parts.index("playlists")
                     playlist = parts[index + 1] if index + 1 < len(parts) - 1 else "default"
                     playlists_data.setdefault(playlist, []).append((filename, content))
-                elif filename.lower() == "style.txt":
-                    try:
-                        style = content.decode("utf-8").strip()
-                    except UnicodeDecodeError:
-                        pass
     except ValueError:
         raise
     except Exception as error:
         logger.error("Error parsing asset ZIP package: %s", error)
-    return reference_files, playlists_data, style
+    return reference_files, playlists_data
 
 
 class TheaterManager:
@@ -192,7 +183,7 @@ class TheaterManager:
         theater_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_path(metadata.theater_id).write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
 
-    def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, theater_config: Optional[Dict] = None, style: Optional[str] = None) -> TheaterMetadata:
+    def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, theater_config: Optional[Dict] = None) -> TheaterMetadata:
         # Import lazily so config loading can reuse the theater-root helper.
         from utils.config_loader import deep_merge, get_theater_default_config, save_theater_config
 
@@ -204,9 +195,6 @@ class TheaterManager:
         reference_dir.mkdir(parents=True)
         playlists_dir.mkdir()
         self._get_theater_output_dir(theater_id).mkdir()
-        if style and style.strip():
-            (theater_dir / "style.txt").write_text(style.strip(), encoding="utf-8")
-
         mounted_references = []
         for relative_filename, content in reference_files or []:
             parts = [part for part in relative_filename.replace("\\", "/").split("/") if part]

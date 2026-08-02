@@ -223,7 +223,7 @@ class TestTheaterAPI(BaseTestCase):
 
         response = self.client.post(
             "/api/theaters/create-and-deploy",
-            data={"name": "Integration Test Theater", "style": "storybook watercolor"},
+            data={"name": "Integration Test Theater", "agent_style": "storybook watercolor", "agent_special_instructions": "Be concise."},
             files=[
                 ("reference_files", ref_file),
                 ("playlist_ambient", track_file),
@@ -237,10 +237,9 @@ class TestTheaterAPI(BaseTestCase):
         join_key = data["theater"]["join_key"]
         self.assertIsNotNone(theater_id)
         self.assertIsNotNone(join_key)
-        self.assertEqual(
-            (theater_manager.theater(theater_id).directory() / "style.txt").read_text(encoding="utf-8"),
-            "storybook watercolor",
-        )
+        theater_yaml = (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
+        self.assertIn("style: storybook watercolor", theater_yaml)
+        self.assertIn("special_instructions: Be concise.", theater_yaml)
 
         # Test resolving join key
         res_key = self.client.post("/api/theaters/resolve-join-key", json={"join_key": join_key})

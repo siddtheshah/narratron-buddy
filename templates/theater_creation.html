@@ -1003,6 +1003,13 @@
                     <small>Applied to generated images unless their prompt specifies a style.</small>
                 </div>
 
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label for="theaterSpecialInstructions">Special Instructions for the Agent</label>
+                    <textarea id="theaterSpecialInstructions" rows="3"
+                        placeholder="e.g. Keep the tone mysterious and ask before changing the scene."></textarea>
+                    <small>Included in the Narratron's instructions for this theater.</small>
+                </div>
+
                 <!-- Custom Theater Settings (Expandable Accordion) -->
                 <details id="advancedConfig" class="advanced-config-accordion">
                     <summary class="advanced-config-summary">
@@ -1170,14 +1177,14 @@
                                         <div>│ │ └── <span class="tree-file">desert_wind.mp3</span></div>
                                         <div>│ └── <span class="tree-folder">📁 combat/</span></div>
                                         <div>│ └── <span class="tree-file">battle_theme.wav</span></div>
-                                        <div>└── <span class="tree-file">📄 style.txt</span> <span
-                                                class="tree-tag">(Optional default style prompt)</span></div>
+                                        <div>└── <span class="tree-file">📄 theater.yaml</span> <span
+                                                class="tree-tag">(Optional theater configuration)</span></div>
                                     </div>
                                     <div class="tutorial-bullet-list">
                                         <div class="tutorial-bullet-item">
                                             <span>⚡</span>
-                                            <span><strong>Auto-Extraction:</strong> References, audio tracks, and style
-                                                prompts are parsed & mounted instantly.</span>
+                                            <span><strong>Auto-Extraction:</strong> References and audio tracks are
+                                                parsed & mounted instantly.</span>
                                         </div>
                                         <div class="tutorial-bullet-item">
                                             <span>📦</span>
@@ -2249,7 +2256,6 @@
 
             let refCount = 0;
             let playListMap = {};
-            let hasStyle = false;
 
             files.forEach(f => {
                 const relPath = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
@@ -2271,15 +2277,6 @@
                     if (!playlistsData[plName].some(tf => tf.name === cleanName)) {
                         playlistsData[plName].push(f);
                     }
-                } else if (cleanName.toLowerCase() === 'style.txt') {
-                    hasStyle = true;
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        const styleElem = document.getElementById('theaterStyle');
-                        if (styleElem) styleElem.value = e.target.result.trim();
-                    };
-                    reader.readAsText(f);
-                }
             });
 
             renderRefFileList();
@@ -2294,7 +2291,7 @@
             if (detailsDiv) {
                 detailsDiv.innerHTML = `
                     Found <strong>${refCount}</strong> reference image(s), 
-                    <strong>${plNames.length}</strong> playlist(s) (${Object.values(playListMap).reduce((a, b) => a + b, 0)} tracks)${hasStyle ? ', and default style prompt imported' : ''}.
+                    <strong>${plNames.length}</strong> playlist(s) (${Object.values(playListMap).reduce((a, b) => a + b, 0)} tracks).
                 `;
             }
             if (manifestCard) manifestCard.style.display = 'block';
@@ -2394,6 +2391,7 @@
 
             const name = document.getElementById('theaterName').value.trim() || 'Narratron Canvas';
             const style = document.getElementById('theaterStyle').value.trim();
+            const specialInstructions = document.getElementById('theaterSpecialInstructions').value.trim();
             const deployBtn = document.getElementById('deployBtn');
             const deploySpinner = document.getElementById('deploySpinner');
             const deployBtnText = document.getElementById('deployBtnText');
@@ -2406,7 +2404,8 @@
                 if (theaterDefaultConfigRequest) await theaterDefaultConfigRequest;
                 const formData = new FormData();
                 formData.append('name', name);
-                formData.append('style', style);
+                formData.append('agent_style', style);
+                formData.append('agent_special_instructions', specialInstructions);
 
                 const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
                 if (theaterConfigYaml) {

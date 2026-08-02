@@ -37,15 +37,14 @@ class TestTheaterManager(unittest.TestCase):
             theater_id="quest",
             reference_files=[("references/maps/hero.png", b"image")],
             playlists_data={"ambient": [("rain.mp3", b"audio")]},
-            theater_config={"proactivity": False},
-            style="painted fantasy",
+            theater_config={"agent": {"proactivity": False, "style": "painted fantasy"}},
         )
 
         theater_dir = Path(self.temp_dir.name) / "quest"
         self.assertEqual(theater.status, "created")
         self.assertTrue((theater_dir / "references" / "maps" / "hero.png").exists())
         self.assertTrue((theater_dir / "playlists" / "ambient" / "rain.mp3").exists())
-        self.assertEqual((theater_dir / "style.txt").read_text(encoding="utf-8"), "painted fantasy")
+        self.assertIn("style: painted fantasy", (theater_dir / "theater.yaml").read_text(encoding="utf-8"))
         self.assertEqual(self.manager.deploy_theater("quest").status, "deployed")
         self.assertEqual(self.manager.stop_theater("quest").status, "stopped")
         self.assertTrue(self.manager.destroy_theater("quest"))
@@ -72,11 +71,9 @@ class TestTheaterManager(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as zip_file:
             zip_file.writestr("assets/references/hero.png", b"image")
             zip_file.writestr("assets/playlists/ambient/rain.mp3", b"audio")
-            zip_file.writestr("assets/style.txt", "neon noir")
 
-        references, playlists, style = extract_asset_package(archive.getvalue())
+        references, playlists = extract_asset_package(archive.getvalue())
         self.assertEqual(references, [("assets/references/hero.png", b"image")])
         self.assertEqual(playlists, {"ambient": [("rain.mp3", b"audio")]})
-        self.assertEqual(style, "neon noir")
         with self.assertRaises(ValueError):
             extract_asset_package(b"0" * (10 * 1024 * 1024 + 1))

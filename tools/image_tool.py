@@ -47,8 +47,7 @@ class ImageTools(BaseTools):
 
         self.theater_manager = theater_manager
         self.theater = theater_manager.theater(self.active_theater_id)
-        self.style_path = self.theater.style_path()
-        self.default_style = self._load_default_style()
+        self.default_style = str(raw_config.get("agent", {}).get("style", "")).strip()
         self.output_dir = str(self.theater.image_artifacts_dir())
         os.makedirs(self.output_dir, exist_ok=True)
         
@@ -84,18 +83,6 @@ class ImageTools(BaseTools):
             self._load_references()
             ImageTools._references_cache = self.references_manifest
             ImageTools._reference_dir_cached = self.reference_dir
-
-    def _load_default_style(self) -> str:
-        """Load this theater's optional default image style."""
-        try:
-            if self.style_path.is_file():
-                style = self.style_path.read_text(encoding="utf-8").strip()
-                if style:
-                    logger.info("[ImageTools] Loaded default image style for theater '%s'.", self.active_theater_id)
-                return style
-        except OSError as exc:
-            logger.warning("[ImageTools] Could not read default image style: %s", exc)
-        return ""
 
     def _apply_default_style(self, image_prompt: str) -> str:
         """Append the theater style unless the prompt supplies a style itself."""

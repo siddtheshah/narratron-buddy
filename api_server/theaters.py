@@ -1,6 +1,7 @@
 """Theater deployer, asset routes, baton passing, and theater management API endpoints."""
 
 import asyncio
+from copy import deepcopy
 import json
 import logging
 import os
@@ -158,6 +159,15 @@ def list_theaters(request: Request):
     result.sort(key=lambda x: (x["is_owner"], x.get("last_used_at", "") or x.get("created_at", "")), reverse=True)
     return result
 
+@app.get("/api/theaters/default-config")
+async def get_default_theater_config():
+    """Return the creation-editor baseline without duplicating simple agent fields."""
+    config = deepcopy(get_theater_default_config())
+    agent = config.setdefault("agent", {})
+    agent["style"] = ""
+    agent["special_instructions"] = ""
+    return {"config_yaml": yaml.safe_dump(config, default_flow_style=False, sort_keys=False)}
+
 @app.get("/api/theaters/{theater_id}")
 async def get_theater(theater_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific theater."""
@@ -288,7 +298,8 @@ async def create_and_deploy_theater(request: Request):
 
     form = await request.form()
     name = str(form.get("name", "Narratron Theater"))
-    style = str(form.get("style", "")).strip()
+    style = str(form.get("agent_style", "")).strip()
+    special_instructions = str(form.get("agent_special_instructions", "")).strip()
 
     reference_files = []
     playlists_data = {}
@@ -301,7 +312,7 @@ async def create_and_deploy_theater(request: Request):
                 # Check for uploaded ZIP package
                 if key in ("asset_zip", "asset_package") or filename.lower().endswith(".zip"):
                     try:
-                        zip_refs, zip_playlists, zip_style = extract_asset_package(content)
+                        zip_refs, zip_playlists = extract_asset_package(content)
                     except ValueError as ve:
                         raise HTTPException(status_code=400, detail=str(ve))
                     reference_files.extend(zip_refs)
@@ -309,8 +320,6 @@ async def create_and_deploy_theater(request: Request):
                         if pl_name not in playlists_data:
                             playlists_data[pl_name] = []
                         playlists_data[pl_name].extend(tracks)
-                    if zip_style and not style:
-                        style = zip_style
                 elif key in ("asset_folder_files", "asset_files"):
                     # Folder upload with relative path info
                     rel_path = filename.replace("\\", "/")
@@ -329,11 +338,6 @@ async def create_and_deploy_theater(request: Request):
                             if pl_name not in playlists_data:
                                 playlists_data[pl_name] = []
                             playlists_data[pl_name].append((clean_name, content))
-                    elif clean_name.lower() == "style.txt" and not style:
-                        try:
-                            style = content.decode("utf-8").strip()
-                        except Exception:
-                            pass
                 elif key == "reference_files":
                     reference_files.append((filename, content))
                 elif key.startswith("playlist_"):
@@ -342,13 +346,22 @@ async def create_and_deploy_theater(request: Request):
                         playlists_data[pl_name] = []
                     playlists_data[pl_name].append((filename, content))
 
-    raw_config_param = form.get("theater_config")
+    raw_config_param = form.get("theater_config_yaml") or form.get("theater_config")
     theater_config = None
     if raw_config_param:
         try:
-            theater_config = json.loads(raw_config_param) if isinstance(raw_config_param, str) else raw_config_param
-        except Exception:
-            pass
+            theater_config = yaml.safe_load(raw_config_param) if isinstance(raw_config_param, str) else raw_config_param
+            if theater_config is not None and not isinstance(theater_config, dict):
+                raise ValueError("Theater configuration must be a YAML mapping.")
+        except (yaml.YAMLError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=f"Invalid theater configuration: {error}")
+
+    theater_config = theater_config or {}
+    agent_config = theater_config.setdefault("agent", {})
+    if not isinstance(agent_config, dict):
+        raise HTTPException(status_code=400, detail="Invalid theater configuration: agent must be a mapping.")
+    agent_config["style"] = style
+    agent_config["special_instructions"] = special_instructions
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = theater_manager.create_theater(
@@ -357,7 +370,6 @@ async def create_and_deploy_theater(request: Request):
         reference_files=reference_files,
         playlists_data=playlists_data,
         theater_config=theater_config,
-        style=style or None,
     )
     deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
 
