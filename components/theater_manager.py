@@ -32,7 +32,7 @@ FLAGS = flags.FLAGS
 def get_theaters_root() -> Path:
     """Return the theater-data root for the selected runtime environment."""
     if FLAGS["use_cloud_theater_storage"].value:
-        return Path("/tmp/theaters")
+        return Path("/mnt/storage/theaters")
     return Path(__file__).parent.parent / "theaters"
 
 
