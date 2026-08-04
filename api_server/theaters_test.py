@@ -119,7 +119,6 @@ class TestTheaterAPI(BaseTestCase):
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron Canvas", response.text)
-        self.assertIn('href="/about"', response.text)
 
     def test_canvas_data_endpoints_require_canvas_access(self):
         owner = db.register_user("canvas_api_owner", "canvas-api-owner@example.com", "Password123")

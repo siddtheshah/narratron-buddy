@@ -22,7 +22,7 @@ pip install -r requirements.txt
 
 ### Gcloud Setup
 
-You will need a GCloud project to use the Gemini Live API via Vertex AI.
+You will need a GCloud project to use the Gemini Live API.
 
 To get started with GCloud, complete the following steps:
 1. Install GCloud CLI: https://cloud.google.com/sdk/docs/install

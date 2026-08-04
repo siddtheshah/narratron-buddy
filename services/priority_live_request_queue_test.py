@@ -3,6 +3,7 @@ import time
 import unittest
 from unittest.mock import MagicMock
 
+from google.adk.agents.live_request_queue import LiveRequest
 from google.genai import types
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 
@@ -167,6 +168,48 @@ class TestPriorityLiveRequestQueue(unittest.TestCase):
             self.assertLess(elapsed, 0.05)
             self.assertIsNotNone(req_sys.content)
             self.assertEqual(req_sys.content.parts[0].text, "Immediate system notification")
+
+        asyncio.run(run_test())
+
+    def test_system_notification_cannot_interrupt_active_vad(self):
+        async def run_test():
+            queue = PriorityLiveRequestQueue(retention_window=0.01)
+            system_content = types.Content(parts=[types.Part(text="Deferred system notification")])
+
+            queue.send_activity_start()
+            req_start = await queue.get()
+            self.assertIsNotNone(req_start.activity_start)
+
+            queue.send_content(system_content)
+            await asyncio.sleep(0.02)  # Let the old timestamp window expire.
+
+            pending_get = asyncio.create_task(queue.get())
+            await asyncio.sleep(0.02)
+            self.assertFalse(pending_get.done())
+
+            queue.send_realtime(types.Blob(mime_type="audio/pcm;rate=16000", data=b"speech"))
+            req_audio = await asyncio.wait_for(pending_get, timeout=0.1)
+            self.assertEqual(req_audio.blob.data, b"speech")
+
+            queue.send_activity_end()
+            req_end = await queue.get()
+            self.assertIsNotNone(req_end.activity_end)
+
+            req_system = await asyncio.wait_for(queue.get(), timeout=0.1)
+            self.assertEqual(req_system.content.parts[0].text, "Deferred system notification")
+
+        asyncio.run(run_test())
+
+    def test_arbitrary_send_routes_activity_end_with_audio(self):
+        async def run_test():
+            queue = PriorityLiveRequestQueue(retention_window=0.01)
+            queue.send(LiveRequest(activity_start=types.ActivityStart()))
+            queue.send_content(types.Content(parts=[types.Part(text="Deferred")]))
+            queue.send(LiveRequest(activity_end=types.ActivityEnd()))
+
+            self.assertIsNotNone((await queue.get()).activity_start)
+            self.assertIsNotNone((await queue.get()).activity_end)
+            self.assertEqual((await queue.get()).content.parts[0].text, "Deferred")
 
         asyncio.run(run_test())
 

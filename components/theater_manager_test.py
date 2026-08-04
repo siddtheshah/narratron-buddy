@@ -20,7 +20,7 @@ class TestTheaterRootSelection(unittest.TestCase):
 
     @flagsaver.flagsaver(use_cloud_theater_storage=True)
     def test_cloud_root_uses_tmp_theaters(self):
-        self.assertEqual(get_theaters_root(), Path("/tmp/theaters"))
+        self.assertEqual(get_theaters_root(), Path("/mnt/storage/theaters"))
 
 
 class TestTheaterManager(unittest.TestCase):

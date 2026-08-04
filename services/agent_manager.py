@@ -365,7 +365,7 @@ class AgentSession:
                 app_name=self.runner.app_name,
                 user_id=self.adk_user_id,
                 session_id=self.adk_session_id,
-            ) is None:
+            ) is None  self.status == 'stopped':
                 await self.session_service.create_session(
                     app_name=self.runner.app_name,
                     user_id=self.adk_user_id,
@@ -412,7 +412,6 @@ class AgentSession:
     async def _run_canvas_refresh(self):
         try:
             while True:
-                await asyncio.sleep(1.0)
                 db_inst = self._get_database()
                 owner_id = self._get_owner_id(db_inst)
                 if db_inst and owner_id:
@@ -433,6 +432,7 @@ class AgentSession:
                 if self.websocket_connected and self.canvas_state_manager:
                     self.canvas_state_manager.set_tool_activity("live", active=True, recent_seconds=10.0)
                 self.send_canvas_state()
+                await asyncio.sleep(60.0)
         except asyncio.CancelledError:
             return
 
