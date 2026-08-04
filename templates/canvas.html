@@ -4306,7 +4306,9 @@
         async function playMicTestRecording() {
             if (!micTestBytes) return;
             if (micTestPlayback) micTestPlayback.stop();
-            if (micTestPlaybackContext?.state !== 'closed') await micTestPlaybackContext.close();
+            if (micTestPlaybackContext && micTestPlaybackContext.state !== 'closed') {
+                await micTestPlaybackContext.close();
+            }
 
             const pcm = new Uint8Array(micTestBytes);
             let offset = 0;
@@ -4397,6 +4399,35 @@
         // ========================================
         // Orator How-To Modal Logic
         // ========================================
+        const micConfigModal = document.getElementById('mic-config-modal');
+        const menuItemMicConfig = document.getElementById('menu-item-mic-config');
+        const micConfigCloseBtn = document.getElementById('mic-config-close-btn');
+        const micConfigDoneBtn = document.getElementById('mic-config-done-btn');
+
+        function openMicConfigModal() {
+            if (!micConfigModal) return;
+            closePulloutMenu();
+            refreshMicrophoneDevices();
+            micConfigModal.classList.add('active');
+            micConfigModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeMicConfigModal() {
+            if (!micConfigModal) return;
+            if (stopMicTestCapture) stopMicTestRecording();
+            micConfigModal.classList.remove('active');
+            micConfigModal.setAttribute('aria-hidden', 'true');
+        }
+
+        if (menuItemMicConfig) menuItemMicConfig.addEventListener('click', openMicConfigModal);
+        if (micConfigCloseBtn) micConfigCloseBtn.addEventListener('click', closeMicConfigModal);
+        if (micConfigDoneBtn) micConfigDoneBtn.addEventListener('click', closeMicConfigModal);
+        if (micConfigModal) {
+            micConfigModal.addEventListener('click', (event) => {
+                if (event.target === micConfigModal) closeMicConfigModal();
+            });
+        }
+
         const oratorHowtoModal = document.getElementById('orator-howto-modal');
         const howtoCloseBtn = document.getElementById('howto-close-btn');
         const howtoAckBtn = document.getElementById('howto-ack-btn');
@@ -4476,6 +4507,8 @@
             if (e.key === 'Escape') {
                 if (pulloutOverlay && pulloutOverlay.classList.contains('active')) {
                     closePulloutMenu();
+                } else if (micConfigModal && micConfigModal.classList.contains('active')) {
+                    closeMicConfigModal();
                 } else if (oratorHowtoModal && oratorHowtoModal.classList.contains('active')) {
                     closeOratorHowtoModal();
                 } else if (viewerCollabGuideModal && viewerCollabGuideModal.classList.contains('active')) {
@@ -4671,6 +4704,8 @@
         window.closePulloutMenu = closePulloutMenu;
         window.openOratorHowtoModal = openOratorHowtoModal;
         window.closeOratorHowtoModal = closeOratorHowtoModal;
+        window.openMicConfigModal = openMicConfigModal;
+        window.closeMicConfigModal = closeMicConfigModal;
         window.openTheaterConfigModal = openTheaterConfigModal;
         window.closeTheaterConfigModal = closeTheaterConfigModal;
     </script>
@@ -4713,63 +4748,10 @@
                 <div>
                     <div class="pullout-section-title">Orator & Audio Settings</div>
                     <div class="pullout-menu-list">
-                        <button id="menu-item-hotkey" class="pullout-menu-item"
-                            title="Click to rebind Orator mic toggle hotkey">
-                            <span class="pullout-item-icon">⌨️</span>
-                            <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
+                        <button id="menu-item-mic-config" class="pullout-menu-item">
+                            <span class="pullout-item-icon">🎙️</span>
+                            <span>Microphone Configuration</span>
                         </button>
-                        <div class="pullout-menu-item"
-                            style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
-                            <div
-                                style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                                <span>Microphone</span>
-                                <button id="menu-mic-device-refresh" type="button"
-                                    style="padding: 3px 7px; font-size: .72rem; cursor: pointer;">Refresh</button>
-                            </div>
-                            <select id="menu-mic-device-select"
-                                style="width: 100%; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 5px; padding: 6px;">
-                                <option value="">System default microphone</option>
-                            </select>
-                            <span id="menu-mic-device-hint" style="font-size: .7rem; color: #94a3b8;">Choose the
-                                microphone to use when connecting.</span>
-                        </div>
-                        <div class="pullout-menu-item"
-                            style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
-                            <div
-                                style="display: flex; align-items: center; gap: 12px; font-size: 0.9rem; font-weight: 500; width: 100%;">
-                                <span class="pullout-item-icon">🎧</span>
-                                <span>Test microphone</span>
-                            </div>
-                            <div style="display: flex; gap: 8px;">
-                                <button id="menu-mic-test-record" type="button" aria-pressed="false"
-                                    style="flex: 1; padding: 6px 8px; cursor: pointer;">Record test</button>
-                                <button id="menu-mic-test-play" type="button" disabled
-                                    style="flex: 1; padding: 6px 8px; cursor: pointer;">Play back</button>
-                            </div>
-                            <span id="menu-mic-test-status" aria-live="polite"
-                                style="font-size: .7rem; color: #94a3b8;">Record with pauses to test detection. Agent
-                                hears like so.</span>
-                        </div>
-                        <div class="pullout-menu-item"
-                            style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;"
-                            title="Adjust microphone voice activity detection sensitivity">
-                            <div
-                                style="display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; font-weight: 500; width: 100%;">
-                                <span style="display: flex; align-items: center; gap: 12px;">
-                                    <span class="pullout-item-icon">🎚️</span>
-                                    <span>Mic Sensitivity</span>
-                                </span>
-                                <span id="menu-mic-sensitivity-val"
-                                    style="color: #a5b4fc; font-weight: 600; font-family: monospace; font-size: 0.85rem;">50%</span>
-                            </div>
-                            <input type="range" id="menu-mic-sensitivity-slider" min="0" max="100" value="50"
-                                style="width: 100%; accent-color: #6366f1; cursor: pointer; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.15); outline: none;">
-                            <div
-                                style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #64748b; font-weight: 500; width: 100%;">
-                                <span>Strict Noise (Low)</span>
-                                <span>Whisper (High)</span>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -4991,6 +4973,84 @@
                     style="flex: 1; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: #94a3b8; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
                     Decline
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Microphone Configuration Modal -->
+    <div id="mic-config-modal" class="modal-overlay" role="dialog" aria-modal="true"
+        aria-labelledby="mic-config-title" aria-hidden="true" style="z-index: 9999;">
+        <div class="modal-card"
+            style="max-width: 560px; width: 90%; text-align: left; border: 1px solid rgba(99, 102, 241, 0.45); box-shadow: 0 0 35px rgba(99, 102, 241, 0.2);">
+            <button id="mic-config-close-btn" class="modal-close-btn" aria-label="Close microphone configuration">✕</button>
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1.25rem;">
+                <div style="font-size: 1.8rem;">🎙️</div>
+                <div>
+                    <h3 id="mic-config-title" style="margin: 0; font-size: 1.25rem; color: #fff;">Microphone Configuration</h3>
+                    <div style="font-size: .84rem; color: #94a3b8;">Choose your input, tune detection, and verify playback.</div>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <button id="menu-item-hotkey" class="pullout-menu-item"
+                    title="Click to rebind Orator mic toggle hotkey">
+                    <span class="pullout-item-icon">⌨️</span>
+                    <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
+                </button>
+
+                <div class="pullout-menu-item"
+                    style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <span>Microphone input</span>
+                        <button id="menu-mic-device-refresh" type="button"
+                            style="padding: 3px 7px; font-size: .72rem; cursor: pointer;">Refresh</button>
+                    </div>
+                    <select id="menu-mic-device-select"
+                        style="width: 100%; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 5px; padding: 6px;">
+                        <option value="">System default microphone</option>
+                    </select>
+                    <span id="menu-mic-device-hint" style="font-size: .7rem; color: #94a3b8;">Choose the microphone to use when connecting.</span>
+                </div>
+
+                <div class="pullout-menu-item"
+                    style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;"
+                    title="Adjust microphone voice activity detection sensitivity">
+                    <div style="display: flex; align-items: center; justify-content: space-between; font-size: .9rem; font-weight: 500; width: 100%;">
+                        <span style="display: flex; align-items: center; gap: 12px;">
+                            <span class="pullout-item-icon">🎚️</span>
+                            <span>Mic Sensitivity</span>
+                        </span>
+                        <span id="menu-mic-sensitivity-val"
+                            style="color: #a5b4fc; font-weight: 600; font-family: monospace; font-size: .85rem;">50%</span>
+                    </div>
+                    <input type="range" id="menu-mic-sensitivity-slider" min="0" max="100" value="50"
+                        style="width: 100%; accent-color: #6366f1; cursor: pointer; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.15); outline: none;">
+                    <div style="display: flex; justify-content: space-between; font-size: .7rem; color: #64748b; font-weight: 500; width: 100%;">
+                        <span>Strict Noise (Low)</span>
+                        <span>Whisper (High)</span>
+                    </div>
+                </div>
+
+                <div class="pullout-menu-item"
+                    style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; width: 100%;">
+                        <span class="pullout-item-icon">🎧</span>
+                        <span>Test microphone</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="menu-mic-test-record" type="button" aria-pressed="false"
+                            style="flex: 1; padding: 8px; cursor: pointer;">Record test</button>
+                        <button id="menu-mic-test-play" type="button" disabled
+                            style="flex: 1; padding: 8px; cursor: pointer;">Play back</button>
+                    </div>
+                    <span id="menu-mic-test-status" aria-live="polite"
+                        style="font-size: .7rem; color: #94a3b8;">Record with pauses to test what the agent will hear.</span>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem;">
+                <button id="mic-config-done-btn" type="button"
+                    style="background: linear-gradient(135deg, #6366f1, #3b82f6); border: none; color: #fff; padding: 9px 22px; border-radius: 10px; font-weight: 600; cursor: pointer;">Done</button>
             </div>
         </div>
     </div>
