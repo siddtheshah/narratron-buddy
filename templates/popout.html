@@ -478,8 +478,11 @@
                 const res = await fetch('/api/latest' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
                 const data = await res.json();
                 const thought = data.agent_thought && data.agent_thought.text;
-                agentThoughtText.textContent = thought || 'Waiting for Narratron to think…';
-                agentThoughtText.classList.toggle('is-wandering', (thought || '').trim().toLowerCase() === 'wandering');
+                const isWandering = (thought || '').trim().toLowerCase() === 'wandering';
+                agentThoughtText.textContent = isWandering
+                    ? 'Narratron has wandered away. (Try resummoning?)'
+                    : (thought || 'Waiting for Narratron to think…');
+                agentThoughtText.classList.toggle('is-wandering', isWandering);
                 if (data.prompt) {
                     document.getElementById('popout-prompt-text').textContent = data.prompt;
                 }

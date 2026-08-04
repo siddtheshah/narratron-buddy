@@ -24,10 +24,6 @@
 - [ ] Refactor canvas.html to be more modular.
 - [ ] Refactor database definitions to live as an external SQL schema, not baked in python code.
 
-## Customization
-- [x] Move style.txt into theater.yaml
-- [x] Special instructions for the agent in theater.yaml.
-
 ## User Profiles
 - [x] Create a user profile page showing lifetime credits used, and theater views. Let them write a bio.
 - [ ] Implement proper account deletion.
@@ -45,3 +41,8 @@
 ## Policy Pages
 - [ ] Page for terms of use.
 - [ ] Page for privacy policy.
+
+## Major bugs
+
+- [ ] Network errors connecting to the database from the hosted app.
+- [ ] Agent reconnect requires an additional stop/start cycle.

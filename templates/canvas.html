@@ -1410,12 +1410,12 @@
                 </svg>
             </button>
 
-            <!-- Orator Audio controls (Start/Stop Agent, Connect) -->
+            <!-- Orator Audio controls (Summon/Banish Agent, Connect) -->
             <div id="orator-controls"
                 style="display: none; align-items: center; gap: 10px; margin-left: 1rem; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
                 <button id="agent-start-stop-btn"
                     style="background: #10b981; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                    🚀 Start Agent
+                    🚀 Summon
                 </button>
                 <button id="agent-connect-btn"
                     style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
@@ -2624,8 +2624,11 @@
         function updateAgentThought(thought) {
             const text = thought && thought.text ? thought.text.trim() : '';
             if (text === lastAgentThought) return;
-            agentThoughtText.textContent = text || 'Waiting for Narratron to think…';
-            agentThoughtText.classList.toggle('is-wandering', text.toLowerCase() === 'wandering');
+            const isWandering = text.toLowerCase() === 'wandering';
+            agentThoughtText.textContent = isWandering
+                ? 'Narratron has wandered away. (Try resummoning?)'
+                : (text || 'Waiting for Narratron to think…');
+            agentThoughtText.classList.toggle('is-wandering', isWandering);
             lastAgentThought = text;
         }
 
@@ -3447,10 +3450,10 @@
             window.isAgentStarted = started;
             if (!agentStartStopBtn) return;
             if (started) {
-                agentStartStopBtn.textContent = '🛑 Stop Agent';
+                agentStartStopBtn.textContent = '🛑 Banish';
                 agentStartStopBtn.style.background = '#ef4444'; // Red
             } else {
-                agentStartStopBtn.textContent = '🚀 Start Agent';
+                agentStartStopBtn.textContent = '🚀 Summon';
                 agentStartStopBtn.style.background = '#10b981'; // Emerald
             }
         }
