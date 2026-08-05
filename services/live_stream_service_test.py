@@ -1,9 +1,29 @@
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock
 from google.genai import types
 
-from services.live_stream_service import handle_live_websocket_connection
+from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
+from tools.named_element_tool import NamedElementTools
+
+
+def test_format_canvas_state_includes_present_scene_elements():
+    elements = NamedElementTools(theater_id="stage")
+    elements.upsert_named_element("hero", "Mara, a cartographer")
+    elements.upsert_named_element("tone", "Hopeful and tense")
+
+    state = format_canvas_state(
+        SimpleNamespace(
+            shown_image_path=None,
+            shown_image_prompt=None,
+            current_playlist=None,
+            viewer_collab_enabled=False,
+        ),
+        elements,
+    )
+
+    assert "[Present Scene Elements]: hero: Mara, a cartographer; tone: Hopeful and tense" in state
 
 
 class TestLiveStreamServiceAudioChunking(unittest.TestCase):

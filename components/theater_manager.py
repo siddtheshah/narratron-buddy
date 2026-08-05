@@ -85,9 +85,6 @@ class Theater:
     def image_artifacts_dir(self) -> Path:
         return self.manager._get_theater_image_artifacts_dir(self.theater_id)
 
-    def notes_artifacts_dir(self) -> Path:
-        return self.manager._get_theater_notes_artifacts_dir(self.theater_id)
-
     @property
     def metadata(self) -> Optional[TheaterMetadata]:
         return self.manager.get_theater(self.theater_id)
@@ -177,9 +174,6 @@ class TheaterManager:
 
     def _get_theater_image_artifacts_dir(self, theater_id: str) -> Path:
         return self._get_theater_artifacts_dir(theater_id) / "images"
-
-    def _get_theater_notes_artifacts_dir(self, theater_id: str) -> Path:
-        return self._get_theater_artifacts_dir(theater_id) / "notes"
 
     def _metadata_path(self, theater_id: str) -> Path:
         return self._get_theater_dir(theater_id) / "theater.json"

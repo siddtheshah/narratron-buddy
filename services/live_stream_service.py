@@ -19,8 +19,11 @@ from components.canvas_state import CanvasStateManager
 
 logger = logging.getLogger(__name__)
 
-def format_canvas_state(canvas_state_manager: Optional[CanvasStateManager]) -> str:
-    """Format the compact canvas state injected into the live agent context."""
+def format_canvas_state(
+    canvas_state_manager: Optional[CanvasStateManager],
+    named_element_tools: Optional[Any] = None,
+) -> str:
+    """Format canvas and current-scene state injected into the live agent context."""
     image_path = getattr(canvas_state_manager, "shown_image_path", None)
     image_name = Path(image_path).name if image_path else "none"
     image_prompt = getattr(canvas_state_manager, "shown_image_prompt", None) or "none"
@@ -35,6 +38,19 @@ def format_canvas_state(canvas_state_manager: Optional[CanvasStateManager]) -> s
                 f"[Viewer Suggestion]: {suggestion['text']} "
                 f"(by {suggestion['author']}, {suggestion['upvote_count']} upvotes)"
             )
+
+    elements = (
+        named_element_tools.get_present_elements()
+        if named_element_tools and hasattr(named_element_tools, "get_present_elements")
+        else []
+    )
+    if elements:
+        rendered_elements = "; ".join(
+            f"{element['name']}: {element['content']}" for element in elements
+        )
+        parts.append(f"[Present Scene Elements]: {rendered_elements}")
+    else:
+        parts.append("[Present Scene Elements]: none")
 
     return "\n".join(parts)
 

@@ -4,7 +4,6 @@ from typing import Any, Optional
 
 from google.adk.agents import Agent
 from google.adk.planners import BuiltInPlanner
-from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.genai import types
 from jinja2 import StrictUndefined, Template
 
@@ -12,14 +11,14 @@ from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.music_tool import MusicTools
-from tools.notes_tool import NotesTools
+from tools.named_element_tool import NamedElementTools
 from tools.tool_bundle import ToolBundle
 from utils.config_loader import get_app_config, get_theater_config
 
 AGENT_INSTRUCTION_TEMPLATE = """
 # Objective
 
-You are a narrative agent (narratron) that has been given the special ability to use image generation and management tools.
+You are a narrative agent (narratron) that has been given the special ability to use scenery and performance tools.
 You are NOT the driver of the story. You are the collaborator. The orator is in full control and will pull the plug if you deviate.
 You are given full liberty to use tools to help craft a beautiful narrative experience for the orator as they address their audience.
 
@@ -42,13 +41,19 @@ Note: The references are loaded immediately on agent initialization so you alrea
 - ALWAYS prioritize what the user is saying, over your own ideas and past images. Use past information only if it follows naturally.
 - NEVER take initiative to storytell on your own.
 
-## Note Taking
-The storytelling session may be long and therefore difficult to keep track of everything. You are given access to a note taking tool
-which can be accessed using the `load_artifacts_tool` tool.  This tool will enable you to consolidate details and perform better
-image generation.
+## Scene Context
+Maintain the current scene as a compact set of named elements. Add or update elements such as characters, locations, objects, and relationships.
+Pay close attention to what the orator focuses on and gives detail to. If the orator describes something, more so than just offhandedly mentioning them,
+then ensure they are tracked. You should not only be listing the elements, but keeping dutifully accurate descriptions of them. If any of the elements explicitly leaves
+the scene, then you should mark them '(absent) <description>', keeping them on hand just in case.
 
-Good topics for note taking include the description of high level locations and characters, such that prompts can be more coherently
-constructed. You can also list the previous images created in the notes and re-use them.
+You should use these named elements to improve image creation by ensuring that references to them use the appropriate descriptions
+and reference images.
+
+When the story moves to a new scene and the old context no longer applies, call `clear_scene` before adding the new elements.
+The present elements are included in your regular observability updates.
+The log of named elements are not themselves a transcript or image history. Images should always prioritize
+orator speech over previous named elements, and named elements are just additional context.
 
 # Tools
 
@@ -69,9 +74,10 @@ Besides greeting the orator initially, use this in tandem with show_image to sho
 * send_chat_message <text>: updates the pinned "Narratron's current thought" panel above user chat. Use it for a concise current status, response, or error; it replaces the previous panel text rather than adding to the user conversation.
 
 ## Context Management
-* edit_notes <note_name> <content>: Create or edit a note file under artifacts/notes.
-* delete_notes <note_name>: Delete a note file under artifacts/notes.
-* LoadArtifactsTool: For directly viewing the images or notes yourself (not shown to user/viewers).
+In order to maintain coherency, you must use these tools to keep track of the scene state. 
+
+* upsert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
+* clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
 
 ## Music Management
 When a story begins or a scene/mood is described, invoke `play_playlist` immediately with an appropriate playlist (e.g., 'default', 'desert adventure', 'desert combat'). You can call `play_playlist` directly without listing playlists first.
@@ -105,7 +111,11 @@ def create_tool_bundle_for_session(
     theater_manager = theater_manager or TheaterManager()
     image_tools = ImageTools(config, theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
     chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
-    notes_tools = NotesTools(config.get("notes", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
+    named_element_tools = NamedElementTools(
+        config.get("named_elements", {}),
+        theater_id=theater_id,
+        canvas_state_service=canvas_state_service,
+    )
     music_tools = MusicTools(config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
 
     return ToolBundle([
@@ -115,13 +125,12 @@ def create_tool_bundle_for_session(
         image_tools.browse_images,
         image_tools.search_image_by_metadata,
         chat_tools.send_chat_message,
-        notes_tools.edit_notes,
-        notes_tools.delete_notes,
+        named_element_tools.upsert_named_element,
+        named_element_tools.clear_scene,
         music_tools.list_playlists,
         music_tools.play_playlist,
         music_tools.pause_playlist,
         music_tools.resume_playlist,
-        LoadArtifactsTool(),
     ])
 
 

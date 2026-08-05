@@ -13,8 +13,7 @@ music:
     playlists_folder: "playlists"
     cooldown_duration: 15
 
-notes:
-    cooldown_duration: 5
+named_elements: {}
 
 chat:
     cooldown_duration: 12

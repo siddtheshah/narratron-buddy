@@ -39,11 +39,11 @@ class TestCreateAgent(unittest.TestCase):
 
     @patch("services.agent.ImageTools")
     @patch("services.agent.ChatTools")
-    @patch("services.agent.NotesTools")
+    @patch("services.agent.NamedElementTools")
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_create_agent_passes_canvas_state_service_to_every_tool(
-        self, mock_agent_cls, mock_music_cls, mock_notes_cls, mock_chat_cls, mock_image_cls
+        self, mock_agent_cls, mock_music_cls, mock_named_elements_cls, mock_chat_cls, mock_image_cls
     ):
         mock_image_cls.return_value.list_references.return_value = []
         canvas_state_service = MagicMock()
@@ -63,7 +63,7 @@ class TestCreateAgent(unittest.TestCase):
         managed_tool_kwargs = {**expected_kwargs, "theater_manager": expected_manager}
         mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
-        mock_notes_cls.assert_called_once_with(config.get("notes", {}), **managed_tool_kwargs)
+        mock_named_elements_cls.assert_called_once_with(config.get("named_elements", {}), **expected_kwargs)
         mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)
 
     @patch("services.agent.create_tool_bundle_for_session")

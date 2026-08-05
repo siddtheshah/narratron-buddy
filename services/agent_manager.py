@@ -171,7 +171,7 @@ class AgentSession:
         # Retrieve bound tool instances safely
         self.image_tools = get_bound_tool_instance(self.agent, "create_image")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
-        self.notes_tools = get_bound_tool_instance(self.agent, "edit_notes")
+        self.named_element_tools = get_bound_tool_instance(self.agent, "upsert_named_element")
         self.music_tools = get_bound_tool_instance(self.agent, "play_playlist")
 
         self.run_config = build_run_config(
@@ -253,7 +253,7 @@ class AgentSession:
         def handle_after_image_tool(_tool_name: str, _canvas_info: dict):
             self.send_canvas_state(force=True)
 
-        for tool_suite in (self.image_tools, self.chat_tools, self.notes_tools, self.music_tools):
+        for tool_suite in (self.image_tools, self.chat_tools, self.named_element_tools, self.music_tools):
             if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
                 tool_suite.on_cooldown_expired = handle_cooldown_expired
 
@@ -293,7 +293,7 @@ class AgentSession:
                 and now - self.last_canvas_state_sent < self.observability_interval
             ):
                 return False
-            msg = format_canvas_state(self.canvas_state_manager)
+            msg = format_canvas_state(self.canvas_state_manager, self.named_element_tools)
             try:
                 self.send_content(types.Content(parts=[types.Part(text=msg)]))
             except Exception as e:
@@ -365,7 +365,7 @@ class AgentSession:
                 app_name=self.runner.app_name,
                 user_id=self.adk_user_id,
                 session_id=self.adk_session_id,
-            ) is None  self.status == 'stopped':
+            ) is None or self.status == 'stopped':
                 await self.session_service.create_session(
                     app_name=self.runner.app_name,
                     user_id=self.adk_user_id,
