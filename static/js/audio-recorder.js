@@ -45,6 +45,11 @@ function emitVadEvent(phase, reason) {
   sendControlMessage(phase === "start" ? "activity_start" : "activity_end", reason);
 }
 
+function emitSpeechActivity(phase) {
+  // Unlike VAD chunk events, this maps one-to-one with the complete utterance.
+  window.dispatchEvent(new CustomEvent(`narratron:speech-${phase}`));
+}
+
 function flushAudioChunk() {
   if (pendingPcmBytes === 0) return;
 
@@ -92,6 +97,7 @@ function finishSpeech() {
   if (!speechActive) return;
   finishAudioChunk("speech_end");
   speechActive = false;
+  emitSpeechActivity("end");
 }
 
 /**
@@ -123,6 +129,7 @@ export async function startAudioRecorderWorklet(handler) {
       if (speechActive) return;
       speechActive = true;
       startAudioChunk("speech_start");
+      emitSpeechActivity("start");
     },
     onSpeechEnd: () => {
       finishSpeech();

@@ -4,7 +4,6 @@
 - [ ] Require an existing deployment/owner record before deploying or deleting a theater, rather than treating a missing record as authorized.
 - [ ] Add rate limits for registration/login, password reset, join-key resolution, uploads, payment attempts, and Live WebSocket connections.
 - [ ] Use secure production auth cookies and CSRF protection for authenticated state-changing endpoints.
-- [ ] Review public theater listing, stats, and configuration endpoints; expose only intentionally public metadata.
 - [ ] Cloudflare
 
 ## Narratron UI & Canvas Features
@@ -23,6 +22,7 @@
 
 - [ ] Refactor canvas.html to be more modular.
 - [ ] Refactor database definitions to live as an external SQL schema, not baked in python code.
+    - Important if postgres sql will become a necessary migration.
 
 ## User Profiles
 - [x] Create a user profile page showing lifetime credits used, and theater views. Let them write a bio.

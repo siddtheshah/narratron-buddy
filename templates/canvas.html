@@ -1447,16 +1447,14 @@
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
             <div id="agent-activity-tray" aria-label="Agent activity" aria-live="polite">
-                <div id="agent-live-indicator" class="agent-activity-icon live" role="status"
-                    title="Gemini Live API Ready & Healthy" aria-hidden="true">
+                <div id="pcm-broadcast-indicator" class="agent-activity-icon live" role="status"
+                    title="Voice activity is broadcasting to the agent" aria-hidden="true">
                     <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M2 10v4" />
-                        <path d="M6 6v12" />
-                        <path d="M10 3v18" />
-                        <path d="M14 8v8" />
-                        <path d="M18 5v14" />
-                        <path d="M22 10v4" />
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <path d="M12 19v3" />
+                        <path d="M8 22h8" />
                     </svg>
                 </div>
                 <div id="agent-drawing-indicator" class="agent-activity-icon drawing" role="status"
@@ -2247,7 +2245,7 @@
         });
 
         const promptBtn = document.getElementById('prompt-toggle-btn');
-        const liveIndicator = document.getElementById('agent-live-indicator');
+        const pcmBroadcastIndicator = document.getElementById('pcm-broadcast-indicator');
         const drawingIndicator = document.getElementById('agent-drawing-indicator');
 
         function updateAgentActivity(toolActivity = {}) {
@@ -2256,10 +2254,18 @@
                 element.classList.toggle('active', !!visible);
                 element.setAttribute('aria-hidden', String(!visible));
             };
-            const isLiveReady = !!(toolActivity.live_ready || (agentWs && agentWs.readyState === WebSocket.OPEN && window.isSetupComplete));
-            setVisible(liveIndicator, isLiveReady);
             setVisible(drawingIndicator, toolActivity.image_generating);
         }
+
+        function setPcmBroadcasting(isBroadcasting) {
+            if (!pcmBroadcastIndicator) return;
+            pcmBroadcastIndicator.classList.toggle('active', isBroadcasting);
+            pcmBroadcastIndicator.setAttribute('aria-hidden', String(!isBroadcasting));
+        }
+
+        // These map to the complete RMS VAD speech segment, not PCM chunk boundaries.
+        window.addEventListener('narratron:speech-start', () => setPcmBroadcasting(true));
+        window.addEventListener('narratron:speech-end', () => setPcmBroadcasting(false));
         let promptPinned = false;
 
         promptBtn.addEventListener('mouseenter', () => {
@@ -3662,6 +3668,7 @@
             }
             audioRecorderNode = null;
             isRecording = false;
+            setPcmBroadcasting(false);
         }
 
         // Connect button handler (connects socket & starts mic stream automatically)
