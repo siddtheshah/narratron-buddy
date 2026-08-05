@@ -184,16 +184,22 @@ async def handle_live_websocket_connection(
                     rms = json_message.get("rms")
                     ts = json_message.get("ts")
                     logger.info(f"[Mic Detection] theater_id={theater_id} rms={rms} ts={ts}")
-                    if hasattr(agent_session, "record_input_detected"):
-                        agent_session.record_input_detected()
 
                 elif msg_type == "activity_start":
-                    logger.info(f"[Activity Start] theater_id={theater_id}")
+                    logger.info(
+                        "[Activity Start] theater_id=%s reason=%s",
+                        theater_id,
+                        json_message.get("reason", "unspecified"),
+                    )
                     if hasattr(agent_session, "send_activity_start"):
                         agent_session.send_activity_start()
 
                 elif msg_type == "activity_end":
-                    logger.info(f"[Activity End] theater_id={theater_id}")
+                    logger.info(
+                        "[Activity End] theater_id=%s reason=%s",
+                        theater_id,
+                        json_message.get("reason", "unspecified"),
+                    )
                     if hasattr(agent_session, "send_activity_end"):
                         agent_session.send_activity_end()
 

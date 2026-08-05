@@ -162,7 +162,7 @@ class AgentSession:
         self.status = "ready"  # "ready", "active", "stopped"
 
 
-        self.live_request_queue = PriorityLiveRequestQueue(retention_window=0.5)
+        self.live_request_queue = PriorityLiveRequestQueue()
         self.websockets: Set[WebSocket] = set()
         self.websocket_user_ids: Dict[WebSocket, Optional[int]] = {}
         self.active_controller_user_id: Optional[int] = None
@@ -202,11 +202,6 @@ class AgentSession:
     @property
     def websocket_connected(self) -> bool:
         return len(self.websockets) > 0
-
-    def record_input_detected(self) -> None:
-        """Mark that orator input has been detected to hold priority window."""
-        if hasattr(self.live_request_queue, "record_input_detected"):
-            self.live_request_queue.record_input_detected()
 
     def send_content(self, content: types.Content) -> bool:
         """Send content to live_request_queue if user is connected; suppress otherwise."""

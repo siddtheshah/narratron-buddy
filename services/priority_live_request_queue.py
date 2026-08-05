@@ -1,154 +1,122 @@
 import asyncio
-import logging
-import time
-from typing import Optional
 
 from google.adk.agents.live_request_queue import LiveRequest, LiveRequestQueue
 from google.genai import types
-
-logger = logging.getLogger(__name__)
 
 
 class PriorityLiveRequestQueue(LiveRequestQueue):
     """
     Queue used to send LiveRequests with priority scheduling for orator audio events.
 
-    Audio chunks from the orator always have priority while input is being detected,
-    with a retention window (default at least 0.5s) holding priority before yielding to
-    system notifications (tool cooldowns, canvas updates, etc.).
+    Requests are delivered by explicit non-audio and audio/VAD states.
     """
 
-    def __init__(self, retention_window: float = 0.5):
+    _NON_AUDIO = "non_audio"
+    _AUDIO = "audio"
+
+    def __init__(self):
         super().__init__()
-        self.retention_window: float = retention_window
-        self._audio_queue: asyncio.Queue = asyncio.Queue()
-        self._system_queue: asyncio.Queue = asyncio.Queue()
-        self._last_input_time: Optional[float] = None
-        # Track the VAD state as it is emitted, rather than as it is enqueued.
-        # This guarantees that system requests cannot be returned between an
-        # activity_start and its matching activity_end.
-        self._vad_active: bool = False
+        self._current_non_audio_queue: asyncio.Queue = asyncio.Queue()
+        self._current_audio_queue: asyncio.Queue = asyncio.Queue()
+        self._future_non_audio_queue: asyncio.Queue = asyncio.Queue()
+        self._state = self._NON_AUDIO
+        self._audio_turn_pending = False
         self._notify_event: asyncio.Event = asyncio.Event()
 
-    def _get_audio_nowait(self) -> LiveRequest:
-        """Return the next audio/VAD request and apply its state transition."""
-        req = self._audio_queue.get_nowait()
-        if req.activity_start is not None:
-            self._vad_active = True
-        elif req.activity_end is not None:
-            self._vad_active = False
-            self._last_input_time = None
+    def _get_current_audio_nowait(self) -> LiveRequest:
+        """Return audio/VAD request and switch to non-audio after VAD end."""
+        req = self._current_audio_queue.get_nowait()
+        if req.activity_end is not None:
+            self._state = self._NON_AUDIO
         return req
 
-    def record_input_detected(self) -> None:
-        """Mark that orator input has been detected to start or renew the priority window."""
-        self._last_input_time = time.monotonic()
-        self._notify_event.set()
+    def _queue_activity_start(self, req: LiveRequest) -> None:
+        """Queue VAD start after the current non-audio batch."""
+        self._queue_audio(req)
+        if self._state == self._NON_AUDIO:
+            self._audio_turn_pending = True
+
+    def _queue_audio(self, req: LiveRequest) -> None:
+        self._current_audio_queue.put_nowait(req)
+
+    def _queue_non_audio(self, req: LiveRequest) -> None:
+        if self._state == self._NON_AUDIO and self._audio_turn_pending:
+            self._future_non_audio_queue.put_nowait(req)
+        else:
+            self._current_non_audio_queue.put_nowait(req)
 
     def send_realtime(self, blob: types.Blob) -> None:
         """Send realtime blob. Prioritize audio blobs over non-audio blobs."""
         is_audio = bool(blob and getattr(blob, "mime_type", "").startswith("audio/"))
         req = LiveRequest(blob=blob)
         if is_audio:
-            self._last_input_time = time.monotonic()
-            self._audio_queue.put_nowait(req)
+            self._queue_audio(req)
         else:
-            self._system_queue.put_nowait(req)
+            self._queue_non_audio(req)
         self._notify_event.set()
 
     def send_content(self, content: types.Content) -> None:
         """Send content (e.g. system notifications, canvas updates, user text)."""
         req = LiveRequest(content=content)
-        self._system_queue.put_nowait(req)
+        self._queue_non_audio(req)
         self._notify_event.set()
 
     def send_activity_start(self) -> None:
         """Sends an activity start signal marking user input start."""
-        self._last_input_time = time.monotonic()
         req = LiveRequest(activity_start=types.ActivityStart())
-        self._audio_queue.put_nowait(req)
+        self._queue_activity_start(req)
         self._notify_event.set()
 
     def send_activity_end(self) -> None:
         """Sends an activity end signal."""
         req = LiveRequest(activity_end=types.ActivityEnd())
-        self._audio_queue.put_nowait(req)
+        self._queue_audio(req)
         self._notify_event.set()
 
     def close(self) -> None:
         """Close signal for request queue."""
         req = LiveRequest(close=True)
-        self._system_queue.put_nowait(req)
+        self._queue_non_audio(req)
         self._notify_event.set()
 
     def send(self, req: LiveRequest) -> None:
-        """Send arbitrary LiveRequest, routing audio/activity to audio queue."""
+        """Send arbitrary LiveRequest, routing it according to queue state."""
         is_audio = bool(req.blob and getattr(req.blob, "mime_type", "").startswith("audio/"))
-        if is_audio or req.activity_start is not None or req.activity_end is not None:
-            if is_audio or req.activity_start is not None:
-                self._last_input_time = time.monotonic()
-            self._audio_queue.put_nowait(req)
+        if req.activity_start is not None:
+            self._queue_activity_start(req)
+        elif req.activity_end is not None:
+            self._queue_audio(req)
+        elif is_audio:
+            self._queue_audio(req)
         else:
-            self._system_queue.put_nowait(req)
+            self._queue_non_audio(req)
         self._notify_event.set()
 
     async def get(self) -> LiveRequest:
         """
-        Dequeue next LiveRequest according to priority:
-        1. If audio queue has items, return audio chunk immediately.
-        2. If audio queue is empty but priority window (retention_window) is active,
-           wait up to remaining window for new audio chunks before yielding to system queue.
-        3. If priority window is inactive (or expired) and system queue has items, return system item.
-        4. If both queues are empty, wait for next event notification.
+        Alternate between the current non-audio and audio queues. The future
+        non-audio queue is promoted when the audio queue becomes active.
         """
         while True:
-            # 1. Immediate priority for audio chunks
-            if not self._audio_queue.empty():
-                return self._get_audio_nowait()
+            if self._state == self._NON_AUDIO:
+                if not self._current_non_audio_queue.empty():
+                    return self._current_non_audio_queue.get_nowait()
 
-            # Once an activity start has been emitted, only audio/VAD requests
-            # may follow until the corresponding activity end is emitted.
-            if self._vad_active:
-                self._notify_event.clear()
-                if not self._audio_queue.empty():
-                    return self._get_audio_nowait()
-                await self._notify_event.wait()
+                if self._current_audio_queue.empty():
+                    self._notify_event.clear()
+                    if not self._current_non_audio_queue.empty() or not self._current_audio_queue.empty():
+                        continue
+                    await self._notify_event.wait()
+                    continue
+
+                self._state = self._AUDIO
+                self._audio_turn_pending = False
+                self._current_non_audio_queue = self._future_non_audio_queue
+                self._future_non_audio_queue = asyncio.Queue()
                 continue
 
-            now = time.monotonic()
-            is_priority_active = False
-            remaining_window = 0.0
-
-            if self._last_input_time is not None:
-                elapsed = now - self._last_input_time
-                if elapsed < self.retention_window:
-                    is_priority_active = True
-                    remaining_window = self.retention_window - elapsed
-
-            if is_priority_active:
-                self._notify_event.clear()
-                # Re-check audio queue after clearing event
-                if not self._audio_queue.empty():
-                    return self._get_audio_nowait()
-
-                try:
-                    await asyncio.wait_for(self._notify_event.wait(), timeout=remaining_window)
-                    # Woken up by new item or input trigger; loop back to check audio queue first
-                    continue
-                except asyncio.TimeoutError:
-                    # Priority window expired; loop back, next iteration will yield to system queue
-                    continue
-
-            # 2. Priority not active -> yield to system notifications
-            if not self._system_queue.empty():
-                return self._system_queue.get_nowait()
-
-            # 3. Both queues empty -> wait for next event
             self._notify_event.clear()
-            # Double check queues after clearing event
-            if not self._audio_queue.empty():
-                return self._get_audio_nowait()
-            if not self._system_queue.empty():
-                return self._system_queue.get_nowait()
+            if not self._current_audio_queue.empty():
+                return self._get_current_audio_nowait()
 
             await self._notify_event.wait()
