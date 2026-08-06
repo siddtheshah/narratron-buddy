@@ -40,4 +40,6 @@ agent_manager = RegistryDependency("agent_manager")
 canvas_states = RegistryDependency("canvas_states")
 db = RegistryDependency("db")
 pricing_controller = RegistryDependency("pricing_controller")
+suggestion_service = RegistryDependency("suggestion_service")
 theater_manager = RegistryDependency("theater_manager")
+

@@ -68,3 +68,10 @@ def test_dependency_assignment_updates_the_current_registry_target():
 
 def test_dependency_representation_identifies_its_registry_entry():
     assert repr(RegistryDependency("canvas_states")) == "RegistryDependency('canvas_states')"
+
+
+def test_suggestion_service_initialized_in_object_registry():
+    from api_server.dependencies import suggestion_service
+    assert hasattr(object_registry, "suggestion_service")
+    assert suggestion_service.target is object_registry.suggestion_service
+

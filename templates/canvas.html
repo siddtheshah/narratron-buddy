@@ -792,7 +792,142 @@
             line-height: 1.45;
         }
 
+        /* Suggestions Floating Button (Lower Left, Expands Upwards, Orator Only) */
+        #suggestions-toggle-btn {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 1.5rem;
+            z-index: 25;
+            min-height: 44px;
+            height: 44px;
+            width: 44px;
+            border-radius: 22px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(168, 85, 247, 0.4);
+            display: none; /* Controlled by JS: hidden for viewers, shown for Orators */
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+            padding: 10px 11px;
+            box-sizing: border-box;
+            cursor: pointer;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+        }
+
+        #suggestions-toggle-btn:hover,
+        #suggestions-toggle-btn.expanded {
+            width: 320px;
+            height: auto;
+            max-height: 380px;
+            border-radius: 16px;
+            padding: 14px;
+            background: rgba(15, 17, 21, 0.95);
+            border-color: rgba(168, 85, 247, 0.6);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+            overflow-y: auto;
+        }
+
+
+        .suggestions-header-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            flex-shrink: 0;
+        }
+
+        .suggestions-header-bar svg {
+            flex-shrink: 0;
+            color: #f59e0b;
+        }
+
+        .suggestions-header-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #e2e8f0;
+            white-space: nowrap;
+            opacity: 0;
+            max-width: 0;
+            overflow: hidden;
+            transition: opacity 0.2s ease, max-width 0.3s ease;
+        }
+
+        #suggestions-toggle-btn:hover .suggestions-header-title,
+        #suggestions-toggle-btn.expanded .suggestions-header-title {
+            opacity: 1;
+            max-width: 200px;
+        }
+
+        .suggestions-body {
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #suggestions-toggle-btn:hover .suggestions-body,
+        #suggestions-toggle-btn.expanded .suggestions-body {
+            display: flex;
+        }
+
+        .suggestion-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 8px 10px;
+            transition: background 0.2s ease;
+        }
+
+        .suggestion-card:hover {
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        .suggestion-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .suggestion-card-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #f59e0b;
+        }
+
+        .suggestion-card-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 8px;
+            background: rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
+            border: 1px solid rgba(99, 102, 241, 0.4);
+        }
+
+        .suggestion-card-desc {
+            font-size: 0.78rem;
+            color: #cbd5e1;
+            line-height: 1.35;
+        }
+
+        .suggestions-spinner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.78rem;
+            color: #a5b4fc;
+            padding: 8px 0;
+        }
+
         #agent-activity-tray {
+
             position: absolute;
             top: 1.25rem;
             right: 1.25rem;
@@ -1475,6 +1610,28 @@
                 <span id="prompt-text"></span>
             </div>
 
+            <!-- NamedElement Scene Suggestions Floating Button -->
+            <div id="suggestions-toggle-btn" title="Scene Suggestions (Hover to expand)">
+                <div class="suggestions-header-bar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+                        <path d="M9 18h6"/>
+                        <path d="M10 22h4"/>
+                    </svg>
+                    <span class="suggestions-header-title">Scene Suggestions</span>
+                </div>
+                <div class="suggestions-body">
+                    <div id="suggestions-loading" class="suggestions-spinner" style="display: none;">
+                        <span>✨ Generating suggestions...</span>
+                    </div>
+                    <div id="suggestions-list" style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="font-size: 0.78rem; color: #94a3b8;">Hover to generate scene suggestions.</div>
+                    </div>
+                </div>
+            </div>
+
+
             <!-- Image History Paging Controls -->
             <div id="history-paging-controls"
                 style="display: none; position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 20; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 4px 12px; align-items: center; gap: 8px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4); font-family: 'Outfit', sans-serif;">
@@ -1632,7 +1789,107 @@
     </div>
 
     <script type="module">
+        // Scene Suggestions Hover & Element Fingerprint Caching Logic
+        (function initSuggestionsHandler() {
+            const btn = document.getElementById('suggestions-toggle-btn');
+            const list = document.getElementById('suggestions-list');
+            const loading = document.getElementById('suggestions-loading');
+            if (!btn || !list || !loading) return;
+
+            let cachedSuggestions = null;
+            let cachedFingerprint = null;
+            let isFetching = false;
+
+            function escapeHtml(str) {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function renderSuggestions(items) {
+                if (!items || items.length === 0) {
+                    list.innerHTML = '<div style="font-size: 0.78rem; color: #94a3b8;">No suggestions available right now.</div>';
+                    return;
+                }
+                list.innerHTML = items.map(item => `
+                    <div class="suggestion-card">
+                        <div class="suggestion-card-header">
+                            <span class="suggestion-card-title">${escapeHtml(item.title || '')}</span>
+                            <span class="suggestion-card-badge">${escapeHtml(item.category || 'Idea')}</span>
+                        </div>
+                        <div class="suggestion-card-desc">${escapeHtml(item.description || '')}</div>
+                    </div>
+                `).join('');
+            }
+
+            async function triggerSuggestionsFetch() {
+                if (isFetching) return;
+                isFetching = true;
+
+                if (!cachedSuggestions) {
+                    loading.style.display = 'flex';
+                    list.style.display = 'none';
+                }
+
+                try {
+                    let currentTheaterId = new URLSearchParams(window.location.search).get('theater_id');
+                    if (!currentTheaterId && typeof theaterId !== 'undefined' && theaterId) {
+                        currentTheaterId = theaterId;
+                    }
+                    if (!currentTheaterId) {
+                        const pathParts = window.location.pathname.split('/').filter(Boolean);
+                        if (pathParts.length >= 2 && pathParts[0] === 'theaters') {
+                            currentTheaterId = pathParts[1];
+                        }
+                    }
+                    if (!currentTheaterId) {
+                        console.warn('Cannot fetch suggestions: theater_id missing.');
+                        if (!cachedSuggestions) {
+                            list.innerHTML = '<div style="font-size: 0.78rem; color: #cbd5e1;">Launch a theater to view suggestions.</div>';
+                        }
+                        return;
+                    }
+
+                    const response = await fetch(`/theaters/${encodeURIComponent(currentTheaterId)}/suggestions`);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    
+                    const newFingerprint = data.elements_fingerprint || '';
+                    const newSuggestions = data.suggestions || [];
+
+                    // Keep suggestions cached until elements update (fingerprint changes)
+                    if (!cachedSuggestions || newFingerprint !== cachedFingerprint) {
+                        cachedSuggestions = newSuggestions;
+                        cachedFingerprint = newFingerprint;
+                    }
+                    renderSuggestions(cachedSuggestions);
+                } catch (err) {
+                    console.error('Failed to load suggestions:', err);
+                    if (!cachedSuggestions) {
+                        list.innerHTML = '<div style="font-size: 0.78rem; color: #ef4444;">Unable to generate suggestions at this time.</div>';
+                    }
+                } finally {
+                    isFetching = false;
+                    loading.style.display = 'none';
+                    list.style.display = 'flex';
+                }
+            }
+
+            btn.addEventListener('mouseenter', () => {
+                btn.classList.add('expanded');
+                triggerSuggestionsFetch();
+            });
+
+            btn.addEventListener('mouseleave', () => {
+                btn.classList.remove('expanded');
+            });
+        })();
+
+
         let startAudioRecorderWorklet;
+
         let stopMicrophone;
         let listenForSpeech;
         import(`/static/js/audio-recorder.js?cache_bust=${Date.now()}`)
@@ -2874,6 +3131,7 @@
 
         // Initialize UI based on role
         const backBtn = document.getElementById('back-btn');
+        const suggestionsToggleBtn = document.getElementById('suggestions-toggle-btn');
         if (isOrator) {
             if (backBtn) backBtn.href = '/deploy';
             roleBadge.textContent = 'Orator';
@@ -2883,6 +3141,7 @@
             roleToggleBtn.textContent = 'Switch to Viewer';
             oratorControls.style.display = 'flex';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
+            if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
             if (collabSection) collabSection.style.display = 'flex';
             if (hideSuggestionsBtn) {
                 hideSuggestionsBtn.style.display = 'inline-flex';
@@ -2901,6 +3160,7 @@
             roleToggleBtn.textContent = 'Switch to Orator';
             oratorControls.style.display = 'none';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
+            if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
             if (collabSection) collabSection.style.display = 'none';
             if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
             if (viewerCollabGuideBtn) {
@@ -2913,6 +3173,7 @@
             }
             statusIndicator.classList.remove('disconnected'); // Viewer always green/default
         }
+
 
         // Theater ownership verification for Orator controls
         const activetheaterId = urlParams.get('theater_id');
@@ -3026,6 +3287,7 @@
                 roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
                 roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
                 oratorControls.style.display = 'flex';
+                if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
                 if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
                     statusIndicator.classList.add('disconnected');
                 }
@@ -3035,10 +3297,12 @@
                 roleBadge.style.background = 'rgba(99, 102, 241, 0.2)';
                 roleBadge.style.borderColor = 'rgba(99, 102, 241, 0.4)';
                 oratorControls.style.display = 'none';
+                if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
                 // Keep the live agent socket alive through baton transfers.
                 // The server ignores input from anyone who no longer holds it.
                 if (isRecording) stopMicStream();
             }
+
 
             // Check pending request targeting local user
             if (batonState.baton_request && currentUser && batonState.baton_request.target_user_id === currentUser.id) {

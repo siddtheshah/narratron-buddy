@@ -635,3 +635,43 @@ def test_export_theater_requires_the_registry_deployment_owner():
         theaters.export_theater_assets("stage", MagicMock())
     assert error.value.status_code == 403
 
+
+@pytest.mark.asyncio
+async def test_get_theater_suggestions_endpoint():
+    mock_agent_mgr = MagicMock()
+    mock_session = MagicMock()
+    mock_named_element_tools = MagicMock()
+    mock_named_element_tools.get_present_elements.return_value = [
+        {"name": "hero", "content": "Mara, a bold cartographer"}
+    ]
+    mock_session.named_element_tools = mock_named_element_tools
+    mock_agent_mgr.get_session.return_value = mock_session
+
+    mock_suggestion_svc = MagicMock()
+    mock_suggestion_res = MagicMock()
+    mock_item = MagicMock()
+    mock_item.model_dump.return_value = {
+        "title": "Explore Ruins",
+        "description": "Find an ancient map.",
+        "category": "Action"
+    }
+    mock_suggestion_res.suggestions = [mock_item]
+    mock_suggestion_svc.generate_suggestions.return_value = (mock_suggestion_res, "mock_fp")
+
+    with patch.object(theaters, "_require_canvas_access"), \
+         patch.object(theaters, "_safe_path_param"), \
+         patch.object(object_registry, "agent_manager", mock_agent_mgr), \
+         patch.object(object_registry, "suggestion_service", mock_suggestion_svc):
+
+        request = MagicMock()
+        res = await theaters.get_theater_suggestions("stage", request)
+
+        assert "suggestions" in res
+        assert len(res["suggestions"]) == 1
+        assert res["suggestions"][0]["title"] == "Explore Ruins"
+        assert res["elements_fingerprint"] == "mock_fp"
+
+
+
+
+

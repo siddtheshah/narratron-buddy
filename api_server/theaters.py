@@ -26,12 +26,13 @@ from api_server.shared import (
     _valid_join_key,
     PROJECT_ROOT
 )
-from api_server.dependencies import agent_manager
+from api_server.dependencies import agent_manager, suggestion_service
 from components.theater_manager import TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
 
 
 logger = logging.getLogger(__name__)
+
 
 
 async def _sync_agent_controller(theater_id: str, baton_state: dict) -> None:
@@ -631,3 +632,30 @@ def export_theater_assets(theater_id: str, request: Request):
         "Content-Disposition": f'attachment; filename="{theater_id}_assets.zip"'
     }
     return Response(content=zip_buffer.getvalue(), media_type="application/zip", headers=headers)
+
+
+@app.get("/theaters/{theater_id}/suggestions")
+@app.get("/api/theaters/{theater_id}/suggestions")
+async def get_theater_suggestions(theater_id: str, request: Request):
+    """Generate structured scene suggestions based on present named elements from NamedElementTool."""
+    _require_canvas_access(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+
+    session = agent_manager.get_session(theater_id)
+    named_elements = []
+    if session and hasattr(session, "named_element_tools") and session.named_element_tools:
+        if hasattr(session.named_element_tools, "get_present_elements"):
+            named_elements = session.named_element_tools.get_present_elements()
+
+    force_refresh = request.query_params.get("refresh") in ("true", "1")
+    res, fingerprint = suggestion_service.generate_suggestions(
+        named_elements=named_elements,
+        theater_id=theater_id,
+        force_refresh=force_refresh,
+    )
+    return {
+        "suggestions": [item.model_dump() for item in res.suggestions],
+        "elements_fingerprint": fingerprint,
+    }
+
+
