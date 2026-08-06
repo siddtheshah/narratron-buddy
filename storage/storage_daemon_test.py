@@ -57,6 +57,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
     def test_database_daemon_cleanup_and_charge_accrual(self):
         user = self.db.register_user("owner", "owner@example.com", "Password123")
         user_id = user["id"]
+        self.db.add_user_credits(user_id, 100.0, 5.0)
 
         now = datetime.datetime.now(datetime.timezone.utc)
         old_time = (now - datetime.timedelta(days=10)).isoformat()
@@ -163,6 +164,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
     def test_run_once_accrues_persistent_charges(self):
         user = self.db.register_user("persistent_user", "per@example.com", "Password123")
         user_id = user["id"]
+        self.db.add_user_credits(user_id, 100.0, 5.0)
 
         theater_meta = self.theater_manager.create_theater("Persistent Theater", "theater_daemon_2")
         self.db.record_deployment("theater_daemon_2", user_id, theater_meta.join_key, cost=0.0, is_persistent=True)
@@ -194,6 +196,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         )
         user = self.db.register_user("pricing_user", "pricing@example.com", "Password123")
         user_id = user["id"]
+        self.db.add_user_credits(user_id, 100.0, 5.0)
 
         theater_meta = self.theater_manager.create_theater("Pricing Theater", "theater_pricing_1")
         self.db.record_deployment("theater_pricing_1", user_id, theater_meta.join_key, cost=0.0, is_persistent=True)

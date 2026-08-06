@@ -104,6 +104,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_canvas_page(self):
         owner = db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")
+        db.add_user_credits(owner["id"], 50.0, 2.5)
         self.assertTrue(db.record_deployment("test_theater", owner["id"], "KEY-CANVAS", cost=5.0))
 
         response = self.client.get("/canvas?theater_id=test_theater")
@@ -122,6 +123,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_canvas_data_endpoints_require_canvas_access(self):
         owner = db.register_user("canvas_api_owner", "canvas-api-owner@example.com", "Password123")
+        db.add_user_credits(owner["id"], 50.0, 2.5)
         self.assertTrue(db.record_deployment("protected_theater", owner["id"], "KEY-PROTECTED", cost=5.0))
 
         self.assertEqual(
@@ -139,6 +141,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_theater_config_api_get_and_post(self):
         owner = db.register_user("config_owner", "config-owner@example.com", "Password123")
+        db.add_user_credits(owner["id"], 50.0, 2.5)
         self.assertTrue(db.record_deployment("config_theater", owner["id"], "KEY-CONFIG", cost=5.0))
 
         # Access canvas to grant canvas_access cookie
@@ -513,9 +516,9 @@ class TestTheaterAPI(BaseTestCase):
         })
         self.assertEqual(reg_res.status_code, 200)
 
-        # Initial balance (25.0)
+        # Initial balance (0.0)
         me_res = self.client.get("/api/auth/me")
-        self.assertEqual(me_res.json()["user"]["credits"], 25.0)
+        self.assertEqual(me_res.json()["user"]["credits"], 0.0)
 
         # 3. Invalid / missing card -> 400 Bad Request
         bad_card_res = self.client.post("/api/payments/buy-credits", json={
@@ -547,7 +550,7 @@ class TestTheaterAPI(BaseTestCase):
         buy_data = buy_res.json()
         self.assertEqual(buy_data["status"], "ok")
         self.assertEqual(buy_data["credits_added"], 400.0)
-        self.assertEqual(buy_data["user"]["credits"], 425.0)
+        self.assertEqual(buy_data["user"]["credits"], 400.0)
 
         # 6. Check payment history endpoint
         hist_res = self.client.get("/api/payments/history")
