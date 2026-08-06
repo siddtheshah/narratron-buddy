@@ -41,12 +41,13 @@ class NamedElementTools(BaseTools):
 
         with self._elements_lock:
             is_update = clean_name in self._elements
-            if not is_update and len(self._elements) >= MAX_NAMED_ELEMENTS:
-                return (
-                    f"Error: The scene already has {MAX_NAMED_ELEMENTS} named elements. "
-                    "Update an existing element or call clear_scene first."
-                )
-            self._elements[clean_name] = clean_content
+            if is_update:
+                self._elements[clean_name] = clean_content
+                self._elements.move_to_end(clean_name)
+            else:
+                if len(self._elements) >= MAX_NAMED_ELEMENTS:
+                    self._elements.popitem(last=False)
+                self._elements[clean_name] = clean_content
 
         action = "Updated" if is_update else "Added"
         return f"{action} named element '{clean_name}'."
