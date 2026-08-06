@@ -42,11 +42,6 @@ COPY pricing/ pricing/
 COPY playlists/ playlists/
 COPY reference_library/ reference_library/
 
-# Run as non-root for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app /mnt/storage/theaters
-USER appuser
-
 EXPOSE 8080
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
