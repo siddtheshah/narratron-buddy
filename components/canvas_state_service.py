@@ -108,6 +108,11 @@ class CanvasStateService:
     def set_viewer_collab_enabled(self, enabled: bool, theater_id: Optional[str] = None) -> None:
         self.get(theater_id).set_viewer_collab_enabled(enabled)
 
+    def get_named_elements(self, theater_id: Optional[str] = None) -> list[dict[str, str]]:
+        return self.get(theater_id).get_named_elements()
+
+    def set_named_elements(self, elements: list[dict[str, str]], theater_id: Optional[str] = None) -> None:
+        self.get(theater_id).set_named_elements(elements)
 
     async def connect_doodle_websocket(
         self, websocket: WebSocket, theater_id: Optional[str] = None, user: Optional[dict] = None
@@ -129,7 +134,6 @@ class CanvasStateService:
             "active_viewers": state.get_active_viewers(),
         }
         await state.broadcast_ws_message(payload)
-
 
     async def apply_doodle_message(
         self,

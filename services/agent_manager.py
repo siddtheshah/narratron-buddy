@@ -455,7 +455,7 @@ class AgentSession:
 
     async def add_websocket(self, websocket: WebSocket, user_id: Optional[int] = None):
         async with self.ws_lock:
-            was_disconnected = len(self.websockets) == 0
+            was_disconnected = len(self.websockets) == 0 or self.status == "stopped"
             self.websockets.add(websocket)
             self.websocket_user_ids[websocket] = user_id
             self.status = "active"
@@ -589,6 +589,17 @@ class AgentSession:
                 logger.debug(f"[AgentSession] Could not fetch deployment owner: {e}")
         return self.owner_user_id
 
+    def save_named_elements_to_session_state(self):
+        """Save named elements snapshot to canvas state / session state when agent connection drops."""
+        if self.named_element_tools:
+            if hasattr(self.named_element_tools, "save_to_session_state"):
+                self.named_element_tools.save_to_session_state()
+            elif hasattr(self.named_element_tools, "get_present_elements") and self.canvas_state_manager:
+                if hasattr(self.canvas_state_manager, "set_named_elements"):
+                    self.canvas_state_manager.set_named_elements(
+                        self.named_element_tools.get_present_elements()
+                    )
+
     async def remove_websocket(self, websocket: WebSocket):
         async with self.ws_lock:
             self.websockets.discard(websocket)
@@ -600,6 +611,7 @@ class AgentSession:
             logger.info(f"[AgentSession] WebSocket detached from session {self.theater_id} (remaining={len(self.websockets)})")
             if is_now_disconnected:
                 logger.info(f"[AgentSession] User disconnected for session {self.theater_id}; inputs are now suppressed.")
+                self.save_named_elements_to_session_state()
         self.flush_usage_to_db()
 
     async def broadcast_text(self, text: str):
@@ -617,6 +629,7 @@ class AgentSession:
     def close(self):
         """Close LiveRequestQueue and cancel background tasks."""
         self.status = "stopped"
+        self.save_named_elements_to_session_state()
         self.flush_usage_to_db()
         if self.downstream_task and not self.downstream_task.done():
             self.downstream_task.cancel()

@@ -417,6 +417,26 @@ class TestAgentSessionManager(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_remove_websocket_saves_named_elements_to_session_state(self):
+        async def run_test():
+            session = AgentSession.__new__(AgentSession)
+            session.theater_id = "theater_drop"
+            session.ws_lock = asyncio.Lock()
+            session.websockets = set()
+            session.websocket_user_ids = {}
+            session.flush_usage_to_db = MagicMock()
+
+            mock_ws = MagicMock()
+            session.websockets.add(mock_ws)
+
+            mock_named_element_tools = MagicMock()
+            session.named_element_tools = mock_named_element_tools
+
+            await session.remove_websocket(mock_ws)
+
+            mock_named_element_tools.save_to_session_state.assert_called_once()
+
+        asyncio.run(run_test())
 
 
 if __name__ == "__main__":

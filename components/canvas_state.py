@@ -51,6 +51,9 @@ class CanvasStateManager:
         # is fed to the Narratron agent on each observability cycle.
         self.viewer_collab_enabled: bool = False
 
+        # Named elements context
+        self.named_elements: List[Dict[str, str]] = []
+
         # Transient agent tool activity. This is intentionally not persisted: a
         # reconnect should not show an activity indicator left over from a
         # previous server process.
@@ -92,6 +95,7 @@ class CanvasStateManager:
                     self.doodles_state = c_state.get("doodles", [])
                     self.doodles_enabled = c_state.get("doodles_enabled", True)
                     self.viewer_collab_enabled = c_state.get("viewer_collab_enabled", False)
+                    self.named_elements = c_state.get("named_elements", [])
                     chat_msgs = c_state.get("chat_messages", [])
                     if chat_msgs:
                         self.chat_manager.messages = chat_msgs
@@ -99,6 +103,15 @@ class CanvasStateManager:
                     logger.info(f"Loaded canvas state from {target_file.name} for theater '{self.theater_id}'.")
             except Exception as e:
                 logger.warning(f"Failed to load canvas state for {self.theater_id}: {e}")
+
+    def get_named_elements(self) -> List[Dict[str, str]]:
+        return list(self.named_elements)
+
+    def set_named_elements(self, elements: List[Dict[str, str]]):
+        self.named_elements = list(elements or [])
+        sess_dir = self.theater.directory()
+        if sess_dir.exists():
+            self.export_theater_data(theater_dir=sess_dir)
 
     def update_current_playlist(self, playlist_name: str, tracks: List[str]):
         self.current_playlist = playlist_name
@@ -463,6 +476,7 @@ class CanvasStateManager:
             "doodles": list(self.doodles_state),
             "doodles_enabled": self.doodles_enabled,
             "viewer_collab_enabled": self.viewer_collab_enabled,
+            "named_elements": list(self.named_elements),
             "suggestions": self.chat_manager.export_suggestions(),
             "chat_messages": self.chat_manager.get_messages(),
         }

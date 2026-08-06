@@ -646,6 +646,13 @@ async def get_theater_suggestions(theater_id: str, request: Request):
     if session and hasattr(session, "named_element_tools") and session.named_element_tools:
         if hasattr(session.named_element_tools, "get_present_elements"):
             named_elements = session.named_element_tools.get_present_elements()
+    if not named_elements and canvas_state_service:
+        try:
+            mgr = canvas_state_service.get(theater_id)
+            if hasattr(mgr, "get_named_elements"):
+                named_elements = mgr.get_named_elements()
+        except Exception:
+            pass
 
     force_refresh = request.query_params.get("refresh") in ("true", "1")
     res, fingerprint = suggestion_service.generate_suggestions(

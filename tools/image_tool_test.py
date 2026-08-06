@@ -476,7 +476,7 @@ class TestImageTools(BaseTestCase):
         tools.join_generation()
         self.assertEqual(
             mock_client_instance.models.generate_content.call_args.kwargs["model"],
-            "gemini-3.1-flash-image"
+            "gemini-3.1-flash-lite-image"
         )
 
     @patch("tools.image_tool.genai.Client")

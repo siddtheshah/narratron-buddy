@@ -54,3 +54,20 @@ class TestNamedElementTools(unittest.TestCase):
         self.tools.upsert_named_element("hero", "Mara")
         self.assertEqual(self.tools.clear_scene(), "Cleared 1 named element(s) from the scene.")
         self.assertEqual(self.tools.get_present_elements(), [])
+
+    def test_session_state_save_and_reload(self):
+        import unittest.mock
+        mock_canvas_service = unittest.mock.MagicMock()
+        mock_canvas_state = unittest.mock.MagicMock()
+        mock_canvas_state.get_named_elements.return_value = []
+        mock_canvas_service.get.return_value = mock_canvas_state
+
+        tools1 = NamedElementTools(theater_id="stage_1", canvas_state_service=mock_canvas_service)
+        tools1.upsert_named_element("hero", "Mara")
+        mock_canvas_state.set_named_elements.assert_called_with([{"name": "hero", "content": "Mara"}])
+
+        # Simulate saved elements in session state for reloading
+        mock_canvas_state.get_named_elements.return_value = [{"name": "hero", "content": "Mara"}]
+        tools2 = NamedElementTools(theater_id="stage_1", canvas_state_service=mock_canvas_service)
+        self.assertEqual(tools2.get_present_elements(), [{"name": "hero", "content": "Mara"}])
+
