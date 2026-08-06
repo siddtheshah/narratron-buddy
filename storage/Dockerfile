@@ -26,11 +26,11 @@ COPY utils/ utils/
 COPY storage/ storage/
 
 # Default directories for theaters data if using local storage
-RUN mkdir -p /tmp/theaters
+RUN mkdir -p /tmp
 
 # Run as non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app /tmp/theaters
+RUN chown -R appuser:appuser /app /tmp
 USER appuser
 
 # Environment default parameters

@@ -23,7 +23,7 @@ MAX_ZIP_BYTES = 10 * 1024 * 1024
 flags.DEFINE_boolean(
     "use_cloud_theater_storage",
     False,
-    "Store theater files under /tmp/theaters instead of the workspace theaters directory.",
+    "Store theater files under /mnt/storage/theaters instead of the workspace theaters directory.",
 )
 
 FLAGS = flags.FLAGS

@@ -38,16 +38,13 @@ COPY templates/ templates/
 COPY static/ static/
 COPY pricing/ pricing/
 
-# Cloud Run theater data is intentionally ephemeral and stored under /tmp.
-RUN mkdir -p /tmp/theaters output playlists reference_library
-
 # Copy default playlist and reference library assets that are checked in
 COPY playlists/ playlists/
 COPY reference_library/ reference_library/
 
 # Run as non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app /tmp/theaters
+RUN chown -R appuser:appuser /app /mnt/storage/theaters
 USER appuser
 
 EXPOSE 8080
