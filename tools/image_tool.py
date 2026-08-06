@@ -69,8 +69,9 @@ class ImageTools(BaseTools):
         self.currently_displayed_image_transition: str = "crossfade"
         self.currently_displayed_image_effect: str = "gleam3"
 
-        self.simple_model = config.get("image_generation", {}).get("simple_model", "gemini-3.1-flash-lite-image")
-        self.reference_model = config.get("image_generation", {}).get("reference_model", "gemini-3.1-flash-image")
+        # Can be hardcoded for now.
+        self.simple_model = "gemini-3.1-flash-lite-image"  
+        self.reference_model = "gemini-3.1-flash-lite-image"
 
         # In-memory mapping of custom image names/aliases to file paths
         self.image_aliases: Dict[str, str] = {}

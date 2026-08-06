@@ -15,4 +15,3 @@ agent_internal:
     compaction:
         trigger_tokens: 20000
         target_tokens: 8000
-

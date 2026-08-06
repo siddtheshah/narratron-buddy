@@ -2503,12 +2503,24 @@
                     body: formData,
                 });
 
-                const result = await response.json();
+                let result = {};
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        result = await response.json();
+                    } catch (e) {
+                        result = {};
+                    }
+                } else {
+                    const text = await response.text();
+                    result = { detail: text || response.statusText || `Server error (${response.status})` };
+                }
+
                 if (response.ok && result.theater_id) {
                     await checkAuthStatus();
                     window.location.href = `/canvas?theater_id=${encodeURIComponent(result.theater_id)}&role=orator`;
                 } else {
-                    alert('Error deploying theater: ' + (result.detail || 'Unknown error'));
+                    alert('Error deploying theater: ' + (result.detail || `Server error (${response.status})`));
                 }
             } catch (err) {
                 console.error(err);
