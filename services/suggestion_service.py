@@ -96,6 +96,7 @@ class SuggestionService:
             "You are a fast narrative assistant for live storytelling. "
             "Based on the given scene elements (characters, locations, items, tone), generate 3 concise, creative suggestions."
             "Your suggestions MUST include a new scene element, such as a setting shift, plot twist, character, or action on screen."
+            "Your suggestions should not be longer than 10 words. Avoid long prose, convey ideas directly."
         )
 
         response = client.models.generate_content(

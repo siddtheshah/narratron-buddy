@@ -44,5 +44,9 @@
 
 ## Major bugs
 
-- [ ] Network errors connecting to the database from the hosted app.
+
 - [ ] Agent reconnect requires an additional stop/start cycle.
+
+## Multiplayer
+
+- [ ] Fix doodle network usage. Use stroke based.

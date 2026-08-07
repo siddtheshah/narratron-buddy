@@ -26,7 +26,7 @@ from api_server.shared import (
     _valid_join_key,
     PROJECT_ROOT
 )
-from api_server.dependencies import agent_manager, suggestion_service
+from api_server.dependencies import agent_manager, suggestion_service, canvas_states
 from components.theater_manager import TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
 
@@ -646,9 +646,9 @@ async def get_theater_suggestions(theater_id: str, request: Request):
     if session and hasattr(session, "named_element_tools") and session.named_element_tools:
         if hasattr(session.named_element_tools, "get_present_elements"):
             named_elements = session.named_element_tools.get_present_elements()
-    if not named_elements and canvas_state_service:
+    if not named_elements and canvas_states:
         try:
-            mgr = canvas_state_service.get(theater_id)
+            mgr = canvas_states.get(theater_id)
             if hasattr(mgr, "get_named_elements"):
                 named_elements = mgr.get_named_elements()
         except Exception:
