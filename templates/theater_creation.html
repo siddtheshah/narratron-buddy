@@ -837,6 +837,30 @@
             display: none;
         }
 
+        .acknowledgement-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 0.85rem;
+            margin: 0.75rem 0;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: var(--radius-sm);
+            background: rgba(15, 23, 42, 0.45);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.45;
+            cursor: pointer;
+        }
+
+        .acknowledgement-option input {
+            width: 17px;
+            height: 17px;
+            margin-top: 0.15rem;
+            accent-color: var(--accent-primary);
+            flex: 0 0 auto;
+            cursor: pointer;
+        }
+
         /* Advanced Configuration Expandable Accordion */
         details.advanced-config-accordion {
             background: rgba(15, 23, 42, 0.55);
@@ -1297,6 +1321,29 @@
         </div>
     </main>
 
+    <!-- First-time deployment acknowledgement -->
+    <div class="modal-overlay" id="deploymentAcknowledgementModal" role="dialog" aria-modal="true"
+        aria-labelledby="deploymentAcknowledgementTitle">
+        <div class="modal-card" style="max-width: 500px;">
+            <h3 id="deploymentAcknowledgementTitle" style="margin-bottom: 0.5rem;">Before you deploy</h3>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin-bottom: 1rem;">
+                Please confirm that you will use Narratron responsibly.
+            </p>
+            <label class="acknowledgement-option" for="safeContentAcknowledgement">
+                <input type="checkbox" id="safeContentAcknowledgement">
+                <span>I will not use Narratron to generate explicit or unsafe content.</span>
+            </label>
+            <label class="acknowledgement-option" for="referenceRightsAcknowledgement">
+                <input type="checkbox" id="referenceRightsAcknowledgement">
+                <span>I have the necessary rights to use any reference data or assets I provide.</span>
+            </label>
+            <button class="btn btn-primary" id="deploymentAcknowledgementButton" style="width: 100%; margin-top: 0.75rem;"
+                onclick="acceptDeploymentAcknowledgement()" disabled>
+                I Understand &amp; Agree
+            </button>
+        </div>
+    </div>
+
     <!-- Auth Modal -->
     <div class="modal-overlay" id="authModal">
         <div class="modal-card">
@@ -1675,6 +1722,36 @@
         let currentUser = null;
         let refFiles = [];
         let playlistsData = {};
+        const deploymentAcknowledgementStorageKey = 'narratron.deployAcknowledgement.v1';
+
+        function hasDeploymentAcknowledgement() {
+            return localStorage.getItem(deploymentAcknowledgementStorageKey) === 'accepted';
+        }
+
+        function updateDeploymentAcknowledgementButton() {
+            const safeContent = document.getElementById('safeContentAcknowledgement')?.checked;
+            const referenceRights = document.getElementById('referenceRightsAcknowledgement')?.checked;
+            const button = document.getElementById('deploymentAcknowledgementButton');
+            if (button) button.disabled = !(safeContent && referenceRights);
+        }
+
+        function showDeploymentAcknowledgement() {
+            if (!hasDeploymentAcknowledgement()) {
+                document.getElementById('deploymentAcknowledgementModal')?.classList.add('active');
+            }
+        }
+
+        function acceptDeploymentAcknowledgement() {
+            const safeContent = document.getElementById('safeContentAcknowledgement')?.checked;
+            const referenceRights = document.getElementById('referenceRightsAcknowledgement')?.checked;
+            if (!safeContent || !referenceRights) return;
+
+            localStorage.setItem(deploymentAcknowledgementStorageKey, 'accepted');
+            document.getElementById('deploymentAcknowledgementModal')?.classList.remove('active');
+        }
+
+        document.getElementById('safeContentAcknowledgement')?.addEventListener('change', updateDeploymentAcknowledgementButton);
+        document.getElementById('referenceRightsAcknowledgement')?.addEventListener('change', updateDeploymentAcknowledgementButton);
 
         // Auth status checking
         async function checkAuthStatus() {
@@ -2442,6 +2519,11 @@
 
         // Deploy Theater
         async function deployNewTheater() {
+            if (!hasDeploymentAcknowledgement()) {
+                showDeploymentAcknowledgement();
+                return;
+            }
+
             if (!currentUser) {
                 openAuthModal('login');
                 return;
@@ -2822,6 +2904,7 @@
         async function initPage() {
             playlistsData['default'] = [];
             renderPlaylists();
+            showDeploymentAcknowledgement();
             await checkAuthStatus();
             await loadTheaters();
             checkResetTokenInURL();
