@@ -197,7 +197,9 @@ async def get_theater(theater_id: str, request: Request):
 
     meta_dict = meta.model_dump()
     meta_dict["is_owner"] = is_owner
-    if not is_owner:
+    if dep and dep.get("join_key"):
+        meta_dict["join_key"] = dep["join_key"]
+    elif not is_owner:
         meta_dict["join_key"] = "🔒 Owner Only"
 
     return {

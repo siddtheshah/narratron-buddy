@@ -1553,14 +1553,11 @@
                 </button>
             </div>
 
-            <!-- Role Indicator & Toggle (Orator switch) -->
+            <!-- Role Indicator -->
             <div id="role-container"
                 style="margin-left: 1rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
                 <span id="role-badge"
                     style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.4);">Viewer</span>
-                <button id="role-toggle-btn"
-                    style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit;">Switch
-                    to Orator</button>
             </div>
 
             <!-- Baton status and controls -->
@@ -3112,7 +3109,6 @@
         const isOrator = urlParams.get('role') === 'orator';
 
         const roleBadge = document.getElementById('role-badge');
-        const roleToggleBtn = document.getElementById('role-toggle-btn');
         const oratorControls = document.getElementById('orator-controls');
         const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
         const agentConnectBtn = document.getElementById('agent-connect-btn');
@@ -3175,7 +3171,6 @@
             roleBadge.style.color = '#f97316';
             roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
             roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
-            roleToggleBtn.textContent = 'Switch to Viewer';
             oratorControls.style.display = 'flex';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
             if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
@@ -3194,7 +3189,6 @@
         } else {
             if (backBtn) backBtn.href = '/';
             roleBadge.textContent = 'Viewer';
-            roleToggleBtn.textContent = 'Switch to Orator';
             oratorControls.style.display = 'none';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
             if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
@@ -3221,7 +3215,6 @@
                     if (data && data.metadata) {
                         const isOwner = data.metadata.is_owner;
                         if (!isOwner) {
-                            roleToggleBtn.style.display = 'none';
                             if (isOrator) {
                                 alert("🔒 Only the theater owner can become the Orator.");
                                 const params = new URLSearchParams(window.location.search);
@@ -3233,17 +3226,6 @@
                 })
                 .catch(err => console.error("Error checking theater ownership:", err));
         }
-
-        roleToggleBtn.addEventListener('click', () => {
-            const params = new URLSearchParams(window.location.search);
-            if (isOrator) {
-                params.delete('role');
-            } else {
-                params.set('role', 'orator');
-            }
-            const query = params.toString();
-            window.location.search = query ? `?${query}` : '';
-        });
 
         // ========================================
         // Baton Passing & Co-Orator Management JS
@@ -3307,12 +3289,7 @@
             if (menuTakeBackBatonBtn) {
                 menuTakeBackBatonBtn.style.display = (isOwner && !isActiveOrator) ? 'inline-flex' : 'none';
             }
-            // A baton transfer makes the owner a viewer.  Returning to the
-            // viewer URL is redundant and can cause an unnecessary reload;
-            // use "Take Back Baton" to become the active orator again.
-            if (roleToggleBtn) {
-                roleToggleBtn.style.display = isActiveOrator ? 'inline-flex' : 'none';
-            }
+
 
             const wasActiveOrator = window._isActiveOratorState;
             window._isActiveOratorState = isActiveOrator;
@@ -3600,13 +3577,33 @@
 
         const obsTheaterBtn = document.getElementById('obs-theater-btn');
         if (obsTheaterBtn) {
-            obsTheaterBtn.addEventListener('click', () => {
+            obsTheaterBtn.addEventListener('click', async () => {
                 const currentUrl = new URL(window.location.href);
                 const obsUrl = new URL('/obs', window.location.origin);
                 // Copy all search params (theater_id, join_key, role)
                 currentUrl.searchParams.forEach((val, key) => {
                     obsUrl.searchParams.set(key, val);
                 });
+
+                if (theaterId && !obsUrl.searchParams.get('theater_id')) {
+                    obsUrl.searchParams.set('theater_id', theaterId);
+                }
+
+                if (!obsUrl.searchParams.get('join_key') && theaterId) {
+                    try {
+                        const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            const joinKey = data && data.metadata && data.metadata.join_key;
+                            if (joinKey && !joinKey.includes('Owner')) {
+                                obsUrl.searchParams.set('join_key', joinKey);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to fetch theater join key for OBS link:', err);
+                    }
+                }
+
                 const obsLink = obsUrl.toString();
 
                 if (navigator.clipboard && navigator.clipboard.writeText) {
