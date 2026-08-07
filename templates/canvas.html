@@ -3170,7 +3170,7 @@
         const backBtn = document.getElementById('back-btn');
         const suggestionsToggleBtn = document.getElementById('suggestions-toggle-btn');
         if (isOrator) {
-            if (backBtn) backBtn.href = '/deploy';
+            if (backBtn) backBtn.href = '/deploy?from=canvas';
             roleBadge.textContent = 'Orator';
             roleBadge.style.color = '#f97316';
             roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
@@ -3729,7 +3729,7 @@
         }
 
         document.getElementById('credits-modal-deploy-btn')?.addEventListener('click', () => {
-            window.location.href = '/deploy';
+            window.location.href = '/deploy?from=canvas';
         });
         document.getElementById('credits-modal-dismiss-btn')?.addEventListener('click', hideInsufficientCreditsModal);
         document.getElementById('credits-modal-close-btn')?.addEventListener('click', hideInsufficientCreditsModal);
@@ -5031,7 +5031,7 @@
                             <span class="pullout-item-icon">🏠</span>
                             <span>Theater Launcher</span>
                         </a>
-                        <a href="/deploy" class="pullout-menu-item">
+                        <a href="/deploy?from=canvas" class="pullout-menu-item">
                             <span class="pullout-item-icon">🚀</span>
                             <span>Deploy & Manage Theaters</span>
                         </a>

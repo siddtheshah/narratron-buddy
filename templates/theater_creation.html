@@ -257,6 +257,33 @@
             margin: 0 auto;
         }
 
+        .canvas-return-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            max-width: 760px;
+            margin: 1.25rem auto 0;
+            padding: 0.8rem 1rem;
+            color: #dbeafe;
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(96, 165, 250, 0.35);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        .canvas-return-banner.visible {
+            display: flex;
+        }
+
+        @media (max-width: 600px) {
+            .canvas-return-banner {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+
         /* Grid Layout */
         .grid-container {
             display: grid;
@@ -987,6 +1014,11 @@
         <div class="hero">
             <h1>Theater & Asset Deployer</h1>
             <p>Deploy Canvas Instance with your own personal assets and custom styles.</p>
+            <div class="canvas-return-banner" id="canvasReturnBanner" role="status">
+                <span>Ready to make it your own? Try <strong>Configure with Assets</strong> to add reference images,
+                    playlists, and custom agent settings.</span>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="dismissCanvasReturnBanner()">Got it</button>
+            </div>
         </div>
 
         <div class="grid-container">
@@ -1723,6 +1755,7 @@
         let refFiles = [];
         let playlistsData = {};
         const deploymentAcknowledgementStorageKey = 'narratron.deployAcknowledgement.v1';
+        const canvasReturnSuggestionStorageKey = 'narratron.canvasReturnSuggestion.v1';
 
         function hasDeploymentAcknowledgement() {
             return localStorage.getItem(deploymentAcknowledgementStorageKey) === 'accepted';
@@ -1748,6 +1781,22 @@
 
             localStorage.setItem(deploymentAcknowledgementStorageKey, 'accepted');
             document.getElementById('deploymentAcknowledgementModal')?.classList.remove('active');
+        }
+
+        function dismissCanvasReturnBanner() {
+            document.getElementById('canvasReturnBanner')?.classList.remove('visible');
+        }
+
+        function showCanvasReturnSuggestion() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('from') !== 'canvas' || localStorage.getItem(canvasReturnSuggestionStorageKey)) return;
+
+            localStorage.setItem(canvasReturnSuggestionStorageKey, 'seen');
+            selectCreationPath('individual');
+            document.getElementById('canvasReturnBanner')?.classList.add('visible');
+            params.delete('from');
+            const query = params.toString();
+            window.history.replaceState({}, document.title, `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
         }
 
         document.getElementById('safeContentAcknowledgement')?.addEventListener('change', updateDeploymentAcknowledgementButton);
@@ -2905,6 +2954,7 @@
             playlistsData['default'] = [];
             renderPlaylists();
             showDeploymentAcknowledgement();
+            showCanvasReturnSuggestion();
             await checkAuthStatus();
             await loadTheaters();
             checkResetTokenInURL();
