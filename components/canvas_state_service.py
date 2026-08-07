@@ -121,8 +121,10 @@ class CanvasStateService:
         state = self.get(theater_id)
         state.register_websocket(websocket, user=user)
         await websocket.send_json({"type": "doodles_toggle", "enabled": state.doodles_enabled})
-        for action in state.doodles_state:
-            await websocket.send_json(action)
+        # One compact snapshot avoids a WebSocket frame and repeated style
+        # fields per historical segment. Persisted data stays in its original,
+        # backwards-compatible segment format.
+        await websocket.send_json({"type": "doodle_snapshot", "batches": state.get_doodle_snapshot_batches()})
         return state
 
     async def broadcast_baton_update(self, theater_id: str, baton_state: dict[str, Any]) -> None:
@@ -150,8 +152,45 @@ class CanvasStateService:
             )
             return
 
-        state.add_doodle(data)
-        await state.broadcast_ws_message(data, sender=sender)
+        if data.get("type") == "draw_batch":
+            color = data.get("color")
+            size = data.get("size", 3)
+            points = data.get("points")
+            if not isinstance(points, list) or len(points) < 4 or len(points) % 2 or len(points) > 400:
+                return
+            try:
+                points = [float(point) for point in points]
+                size = float(size)
+            except (TypeError, ValueError):
+                return
+            if not all(0 <= point <= 1 for point in points) or not 1 <= size <= 100:
+                return
+
+            actions = [
+                {
+                    "type": "draw", "x0": points[index], "y0": points[index + 1],
+                    "x1": points[index + 2], "y1": points[index + 3],
+                    "color": color, "size": size,
+                }
+                for index in range(0, len(points) - 2, 2)
+            ]
+            state.add_doodles(actions)
+            await state.broadcast_ws_message(
+                {"type": "draw_batch", "color": color, "size": size, "points": points},
+                sender=sender,
+            )
+            return
+
+        if data.get("type") == "clear":
+            state.add_doodle(data)
+            await state.broadcast_ws_message(data, sender=sender)
+            return
+
+        # Accept the pre-batching protocol during rolling deploys and from
+        # browser tabs that still have the previous canvas script loaded.
+        if data.get("type") == "draw":
+            state.add_doodle(data)
+            await state.broadcast_ws_message(data, sender=sender)
 
     async def toggle_microphone(self, theater_id: Optional[str] = None) -> int:
         """Ask connected canvas clients to toggle their microphone input."""

@@ -204,6 +204,26 @@
             } else if (data.type === 'clear') {
                 doodleActions = [];
                 redrawAllDoodles();
+            } else if (data.type === 'doodle_snapshot') {
+                doodleActions = [];
+                redrawAllDoodles();
+                (data.batches || []).forEach((batch) => {
+                    const points = batch.points || [];
+                    const rect = doodleCanvas.getBoundingClientRect();
+                    for (let index = 0; index < points.length - 2; index += 2) {
+                        const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: batch.color, size: batch.size || 3 };
+                        doodleActions.push(action);
+                        renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
+                    }
+                });
+            } else if (data.type === 'draw_batch') {
+                const points = data.points || [];
+                const rect = doodleCanvas.getBoundingClientRect();
+                for (let index = 0; index < points.length - 2; index += 2) {
+                    const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: data.color, size: data.size || 3 };
+                    doodleActions.push(action);
+                    renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
+                }
             } else if (data.type === 'draw') {
                 doodleActions.push(data);
                 if (doodleCanvas) {

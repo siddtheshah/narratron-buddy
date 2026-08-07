@@ -256,13 +256,41 @@ class CanvasStateManager:
                     pass
 
     def add_doodle(self, doodle: Dict[str, Any]):
-        if doodle.get("type") == "clear":
+        self.add_doodles([doodle])
+
+    def add_doodles(self, doodles: List[Dict[str, Any]]):
+        """Store a group of doodles and persist it with one disk write.
+
+        A browser sends several adjacent segments together, so persisting them
+        together also avoids rewriting theater.json for every pointer event.
+        """
+        if any(doodle.get("type") == "clear" for doodle in doodles):
             self.doodles_state.clear()
         else:
-            self.doodles_state.append(doodle)
+            self.doodles_state.extend(doodles)
         sess_dir = self.theater.directory()
         sess_dir.mkdir(parents=True, exist_ok=True)
         self.export_theater_data(theater_dir=sess_dir)
+
+    def get_doodle_snapshot_batches(self) -> List[Dict[str, Any]]:
+        """Encode persisted segments into compact, style-grouped stroke paths."""
+        batches: List[Dict[str, Any]] = []
+        for action in self.doodles_state:
+            if action.get("type") != "draw":
+                continue
+            try:
+                x0, y0 = action["x0"], action["y0"]
+                x1, y1 = action["x1"], action["y1"]
+            except KeyError:
+                continue
+            color = action.get("color")
+            size = action.get("size", 3)
+            if (batches and batches[-1]["color"] == color and batches[-1]["size"] == size
+                    and batches[-1]["points"][-2:] == [x0, y0]):
+                batches[-1]["points"].extend([x1, y1])
+            else:
+                batches.append({"color": color, "size": size, "points": [x0, y0, x1, y1]})
+        return batches
 
     def set_doodles_enabled(self, enabled: bool):
         self.doodles_enabled = bool(enabled)

@@ -2898,6 +2898,31 @@
 
         // Stores all active doodle stroke segments for replay across window resizes
         let doodleActions = [];
+        let pendingDrawBatch = null;
+        let drawBatchFrame = null;
+
+        function renderDoodleBatch(data) {
+            const points = data.points;
+            if (!Array.isArray(points) || points.length < 4) return;
+            const rect = canvas.getBoundingClientRect();
+            for (let index = 0; index < points.length - 2; index += 2) {
+                const action = {
+                    type: 'draw', x0: points[index], y0: points[index + 1],
+                    x1: points[index + 2], y1: points[index + 3],
+                    color: data.color, size: data.size || 3
+                };
+                doodleActions.push(action);
+                renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
+            }
+        }
+
+        function flushDrawBatch() {
+            drawBatchFrame = null;
+            if (!pendingDrawBatch) return;
+            const batch = pendingDrawBatch;
+            pendingDrawBatch = null;
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(batch));
+        }
 
         function setDoodlesDisplay(enabled) {
             doodlesEnabled = Boolean(enabled);
@@ -2961,6 +2986,12 @@
             } else if (data.type === 'clear') {
                 doodleActions = [];
                 redrawAllDoodles();
+            } else if (data.type === 'doodle_snapshot') {
+                doodleActions = [];
+                redrawAllDoodles();
+                (data.batches || []).forEach(renderDoodleBatch);
+            } else if (data.type === 'draw_batch') {
+                renderDoodleBatch(data);
             } else if (data.type === 'draw') {
                 doodleActions.push(data);
                 const rect = canvas.getBoundingClientRect();
@@ -2997,9 +3028,14 @@
 
             if (!emit) return;
 
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(action));
+            if (!pendingDrawBatch || pendingDrawBatch.color !== color || pendingDrawBatch.size !== size ||
+                pendingDrawBatch.points[pendingDrawBatch.points.length - 2] !== nx0 ||
+                pendingDrawBatch.points[pendingDrawBatch.points.length - 1] !== ny0) {
+                flushDrawBatch();
+                pendingDrawBatch = { type: 'draw_batch', color, size, points: [nx0, ny0] };
             }
+            pendingDrawBatch.points.push(nx1, ny1);
+            if (!drawBatchFrame) drawBatchFrame = requestAnimationFrame(flushDrawBatch);
         }
 
         function getNormalizedCoords(e) {
@@ -3028,8 +3064,8 @@
             lastNormY = coords.y;
         });
 
-        canvas.addEventListener('mouseup', () => isDrawing = false);
-        canvas.addEventListener('mouseout', () => isDrawing = false);
+        canvas.addEventListener('mouseup', () => { isDrawing = false; flushDrawBatch(); });
+        canvas.addEventListener('mouseout', () => { isDrawing = false; flushDrawBatch(); });
 
         // Touch support for tablets/mobile
         canvas.addEventListener('touchstart', (e) => {
@@ -3050,9 +3086,10 @@
             lastNormY = coords.y;
         }, { passive: false });
 
-        canvas.addEventListener('touchend', () => isDrawing = false);
+        canvas.addEventListener('touchend', () => { isDrawing = false; flushDrawBatch(); });
 
         clearBtn.addEventListener('click', () => {
+            flushDrawBatch();
             doodleActions = [];
             redrawAllDoodles();
             if (ws.readyState === WebSocket.OPEN) {

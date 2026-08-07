@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+import asyncio
 from pathlib import Path
 
 from PIL import Image
@@ -9,6 +10,15 @@ from PIL import Image
 from components.theater_manager import TheaterManager
 from testing.base import BaseTestCase
 from components.canvas_state import CanvasStateManager, MAX_AGENT_THOUGHT_LENGTH
+from components.canvas_state_service import CanvasStateService
+
+
+class RecordingWebSocket:
+    def __init__(self):
+        self.messages = []
+
+    async def send_json(self, message):
+        self.messages.append(message)
 
 class TestCanvasStateManager(BaseTestCase):
     def setUp(self):
@@ -89,8 +99,72 @@ class TestCanvasStateManager(BaseTestCase):
             with Image.open(__import__("io").BytesIO(snapshot)) as rendered:
                 self.assertGreater(rendered.getpixel((50, 50))[0], 150)
         finally:
-            if os.path.exists(image_path):
-                os.remove(image_path)
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+
+    def test_doodle_batch_is_persisted_as_segments_and_broadcast_once(self):
+        service = CanvasStateService(self.theater_manager)
+        state = service.get("batched_doodles")
+        sender = RecordingWebSocket()
+        recipient = RecordingWebSocket()
+        state.register_websocket(sender)
+        state.register_websocket(recipient)
+
+        asyncio.run(service.apply_doodle_message(state, {
+            "type": "draw_batch", "color": "#ffffff", "size": 3,
+            "points": [0.1, 0.1, 0.2, 0.2, 0.3, 0.3],
+        }, sender))
+
+        self.assertEqual(len(state.doodles_state), 2)
+        self.assertEqual(len(recipient.messages), 1)
+        self.assertEqual(recipient.messages[0]["type"], "draw_batch")
+        self.assertEqual(recipient.messages[0]["points"], [0.1, 0.1, 0.2, 0.2, 0.3, 0.3])
+        self.assertEqual(sender.messages, [])
+
+    def test_doodle_snapshot_groups_connected_segments_by_style(self):
+        manager = CanvasStateManager(theater_id="snapshot_batches", theater_manager=self.theater_manager)
+        manager.doodles_state = [
+            {"type": "draw", "x0": 0, "y0": 0, "x1": 0.1, "y1": 0.1, "color": "#fff", "size": 3},
+            {"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.2, "y1": 0.2, "color": "#fff", "size": 3},
+            {"type": "draw", "x0": 0.2, "y0": 0.2, "x1": 0.3, "y1": 0.3, "color": "#f00", "size": 3},
+        ]
+        self.assertEqual(manager.get_doodle_snapshot_batches(), [
+            {"color": "#fff", "size": 3, "points": [0, 0, 0.1, 0.1, 0.2, 0.2]},
+            {"color": "#f00", "size": 3, "points": [0.2, 0.2, 0.3, 0.3]},
+        ])
+
+    def test_doodle_websocket_receives_compact_snapshot(self):
+        service = CanvasStateService(self.theater_manager)
+        state = service.get("compact_snapshot")
+        state.doodles_state = [{
+            "type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1,
+            "color": "#fff", "size": 3,
+        }]
+        websocket = RecordingWebSocket()
+
+        asyncio.run(service.connect_doodle_websocket(websocket, "compact_snapshot"))
+
+        self.assertEqual(websocket.messages[1], {
+            "type": "doodle_snapshot",
+            "batches": [{"color": "#fff", "size": 3, "points": [0, 0, 1, 1]}],
+        })
+
+    def test_legacy_draw_message_still_reaches_other_clients(self):
+        service = CanvasStateService(self.theater_manager)
+        state = service.get("legacy_doodle")
+        sender = RecordingWebSocket()
+        recipient = RecordingWebSocket()
+        state.register_websocket(sender)
+        state.register_websocket(recipient)
+        action = {
+            "type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1,
+            "color": "#fff", "size": 3,
+        }
+
+        asyncio.run(service.apply_doodle_message(state, action, sender))
+
+        self.assertEqual(state.doodles_state, [action])
+        self.assertEqual(recipient.messages, [action])
 
     def test_shown_images_history_capping(self):
         manager = CanvasStateManager(theater_id="test_history_theater", theater_manager=self.theater_manager)
