@@ -259,6 +259,54 @@
       display: none;
     }
 
+    .host-theater-card {
+      width: 100%;
+      max-width: 480px;
+      margin: -24px 0 48px;
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      text-align: left;
+      background: rgba(139, 92, 246, 0.16);
+      border: 1px solid rgba(196, 181, 253, 0.4);
+      border-radius: var(--radius);
+      box-shadow: 0 12px 30px rgba(76, 29, 149, 0.18);
+    }
+
+    .host-theater-card h3 {
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .host-theater-card p {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .host-theater-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      padding: 10px 14px;
+      border-radius: 10px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    .host-theater-link:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
     .features-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -285,6 +333,11 @@
     @media (max-width: 640px) {
       .features-grid {
         grid-template-columns: 1fr;
+      }
+
+      .host-theater-card {
+        align-items: flex-start;
+        flex-direction: column;
       }
     }
 
@@ -349,6 +402,14 @@
       </div>
       <div id="errorMessage" class="error-msg"></div>
     </div>
+
+    <aside class="host-theater-card" aria-label="Host a theater">
+      <div>
+        <h3>Hosting a story instead?</h3>
+        <p>Create a theater, customize it, and invite your audience with a join key.</p>
+      </div>
+      <a href="/deploy" class="host-theater-link">Deploy a Theater →</a>
+    </aside>
 
     <div class="features-grid">
       <div class="feature-item">
