@@ -15,16 +15,19 @@ export function createImageRenderer({
     sizingElement = canvas?.parentElement,
     fadeDuration = 1500,
     loadedClassNames = ["loaded"],
+    fitMode = "contain",
 }) {
     const context = canvas?.getContext("2d");
     let currentImage = null;
     let activeAnimation = null;
     let imageEffectController = null;
 
-    function drawContainImage(sourceImage, width, height, opacity = 1) {
+    function drawScaledImage(sourceImage, width, height, opacity = 1) {
         if (!context || !sourceImage?.complete || sourceImage.naturalWidth === 0) return;
 
-        const scale = Math.min(width / sourceImage.naturalWidth, height / sourceImage.naturalHeight);
+        const scale = fitMode === "cover"
+            ? Math.max(width / sourceImage.naturalWidth, height / sourceImage.naturalHeight)
+            : Math.min(width / sourceImage.naturalWidth, height / sourceImage.naturalHeight);
         const drawWidth = sourceImage.naturalWidth * scale;
         const drawHeight = sourceImage.naturalHeight * scale;
 
@@ -38,14 +41,16 @@ export function createImageRenderer({
         if (!canvas || !context) return;
         const rect = canvas.getBoundingClientRect();
         context.clearRect(0, 0, rect.width, rect.height);
-        drawContainImage(sourceImage, rect.width, rect.height);
+        drawScaledImage(sourceImage, rect.width, rect.height);
     }
 
     function layoutImageEffect(sourceImage = image) {
         if (!imageEffectController || !canvas || !sourceImage?.naturalWidth) return;
 
         const rect = canvas.getBoundingClientRect();
-        const scale = Math.min(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight);
+        const scale = fitMode === "cover"
+            ? Math.max(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight)
+            : Math.min(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight);
         const width = sourceImage.naturalWidth * scale;
         const height = sourceImage.naturalHeight * scale;
         const frame = imageEffectController.element;
@@ -177,15 +182,15 @@ export function createImageRenderer({
 
         if (transition === "crossfade" && hasOldImage) {
             animate(2000, (progress) => {
-                drawContainImage(newImage, rect.width, rect.height);
-                drawContainImage(oldImage, rect.width, rect.height, 1 - progress);
+                drawScaledImage(newImage, rect.width, rect.height);
+                drawScaledImage(oldImage, rect.width, rect.height, 1 - progress);
             });
         } else if (transition === "none") {
             drawSingleImage(newImage);
             currentImage = newImage;
         } else {
             animate(fadeDuration, (progress) => {
-                drawContainImage(newImage, rect.width, rect.height, progress);
+                drawScaledImage(newImage, rect.width, rect.height, progress);
             });
         }
 

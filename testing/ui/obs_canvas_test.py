@@ -44,3 +44,10 @@ class TestOBSCanvas(UITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron OBS Canvas", response.text)
         self.assertNotIn('id="chat-sidebar"', response.text)
+
+    def test_canvas_includes_disconnected_indicator(self):
+        response = self.client.get("/canvas?theater_id=test_theater")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="agent-disconnected-indicator"', response.text)
+        self.assertIn('agentDisconnectedPulse', response.text)
+

@@ -968,6 +968,26 @@
             animation: livePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
 
+        .agent-activity-icon.disconnected {
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.7);
+            animation: agentDisconnectedPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            cursor: pointer;
+        }
+
+        @keyframes agentDisconnectedPulse {
+            0%,
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+            }
+
+            50% {
+                transform: scale(1.08);
+                box-shadow: 0 0 22px rgba(239, 68, 68, 0.85);
+            }
+        }
+
         @keyframes livePulse {
 
             0%,
@@ -1595,6 +1615,15 @@
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="m12 20 9-9" />
                         <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                </div>
+                <div id="agent-disconnected-indicator" class="agent-activity-icon disconnected" role="status"
+                    title="Narratron has wandered away (model disconnected). Click to resummon." aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
                     </svg>
                 </div>
             </div>
@@ -2501,6 +2530,16 @@
         const promptBtn = document.getElementById('prompt-toggle-btn');
         const pcmBroadcastIndicator = document.getElementById('pcm-broadcast-indicator');
         const drawingIndicator = document.getElementById('agent-drawing-indicator');
+        const disconnectedIndicator = document.getElementById('agent-disconnected-indicator');
+
+        if (disconnectedIndicator) {
+            disconnectedIndicator.addEventListener('click', () => {
+                const btn = document.getElementById('agent-connect-btn');
+                if (btn && !btn.disabled) {
+                    btn.click();
+                }
+            });
+        }
 
         function updateAgentActivity(toolActivity = {}) {
             const setVisible = (element, visible) => {
@@ -2874,6 +2913,10 @@
                 ? 'Narratron has wandered away. (Try resummoning?)'
                 : (text || 'Waiting for Narratron to think…');
             agentThoughtText.classList.toggle('is-wandering', isWandering);
+            if (disconnectedIndicator) {
+                disconnectedIndicator.classList.toggle('active', isWandering);
+                disconnectedIndicator.setAttribute('aria-hidden', String(!isWandering));
+            }
             lastAgentThought = text;
         }
 

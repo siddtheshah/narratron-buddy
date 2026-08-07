@@ -30,18 +30,6 @@
             user-select: none;
         }
 
-        /* Ambient blurred background layer */
-        #bg-layer {
-            position: absolute;
-            inset: 0;
-            background-size: cover;
-            background-position: center;
-            filter: blur(40px) brightness(0.3);
-            opacity: 0.8;
-            transition: background-image 1s ease-in-out;
-            z-index: 0;
-        }
-
         /* Main OBS Viewport Container */
         #image-container {
             position: absolute;
@@ -102,8 +90,6 @@
 
 <body>
 
-    <div id="bg-layer"></div>
-
     <div id="image-container">
         <canvas id="canvas-renderer"></canvas>
         <img id="current-image" src="" alt="Narratron Generation">
@@ -123,7 +109,6 @@
             }
         }
 
-        const bgLayer = document.getElementById('bg-layer');
         const rendererCanvas = document.getElementById('canvas-renderer');
         const doodleCanvas = document.getElementById('doodle-canvas');
         const currentImage = document.getElementById('current-image');
@@ -136,8 +121,8 @@
         const imageRenderer = createImageRenderer({
             canvas: rendererCanvas,
             image: currentImage,
-            backgroundLayer: bgLayer,
             fadeDuration: 1200,
+            fitMode: "cover",
         });
         const doodleRenderer = createDoodleRenderer({
             canvas: doodleCanvas,
