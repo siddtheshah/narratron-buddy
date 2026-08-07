@@ -112,6 +112,7 @@ class StorageDaemon:
                 elapsed += 1.0
 
         logger.info("storage_daemon stopped successfully.")
+        self.db.close()
 
 
 

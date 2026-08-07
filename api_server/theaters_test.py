@@ -56,6 +56,9 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(join_response.status_code, 200)
         self.assertIn("Join a Live Story Theater", join_response.text)
         self.assertIn('href="/about"', join_response.text)
+        self.assertIn('id="userAccountBar"', join_response.text)
+        self.assertIn("openAuthModal('login')", join_response.text)
+        self.assertIn("auth-flow.js", join_response.text)
 
     def test_deploy_page(self):
         response = self.client.get("/deploy")

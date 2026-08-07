@@ -176,6 +176,7 @@ class DatabaseManager:
         """Close the active cached database connection if open."""
         with self._connection_lock:
             if self._conn is not None:
+                logger.info("Closing active database connection.")
                 self._conn.close()
                 self._conn = None
             self._cached_db_path = None

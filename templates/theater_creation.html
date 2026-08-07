@@ -7,6 +7,8 @@
     <title>Narratron Buddy - Theater Deployer</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/auth-flow.css">
+    <script src="/static/js/auth-flow.js"></script>
     <style>
         :root {
             --bg-color: #0b0d12;
@@ -1013,11 +1015,12 @@
     <main>
         <div class="hero">
             <h1>Theater & Asset Deployer</h1>
-            <p>Deploy Canvas Instance with your own personal assets and custom styles.</p>
+            <p>Deploy a Theater with your own personal assets and custom styles.</p>
             <div class="canvas-return-banner" id="canvasReturnBanner" role="status">
                 <span>Ready to make it your own? Try <strong>Configure with Assets</strong> to add reference images,
                     playlists, and custom agent settings.</span>
-                <button class="btn btn-secondary btn-sm" type="button" onclick="dismissCanvasReturnBanner()">Got it</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="dismissCanvasReturnBanner()">Got
+                    it</button>
             </div>
         </div>
 
@@ -1369,105 +1372,14 @@
                 <input type="checkbox" id="referenceRightsAcknowledgement">
                 <span>I have the necessary rights to use any reference data or assets I provide.</span>
             </label>
-            <button class="btn btn-primary" id="deploymentAcknowledgementButton" style="width: 100%; margin-top: 0.75rem;"
-                onclick="acceptDeploymentAcknowledgement()" disabled>
+            <button class="btn btn-primary" id="deploymentAcknowledgementButton"
+                style="width: 100%; margin-top: 0.75rem;" onclick="acceptDeploymentAcknowledgement()" disabled>
                 I Understand &amp; Agree
             </button>
         </div>
     </div>
 
-    <!-- Auth Modal -->
-    <div class="modal-overlay" id="authModal">
-        <div class="modal-card">
-            <div class="modal-tabs" id="authModalTabs">
-                <div class="modal-tab active" id="tabLogin" onclick="switchAuthTab('login')">Log In</div>
-                <div class="modal-tab" id="tabRegister" onclick="switchAuthTab('register')">Sign Up</div>
-            </div>
 
-            <!-- Login Form -->
-            <div id="formLogin">
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>Username or Email</label>
-                    <input type="text" id="loginUserEmail" placeholder="username or email"
-                        onkeypress="if(event.key==='Enter') submitLogin()">
-                </div>
-                <div class="form-group" style="margin-bottom: 0.5rem;">
-                    <label>Password</label>
-                    <input type="password" id="loginPassword" placeholder="••••••••"
-                        onkeypress="if(event.key==='Enter') submitLogin()">
-                </div>
-                <div style="text-align: right; margin-bottom: 1.25rem;">
-                    <a href="javascript:void(0)" onclick="switchAuthTab('forgot')"
-                        style="font-size: 0.85rem; color: var(--accent-primary, #38bdf8); text-decoration: none;">Forgot
-                        password?</a>
-                </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitLogin()">Log In</button>
-            </div>
-
-            <!-- Register Form -->
-            <div id="formRegister" style="display: none;">
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>Username</label>
-                    <input type="text" id="regUsername" placeholder="e.g. narrator1">
-                </div>
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>Email</label>
-                    <input type="email" id="regEmail" placeholder="you@example.com">
-                </div>
-                <div class="form-group" style="margin-bottom: 1.5rem;">
-                    <label>Password</label>
-                    <input type="password" id="regPassword" placeholder="••••••••"
-                        onkeypress="if(event.key==='Enter') submitRegister()">
-                </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitRegister()">Sign Up</button>
-            </div>
-
-            <!-- Forgot Password Form -->
-            <div id="formForgotPassword" style="display: none;">
-                <h4 style="margin-bottom: 0.5rem;">Reset Your Password</h4>
-                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">Enter your email
-                    address or username and we'll send you a password reset link.</p>
-                <div class="form-group" style="margin-bottom: 1.25rem;">
-                    <label>Username or Email</label>
-                    <input type="text" id="forgotUserEmail" placeholder="username or email"
-                        onkeypress="if(event.key==='Enter') submitForgotPassword()">
-                </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitForgotPassword()">Send Reset
-                    Link</button>
-                <div style="text-align: center; margin-top: 1rem;">
-                    <a href="javascript:void(0)" onclick="switchAuthTab('login')"
-                        style="font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;">← Back to Log
-                        In</a>
-                </div>
-            </div>
-
-            <!-- Reset Password Form -->
-            <div id="formResetPassword" style="display: none;">
-                <h4 style="margin-bottom: 0.5rem;">Set New Password</h4>
-                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;"
-                    id="resetPasswordSubtext">Enter a new password for your account.</p>
-                <input type="hidden" id="resetTokenInput">
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>New Password</label>
-                    <input type="password" id="resetNewPassword" placeholder="••••••••">
-                </div>
-                <div class="form-group" style="margin-bottom: 1.25rem;">
-                    <label>Confirm New Password</label>
-                    <input type="password" id="resetConfirmPassword" placeholder="••••••••"
-                        onkeypress="if(event.key==='Enter') submitResetPassword()">
-                </div>
-                <button class="btn btn-primary" style="width: 100%;" onclick="submitResetPassword()">Update
-                    Password</button>
-            </div>
-
-            <div class="modal-error" id="modalError"></div>
-            <div class="modal-success" id="modalSuccess"
-                style="display:none; color: #4ade80; background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; word-break: break-all;">
-            </div>
-            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;"
-                onclick="closeAuthModal()">Cancel</button>
-        </div>
-    </div>
 
     <!-- Join Key Modal -->
     <div class="modal-overlay" id="joinKeyModal">
@@ -1751,7 +1663,7 @@
 
 
     <script>
-        let currentUser = null;
+        let currentUser = window.currentUser || null;
         let refFiles = [];
         let playlistsData = {};
         const deploymentAcknowledgementStorageKey = 'narratron.deployAcknowledgement.v1';
@@ -1802,39 +1714,17 @@
         document.getElementById('safeContentAcknowledgement')?.addEventListener('change', updateDeploymentAcknowledgementButton);
         document.getElementById('referenceRightsAcknowledgement')?.addEventListener('change', updateDeploymentAcknowledgementButton);
 
-        // Auth status checking
-        async function checkAuthStatus() {
-            try {
-                const res = await fetch('/api/auth/me');
-                const data = await res.json();
-                const bar = document.getElementById('userAccountBar');
-
-                if (data.authenticated && data.user) {
-                    currentUser = data.user;
-                    bar.innerHTML = `
-                        <div class="credit-badge" onclick="openBuyCreditsModal()" title="Click to top up credits">
-                            ⚡ ${data.user.credits.toFixed(1)} Credits
-                            <span class="buy-credits-plus-btn">+ Buy</span>
-                        </div>
-                        <a class="user-pill" href="/users/${encodeURIComponent(data.user.username)}">👤 ${data.user.username}</a>
-                        <button class="btn btn-secondary btn-sm" onclick="submitLogout()">Logout</button>
-                    `;
-                } else {
-                    currentUser = null;
-                    bar.innerHTML = `
-                        <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Log In</button>
-                        <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Sign Up</button>
-                    `;
-                }
-            } catch (e) {
-                console.error(e);
-            }
-        }
+        // Listen for auth state changes to update local currentUser and reload theaters
+        window.addEventListener('narratron:auth-changed', (e) => {
+            currentUser = e.detail?.user || window.currentUser || null;
+            loadTheaters();
+        });
 
         // Buy Credits Modal Logic
         let selectedPackage = { id: 'pro', credits: 400, usd: 18.00 };
 
         function openBuyCreditsModal(reason = null) {
+            currentUser = window.currentUser || currentUser;
             if (!currentUser) {
                 openAuthModal('login');
                 return;
@@ -1989,215 +1879,7 @@
             }
         }
 
-        function openAuthModal(tab = 'login') {
-            document.getElementById('authModal').classList.add('active');
-            switchAuthTab(tab);
-        }
 
-        function closeAuthModal() {
-            document.getElementById('authModal').classList.remove('active');
-            document.getElementById('modalError').style.display = 'none';
-            document.getElementById('modalSuccess').style.display = 'none';
-        }
-
-        function switchAuthTab(tab) {
-            const tabsContainer = document.getElementById('authModalTabs');
-            const formLogin = document.getElementById('formLogin');
-            const formRegister = document.getElementById('formRegister');
-            const formForgot = document.getElementById('formForgotPassword');
-            const formReset = document.getElementById('formResetPassword');
-            const err = document.getElementById('modalError');
-            const success = document.getElementById('modalSuccess');
-
-            err.style.display = 'none';
-            success.style.display = 'none';
-
-            tabsContainer.style.display = (tab === 'login' || tab === 'register') ? 'flex' : 'none';
-
-            document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
-            document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
-
-            formLogin.style.display = tab === 'login' ? 'block' : 'none';
-            formRegister.style.display = tab === 'register' ? 'block' : 'none';
-            formForgot.style.display = tab === 'forgot' ? 'block' : 'none';
-            formReset.style.display = tab === 'reset' ? 'block' : 'none';
-        }
-
-        async function submitForgotPassword() {
-            const input = document.getElementById('forgotUserEmail').value.trim();
-            const err = document.getElementById('modalError');
-            const success = document.getElementById('modalSuccess');
-            err.style.display = 'none';
-            success.style.display = 'none';
-
-            if (!input) {
-                err.textContent = 'Please enter your username or email address.';
-                err.style.display = 'block';
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/auth/forgot-password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username_or_email: input })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    let msg = data.message || 'Password reset link sent!';
-                    if (data.reset_link) {
-                        msg += `<br><br><strong>Dev Mode Reset Link:</strong><br><a href="${data.reset_link}" style="color: #38bdf8; word-break: break-all;">${data.reset_link}</a>`;
-                    }
-                    success.innerHTML = msg;
-                    success.style.display = 'block';
-                } else {
-                    err.textContent = data.detail || 'Failed to request password reset.';
-                    err.style.display = 'block';
-                }
-            } catch (e) {
-                err.textContent = 'Network error.';
-                err.style.display = 'block';
-            }
-        }
-
-        async function submitResetPassword() {
-            const token = document.getElementById('resetTokenInput').value;
-            const newPassword = document.getElementById('resetNewPassword').value;
-            const confirmPassword = document.getElementById('resetConfirmPassword').value;
-            const err = document.getElementById('modalError');
-            const success = document.getElementById('modalSuccess');
-            err.style.display = 'none';
-            success.style.display = 'none';
-
-            if (!newPassword || !confirmPassword) {
-                err.textContent = 'Please enter and confirm your new password.';
-                err.style.display = 'block';
-                return;
-            }
-
-            if (newPassword !== confirmPassword) {
-                err.textContent = 'Passwords do not match.';
-                err.style.display = 'block';
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/auth/reset-password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: token, new_password: newPassword })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    switchAuthTab('login');
-                    const loginSuccess = document.getElementById('modalSuccess');
-                    loginSuccess.textContent = data.message || 'Password updated successfully! Please log in.';
-                    loginSuccess.style.display = 'block';
-                } else {
-                    err.textContent = data.detail || 'Failed to reset password.';
-                    err.style.display = 'block';
-                }
-            } catch (e) {
-                err.textContent = 'Network error.';
-                err.style.display = 'block';
-            }
-        }
-
-        async function checkResetTokenInURL() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const resetToken = urlParams.get('reset_token');
-            if (resetToken) {
-                try {
-                    const res = await fetch(`/api/auth/reset-password/validate?token=${encodeURIComponent(resetToken)}`);
-                    const data = await res.json();
-                    if (data.valid) {
-                        document.getElementById('resetTokenInput').value = resetToken;
-                        document.getElementById('resetPasswordSubtext').textContent = `Set a new password for ${data.username}.`;
-                        openAuthModal('reset');
-                    } else {
-                        openAuthModal('forgot');
-                        const err = document.getElementById('modalError');
-                        err.textContent = data.detail || 'The reset link is invalid or expired. Please request a new link.';
-                        err.style.display = 'block';
-                    }
-                } catch (e) {
-                    console.error('Error validating reset token:', e);
-                }
-            }
-        }
-
-        async function submitLogin() {
-            const val = document.getElementById('loginUserEmail').value.trim();
-            const pwd = document.getElementById('loginPassword').value;
-            const err = document.getElementById('modalError');
-            err.style.display = 'none';
-
-            if (!val || !pwd) {
-                err.textContent = 'Please enter username/email and password.';
-                err.style.display = 'block';
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username_or_email: val, password: pwd })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    closeAuthModal();
-                    await checkAuthStatus();
-                    await loadTheaters();
-                } else {
-                    err.textContent = data.detail || 'Login failed.';
-                    err.style.display = 'block';
-                }
-            } catch (e) {
-                err.textContent = 'Network error.';
-                err.style.display = 'block';
-            }
-        }
-
-        async function submitRegister() {
-            const username = document.getElementById('regUsername').value.trim();
-            const email = document.getElementById('regEmail').value.trim();
-            const password = document.getElementById('regPassword').value;
-            const err = document.getElementById('modalError');
-            err.style.display = 'none';
-
-            if (!username || !email || !password) {
-                err.textContent = 'Please fill out all fields.';
-                err.style.display = 'block';
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, email, password })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    closeAuthModal();
-                    await checkAuthStatus();
-                    await loadTheaters();
-                } else {
-                    err.textContent = data.detail || 'Registration failed.';
-                    err.style.display = 'block';
-                }
-            } catch (e) {
-                err.textContent = 'Network error.';
-                err.style.display = 'block';
-            }
-        }
-
-        async function submitLogout() {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            await checkAuthStatus();
-            await loadTheaters();
-        }
 
         // Dropzone Reference Files Handling
         const refDropzone = document.getElementById('refDropzone');
@@ -2568,6 +2250,7 @@
 
         // Deploy Theater
         async function deployNewTheater() {
+            currentUser = window.currentUser || currentUser;
             if (!hasDeploymentAcknowledgement()) {
                 showDeploymentAcknowledgement();
                 return;
@@ -2665,6 +2348,7 @@
 
         // Active Theaters / Personal Sessions List
         async function loadTheaters() {
+            currentUser = window.currentUser || currentUser;
             const body = document.getElementById('theatersTableBody');
             const panelTitle = document.getElementById('theatersPanelTitle');
             try {
@@ -2955,9 +2639,7 @@
             renderPlaylists();
             showDeploymentAcknowledgement();
             showCanvasReturnSuggestion();
-            await checkAuthStatus();
             await loadTheaters();
-            checkResetTokenInURL();
             checkPaymentStatusInURL();
         }
         initPage();

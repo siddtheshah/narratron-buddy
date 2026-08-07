@@ -103,6 +103,13 @@ def test_agent_status_reads_active_session_from_registry_manager():
     assert result["credits"] == 3.5
 
 
+def test_server_shutdown_closes_database_connection():
+    mock_db = MagicMock()
+    with patch.object(object_registry, "db", mock_db):
+        object_registry.shutdown_database_connection()
+    mock_db.close.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
 

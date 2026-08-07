@@ -5,8 +5,10 @@ Keeping construction here ensures the HTTP routes, agent runtime, and test
 configuration all operate on the same instances.
 """
 
-import sys
+import atexit
+from contextlib import asynccontextmanager
 from pathlib import Path
+import sys
 
 from absl import flags
 from dotenv import load_dotenv
@@ -19,7 +21,6 @@ from services.agent_manager import AgentSessionManager
 from services.suggestion_service import SuggestionService
 from storage.database import DatabaseManager
 from utils.config_loader import get_app_config
-
 
 
 # Repository-level paths are shared application constants, alongside the
@@ -56,9 +57,21 @@ flags.DEFINE_bool("suppress_polling", True, "Suppress frequent polling logs.")
 FLAGS = flags.FLAGS
 sys.argv = FLAGS(sys.argv, known_only=True)
 
+
+def shutdown_database_connection() -> None:
+    """Close active database connections when the server receives Ctrl+C / shutdown signal."""
+    db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    shutdown_database_connection()
+
+
 load_dotenv()
 config = get_app_config()
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 theater_manager = TheaterManager()
 pricing_controller = PricingController.from_env()
 db = (
@@ -74,4 +87,6 @@ agent_manager = AgentSessionManager(
     database_manager=db,
 )
 suggestion_service = SuggestionService(config=config)
+
+atexit.register(shutdown_database_connection)
 

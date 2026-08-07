@@ -11,6 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/css/splide.min.css">
+  <link rel="stylesheet" href="/static/css/auth-flow.css">
+  <script src="/static/js/auth-flow.js"></script>
   <style>
     :root {
       --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
@@ -440,6 +442,10 @@
       <a href="/about" class="deploy-nav-btn">About</a>
       <a href="/stats" class="deploy-nav-btn">Stats Dashboard</a>
       <a href="/deploy" class="deploy-nav-btn">Host / Deploy Theater →</a>
+      <div id="userAccountBar" class="user-account-bar">
+        <button class="auth-nav-btn" onclick="openAuthModal('login')">Log In</button>
+        <button class="auth-nav-btn auth-nav-btn-primary" onclick="openAuthModal('register')">Sign Up</button>
+      </div>
     </div>
   </header>
 
@@ -477,36 +483,36 @@
         </div>
         <div class="features-carousel-viewport splide__track">
           <ul class="features-grid splide__list" id="featuresGrid">
-      <li class="feature-item splide__slide">
-        <div class="feature-icon">🎙️</div>
-        <div class="feature-title">Real-Time Voice Orator</div>
-        <div class="feature-desc">Your storyteller's voice will bring the narrative to life in real time.</div>
-      </li>
-      <li class="feature-item splide__slide">
-        <div class="feature-icon">🖼️</div>
-        <div class="feature-title">Dynamic Visuals</div>
-        <div class="feature-desc">AI-generated scene illustrations updated in real-time as the narrative unfolds.</div>
-      </li>
-      <li class="feature-item splide__slide">
-        <div class="feature-icon">🎵</div>
-        <div class="feature-title">Ambient Soundscapes</div>
-        <div class="feature-desc">Synchronized music playlists and adaptive sound effects matching the mood.</div>
-      </li>
-      <li class="feature-item splide__slide">
-        <div class="feature-icon">✏️</div>
-        <div class="feature-title">Draw and Suggest</div>
-        <div class="feature-desc">Sketch ideas and share suggestions to help shape the story as it unfolds.</div>
-      </li>
-      <li class="feature-item splide__slide">
-        <div class="feature-icon">📺</div>
-        <div class="feature-title">Streaming Support</div>
-        <div class="feature-desc">Bring your audience along with a theater designed for live, shared experiences.</div>
-      </li>
-      <li class="feature-item splide__slide">
-        <div class="feature-icon">📦</div>
-        <div class="feature-title">Export and Import Assets</div>
-        <div class="feature-desc">Move reference assets and audio between theaters so your story setup travels with you.</div>
-      </li>
+            <li class="feature-item splide__slide">
+              <div class="feature-icon">🎙️</div>
+              <div class="feature-title">Real-Time Voice Orator</div>
+              <div class="feature-desc">Your storyteller's voice will bring the narrative to life in real time.</div>
+            </li>
+            <li class="feature-item splide__slide">
+              <div class="feature-icon">🖼️</div>
+              <div class="feature-title">Dynamic Visuals</div>
+              <div class="feature-desc">AI-generated scene illustrations updated in real-time as the narrative unfolds.</div>
+            </li>
+            <li class="feature-item splide__slide">
+              <div class="feature-icon">🎵</div>
+              <div class="feature-title">Ambient Soundscapes</div>
+              <div class="feature-desc">Synchronized music playlists and adaptive sound effects matching the mood.</div>
+            </li>
+            <li class="feature-item splide__slide">
+              <div class="feature-icon">✏️</div>
+              <div class="feature-title">Draw and Suggest</div>
+              <div class="feature-desc">Sketch ideas and share suggestions to help shape the story as it unfolds.</div>
+            </li>
+            <li class="feature-item splide__slide">
+              <div class="feature-icon">📺</div>
+              <div class="feature-title">Streaming Support</div>
+              <div class="feature-desc">Bring your audience along with a theater designed for live, shared experiences.</div>
+            </li>
+            <li class="feature-item splide__slide">
+              <div class="feature-icon">📦</div>
+              <div class="feature-title">Export and Import Assets</div>
+              <div class="feature-desc">Move reference assets and audio between theaters so your story setup travels with you.</div>
+            </li>
           </ul>
         </div>
       </div>
