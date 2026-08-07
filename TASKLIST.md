@@ -49,4 +49,8 @@
 
 ## Multiplayer
 
-- [ ] Fix doodle network usage. Use stroke based.
+- [x] Fix doodle network usage. Use stroke based.
+
+## Foundry VTT
+
+- [ ] DnD VTTs would love this. Foundry is open, so let's move on it.
