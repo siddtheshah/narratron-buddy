@@ -5,7 +5,7 @@ agent:
     style: "wistful and bygone glories"
 
 image_generation:
-    cooldown_duration: 12
+    cooldown_duration: 9
 
 music:
     playlists_folder: "playlists"
@@ -14,4 +14,4 @@ music:
 named_elements: {}
 
 chat:
-    cooldown_duration: 12
+    cooldown_duration: 9

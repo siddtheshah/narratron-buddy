@@ -11,7 +11,9 @@ agent_internal:
     enable_tool_injection: false
     # Delay state-observability messages so the live agent can receive initial user input.
     observability_startup_delay: 20
-    observability_interval: 45
+    observability_interval: 20
     compaction:
         trigger_tokens: 20000
         target_tokens: 8000
+
+suggestion_model: "gemini-3.6-flash"

@@ -91,7 +91,7 @@ def build_run_config(
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     disabled=True
                 ),
-                activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
+                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
             ),
             tool_thread_pool_config=ToolThreadPoolConfig(
                 max_workers=agent_config.get("max_tool_workers", 3)

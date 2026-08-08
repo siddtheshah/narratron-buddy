@@ -45,7 +45,7 @@ class SuggestionService:
     def __init__(self, config: Optional[dict] = None, model: Optional[str] = None):
         self.config = config or {}
         # Default to cheap fast Gemini model (e.g. gemini-2.5-flash)
-        self.model = model or self.config.get("suggestion_model", "gemini-2.5-flash")
+        self.model = model or self.config.get("suggestion_model", "gemini-3.6-flash")
         # In-memory cache mapping theater_id -> (fingerprint, SuggestionsResponse)
         self._cache: Dict[str, Tuple[str, SuggestionsResponse]] = {}
 
