@@ -16,3 +16,10 @@ def test_canvas_contains_pcm_microphone_test_controls():
         "getInt16(index * 2, true)",
     ):
         assert element in content
+
+
+def test_first_time_orator_opens_microphone_configuration_after_tutorial():
+    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+
+    assert "openOratorHowtoModal({ openMicConfigOnClose: true })" in content
+    assert "if (openMicConfigOnClose) openMicConfigModal();" in content

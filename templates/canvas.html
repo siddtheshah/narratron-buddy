@@ -3227,7 +3227,7 @@
 
             // Show Orator How-To popup automatically on first visit
             if (!localStorage.getItem('narratron_orator_howto_seen')) {
-                setTimeout(() => openOratorHowtoModal(), 400);
+                setTimeout(() => openOratorHowtoModal({ openMicConfigOnClose: true }), 400);
             }
         } else {
             if (backBtn) backBtn.href = '/';
@@ -4765,19 +4765,23 @@
         const howtoCloseBtn = document.getElementById('howto-close-btn');
         const howtoAckBtn = document.getElementById('howto-ack-btn');
 
-        function openOratorHowtoModal() {
+        function openOratorHowtoModal({ openMicConfigOnClose = false } = {}) {
             if (!oratorHowtoModal) return;
+            oratorHowtoModal.dataset.openMicConfigOnClose = String(openMicConfigOnClose);
             oratorHowtoModal.classList.add('active');
             oratorHowtoModal.setAttribute('aria-hidden', 'false');
         }
 
         function closeOratorHowtoModal() {
             if (!oratorHowtoModal) return;
+            const openMicConfigOnClose = oratorHowtoModal.dataset.openMicConfigOnClose === 'true';
+            delete oratorHowtoModal.dataset.openMicConfigOnClose;
             oratorHowtoModal.classList.remove('active');
             oratorHowtoModal.setAttribute('aria-hidden', 'true');
             try {
                 localStorage.setItem('narratron_orator_howto_seen', 'true');
             } catch (e) { }
+            if (openMicConfigOnClose) openMicConfigModal();
         }
 
         if (howtoCloseBtn) howtoCloseBtn.addEventListener('click', closeOratorHowtoModal);
