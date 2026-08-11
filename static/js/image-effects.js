@@ -17,6 +17,8 @@ export const IMAGE_EFFECTS = Object.freeze({
   sparkle: { label: 'Starlight twinkle', classes: ['fx-star-twinkle'] },
   gleam3: { label: 'Gleam 3', classes: ['fx-gleam3'] },
   bendy: { label: 'Bendy', classes: ['fx-bendy'] },
+  haze: { label: 'Drifting haze', classes: ['fx-haze'] },
+  trace: { label: 'Light trace', classes: ['fx-trace'] },
 });
 
 /** Visual defaults are owned by the canvas, not the agent tool contract. */
@@ -27,6 +29,8 @@ export const IMAGE_EFFECT_DEFAULT_INTENSITIES = Object.freeze({
   sparkle: 0.72,
   gleam3: 0.68,
   bendy: 0.45,
+  haze: 0.75,
+  trace: 0.78,
 });
 
 const ALL_EFFECT_CLASSES = Object.values(IMAGE_EFFECTS)
@@ -1357,6 +1361,360 @@ function createBendyLayer(frame, image) {
   };
 }
 
+/** Soft, blurred copies of the source drift as slow atmospheric bubbles. */
+function createHazeLayer(frame, image) {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'image-effect-haze';
+  canvas.setAttribute('aria-hidden', 'true');
+  frame.appendChild(canvas);
+
+  const sourceCanvas = document.createElement('canvas');
+  const bubbleCanvas = document.createElement('canvas');
+  const twistCanvas = document.createElement('canvas');
+  const twistSourceCanvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const sourceContext = sourceCanvas.getContext('2d');
+  const bubbleContext = bubbleCanvas.getContext('2d');
+  const twistContext = twistCanvas.getContext('2d');
+  const twistSourceContext = twistSourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const bubbles = [
+    { x: 0.25, radius: 0.11, speed: 0.000050, phase: 0.00 },
+    { x: 0.66, radius: 0.14, speed: 0.000041, phase: 0.35 },
+    { x: 0.46, radius: 0.09, speed: 0.000058, phase: 0.68 },
+    { x: 0.12, radius: 0.08, speed: 0.000053, phase: 0.13 },
+    { x: 0.84, radius: 0.12, speed: 0.000046, phase: 0.48 },
+    { x: 0.38, radius: 0.10, speed: 0.000061, phase: 0.82 },
+    { x: 0.57, radius: 0.07, speed: 0.000055, phase: 0.24 },
+    { x: 0.76, radius: 0.10, speed: 0.000044, phase: 0.59 },
+    { x: 0.21, radius: 0.09, speed: 0.000057, phase: 0.91 },
+  ];
+  let sourceReady = false;
+  let twistSourcePixels;
+  let twistOutputPixels;
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+  let animationFrame;
+  let lastDraw = 0;
+  let lastStrengthUpdate = performance.now();
+
+  function analyse() {
+    if (!sourceContext || !image.naturalWidth) return;
+    const width = Math.min(420, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = sourceCanvas.width = bubbleCanvas.width = width;
+    canvas.height = sourceCanvas.height = bubbleCanvas.height = height;
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+    lastStrengthUpdate = performance.now();
+    const twistWidth = Math.min(300, width);
+    const twistHeight = Math.max(1, Math.round(twistWidth * height / width));
+    twistCanvas.width = twistSourceCanvas.width = twistWidth;
+    twistCanvas.height = twistSourceCanvas.height = twistHeight;
+    twistSourceContext?.clearRect(0, 0, twistWidth, twistHeight);
+    twistSourceContext?.drawImage(image, 0, 0, twistWidth, twistHeight);
+    try {
+      twistSourcePixels = twistSourceContext?.getImageData(0, 0, twistWidth, twistHeight);
+      twistOutputPixels = twistContext?.createImageData(twistWidth, twistHeight);
+    } catch (error) {
+      twistSourcePixels = undefined;
+      twistOutputPixels = undefined;
+      console.warn('Haze twist needs a same-origin or CORS-enabled image.', error);
+    }
+    sourceReady = true;
+    draw(performance.now());
+  }
+
+  function drawTwist(states, intensity) {
+    if (!twistContext || !twistSourcePixels || !twistOutputPixels) return;
+    const { width, height } = twistCanvas;
+    const scaleX = width / canvas.width;
+    const scaleY = height / canvas.height;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let sampleX = x;
+        let sampleY = y;
+        let opacity = 0;
+        for (let bubbleIndex = 0; bubbleIndex < states.length; bubbleIndex += 1) {
+          const state = states[bubbleIndex];
+          const centerX = state.centerX * scaleX;
+          const centerY = state.centerY * scaleY;
+          const surface = state.radius * Math.min(scaleX, scaleY);
+          const dx = x - centerX;
+          const dy = y - centerY;
+          const distance = Math.hypot(dx, dy);
+          const reach = surface * 2.75;
+          if (distance < 0.001 || distance >= reach) continue;
+          // The angular field is zero at the core, rises linearly to its
+          // maximum at the bubble surface, then decays proportionally to 1/r.
+          const peakTwist = 0.22 * intensity;
+          const vorticity = distance < surface
+            ? peakTwist * distance / surface
+            : peakTwist * surface / distance;
+          const edgeFade = 1 - smoothstep(surface * 2.15, reach, distance);
+          const signedVorticity = vorticity * edgeFade * (bubbleIndex % 2 ? -1 : 1);
+          sampleX += -dy * signedVorticity;
+          sampleY += dx * signedVorticity;
+          opacity = Math.max(opacity, signedVorticity === 0 ? 0 : Math.abs(signedVorticity) / (0.22 * intensity) * edgeFade);
+        }
+        const sourceX = Math.round(mirrorCoordinate(sampleX, width - 1));
+        const sourceY = Math.round(mirrorCoordinate(sampleY, height - 1));
+        const source = (sourceY * width + sourceX) * 4;
+        const target = (y * width + x) * 4;
+        twistOutputPixels.data[target] = twistSourcePixels.data[source];
+        twistOutputPixels.data[target + 1] = twistSourcePixels.data[source + 1];
+        twistOutputPixels.data[target + 2] = twistSourcePixels.data[source + 2];
+        twistOutputPixels.data[target + 3] = Math.round(opacity * 178);
+      }
+    }
+    twistContext.putImageData(twistOutputPixels, 0, 0);
+  }
+
+  function draw(time) {
+    if (!context || !bubbleContext || !sourceReady || !enabled) return;
+    const { width, height } = canvas;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const strengthDelta = Math.min(100, Math.max(0, time - lastStrengthUpdate));
+    const strengthMomentum = paused ? 0 : 1 - Math.exp(-strengthDelta / 550);
+    lastStrengthUpdate = time;
+    context.clearRect(0, 0, width, height);
+    const states = [];
+    for (const bubble of bubbles) {
+      // Each bubble rises from below the artwork, crossing it on a repeating
+      // triangular (zigzag) course before restarting beneath the bottom edge.
+      const progress = paused ? bubble.phase : (bubble.phase + time * bubble.speed) % 1;
+      const zigzag = 1 - Math.abs(((progress * 3) % 2) - 1);
+      const centerX = width * (bubble.x + (zigzag - 0.5) * 0.32);
+      const centerY = height * (1.16 - progress * 1.32);
+      const radius = Math.min(width, height) * bubble.radius * (0.82 + intensity * 0.22);
+      let lightFactor = 1;
+      if (twistSourcePixels) {
+        const sampleX = clamp(Math.round(centerX * twistCanvas.width / width), 0, twistCanvas.width - 1);
+        const sampleY = clamp(Math.round(centerY * twistCanvas.height / height), 0, twistCanvas.height - 1);
+        let luminance = 0;
+        let samples = 0;
+        // A small local average prevents a single bright edge from causing a
+        // strength jump as the bubble passes across it.
+        for (let offsetY = -2; offsetY <= 2; offsetY += 1) {
+          for (let offsetX = -2; offsetX <= 2; offsetX += 1) {
+            const x = clamp(sampleX + offsetX, 0, twistCanvas.width - 1);
+            const y = clamp(sampleY + offsetY, 0, twistCanvas.height - 1);
+            const pixel = (y * twistCanvas.width + x) * 4;
+            luminance += (0.2126 * twistSourcePixels.data[pixel]
+              + 0.7152 * twistSourcePixels.data[pixel + 1]
+              + 0.0722 * twistSourcePixels.data[pixel + 2]) / 255;
+            samples += 1;
+          }
+        }
+        luminance /= samples;
+        // Shadows retain a quiet residual, while the effect reaches full
+        // energy only once the bubble passes through a lit part of the image.
+        const targetLightFactor = 0.16 + 0.84 * smoothstep(0.07, 0.56, luminance);
+        bubble.lightFactor = bubble.lightFactor === undefined
+          ? targetLightFactor
+          : bubble.lightFactor + (targetLightFactor - bubble.lightFactor) * strengthMomentum;
+        lightFactor = bubble.lightFactor;
+      }
+      states.push({ centerX, centerY, radius, lightFactor });
+      // Blur first, then use a very wide alpha falloff. This avoids a visible
+      // circular edge while preserving the strong, moving refraction inside.
+      bubbleContext.clearRect(0, 0, width, height);
+      bubbleContext.filter = `blur(${5 + intensity * 10}px)`;
+      bubbleContext.drawImage(sourceCanvas, -radius * 0.18, radius * 0.13, width + radius * 0.36, height - radius * 0.26);
+      bubbleContext.filter = 'none';
+      bubbleContext.globalCompositeOperation = 'destination-in';
+      const maskRadius = radius * 1.34;
+      const mask = bubbleContext.createRadialGradient(centerX, centerY, 0, centerX, centerY, maskRadius);
+      mask.addColorStop(0, 'rgba(255, 255, 255, .68)');
+      mask.addColorStop(0.34, 'rgba(255, 255, 255, .52)');
+      mask.addColorStop(0.68, 'rgba(255, 255, 255, .14)');
+      mask.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      bubbleContext.fillStyle = mask;
+      bubbleContext.fillRect(0, 0, width, height);
+      bubbleContext.globalCompositeOperation = 'source-over';
+      context.save();
+      context.globalAlpha = (0.18 + intensity * 0.38) * lightFactor;
+      context.drawImage(bubbleCanvas, 0, 0);
+      context.restore();
+      const glow = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, maskRadius);
+      glow.addColorStop(0, `rgba(218, 232, 255, ${0.045 + intensity * 0.11})`);
+      glow.addColorStop(0.7, `rgba(196, 215, 255, ${0.012 + intensity * 0.04})`);
+      glow.addColorStop(1, 'rgba(196, 215, 255, 0)');
+      context.fillStyle = glow;
+      context.beginPath();
+      context.arc(centerX, centerY, maskRadius, 0, Math.PI * 2);
+      context.fill();
+    }
+    drawTwist(states, intensity);
+    if (twistOutputPixels) {
+      context.save();
+      context.globalAlpha = 0.72;
+      context.drawImage(twistCanvas, 0, 0, width, height);
+      context.restore();
+    }
+  }
+
+  function animate(time) {
+    if (time - lastDraw >= 42) { draw(time); lastDraw = time; }
+    if (enabled && !paused) animationFrame = requestAnimationFrame(animate);
+  }
+
+  function restart() {
+    cancelAnimationFrame(animationFrame);
+    if (enabled && !paused) animationFrame = requestAnimationFrame(animate);
+  }
+
+  image.addEventListener('load', analyse);
+  if (image.complete) analyse();
+  return {
+    setEnabled(nextEnabled) { enabled = nextEnabled; canvas.hidden = !enabled; if (enabled && !sourceReady) analyse(); draw(performance.now()); restart(); },
+    setPaused(nextPaused) { paused = nextPaused || prefersReducedMotion.matches; draw(performance.now()); restart(); },
+    destroy() { cancelAnimationFrame(animationFrame); image.removeEventListener('load', analyse); canvas.remove(); },
+  };
+}
+
+/**
+ * Finds connected pale highlight strokes. Each stroke receives a local progress
+ * coordinate, so one global phase sends a pulse along every detected line.
+ */
+function createTraceLayer(frame, image) {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'image-effect-trace';
+  canvas.setAttribute('aria-hidden', 'true');
+  frame.appendChild(canvas);
+  const mapCanvas = document.createElement('canvas');
+  mapCanvas.className = 'image-effect-trace-map';
+  mapCanvas.setAttribute('aria-hidden', 'true');
+  mapCanvas.hidden = true;
+  frame.appendChild(mapCanvas);
+
+  const sourceCanvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const mapContext = mapCanvas.getContext('2d');
+  const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let outputPixels;
+  let traceStrength;
+  let traceProgress;
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+  let mapVisible = false;
+  let animationFrame;
+  let lastDraw = 0;
+
+  function analyse() {
+    if (!sourceContext || !image.naturalWidth) return;
+    const width = Math.min(420, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = mapCanvas.width = sourceCanvas.width = width;
+    canvas.height = mapCanvas.height = sourceCanvas.height = height;
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+    try {
+      const pixels = sourceContext.getImageData(0, 0, width, height);
+      const candidates = new Uint8Array(width * height);
+      for (let index = 0; index < candidates.length; index += 1) {
+        const pixel = index * 4;
+        const maximum = Math.max(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2]) / 255;
+        const minimum = Math.min(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2]) / 255;
+        const saturation = maximum > 0.001 ? (maximum - minimum) / maximum : 0;
+        candidates[index] = maximum > 0.62 && saturation < 0.33 ? 1 : 0;
+      }
+      traceStrength = new Float32Array(candidates.length);
+      traceProgress = new Float32Array(candidates.length);
+      const visited = new Uint8Array(candidates.length);
+      let lineCount = 0;
+      for (let start = 0; start < candidates.length; start += 1) {
+        if (!candidates[start] || visited[start]) continue;
+        const component = [];
+        const queue = [start];
+        visited[start] = 1;
+        for (let head = 0; head < queue.length; head += 1) {
+          const index = queue[head]; component.push(index);
+          const x = index % width; const y = Math.floor(index / width);
+          for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+            const nextX = x + dx; const nextY = y + dy;
+            if ((dx || dy) && nextX >= 0 && nextX < width && nextY >= 0 && nextY < height) {
+              const next = nextY * width + nextX;
+              if (candidates[next] && !visited[next]) { visited[next] = 1; queue.push(next); }
+            }
+          }
+        }
+        if (component.length < 14) continue;
+        let meanX = 0; let meanY = 0;
+        for (const index of component) { meanX += index % width; meanY += Math.floor(index / width); }
+        meanX /= component.length; meanY /= component.length;
+        let xx = 0; let yy = 0; let xy = 0;
+        for (const index of component) {
+          const dx = index % width - meanX; const dy = Math.floor(index / width) - meanY;
+          xx += dx * dx; yy += dy * dy; xy += dx * dy;
+        }
+        const angle = 0.5 * Math.atan2(2 * xy, xx - yy);
+        const axisX = Math.cos(angle); const axisY = Math.sin(angle);
+        const major = Math.max(xx, yy) / component.length;
+        const minor = Math.max(0.0001, Math.min(xx, yy) / component.length);
+        if (major / minor < 1.55) continue;
+        let minimumProjection = Infinity; let maximumProjection = -Infinity;
+        for (const index of component) {
+          const projection = (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          minimumProjection = Math.min(minimumProjection, projection); maximumProjection = Math.max(maximumProjection, projection);
+        }
+        if (maximumProjection - minimumProjection < 7) continue;
+        for (const index of component) {
+          const projection = (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          traceProgress[index] = (projection - minimumProjection) / (maximumProjection - minimumProjection);
+          traceStrength[index] = 1;
+        }
+        lineCount += 1;
+      }
+      outputPixels = context?.createImageData(width, height);
+      if (mapContext) {
+        const map = mapContext.createImageData(width, height);
+        for (let index = 0; index < traceStrength.length; index += 1) {
+          const pixel = index * 4;
+          if (traceStrength[index]) { map.data[pixel] = 98; map.data[pixel + 1] = 255; map.data[pixel + 2] = 192; map.data[pixel + 3] = 230; }
+          else { map.data[pixel] = pixels.data[pixel] * 0.12; map.data[pixel + 1] = pixels.data[pixel + 1] * 0.12; map.data[pixel + 2] = pixels.data[pixel + 2] * 0.12; map.data[pixel + 3] = 255; }
+        }
+        mapContext.putImageData(map, 0, 0);
+      }
+      canvas.dataset.traceLineCount = String(lineCount);
+      canvas.dataset.tracePixels = String(traceStrength.reduce((total, strength) => total + (strength ? 1 : 0), 0));
+      canvas.hidden = !enabled; mapCanvas.hidden = !mapVisible;
+      draw(performance.now());
+    } catch (error) {
+      traceStrength = undefined; traceProgress = undefined; outputPixels = undefined;
+      canvas.hidden = true; mapCanvas.hidden = true;
+      console.warn('Light trace needs a same-origin or CORS-enabled image.', error);
+    }
+  }
+
+  function draw(time) {
+    if (!context || !outputPixels || !traceStrength || !enabled) return;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const phase = paused ? 0.26 : (time % 3400) / 3400;
+    for (let index = 0; index < traceStrength.length; index += 1) {
+      const pixel = index * 4;
+      const distance = Math.abs(traceProgress[index] - phase);
+      const wrappedDistance = Math.min(distance, 1 - distance);
+      const pulse = Math.exp(-(wrappedDistance * wrappedDistance) / 0.0019);
+      outputPixels.data[pixel] = 238; outputPixels.data[pixel + 1] = 249; outputPixels.data[pixel + 2] = 255;
+      outputPixels.data[pixel + 3] = Math.round(traceStrength[index] * pulse * intensity * 245);
+    }
+    context.putImageData(outputPixels, 0, 0);
+  }
+
+  function animate(time) { if (time - lastDraw >= 34) { draw(time); lastDraw = time; } if (enabled && !paused) animationFrame = requestAnimationFrame(animate); }
+  function restart() { cancelAnimationFrame(animationFrame); if (enabled && !paused) animationFrame = requestAnimationFrame(animate); }
+  image.addEventListener('load', analyse);
+  if (image.complete) analyse();
+  return {
+    setEnabled(nextEnabled) { enabled = nextEnabled; canvas.hidden = !enabled; if (enabled && !traceStrength) analyse(); draw(performance.now()); restart(); },
+    setPaused(nextPaused) { paused = nextPaused || prefersReducedMotion.matches; draw(performance.now()); restart(); },
+    setMapVisible(nextVisible) { mapVisible = nextVisible; mapCanvas.hidden = !mapVisible; },
+    destroy() { cancelAnimationFrame(animationFrame); image.removeEventListener('load', analyse); canvas.remove(); mapCanvas.remove(); },
+  };
+}
+
 function diagonalFor(width, height) {
   return Math.hypot(width, height);
 }
@@ -1381,6 +1739,8 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
   const starTwinkleLayer = createStarTwinkleLayer(frame, image);
   const gleam3Layer = createGleam3Layer(frame, image);
   const bendyLayer = createBendyLayer(frame, image);
+  const hazeLayer = createHazeLayer(frame, image);
+  const traceLayer = createTraceLayer(frame, image);
 
   const apply = (nextEffect = effect, nextIntensity = intensity) => {
     const definition = IMAGE_EFFECTS[nextEffect] || IMAGE_EFFECTS.gleam3;
@@ -1399,6 +1759,8 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
     starTwinkleLayer.setEnabled(definition.classes.includes('fx-star-twinkle'));
     gleam3Layer.setEnabled(definition.classes.includes('fx-gleam3'));
     bendyLayer.setEnabled(definition.classes.includes('fx-bendy'));
+    hazeLayer.setEnabled(definition.classes.includes('fx-haze'));
+    traceLayer.setEnabled(definition.classes.includes('fx-trace'));
   };
 
   apply(effect, intensity);
@@ -1413,10 +1775,13 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
       starTwinkleLayer.setPaused(isPaused);
       gleam3Layer.setPaused(isPaused);
       bendyLayer.setPaused(isPaused);
+      hazeLayer.setPaused(isPaused);
+      traceLayer.setPaused(isPaused);
     },
     setInverseBlurMapVisible(isVisible) { gleam3Layer.setInverseMapVisible(isVisible); },
     setGleam3SeedMapVisible(isVisible) { gleam3Layer.setSeedMapVisible(isVisible); },
     setBendyLineMapVisible(isVisible) { bendyLayer.setLineMapVisible(isVisible); },
+    setTraceMapVisible(isVisible) { traceLayer.setMapVisible(isVisible); },
     destroy() {
       frame.classList.remove(...ALL_EFFECT_CLASSES);
       frame.style.removeProperty('--fx-intensity');
@@ -1426,6 +1791,8 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
       starTwinkleLayer.destroy();
       gleam3Layer.destroy();
       bendyLayer.destroy();
+      hazeLayer.destroy();
+      traceLayer.destroy();
     },
   };
 }

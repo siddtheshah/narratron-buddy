@@ -93,6 +93,39 @@
   image-rendering: auto;
 }
 
+/* Haze redraws soft, moving source-image bubbles without altering the artwork. */
+.image-effect-haze {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+/* Trace is a source-aware overlay for synchronized light pulses on pale lines. */
+.image-effect-trace {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+/* Debug view: green marks the bright, desaturated pixels used by Light trace. */
+.image-effect-trace-map {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  image-rendering: auto;
+}
+
 /* Debug view: cyan value-flow peaks are the legal Gaussian birthplaces. */
 .image-effect-gleam3-seed-map {
   position: absolute;

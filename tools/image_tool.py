@@ -245,7 +245,7 @@ class ImageTools(BaseTools):
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
             display: Whether to automatically display the image on the canvas upon creation (default True).
             effect: Optional canvas animation effect; defaults to gleam3. Supported values: none, creeping,
-                    shining, sparkle, gleam3, or bendy.
+                    shining, sparkle, gleam3, bendy, haze, or trace.
 
         Returns:
             A string indicating that background image generation has started, or an error message.
@@ -410,13 +410,13 @@ class ImageTools(BaseTools):
             transition: The transition effect to apply when displaying the image on the canvas.
                         Supported values: 'crossfade' (default, old image dissolves into new), 'fade' (fades in from black), 'none' (instant).
             effect: Animation effect to apply after the transition; defaults to 'gleam3'. Supported values:
-                    'none', 'creeping', 'shining', 'sparkle', 'gleam3', and 'bendy'.
+                    'none', 'creeping', 'shining', 'sparkle', 'gleam3', 'bendy', 'haze', and 'trace'.
 
         Returns:
             A status message indicating success or failure.
         """
         try:
-            supported_effects = {"none", "creeping", "shining", "sparkle", "gleam3", "bendy"}
+            supported_effects = {"none", "creeping", "shining", "sparkle", "gleam3", "bendy", "haze", "trace"}
             effect = str(effect or "gleam3").lower().strip()
             if effect not in supported_effects:
                 return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
