@@ -35,8 +35,7 @@
 - [ ] Speed up page loads and toggles in the canvas.
    - Optimistic updates on UI toggles.
    - Simple time based cache for authorization. Investigate Redis and avoid tech debt here.
-- [ ] Optimize doodles. Use full strokes rather than real time.
-- [ ] Optimize chat polling. Should use 
+- [ ] Optimize chat polling.
 
 ## Policy Pages
 - [ ] Page for terms of use.
@@ -46,11 +45,3 @@
 
 
 - [ ] Agent reconnect requires an additional stop/start cycle.
-
-## Multiplayer
-
-- [x] Fix doodle network usage. Use stroke based.
-
-## Foundry VTT
-
-- [ ] DnD VTTs would love this. Foundry is open, so let's move on it.

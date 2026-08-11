@@ -80,14 +80,15 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 * clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
 
 ## Music Management
-When a story begins or a scene/mood is described, invoke `play_playlist` immediately with an appropriate playlist (e.g., 'default', 'desert adventure', 'desert combat'). You can call `play_playlist` directly without listing playlists first.
+When a story begins or a scene/mood is described, invoke `play_playlist` immediately with an appropriate playlist from the preloaded music context below. You do not need to discover playlists during a turn.
 
-* list_playlists: List all available music playlists, their descriptions, and the tracks inside them.
 * play_playlist <playlist_name>: Choose a playlist to play. This sends a signal to play the music on the canvas.
 * pause_playlist: Pause the current music playlist playing on the canvas.
 * resume_playlist: Resume the paused music playlist playing on the canvas.
 
 {{ ref_context }}
+
+{{ playlist_context }}
 
 {% if special_instructions %}
 ## SPECIAL INSTRUCTIONS Directly from your Orator
@@ -127,11 +128,10 @@ def create_tool_bundle_for_session(
         chat_tools.send_chat_message,
         named_element_tools.update_or_insert_named_element,
         named_element_tools.clear_scene,
-        music_tools.list_playlists,
         music_tools.play_playlist,
         music_tools.pause_playlist,
         music_tools.resume_playlist,
-    ])
+    ], preloaded_playlists_context=music_tools.get_playlists_context())
 
 
 def create_agent(
@@ -161,6 +161,11 @@ def create_agent(
                 ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + "\n".join(lines)
             break
 
+    playlists = getattr(tool_bundle, "preloaded_playlists_context", None)
+    if not isinstance(playlists, str) or not playlists.strip():
+        playlists = "No preloaded music playlists found."
+    playlist_context = "\n\n## Preloaded Music Playlists Context (Loaded at Agent Init)\n" + playlists
+
     special_instructions = str(config.get("agent", {}).get("special_instructions", "")).strip()
     theater_manager = theater_manager or TheaterManager()
     theater = theater_manager.get_theater(theater_id)
@@ -169,6 +174,7 @@ def create_agent(
         undefined=StrictUndefined,
     ).render(
         ref_context=ref_context,
+        playlist_context=playlist_context,
         special_instructions=special_instructions,
         theater_id=theater_id,
         theater_name=theater.name if theater else theater_id,

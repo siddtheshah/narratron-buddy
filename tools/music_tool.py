@@ -43,8 +43,8 @@ class MusicTools(BaseTools):
     def playlists_folder(self, val: str) -> None:
         self.theater_playlists_dir = str(val)
 
-    def list_playlists(self) -> str:
-        """List all available music playlists, their descriptions, and the tracks inside them.
+    def get_playlists_context(self) -> str:
+        """Return available playlists for inclusion in the agent's startup prompt.
 
         Returns:
             A formatted string of all available playlists, descriptions, and tracks.
@@ -77,8 +77,8 @@ class MusicTools(BaseTools):
 
             return "\n\n".join(result)
         except Exception as e:
-            logger.error(f"Error listing playlists: {e}")
-            return f"Error listing playlists: {e}"
+            logger.error(f"Error loading playlists context: {e}")
+            return f"Error loading playlists context: {e}"
 
     @with_cooldown("playing another playlist")
     def play_playlist(self, playlist_name: str) -> str:

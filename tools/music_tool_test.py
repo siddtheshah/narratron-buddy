@@ -42,8 +42,8 @@ class TestMusicTools(BaseTestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_list_playlists(self):
-        res = self.music_tools.list_playlists()
+    def test_get_playlists_context(self):
+        res = self.music_tools.get_playlists_context()
         self.assertIn("ambient", res)
         self.assertIn("combat", res)
         self.assertIn("Calm ambient soundtrack.", res)

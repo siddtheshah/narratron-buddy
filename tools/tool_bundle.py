@@ -15,12 +15,20 @@ class ToolBundle:
     callback methods for system re-injection.
     """
 
-    def __init__(self, tools: Sequence[Union[BaseTool, Callable, Any]]):
+    def __init__(
+        self,
+        tools: Sequence[Union[BaseTool, Callable, Any]],
+        preloaded_playlists_context: Optional[str] = None,
+    ):
         if not isinstance(tools, (list, tuple, set)):
             raise TypeError(
                 f"Parameter 'tools' must be a sequence of ADK BaseTool objects or callables, got {type(tools).__name__}."
             )
         self.tools: List[BaseTool] = []
+        # Initialization-only context for the agent prompt.  This is deliberately
+        # separate from the callable tools so the model does not need to discover
+        # playlists during a live narration turn.
+        self.preloaded_playlists_context = preloaded_playlists_context
         for item in tools:
             if isinstance(item, BaseTool):
                 self.tools.append(item)

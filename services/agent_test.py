@@ -37,6 +37,29 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("/path/to/hero_character.png", instruction)
         self.assertIs(agent_inst, mock_agent_cls.return_value)
 
+    @patch("services.agent.create_tool_bundle_for_session")
+    @patch("services.agent.Agent")
+    def test_create_agent_embeds_playlists_without_exposing_a_listing_tool(
+        self, mock_agent_cls, mock_bundle_fn
+    ):
+        mock_bundle = MagicMock()
+        mock_bundle.tools = [
+            MagicMock(name="play_playlist"),
+            MagicMock(name="pause_playlist"),
+            MagicMock(name="resume_playlist"),
+        ]
+        mock_bundle.preloaded_playlists_context = (
+            "- Playlist: 'moonlit forest'\n  Description: Quiet, mysterious woodland ambience.\n  Tracks: dusk.mp3"
+        )
+        mock_bundle_fn.return_value = mock_bundle
+
+        create_agent(theater_id="music_context_theater")
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("Preloaded Music Playlists Context", instruction)
+        self.assertIn("moonlit forest", instruction)
+        self.assertNotIn("* list_playlists:", instruction)
+
     @patch("services.agent.ImageTools")
     @patch("services.agent.ChatTools")
     @patch("services.agent.NamedElementTools")
