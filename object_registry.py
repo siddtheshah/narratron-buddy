@@ -34,15 +34,10 @@ flags.DEFINE_boolean(
     False,
     "Use PreloadedInMemoryArtifactService pre-loaded with test artifacts.",
 )
-flags.DEFINE_bool(
-    "use_local_test_db",
-    False,
-    "Use the local SQLite database for test authentication and deployments.",
-)
 flags.DEFINE_boolean(
     "testing_use_local_database",
     False,
-    "Legacy alias for --use_local_test_db.",
+    "Use local test database.",
 )
 flags.DEFINE_boolean(
     "allow_mock_payments",
@@ -91,7 +86,7 @@ theater_manager = TheaterManager()
 pricing_controller = PricingController.from_env()
 db = (
     DatabaseManager.from_local("deployer.db", pricing_controller=pricing_controller)
-    if FLAGS.use_local_test_db or FLAGS.testing_use_local_database
+    if FLAGS.testing_use_local_database
     else DatabaseManager.from_live(
         pricing_controller=pricing_controller,
         live_connection_timeout=FLAGS.libsql_connection_timeout_seconds,
