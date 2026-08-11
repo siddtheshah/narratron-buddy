@@ -19,6 +19,12 @@ def test_about_renderer_closes_lists_when_type_changes():
     assert html == "<ul><li>one</li><li>two</li></ul>\n<ol><li>three</li></ol>\n<p>paragraph</p>"
 
 
+def test_ideas_page_reads_the_ideas_template():
+    response = pages.read_ideas()
+    assert "Stories are better when the room helps make them." in response
+    assert "Available image effects" in response
+
+
 def test_canvas_with_verified_join_key_redirects_and_grants_cookie():
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
     request = SimpleNamespace(url=SimpleNamespace(remove_query_params=lambda _: "/canvas?theater_id=stage"))

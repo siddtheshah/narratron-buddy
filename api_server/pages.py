@@ -136,6 +136,11 @@ def read_about():
         "<!-- ABOUT_CONTENT -->", about_content
     )
 
+@app.get("/ideas", response_class=HTMLResponse)
+def read_ideas():
+    """Serve inspiration for making a Narratron theater your own."""
+    return (PROJECT_ROOT / "templates" / "ideas.html").read_text(encoding="utf-8")
+
 @app.get("/stats", response_class=HTMLResponse)
 def read_stats():
     """Serve the System Stats Dashboard Page."""
