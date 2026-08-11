@@ -23,6 +23,10 @@ class TestOBSCanvas(UITestCase):
             'id="canvas-renderer"',
             'id="doodle-canvas"',
             'id="current-image"',
+            "function syncMusic(music)",
+            "const bgMusic = new Audio();",
+            "action: 'hide-overlay'",
+            "action === 'pause-audio'",
         ):
             self.assertIn(element, html)
         for element in (

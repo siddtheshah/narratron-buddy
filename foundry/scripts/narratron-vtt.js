@@ -52,6 +52,28 @@ function getObsUrl() {
   return game.settings.get("narratron-buddy-vtt", "obsUrl").trim();
 }
 
+/** Add the local audio preference without requiring users to edit their OBS URL. */
+function getObsUrlWithAudioPreference() {
+  const obsUrl = getObsUrl();
+  if (!obsUrl) return "";
+
+  try {
+    const url = new URL(obsUrl, window.location.href);
+    url.searchParams.set(
+      "audio",
+      game.settings.get("narratron-buddy-vtt", "enableAudio") ? "1" : "0"
+    );
+    url.searchParams.set(
+      "audio_volume",
+      String(game.settings.get("narratron-buddy-vtt", "audioVolume"))
+    );
+    return url.href;
+  } catch (error) {
+    console.warn("Narratron Buddy | Could not apply audio preference to OBS URL:", error);
+    return obsUrl;
+  }
+}
+
 /** A DOM layer positioned over Foundry's PIXI canvas. */
 class NarratronObsOverlay {
   static get element() {
@@ -72,7 +94,7 @@ class NarratronObsOverlay {
       return;
     }
 
-    const obsUrl = getObsUrl();
+    const obsUrl = getObsUrlWithAudioPreference();
     if (!obsUrl) {
       ui.notifications.warn("Set Narratron OBS URL in Module Settings before opening the overlay.");
       return;
@@ -87,10 +109,31 @@ class NarratronObsOverlay {
       iframe.dataset.obsUrl = obsUrl;
     }
     overlay.classList.add("is-visible");
+    this.#setFrameAudio(iframe, "resume-audio");
   }
 
   static hide() {
-    this.element?.classList.remove("is-visible");
+    const overlay = this.element;
+    this.#setFrameAudio(overlay?.querySelector("iframe"), "pause-audio");
+    overlay?.classList.remove("is-visible");
+  }
+
+  static handleFrameMessage(event) {
+    const iframe = this.element?.querySelector("iframe");
+    if (
+      event.data?.source !== "narratron-buddy-obs" ||
+      event.data?.action !== "hide-overlay" ||
+      event.source !== iframe?.contentWindow
+    ) return;
+
+    this.hide();
+  }
+
+  static #setFrameAudio(iframe, action) {
+    iframe?.contentWindow?.postMessage({
+      source: "narratron-buddy-foundry",
+      action,
+    }, "*");
   }
 
   static #create() {
@@ -110,12 +153,23 @@ class NarratronObsOverlay {
         Press <kbd>Alt</kbd>+<kbd>O</kbd> to return to Foundry
       </div>`;
     overlay.querySelector(".narratron-obs-close").addEventListener("click", () => this.hide());
+    overlay.querySelector("iframe").addEventListener("load", (event) => {
+      this.#setFrameAudio(
+        event.currentTarget,
+        this.isVisible ? "resume-audio" : "pause-audio"
+      );
+    });
     // #board is Foundry's PIXI <canvas>, which cannot visually host regular
     // HTML children. Mount a sibling layer on <body> instead.
     document.body.appendChild(overlay);
     return overlay;
   }
 }
+
+// Keyboard events inside an iframe do not bubble into Foundry. The OBS page
+// relays Alt+O with postMessage so the documented shortcut works either side
+// of the iframe boundary.
+window.addEventListener("message", (event) => NarratronObsOverlay.handleFrameMessage(event));
 
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user.isGM) return;

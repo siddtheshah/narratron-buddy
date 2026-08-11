@@ -117,6 +117,104 @@
         let isFirstCanvasLoad = true;
         let doodleActions = [];
         let doodlesEnabled = true;
+        // OBS Browser Sources capture audio produced by this page. Keep this
+        // player deliberately headless so the visual output remains clean.
+        const audioEnabled = urlParams.get('audio') !== '0';
+        const requestedVolume = Number(urlParams.get('audio_volume'));
+        const musicVolume = Number.isFinite(requestedVolume)
+            ? Math.min(1, Math.max(0, requestedVolume))
+            : 0.8;
+        const bgMusic = new Audio();
+        bgMusic.volume = musicVolume;
+        let activePlaylistName = null;
+        let activeTracks = [];
+        let activeTrackSrc = null;
+        let lastMusicTime = 0;
+        let hasReceivedMusicState = false;
+        let latestMusicState = null;
+        let overlayAudioPaused = false;
+
+        bgMusic.addEventListener('ended', () => playNextTrack());
+
+        function chooseTrack(tracks) {
+            if (tracks.length === 1) return tracks[0];
+            const alternatives = tracks.filter(track => track !== activeTrackSrc);
+            return alternatives[Math.floor(Math.random() * alternatives.length)];
+        }
+
+        function playNextTrack() {
+            if (!audioEnabled || activeTracks.length === 0) return;
+            const track = chooseTrack(activeTracks);
+            activeTrackSrc = track;
+            bgMusic.src = track;
+            bgMusic.play().catch((error) => {
+                console.warn('OBS music playback could not start:', error);
+            });
+        }
+
+        function syncMusic(music) {
+            latestMusicState = music;
+            if (!audioEnabled || overlayAudioPaused) return;
+
+            const playlist = music?.playlist;
+            const tracks = Array.isArray(music?.tracks) ? music.tracks : [];
+            if (!playlist || tracks.length === 0) {
+                activePlaylistName = null;
+                activeTracks = [];
+                activeTrackSrc = null;
+                bgMusic.pause();
+                bgMusic.removeAttribute('src');
+                return;
+            }
+
+            const playlistChanged = playlist !== activePlaylistName;
+            activePlaylistName = playlist;
+            activeTracks = tracks;
+            if (playlistChanged || !activeTrackSrc || !tracks.includes(activeTrackSrc)) {
+                playNextTrack();
+            }
+
+            if (music.paused) {
+                bgMusic.pause();
+            } else if (bgMusic.paused) {
+                bgMusic.play().catch((error) => {
+                    console.warn('OBS music playback could not resume:', error);
+                });
+            }
+        }
+
+        // There is deliberately no player UI in the OBS view. A normal web
+        // browser may still require a user activation before it permits audio;
+        // a click anywhere on the canvas retries the already-selected track.
+        // OBS Browser Source normally permits autoplay and needs no click.
+        document.addEventListener('pointerdown', () => {
+            if (latestMusicState) syncMusic(latestMusicState);
+        });
+
+        // When embedded by Foundry, the iframe receives keyboard focus and
+        // its events cannot bubble to the host. Relay the module's close
+        // shortcut back to the parent without affecting standalone OBS use.
+        window.addEventListener('keydown', (event) => {
+            if (event.altKey && event.code === 'KeyO' && window.parent !== window) {
+                event.preventDefault();
+                window.parent.postMessage({
+                    source: 'narratron-buddy-obs',
+                    action: 'hide-overlay',
+                }, '*');
+            }
+        });
+
+        window.addEventListener('message', (event) => {
+            if (event.data?.source !== 'narratron-buddy-foundry') return;
+
+            if (event.data.action === 'pause-audio') {
+                overlayAudioPaused = true;
+                bgMusic.pause();
+            } else if (event.data.action === 'resume-audio') {
+                overlayAudioPaused = false;
+                if (latestMusicState) syncMusic(latestMusicState);
+            }
+        });
 
         const imageRenderer = createImageRenderer({
             canvas: rendererCanvas,
@@ -144,6 +242,12 @@
                 const apiUrl = currenttheaterId ? `/api/latest?theater_id=${encodeURIComponent(currenttheaterId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
+
+                if (data.music && (!hasReceivedMusicState || data.music.time > lastMusicTime)) {
+                    lastMusicTime = data.music.time;
+                    hasReceivedMusicState = true;
+                    syncMusic(data.music);
+                }
 
                 if (data.doodles_enabled !== undefined && data.doodles_enabled !== doodlesEnabled) {
                     doodlesEnabled = Boolean(data.doodles_enabled);

@@ -18,5 +18,11 @@ This folder contains the official Foundry VTT module for Narratron Buddy. It add
 
 In Foundry VTT: **Game Settings** -> **Configure Settings** -> **Module Settings**:
 - **Narratron OBS URL**: Set the full direct URL for the OBS view, for example `http://localhost:8000/obs?theater_id=...`. This client-only setting may include a theater join key.
-- **Enable Background Audio Sync**: Toggles automatic audio stream/narration sync from Narratron into Foundry VTT.
-- **Audio Volume**: Controls master volume level for Narratron audio playback (default: `0.8`).
+- **Enable Background Audio Sync**: Includes Narratron's selected background playlist in the OBS view embedded by Foundry VTT. The setting is enabled by default.
+- **Audio Volume**: Controls the Narratron playlist volume in the Foundry overlay (default: `0.8`).
+
+Hiding the overlay pauses Narratron’s embedded music; reopening it resumes the active playlist.
+
+## Streaming audio
+
+The `/obs` page now plays the active Narratron background playlist as well as rendering the visuals. In OBS, enable audio capture for its Narratron Browser Source (the exact option name varies by OBS version) so the page audio is included in the stream/mixer. The page has no player UI. When previewing it in a normal browser, its autoplay policy may require one click on the canvas before sound can begin; OBS Browser Source normally permits autoplay. The Foundry overlay passes its **Enable Background Audio Sync** setting to the same page; set it off if music should stay out of the Foundry client.
