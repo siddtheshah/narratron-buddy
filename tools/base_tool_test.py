@@ -11,6 +11,10 @@ class SampleTools(BaseTools):
     def decorated_tool(self) -> str:
         return "Success"
 
+    @with_cooldown("doing quick action", duration=0.1)
+    def quick_tool(self) -> str:
+        return "Success"
+
 
 class TestBaseTools(BaseTestCase):
     def setUp(self):
@@ -46,6 +50,14 @@ class TestBaseTools(BaseTestCase):
 
         res2 = sample.decorated_tool()
         self.assertIn("decorated_tool is on cooldown", res2)
+
+    def test_with_cooldown_decorator_uses_override_duration(self):
+        sample = SampleTools({"cooldown_duration": 10.0}, theater_id="test_theater")
+        self.assertEqual(sample.quick_tool(), "Success")
+        self.assertIn("quick_tool is on cooldown", sample.quick_tool())
+
+        time.sleep(0.2)
+        self.assertEqual(sample.quick_tool(), "Success")
 
 
 

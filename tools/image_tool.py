@@ -396,6 +396,7 @@ class ImageTools(BaseTools):
         name_msg = f" with alias '{image_name}'" if image_name else ""
         return f"Image generation started in background{name_msg} for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
 
+    @with_cooldown("showing another image", duration=4.0)
     def show_image(
         self,
         file_path: str,

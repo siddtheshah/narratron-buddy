@@ -287,7 +287,7 @@ class TestImageTools(BaseTestCase):
         self.assertIn("Successfully displayed", res)
 
     @patch("tools.image_tool.genai.Client")
-    def test_show_image_can_be_called_repeatedly(self, mock_genai_client):
+    def test_show_image_has_a_separate_four_second_cooldown(self, mock_genai_client):
         tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -303,8 +303,8 @@ class TestImageTools(BaseTestCase):
         callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
 
         res2 = tools.show_image(file_path)
-        self.assertIn("Successfully displayed", res2)
-        self.assertEqual(callback.call_count, 2)
+        self.assertIn("show_image is on cooldown", res2)
+        self.assertEqual(callback.call_count, 1)
 
     @patch("tools.image_tool.genai.Client")
     def test_show_image_transition(self, mock_genai_client):
@@ -547,7 +547,7 @@ class TestImageTools(BaseTestCase):
         self.assertIn("Successfully displayed", res)
 
     @patch("tools.image_tool.genai.Client")
-    def test_show_image_can_be_called_repeatedly(self, mock_genai_client):
+    def test_show_image_has_a_separate_four_second_cooldown_regression(self, mock_genai_client):
         tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -563,8 +563,8 @@ class TestImageTools(BaseTestCase):
         callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
 
         res2 = tools.show_image(file_path)
-        self.assertIn("Successfully displayed", res2)
-        self.assertEqual(callback.call_count, 2)
+        self.assertIn("show_image is on cooldown", res2)
+        self.assertEqual(callback.call_count, 1)
 
     @patch("tools.image_tool.genai.Client")
     def test_show_image_transition(self, mock_genai_client):
