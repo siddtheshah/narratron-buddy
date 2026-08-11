@@ -44,6 +44,14 @@ Hooks.once("init", () => {
     default: 0.8
   });
 
+  game.settings.register("narratron-buddy-vtt", "panelBounds", {
+    name: "Narratron Panel Bounds",
+    scope: "client",
+    config: false,
+    type: String,
+    default: ""
+  });
+
   game.keybindings.register("narratron-buddy-vtt", "toggleObsOverlay", {
     name: "Toggle Narratron OBS Overlay",
     hint: "Show or hide the Narratron OBS view over the active Foundry canvas.",
@@ -90,9 +98,10 @@ function getObsUrlWithAudioPreference() {
   }
 }
 
-/** A DOM layer positioned over Foundry's PIXI canvas. */
+/** A floating Narratron panel rendered above Foundry's PIXI canvas. */
 class NarratronObsOverlay {
   static playerDismissed = false;
+  static boundsSaveTimer = null;
 
   static get element() {
     return document.getElementById("narratron-obs-overlay");
@@ -220,22 +229,20 @@ class NarratronObsOverlay {
     overlay.id = "narratron-obs-overlay";
     overlay.className = "narratron-obs-overlay";
     overlay.innerHTML = `
+      <header class="narratron-obs-titlebar">
+        <span class="narratron-obs-title"><i class="fas fa-tv"></i> Narratron</span>
+        <button type="button" class="narratron-obs-close" title="Hide Narratron Display (Alt+O)">
+          <i class="fas fa-times"></i><span class="sr-only">Hide Narratron Display</span>
+        </button>
+      </header>
       <iframe class="narratron-obs-iframe" title="Narratron OBS Display & Audio"
         allow="autoplay; microphone; fullscreen; clipboard-write; sound"></iframe>`;
     if (game.user.isGM) {
+      overlay.querySelector(".narratron-obs-close").title = "Hide Narratron Display (Alt+O)";
       overlay.insertAdjacentHTML("beforeend", `
-        <button type="button" class="narratron-obs-close" title="Hide Narratron OBS Overlay (Alt+O)">
-          <i class="fas fa-times"></i><span class="sr-only">Hide Narratron OBS Overlay</span>
-        </button>
-        <div class="narratron-obs-shortcut" aria-live="polite">
-          Press <kbd>Alt</kbd>+<kbd>O</kbd> to return to Foundry
-        </div>`);
+        <div class="narratron-obs-shortcut" aria-live="polite">Press <kbd>Alt</kbd>+<kbd>O</kbd> to hide</div>`);
       overlay.querySelector(".narratron-obs-close").addEventListener("click", () => void this.toggle());
     } else {
-      overlay.insertAdjacentHTML("beforeend", `
-        <button type="button" class="narratron-obs-close" title="Hide Narratron Display (Alt+O)">
-          <i class="fas fa-times"></i><span class="sr-only">Hide Narratron Display</span>
-        </button>`);
       overlay.querySelector(".narratron-obs-close").addEventListener("click", () => this.dismissForPlayer());
     }
     overlay.querySelector("iframe").addEventListener("load", (event) => {
@@ -244,10 +251,66 @@ class NarratronObsOverlay {
         this.isVisible ? "resume-audio" : "pause-audio"
       );
     });
+    this.#restoreBounds(overlay);
+    this.#enableDragging(overlay);
+    new ResizeObserver(() => this.#scheduleBoundsSave(overlay)).observe(overlay);
     // #board is Foundry's PIXI <canvas>, which cannot visually host regular
-    // HTML children. Mount a sibling layer on <body> instead.
+    // HTML children. Mount a sibling panel on <body> instead.
     document.body.appendChild(overlay);
     return overlay;
+  }
+
+  static #restoreBounds(overlay) {
+    try {
+      const saved = JSON.parse(game.settings.get(MODULE_ID, "panelBounds"));
+      if (!saved || ![saved.left, saved.top, saved.width, saved.height].every(Number.isFinite)) return;
+
+      const width = Math.min(saved.width, window.innerWidth - 24);
+      const height = Math.min(saved.height, window.innerHeight - 24);
+      overlay.style.width = `${Math.max(360, width)}px`;
+      overlay.style.height = `${Math.max(260, height)}px`;
+      overlay.style.left = `${Math.max(12, Math.min(saved.left, window.innerWidth - width - 12))}px`;
+      overlay.style.top = `${Math.max(12, Math.min(saved.top, window.innerHeight - height - 12))}px`;
+    } catch (error) {
+      console.warn("Narratron Buddy | Could not restore panel bounds:", error);
+    }
+  }
+
+  static #enableDragging(overlay) {
+    const titlebar = overlay.querySelector(".narratron-obs-titlebar");
+    titlebar.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button")) return;
+      const rect = overlay.getBoundingClientRect();
+      const offsetX = event.clientX - rect.left;
+      const offsetY = event.clientY - rect.top;
+      titlebar.setPointerCapture(event.pointerId);
+
+      const move = (moveEvent) => {
+        overlay.style.left = `${Math.max(12, Math.min(moveEvent.clientX - offsetX, window.innerWidth - overlay.offsetWidth - 12))}px`;
+        overlay.style.top = `${Math.max(12, Math.min(moveEvent.clientY - offsetY, window.innerHeight - overlay.offsetHeight - 12))}px`;
+      };
+      const stop = () => {
+        titlebar.removeEventListener("pointermove", move);
+        titlebar.removeEventListener("pointerup", stop);
+        titlebar.removeEventListener("pointercancel", stop);
+        this.#scheduleBoundsSave(overlay);
+      };
+      titlebar.addEventListener("pointermove", move);
+      titlebar.addEventListener("pointerup", stop);
+      titlebar.addEventListener("pointercancel", stop);
+    });
+  }
+
+  static #scheduleBoundsSave(overlay) {
+    clearTimeout(this.boundsSaveTimer);
+    this.boundsSaveTimer = setTimeout(() => {
+      if (!this.isVisible) return;
+      const rect = overlay.getBoundingClientRect();
+      void game.settings.set(MODULE_ID, "panelBounds", JSON.stringify({
+        left: Math.round(rect.left), top: Math.round(rect.top),
+        width: Math.round(rect.width), height: Math.round(rect.height)
+      }));
+    }, 200);
   }
 }
 

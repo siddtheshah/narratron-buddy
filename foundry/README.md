@@ -1,6 +1,6 @@
 # Narratron Buddy - Foundry VTT Module
 
-This folder contains the official Foundry VTT module for Narratron Buddy. It adds a GM control and keybinding that display Narratron's OBS Canvas view (`/obs`) directly over the Foundry scene canvas for every connected player.
+This folder contains the official Foundry VTT module for Narratron Buddy. It adds a GM control and keybinding that display Narratron's OBS Canvas view (`/obs`) in a floating panel for every connected player.
 
 ## Installation into Foundry VTT
 
@@ -24,7 +24,7 @@ In Foundry VTT: **Game Settings** -> **Configure Settings** -> **Module Settings
 
 The GM controls whether the overlay is visible. Connected players render their own local instance automatically, and players joining while it is enabled also see it. Players can hide their own view with its close button (or **Alt+O**) without affecting anyone else, and use **Alt+O** to rejoin while the GM is still sharing it. After upgrading from a prior version, enter the OBS URL again because it has moved from a client setting to a world setting.
 
-Hiding the overlay pauses Narratron’s embedded music; reopening it resumes the active playlist.
+The Narratron view is a floating panel: drag its title bar to move it and use the lower-right corner to resize it. Each user’s panel size and position are saved locally. Hiding the panel pauses Narratron’s embedded music; reopening it resumes the active playlist.
 
 ## Streaming audio
 

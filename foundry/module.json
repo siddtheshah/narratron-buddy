@@ -2,7 +2,7 @@
   "id": "narratron-buddy-vtt",
   "title": "Narratron Buddy Integration",
   "description": "Integrates Narratron AI live scene narration and a GM-controlled OBS canvas display for every Foundry VTT player.",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "compatibility": {
     "minimum": "11",
     "verified": "12"
