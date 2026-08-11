@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/image-effects.css">
+    <link rel="stylesheet" href="/static/css/image-effects.css?v=effects-20260811-2">
     <style>
         * {
             box-sizing: border-box;
@@ -98,7 +98,7 @@
     </div>
 
     <script type="module">
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=effects-20260811-2";
         // Extract Theater ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
         let currenttheaterId = urlParams.get('theater_id') || '';
@@ -114,6 +114,7 @@
         const currentImage = document.getElementById('current-image');
         let lastTime = 0;
         let lastImageRawUrl = "";
+        let lastImageEffect = null;
         let isFirstCanvasLoad = true;
         let doodleActions = [];
         let doodlesEnabled = true;
@@ -254,26 +255,33 @@
                     redrawAllDoodles();
                 }
 
-                const isNewImage = (data.latest && (data.time > lastTime || data.latest !== lastImageRawUrl));
+                const currentImageEffect = data.effect || 'gleam3';
+                const isNewImage = data.latest && (
+                    data.time > lastTime
+                    || data.latest !== lastImageRawUrl
+                    || currentImageEffect !== lastImageEffect
+                );
 
                 if (isFirstCanvasLoad) {
                     isFirstCanvasLoad = false;
                     if (data.latest) {
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
+                        lastImageEffect = currentImageEffect;
                         const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                        applyImageTransition(newImgUrl, 'none', data.effect || 'gleam3');
+                        applyImageTransition(newImgUrl, 'none', currentImageEffect);
                     }
                 } else if (isNewImage) {
                     lastTime = data.time;
                     lastImageRawUrl = data.latest;
+                    lastImageEffect = currentImageEffect;
                     const newImgUrl = data.latest + "?t=" + new Date().getTime();
                     const transition = (data.transition || 'crossfade').toLowerCase().trim();
 
                     doodleActions = [];
                     redrawAllDoodles();
 
-                    applyImageTransition(newImgUrl, transition, data.effect || 'gleam3');
+                    applyImageTransition(newImgUrl, transition, currentImageEffect);
                 }
             } catch (err) {
                 console.error("OBS Canvas fetch error:", err);

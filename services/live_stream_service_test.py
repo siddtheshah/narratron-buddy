@@ -10,8 +10,8 @@ from tools.named_element_tool import NamedElementTools
 
 def test_format_canvas_state_includes_present_scene_elements():
     elements = NamedElementTools(theater_id="stage")
-    elements.upsert_named_element("hero", "Mara, a cartographer")
-    elements.upsert_named_element("tone", "Hopeful and tense")
+    elements.update_or_insert_named_element("hero", "Mara, a cartographer")
+    elements.update_or_insert_named_element("tone", "Hopeful and tense")
 
     state = format_canvas_state(
         SimpleNamespace(

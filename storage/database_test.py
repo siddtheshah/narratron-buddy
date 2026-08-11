@@ -8,11 +8,13 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from queue import Queue
 from unittest.mock import MagicMock, patch
 
 from testing.base import BaseTestCase
 from storage.database import (
     DatabaseManager,
+    DatabaseConnectionTimeout,
     _DictCursor,
     _ReusableConnection,
 )
@@ -111,6 +113,16 @@ class TestDictCursorAndReusableConnection(unittest.TestCase):
         mock_conn.commit.assert_not_called()
         mock_conn.close.assert_not_called()
 
+    def test_reusable_connection_releases_its_lease(self):
+        mock_conn = MagicMock()
+        release = MagicMock()
+        reusable = _ReusableConnection(mock_conn, release_callback=release)
+
+        with reusable:
+            pass
+
+        release.assert_called_once_with(mock_conn)
+
     def test_reusable_connection_exception_handling(self):
         mock_conn = MagicMock()
         mock_conn.rollback.side_effect = Exception("Rollback error")
@@ -120,6 +132,51 @@ class TestDictCursorAndReusableConnection(unittest.TestCase):
         # Ensure rollback and close exception handling inside _ReusableConnection doesn't crash
         reusable.rollback()
         reusable.close()
+
+
+class TestLiveConnectionPool(unittest.TestCase):
+    """Verify the live pool isolates requests and always returns leases."""
+
+    def setUp(self):
+        self.db = DatabaseManager.from_live()
+        self.db._live_pool = Queue(maxsize=2)
+        self.db._live_pool_closed = False
+        self.db._live_checkout_timeout = 0.01
+
+    def test_checkout_returns_connection_when_context_exits(self):
+        raw_connection = MagicMock()
+        self.db._live_pool.put_nowait(raw_connection)
+        self.db._live_pool_total = 1
+
+        with self.db._get_connection() as connection:
+            self.assertIsInstance(connection.cursor(), _DictCursor)
+
+        self.assertIs(self.db._live_pool.get_nowait(), raw_connection)
+        raw_connection.commit.assert_called_once()
+
+    def test_checkout_times_out_when_all_connections_are_leased(self):
+        self.db._live_pool.put_nowait(MagicMock())
+        self.db._live_pool_total = self.db._live_pool_size
+        lease = self.db._get_connection()
+        try:
+            with self.assertRaises(DatabaseConnectionTimeout):
+                self.db._get_connection()
+        finally:
+            with lease:
+                pass
+
+    def test_close_does_not_wait_for_checked_out_connection(self):
+        raw_connection = MagicMock()
+        self.db._live_pool.put_nowait(raw_connection)
+        self.db._live_pool_total = 1
+        lease = self.db._get_connection()
+
+        self.db.close()
+        raw_connection.close.assert_not_called()
+
+        with lease:
+            pass
+        raw_connection.close.assert_called_once()
 
 
 class TestDatabaseManagerConnectionAndMigration(BaseTestCase):

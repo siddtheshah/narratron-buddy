@@ -220,7 +220,7 @@ class ImageTools(BaseTools):
                 if os.path.exists(candidate):
                     return candidate
 
-            return None
+        return None
 
     def join_generation(self, timeout: float = 10.0) -> None:
         """Helper for unit tests or teardown to wait for background image generation thread."""
@@ -245,7 +245,7 @@ class ImageTools(BaseTools):
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
             display: Whether to automatically display the image on the canvas upon creation (default True).
             effect: Optional canvas animation effect; defaults to gleam3. Supported values: none, creeping,
-                    shining, sparkle, gleam3, bendy, haze, or trace.
+                    dream, sparkle, gleam3, bendy, haze, or trace.
 
         Returns:
             A string indicating that background image generation has started, or an error message.
@@ -396,7 +396,6 @@ class ImageTools(BaseTools):
         name_msg = f" with alias '{image_name}'" if image_name else ""
         return f"Image generation started in background{name_msg} for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
 
-    @with_cooldown("displaying another image")
     def show_image(
         self,
         file_path: str,
@@ -410,13 +409,22 @@ class ImageTools(BaseTools):
             transition: The transition effect to apply when displaying the image on the canvas.
                         Supported values: 'crossfade' (default, old image dissolves into new), 'fade' (fades in from black), 'none' (instant).
             effect: Animation effect to apply after the transition; defaults to 'gleam3'. Supported values:
-                    'none', 'creeping', 'shining', 'sparkle', 'gleam3', 'bendy', 'haze', and 'trace'.
+                    'none', 'creeping', 'dream', 'sparkle', 'gleam3', 'bendy', 'haze', and 'trace'.
 
         Returns:
             A status message indicating success or failure.
         """
+        return self._display_image(file_path, transition=transition, effect=effect)
+
+    def _display_image(
+        self,
+        file_path: str,
+        transition: str = "crossfade",
+        effect: str = "gleam3",
+    ) -> str:
+        """Apply an image to the canvas."""
         try:
-            supported_effects = {"none", "creeping", "shining", "sparkle", "gleam3", "bendy", "haze", "trace"}
+            supported_effects = {"none", "creeping", "dream", "sparkle", "gleam3", "bendy", "haze", "trace"}
             effect = str(effect or "gleam3").lower().strip()
             if effect not in supported_effects:
                 return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."

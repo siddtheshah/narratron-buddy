@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/effects-static/css/image-effects.css">
+  <link rel="stylesheet" href="/effects-static/css/image-effects.css?v=effects-20260811-2">
   <style>
     :root {
       color-scheme: dark;
@@ -184,7 +184,7 @@
           <option value="trace">Light trace</option>
           <option value="gleam3">Gleam 3</option>
           <option value="creeping">Creeping darkness</option>
-          <option value="shining">Cloudy dreams</option>
+          <option value="dream">Cloudy dreams</option>
           <option value="sparkle">Starlight twinkle</option>
         </select></label>
       <label>Intensity <input id="intensity" type="range" min="-100" max="100" value="0"
@@ -206,7 +206,7 @@
     </section>
   </main>
   <script type="module">
-    import { attachImageEffect, IMAGE_EFFECTS } from '/effects-static/js/image-effects.js';
+    import { attachImageEffect, IMAGE_EFFECTS } from '/effects-static/js/image-effects.js?v=effects-20260811-2';
     const artworks = {
       vortex: { src: '/carousel/spacetime%20vortex.png', alt: 'Spacetime vortex preview', title: 'Spacetime vortex', kind: 'space' },
       knightSword: { src: '/test-images/trace-knight-sword.png', alt: 'Armored knight holding a bright sword', title: 'Trace knight and sword', kind: 'trace target: sword blade' },

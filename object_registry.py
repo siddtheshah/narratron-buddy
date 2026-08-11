@@ -53,6 +53,21 @@ flags.DEFINE_string("host", "localhost", "Host to run the app on.")
 flags.DEFINE_integer("port", 8000, "Port to run the app on.")
 flags.DEFINE_string("log_prefix", "", "Only show logs containing this substring.")
 flags.DEFINE_bool("suppress_polling", True, "Suppress frequent polling logs.")
+flags.DEFINE_float(
+    "libsql_connection_timeout_seconds",
+    5.0,
+    "Maximum duration of a live libSQL operation.",
+)
+flags.DEFINE_integer(
+    "libsql_pool_size",
+    8,
+    "Maximum number of live libSQL connections.",
+)
+flags.DEFINE_float(
+    "libsql_pool_checkout_timeout_seconds",
+    5.0,
+    "Maximum duration a request waits for an idle live libSQL connection.",
+)
 
 FLAGS = flags.FLAGS
 sys.argv = FLAGS(sys.argv, known_only=True)
@@ -77,7 +92,12 @@ pricing_controller = PricingController.from_env()
 db = (
     DatabaseManager.from_local("deployer.db", pricing_controller=pricing_controller)
     if FLAGS.use_local_test_db or FLAGS.testing_use_local_database
-    else DatabaseManager.from_live(pricing_controller=pricing_controller)
+    else DatabaseManager.from_live(
+        pricing_controller=pricing_controller,
+        live_connection_timeout=FLAGS.libsql_connection_timeout_seconds,
+        live_pool_size=FLAGS.libsql_pool_size,
+        live_checkout_timeout=FLAGS.libsql_pool_checkout_timeout_seconds,
+    )
 )
 canvas_states = CanvasStateService(theater_manager)
 agent_manager = AgentSessionManager(

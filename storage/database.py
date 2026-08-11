@@ -10,6 +10,7 @@ import sqlite3
 import secrets
 import threading
 import time
+from queue import Empty, Queue
 from typing import Any, Dict, List, Optional
 import logging
 import re
@@ -20,6 +21,10 @@ from pricing.pricing_controller import PricingController
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+class DatabaseConnectionTimeout(TimeoutError):
+    """Raised when a live database connection is not available in time."""
 
 
 class _DictCursor:
@@ -85,11 +90,13 @@ class _ReusableConnection:
         is_dict_cursor: bool = False,
         lock: Optional[Any] = None,
         retry_cursor_factory=None,
+        release_callback=None,
     ):
         self._conn = conn
         self._is_dict_cursor = is_dict_cursor
         self._lock = lock
         self._retry_cursor_factory = retry_cursor_factory
+        self._release_callback = release_callback
 
     def cursor(self):
         if self._is_dict_cursor:
@@ -129,6 +136,8 @@ class _ReusableConnection:
         finally:
             if self._lock:
                 self._lock.release()
+            if self._release_callback:
+                self._release_callback(self._conn)
         return False
 
     def __getattr__(self, name):
@@ -138,7 +147,15 @@ class _ReusableConnection:
 class DatabaseManager:
     """Manages SQLite database storage for users, authentication tokens, and deployments."""
 
-    def __init__(self, is_live: bool, db_path: Optional[str] = None, pricing_controller: Optional[PricingController] = None):
+    def __init__(
+        self,
+        is_live: bool,
+        db_path: Optional[str] = None,
+        pricing_controller: Optional[PricingController] = None,
+        live_connection_timeout: Optional[float] = None,
+        live_pool_size: Optional[int] = None,
+        live_checkout_timeout: Optional[float] = None,
+    ):
         self.is_live = is_live
         self.db_path = db_path
         self._conn = None
@@ -148,16 +165,38 @@ class DatabaseManager:
         # synchronous request worker threads and the application's async routes.
         # Keep a single operation on the cached connection at a time.
         self._connection_lock = threading.RLock()
-        self._live_connection_timeout = self._get_live_connection_timeout()
+        self._live_connection_timeout = self._get_live_connection_timeout(live_connection_timeout)
+        self._live_pool_size = self._get_live_pool_size(live_pool_size)
+        self._live_checkout_timeout = self._get_live_checkout_timeout(live_checkout_timeout)
+        self._live_pool: Optional[Queue] = None
+        self._live_pool_total = 0
+        self._live_pool_closed = False
         self.pricing_controller = pricing_controller or PricingController.from_env()
 
     @staticmethod
-    def _get_live_connection_timeout() -> float:
-        """Read a bounded libsql timeout without allowing an invalid env value."""
+    def _get_live_connection_timeout(value: Optional[float]) -> float:
+        """Return a bounded timeout for each live libsql operation."""
         try:
-            timeout = float(os.environ.get("LIBSQL_CONNECTION_TIMEOUT_SECONDS", "5"))
-        except ValueError:
+            timeout = float(5.0 if value is None else value)
+        except (TypeError, ValueError):
             timeout = 5.0
+        return max(0.1, timeout)
+
+    @staticmethod
+    def _get_live_pool_size(value: Optional[int]) -> int:
+        """Return a bounded live connection pool size."""
+        try:
+            size = int(8 if value is None else value)
+        except (TypeError, ValueError):
+            size = 8
+        return min(max(1, size), 32)
+
+    def _get_live_checkout_timeout(self, value: Optional[float]) -> float:
+        """Bound how long a request may wait for an idle live connection."""
+        try:
+            timeout = float(self._live_connection_timeout if value is None else value)
+        except (TypeError, ValueError):
+            timeout = self._live_connection_timeout
         return max(0.1, timeout)
 
     def get_pricing_rates(self) -> Dict[str, float]:
@@ -165,16 +204,42 @@ class DatabaseManager:
         return self.pricing_controller.get_rates()
 
     @classmethod
-    def from_live(cls, pricing_controller: Optional[PricingController] = None) -> "DatabaseManager":
-        return cls(is_live=True, db_path=None, pricing_controller=pricing_controller)
+    def from_live(
+        cls,
+        pricing_controller: Optional[PricingController] = None,
+        live_connection_timeout: Optional[float] = None,
+        live_pool_size: Optional[int] = None,
+        live_checkout_timeout: Optional[float] = None,
+    ) -> "DatabaseManager":
+        return cls(
+            is_live=True,
+            db_path=None,
+            pricing_controller=pricing_controller,
+            live_connection_timeout=live_connection_timeout,
+            live_pool_size=live_pool_size,
+            live_checkout_timeout=live_checkout_timeout,
+        )
 
     @classmethod
     def from_local(cls, db_path: str, pricing_controller: Optional[PricingController] = None) -> "DatabaseManager":
         return cls(is_live=False, db_path=db_path, pricing_controller=pricing_controller)
 
     def close(self) -> None:
-        """Close the active cached database connection if open."""
+        """Close idle database connections without waiting for active requests."""
         with self._connection_lock:
+            self._live_pool_closed = True
+            pool = self._live_pool
+            self._live_pool = None
+            self._live_pool_total = 0
+            if pool is not None:
+                logger.info("Closing idle live database connections.")
+                while True:
+                    try:
+                        pool.get_nowait().close()
+                    except Empty:
+                        break
+                    except Exception:
+                        logger.warning("Failed to close an idle live database connection.", exc_info=True)
             if self._conn is not None:
                 logger.info("Closing active database connection.")
                 self._conn.close()
@@ -183,6 +248,10 @@ class DatabaseManager:
             self._cached_is_live = None
 
     def _get_connection(self):
+        if self.is_live:
+            self._ensure_live_pool()
+            return self._checkout_live_connection()
+
         with self._connection_lock:
             str_db_path = str(self.db_path) if self.db_path is not None else None
             if (
@@ -192,68 +261,116 @@ class DatabaseManager:
                 self.close()
 
             if self._conn is None:
-                if not self.is_live:
-                    db_file = str(self.db_path or "deployer.db")
-                    conn = sqlite3.connect(db_file, check_same_thread=False)
-                    conn.row_factory = sqlite3.Row
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    self._conn = _ReusableConnection(conn, is_dict_cursor=False, lock=self._connection_lock)
-                    self._ensure_tables_exist()
-                else:
-                    turso_url = os.environ.get("TURSO_DATABASE_URL")
-                    turso_token = os.environ.get("TURSO_DB_TOKEN")
-                    if not turso_url or not turso_token:
-                        raise ValueError("Missing Turso database credentials.")
-                    logger.info(
-                        "Opening live libsql connection (timeout=%.1fs).",
-                        self._live_connection_timeout,
-                    )
-                    conn = libsql.connect(
-                        database=turso_url,
-                        auth_token=turso_token,
-                        timeout=self._live_connection_timeout,
-                    )
-                    self._conn = _ReusableConnection(
-                        conn,
-                        is_dict_cursor=True,
-                        lock=self._connection_lock,
-                        retry_cursor_factory=self._reconnect_live_cursor,
-                    )
-                    self._ensure_tables_exist()
+                db_file = str(self.db_path or "deployer.db")
+                conn = sqlite3.connect(db_file, check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                self._conn = _ReusableConnection(conn, is_dict_cursor=False, lock=self._connection_lock)
+                self._ensure_tables_exist()
                 self._cached_db_path = str_db_path
                 self._cached_is_live = self.is_live
 
             return self._conn
 
-    def _reconnect_live_cursor(self):
-        """Replace a failed live connection and return a cursor from the replacement.
+    def _open_live_connection(self):
+        turso_url = os.environ.get("TURSO_DATABASE_URL")
+        turso_token = os.environ.get("TURSO_DB_TOKEN")
+        if not turso_url or not turso_token:
+            raise ValueError("Missing Turso database credentials.")
+        return libsql.connect(
+            database=turso_url,
+            auth_token=turso_token,
+            timeout=self._live_connection_timeout,
+        )
 
-        This is called only by ``_DictCursor`` after an idempotent read fails.
-        The enclosing connection context holds ``_connection_lock``, preventing
-        another request from using the old connection while it is replaced.
-        """
-        if not self.is_live or self._conn is None:
-            raise RuntimeError("Cannot reconnect a missing or local database connection.")
-
+    def _ensure_live_pool(self) -> None:
+        """Create the live connection pool once, before serving requests."""
         with self._connection_lock:
-            turso_url = os.environ.get("TURSO_DATABASE_URL")
-            turso_token = os.environ.get("TURSO_DB_TOKEN")
-            if not turso_url or not turso_token:
-                raise ValueError("Missing Turso database credentials.")
+            if self._live_pool is not None:
+                return
 
-            logger.warning("Retrying a failed libsql read with a new connection.")
-            replacement = libsql.connect(
-                database=turso_url,
-                auth_token=turso_token,
-                timeout=self._live_connection_timeout,
+            logger.info(
+                "Preparing live libsql connection pool (max size=%d, connection timeout=%.1fs).",
+                self._live_pool_size,
+                self._live_connection_timeout,
             )
-            old_connection = self._conn._conn
-            self._conn._conn = replacement
+            pool = Queue(maxsize=self._live_pool_size)
             try:
-                old_connection.close()
+                self._live_pool = pool
+                self._live_pool_total = 0
+                self._live_pool_closed = False
+                self._ensure_tables_exist()
             except Exception:
-                pass
-            return replacement.cursor()
+                self._live_pool = None
+                self._live_pool_total = 0
+                raise
+
+    def _checkout_live_connection(self) -> _ReusableConnection:
+        create_connection = False
+        with self._connection_lock:
+            pool = self._live_pool
+            if pool is None or self._live_pool_closed:
+                raise DatabaseConnectionTimeout("Live database connection pool is unavailable.")
+            try:
+                conn = pool.get_nowait()
+            except Empty:
+                if self._live_pool_total < self._live_pool_size:
+                    self._live_pool_total += 1
+                    conn = None
+                    create_connection = True
+                else:
+                    conn = None
+
+        if create_connection:
+            try:
+                conn = self._open_live_connection()
+            except Exception:
+                with self._connection_lock:
+                    self._live_pool_total = max(0, self._live_pool_total - 1)
+                raise
+
+        if conn is None:
+            try:
+                conn = pool.get(timeout=self._live_checkout_timeout)
+            except Empty as exc:
+                raise DatabaseConnectionTimeout(
+                    f"Timed out after {self._live_checkout_timeout:.1f}s waiting for a live database connection."
+                ) from exc
+
+        lease = _ReusableConnection(
+            conn,
+            is_dict_cursor=True,
+            release_callback=self._release_live_connection,
+        )
+        lease._retry_cursor_factory = lambda: self._replace_live_cursor(lease)
+        return lease
+
+    def _release_live_connection(self, conn) -> None:
+        """Return a lease to its pool, or close it after shutdown."""
+        with self._connection_lock:
+            pool = self._live_pool
+            if pool is not None and not self._live_pool_closed:
+                try:
+                    pool.put_nowait(conn)
+                    return
+                except Exception:
+                    logger.warning("Failed to return live database connection to pool.", exc_info=True)
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    def _replace_live_cursor(self, lease: _ReusableConnection):
+        """Replace only the failed lease before retrying an idempotent read."""
+        logger.warning("Retrying a failed libsql read with a new connection.")
+        replacement = self._open_live_connection()
+        old_connection = lease._conn
+        lease._conn = replacement
+        try:
+            old_connection.close()
+        except Exception:
+            pass
+        return replacement.cursor()
 
     def _ensure_tables_exist(self) -> None:
         if getattr(self, "_initializing_tables", False):

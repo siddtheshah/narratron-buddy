@@ -64,7 +64,7 @@ Use them when they are off cooldown. You will be notified by the system whenever
 
 * list_references: List preloaded reference images from the session references directory. Note: Reference items are already preloaded into your initial context upon agent initialization, so you do not need to call this tool on every turn.
 * create_image <image_prompt> [image_name] [reference_images] [display] [effect]: Creates an image based on a prompt. You can specify a custom `image_name` (e.g. 'hero_portrait') for easy tracking and recall, and pass `reference_images` (names or paths of stock art or previously created images) to adapt visual style and maintain consistency across scenes. If it is displayed, optionally use an animation `effect`.
-* show_image <file_path_or_name> [transition] [effect]: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period. Optionally specify `transition`: `crossfade` (default â€” old image dissolves into new), `fade` (new image fades in from black), or `none` (instant cut). Optionally specify `effect`: `gleam3` (default), `none`, `creeping`, `shining`, `sparkle`, `bendy`, `haze`, or `trace`. The canvas selects the tuned intensity automatically. Choose an effect only when it supports the scene: `sparkle` for starry/magical light, `creeping` for ominous darkness, `shining`/`gleam3` for dreamlike illumination, `bendy` for surreal distortion, `haze` for soft atmospheric movement, and `trace` for pale magical or reflective linework.
+* show_image <file_path_or_name> [transition] [effect]: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period. Optionally specify `transition`: `crossfade` (default â€” old image dissolves into new), `fade` (new image fades in from black), or `none` (instant cut). Optionally specify `effect`: `gleam3` (default), `none`, `creeping`, `dream`, `sparkle`, `bendy`, `haze`, or `trace`. The canvas selects the tuned intensity automatically. Choose an effect only when it supports the scene: `sparkle` for starry/magical light, `creeping` for ominous darkness, `dream` for fancyful splendor, `gleam3` for dramatics, `bendy` for silly springiness, `haze` for distortion and strangeness, and `trace` for making metal and energies pop.
 * browse_images: Returns a list of all available generated image file paths.
 * search_image_by_metadata <metadata_query>: Returns a list of image file paths whose metadata description matches the query by keywords.
 
@@ -76,7 +76,7 @@ Besides greeting the orator initially, use this in tandem with show_image to sho
 ## Context Management
 In order to maintain coherency, you must use these tools to keep track of the scene state. 
 
-* upsert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
+* update_or_insert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
 * clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
 
 ## Music Management
@@ -125,7 +125,7 @@ def create_tool_bundle_for_session(
         image_tools.browse_images,
         image_tools.search_image_by_metadata,
         chat_tools.send_chat_message,
-        named_element_tools.upsert_named_element,
+        named_element_tools.update_or_insert_named_element,
         named_element_tools.clear_scene,
         music_tools.list_playlists,
         music_tools.play_playlist,

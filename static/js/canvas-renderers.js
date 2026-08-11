@@ -2,7 +2,7 @@ import {
     attachImageEffect,
     IMAGE_EFFECTS,
     IMAGE_EFFECT_DEFAULT_INTENSITIES,
-} from "/static/js/image-effects.js";
+} from "/static/js/image-effects.js?v=effects-20260811-2";
 
 /**
  * Draws generated images to a canvas, including transitions and image effects.
@@ -144,11 +144,14 @@ export function createImageRenderer({
             });
         }
 
-        applyImageEffect(newImage, effect, transition);
         if (image) {
+            // Haze and trace sample the DOM image for their source pixels.
+            // Update it before enabling the effect so those layers never
+            // analyse the preceding image (or an empty source on first load).
             image.src = imageUrl;
             image.classList.add(...loadedClassNames);
         }
+        applyImageEffect(newImage, effect, transition);
 
         if (activeAnimation) {
             cancelAnimationFrame(activeAnimation);

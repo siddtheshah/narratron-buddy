@@ -171,7 +171,7 @@ class AgentSession:
         # Retrieve bound tool instances safely
         self.image_tools = get_bound_tool_instance(self.agent, "create_image")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
-        self.named_element_tools = get_bound_tool_instance(self.agent, "upsert_named_element")
+        self.named_element_tools = get_bound_tool_instance(self.agent, "update_or_insert_named_element")
         self.music_tools = get_bound_tool_instance(self.agent, "play_playlist")
 
         self.run_config = build_run_config(

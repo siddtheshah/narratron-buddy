@@ -205,6 +205,31 @@ class TestImageTools(BaseTestCase):
         callback.assert_not_called()
         self.assertIn("sunset_02", tools.image_aliases)
 
+    @patch("tools.image_tool.genai.Client")
+    def test_create_image_displays_requested_effect(self, mock_genai_client):
+        mock_part = MagicMock()
+        mock_part.inline_data.data = create_fake_image_bytes()
+        mock_genai_client.return_value.models.generate_content.return_value.candidates = [
+            MagicMock(content=MagicMock(parts=[mock_part]))
+        ]
+        canvas_state_service = MagicMock()
+        tools = ImageTools(
+            self.config,
+            theater_id="test_theater",
+            theater_manager=TheaterManager(base_theaters_dir=self.temp_dir),
+            canvas_state_service=canvas_state_service,
+        )
+        tools.create_image("a spectral ghost", image_name="ethereal_ghost", effect="haze")
+        tools.join_generation()
+
+        displayed_path = tools.image_aliases["ethereal_ghost"]
+        canvas_state_service.show_image.assert_called_once_with(
+            displayed_path,
+            theater_id="test_theater",
+            transition="crossfade",
+            effect="haze",
+        )
+
     @patch("tools.image_tool.types.Part")
     @patch("tools.image_tool.genai.Client")
     def test_create_image_with_reference_images(self, mock_genai_client, mock_part_cls):
@@ -262,7 +287,7 @@ class TestImageTools(BaseTestCase):
         self.assertIn("Successfully displayed", res)
 
     @patch("tools.image_tool.genai.Client")
-    def test_show_image_and_cooldown(self, mock_genai_client):
+    def test_show_image_can_be_called_repeatedly(self, mock_genai_client):
         tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -278,7 +303,8 @@ class TestImageTools(BaseTestCase):
         callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
 
         res2 = tools.show_image(file_path)
-        self.assertIn("show_image is on cooldown", res2)
+        self.assertIn("Successfully displayed", res2)
+        self.assertEqual(callback.call_count, 2)
 
     @patch("tools.image_tool.genai.Client")
     def test_show_image_transition(self, mock_genai_client):
@@ -296,6 +322,18 @@ class TestImageTools(BaseTestCase):
         res = tools.show_image(file_path, transition="zoom")
         self.assertIn("Successfully displayed", res)
         callback.assert_called_once_with(file_path, transition="zoom", effect="gleam3")
+
+    @patch("tools.image_tool.genai.Client")
+    def test_show_image_resolves_generated_output_by_filename(self, mock_genai_client):
+        """A generated image may be shown later using only its filename."""
+        theater_id = "test_theater"
+        manager = TheaterManager(base_theaters_dir=self.temp_dir)
+        tools = ImageTools(self.config, theater_id=theater_id, theater_manager=manager)
+        filename = "smoky_haze_creature_1786421516.jpg"
+        image_path = os.path.join(tools.output_dir, filename)
+        Image.new("RGB", (10, 10), color="gray").save(image_path)
+
+        self.assertEqual(tools._find_image_path(filename), image_path)
 
     @patch("tools.image_tool.genai.Client")
     def test_search_and_browse_images(self, mock_genai_client):
@@ -509,7 +547,7 @@ class TestImageTools(BaseTestCase):
         self.assertIn("Successfully displayed", res)
 
     @patch("tools.image_tool.genai.Client")
-    def test_show_image_and_cooldown(self, mock_genai_client):
+    def test_show_image_can_be_called_repeatedly(self, mock_genai_client):
         tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
         tools.output_dir = os.path.join(self.temp_dir, "output")
         os.makedirs(tools.output_dir, exist_ok=True)
@@ -525,7 +563,8 @@ class TestImageTools(BaseTestCase):
         callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
 
         res2 = tools.show_image(file_path)
-        self.assertIn("show_image is on cooldown", res2)
+        self.assertIn("Successfully displayed", res2)
+        self.assertEqual(callback.call_count, 2)
 
     @patch("tools.image_tool.genai.Client")
     def test_show_image_transition(self, mock_genai_client):
@@ -616,12 +655,12 @@ class TestImageTools(BaseTestCase):
         img = Image.new("RGB", (10, 10), color="purple")
         img.save(file_path)
 
-        res1 = tools.show_image(file_path)
-        self.assertIn("Successfully displayed", res1)
+        res1 = tools.create_image("a purple scene", display=False)
+        self.assertIn("Image generation started in background", res1)
 
-        # Do NOT call show_image again. Verify callback fires automatically after cooldown duration.
+        # Verify the remaining create_image cooldown still expires automatically.
         time.sleep(0.25)
-        on_cooldown_expired.assert_called_with("show_image")
+        on_cooldown_expired.assert_called_with("create_image")
 
     @patch("tools.image_tool.genai.Client")
     def test_on_after_tool_call_and_canvas_info(self, mock_genai_client):

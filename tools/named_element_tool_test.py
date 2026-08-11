@@ -7,10 +7,10 @@ class TestNamedElementTools(unittest.TestCase):
     def setUp(self):
         self.tools = NamedElementTools(theater_id="test_theater")
 
-    def test_upsert_and_snapshot_preserve_named_elements(self):
-        self.assertEqual(self.tools.upsert_named_element("hero", "Mara, a bold cartographer."), "Added named element 'hero'.")
-        self.assertEqual(self.tools.upsert_named_element("setting", "A flooded observatory."), "Added named element 'setting'.")
-        self.assertEqual(self.tools.upsert_named_element("hero", "Mara, now carrying the star map."), "Updated named element 'hero'.")
+    def test_update_or_insert_and_snapshot_preserve_named_elements(self):
+        self.assertEqual(self.tools.update_or_insert_named_element("hero", "Mara, a bold cartographer."), "Added named element 'hero'.")
+        self.assertEqual(self.tools.update_or_insert_named_element("setting", "A flooded observatory."), "Added named element 'setting'.")
+        self.assertEqual(self.tools.update_or_insert_named_element("hero", "Mara, now carrying the star map."), "Updated named element 'hero'.")
         self.assertEqual(
             self.tools.get_present_elements(),
             [
@@ -22,11 +22,11 @@ class TestNamedElementTools(unittest.TestCase):
     def test_lru_eviction_when_exceeding_max_elements(self):
         for index in range(MAX_NAMED_ELEMENTS):
             self.assertEqual(
-                self.tools.upsert_named_element(f"element-{index}", f"value-{index}"),
+                self.tools.update_or_insert_named_element(f"element-{index}", f"value-{index}"),
                 f"Added named element 'element-{index}'.",
             )
         self.assertEqual(
-            self.tools.upsert_named_element("overflow", "overflow-value"),
+            self.tools.update_or_insert_named_element("overflow", "overflow-value"),
             "Added named element 'overflow'.",
         )
         present = self.tools.get_present_elements()
@@ -36,22 +36,22 @@ class TestNamedElementTools(unittest.TestCase):
 
     def test_lru_update_refreshes_recency(self):
         for index in range(MAX_NAMED_ELEMENTS):
-            self.tools.upsert_named_element(f"element-{index}", f"value-{index}")
+            self.tools.update_or_insert_named_element(f"element-{index}", f"value-{index}")
 
         # Update element-0, moving it to the end (most recent).
         self.assertEqual(
-            self.tools.upsert_named_element("element-0", "updated-value-0"),
+            self.tools.update_or_insert_named_element("element-0", "updated-value-0"),
             "Updated named element 'element-0'.",
         )
         # Adding a 6th element should evict element-1 (the new least recently used), not element-0.
-        self.tools.upsert_named_element("overflow", "overflow-value")
+        self.tools.update_or_insert_named_element("overflow", "overflow-value")
         present_names = [e["name"] for e in self.tools.get_present_elements()]
         self.assertNotIn("element-1", present_names)
         self.assertIn("element-0", present_names)
         self.assertIn("overflow", present_names)
 
     def test_clear_scene_removes_all_elements(self):
-        self.tools.upsert_named_element("hero", "Mara")
+        self.tools.update_or_insert_named_element("hero", "Mara")
         self.assertEqual(self.tools.clear_scene(), "Cleared 1 named element(s) from the scene.")
         self.assertEqual(self.tools.get_present_elements(), [])
 
@@ -63,7 +63,7 @@ class TestNamedElementTools(unittest.TestCase):
         mock_canvas_service.get.return_value = mock_canvas_state
 
         tools1 = NamedElementTools(theater_id="stage_1", canvas_state_service=mock_canvas_service)
-        tools1.upsert_named_element("hero", "Mara")
+        tools1.update_or_insert_named_element("hero", "Mara")
         mock_canvas_state.set_named_elements.assert_called_with([{"name": "hero", "content": "Mara"}])
 
         # Simulate saved elements in session state for reloading

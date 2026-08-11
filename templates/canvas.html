@@ -7,7 +7,7 @@
     <title>Narratron Canvas</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/image-effects.css">
+    <link rel="stylesheet" href="/static/css/image-effects.css?v=effects-20260811-2">
     <style>
         :root {
             --bg-color: #0f1115;
@@ -1933,10 +1933,11 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=effects-20260811-2";
 
         let lastTime = -1;
         let lastImageRawUrl = null;
+        let lastImageEffect = null;
         let isFirstCanvasLoad = true;
         const currentImage = document.getElementById('current-image');
         const bgLayer = document.getElementById('bg-layer');
@@ -2782,7 +2783,15 @@
                     }];
                 }
 
-                const isNewImage = (data.latest && (data.time > lastTime || data.latest !== lastImageRawUrl));
+                const currentImageEffect = data.effect || 'gleam3';
+                // A show_image call may change only presentation (for example,
+                // applying haze to an image the fallback already displayed).
+                // Treat that as an update even when the URL has not changed.
+                const isNewImage = data.latest && (
+                    data.time > lastTime
+                    || data.latest !== lastImageRawUrl
+                    || currentImageEffect !== lastImageEffect
+                );
                 if (isFirstCanvasLoad) {
                     isFirstCanvasLoad = false;
                     currentViewIndex = imageHistory.length - 1;
@@ -2791,8 +2800,9 @@
                     if (data.latest) {
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
+                        lastImageEffect = currentImageEffect;
                         const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                        applyImageTransition(newImgUrl, 'none', data.effect || 'gleam3');
+                        applyImageTransition(newImgUrl, 'none', currentImageEffect);
                         if (data.prompt) {
                             promptTextSpan.textContent = data.prompt;
                             promptBtn.style.display = 'flex';
@@ -2802,6 +2812,7 @@
                 } else if (isNewImage) {
                     lastTime = data.time;
                     lastImageRawUrl = data.latest;
+                    lastImageEffect = currentImageEffect;
                     const newImgUrl = data.latest + "?t=" + new Date().getTime();
                     const transition = (data.transition || 'crossfade').toLowerCase().trim();
 
@@ -2822,7 +2833,7 @@
                             promptBtn.style.display = 'none';
                             promptPinned = false;
 
-                            applyImageTransition(newImgUrl, transition, data.effect || 'gleam3');
+                            applyImageTransition(newImgUrl, transition, currentImageEffect);
 
                             if (data.prompt) {
                                 promptTextSpan.textContent = data.prompt;

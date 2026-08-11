@@ -8,6 +8,7 @@ from fastapi import HTTPException, Response
 
 import object_registry
 from api_server import auth
+from storage.database import DatabaseConnectionTimeout
 
 
 def request(*, cookies=None, base_url="http://testserver/"):
@@ -53,6 +54,14 @@ def test_logout_invalidates_present_cookie_and_always_clears_it():
         assert auth.logout_user(request(cookies={"auth_token": "old"}), response) == {"status": "ok"}
     registry_db.invalidate_session_token.assert_called_once_with("old")
     assert "auth_token=\"\"" in response.headers["set-cookie"]
+
+
+def test_auth_me_returns_a_timeout_response_when_no_connection_is_available():
+    with patch.object(auth, "get_current_user", side_effect=DatabaseConnectionTimeout("pool busy")):
+        with pytest.raises(HTTPException) as error:
+            auth.get_auth_me(request())
+
+    assert error.value.status_code == 503
 
 
 def test_mic_sensitivity_validates_range_before_writing_registry():

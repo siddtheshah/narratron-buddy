@@ -82,7 +82,7 @@ class NamedElementTools(BaseTools):
         except Exception as e:
             logger.warning(f"Failed to save named elements to session state: {e}")
 
-    def upsert_named_element(self, name: str, content: str) -> str:
+    def update_or_insert_named_element(self, name: str, content: str) -> str:
         """Insert or replace one named element in the current scene.
 
         Can be used to take objects, characters, locations, and relationships within a scene.

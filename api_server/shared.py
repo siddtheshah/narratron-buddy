@@ -9,10 +9,12 @@ import re
 from typing import Optional
 
 from fastapi import Request, Response, WebSocket, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import object_registry
 from api_server.dependencies import FLAGS, canvas_states, db, theater_manager
+from storage.database import DatabaseConnectionTimeout
 
 # Project root is one level above api_server/
 PROJECT_ROOT = object_registry.PROJECT_ROOT
@@ -20,6 +22,16 @@ PROJECT_ROOT = object_registry.PROJECT_ROOT
 logger = logging.getLogger(__name__)
 config = object_registry.config
 app = object_registry.app
+
+
+@app.exception_handler(DatabaseConnectionTimeout)
+async def database_connection_timeout_handler(request: Request, exc: DatabaseConnectionTimeout):
+    """Return a bounded failure instead of exhausting request workers."""
+    logger.warning("Database connection checkout timed out for %s.", request.url.path)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database service is temporarily unavailable. Please retry."},
+    )
 
 
 theaters_folder = str(theater_manager.base_dir)
