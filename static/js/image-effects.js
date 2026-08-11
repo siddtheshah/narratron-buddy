@@ -30,7 +30,7 @@ export const IMAGE_EFFECT_DEFAULT_INTENSITIES = Object.freeze({
   gleam3: 0.68,
   bendy: 0.45,
   haze: 0.75,
-  trace: 0.78,
+  trace: 0.60,
 });
 
 const ALL_EFFECT_CLASSES = Object.values(IMAGE_EFFECTS)
@@ -49,6 +49,22 @@ function normaliseSignedIntensity(value) {
 function smoothstep(edge0, edge1, value) {
   const progress = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
   return progress * progress * (3 - 2 * progress);
+}
+
+/** Returns a distribution-relative cutoff without sorting a full image buffer. */
+function histogramPercentile(values, fraction, maximum = 1, bins = 256) {
+  const histogram = new Uint32Array(bins);
+  for (let index = 0; index < values.length; index += 1) {
+    const bin = clamp(Math.floor(values[index] / maximum * (bins - 1)), 0, bins - 1);
+    histogram[bin] += 1;
+  }
+  const target = Math.max(0, Math.ceil(values.length * fraction) - 1);
+  let cumulative = 0;
+  for (let bin = 0; bin < bins; bin += 1) {
+    cumulative += histogram[bin];
+    if (cumulative > target) return (bin + 0.5) / bins * maximum;
+  }
+  return maximum;
 }
 
 /**
@@ -1596,6 +1612,7 @@ function createTraceLayer(frame, image) {
   let outputPixels;
   let traceStrength;
   let traceProgress;
+  let traceOrientationGroups;
   let enabled = false;
   let paused = prefersReducedMotion.matches;
   let mapVisible = false;
@@ -1613,15 +1630,36 @@ function createTraceLayer(frame, image) {
     try {
       const pixels = sourceContext.getImageData(0, 0, width, height);
       const candidates = new Uint8Array(width * height);
+      const values = new Float32Array(candidates.length);
+      const saturations = new Float32Array(candidates.length);
       for (let index = 0; index < candidates.length; index += 1) {
         const pixel = index * 4;
         const maximum = Math.max(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2]) / 255;
         const minimum = Math.min(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2]) / 255;
-        const saturation = maximum > 0.001 ? (maximum - minimum) / maximum : 0;
-        candidates[index] = maximum > 0.62 && saturation < 0.33 ? 1 : 0;
+        values[index] = maximum;
+        saturations[index] = maximum > 0.001 ? (maximum - minimum) / maximum : 0;
+      }
+      const localValues = gaussianBlurValues(values, width, height, 14);
+      const relativeBrightness = new Float32Array(candidates.length);
+      for (let index = 0; index < candidates.length; index += 1) {
+        relativeBrightness[index] = Math.max(0, (values[index] - localValues[index]) / (0.08 + localValues[index]));
+      }
+      // All three gates adapt to the current image, making a pale line in a
+      // low-key scene as eligible as a pale line in a bright illustration.
+      const brightCutoff = histogramPercentile(values, 0.72);
+      const relativeBrightnessCutoff = Math.max(0.018, histogramPercentile(relativeBrightness, 0.70, 2));
+      const saturationCutoff = Math.min(0.46, histogramPercentile(saturations, 0.46) + 0.055);
+      for (let index = 0; index < candidates.length; index += 1) {
+        candidates[index] = values[index] >= brightCutoff
+          && relativeBrightness[index] >= relativeBrightnessCutoff
+          && saturations[index] <= saturationCutoff ? 1 : 0;
       }
       traceStrength = new Float32Array(candidates.length);
       traceProgress = new Float32Array(candidates.length);
+      traceOrientationGroups = new Int8Array(candidates.length);
+      traceOrientationGroups.fill(-1);
+      const orientationGroupCount = 4;
+      const orientationGroupSizes = new Uint32Array(orientationGroupCount);
       const visited = new Uint8Array(candidates.length);
       let lineCount = 0;
       for (let start = 0; start < candidates.length; start += 1) {
@@ -1660,10 +1698,35 @@ function createTraceLayer(frame, image) {
           minimumProjection = Math.min(minimumProjection, projection); maximumProjection = Math.max(maximumProjection, projection);
         }
         if (maximumProjection - minimumProjection < 7) continue;
+        // PCA gives the stroke an axis but not a direction. Recover that
+        // direction from the component's aggregate brightness gradient, so
+        // travel always heads from the darker end toward the brighter end.
+        let meanProjection = 0;
+        let meanBrightness = 0;
+        for (const index of component) {
+          meanProjection += (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          meanBrightness += values[index];
+        }
+        meanProjection /= component.length;
+        meanBrightness /= component.length;
+        let brightnessGradient = 0;
         for (const index of component) {
           const projection = (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
-          traceProgress[index] = (projection - minimumProjection) / (maximumProjection - minimumProjection);
+          brightnessGradient += (projection - meanProjection) * (values[index] - meanBrightness);
+        }
+        const risesWithProjection = brightnessGradient >= 0;
+        // Unlike the geometric line axis, a brightness gradient has an
+        // actual heading. Keep the full 360° range, so two otherwise parallel
+        // regions moving in opposite directions belong to separate families.
+        const directedOrientation = ((angle + (risesWithProjection ? 0 : Math.PI)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+        const orientationGroup = clamp(Math.floor(directedOrientation / (Math.PI * 2) * orientationGroupCount), 0, orientationGroupCount - 1);
+        for (const index of component) {
+          const projection = (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          const normalizedProgress = (projection - minimumProjection) / (maximumProjection - minimumProjection);
+          traceProgress[index] = risesWithProjection ? normalizedProgress : 1 - normalizedProgress;
           traceStrength[index] = 1;
+          traceOrientationGroups[index] = orientationGroup;
+          orientationGroupSizes[orientationGroup] += 1;
         }
         lineCount += 1;
       }
@@ -1672,17 +1735,26 @@ function createTraceLayer(frame, image) {
         const map = mapContext.createImageData(width, height);
         for (let index = 0; index < traceStrength.length; index += 1) {
           const pixel = index * 4;
-          if (traceStrength[index]) { map.data[pixel] = 98; map.data[pixel + 1] = 255; map.data[pixel + 2] = 192; map.data[pixel + 3] = 230; }
+          if (traceStrength[index]) {
+            const group = traceOrientationGroups[index];
+            const colours = [[105, 236, 255], [152, 255, 166], [255, 202, 105], [226, 145, 255]];
+            map.data[pixel] = colours[group][0]; map.data[pixel + 1] = colours[group][1]; map.data[pixel + 2] = colours[group][2]; map.data[pixel + 3] = 230;
+          }
           else { map.data[pixel] = pixels.data[pixel] * 0.12; map.data[pixel + 1] = pixels.data[pixel + 1] * 0.12; map.data[pixel + 2] = pixels.data[pixel + 2] * 0.12; map.data[pixel + 3] = 255; }
         }
         mapContext.putImageData(map, 0, 0);
       }
       canvas.dataset.traceLineCount = String(lineCount);
       canvas.dataset.tracePixels = String(traceStrength.reduce((total, strength) => total + (strength ? 1 : 0), 0));
+      canvas.dataset.traceBrightCutoff = brightCutoff.toFixed(3);
+      canvas.dataset.traceRelativeBrightnessCutoff = relativeBrightnessCutoff.toFixed(3);
+      canvas.dataset.traceSaturationCutoff = saturationCutoff.toFixed(3);
+      canvas.dataset.traceOrientationGroups = Array.from(orientationGroupSizes).join(',');
+      canvas.dataset.traceBrightnessDirected = 'true';
       canvas.hidden = !enabled; mapCanvas.hidden = !mapVisible;
       draw(performance.now());
     } catch (error) {
-      traceStrength = undefined; traceProgress = undefined; outputPixels = undefined;
+      traceStrength = undefined; traceProgress = undefined; traceOrientationGroups = undefined; outputPixels = undefined;
       canvas.hidden = true; mapCanvas.hidden = true;
       console.warn('Light trace needs a same-origin or CORS-enabled image.', error);
     }
@@ -1691,14 +1763,40 @@ function createTraceLayer(frame, image) {
   function draw(time) {
     if (!context || !outputPixels || !traceStrength || !enabled) return;
     const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
-    const phase = paused ? 0.26 : (time % 3400) / 3400;
+    const orientationGroupCount = 4;
+    const sweepDuration = 2000;
+    const fadeDuration = 260;
+    const deadDuration = 1480;
+    const orientationSlotDuration = sweepDuration + fadeDuration * 2 + deadDuration;
+    const orientationCycleTime = paused ? 0 : time % (orientationSlotDuration * orientationGroupCount);
+    const activeOrientationGroup = paused ? 0 : Math.floor(orientationCycleTime / orientationSlotDuration);
+    const slotTime = paused ? 0 : orientationCycleTime - activeOrientationGroup * orientationSlotDuration;
+    let phase = 0.26;
+    let pulseEnvelope = 1;
+    if (!paused) {
+      if (slotTime < fadeDuration) {
+        phase = 0;
+        pulseEnvelope = slotTime / fadeDuration;
+      } else if (slotTime < fadeDuration + sweepDuration) {
+        phase = (slotTime - fadeDuration) / sweepDuration;
+      } else if (slotTime < fadeDuration * 2 + sweepDuration) {
+        phase = 1;
+        pulseEnvelope = 1 - (slotTime - fadeDuration - sweepDuration) / fadeDuration;
+      } else {
+        // Leave a clear beat of darkness between orientation families.
+        phase = 0;
+        pulseEnvelope = 0;
+      }
+    }
     for (let index = 0; index < traceStrength.length; index += 1) {
       const pixel = index * 4;
       const distance = Math.abs(traceProgress[index] - phase);
-      const wrappedDistance = Math.min(distance, 1 - distance);
-      const pulse = Math.exp(-(wrappedDistance * wrappedDistance) / 0.0019);
-      outputPixels.data[pixel] = 238; outputPixels.data[pixel + 1] = 249; outputPixels.data[pixel + 2] = 255;
-      outputPixels.data[pixel + 3] = Math.round(traceStrength[index] * pulse * intensity * 245);
+      // Trace paths are directional for this animation: reaching one end must
+      // not wrap the pulse around and flash the path's starting point.
+      const pulse = Math.exp(-(distance * distance) / 0.0019);
+      outputPixels.data[pixel] = 255; outputPixels.data[pixel + 1] = 253; outputPixels.data[pixel + 2] = 246;
+      const orientationIsActive = traceOrientationGroups[index] === activeOrientationGroup;
+      outputPixels.data[pixel + 3] = Math.round(traceStrength[index] * pulse * intensity * pulseEnvelope * (orientationIsActive ? 255 : 0));
     }
     context.putImageData(outputPixels, 0, 0);
   }

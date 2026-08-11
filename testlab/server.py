@@ -13,6 +13,7 @@ app = FastAPI(title="Narratron Test Lab")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "static"), name="effects-static")
 app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "templates" / "carousel"), name="carousel")
+app.mount("/test-images", StaticFiles(directory=ROOT / "images"), name="test-images")
 
 
 @app.get("/", include_in_schema=False)

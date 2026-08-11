@@ -113,6 +113,7 @@
   height: 100%;
   pointer-events: none;
   mix-blend-mode: screen;
+  filter: brightness(1.22) drop-shadow(0 0 3px rgba(185, 226, 255, .8));
 }
 
 /* Debug view: green marks the bright, desaturated pixels used by Light trace. */
