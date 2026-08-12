@@ -25,6 +25,7 @@ from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtif
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 from utils.config_loader import get_app_config, get_theater_config
 from components.theater_manager import TheaterManager
+from api_server.auth_cache import auth_session_cache
 
 logger = logging.getLogger(__name__)
 
@@ -544,6 +545,7 @@ class AgentSession:
                     voice_minutes=unbilled_vm,
                     images_created=unbilled_img,
                 )
+                auth_session_cache.invalidate_user(owner_id)
                 logger.info(
                     f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}"
                 )

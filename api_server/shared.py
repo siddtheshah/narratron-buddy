@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 import object_registry
 from api_server.dependencies import FLAGS, canvas_states, db, theater_manager
+from api_server.auth_cache import auth_session_cache
 from storage.database import DatabaseConnectionTimeout
 
 # Project root is one level above api_server/
@@ -63,6 +64,13 @@ def _safe_path_param(value: str, label: str = "parameter") -> str:
     return value
 
 def get_current_user(request: Request | WebSocket, *, record_activity: bool = True) -> Optional[dict]:
+    # Several helpers may authenticate the same request.  Keep this result on
+    # the request object so only the first needs a cache/database lookup.
+    request_cache = getattr(request, "state", request)
+    if hasattr(request_cache, "_narratron_current_user"):
+        cached = request_cache._narratron_current_user
+        return dict(cached) if cached else None
+
     token = None
     if hasattr(request, "cookies") and request.cookies:
         token = request.cookies.get("auth_token")
@@ -86,10 +94,15 @@ def get_current_user(request: Request | WebSocket, *, record_activity: bool = Tr
                     break
 
     if token:
-        user = db.validate_session_token(token, record_activity=record_activity)
+        user = auth_session_cache.get_or_validate(
+            token,
+            lambda: db.validate_session_token(token, record_activity=record_activity),
+        )
         if user:
+            setattr(request_cache, "_narratron_current_user", dict(user))
             return user
 
+    setattr(request_cache, "_narratron_current_user", None)
     return None
 
 

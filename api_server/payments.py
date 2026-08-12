@@ -10,6 +10,7 @@ from pydantic import BaseModel
 import stripe
 
 from api_server.shared import app, db, get_current_user, FLAGS
+from api_server.auth_cache import auth_session_cache
 from pricing.pricing_controller import PricingController
 
 
@@ -116,6 +117,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
                 raise HTTPException(status_code=503, detail="Payment service unavailable")
 
         result = db.add_user_credits(user["id"], credits_to_add, usd_amount, payment_method)
+        auth_session_cache.invalidate_user(user["id"])
         return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
 
     # ========================================
@@ -200,6 +202,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
         )
         if intent.status == "succeeded":
             result = db.add_user_credits(user["id"], credits_to_add, usd_amount, "stripe_live")
+            auth_session_cache.invalidate_user(user["id"])
             return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
         else:
             raise HTTPException(status_code=400, detail=f"Stripe payment status: {intent.status}")
@@ -238,6 +241,7 @@ def verify_stripe_session(session_id: str, request: Request):
                 result = db.add_stripe_session_credits(
                     user["id"], credits_to_add, usd_amount, session_id, "stripe_checkout"
                 )
+                auth_session_cache.invalidate_user(user["id"])
                 return {"status": "ok", "verified": True, "credits_added": credits_to_add, **result}
             return {"status": "ok", "verified": True, "user": user}
         return {"status": "pending", "verified": False, "detail": "Payment not completed."}
@@ -284,6 +288,7 @@ async def stripe_webhook(request: Request):
                 session_id,
                 "stripe_webhook",
             )
+            auth_session_cache.invalidate_user(int(user_id))
 
     return {"status": "ok"}
 

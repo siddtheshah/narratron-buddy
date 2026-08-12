@@ -4,6 +4,7 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel
 
 from api_server.shared import app, db, get_current_user
+from api_server.auth_cache import auth_session_cache
 
 
 class ProfileUpdate(BaseModel):
@@ -34,4 +35,5 @@ def update_my_profile(payload: ProfileUpdate, request: Request):
         db.update_user_profile(user["id"], payload.bio, payload.stats_visible, payload.profile_color)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    auth_session_cache.invalidate_user(user["id"])
     return _profile_or_404(user["username"], request)

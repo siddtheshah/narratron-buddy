@@ -6,6 +6,7 @@ import time
 from fastapi import Request, Response, HTTPException
 from pydantic import BaseModel
 
+from api_server.auth_cache import auth_session_cache
 from api_server.shared import app, db, get_current_user
 from storage.database import DatabaseConnectionTimeout
 from utils.config_loader import get_app_config
@@ -70,6 +71,7 @@ def logout_user(request: Request, response: Response):
     token = request.cookies.get("auth_token")
     if token:
         db.invalidate_session_token(token)
+        auth_session_cache.invalidate_token(token)
     response.delete_cookie("auth_token")
     return {"status": "ok"}
 
@@ -93,6 +95,7 @@ def update_mic_sensitivity_endpoint(req: MicSensitivityRequest, request: Request
     user = get_current_user(request)
     if user:
         db.update_user_mic_sensitivity(user["id"], req.mic_sensitivity)
+        auth_session_cache.invalidate_user(user["id"])
         return {"status": "ok", "authenticated": True, "mic_sensitivity": req.mic_sensitivity}
     return {"status": "ok", "authenticated": False, "mic_sensitivity": req.mic_sensitivity}
 
@@ -127,7 +130,10 @@ def validate_reset_token(token: str):
 def reset_password(req: ResetPasswordRequest):
     if not req.new_password or not req.new_password.strip():
         raise HTTPException(status_code=400, detail="New password cannot be empty.")
+    reset_user = db.validate_password_reset_token(req.token)
     success = db.reset_password_with_token(req.token, req.new_password)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+    if reset_user:
+        auth_session_cache.invalidate_user(reset_user["id"])
     return {"status": "ok", "message": "Password updated successfully! You can now log in with your new password."}

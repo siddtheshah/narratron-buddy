@@ -27,6 +27,7 @@ from api_server.shared import (
     PROJECT_ROOT
 )
 from api_server.dependencies import agent_manager, suggestion_service, canvas_states
+from api_server.auth_cache import auth_session_cache
 from components.theater_manager import TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
 
@@ -398,6 +399,7 @@ async def create_and_deploy_theater(request: Request):
 
     # Record deployment & deduct credits (0.0 cost)
     db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0, theater_config=theater_config)
+    auth_session_cache.invalidate_user(user["id"])
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
