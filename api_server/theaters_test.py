@@ -268,6 +268,31 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(del_res.status_code, 200)
         self.assertEqual(del_res.json()["status"], "ok")
 
+    def test_get_theater_reuses_access_validation_deployment(self):
+        """The metadata endpoint must not look up its deployment twice."""
+        reg_res = self.client.post("/api/auth/register", json={
+            "username": "single_lookup_owner",
+            "email": "single-lookup@example.com",
+            "password": "Password123",
+        })
+        self.assertEqual(reg_res.status_code, 200)
+        create_res = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Single Lookup Theater"},
+        )
+        self.assertEqual(create_res.status_code, 200)
+        theater_id = create_res.json()["theater_id"]
+
+        theaters.theater_access_cache.clear()
+        with patch.object(
+            db.target, "get_deployment", wraps=db.target.get_deployment
+        ) as get_deployment:
+            response = self.client.get(f"/api/theaters/{theater_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["metadata"]["is_owner"])
+        get_deployment.assert_called_once_with(theater_id)
+
     def test_advanced_yaml_is_canonical_over_quick_agent_fields(self):
         self.client.post("/api/auth/register", json={
             "username": "advanced_config_user",

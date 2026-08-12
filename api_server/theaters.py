@@ -173,7 +173,10 @@ async def get_default_theater_config():
 @app.get("/api/theaters/{theater_id}")
 async def get_theater(theater_id: str, request: Request):
     """Retrieve metadata and mounted assets for a specific theater."""
-    _require_canvas_access(request, theater_id)
+    # Access validation already resolves the authenticated principal and the
+    # deployment. Reuse both request-scoped results below rather than issuing
+    # another deployment lookup for this same theater.
+    deployment = _require_canvas_access(request, theater_id)
     theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
@@ -183,8 +186,7 @@ async def get_theater(theater_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Theater not found")
     
     current_user = get_current_user(request, record_activity=False)
-    dep = db.get_deployment(theater_id)
-    owner_id = dep["user_id"] if dep else None
+    owner_id = deployment.get("user_id")
     is_owner = (current_user is not None and owner_id == current_user["id"])
 
     # Analytics must not hold up the canvas reload, especially with a remote DB.
@@ -199,8 +201,8 @@ async def get_theater(theater_id: str, request: Request):
 
     meta_dict = meta.model_dump()
     meta_dict["is_owner"] = is_owner
-    if dep and dep.get("join_key"):
-        meta_dict["join_key"] = dep["join_key"]
+    if deployment.get("join_key"):
+        meta_dict["join_key"] = deployment["join_key"]
     elif not is_owner:
         meta_dict["join_key"] = "🔒 Owner Only"
 
