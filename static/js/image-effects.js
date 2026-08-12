@@ -708,6 +708,64 @@ function gaussianBlurValues(values, width, height, radius) {
 }
 
 /**
+ * Builds summed-area histograms for dark, medium, and bright Value bins. This
+ * lets each Gleam 3 seed inspect its neighborhood without repeatedly scanning
+ * every pixel in it.
+ */
+function buildValueNeighborhoodHistograms(values, width, height, darkValueCutoff, brightValueCutoff) {
+  const stride = width + 1;
+  const darkBin = new Uint32Array(stride * (height + 1));
+  const mediumBin = new Uint32Array(stride * (height + 1));
+  const brightBin = new Uint32Array(stride * (height + 1));
+  for (let y = 1; y <= height; y += 1) {
+    let rowDarkPixels = 0;
+    let rowMediumPixels = 0;
+    let rowBrightPixels = 0;
+    for (let x = 1; x <= width; x += 1) {
+      const value = values[(y - 1) * width + x - 1];
+      if (value <= darkValueCutoff) rowDarkPixels += 1;
+      else if (value >= brightValueCutoff) rowBrightPixels += 1;
+      else rowMediumPixels += 1;
+      darkBin[y * stride + x] = darkBin[(y - 1) * stride + x] + rowDarkPixels;
+      mediumBin[y * stride + x] = mediumBin[(y - 1) * stride + x] + rowMediumPixels;
+      brightBin[y * stride + x] = brightBin[(y - 1) * stride + x] + rowBrightPixels;
+    }
+  }
+  return { darkBin, mediumBin, brightBin, stride };
+}
+
+function neighborhoodValueRatios(histograms, width, height, index, radius) {
+  const x = index % width;
+  const y = Math.floor(index / width);
+  const left = Math.max(0, x - radius);
+  const top = Math.max(0, y - radius);
+  const right = Math.min(width - 1, x + radius);
+  const bottom = Math.min(height - 1, y + radius);
+  const { darkBin, mediumBin, brightBin, stride } = histograms;
+  const countInBin = (bin) => bin[(bottom + 1) * stride + right + 1]
+    - bin[top * stride + right + 1]
+    - bin[(bottom + 1) * stride + left]
+    + bin[top * stride + left];
+  const pixelCount = (right - left + 1) * (bottom - top + 1);
+  return [countInBin(darkBin) / pixelCount, countInBin(mediumBin) / pixelCount, countInBin(brightBin) / pixelCount];
+}
+
+/**
+ * Gini coefficient of the observed ratios relative to a desired distribution.
+ * A zero score is a perfect target match; lower scores are more desirable.
+ */
+function targetRelativeGini(observedRatios, targetRatios) {
+  const relativeRatios = observedRatios.map((ratio, index) => ratio / targetRatios[index]);
+  const total = relativeRatios.reduce((sum, ratio) => sum + ratio, 0);
+  if (!total) return 1;
+  let differenceTotal = 0;
+  for (const first of relativeRatios) {
+    for (const second of relativeRatios) differenceTotal += Math.abs(first - second);
+  }
+  return differenceTotal / (2 * relativeRatios.length * total);
+}
+
+/**
  * Gleam 3 keeps the inverse-Gaussian highlight mask spatially fixed, then
  * builds its time-varying mask from many short-lived Gaussians. Their centres
  * are sampled from the value-flow peaks, so broad bright basins receive more
@@ -853,26 +911,61 @@ function createGleam3Layer(frame, image) {
       // Avoid a diffuse field of tiny basins: only peaks with meaningful
       // upstream value-flow support may seed a renewing Gaussian.
       const minimumFlowScore = Math.max(64, flow.maximumScore * 0.26);
+      // Prefer bright peaks whose 31px local neighborhood approaches 25% dark,
+      // 50% medium, and 25% bright. Rank candidates by target-relative Gini
+      // imbalance and retain the best half.
+      const darkNeighborhoodRadius = 15;
+      const darkValueCutoff = 0.25;
+      const brightValueCutoff = 0.75;
+      const targetValueRatios = [0.25, 0.50, 0.25];
+      const valueNeighborhoodHistograms = buildValueNeighborhoodHistograms(
+        values,
+        width,
+        height,
+        darkValueCutoff,
+        brightValueCutoff,
+      );
+      const seedCandidates = [];
       for (let index = 0; index < values.length; index += 1) {
         const positiveResidual = Math.max(0, values[index] - blurredValues[index]);
         seedMask[index] = smoothstep(0.015, 0.060, positiveResidual);
         const score = flow.peakScores[index];
         if (score >= minimumFlowScore) {
-          const strength = Math.log1p(score) / Math.log1p(flow.maximumScore);
-          flowSeedStrength[index] = strength;
-          seedWeightTotal += 0.10 + strength * strength;
-          seedIndices.push(index);
-          seedCumulativeWeights.push(seedWeightTotal);
+          const valueRatios = neighborhoodValueRatios(
+            valueNeighborhoodHistograms,
+            width,
+            height,
+            index,
+            darkNeighborhoodRadius,
+          );
+          seedCandidates.push({
+            index,
+            score,
+            // Lower is better: zero when the neighborhood matches the target.
+            imbalance: targetRelativeGini(valueRatios, targetValueRatios),
+          });
         }
       }
+      seedCandidates.sort((first, second) => first.imbalance - second.imbalance || second.score - first.score);
+      const retainedSeedCandidates = seedCandidates.slice(0, Math.ceil(seedCandidates.length / 2));
+      for (const candidate of retainedSeedCandidates) {
+        const strength = Math.log1p(candidate.score) / Math.log1p(flow.maximumScore);
+        flowSeedStrength[candidate.index] = strength;
+        seedWeightTotal += 0.10 + strength * strength;
+        seedIndices.push(candidate.index);
+        seedCumulativeWeights.push(seedWeightTotal);
+      }
       drawSeedMap();
-      gaussians = Array.from({ length: Math.min(156, Math.max(52, Math.round(seedIndices.length / 18))) }, () => ({}));
+      const requestedGaussianCount = Math.min(156, Math.max(52, Math.round(seedIndices.length / 18)));
+      const gaussianCount = Math.min(requestedGaussianCount, Math.floor(seedIndices.length / 2));
+      gaussians = Array.from({ length: gaussianCount }, () => ({}));
       const now = performance.now();
       gaussians.forEach((gaussian) => renewGaussian(gaussian, now - Math.random() * 1350));
       canvas.dataset.gleam3SeedPixels = String(seedIndices.length);
       canvas.dataset.gleam3SeedSource = 'value-flow';
       canvas.dataset.gleam3FlowMaximumScore = String(flow.maximumScore);
       canvas.dataset.gleam3MinimumFlowScore = String(minimumFlowScore);
+      canvas.dataset.gleam3ValueBalanceSeedsRemoved = String(seedCandidates.length - seedIndices.length);
       canvas.dataset.gleam3Gaussians = String(gaussians.length);
       canvas.dataset.gleam3MaximumEnergy = String(maximumGaussianEnergy);
       canvas.hidden = !enabled;
