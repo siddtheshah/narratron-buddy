@@ -2,6 +2,7 @@ fastapi
 uvicorn
 google-adk
 google-genai
+openai>=1.0
 pyyaml
 Pillow
 python-multipart

@@ -9,6 +9,7 @@ output/
 scratch/
 theaters/
 evaluation_results/
+testlab/benchmark_output/
 .env
 *.db
 deployer.db*
