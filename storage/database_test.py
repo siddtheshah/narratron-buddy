@@ -6,6 +6,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from queue import Queue
@@ -88,6 +89,27 @@ class TestDictCursorAndReusableConnection(unittest.TestCase):
             cursor.execute("INSERT INTO users (username) VALUES (?)", ("alice",))
 
         retry_factory.assert_not_called()
+
+    def test_dict_cursor_closes_and_retries_timed_out_read(self):
+        unblock = threading.Event()
+        timed_out_connection = MagicMock()
+        timed_out_connection.close.side_effect = unblock.set
+        failed_cursor = MagicMock()
+        failed_cursor.execute.side_effect = lambda *_: unblock.wait(1)
+        replacement_cursor = MagicMock()
+        retry_factory = MagicMock(return_value=replacement_cursor)
+
+        cursor = _DictCursor(
+            failed_cursor,
+            retry_cursor_factory=retry_factory,
+            operation_timeout=0.01,
+            timeout_callback=timed_out_connection.close,
+        )
+        cursor.execute("SELECT 1")
+
+        timed_out_connection.close.assert_called_once_with()
+        retry_factory.assert_called_once_with()
+        replacement_cursor.execute.assert_called_once_with("SELECT 1", ())
 
     def test_reusable_connection_context_manager_normal(self):
         mock_conn = MagicMock()
@@ -176,6 +198,20 @@ class TestLiveConnectionPool(unittest.TestCase):
 
         with lease:
             pass
+        raw_connection.close.assert_called_once()
+
+    def test_timed_out_lease_is_discarded_instead_of_returned_to_pool(self):
+        raw_connection = MagicMock()
+        self.db._live_pool.put_nowait(raw_connection)
+        self.db._live_pool_total = 1
+        lease = self.db._get_connection()
+
+        self.db._discard_live_connection(lease)
+        with lease:
+            pass
+
+        self.assertTrue(self.db._live_pool.empty())
+        self.assertEqual(self.db._live_pool_total, 0)
         raw_connection.close.assert_called_once()
 
 

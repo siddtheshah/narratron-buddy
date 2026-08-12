@@ -27,6 +27,10 @@ class DatabaseConnectionTimeout(TimeoutError):
     """Raised when a live database connection is not available in time."""
 
 
+class DatabaseOperationTimeout(TimeoutError):
+    """Raised after a live database operation exceeds its deadline."""
+
+
 class _DictCursor:
     """Wraps a DB-API cursor so fetchone/fetchall return dicts keyed by column name.
 
@@ -34,13 +38,21 @@ class _DictCursor:
     to map tuple positions to column names after each query.
     """
 
-    def __init__(self, cursor, retry_cursor_factory=None):
+    def __init__(
+        self,
+        cursor,
+        retry_cursor_factory=None,
+        operation_timeout: Optional[float] = None,
+        timeout_callback=None,
+    ):
         self._cursor = cursor
         self._retry_cursor_factory = retry_cursor_factory
+        self._operation_timeout = operation_timeout
+        self._timeout_callback = timeout_callback
 
     def execute(self, sql, params=()):
         try:
-            self._cursor.execute(sql, params)
+            self._execute_with_deadline(sql, params)
         except Exception as exc:
             # A response timeout can leave a remote libsql connection unusable.
             # Retrying reads is safe; retrying a write after an unknown outcome
@@ -48,17 +60,50 @@ class _DictCursor:
             if not self._retry_cursor_factory or not _is_retryable_read_error(sql, exc):
                 raise
             self._cursor = self._retry_cursor_factory()
-            self._cursor.execute(sql, params)
+            self._execute_with_deadline(sql, params)
         return self
 
+    def _execute_with_deadline(self, sql, params) -> None:
+        """Execute a statement and tear down a connection that outlives its deadline."""
+        self._run_with_deadline(lambda: self._cursor.execute(sql, params))
+
+    def _run_with_deadline(self, operation):
+        """Run one libsql call while ensuring its lease cannot outlive the deadline."""
+        if self._operation_timeout is None:
+            return operation()
+
+        expired = threading.Event()
+
+        def _expire() -> None:
+            expired.set()
+            if self._timeout_callback:
+                try:
+                    self._timeout_callback()
+                except Exception:
+                    logger.warning("Failed to close a timed-out live database connection.", exc_info=True)
+
+        timer = threading.Timer(self._operation_timeout, _expire)
+        timer.daemon = True
+        timer.start()
+        try:
+            result = operation()
+        finally:
+            timer.cancel()
+
+        if expired.is_set():
+            raise DatabaseOperationTimeout(
+                f"Live database operation exceeded {self._operation_timeout:.1f}s."
+            )
+        return result
+
     def fetchone(self):
-        row = self._cursor.fetchone()
+        row = self._run_with_deadline(self._cursor.fetchone)
         if row is None:
             return None
         return self._row_to_dict(row)
 
     def fetchall(self):
-        return [self._row_to_dict(r) for r in self._cursor.fetchall()]
+        return [self._row_to_dict(r) for r in self._run_with_deadline(self._cursor.fetchall)]
 
     def _row_to_dict(self, row):
         if self._cursor.description is None:
@@ -91,24 +136,33 @@ class _ReusableConnection:
         lock: Optional[Any] = None,
         retry_cursor_factory=None,
         release_callback=None,
+        operation_timeout: Optional[float] = None,
+        timeout_callback=None,
     ):
         self._conn = conn
         self._is_dict_cursor = is_dict_cursor
         self._lock = lock
         self._retry_cursor_factory = retry_cursor_factory
         self._release_callback = release_callback
+        self._operation_timeout = operation_timeout
+        self._timeout_callback = timeout_callback
 
     def cursor(self):
         if self._is_dict_cursor:
-            return _DictCursor(self._conn.cursor(), self._retry_cursor_factory)
+            return _DictCursor(
+                self._conn.cursor(),
+                self._retry_cursor_factory,
+                operation_timeout=self._operation_timeout,
+                timeout_callback=self._timeout_callback,
+            )
         return self._conn.cursor()
 
     def commit(self):
-        self._conn.commit()
+        self._run_with_deadline(self._conn.commit)
 
     def rollback(self):
         try:
-            self._conn.rollback()
+            self._run_with_deadline(self._conn.rollback)
         except Exception:
             pass
 
@@ -126,6 +180,35 @@ class _ReusableConnection:
             if wait_seconds >= 0.5:
                 logger.warning("Waited %.2fs for the shared database connection.", wait_seconds)
         return self
+
+    def _run_with_deadline(self, operation) -> None:
+        """Keep a stuck transaction finalization from retaining a live lease."""
+        if self._operation_timeout is None:
+            operation()
+            return
+
+        expired = threading.Event()
+
+        def _expire() -> None:
+            expired.set()
+            if self._timeout_callback:
+                try:
+                    self._timeout_callback()
+                except Exception:
+                    logger.warning("Failed to close a timed-out live database connection.", exc_info=True)
+
+        timer = threading.Timer(self._operation_timeout, _expire)
+        timer.daemon = True
+        timer.start()
+        try:
+            operation()
+        finally:
+            timer.cancel()
+
+        if expired.is_set():
+            raise DatabaseOperationTimeout(
+                f"Live database operation exceeded {self._operation_timeout:.1f}s."
+            )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
@@ -340,16 +423,21 @@ class DatabaseManager:
         lease = _ReusableConnection(
             conn,
             is_dict_cursor=True,
-            release_callback=self._release_live_connection,
+            operation_timeout=self._live_connection_timeout,
         )
+        lease._release_callback = lambda returned: self._release_live_connection(lease, returned)
         lease._retry_cursor_factory = lambda: self._replace_live_cursor(lease)
+        lease._timeout_callback = lambda: self._discard_live_connection(lease)
         return lease
 
-    def _release_live_connection(self, conn) -> None:
+    def _release_live_connection(self, lease: _ReusableConnection, conn) -> None:
         """Return a lease to its pool, or close it after shutdown."""
         with self._connection_lock:
             pool = self._live_pool
-            if pool is not None and not self._live_pool_closed:
+            if getattr(lease, "_discard_connection", None) is conn:
+                self._live_pool_total = max(0, self._live_pool_total - 1)
+                return
+            elif pool is not None and not self._live_pool_closed:
                 try:
                     pool.put_nowait(conn)
                     return
@@ -360,12 +448,26 @@ class DatabaseManager:
         except Exception:
             pass
 
+    def _discard_live_connection(self, lease: _ReusableConnection) -> None:
+        """Close a timed-out lease so it can never block another request in the pool."""
+        conn = lease._conn
+        lease._discard_connection = conn
+        logger.warning(
+            "Live database operation exceeded %.1fs; closing its connection.",
+            self._live_connection_timeout,
+        )
+        try:
+            conn.close()
+        except Exception:
+            logger.warning("Failed to close a timed-out live database connection.", exc_info=True)
+
     def _replace_live_cursor(self, lease: _ReusableConnection):
         """Replace only the failed lease before retrying an idempotent read."""
         logger.warning("Retrying a failed libsql read with a new connection.")
         replacement = self._open_live_connection()
         old_connection = lease._conn
         lease._conn = replacement
+        lease._discard_connection = None
         try:
             old_connection.close()
         except Exception:
