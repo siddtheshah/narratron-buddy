@@ -68,6 +68,28 @@ async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = N
                 await canvas_states.broadcast_baton_update(theater_id, baton_st)
 
 
+@app.websocket("/ws/canvas-state")
+async def canvas_state_websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = None):
+    """Notification-only state channel; REST remains the source of truth."""
+    if theater_id:
+        try:
+            _require_canvas_access(websocket, theater_id)
+        except HTTPException:
+            await websocket.close(code=1008)
+            return
+    await websocket.accept()
+    state = await canvas_states.connect_state_websocket(websocket, theater_id)
+    try:
+        # This endpoint accepts no application commands. Receiving here only
+        # lets the server promptly notice a disconnected browser.
+        while True:
+            await websocket.receive()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        state.unregister_state_websocket(websocket)
+
+
 @app.api_route("/api/orator/toggle_mic", methods=["GET", "POST"])
 async def trigger_orator_mic_toggle(request: Request, theater_id: Optional[str] = None):
     user = get_current_user(request)

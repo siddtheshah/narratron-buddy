@@ -47,9 +47,9 @@
   - Explicit auth events (login, logout, registration, account updates) must invalidate or refresh the browser cache.
 - [ ] Replace high-frequency canvas REST polling with WebSocket state updates.
   - The canvas currently polls latest state and chat every second, plus suggestions every two seconds; authenticated viewers therefore create about five DB reads per second from access checks alone.
-  - Extend the existing doodle WebSocket protocol to publish initial state and mutations for latest image/agent activity, chat, suggestions, and baton state.
-  - Keep REST as initial-hydration/reconnect fallback, with version/ETag responses and adaptive polling (slow/paused while backgrounded) until WebSocket migration is complete.
-  - Ensure reconnect sends a complete, versioned snapshot and supports idempotent client application.
+  - Use a separate notification-only canvas-state WebSocket (not the doodle protocol) to publish revisioned invalidations for latest image/agent activity, chat, and suggestions.
+  - Keep REST as the authoritative initial-hydration/reconnect fetch; use slow, background-aware fallback polling only while the notification socket is disconnected.
+  - Add version/ETag responses and idempotent client application for conditional, coalesced refreshes.
 - [ ] Collapse redundant database work in theater and baton APIs.
   - Refactor `GET /api/theaters/{id}` so access validation, current-user resolution, and deployment lookup share results instead of querying them again.
   - Replace theater-list per-theater metadata/deployment queries with a joined/batched query; avoid the current N+1 pattern.

@@ -338,7 +338,66 @@
         resizeRendererCanvas();
         resizeDoodleCanvas();
         fetchLatestImage();
-        setInterval(fetchLatestImage, 1000);
+
+        // Keep image/doodle collaboration concerns separate. This socket only
+        // says when REST state is stale; it does not carry render data.
+        let canvasStateWs = null;
+        let canvasStateReconnectDelay = 1000;
+        let canvasStateReconnectTimer = null;
+        let canvasStateFallbackTimer = null;
+
+        function stopCanvasStateFallbackPolling() {
+            if (canvasStateFallbackTimer) {
+                clearInterval(canvasStateFallbackTimer);
+                canvasStateFallbackTimer = null;
+            }
+        }
+
+        function startCanvasStateFallbackPolling() {
+            if (canvasStateFallbackTimer) return;
+            canvasStateFallbackTimer = setInterval(() => {
+                if (!document.hidden) fetchLatestImage();
+            }, 30000);
+        }
+
+        function connectCanvasStateSocket() {
+            const stateWsUrl = `${wsProtocol}//${window.location.host}/ws/canvas-state` +
+                (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
+            canvasStateWs = new WebSocket(stateWsUrl);
+            canvasStateWs.onopen = () => {
+                canvasStateReconnectDelay = 1000;
+                stopCanvasStateFallbackPolling();
+            };
+            canvasStateWs.onmessage = event => {
+                try {
+                    const message = JSON.parse(event.data);
+                    if (message.type === 'state_ready' ||
+                        (message.type === 'state_changed' && message.domains?.includes('latest'))) {
+                        fetchLatestImage();
+                    }
+                } catch (error) {
+                    console.warn('Ignoring invalid canvas-state message.', error);
+                }
+            };
+            canvasStateWs.onclose = () => {
+                canvasStateWs = null;
+                startCanvasStateFallbackPolling();
+                if (!canvasStateReconnectTimer) {
+                    canvasStateReconnectTimer = setTimeout(() => {
+                        canvasStateReconnectTimer = null;
+                        connectCanvasStateSocket();
+                    }, canvasStateReconnectDelay);
+                    canvasStateReconnectDelay = Math.min(canvasStateReconnectDelay * 2, 30000);
+                }
+            };
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && (!canvasStateWs || canvasStateWs.readyState !== WebSocket.OPEN)) {
+                fetchLatestImage();
+            }
+        });
+        connectCanvasStateSocket();
     </script>
 </body>
 

@@ -47,6 +47,21 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertEqual(len(manager.get_agent_thought()["text"]), MAX_AGENT_THOUGHT_LENGTH)
         self.assertTrue(manager.get_agent_thought()["text"].endswith("…"))
 
+    def test_state_websocket_receives_compact_invalidations(self):
+        async def exercise():
+            manager = CanvasStateManager(theater_id="state_socket", theater_manager=self.theater_manager)
+            socket = RecordingWebSocket()
+            manager.register_state_websocket(socket)
+            manager.update_current_playlist("test_playlist", ["/playlists/test/1.mp3"])
+            await asyncio.sleep(0)
+            self.assertEqual(manager.state_revision, 1)
+            self.assertEqual(socket.messages, [{
+                "type": "state_changed", "revision": 1, "domains": ["latest"],
+            }])
+            manager.unregister_state_websocket(socket)
+
+        asyncio.run(exercise())
+
     def test_update_shown_image_empty_folder(self):
         with tempfile.TemporaryDirectory() as empty_dir:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:

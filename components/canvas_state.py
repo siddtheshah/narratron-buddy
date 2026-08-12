@@ -1,5 +1,6 @@
 import glob
 import io
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -44,6 +45,11 @@ class CanvasStateManager:
         
         # WebSocket and doodles
         self.active_ws_connections: List[WebSocket] = []
+        # Separate from the doodle socket: this carries notification-only
+        # invalidations, while REST remains authoritative state.
+        self.active_state_ws_connections: List[WebSocket] = []
+        self._state_ws_loop: Optional[asyncio.AbstractEventLoop] = None
+        self.state_revision: int = 0
         self.doodles_state: List[Dict[str, Any]] = []
         self.doodles_enabled: bool = True
 
@@ -113,19 +119,50 @@ class CanvasStateManager:
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
 
+    def _notify_state_changed(self, *domains: str):
+        """Schedule a compact state invalidation for connected viewers."""
+        self.state_revision += 1
+        if not self.active_state_ws_connections or not self._state_ws_loop:
+            return
+        payload = {
+            "type": "state_changed",
+            "revision": self.state_revision,
+            "domains": sorted(set(domains)),
+        }
+        try:
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+            if running_loop is self._state_ws_loop:
+                running_loop.create_task(self.broadcast_state_ws_message(payload))
+            else:
+                if self._state_ws_loop.is_closed():
+                    return
+                asyncio.run_coroutine_threadsafe(
+                    self.broadcast_state_ws_message(payload), self._state_ws_loop
+                )
+        except RuntimeError:
+            # The loop may be gone during application shutdown. Reconnection
+            # sends state_ready and the browser performs a full refresh.
+            pass
+
     def update_current_playlist(self, playlist_name: str, tracks: List[str]):
         self.current_playlist = playlist_name
         self.current_playlist_tracks = tracks
         self.music_paused = False
         self.current_playlist_time = time.time()
+        self._notify_state_changed("latest")
 
     def pause_current_playlist(self):
         self.music_paused = True
         self.current_playlist_time = time.time()
+        self._notify_state_changed("latest")
 
     def resume_current_playlist(self):
         self.music_paused = False
         self.current_playlist_time = time.time()
+        self._notify_state_changed("latest")
 
     def _get_url_for_path(self, file_path: str) -> str:
         if not file_path:
@@ -161,6 +198,7 @@ class CanvasStateManager:
         self.shown_image_prompt = extract_image_prompt(file_path)
         self.shown_image_transition = transition
         self.shown_image_effect = effect
+        self._notify_state_changed("latest")
 
         if file_path:
             image_url = self._get_url_for_path(file_path)
@@ -209,6 +247,13 @@ class CanvasStateManager:
         if profile_color:
             message["profile_color"] = profile_color
         self.chat_manager.add_message(message)
+        self._notify_state_changed("chat")
+
+    def consume_top_suggestion(self) -> Optional[Dict[str, Any]]:
+        suggestion = self.chat_manager.consume_top_suggestion()
+        if suggestion:
+            self._notify_state_changed("chat", "suggestions")
+        return suggestion
 
     def set_agent_thought(self, text: str):
         normalized_text = text.strip()
@@ -216,6 +261,7 @@ class CanvasStateManager:
             normalized_text = normalized_text[: MAX_AGENT_THOUGHT_LENGTH - 1].rstrip() + "…"
         self.current_agent_thought = normalized_text
         self.current_agent_thought_time = time.time() if self.current_agent_thought else 0.0
+        self._notify_state_changed("latest")
 
     def get_agent_thought(self) -> Dict[str, Any]:
         return {
@@ -235,6 +281,22 @@ class CanvasStateManager:
             self.active_ws_connections.remove(websocket)
         if hasattr(self, "active_user_connections") and websocket in self.active_user_connections:
             del self.active_user_connections[websocket]
+
+    def register_state_websocket(self, websocket: WebSocket):
+        if websocket not in self.active_state_ws_connections:
+            self.active_state_ws_connections.append(websocket)
+        self._state_ws_loop = asyncio.get_running_loop()
+
+    def unregister_state_websocket(self, websocket: WebSocket):
+        if websocket in self.active_state_ws_connections:
+            self.active_state_ws_connections.remove(websocket)
+
+    async def broadcast_state_ws_message(self, message: Dict[str, Any]):
+        for connection in list(self.active_state_ws_connections):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                self.unregister_state_websocket(connection)
 
     def get_active_viewers(self) -> List[Dict[str, Any]]:
         """Return list of distinct authenticated users currently connected as active canvas viewers."""
@@ -304,6 +366,7 @@ class CanvasStateManager:
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
+        self._notify_state_changed("latest")
 
     def get_doodle_snapshot_data(self) -> List[Dict[str, Any]]:
         """Return the current doodle stroke data for agent observability."""
@@ -351,6 +414,7 @@ class CanvasStateManager:
                 self.live_connection_until = time.time() + max(0.0, recent_seconds)
             elif not active:
                 self.live_connection_until = 0.0
+        self._notify_state_changed("latest")
 
     def get_tool_activity(self) -> Dict[str, bool]:
         now = time.time()

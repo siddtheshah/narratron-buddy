@@ -32,7 +32,7 @@ def format_canvas_state(
 
     # Viewer Collaboration Mode: inject one ranked suggestion for the agent.
     if getattr(canvas_state_manager, "viewer_collab_enabled", False) and canvas_state_manager is not None:
-        suggestion = canvas_state_manager.chat_manager.consume_top_suggestion()
+        suggestion = canvas_state_manager.consume_top_suggestion()
         if suggestion:
             parts.append(
                 f"[Viewer Suggestion]: {suggestion['text']} "

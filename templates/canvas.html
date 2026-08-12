@@ -3165,12 +3165,90 @@
 
         resizeDoodleCanvas();
 
-        setInterval(fetchLatestImage, 1000);
-        setInterval(fetchChat, 1000);
-        setInterval(fetchSuggestions, 2000);
-        fetchLatestImage();
-        fetchChat();
-        fetchSuggestions();
+        // Canvas-state notifications are deliberately separate from the
+        // doodle socket. They invalidate REST data; they never carry canvas
+        // state themselves, so reconnects and rolling deploys remain simple.
+        let canvasStateWs = null;
+        let canvasStateReconnectDelay = 1000;
+        let canvasStateReconnectTimer = null;
+        let canvasStateFallbackTimer = null;
+        let canvasStateRefreshTimer = null;
+        const pendingCanvasStateDomains = new Set();
+
+        function refreshCanvasState(domains = ['latest', 'chat', 'suggestions']) {
+            domains.forEach(domain => pendingCanvasStateDomains.add(domain));
+            if (canvasStateRefreshTimer) return;
+            canvasStateRefreshTimer = setTimeout(() => {
+                canvasStateRefreshTimer = null;
+                const pending = new Set(pendingCanvasStateDomains);
+                pendingCanvasStateDomains.clear();
+                if (pending.has('latest')) fetchLatestImage();
+                if (pending.has('chat')) fetchChat();
+                if (pending.has('suggestions')) fetchSuggestions();
+            }, 50);
+        }
+
+        function stopCanvasStateFallbackPolling() {
+            if (canvasStateFallbackTimer) {
+                clearInterval(canvasStateFallbackTimer);
+                canvasStateFallbackTimer = null;
+            }
+        }
+
+        function startCanvasStateFallbackPolling() {
+            if (canvasStateFallbackTimer) return;
+            // A disconnected socket should not leave a viewer stale, but this
+            // is deliberately far less frequent than the former 1–2s polling.
+            canvasStateFallbackTimer = setInterval(() => {
+                if (!document.hidden) refreshCanvasState();
+            }, 30000);
+        }
+
+        function connectCanvasStateSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const socketUrl = `${protocol}//${window.location.host}/ws/canvas-state` +
+                (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
+            canvasStateWs = new WebSocket(socketUrl);
+
+            canvasStateWs.onopen = () => {
+                canvasStateReconnectDelay = 1000;
+                stopCanvasStateFallbackPolling();
+            };
+            canvasStateWs.onmessage = event => {
+                let message;
+                try {
+                    message = JSON.parse(event.data);
+                } catch (error) {
+                    console.warn('Ignoring invalid canvas-state message.', error);
+                    return;
+                }
+                if (message.type === 'state_ready') {
+                    refreshCanvasState();
+                } else if (message.type === 'state_changed' && Array.isArray(message.domains)) {
+                    refreshCanvasState(message.domains);
+                }
+            };
+            canvasStateWs.onclose = () => {
+                canvasStateWs = null;
+                startCanvasStateFallbackPolling();
+                if (!canvasStateReconnectTimer) {
+                    canvasStateReconnectTimer = setTimeout(() => {
+                        canvasStateReconnectTimer = null;
+                        connectCanvasStateSocket();
+                    }, canvasStateReconnectDelay);
+                    canvasStateReconnectDelay = Math.min(canvasStateReconnectDelay * 2, 30000);
+                }
+            };
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && (!canvasStateWs || canvasStateWs.readyState !== WebSocket.OPEN)) {
+                refreshCanvasState();
+            }
+        });
+
+        refreshCanvasState();
+        connectCanvasStateSocket();
 
         // ========================================
         // Orator vs Viewer Logic

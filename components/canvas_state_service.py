@@ -91,19 +91,30 @@ class CanvasStateService:
     # ------------------------------------------------------------------
 
     def add_suggestion(self, author: str, text: str, theater_id: Optional[str] = None, profile_username: Optional[str] = None, profile_color: Optional[str] = None) -> dict:
-        return self.get(theater_id).chat_manager.add_suggestion(author, text, profile_username=profile_username, profile_color=profile_color)
+        state = self.get(theater_id)
+        suggestion = state.chat_manager.add_suggestion(author, text, profile_username=profile_username, profile_color=profile_color)
+        state._notify_state_changed("chat", "suggestions")
+        return suggestion
 
     def withdraw_suggestion(self, author: str, theater_id: Optional[str] = None) -> bool:
-        return self.get(theater_id).chat_manager.withdraw_suggestion(author)
+        state = self.get(theater_id)
+        changed = state.chat_manager.withdraw_suggestion(author)
+        if changed:
+            state._notify_state_changed("chat", "suggestions")
+        return changed
 
     def upvote_suggestion(self, voter: str, target_author: str, theater_id: Optional[str] = None) -> bool:
-        return self.get(theater_id).chat_manager.upvote_suggestion(voter, target_author)
+        state = self.get(theater_id)
+        changed = state.chat_manager.upvote_suggestion(voter, target_author)
+        if changed:
+            state._notify_state_changed("suggestions")
+        return changed
 
     def get_suggestions(self, theater_id: Optional[str] = None) -> list[dict]:
         return self.get(theater_id).chat_manager.get_suggestions()
 
     def consume_top_suggestion(self, theater_id: Optional[str] = None) -> dict | None:
-        return self.get(theater_id).chat_manager.consume_top_suggestion()
+        return self.get(theater_id).consume_top_suggestion()
 
     def set_viewer_collab_enabled(self, enabled: bool, theater_id: Optional[str] = None) -> None:
         self.get(theater_id).set_viewer_collab_enabled(enabled)
@@ -125,6 +136,15 @@ class CanvasStateService:
         # fields per historical segment. Persisted data stays in its original,
         # backwards-compatible segment format.
         await websocket.send_json({"type": "doodle_snapshot", "batches": state.get_doodle_snapshot_batches()})
+        return state
+
+    async def connect_state_websocket(
+        self, websocket: WebSocket, theater_id: Optional[str] = None
+    ) -> CanvasStateManager:
+        """Register a notification-only canvas-state WebSocket client."""
+        state = self.get(theater_id)
+        state.register_state_websocket(websocket)
+        await websocket.send_json({"type": "state_ready", "revision": state.state_revision})
         return state
 
     async def broadcast_baton_update(self, theater_id: str, baton_state: dict[str, Any]) -> None:

@@ -510,10 +510,82 @@
             } catch (e) { }
         });
 
-        setInterval(fetchChat, 1000);
-        setInterval(fetchLatestState, 1000);
         fetchChat();
         fetchLatestState();
+
+        let canvasStateWs = null;
+        let canvasStateReconnectDelay = 1000;
+        let canvasStateReconnectTimer = null;
+        let canvasStateFallbackTimer = null;
+        let canvasStateRefreshTimer = null;
+        const pendingCanvasStateDomains = new Set();
+
+        function refreshCanvasState(domains = ['latest', 'chat']) {
+            domains.forEach(domain => pendingCanvasStateDomains.add(domain));
+            if (canvasStateRefreshTimer) return;
+            canvasStateRefreshTimer = setTimeout(() => {
+                canvasStateRefreshTimer = null;
+                const pending = new Set(pendingCanvasStateDomains);
+                pendingCanvasStateDomains.clear();
+                if (pending.has('latest')) fetchLatestState();
+                if (pending.has('chat')) fetchChat();
+            }, 50);
+        }
+
+        function stopCanvasStateFallbackPolling() {
+            if (canvasStateFallbackTimer) {
+                clearInterval(canvasStateFallbackTimer);
+                canvasStateFallbackTimer = null;
+            }
+        }
+
+        function startCanvasStateFallbackPolling() {
+            if (canvasStateFallbackTimer) return;
+            canvasStateFallbackTimer = setInterval(() => {
+                if (!document.hidden) refreshCanvasState();
+            }, 30000);
+        }
+
+        function connectCanvasStateSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const socketUrl = `${protocol}//${window.location.host}/ws/canvas-state` +
+                (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : '');
+            canvasStateWs = new WebSocket(socketUrl);
+            canvasStateWs.onopen = () => {
+                canvasStateReconnectDelay = 1000;
+                stopCanvasStateFallbackPolling();
+            };
+            canvasStateWs.onmessage = event => {
+                try {
+                    const message = JSON.parse(event.data);
+                    if (message.type === 'state_ready') {
+                        refreshCanvasState();
+                    } else if (message.type === 'state_changed' && Array.isArray(message.domains)) {
+                        refreshCanvasState(message.domains);
+                    }
+                } catch (error) {
+                    console.warn('Ignoring invalid canvas-state message.', error);
+                }
+            };
+            canvasStateWs.onclose = () => {
+                canvasStateWs = null;
+                startCanvasStateFallbackPolling();
+                if (!canvasStateReconnectTimer) {
+                    canvasStateReconnectTimer = setTimeout(() => {
+                        canvasStateReconnectTimer = null;
+                        connectCanvasStateSocket();
+                    }, canvasStateReconnectDelay);
+                    canvasStateReconnectDelay = Math.min(canvasStateReconnectDelay * 2, 30000);
+                }
+            };
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && (!canvasStateWs || canvasStateWs.readyState !== WebSocket.OPEN)) {
+                refreshCanvasState();
+            }
+        });
+        connectCanvasStateSocket();
 
         // Notify parent window on unload
         window.addEventListener('beforeunload', () => {
