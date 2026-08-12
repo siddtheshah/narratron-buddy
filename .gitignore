@@ -11,7 +11,7 @@ theaters/
 evaluation_results/
 .env
 *.db
-deployer.db
+deployer.db*
 
 
 reference_library/*
