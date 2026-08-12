@@ -143,10 +143,11 @@ def list_theaters(request: Request):
 
     # Fetch last_used timestamps map from DB
     activity_map = db.get_theaters_last_used()
+    deployments_by_theater = db.get_deployments(list(all_theaters_dict))
 
     result = []
     for sid, s_dict in all_theaters_dict.items():
-        dep = db.get_deployment(sid)
+        dep = deployments_by_theater.get(sid)
         owner_id = dep["user_id"] if dep else None
         is_owner = (current_user_id is not None and owner_id == current_user_id)
 

@@ -11,7 +11,7 @@ import secrets
 import threading
 import time
 from queue import Empty, Queue
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 import logging
 import re
 import libsql
@@ -666,6 +666,27 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_users_by_ids(self, user_ids: Iterable[int]) -> Dict[int, Dict]:
+        """Return the requested users in one batched lookup, keyed by user ID."""
+        ids = list(dict.fromkeys(user_id for user_id in user_ids if user_id is not None))
+        if not ids:
+            return {}
+
+        users: Dict[int, Dict] = {}
+        # SQLite limits a statement's bound variables, so keep the batch safely
+        # below its default 999-variable limit.
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for start in range(0, len(ids), 900):
+                batch = ids[start:start + 900]
+                placeholders = ", ".join("?" for _ in batch)
+                cursor.execute(
+                    f"SELECT id, username FROM users WHERE id IN ({placeholders})",
+                    tuple(batch),
+                )
+                users.update({row["id"]: dict(row) for row in cursor.fetchall()})
+        return users
+
     def get_user_profile(self, username: str, viewer_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """Return a public profile, exposing stats only to its owner when private."""
         with self._get_connection() as conn:
@@ -1162,6 +1183,32 @@ class DatabaseManager:
                 except Exception:
                     pass
             return res
+
+    def get_deployments(self, theater_ids: Iterable[str]) -> Dict[str, Dict]:
+        """Return deployments for theater IDs with batched queries, keyed by ID."""
+        ids = list(dict.fromkeys(theater_id for theater_id in theater_ids if theater_id))
+        if not ids:
+            return {}
+
+        deployments: Dict[str, Dict] = {}
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for start in range(0, len(ids), 900):
+                batch = ids[start:start + 900]
+                placeholders = ", ".join("?" for _ in batch)
+                cursor.execute(
+                    f"SELECT * FROM canvas_deployments WHERE theater_id IN ({placeholders})",
+                    tuple(batch),
+                )
+                for row in cursor.fetchall():
+                    deployment = dict(row)
+                    if deployment.get("theater_config") and isinstance(deployment["theater_config"], str):
+                        try:
+                            deployment["theater_config"] = json.loads(deployment["theater_config"])
+                        except Exception:
+                            pass
+                    deployments[deployment["theater_id"]] = deployment
+        return deployments
 
     def save_theater_config(self, theater_id: str, config_data: Dict[str, Any]) -> bool:
         """Update theater_config column for an existing deployment."""
@@ -1704,14 +1751,16 @@ class DatabaseManager:
                 self.decline_baton(theater_id, baton_req.get("target_user_id"))
                 baton_req = None
 
-        owner_user = self.get_user_by_id(dep["user_id"])
-        active_orator_user = self.get_user_by_id(active_orator_id)
-        
-        allowed_users = []
-        for uid in allowed_ids:
-            u = self.get_user_by_id(uid)
-            if u:
-                allowed_users.append({"id": u["id"], "username": u["username"]})
+        users_by_id = self.get_users_by_ids(
+            [dep["user_id"], active_orator_id, *allowed_ids]
+        )
+        owner_user = users_by_id.get(dep["user_id"])
+        active_orator_user = users_by_id.get(active_orator_id)
+        allowed_users = [
+            {"id": user["id"], "username": user["username"]}
+            for user_id in allowed_ids
+            if (user := users_by_id.get(user_id))
+        ]
 
         return {
             "theater_id": theater_id,

@@ -623,7 +623,10 @@ def test_list_theaters_reads_disk_and_database_metadata_from_registry():
     registry_db.get_all_exported_theater_ids.return_value = ["disk-stage", "db-stage"]
     registry_db.get_theater_metadata_from_db.return_value = {"theater_id": "db-stage", "join_key": "DB"}
     registry_db.get_theaters_last_used.return_value = {"db-stage": "2026-01-01"}
-    registry_db.get_deployment.side_effect = lambda theater_id: {"user_id": 1} if theater_id == "disk-stage" else {"user_id": 2}
+    registry_db.get_deployments.return_value = {
+        "disk-stage": {"user_id": 1},
+        "db-stage": {"user_id": 2},
+    }
 
     with patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user", return_value={"id": 1}):
         result = theaters.list_theaters(MagicMock())
@@ -631,6 +634,7 @@ def test_list_theaters_reads_disk_and_database_metadata_from_registry():
     by_id = {item["theater_id"]: item for item in result}
     assert by_id["disk-stage"]["is_owner"] is True
     assert by_id["db-stage"]["join_key"] == "\U0001f512 Owner Only"
+    registry_db.get_deployments.assert_called_once_with(["disk-stage", "db-stage"])
 
 
 def test_resolve_join_key_uses_registry_database_and_grants_verified_access():

@@ -547,6 +547,18 @@ class TestBatonManagement(BaseTestCase):
     def test_get_baton_state_nonexistent_theater(self):
         self.assertIsNone(self.db.get_theater_baton_state("non_existent_theater"))
 
+    def test_get_baton_state_batches_user_lookups(self):
+        self.db.add_allowed_orator(self.theater_id, self.owner["id"], self.orator1["id"])
+        self.db.add_allowed_orator(self.theater_id, self.owner["id"], self.orator2["id"])
+        with patch.object(self.db, "get_users_by_ids", wraps=self.db.get_users_by_ids) as get_users:
+            state = self.db.get_theater_baton_state(self.theater_id)
+
+        get_users.assert_called_once_with([self.owner["id"], self.owner["id"], self.orator1["id"], self.orator2["id"]])
+        self.assertEqual(
+            [user["id"] for user in state["allowed_orators"]],
+            [self.orator1["id"], self.orator2["id"]],
+        )
+
     def test_add_allowed_orator_permissions_and_idempotency(self):
         # Non-owner attempting to add orator
         with self.assertRaises(ValueError) as ctx:
