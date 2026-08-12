@@ -1815,6 +1815,22 @@
     </div>
 
     <script type="module">
+        // Keep canvas identity self-contained: this page must still recognize
+        // its owner if a shared UI script fails to load. Concurrent consumers
+        // on this page nevertheless share the same auth request.
+        let canvasAuthStatePromise = null;
+        function getCanvasAuthState() {
+            if (!canvasAuthStatePromise) {
+                canvasAuthStatePromise = fetch('/api/auth/me')
+                    .then(res => res.json())
+                    .catch(error => {
+                        canvasAuthStatePromise = null;
+                        throw error;
+                    });
+            }
+            return canvasAuthStatePromise;
+        }
+
         // Scene Suggestions Hover & Element Fingerprint Caching Logic
         (function initSuggestionsHandler() {
             const btn = document.getElementById('suggestions-toggle-btn');
@@ -2106,8 +2122,7 @@
 
         async function initChatUser() {
             try {
-                const res = await fetch('/api/auth/me');
-                const data = await res.json();
+                const data = await getCanvasAuthState();
                 if (data.authenticated && data.user && data.user.username) {
                     currentChatUsername = data.user.username;
                     isAuthenticatedUser = true;
@@ -3297,8 +3312,7 @@
         const declineBatonBtn = document.getElementById('decline-baton-btn');
 
         // Fetch current user details
-        fetch('/api/auth/me')
-            .then(res => res.json())
+        getCanvasAuthState()
             .then(data => {
                 if (data.authenticated && data.user) {
                     currentUser = data.user;
@@ -4705,6 +4719,8 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mic_sensitivity: s })
+                }).then(res => {
+                    if (res.ok) canvasAuthStatePromise = null;
                 }).catch(err => console.debug('Failed to sync mic_sensitivity to server:', err));
             }
         }
@@ -4727,8 +4743,7 @@
                 }
             } catch (e) { }
 
-            fetch('/api/auth/me')
-                .then(res => res.json())
+            getCanvasAuthState()
                 .then(data => {
                     if (data && data.authenticated && data.user && data.user.mic_sensitivity !== undefined && data.user.mic_sensitivity !== null) {
                         const userVal = Math.round(data.user.mic_sensitivity * 100);

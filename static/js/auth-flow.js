@@ -4,6 +4,26 @@
  */
 
 window.currentUser = null;
+let authStatePromise = null;
+
+/** Return one shared auth-state request for the lifetime of the current page. */
+function getAuthState({ refresh = false } = {}) {
+  if (refresh) authStatePromise = null;
+  if (!authStatePromise) {
+    authStatePromise = fetch('/api/auth/me')
+      .then(res => res.json())
+      .catch(error => {
+        // Do not make a transient network failure stick for the whole page.
+        authStatePromise = null;
+        throw error;
+      });
+  }
+  return authStatePromise;
+}
+
+function invalidateAuthState() {
+  authStatePromise = null;
+}
 
 function ensureAuthModalDOM() {
   if (document.getElementById('authModal')) return;
@@ -109,10 +129,9 @@ function ensureAuthModalDOM() {
   });
 }
 
-async function checkAuthStatus() {
+async function checkAuthStatus({ refresh = false } = {}) {
   try {
-    const res = await fetch('/api/auth/me');
-    const data = await res.json();
+    const data = await getAuthState({ refresh });
     const bar = document.getElementById('userAccountBar');
 
     if (data.authenticated && data.user) {
@@ -220,6 +239,7 @@ async function submitLogin() {
     const data = await res.json();
     if (res.ok) {
       closeAuthModal();
+      invalidateAuthState();
       await checkAuthStatus();
       if (typeof window.onAuthSuccess === 'function') {
         window.onAuthSuccess('login', data);
@@ -267,6 +287,7 @@ async function submitRegister() {
     const data = await res.json();
     if (res.ok) {
       closeAuthModal();
+      invalidateAuthState();
       await checkAuthStatus();
       if (typeof window.onAuthSuccess === 'function') {
         window.onAuthSuccess('register', data);
@@ -366,6 +387,7 @@ async function submitResetPassword() {
     });
     const data = await res.json();
     if (res.ok) {
+      invalidateAuthState();
       switchAuthTab('login');
       const loginSuccess = document.getElementById('modalSuccess');
       if (loginSuccess) {
@@ -415,6 +437,7 @@ async function checkResetTokenInURL() {
 
 async function submitLogout() {
   await fetch('/api/auth/logout', { method: 'POST' });
+  invalidateAuthState();
   await checkAuthStatus();
   if (typeof window.onAuthSuccess === 'function') {
     window.onAuthSuccess('logout');
