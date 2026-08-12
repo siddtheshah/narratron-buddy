@@ -1,6 +1,13 @@
 gcloud:
     project_id: "narratron"
 
+# This is an application-wide choice so all theaters use the same image
+# generation policy. Provider-specific settings are passed to providers.registry.
+image_generation:
+    provider: "hybrid-flux-gemini"
+    provider_options:
+        classifier_model: "gemini-2.5-flash-lite"
+
 smtp:
     from_email: "noreply@narratron.io"
     host: "smtp.gmail.com"

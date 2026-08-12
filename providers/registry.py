@@ -50,7 +50,7 @@ _SPECS = (
         "estimated_cost_usd_1mp": None,
         "reference_limit": 4,
         "status": "unconfigured",
-        "notes": "Gemini routes typography, creature interactions, and context-sensitive word meanings to Gemini; ordinary scenes use Klein.",
+        "notes": "FLUX is used only for pure environments and simple single-character scenes. Gemini handles reference-guided, multi-subject, and complex scenes.",
     },
     {
         "id": "qwen-image-2",

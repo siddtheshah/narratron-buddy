@@ -28,7 +28,7 @@ def test_ideas_page_reads_the_ideas_template():
 def test_canvas_with_verified_join_key_redirects_and_grants_cookie():
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
     request = SimpleNamespace(url=SimpleNamespace(remove_query_params=lambda _: "/canvas?theater_id=stage"))
-    with patch.object(pages, "_require_canvas_access", return_value=deployment), patch.object(pages, "_valid_join_key", return_value=True), patch.object(pages, "_grant_canvas_access") as grant:
+    with patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=True), patch.object(pages, "_grant_canvas_access") as grant:
         response = __import__("asyncio").run(pages.read_canvas(request, "stage", "JOIN"))
     assert response.status_code == 303
     assert response.headers["location"] == "/canvas?theater_id=stage"
@@ -44,6 +44,6 @@ def test_canvas_reconstructs_missing_theater_using_registry_database(tmp_path):
     registry_db.record_theater_view_async = AsyncMock()
     request = SimpleNamespace(query_params={}, client=None)
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
-    with patch("object_registry.theater_manager", manager), patch("object_registry.db", registry_db), patch.object(pages, "_require_canvas_access", return_value=deployment), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user", return_value=None):
+    with patch.object(pages, "theater_manager", manager), patch.object(pages, "db", registry_db), patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
         __import__("asyncio").run(pages.read_canvas(request, "stage"))
     registry_db.reconstruct_theater_from_db.assert_called_once_with("stage", theater.directory.return_value)

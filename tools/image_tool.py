@@ -1,7 +1,4 @@
-import base64
-import json
 import logging
-import mimetypes
 import os
 from pathlib import Path
 import re
@@ -10,10 +7,14 @@ import time
 from io import BytesIO
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from google import genai
-from google.genai import types
 from PIL import Image
 
+from providers import (
+    ImageGenerationRequest,
+    ImageProviderError,
+    ImageReference,
+    get_image_provider,
+)
 from tools.base_tool import BaseTools, with_cooldown
 from utils.image_utils import (
     embed_image_metadata,
@@ -25,7 +26,6 @@ from components.theater_manager import TheaterManager
 logger = logging.getLogger(__name__)
 
 class ImageTools(BaseTools):
-    _client_cache = None
     _references_cache: Dict[str, dict] = {}
     _reference_dir_cached: Optional[str] = None
 
@@ -53,14 +53,15 @@ class ImageTools(BaseTools):
         
         self.reference_dir = str(self.theater.references_dir())
         os.makedirs(self.reference_dir, exist_ok=True)
-        
-        # Reuse shared genai Client instance across theater re-initializations
-        if ImageTools._client_cache is None:
-            project_id = raw_config.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))
-            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-            ImageTools._client_cache = genai.Client(vertexai=True, project=project_id, location=location)
-        
-        self.client = ImageTools._client_cache
+
+        self.image_provider_id = str(subconfig.get("provider") or "").strip()
+        if not self.image_provider_id:
+            raise ValueError("image_generation.provider must name a provider from providers/.")
+        provider_options = subconfig.get("provider_options") or {}
+        if not isinstance(provider_options, dict):
+            raise ValueError("image_generation.provider_options must be a mapping.")
+        self.image_provider_options = dict(provider_options)
+        self._image_provider = None
 
         self.on_show_image = None
         self.on_image_created: Optional[Callable] = None
@@ -68,10 +69,6 @@ class ImageTools(BaseTools):
         self.currently_displayed_image_path: Optional[str] = None
         self.currently_displayed_image_transition: str = "crossfade"
         self.currently_displayed_image_effect: str = "gleam3"
-
-        # Can be hardcoded for now.
-        self.simple_model = "gemini-3.1-flash-lite-image"  
-        self.reference_model = "gemini-3.1-flash-lite-image"
 
         # In-memory mapping of custom image names/aliases to file paths
         self.image_aliases: Dict[str, str] = {}
@@ -270,14 +267,14 @@ class ImageTools(BaseTools):
                     self._trigger_after_tool_call("create_image")
                     return res
 
-        prompt_parts = []
+        provider_references = []
         if resolved_refs:
             for ref_key, ref_path in resolved_refs:
                 try:
                     with open(ref_path, "rb") as f:
                         img_bytes = f.read()
                     mime_type = "image/png" if ref_path.lower().endswith(".png") else "image/jpeg"
-                    prompt_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+                    provider_references.append(ImageReference(name=Path(ref_path).name, data=img_bytes, mime_type=mime_type))
                 except Exception as e:
                     logger.error(f"[create_image tool] Error loading reference image {ref_path}: {e}")
                     res = f"Error loading reference image '{ref_key}': {e}"
@@ -286,48 +283,25 @@ class ImageTools(BaseTools):
             
             logger.info(f"[create_image tool] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
 
-        prompt_parts.append(effective_prompt)
-        model_name = self.reference_model if resolved_refs else self.simple_model
-
         self.record_tool_call("create_image")
 
         def _worker():
             self._set_canvas_activity(True)
             try:
-                logger.info(f"[create_image tool] Generating image in background using model '{model_name}' from prompt: {effective_prompt[:100]}...")
-                response = self.client.models.generate_content(
-                    model=model_name,
-                    contents=prompt_parts,
-                )
-                
                 saved_paths = []
-                image_bytes = None
-                text_feedback = []
-                
-                if getattr(response, "candidates", None) and response.candidates:
-                    candidate = response.candidates[0]
-                    content = candidate.get("content") if isinstance(candidate, dict) else getattr(candidate, "content", None)
-                    parts = content.get("parts") if isinstance(content, dict) else (getattr(content, "parts", None) if content else None)
-                    if parts:
-                        for part in parts:
-                            inline_data = part.get("inline_data") if isinstance(part, dict) else getattr(part, "inline_data", None)
-                            text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
-                            
-                            if inline_data:
-                                raw_data = inline_data.get("data") if isinstance(inline_data, dict) else getattr(inline_data, "data", None)
-                                if raw_data:
-                                    if isinstance(raw_data, str):
-                                        try:
-                                            image_bytes = base64.b64decode(raw_data)
-                                        except Exception:
-                                            image_bytes = raw_data.encode("utf-8")
-                                    else:
-                                        image_bytes = raw_data
-                                    break
-                            elif text:
-                                text_feedback.append(str(text))
-                            
-                if image_bytes is not None:
+                provider = self._get_image_provider()
+                logger.info(
+                    "[create_image tool] Generating image using provider '%s' from prompt: %s...",
+                    self.image_provider_id,
+                    effective_prompt[:100],
+                )
+                result = provider.generate(
+                    ImageGenerationRequest(prompt=effective_prompt, references=provider_references)
+                )
+                image_bytes = result.image_bytes
+                generation_details = f"provider '{result.provider}' model '{result.model}'"
+
+                if image_bytes:
                     image = Image.open(BytesIO(image_bytes))
                     if image.mode != "RGB":
                         image = image.convert("RGB")
@@ -356,7 +330,7 @@ class ImageTools(BaseTools):
                         self.image_aliases[image_name.lower()] = filepath
                         self.image_aliases[clean_name.lower()] = filepath
                     
-                    logger.info(f"[create_image tool] Saved image in background to {filepath} (Name alias: {image_name})")
+                    logger.info(f"[create_image tool] Saved image from {generation_details} to {filepath} (Name alias: {image_name})")
                     if self.on_image_created:
                         try:
                             self.on_image_created(filepath)
@@ -374,15 +348,9 @@ class ImageTools(BaseTools):
                         if show_res.startswith("Error:"):
                             logger.warning(f"[create_image tool] Generated image but could not display: {show_res}")
                 else:
-                    details = ""
-                    if text_feedback:
-                        details = f" Details: {' '.join(text_feedback)}"
-                    elif getattr(response, "candidates", None) and response.candidates:
-                        cand = response.candidates[0]
-                        finish_reason = cand.get("finish_reason") if isinstance(cand, dict) else getattr(cand, "finish_reason", None)
-                        if finish_reason:
-                            details = f" Finish reason: {finish_reason}"
-                    logger.error(f"[create_image tool] Failed to generate image: Model didn't return binary image data.{details}")
+                    logger.error("[create_image tool] Failed to generate image: provider returned no binary image data.")
+            except ImageProviderError as e:
+                logger.error("[create_image tool] Image provider '%s' failed: %s", self.image_provider_id, e)
             except Exception as e:
                 logger.error(f"[create_image tool] Error generating image in background: {e}")
             finally:
@@ -395,6 +363,12 @@ class ImageTools(BaseTools):
 
         name_msg = f" with alias '{image_name}'" if image_name else ""
         return f"Image generation started in background{name_msg} for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
+
+    def _get_image_provider(self):
+        """Build the configured provider once per session-scoped tool instance."""
+        if self._image_provider is None:
+            self._image_provider = get_image_provider(self.image_provider_id, self.image_provider_options)
+        return self._image_provider
 
     @with_cooldown("showing another image", duration=4.0)
     def show_image(

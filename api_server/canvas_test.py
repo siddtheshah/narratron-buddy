@@ -63,7 +63,7 @@ async def test_toggle_microphone_requires_owner_then_calls_registry_service():
     registry_db.get_deployment.return_value = {"user_id": 3}
     service = MagicMock()
     service.toggle_microphone = AsyncMock(return_value=2)
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user", return_value={"id": 3}):
+    with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), patch.object(canvas, "get_current_user_async", AsyncMock(return_value={"id": 3})):
         result = await canvas.trigger_orator_mic_toggle(request(), "stage")
     assert result == {"status": "ok", "broadcasted_to": 2}
     service.toggle_microphone.assert_awaited_once_with("stage")

@@ -29,6 +29,7 @@ class TestConfigLoader(BaseTestCase):
             config = get_theater_config(theater_id, base_dir=temp_dir)
             self.assertIsInstance(config, dict)
             self.assertIn("image_generation", config)
+            self.assertEqual(config["image_generation"]["provider"], get_app_config()["image_generation"]["provider"])
 
             created_yaml = temp_dir / theater_id / "theater.yaml"
             self.assertTrue(created_yaml.exists())

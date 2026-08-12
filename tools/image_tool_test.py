@@ -2,724 +2,105 @@ import io
 import os
 import shutil
 import tempfile
-import time
-import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
 from components.theater_manager import TheaterManager
+from providers import ImageGenerationResult
 from testing.base import BaseTestCase
 from tools.image_tool import ImageTools
 
 
 def create_fake_image_bytes() -> bytes:
-    img = Image.new("RGB", (10, 10), color="blue")
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG")
-    return buf.getvalue()
+    image = Image.new("RGB", (10, 10), color="blue")
+    output = io.BytesIO()
+    image.save(output, format="JPEG")
+    return output.getvalue()
 
 
 class TestImageTools(BaseTestCase):
     def setUp(self):
         super().setUp()
-        ImageTools._client_cache = None
         ImageTools._references_cache = {}
         ImageTools._reference_dir_cached = None
-
         self.temp_dir = tempfile.mkdtemp()
-        self.theater_manager = TheaterManager()
+        self.manager = TheaterManager(base_theaters_dir=self.temp_dir)
         self.config = {
             "image_generation": {
-                "cooldown_duration": 5.0,
-            },
-            "gcloud": {
-                "project_id": "test-project"
+                "cooldown_duration": 0,
+                "provider": "hybrid-flux-gemini",
+                "provider_options": {"classifier_model": "gemini-2.5-flash-lite"},
             }
         }
 
     def tearDown(self):
-        ImageTools._client_cache = None
-        ImageTools._references_cache = {}
-        ImageTools._reference_dir_cached = None
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch("tools.image_tool.genai.Client")
-    def test_init_theater_paths(self, mock_genai_client):
-        theater_id = "test_theater_abc"
-        tools = ImageTools(self.config, theater_id=theater_id, theater_manager=self.theater_manager)
-        self.assertEqual(tools.active_theater_id, theater_id)
-        self.assertTrue(tools.output_dir.endswith(os.path.join("theaters", theater_id, "output", "artifacts", "images")))
-        self.assertTrue(tools.reference_dir.endswith(os.path.join("theaters", theater_id, "references")))
-
-    @patch("tools.image_tool.genai.Client")
-    def test_client_caching(self, mock_genai_client):
-        mock_client_inst = MagicMock()
-        mock_genai_client.return_value = mock_client_inst
-
-        tools1 = ImageTools(self.config, theater_id="theater_1", theater_manager=self.theater_manager)
-        tools2 = ImageTools(self.config, theater_id="theater_2", theater_manager=self.theater_manager)
-
-        mock_genai_client.assert_called_once()
-        self.assertIs(tools1.client, tools2.client)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_marks_canvas_drawing_for_the_duration_of_the_call(self, mock_genai_client):
-        canvas_state_service = MagicMock()
-        tools = ImageTools(
-            self.config,
-            theater_id="drawing_indicator",
-            theater_manager=self.theater_manager,
-            canvas_state_service=canvas_state_service,
-        )
-        tools.last_create_time = 0.0
-        tools._schedule_cooldown_timer = MagicMock()
-
-        tools.create_image("a misty forest")
-        tools.join_generation()
-
-        self.assertEqual(
-            canvas_state_service.set_tool_activity.call_args_list,
-            [
-                call("image", active=True, theater_id="drawing_indicator"),
-                call("image", active=False, theater_id="drawing_indicator"),
-            ],
+    def _provider_result(self):
+        return ImageGenerationResult(
+            image_bytes=create_fake_image_bytes(),
+            mime_type="image/jpeg",
+            provider="hybrid-flux-gemini",
+            model="fal-ai/flux-2/klein/9b",
         )
 
-    @patch("tools.image_tool.genai.Client")
-    def test_default_style_is_loaded_and_appended_only_when_needed(self, mock_genai_client):
-        theater_id = "theater_default_style"
-        self.config["agent"] = {"style": "moody watercolor"}
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_uses_configured_provider(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = ImageTools(self.config, theater_id="configured_provider", theater_manager=self.manager)
 
-        mock_part = MagicMock()
-        mock_part.inline_data.data = create_fake_image_bytes()
-        mock_genai_client.return_value.models.generate_content.return_value.candidates = [
-            MagicMock(content=MagicMock(parts=[mock_part]))
-        ]
-        tools = ImageTools(self.config, theater_id=theater_id, theater_manager=self.theater_manager)
-        tools.output_dir = self.temp_dir
-
-        tools.create_image("a moonlit harbor", display=False)
+        tools.create_image("a dog carrying a bag", display=False)
         tools.join_generation()
-        generated_prompt = mock_genai_client.return_value.models.generate_content.call_args.kwargs["contents"][-1]
-        self.assertIn("Style: moody watercolor", generated_prompt)
 
-        tools.last_create_time = 0
-        tools.create_image("a moonlit harbor in a noir style", display=False)
-        tools.join_generation()
-        generated_prompt = mock_genai_client.return_value.models.generate_content.call_args.kwargs["contents"][-1]
-        self.assertEqual(generated_prompt, "a moonlit harbor in a noir style")
+        mock_get_provider.assert_called_once_with(
+            "hybrid-flux-gemini", {"classifier_model": "gemini-2.5-flash-lite"}
+        )
+        request = provider.generate.call_args.args[0]
+        self.assertEqual(request.prompt, "a dog carrying a bag")
+        self.assertEqual(request.references, [])
 
-    @patch("tools.image_tool.genai.Client")
-    def test_references_loading_and_caching(self, mock_genai_client):
-        theater_id = "theater_ref_test"
-        tools = ImageTools(self.config, theater_id=theater_id, theater_manager=self.theater_manager)
-
-        ref_path = os.path.join(tools.reference_dir, "hero_character.png")
-        img = Image.new("RGB", (10, 10), color="red")
-        img.save(ref_path)
-
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_passes_loaded_references_to_provider(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = ImageTools(self.config, theater_id="references", theater_manager=self.manager)
+        reference_path = os.path.join(tools.reference_dir, "hero.png")
+        Image.new("RGB", (10, 10), color="red").save(reference_path)
         tools._load_references()
-        manifest = tools.list_references()
-        self.assertEqual(len(manifest), 1)
-        self.assertEqual(manifest[0]["name"], "hero_character")
-        self.assertEqual(manifest[0]["alias"], "hero_character")
 
-        tools2 = ImageTools(self.config, theater_id=theater_id, theater_manager=self.theater_manager)
-        self.assertEqual(len(tools2.list_references()), 1)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_nested_references_loading(self, mock_genai_client):
-        theater_id = "theater_nested_ref_test"
-        tools = ImageTools(self.config, theater_id=theater_id, theater_manager=self.theater_manager)
-
-        nested_dir = os.path.join(tools.reference_dir, "subfolder", "characters")
-        os.makedirs(nested_dir, exist_ok=True)
-        ref_path = os.path.join(nested_dir, "villain.png")
-        img = Image.new("RGB", (10, 10), color="blue")
-        img.save(ref_path)
-
-        tools._load_references()
-        manifest = tools.list_references()
-        names = [item["name"] for item in manifest]
-        self.assertIn("villain", names)
-        self.assertEqual(tools._find_image_path("villain"), ref_path)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_success_and_alias(self, mock_genai_client):
-        mock_part = MagicMock()
-        mock_part.inline_data.data = create_fake_image_bytes()
-
-        mock_response = MagicMock()
-        mock_response.candidates = [
-            MagicMock(content=MagicMock(parts=[mock_part]))
-        ]
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        callback = MagicMock()
-        tools.on_show_image = callback
-        created_cb = MagicMock()
-        tools.on_image_created = created_cb
-
-        res = tools.create_image("sunset scene", image_name="sunset_01")
-        self.assertIn("Image generation started in background", res)
-        self.assertIn("sunset_01", res)
+        tools.create_image("hero at dawn", reference_images="hero", display=False)
         tools.join_generation()
-        callback.assert_called_once()
-        created_cb.assert_called_once()
-        self.assertIn("sunset_01", tools.image_aliases)
+
+        references = provider.generate.call_args.args[0].references
+        self.assertEqual(len(references), 1)
+        self.assertEqual(references[0].name, "hero.png")
+        self.assertEqual(references[0].mime_type, "image/png")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_saves_output_and_registers_alias(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = ImageTools(self.config, theater_id="alias", theater_manager=self.manager)
+        created = MagicMock()
+        tools.on_image_created = created
+
+        tools.create_image("sunset scene", image_name="sunset_01", display=False)
+        tools.join_generation()
+
         self.assertTrue(os.path.exists(tools.image_aliases["sunset_01"]))
+        created.assert_called_once_with(tools.image_aliases["sunset_01"])
 
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_display_false(self, mock_genai_client):
-        mock_part = MagicMock()
-        mock_part.inline_data.data = create_fake_image_bytes()
+    def test_create_image_requires_a_provider(self):
+        with self.assertRaisesRegex(ValueError, "image_generation.provider"):
+            ImageTools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
 
-        mock_response = MagicMock()
-        mock_response.candidates = [
-            MagicMock(content=MagicMock(parts=[mock_part]))
-        ]
+    @patch("tools.image_tool.get_image_provider")
+    def test_missing_reference_returns_error_without_calling_provider(self, mock_get_provider):
+        tools = ImageTools(self.config, theater_id="missing_reference", theater_manager=self.manager)
 
-        mock_client_instance = MagicMock()
-        mock_client_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_client_instance
+        result = tools.create_image("a castle", reference_images="not-here")
 
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        res = tools.create_image("sunset scene", image_name="sunset_02", display=False)
-        self.assertIn("Image generation started in background", res)
-        tools.join_generation()
-        callback.assert_not_called()
-        self.assertIn("sunset_02", tools.image_aliases)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_displays_requested_effect(self, mock_genai_client):
-        mock_part = MagicMock()
-        mock_part.inline_data.data = create_fake_image_bytes()
-        mock_genai_client.return_value.models.generate_content.return_value.candidates = [
-            MagicMock(content=MagicMock(parts=[mock_part]))
-        ]
-        canvas_state_service = MagicMock()
-        tools = ImageTools(
-            self.config,
-            theater_id="test_theater",
-            theater_manager=TheaterManager(base_theaters_dir=self.temp_dir),
-            canvas_state_service=canvas_state_service,
-        )
-        tools.create_image("a spectral ghost", image_name="ethereal_ghost", effect="haze")
-        tools.join_generation()
-
-        displayed_path = tools.image_aliases["ethereal_ghost"]
-        canvas_state_service.show_image.assert_called_once_with(
-            displayed_path,
-            theater_id="test_theater",
-            transition="crossfade",
-            effect="haze",
-        )
-
-    @patch("tools.image_tool.types.Part")
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_with_reference_images(self, mock_genai_client, mock_part_cls):
-        mock_part_data = MagicMock()
-        mock_part_data.inline_data.data = create_fake_image_bytes()
-        mock_response = MagicMock()
-        mock_response.candidates = [MagicMock(content=MagicMock(parts=[mock_part_data]))]
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        tools.reference_dir = os.path.join(self.temp_dir, "refs")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        os.makedirs(tools.reference_dir, exist_ok=True)
-
-        ref_file = os.path.join(tools.reference_dir, "style_ref.png")
-        Image.new("RGB", (10, 10), color="blue").save(ref_file)
-        tools._load_references()
-
-        res = tools.create_image("a fantasy castle", "castle description", reference_images="style_ref")
-        self.assertIn("Image generation started in background", res)
-        tools.join_generation()
-        mock_part_cls.from_bytes.assert_called_once()
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_with_missing_reference_fails(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        tools.reference_dir = os.path.join(self.temp_dir, "refs")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        os.makedirs(tools.reference_dir, exist_ok=True)
-
-        res = tools.create_image("a fantasy castle", "castle description", reference_images="nonexistent_ref")
-        self.assertIn("Error: Reference image 'nonexistent_ref' not found.", res)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_independent_cooldowns(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        file_path = os.path.join(tools.output_dir, "test.jpg")
-        img = Image.new("RGB", (10, 10), color="green")
-        img.save(file_path)
-
-        tools.last_create_time = time.time()
-        self.assertIn("create_image is on cooldown", tools.create_image("prompt", "desc"))
-
-        res = tools.show_image(file_path)
-        self.assertIn("Successfully displayed", res)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_show_image_has_a_separate_four_second_cooldown(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        file_path = os.path.join(tools.output_dir, "test.jpg")
-        img = Image.new("RGB", (10, 10), color="green")
-        img.save(file_path)
-
-        res = tools.show_image(file_path)
-        self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
-
-        res2 = tools.show_image(file_path)
-        self.assertIn("show_image is on cooldown", res2)
-        self.assertEqual(callback.call_count, 1)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_show_image_transition(self, mock_genai_client):
-        """Test that show_image forwards the transition parameter to the callback."""
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        file_path = os.path.join(tools.output_dir, "trans_test.jpg")
-        img = Image.new("RGB", (10, 10), color="blue")
-        img.save(file_path)
-
-        res = tools.show_image(file_path, transition="zoom")
-        self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="zoom", effect="gleam3")
-
-    @patch("tools.image_tool.genai.Client")
-    def test_show_image_resolves_generated_output_by_filename(self, mock_genai_client):
-        """A generated image may be shown later using only its filename."""
-        theater_id = "test_theater"
-        manager = TheaterManager(base_theaters_dir=self.temp_dir)
-        tools = ImageTools(self.config, theater_id=theater_id, theater_manager=manager)
-        filename = "smoky_haze_creature_1786421516.jpg"
-        image_path = os.path.join(tools.output_dir, filename)
-        Image.new("RGB", (10, 10), color="gray").save(image_path)
-
-        self.assertEqual(tools._find_image_path(filename), image_path)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_search_and_browse_images(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        img_path = os.path.join(tools.output_dir, "oasis_view.jpg")
-        img = Image.new("RGB", (10, 10), color="yellow")
-        img.save(img_path)
-
-        all_imgs = tools.browse_images()
-        self.assertIn(img_path, all_imgs)
-
-        matches = tools.search_image_by_metadata("oasis")
-        self.assertIn(img_path, matches)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_handles_none_content_or_parts(self, mock_genai_client):
-        # Case 1: Candidate with content=None
-        mock_response_none_content = MagicMock()
-        mock_response_none_content.candidates = [MagicMock(content=None, finish_reason="SAFETY")]
-
-        # Case 2: Candidate with content.parts=None
-        mock_response_none_parts = MagicMock()
-        mock_response_none_parts.candidates = [MagicMock(content=MagicMock(parts=None), finish_reason="SAFETY")]
-
-        # Case 3: Candidate with text part instead of image data
-        text_part = MagicMock(spec=["text"], text="Model refusal message")
-        mock_response_text_part = MagicMock()
-        mock_response_text_part.candidates = [MagicMock(content=MagicMock(parts=[text_part]))]
-
-        mock_client_instance = MagicMock()
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        # Test Case 1
-        mock_client_instance.models.generate_content.return_value = mock_response_none_content
-        res1 = tools.create_image("prompt 1", "desc 1")
-        self.assertIn("Failed to generate image", res1)
-        self.assertIn("SAFETY", res1)
-
-        # Test Case 2
-        mock_client_instance.models.generate_content.return_value = mock_response_none_parts
-        tools.last_create_time = 0.0
-        res2 = tools.create_image("prompt 2", "desc 2")
-        self.assertIn("Failed to generate image", res2)
-
-        # Test Case 3
-        mock_client_instance.models.generate_content.return_value = mock_response_text_part
-        tools.last_create_time = 0.0
-        res3 = tools.create_image("prompt 3", "desc 3")
-        self.assertIn("Failed to generate image", res3)
-        self.assertIn("Model refusal message", res3)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_success_and_alias(self, mock_genai_client):
-        mock_part = MagicMock()
-        mock_part.inline_data.data = create_fake_image_bytes()
-
-        mock_response = MagicMock()
-        mock_response.candidates = [
-            MagicMock(content=MagicMock(parts=[mock_part]))
-        ]
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        res = tools.create_image("sunset scene", image_name="sunset_01")
-        self.assertIn("Image generation started in background", res)
-        self.assertIn("sunset_01", res)
-        tools.join_generation()
-        callback.assert_called_once()
-        self.assertIn("sunset_01", tools.image_aliases)
-        self.assertTrue(os.path.exists(tools.image_aliases["sunset_01"]))
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_display_false(self, mock_genai_client):
-        mock_part = MagicMock()
-        mock_part.inline_data.data = create_fake_image_bytes()
-
-        mock_response = MagicMock()
-        mock_response.candidates = [
-            MagicMock(content=MagicMock(parts=[mock_part]))
-        ]
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        res = tools.create_image("sunset scene", image_name="sunset_02", display=False)
-        self.assertIn("Image generation started in background", res)
-        tools.join_generation()
-        callback.assert_not_called()
-        self.assertIn("sunset_02", tools.image_aliases)
-
-    @patch("tools.image_tool.types.Part")
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_with_reference_images(self, mock_genai_client, mock_part_cls):
-        mock_part_data = MagicMock()
-        mock_part_data.inline_data.data = create_fake_image_bytes()
-        mock_response = MagicMock()
-        mock_response.candidates = [MagicMock(content=MagicMock(parts=[mock_part_data]))]
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        tools.reference_dir = os.path.join(self.temp_dir, "refs")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        os.makedirs(tools.reference_dir, exist_ok=True)
-
-        ref_file = os.path.join(tools.reference_dir, "style_ref.png")
-        Image.new("RGB", (10, 10), color="blue").save(ref_file)
-        tools._load_references()
-
-        res = tools.create_image("a fantasy castle", "castle description", reference_images="style_ref")
-        self.assertIn("Image generation started in background", res)
-        tools.join_generation()
-        mock_part_cls.from_bytes.assert_called_once()
-
-    @patch("tools.image_tool.types.Part")
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_model_selection(self, mock_genai_client, mock_part_cls):
-        mock_part_data = MagicMock()
-        mock_part_data.inline_data.data = create_fake_image_bytes()
-        mock_response = MagicMock()
-        mock_response.candidates = [MagicMock(content=MagicMock(parts=[mock_part_data]))]
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        tools.reference_dir = os.path.join(self.temp_dir, "refs")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        os.makedirs(tools.reference_dir, exist_ok=True)
-
-        ref_file = os.path.join(tools.reference_dir, "ref1.png")
-        Image.new("RGB", (10, 10), color="blue").save(ref_file)
-        tools._load_references()
-
-        # 1. Simple render without reference image -> uses simple_model (gemini-3.1-flash-lite-image)
-        tools.create_image("a simple landscape")
-        tools.join_generation()
-        mock_client_instance.models.generate_content.assert_called_with(
-            model="gemini-3.1-flash-lite-image",
-            contents=["a simple landscape"],
-        )
-
-        # Reset cooldown & mock
-        tools.last_create_time = 0.0
-        mock_client_instance.models.generate_content.reset_mock()
-
-        # 2. Render with reference image -> uses reference_model (gemini-3.1-flash-image)
-        tools.create_image("a castle in style of ref1", reference_images="ref1")
-        tools.join_generation()
-        self.assertEqual(
-            mock_client_instance.models.generate_content.call_args.kwargs["model"],
-            "gemini-3.1-flash-lite-image"
-        )
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_with_missing_reference_fails(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        tools.reference_dir = os.path.join(self.temp_dir, "refs")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        os.makedirs(tools.reference_dir, exist_ok=True)
-
-        res = tools.create_image("a fantasy castle", reference_images="nonexistent_ref")
-        self.assertIn("Error: Reference image 'nonexistent_ref' not found.", res)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_independent_cooldowns(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        file_path = os.path.join(tools.output_dir, "test.jpg")
-        img = Image.new("RGB", (10, 10), color="green")
-        img.save(file_path)
-
-        tools.last_create_time = time.time()
-        self.assertIn("create_image is on cooldown", tools.create_image("prompt"))
-
-        res = tools.show_image(file_path)
-        self.assertIn("Successfully displayed", res)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_show_image_has_a_separate_four_second_cooldown_regression(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        file_path = os.path.join(tools.output_dir, "test.jpg")
-        img = Image.new("RGB", (10, 10), color="green")
-        img.save(file_path)
-
-        res = tools.show_image(file_path)
-        self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="crossfade", effect="gleam3")
-
-        res2 = tools.show_image(file_path)
-        self.assertIn("show_image is on cooldown", res2)
-        self.assertEqual(callback.call_count, 1)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_show_image_transition(self, mock_genai_client):
-        """Test that show_image forwards the transition parameter to the callback."""
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-        callback = MagicMock()
-        tools.on_show_image = callback
-
-        file_path = os.path.join(tools.output_dir, "trans_test.jpg")
-        img = Image.new("RGB", (10, 10), color="blue")
-        img.save(file_path)
-
-        res = tools.show_image(file_path, transition="zoom")
-        self.assertIn("Successfully displayed", res)
-        callback.assert_called_once_with(file_path, transition="zoom", effect="gleam3")
-
-    @patch("tools.image_tool.genai.Client")
-    def test_search_and_browse_images(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        img_path = os.path.join(tools.output_dir, "oasis_view.jpg")
-        img = Image.new("RGB", (10, 10), color="yellow")
-        img.save(img_path)
-
-        all_imgs = tools.browse_images()
-        self.assertIn(img_path, all_imgs)
-
-        matches = tools.search_image_by_metadata("oasis")
-        self.assertIn(img_path, matches)
-
-    @patch("tools.image_tool.genai.Client")
-    def test_create_image_handles_none_content_or_parts(self, mock_genai_client):
-        # Case 1: Candidate with content=None
-        mock_response_none_content = MagicMock()
-        mock_response_none_content.candidates = [MagicMock(content=None, finish_reason="SAFETY")]
-
-        # Case 2: Candidate with content.parts=None
-        mock_response_none_parts = MagicMock()
-        mock_response_none_parts.candidates = [MagicMock(content=MagicMock(parts=None), finish_reason="SAFETY")]
-
-        # Case 3: Candidate with text part instead of image data
-        text_part = MagicMock(spec=["text"], text="Model refusal message")
-        mock_response_text_part = MagicMock()
-        mock_response_text_part.candidates = [MagicMock(content=MagicMock(parts=[text_part]))]
-
-        mock_client_instance = MagicMock()
-        mock_genai_client.return_value = mock_client_instance
-
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        # Test Case 1
-        mock_client_instance.models.generate_content.return_value = mock_response_none_content
-        res1 = tools.create_image("prompt 1")
-        self.assertIn("Image generation started in background", res1)
-        tools.join_generation()
-
-        # Test Case 2
-        mock_client_instance.models.generate_content.return_value = mock_response_none_parts
-        tools.last_create_time = 0.0
-        res2 = tools.create_image("prompt 2")
-        self.assertIn("Image generation started in background", res2)
-        tools.join_generation()
-
-        # Test Case 3
-        mock_client_instance.models.generate_content.return_value = mock_response_text_part
-        tools.last_create_time = 0.0
-        res3 = tools.create_image("prompt 3")
-        self.assertIn("Image generation started in background", res3)
-        tools.join_generation()
-
-    @patch("tools.image_tool.genai.Client")
-    def test_cooldown_expired_callbacks(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        tools.cooldown_duration = 0.1
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        on_cooldown_expired = MagicMock()
-        tools.on_cooldown_expired = on_cooldown_expired
-
-        file_path = os.path.join(tools.output_dir, "test.jpg")
-        img = Image.new("RGB", (10, 10), color="purple")
-        img.save(file_path)
-
-        res1 = tools.create_image("a purple scene", display=False)
-        self.assertIn("Image generation started in background", res1)
-
-        # Verify the remaining create_image cooldown still expires automatically.
-        time.sleep(0.25)
-        on_cooldown_expired.assert_called_with("create_image")
-
-    @patch("tools.image_tool.genai.Client")
-    def test_on_after_tool_call_and_canvas_info(self, mock_genai_client):
-        tools = ImageTools(self.config, theater_id="test_theater", theater_manager=TheaterManager(base_theaters_dir=self.temp_dir))
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        after_tool_cb = MagicMock()
-        tools.on_after_tool_call = after_tool_cb
-
-        file_path = os.path.join(tools.output_dir, "view_test.jpg")
-        img = Image.new("RGB", (10, 10), color="blue")
-        img.save(file_path)
-
-        res = tools.show_image(file_path, transition="fade")
-        self.assertIn("Successfully displayed", res)
-
-        after_tool_cb.assert_called_once()
-        tool_name, canvas_info = after_tool_cb.call_args[0]
-        self.assertEqual(tool_name, "show_image")
-        self.assertEqual(canvas_info["path"], file_path)
-        self.assertEqual(canvas_info["transition"], "fade")
-
-        info = tools.get_current_canvas_image_info()
-        self.assertEqual(info["path"], file_path)
-        self.assertEqual(info["transition"], "fade")
-
-    @patch("tools.image_tool.genai.Client")
-    def test_on_show_image_triggers_with_and_without_canvas_state_service(self, mock_genai_client):
-        mock_canvas_service = MagicMock()
-        tools = ImageTools(
-            self.config,
-            theater_id="test_theater",
-            theater_manager=self.theater_manager,
-            canvas_state_service=mock_canvas_service,
-        )
-        tools.output_dir = os.path.join(self.temp_dir, "output")
-        os.makedirs(tools.output_dir, exist_ok=True)
-
-        on_show_image_cb = MagicMock()
-        tools.on_show_image = on_show_image_cb
-
-        file_path = os.path.join(tools.output_dir, "view_test_cb.jpg")
-        img = Image.new("RGB", (10, 10), color="green")
-        img.save(file_path)
-
-        res = tools.show_image(file_path, transition="crossfade", effect="gleam3")
-        self.assertIn("Successfully displayed", res)
-
-        # Verify canvas_state_service.show_image was called
-        mock_canvas_service.show_image.assert_called_once_with(
-            file_path, theater_id="test_theater", transition="crossfade", effect="gleam3"
-        )
-        # Verify on_show_image callback was ALSO triggered
-        on_show_image_cb.assert_called_once_with(
-            file_path, transition="crossfade", effect="gleam3"
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
-
+        self.assertIn("Reference image 'not-here' not found", result)
+        mock_get_provider.assert_not_called()

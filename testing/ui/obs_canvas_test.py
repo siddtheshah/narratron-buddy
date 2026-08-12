@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from testing.ui.base import UITestCase
 from api_server.app import app
@@ -8,7 +8,11 @@ from api_server.app import app
 class TestOBSCanvas(UITestCase):
     def setUp(self):
         super().setUp()
-        access_patcher = patch("api_server.pages._require_canvas_access")
+        access_patcher = patch(
+            "api_server.pages._require_canvas_access_async",
+            new_callable=AsyncMock,
+            return_value={"theater_id": "test_theater", "join_key": "JOIN"},
+        )
         access_patcher.start()
         self.addCleanup(access_patcher.stop)
         self.client = TestClient(app)

@@ -1,7 +1,7 @@
 """Tests for canvas image transitions and effects."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from api_server.shared import PROJECT_ROOT
 from components.theater_manager import TheaterManager
@@ -26,15 +26,11 @@ class TestCrossfade(UITestCase):
     def test_show_image_forwards_transition_and_effect_to_callback(self):
         from tools.image_tool import ImageTools
 
-        with (
-            patch("tools.image_tool.genai.Client"),
-            patch.object(ImageTools, "_client_cache", None),
-        ):
-            tool = ImageTools(
-                config={"image_generation": {"cooldown_duration": 0}},
-                theater_id="image_tool_transition",
-                theater_manager=TheaterManager(base_theaters_dir=self.theaters_dir),
-            )
+        tool = ImageTools(
+            config={"image_generation": {"cooldown_duration": 0, "provider": "hybrid-flux-gemini"}},
+            theater_id="image_tool_transition",
+            theater_manager=TheaterManager(base_theaters_dir=self.theaters_dir),
+        )
 
         image = Path(tool.output_dir) / "test_image.jpg"
         image.write_bytes(b"image")

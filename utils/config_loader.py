@@ -111,6 +111,12 @@ def get_theater_config(
     if "agent_internal" in app_config:
         config["agent_internal"] = app_config["agent_internal"]
 
+    # Image provider selection is an application-level operational setting.
+    # Merge it last so all theaters use the provider selected in app.yaml while
+    # retaining theater-specific settings such as cooldown_duration.
+    if "image_generation" in app_config:
+        deep_merge(config.setdefault("image_generation", {}), app_config["image_generation"])
+
     return config
 
 def save_theater_config(
