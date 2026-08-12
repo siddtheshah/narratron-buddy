@@ -15,7 +15,9 @@ from api_server.shared import (
     db,
     theater_manager,
     get_current_user,
+    get_current_user_async,
     _require_canvas_access,
+    _require_canvas_access_async,
     _valid_join_key,
     _grant_canvas_access,
     PROJECT_ROOT,
@@ -172,7 +174,7 @@ async def read_obs_canvas(
     """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source."""
     if theater_id:
         join_key = request.query_params.get("join_key")
-        deployment = _require_canvas_access(request, theater_id, join_key)
+        deployment = await _require_canvas_access_async(request, theater_id, join_key)
         if _valid_join_key(deployment["join_key"], join_key):
             response = RedirectResponse(
                 url=str(request.url.remove_query_params("join_key")), status_code=303
@@ -185,7 +187,7 @@ async def read_obs_canvas(
         artifacts_dir = theater_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-        current_user = get_current_user(request, record_activity=False)
+        current_user = await get_current_user_async(request, record_activity=False)
         client_ip = request.client.host if request.client else None
         asyncio.create_task(
             db.record_theater_view_async(
@@ -207,7 +209,7 @@ async def read_canvas(
 ):
     """Serve the Canvas interface for a specific theater."""
     if theater_id:
-        deployment = _require_canvas_access(request, theater_id, join_key)
+        deployment = await _require_canvas_access_async(request, theater_id, join_key)
         if _valid_join_key(deployment["join_key"], join_key):
             response = RedirectResponse(
                 url=str(request.url.remove_query_params("join_key")), status_code=303
@@ -222,7 +224,7 @@ async def read_canvas(
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         # Analytics must not delay the initial canvas render.
-        current_user = get_current_user(request, record_activity=False)
+        current_user = await get_current_user_async(request, record_activity=False)
         client_ip = request.client.host if request.client else None
         asyncio.create_task(
             db.record_theater_view_async(

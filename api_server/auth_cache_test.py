@@ -1,6 +1,7 @@
 """Unit coverage for the process-local authentication cache."""
 
 from types import SimpleNamespace
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -59,6 +60,49 @@ def test_current_user_is_memoized_on_the_request():
         assert shared.get_current_user(request)["username"] == "ada"
 
     registry_db.validate_session_token.assert_called_once_with("request-token", record_activity=True)
+
+
+@pytest.mark.asyncio
+async def test_current_user_async_validates_on_a_worker_thread():
+    auth_session_cache.clear()
+    request = SimpleNamespace(cookies={"auth_token": "async-token"}, query_params={})
+    registry_db = MagicMock()
+    worker_thread_ids = []
+
+    def validate(*args, **kwargs):
+        worker_thread_ids.append(threading.get_ident())
+        return {"id": 8, "username": "ada", "expires_at": "2099-01-01T00:00:00+00:00"}
+
+    registry_db.validate_session_token.side_effect = validate
+    event_loop_thread_id = threading.get_ident()
+    with patch.object(shared, "db", registry_db):
+        user = await shared.get_current_user_async(request)
+
+    assert user["username"] == "ada"
+    assert worker_thread_ids == [worker_thread_ids[0]]
+    assert worker_thread_ids[0] != event_loop_thread_id
+
+
+@pytest.mark.asyncio
+async def test_canvas_access_async_resolves_deployment_on_a_worker_thread():
+    auth_session_cache.clear()
+    theater_access_cache.clear()
+    request = SimpleNamespace(cookies={"canvas_access": "eyJzdGFnZSI6IkpPSU4ifQ"}, query_params={})
+    registry_db = MagicMock()
+    worker_thread_ids = []
+
+    def get_deployment(theater_id):
+        worker_thread_ids.append(threading.get_ident())
+        return {"theater_id": theater_id, "user_id": 3, "join_key": "JOIN"}
+
+    registry_db.get_deployment.side_effect = get_deployment
+    event_loop_thread_id = threading.get_ident()
+    with patch.object(shared, "db", registry_db):
+        deployment = await shared._require_canvas_access_async(request, "stage")
+
+    assert deployment["theater_id"] == "stage"
+    assert worker_thread_ids == [worker_thread_ids[0]]
+    assert worker_thread_ids[0] != event_loop_thread_id
 
 
 def test_theater_access_cache_hashes_join_key_and_invalidates_theater():

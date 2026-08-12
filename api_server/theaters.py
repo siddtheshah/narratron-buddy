@@ -20,7 +20,9 @@ from api_server.shared import (
     theater_manager,
     canvas_states,
     get_current_user,
+    get_current_user_async,
     _require_canvas_access,
+    _require_canvas_access_async,
     _safe_path_param,
     _grant_canvas_access,
     _valid_join_key,
@@ -65,7 +67,7 @@ class RequestBatonRequest(BaseModel):
 
 @app.get("/theaters/{theater_id}/references/{filename}")
 async def serve_theater_reference(request: Request, theater_id: str, filename: str):
-    _require_canvas_access(request, theater_id)
+    await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
     _safe_path_param(filename, "filename")
     file_path = theater_manager.theater(theater_id).references_dir() / filename
@@ -75,7 +77,7 @@ async def serve_theater_reference(request: Request, theater_id: str, filename: s
 
 @app.get("/theaters/{theater_id}/playlists/{playlist_name}/{filename}")
 async def serve_theater_playlist_track(request: Request, theater_id: str, playlist_name: str, filename: str):
-    _require_canvas_access(request, theater_id)
+    await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
     _safe_path_param(playlist_name, "playlist_name")
     _safe_path_param(filename, "filename")
@@ -86,7 +88,7 @@ async def serve_theater_playlist_track(request: Request, theater_id: str, playli
 
 @app.get("/theaters/{theater_id}/output/{filename}")
 async def serve_theater_output(request: Request, theater_id: str, filename: str):
-    _require_canvas_access(request, theater_id)
+    await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
     _safe_path_param(filename, "filename")
     output_dir = theater_manager.theater(theater_id).output_dir()
@@ -177,7 +179,7 @@ async def get_theater(theater_id: str, request: Request):
     # Access validation already resolves the authenticated principal and the
     # deployment. Reuse both request-scoped results below rather than issuing
     # another deployment lookup for this same theater.
-    deployment = _require_canvas_access(request, theater_id)
+    deployment = await _require_canvas_access_async(request, theater_id)
     theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
         db.reconstruct_theater_from_db(theater_id, theater_dir)
@@ -186,7 +188,7 @@ async def get_theater(theater_id: str, request: Request):
     if not meta:
         raise HTTPException(status_code=404, detail="Theater not found")
     
-    current_user = get_current_user(request, record_activity=False)
+    current_user = await get_current_user_async(request, record_activity=False)
     owner_id = deployment.get("user_id")
     is_owner = (current_user is not None and owner_id == current_user["id"])
 
@@ -216,7 +218,7 @@ async def get_theater(theater_id: str, request: Request):
 @app.get("/api/theaters/{theater_id}/config")
 async def get_theater_config_endpoint(theater_id: str, request: Request):
     """Get raw theater.yaml configuration for a theater session."""
-    _require_canvas_access(request, theater_id)
+    await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
     base_dir = theater_manager.base_dir
@@ -240,7 +242,7 @@ async def get_theater_config_endpoint(theater_id: str, request: Request):
 @app.post("/api/theaters/{theater_id}/config")
 async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRequest, request: Request):
     """Save raw theater.yaml configuration directly to local theater directory and DB."""
-    _require_canvas_access(request, theater_id)
+    await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
     try:
@@ -299,7 +301,7 @@ async def format_yaml_endpoint(req: SaveTheaterConfigRequest):
 @app.post("/api/theaters/create-and-deploy")
 async def create_and_deploy_theater(request: Request):
     """API endpoint to handle multi-file asset upload and deploy a theater."""
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to deploy theaters.")
 
@@ -474,8 +476,8 @@ def destroy_theater(theater_id: str, request: Request):
 
 @app.get("/api/theaters/{theater_id}/baton")
 async def get_theater_baton_state(theater_id: str, request: Request):
-    _require_canvas_access(request, theater_id)
-    state = db.get_theater_baton_state(theater_id)
+    await _require_canvas_access_async(request, theater_id)
+    state = await db.get_theater_baton_state_async(theater_id)
     if not state:
         raise HTTPException(status_code=404, detail="Theater baton state not found.")
     
@@ -486,12 +488,12 @@ async def get_theater_baton_state(theater_id: str, request: Request):
 
 @app.post("/api/theaters/{theater_id}/baton/allowed_orators")
 async def add_allowed_orator(theater_id: str, req: AddAllowedOratorRequest, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.add_allowed_orator(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
+        updated_state = await db.add_allowed_orator_async(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
@@ -501,12 +503,12 @@ async def add_allowed_orator(theater_id: str, req: AddAllowedOratorRequest, requ
 
 @app.delete("/api/theaters/{theater_id}/baton/allowed_orators/{target_user_id}")
 async def remove_allowed_orator(theater_id: str, target_user_id: int, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.remove_allowed_orator(theater_id, owner_id=user["id"], target_user_id=target_user_id)
+        updated_state = await db.remove_allowed_orator_async(theater_id, owner_id=user["id"], target_user_id=target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
@@ -517,12 +519,12 @@ async def remove_allowed_orator(theater_id: str, target_user_id: int, request: R
 
 @app.post("/api/theaters/{theater_id}/baton/request")
 async def request_baton_pass(theater_id: str, req: RequestBatonRequest, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.request_baton(
+        updated_state = await db.request_baton_async(
             theater_id,
             owner_id=user["id"],
             target_user_id=req.target_user_id,
@@ -536,12 +538,12 @@ async def request_baton_pass(theater_id: str, req: RequestBatonRequest, request:
 
 @app.post("/api/theaters/{theater_id}/baton/accept")
 async def accept_baton_pass(theater_id: str, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.accept_baton(theater_id, target_user_id=user["id"])
+        updated_state = await db.accept_baton_async(theater_id, target_user_id=user["id"])
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
@@ -552,12 +554,12 @@ async def accept_baton_pass(theater_id: str, request: Request):
 
 @app.post("/api/theaters/{theater_id}/baton/decline")
 async def decline_baton_pass(theater_id: str, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.decline_baton(theater_id, target_user_id=user["id"])
+        updated_state = await db.decline_baton_async(theater_id, target_user_id=user["id"])
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
@@ -566,12 +568,12 @@ async def decline_baton_pass(theater_id: str, request: Request):
 
 @app.post("/api/theaters/{theater_id}/baton/takeback")
 async def take_back_baton(theater_id: str, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = db.take_back_baton(theater_id, owner_id=user["id"])
+        updated_state = await db.take_back_baton_async(theater_id, owner_id=user["id"])
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
@@ -583,7 +585,7 @@ async def take_back_baton(theater_id: str, request: Request):
 @app.post("/api/theaters/{theater_id}/save", status_code=202)
 async def save_theater_to_db(theater_id: str, request: Request):
     """Save canvas theater state and image assets to SQLite database on user demand."""
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
@@ -653,7 +655,7 @@ def export_theater_assets(theater_id: str, request: Request):
 @app.get("/api/theaters/{theater_id}/suggestions")
 async def get_theater_suggestions(theater_id: str, request: Request):
     """Generate structured scene suggestions based on present named elements from NamedElementTool."""
-    _require_canvas_access(request, theater_id)
+    await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
     session = agent_manager.get_session(theater_id)

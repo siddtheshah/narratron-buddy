@@ -21,6 +21,7 @@ from api_server import (
     db,
     theater_manager,
     get_current_user,
+    get_current_user_async,
     can_access_agent_websocket,
     can_control_agent_websocket,
 )
@@ -191,7 +192,7 @@ async def agent_websocket_endpoint(
     # ``user_id`` remains in the legacy URL for client compatibility, but it
     # must never establish identity.  Agent control follows the authenticated
     # holder of the theater baton.
-    current_user = get_current_user(websocket)
+    current_user = await get_current_user_async(websocket)
 
     deployment = db.get_deployment(theater_id)
     if not can_control_agent_websocket(deployment, current_user=current_user):

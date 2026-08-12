@@ -1,6 +1,7 @@
 """Shared FastAPI app, singletons, flags, and utility helpers for api_server."""
 
 import base64
+import asyncio
 import hmac
 import json
 import logging
@@ -64,14 +65,8 @@ def _safe_path_param(value: str, label: str = "parameter") -> str:
         raise HTTPException(status_code=400, detail=f"Invalid {label}.")
     return value
 
-def get_current_user(request: Request | WebSocket, *, record_activity: bool = True) -> Optional[dict]:
-    # Several helpers may authenticate the same request.  Keep this result on
-    # the request object so only the first needs a cache/database lookup.
-    request_cache = getattr(request, "state", request)
-    if hasattr(request_cache, "_narratron_current_user"):
-        cached = request_cache._narratron_current_user
-        return dict(cached) if cached else None
-
+def _auth_token_from_request(request: Request | WebSocket) -> Optional[str]:
+    """Extract an auth token without doing I/O."""
     token = None
     if hasattr(request, "cookies") and request.cookies:
         token = request.cookies.get("auth_token")
@@ -93,9 +88,45 @@ def get_current_user(request: Request | WebSocket, *, record_activity: bool = Tr
                     pass
                 if token is not None:
                     break
+    return token
+
+
+def get_current_user(request: Request | WebSocket, *, record_activity: bool = True) -> Optional[dict]:
+    # Several helpers may authenticate the same request.  Keep this result on
+    # the request object so only the first needs a cache/database lookup.
+    request_cache = getattr(request, "state", request)
+    if hasattr(request_cache, "_narratron_current_user"):
+        cached = request_cache._narratron_current_user
+        return dict(cached) if cached else None
+
+    token = _auth_token_from_request(request)
 
     if token:
         user = auth_session_cache.get_or_validate(
+            token,
+            lambda: db.validate_session_token(token, record_activity=record_activity),
+        )
+        if user:
+            setattr(request_cache, "_narratron_current_user", dict(user))
+            return user
+
+    setattr(request_cache, "_narratron_current_user", None)
+    return None
+
+
+async def get_current_user_async(
+    request: Request | WebSocket, *, record_activity: bool = True
+) -> Optional[dict]:
+    """Resolve a user without blocking an async request on a cache miss."""
+    request_cache = getattr(request, "state", request)
+    if hasattr(request_cache, "_narratron_current_user"):
+        cached = request_cache._narratron_current_user
+        return dict(cached) if cached else None
+
+    token = _auth_token_from_request(request)
+    if token:
+        user = await asyncio.to_thread(
+            auth_session_cache.get_or_validate,
             token,
             lambda: db.validate_session_token(token, record_activity=record_activity),
         )
@@ -248,4 +279,46 @@ def _require_canvas_access(
     if allowed:
         return deployment
 
+    raise HTTPException(status_code=403, detail="A valid join key is required to access this theater.")
+
+
+async def _require_canvas_access_async(
+    request: Request | WebSocket, theater_id: str, join_key: Optional[str] = None
+) -> dict:
+    """Require canvas access without blocking the event loop on a cache miss."""
+    _safe_path_param(theater_id, "theater_id")
+    current_user = await get_current_user_async(request)
+    candidate_key = join_key or _canvas_access_grants(request).get(theater_id)
+    principal = theater_access_cache.principal_key(
+        user_id=current_user.get("id") if current_user else None,
+        join_key=candidate_key,
+    )
+    request_cache = getattr(request, "state", request)
+    memoized = getattr(request_cache, "_narratron_theater_access", {})
+    cache_key = (theater_id, principal)
+    if cache_key in memoized:
+        deployment, allowed = memoized[cache_key]
+    else:
+        def resolve() -> tuple[Optional[dict], bool]:
+            deployment = db.get_deployment(theater_id)
+            return (
+                deployment,
+                bool(deployment) and can_access_agent_websocket(
+                    request,
+                    deployment,
+                    current_user=current_user,
+                    join_key=candidate_key,
+                ),
+            )
+
+        deployment, allowed = await asyncio.to_thread(
+            theater_access_cache.get_or_resolve, theater_id, principal, resolve
+        )
+        memoized[cache_key] = (deployment, allowed)
+        setattr(request_cache, "_narratron_theater_access", memoized)
+
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Active theater not found.")
+    if allowed:
+        return deployment
     raise HTTPException(status_code=403, detail="A valid join key is required to access this theater.")

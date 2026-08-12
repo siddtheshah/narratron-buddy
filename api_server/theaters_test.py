@@ -17,7 +17,7 @@ from api_server.app import app, theater_manager, db, FLAGS, canvas_states
 import object_registry
 import api_server.theaters as theaters
 from utils.config_loader import get_theater_default_config
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestTheaterAPI(BaseTestCase):
@@ -654,7 +654,7 @@ def test_resolve_join_key_uses_registry_database_and_grants_verified_access():
 async def test_save_theater_requires_the_registry_deployment_owner():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 2}
-    with patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user", return_value={"id": 3}), pytest.raises(HTTPException) as error:
+    with patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user_async", new=AsyncMock(return_value={"id": 3})), pytest.raises(HTTPException) as error:
         await theaters.save_theater_to_db("stage", MagicMock())
     assert error.value.status_code == 403
     registry_db.persist_canvas_theater_async.assert_not_called()
@@ -690,7 +690,7 @@ async def test_get_theater_suggestions_endpoint():
     mock_suggestion_res.suggestions = [mock_item]
     mock_suggestion_svc.generate_suggestions.return_value = (mock_suggestion_res, "mock_fp")
 
-    with patch.object(theaters, "_require_canvas_access"), \
+    with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
          patch.object(object_registry, "agent_manager", mock_agent_mgr), \
          patch.object(object_registry, "suggestion_service", mock_suggestion_svc):

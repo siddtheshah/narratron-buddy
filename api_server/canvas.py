@@ -12,7 +12,9 @@ from api_server.shared import (
     db,
     theater_manager,
     get_current_user,
+    get_current_user_async,
     _require_canvas_access,
+    _require_canvas_access_async,
 )
 
 
@@ -42,17 +44,17 @@ class ViewerCollabRequest(BaseModel):
 async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = None):
     if theater_id:
         try:
-            _require_canvas_access(websocket, theater_id)
+            await _require_canvas_access_async(websocket, theater_id)
         except HTTPException:
             await websocket.close(code=1008)
             return
     await websocket.accept()
     websocket.state.theater_id = theater_id
-    current_user = get_current_user(websocket)
+    current_user = await get_current_user_async(websocket)
     cs = await canvas_states.connect_doodle_websocket(websocket, theater_id, user=current_user)
     
     if theater_id:
-        baton_st = db.get_theater_baton_state(theater_id)
+        baton_st = await db.get_theater_baton_state_async(theater_id)
         if baton_st:
             await canvas_states.broadcast_baton_update(theater_id, baton_st)
 
@@ -63,7 +65,7 @@ async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = N
     except WebSocketDisconnect:
         cs.unregister_websocket(websocket)
         if theater_id:
-            baton_st = db.get_theater_baton_state(theater_id)
+            baton_st = await db.get_theater_baton_state_async(theater_id)
             if baton_st:
                 await canvas_states.broadcast_baton_update(theater_id, baton_st)
 
@@ -73,7 +75,7 @@ async def canvas_state_websocket_endpoint(websocket: WebSocket, theater_id: Opti
     """Notification-only state channel; REST remains the source of truth."""
     if theater_id:
         try:
-            _require_canvas_access(websocket, theater_id)
+            await _require_canvas_access_async(websocket, theater_id)
         except HTTPException:
             await websocket.close(code=1008)
             return
@@ -92,7 +94,7 @@ async def canvas_state_websocket_endpoint(websocket: WebSocket, theater_id: Opti
 
 @app.api_route("/api/orator/toggle_mic", methods=["GET", "POST"])
 async def trigger_orator_mic_toggle(request: Request, theater_id: Optional[str] = None):
-    user = get_current_user(request)
+    user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to control Orator microphone.")
     
