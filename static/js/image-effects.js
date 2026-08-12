@@ -766,10 +766,10 @@ function targetRelativeGini(observedRatios, targetRatios) {
 }
 
 /**
- * Gleam 3 keeps the inverse-Gaussian highlight mask spatially fixed, then
- * builds its time-varying mask from many short-lived Gaussians. Their centres
- * are sampled from the value-flow peaks, so broad bright basins receive more
- * visits while the yellow positive-residual mask still clips the final light.
+ * Gleam 3 builds a time-varying illumination mask from many short-lived
+ * Gaussians. Their centres are sampled from value-flow peaks, so broad bright
+ * basins receive more visits. Each Gaussian takes the hue of its local region
+ * instead of using one fixed illumination colour.
  */
 function createGleam3Layer(frame, image) {
   const canvas = document.createElement('canvas');
@@ -799,6 +799,7 @@ function createGleam3Layer(frame, image) {
   let outputPixels;
   let seedMask;
   let flowSeedStrength;
+  let sourceColorIntegrals;
   let seedIndices = [];
   let seedCumulativeWeights = [];
   let seedWeightTotal = 0;
@@ -812,6 +813,46 @@ function createGleam3Layer(frame, image) {
   // Overlapping Gaussians may enrich the mask, but never make it grow without
   // bound. This is energy saturation, not a colour-saturation adjustment.
   const maximumGaussianEnergy = 2.0;
+
+  function buildSourceColorIntegrals(width, height) {
+    const stride = width + 1;
+    const length = stride * (height + 1);
+    const red = new Float64Array(length);
+    const green = new Float64Array(length);
+    const blue = new Float64Array(length);
+    for (let y = 0; y < height; y += 1) {
+      let rowRed = 0;
+      let rowGreen = 0;
+      let rowBlue = 0;
+      for (let x = 0; x < width; x += 1) {
+        const pixel = (y * width + x) * 4;
+        const integralIndex = (y + 1) * stride + x + 1;
+        rowRed += sourcePixels.data[pixel];
+        rowGreen += sourcePixels.data[pixel + 1];
+        rowBlue += sourcePixels.data[pixel + 2];
+        red[integralIndex] = red[y * stride + x + 1] + rowRed;
+        green[integralIndex] = green[y * stride + x + 1] + rowGreen;
+        blue[integralIndex] = blue[y * stride + x + 1] + rowBlue;
+      }
+    }
+    return { red, green, blue, stride };
+  }
+
+  function averageGaussianRegion(x, y, sigma) {
+    if (!sourceColorIntegrals) return [127.5, 127.5, 127.5];
+    const radius = Math.ceil(sigma * 3.25);
+    const left = Math.max(0, Math.floor(x - radius));
+    const right = Math.min(canvas.width - 1, Math.ceil(x + radius));
+    const top = Math.max(0, Math.floor(y - radius));
+    const bottom = Math.min(canvas.height - 1, Math.ceil(y + radius));
+    const { red, green, blue, stride } = sourceColorIntegrals;
+    const sumInRegion = (integral) => integral[(bottom + 1) * stride + right + 1]
+      - integral[top * stride + right + 1]
+      - integral[(bottom + 1) * stride + left]
+      + integral[top * stride + left];
+    const count = (right - left + 1) * (bottom - top + 1);
+    return [sumInRegion(red) / count, sumInRegion(green) / count, sumInRegion(blue) / count];
+  }
 
   function pickSeedIndex() {
     if (!seedIndices.length || !seedWeightTotal) return undefined;
@@ -835,6 +876,12 @@ function createGleam3Layer(frame, image) {
     // of pin-prick sparkles while still retaining distinct Gaussian centres.
     gaussian.sigma = 5.0 + Math.random() * 6.0;
     gaussian.amplitude = 0.22 + Math.random() * 0.42;
+    const regionColor = averageGaussianRegion(gaussian.x, gaussian.y, gaussian.sigma);
+    // Screen blending needs a light source. Raising the regional average to
+    // full value preserves its hue while keeping the old illumination strength.
+    const maximumChannel = Math.max(...regionColor);
+    const lightScale = maximumChannel > 0 ? 255 / maximumChannel : 1;
+    gaussian.lightColor = regionColor.map((channel) => clamp(channel * lightScale, 0, 255));
     gaussian.born = time;
     gaussian.lifetime = (620 + Math.random() * 1180) / 0.75;
   }
@@ -895,6 +942,7 @@ function createGleam3Layer(frame, image) {
     try {
       sourcePixels = sourceContext.getImageData(0, 0, width, height);
       outputPixels = context?.createImageData(width, height);
+      sourceColorIntegrals = buildSourceColorIntegrals(width, height);
       const values = new Float32Array(width * height);
       for (let index = 0; index < values.length; index += 1) {
         const pixelIndex = index * 4;
@@ -947,7 +995,7 @@ function createGleam3Layer(frame, image) {
         }
       }
       seedCandidates.sort((first, second) => first.imbalance - second.imbalance || second.score - first.score);
-      const retainedSeedCandidates = seedCandidates.slice(0, Math.ceil(seedCandidates.length / 2));
+      const retainedSeedCandidates = seedCandidates.slice(0, Math.ceil(seedCandidates.length * 2 / 3));
       for (const candidate of retainedSeedCandidates) {
         const strength = Math.log1p(candidate.score) / Math.log1p(flow.maximumScore);
         flowSeedStrength[candidate.index] = strength;
@@ -977,6 +1025,7 @@ function createGleam3Layer(frame, image) {
       outputPixels = undefined;
       seedMask = undefined;
       flowSeedStrength = undefined;
+      sourceColorIntegrals = undefined;
       seedIndices = [];
       seedCumulativeWeights = [];
       gaussians = [];
@@ -991,6 +1040,7 @@ function createGleam3Layer(frame, image) {
   function draw(time) {
     if (!context || !outputPixels || !seedMask || !enabled) return;
     const variation = new Float32Array(seedMask.length);
+    const colourSums = new Float32Array(variation.length * 3);
     for (const gaussian of gaussians) {
       if (time - gaussian.born >= gaussian.lifetime) renewGaussian(gaussian, time);
       const age = Math.max(0, Math.min(1, (time - gaussian.born) / gaussian.lifetime));
@@ -1004,7 +1054,13 @@ function createGleam3Layer(frame, image) {
       for (let y = minY; y <= maxY; y += 1) {
         for (let x = minX; x <= maxX; x += 1) {
           const distanceSquared = (x - gaussian.x) ** 2 + (y - gaussian.y) ** 2;
-          variation[y * canvas.width + x] += gaussian.amplitude * envelope * Math.exp(-distanceSquared * inverseTwoSigmaSquared);
+          const index = y * canvas.width + x;
+          const strength = gaussian.amplitude * envelope * Math.exp(-distanceSquared * inverseTwoSigmaSquared);
+          const colour = index * 3;
+          variation[index] += strength;
+          colourSums[colour] += strength * gaussian.lightColor[0];
+          colourSums[colour + 1] += strength * gaussian.lightColor[1];
+          colourSums[colour + 2] += strength * gaussian.lightColor[2];
         }
       }
     }
@@ -1014,9 +1070,11 @@ function createGleam3Layer(frame, image) {
       const cappedEnergy = Math.min(variation[index], maximumGaussianEnergy);
       const temporalMask = 1 - Math.exp(-cappedEnergy * 1.55);
       const alpha = seedMask[index] * temporalMask * intensity;
-      outputPixels.data[pixelIndex] = 255;
-      outputPixels.data[pixelIndex + 1] = 245;
-      outputPixels.data[pixelIndex + 2] = 205;
+      const colour = index * 3;
+      const energy = variation[index] || 1;
+      outputPixels.data[pixelIndex] = colourSums[colour] / energy;
+      outputPixels.data[pixelIndex + 1] = colourSums[colour + 1] / energy;
+      outputPixels.data[pixelIndex + 2] = colourSums[colour + 2] / energy;
       outputPixels.data[pixelIndex + 3] = Math.round(alpha * 222);
     }
     context.putImageData(outputPixels, 0, 0);

@@ -58,7 +58,7 @@
   filter: saturate(1.2);
 }
 
-/* Gleam 3 is a broad, renewing Gaussian field clipped by its seed mask. */
+/* Gleam 3 is a broad, renewing Gaussian illumination field. */
 .image-effect-gleam3 {
   position: absolute;
   inset: 0;
