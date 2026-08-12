@@ -28,6 +28,7 @@ from api_server.shared import (
 )
 from api_server.dependencies import agent_manager, suggestion_service, canvas_states
 from api_server.auth_cache import auth_session_cache
+from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
 
@@ -400,6 +401,7 @@ async def create_and_deploy_theater(request: Request):
     # Record deployment & deduct credits (0.0 cost)
     db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0, theater_config=theater_config)
     auth_session_cache.invalidate_user(user["id"])
+    theater_access_cache.invalidate_theater(deployed_meta.theater_id)
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
@@ -439,6 +441,7 @@ def deploy_existing_theater(theater_id: str, request: Request):
                 pass
 
     meta = theater_manager.deploy_theater(theater_id)
+    theater_access_cache.invalidate_theater(theater_id)
     return {"status": "ok", "theater": meta}
 
 @app.delete("/api/theaters/{theater_id}")
@@ -454,6 +457,7 @@ def destroy_theater(theater_id: str, request: Request):
 
     disk_removed = theater_manager.destroy_theater(theater_id)
     db_deleted = db.delete_deployment(theater_id)
+    theater_access_cache.invalidate_theater(theater_id)
     canvas_states.states.pop(theater_id, None)
 
     if not (disk_removed or db_deleted):
@@ -485,6 +489,7 @@ async def add_allowed_orator(theater_id: str, req: AddAllowedOratorRequest, requ
     
     try:
         updated_state = db.add_allowed_orator(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
+        theater_access_cache.invalidate_theater(theater_id)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
@@ -499,6 +504,7 @@ async def remove_allowed_orator(theater_id: str, target_user_id: int, request: R
     
     try:
         updated_state = db.remove_allowed_orator(theater_id, owner_id=user["id"], target_user_id=target_user_id)
+        theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
@@ -533,6 +539,7 @@ async def accept_baton_pass(theater_id: str, request: Request):
     
     try:
         updated_state = db.accept_baton(theater_id, target_user_id=user["id"])
+        theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state
@@ -562,6 +569,7 @@ async def take_back_baton(theater_id: str, request: Request):
     
     try:
         updated_state = db.take_back_baton(theater_id, owner_id=user["id"])
+        theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await canvas_states.broadcast_baton_update(theater_id, updated_state)
         return updated_state

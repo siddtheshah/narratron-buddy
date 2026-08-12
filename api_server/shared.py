@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 import object_registry
 from api_server.dependencies import FLAGS, canvas_states, db, theater_manager
 from api_server.auth_cache import auth_session_cache
+from api_server.theater_access_cache import theater_access_cache
 from storage.database import DatabaseConnectionTimeout
 
 # Project root is one level above api_server/
@@ -214,12 +215,37 @@ def _require_canvas_access(
 ) -> dict:
     """Require ownership or a verified join-key grant before serving theater content."""
     _safe_path_param(theater_id, "theater_id")
-    deployment = db.get_deployment(theater_id)
+    current_user = get_current_user(request)
+    candidate_key = join_key or _canvas_access_grants(request).get(theater_id)
+    principal = theater_access_cache.principal_key(
+        user_id=current_user.get("id") if current_user else None,
+        join_key=candidate_key,
+    )
+    request_cache = getattr(request, "state", request)
+    memoized = getattr(request_cache, "_narratron_theater_access", {})
+    cache_key = (theater_id, principal)
+    if cache_key in memoized:
+        deployment, allowed = memoized[cache_key]
+    else:
+        def resolve() -> tuple[Optional[dict], bool]:
+            deployment = db.get_deployment(theater_id)
+            return (
+                deployment,
+                bool(deployment) and can_access_agent_websocket(
+                    request,
+                    deployment,
+                    current_user=current_user,
+                    join_key=candidate_key,
+                ),
+            )
+
+        deployment, allowed = theater_access_cache.get_or_resolve(theater_id, principal, resolve)
+        memoized[cache_key] = (deployment, allowed)
+        setattr(request_cache, "_narratron_theater_access", memoized)
+
     if not deployment:
         raise HTTPException(status_code=404, detail="Active theater not found.")
-
-    current_user = get_current_user(request)
-    if can_access_agent_websocket(request, deployment, current_user=current_user, join_key=join_key):
+    if allowed:
         return deployment
 
     raise HTTPException(status_code=403, detail="A valid join key is required to access this theater.")
