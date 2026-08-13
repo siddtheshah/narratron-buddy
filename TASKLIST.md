@@ -23,7 +23,7 @@
   - continuously based on what the user is giving back.
   - Long term planning will likely be very bad, but maybe we can let the script writer query some docs the user
   has shared or added to the assets.
-- [ ] Music Generation
+- [x] Music Generation
   - Need to find a model provider and assess latency. Probably have a testlab page for it.
   - Music needs to be saved to output/music and be referenceable by the live agent just like images are.
 
