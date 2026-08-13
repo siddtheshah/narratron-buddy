@@ -1534,7 +1534,7 @@
             </div>
 
             <!-- Pricing Rates Summary Grid -->
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.25rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 1.25rem;">
                 <div
                     style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; padding: 1rem;">
                     <div
@@ -1578,6 +1578,20 @@
                 </div>
 
                 <div
+                    style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(244, 63, 94, 0.25); border-radius: 12px; padding: 1rem;">
+                    <div
+                        style="font-size: 0.78rem; font-weight: 700; color: #fb7185; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        🎵 Music Generation Rate
+                    </div>
+                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
+                        <span id="rateMusic">2.0</span> Cr / track
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                        Lyria background tracks (~<span id="rateMusicUsd">$0.10</span> / track)
+                    </div>
+                </div>
+
+                <div
                     style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 1rem;">
                     <div
                         style="font-size: 0.78rem; font-weight: 700; color: #34d399; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
@@ -1604,7 +1618,7 @@
                     <span style="font-size: 0.75rem; color: var(--text-muted);">Calculated live via API</span>
                 </div>
 
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1rem;">
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1rem;">
                     <div>
                         <label
                             style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Voice
@@ -1618,6 +1632,14 @@
                             style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Images
                             Created</label>
                         <input type="number" id="calcImagesInput" min="0" max="100" step="1" value="10"
+                            oninput="calculateLivePricingEstimate()"
+                            style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                    </div>
+                    <div>
+                        <label
+                            style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Music
+                            Tracks</label>
+                        <input type="number" id="calcMusicInput" min="0" max="50" step="1" value="2"
                             oninput="calculateLivePricingEstimate()"
                             style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                     </div>
@@ -2530,6 +2552,12 @@
                 if (document.getElementById('rateImageUsd')) {
                     document.getElementById('rateImageUsd').innerText = `$${(data.image_credit_rate * data.usd_per_credit).toFixed(2)}`;
                 }
+                if (document.getElementById('rateMusic')) {
+                    document.getElementById('rateMusic').innerText = (data.music_credit_rate || 2.0).toFixed(1);
+                }
+                if (document.getElementById('rateMusicUsd')) {
+                    document.getElementById('rateMusicUsd').innerText = `$${((data.music_credit_rate || 2.0) * data.usd_per_credit).toFixed(2)}`;
+                }
                 if (document.getElementById('rateStorageMonthly')) {
                     document.getElementById('rateStorageMonthly').innerText = data.storage_gb_monthly_rate.toFixed(1);
                 }
@@ -2553,18 +2581,21 @@
         async function calculateLivePricingEstimate() {
             const voiceInput = document.getElementById('calcVoiceInput');
             const imagesInput = document.getElementById('calcImagesInput');
+            const musicInput = document.getElementById('calcMusicInput');
             const storageInput = document.getElementById('calcStorageInput');
 
             if (!voiceInput || !imagesInput || !storageInput) return;
 
             const voiceMins = parseFloat(voiceInput.value) || 0;
             const images = parseInt(imagesInput.value) || 0;
+            const music = musicInput ? (parseInt(musicInput.value) || 0) : 0;
             const storageGb = parseFloat(storageInput.value) || 0;
 
             try {
                 const queryParams = new URLSearchParams({
                     voice_minutes: voiceMins,
                     images_created: images,
+                    music_created: music,
                     gb_amount: storageGb,
                     days: 30
                 });
@@ -2584,7 +2615,7 @@
                         document.getElementById('calcTotalUsd').innerText = `~$${totalUsd.toFixed(2)} USD`;
                     }
                     if (document.getElementById('calcBreakdownText')) {
-                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${storageGb} GB/mo`;
+                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${music} music tracks + ${storageGb} GB/mo`;
                     }
                 }
             } catch (e) {

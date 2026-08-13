@@ -325,10 +325,22 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(kwargs["user_id"], 123)
         self.assertEqual(kwargs["voice_minutes"], 0.0)
         self.assertEqual(kwargs["images_created"], 1)
+        self.assertEqual(kwargs["music_created"], 0)
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
-        # 2. Record PCM audio bytes (1,920,000 bytes = 1.0 minute)
+        # 2. Record music created -> triggers immediate flush
+        session.record_music_created("path/to/track.mp3")
+        self.assertEqual(session.music_created_count, 1)
+        kwargs = mock_db.record_user_usage.call_args.kwargs
+        self.assertEqual(kwargs["user_id"], 123)
+        self.assertEqual(kwargs["voice_minutes"], 0.0)
+        self.assertEqual(kwargs["images_created"], 0)
+        self.assertEqual(kwargs["music_created"], 1)
+        self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
+        mock_db.record_user_usage.reset_mock()
+
+        # 3. Record PCM audio bytes (1,920,000 bytes = 1.0 minute)
         # Record 96,000 bytes (triggers automatic flush threshold)
         session.record_audio_input(96000)
         self.assertAlmostEqual(session.voice_minutes, 96000 / 1920000.0)
@@ -336,14 +348,16 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(kwargs["user_id"], 123)
         self.assertEqual(kwargs["voice_minutes"], 96000 / 1920000.0)
         self.assertEqual(kwargs["images_created"], 0)
+        self.assertEqual(kwargs["music_created"], 0)
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
-        # 3. Check get_usage dictionary
+        # 4. Check get_usage dictionary
         usage = session.get_usage()
         self.assertEqual(usage["theater_id"], "test_usage")
         self.assertEqual(usage["owner_user_id"], 123)
         self.assertEqual(usage["images_created"], 1)
+        self.assertEqual(usage["music_created"], 1)
         self.assertEqual(usage["total_audio_bytes"], 96000)
 
     def test_inject_tool_definitions(self):

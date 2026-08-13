@@ -5,6 +5,7 @@
 * **Exchange Rate:** $1.00 USD = 20 Credits ($0.05 / Credit)
 * **Voice Minutes:** 1.0 Credit / minute ($0.05 / min)
 * **Images Generated:** 1.0 Credit / image ($0.05 / image)
+* **Music Generated:** 2.0 Credits / track ($0.10 / track)
 * **Storage Used:** 1.0 Credit / GB / month ($0.05 / GB / month, or ~0.033 Credits / GB / day)
 
 ---
@@ -22,7 +23,8 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **1) Voice Minutes** | **Gemini Live Multimodal API** *(WebSockets bidirectional audio input/output)* | ~$0.010 – $0.018 / min | $0.05 / min | **1.0 Credit per minute** <br>*(or 0.5 Cr/min for standard voice)* |
 | **2) Images Generated** | **Gemini Image / Imagen 3 Fast** (`gemini-3.1-flash-lite-image`) | ~$0.020 – $0.030 / image | $0.05 / image | **1.0 Credit per image** <br>*(0.5 Cr for standard draft, 1.0 Cr for HD/ref)* |
-| **3) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.023 / GB / month <br>*(~$0.00077 / GB / day)* | $0.05 / GB / month | **1.0 Credit per GB per month** <br>*(or ~0.033 Credits / GB / day)* |
+| **3) Music Generated** | **Lyria Music API** (`gemini-2.5-flash-lyria`) | ~$0.030 – $0.050 / track | $0.10 / track | **2.0 Credits per music track** |
+| **4) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.023 / GB / month <br>*(~$0.00077 / GB / day)* | $0.05 / GB / month | **1.0 Credit per GB per month** <br>*(or ~0.033 Credits / GB / day)* |
 
 ---
 
@@ -46,7 +48,14 @@
   * **Draft / Low-Res Preview:** **0.5 Credits / image** ($0.025 / image).
   * **Margin:** ~1.6x – 2.5x margin. Simple 1:1 credit calculation is intuitive for theater owners.
 
-### 3. Storage Used (Persistent Theater Storage)
+### 3. Music Generated
+* **Raw API Pricing:**
+  * `gemini-2.5-flash-lyria`: **~$0.030 – $0.050 per track**.
+* **Proposed Rates:**
+  * **Standard Music Generation:** **2 Credits / track** ($0.10 / track).
+  * **Margin:** ~2x – 3x margin.
+
+### 4. Storage Used (Persistent Theater Storage)
 * **Raw Cloud Storage Pricing:**
   * GCS Standard Storage: **~$0.023 per GB / month** ($0.00077 per GB / day).
 * **Proposed Rates:**
@@ -63,5 +72,6 @@ If a Theater Owner runs a **30-minute interactive live session** with 5 particip
 
 * **Voice:** 30 live minutes × 1 Cr/min = **30 Credits** ($1.50)
 * **Images:** 10 dynamic scene images generated × 1 Cr/img = **10 Credits** ($0.50)
+* **Music:** 2 dynamic background music tracks generated × 2 Cr/track = **4 Credits** ($0.20)
 * **Storage:** 500 MB theater assets saved for 1 month = **0.5 Credits** ($0.025)
-* **Total Session Cost to Theater Owner:** **40.5 Credits** (~$2.025 USD total)
+* **Total Session Cost to Theater Owner:** **44.5 Credits** (~$2.225 USD total)

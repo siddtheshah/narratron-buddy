@@ -531,19 +531,21 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         self.assertIsNotNone(dep["last_billed_at"])
 
     def test_record_user_usage_default_pricing_and_totals(self):
-        # Initial user has 0.0 credits, 0.0 voice mins, 0 images created
-        res = self.db.record_user_usage(self.user["id"], voice_minutes=15.5, images_created=4)
+        # Initial user has 0.0 credits, 0.0 voice mins, 0 images created, 0 music created
+        res = self.db.record_user_usage(self.user["id"], voice_minutes=15.5, images_created=4, music_created=2)
         self.assertEqual(res["total_voice_minutes"], 15.5)
         self.assertEqual(res["total_images_created"], 4)
-        # Default cost: 15.5 + 4 = 19.5 credits deducted -> 0.0 - 19.5 = -19.5
-        self.assertEqual(res["credits"], -19.5)
+        self.assertEqual(res["total_music_created"], 2)
+        # Default cost: 15.5 (voice) + 4.0 (images) + 4.0 (2 music * 2.0 cr) = 23.5 credits deducted -> 0.0 - 23.5 = -23.5
+        self.assertEqual(res["credits"], -23.5)
 
         # Record subsequent usage
-        res2 = self.db.record_user_usage(self.user["id"], voice_minutes=10.0, images_created=2, credit_cost=5.0)
+        res2 = self.db.record_user_usage(self.user["id"], voice_minutes=10.0, images_created=2, music_created=1, credit_cost=5.0)
         self.assertEqual(res2["total_voice_minutes"], 25.5)
         self.assertEqual(res2["total_images_created"], 6)
-        # Explicit cost 5.0 deducted -> -19.5 - 5.0 = -24.5
-        self.assertEqual(res2["credits"], -24.5)
+        self.assertEqual(res2["total_music_created"], 3)
+        # Explicit cost 5.0 deducted -> -23.5 - 5.0 = -28.5
+        self.assertEqual(res2["credits"], -28.5)
 
     def test_record_user_usage_negative_credits_allowed(self):
         # User has 0.0 credits; deduct 150.0 credits -> credits should become -150.0
