@@ -62,7 +62,8 @@ def test_lyria_provider_handles_client_exception():
         provider.generate(req)
 
 
-def test_music_provider_registry():
+def test_music_provider_registry(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     specs = list_music_provider_specs()
     assert any(spec["id"] == "lyria" for spec in specs)
     assert any(spec["id"] == "seedance" for spec in specs)
@@ -76,3 +77,4 @@ def test_music_provider_registry():
 
     with pytest.raises(MusicProviderError, match="Unknown music provider: invalid_id"):
         get_music_provider("invalid_id")
+

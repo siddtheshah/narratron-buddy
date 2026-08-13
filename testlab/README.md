@@ -6,4 +6,5 @@ Run the two browser diagnostics without starting the full Narratron app:
 python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 ```
 
-Open `http://127.0.0.1:8015/vad` for microphone/VAD testing, `/effects` for the image-effects lab, or `/image-benchmark` to compare image providers.
+Open `http://127.0.0.1:8015/vad` for microphone/VAD testing, `/effects` for the image-effects lab, `/image-benchmark` to compare image providers, `/music-benchmark` to compare music providers, or `/text-benchmark` to compare text generation providers.
+

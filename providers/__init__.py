@@ -1,4 +1,4 @@
-"""Provider-neutral image and music generation integrations."""
+"""Provider-neutral image, music, and text response generation integrations."""
 
 from providers.image_provider import (
     ImageGenerationRequest,
@@ -17,11 +17,20 @@ from providers.music_provider import (
     MusicProviderError,
 )
 from providers.lyria_music_provider import LyriaMusicProvider
+from providers.text_response_provider import (
+    TextResponseProvider,
+    TextResponseProviderError,
+    TextResponseRequest,
+    TextResponseResult,
+)
+from providers.gemini_text_response_provider import GeminiTextResponseProvider
 from providers.registry import (
     get_image_provider,
     get_music_provider,
+    get_text_response_provider,
     list_image_provider_specs,
     list_music_provider_specs,
+    list_text_response_provider_specs,
 )
 
 __all__ = [
@@ -38,9 +47,17 @@ __all__ = [
     "MusicProvider",
     "MusicProviderError",
     "LyriaMusicProvider",
+    "TextResponseRequest",
+    "TextResponseResult",
+    "TextResponseProvider",
+    "TextResponseProviderError",
+    "GeminiTextResponseProvider",
     "get_image_provider",
     "get_music_provider",
+    "get_text_response_provider",
     "list_image_provider_specs",
     "list_music_provider_specs",
+    "list_text_response_provider_specs",
 ]
+
 

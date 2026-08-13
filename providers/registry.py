@@ -12,9 +12,12 @@ from providers.image_provider import ImageProvider, ImageProviderError
 from providers.openai_image_provider import OpenAIImageProvider
 from providers.lyria_music_provider import LyriaMusicProvider
 from providers.music_provider import MusicProvider, MusicProviderError
+from providers.gemini_text_response_provider import GeminiTextResponseProvider
+from providers.text_response_provider import TextResponseProvider, TextResponseProviderError
 
 
-_SPECS = (
+
+_IMAGE_SPECS = (
     {
         "id": "openai-gpt-image",
         "name": "GPT Image 1 Mini",
@@ -89,7 +92,7 @@ _MUSIC_SPECS = (
 
 
 def list_image_provider_specs() -> list[dict[str, Any]]:
-    specs = [dict(spec) for spec in _SPECS]
+    specs = [dict(spec) for spec in _IMAGE_SPECS]
     for spec in specs:
         if spec["id"] == "openai-gpt-image":
             spec["status"] = "available" if (os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY")) else "unconfigured"
@@ -119,7 +122,7 @@ def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) 
             fallback=GeminiImageProvider(),
             classifier_model=str(options.get("classifier_model") or "gemini-2.5-flash-lite"),
         )
-    spec = next((item for item in _SPECS if item["id"] == provider_id), None)
+    spec = next((item for item in _IMAGE_SPECS if item["id"] == provider_id), None)
     if spec:
         raise ImageProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
     raise ImageProviderError(f"Unknown image provider: {provider_id}")
@@ -142,4 +145,63 @@ def get_music_provider(provider_id: str, options: dict[str, Any] | None = None) 
     if spec:
         raise MusicProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
     raise MusicProviderError(f"Unknown music provider: {provider_id}")
+
+
+_TEXT_RESPONSE_SPECS = (
+    {
+        "id": "gemini-2-5",
+        "name": "Gemini 2.5 Flash-Lite Text",
+        "model": "gemini-2.5-flash-lite",
+        "model_options": ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"],
+        "status": "unconfigured",
+        "notes": "Fast, cost-effective baseline text response provider.",
+    },
+    {
+        "id": "gemini-3",
+        "name": "Gemini 3 Flash Text",
+        "model": "gemini-3.6-flash",
+        "model_options": ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite"],
+        "status": "unconfigured",
+        "notes": "Next-generation high-capability text generation model for comparison.",
+    },
+)
+
+
+def list_text_response_provider_specs() -> list[dict[str, Any]]:
+    specs = [dict(spec) for spec in _TEXT_RESPONSE_SPECS]
+    has_vertex = bool(
+        os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCP_PROJECT")
+        or os.getenv("GOOGLE_PROJECT_ID")
+        or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+    )
+    for spec in specs:
+        if spec["id"] in ("gemini-2-5", "gemini-3"):
+            spec["status"] = "available" if has_vertex else "unconfigured"
+    return specs
+
+
+
+def get_text_response_provider(provider_id: str, options: dict[str, Any] | None = None) -> TextResponseProvider:
+    options = options or {}
+    if provider_id in ("gemini-2-5", "gemini-2.5", "gemini-text", "Gemini 2.5"):
+        provider = GeminiTextResponseProvider(model=str(options.get("model") or "gemini-2.5-flash-lite"))
+        provider.id = "gemini-2-5"
+        return provider
+    if provider_id in ("gemini-3", "gemini-3-flash", "Gemini 3"):
+        provider = GeminiTextResponseProvider(model=str(options.get("model") or "gemini-3.6-flash"))
+        provider.id = "gemini-3"
+        provider.display_name = "Gemini 3 Flash Text"
+        return provider
+
+    spec = next((item for item in _TEXT_RESPONSE_SPECS if item["id"] == provider_id), None)
+    if spec:
+        raise TextResponseProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
+    raise TextResponseProviderError(f"Unknown text response provider: {provider_id}")
+
+
+
+
 
