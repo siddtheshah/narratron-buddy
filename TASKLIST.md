@@ -15,7 +15,7 @@
   - Requires creating multiple images with an effective alpha layer. Basic case would be background + foreground elements.
   - Also would require an emplacer function. 
   - Allow specification of relative animation, e.g.  a character moving across a background.
-- [ ] Tri-frame animation
+- [x] Tri-frame animation
   - We generate a trio of frames that chain together to form a loopable animation. 
 - [ ] Adventure Mode
   - Let narratron do some more active decision making by generating its own story elements as an option.

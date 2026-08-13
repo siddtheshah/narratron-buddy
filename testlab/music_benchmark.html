@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Music Provider Bench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { color-scheme: dark; --ink:#f8fafc; --muted:#9aa6bd; --line:rgba(255,255,255,.12); --panel:rgba(20,24,40,.82); --accent:#8b5cf6; --good:#34d399; --bad:#fb7185; }
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 10% 0,#2d155b 0,transparent 34%),#080a13;color:var(--ink);font-family:Outfit,sans-serif}
+    main{width:min(1420px,calc(100% - 36px));margin:auto;padding:38px 0 70px}.eyebrow{color:#c4b5fd;font-size:.75rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase}h1{margin:8px 0;font-size:clamp(2rem,4vw,3.4rem);letter-spacing:-.05em}.intro{max-width:780px;color:var(--muted);line-height:1.55}
+    .panel{border:1px solid var(--line);border-radius:18px;background:var(--panel);padding:18px;margin-top:20px}.section-title{font-weight:700;margin:0 0 12px}.provider-grid,.prompt-grid{display:grid;gap:10px}.provider-grid{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}.prompt-grid{grid-template-columns:repeat(auto-fit,minmax(205px,1fr));max-height:420px;overflow:auto;padding-right:4px}
+    .choice{display:block;border:1px solid var(--line);border-radius:12px;padding:12px;background:#111528;cursor:pointer}.choice:has(input:checked){outline:2px solid var(--accent);border-color:transparent}.choice:has(input:disabled){opacity:.55;cursor:not-allowed}.choice input{margin-right:7px;accent-color:var(--accent)}.choice strong{display:block}.choice small{display:block;color:var(--muted);line-height:1.35;margin:5px 0 0}.pill{display:inline-block;padding:2px 6px;border-radius:99px;background:#30265b;color:#ddd6fe;font-size:.72rem;margin:6px 4px 0 0}.actions{display:flex;align-items:center;gap:14px;margin-top:18px}button{border:0;border-radius:999px;padding:11px 17px;background:var(--accent);color:white;font:600 .92rem Outfit,sans-serif;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.status{color:var(--muted)}
+    .provider-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);color:var(--muted);font-size:.76rem}.provider-stats strong{color:var(--ink);font-weight:600}.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;margin-top:18px}.result{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#101425}.audio-wrapper{padding:14px;background:#090b14;border-bottom:1px solid var(--line)}.audio-wrapper audio{width:100%;height:38px}.result-body{padding:12px}.result h3{font-size:1rem;margin:0 0 6px}.result p{margin:4px 0;color:var(--muted);font-size:.86rem}.result.error{border-color:rgba(251,113,133,.6)}.error-text{color:#fda4af!important;word-break:break-word}.generation-note{width:100%;min-height:58px;margin-top:9px;padding:8px;border:1px solid var(--line);border-radius:8px;background:#0b0e1c;color:var(--ink);font:inherit;font-size:.8rem;resize:vertical}.gallery-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.gallery-controls select{margin:0}.hidden{display:none}@media(max-width:620px){main{width:min(100% - 24px,1420px);padding-top:24px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Narratron Test Lab</div>
+  <h1>Music Provider Bench</h1>
+  <p class="intro">Run the same fixed musical prompts through selected providers. The bench measures end-to-end request latency, evaluates dynamic audio generation quality, and records normalized provider usage. Cost is an estimate, not billing truth.</p>
+  <section class="panel"><h2 class="section-title">Providers</h2><div id="providers" class="provider-grid"></div></section>
+  <section class="panel"><h2 class="section-title">Fixed prompts</h2><div class="actions" style="margin-top:0"><button id="selectAll" type="button">Select all</button><label class="status">Runs per provider/prompt <input id="repetitions" type="number" min="1" max="20" value="1" style="width:58px;margin-left:6px"></label></div><div id="prompts" class="prompt-grid" style="margin-top:14px"></div></section>
+  <div class="actions"><button id="run" type="button">Run selected music benchmark</button><span id="status" class="status">One prompt is preselected; increase runs to measure repeatability.</span></div>
+  <section id="gallery" class="panel hidden"><h2 class="section-title">Generation gallery</h2><div class="gallery-controls"><label>Slice by <select id="galleryView"><option value="provider">Provider</option><option value="prompt">Prompt</option></select></label><label id="galleryFilterLabel">Provider <select id="galleryProvider"></select></label><button id="previousPage" type="button">Previous</button><button id="nextPage" type="button">Next</button><span id="galleryPage" class="status"></span></div><div id="galleryPromptDetail" class="choice hidden" style="margin-top:14px"></div><div id="galleryResults" class="results"></div></section>
+</main>
+
+<script>
+const state={catalog:null,run:null,poll:null,galleryPage:0,galleryProvider:'all',galleryPrompt:'all',galleryView:'provider'};
+const money=p=>p.estimated_cost_usd_per_generation!=null?`~$${Number(p.estimated_cost_usd_per_generation).toFixed(2)} / gen`:p.estimated_cost_usd_30s!=null?`~$${Number(p.estimated_cost_usd_30s).toFixed(3)} / 30s`:'Estimate pending';
+function el(tag,attrs={},children=[]){const n=document.createElement(tag);Object.assign(n,attrs);for(const c of children)n.append(c);return n}
+
+function renderCatalog(catalog){
+ const providers=document.querySelector('#providers'); const prompts=document.querySelector('#prompts');
+ catalog.providers.forEach((p,i)=>{const input=el('input',{type:'checkbox',value:p.id,checked:p.status==='available',disabled:p.status!=='available'}); const stats=el('div',{className:'provider-stats hidden'});stats.setAttribute('data-provider-stats',p.id); const children=[input,el('strong',{textContent:p.name}),el('small',{textContent:p.model}),el('span',{className:'pill',textContent:money(p)}),el('span',{className:'pill',textContent:p.status}),el('small',{textContent:p.notes})]; if(p.model_options){const model=el('select');model.setAttribute('data-provider-option','model');model.setAttribute('data-provider-id',p.id);p.model_options.forEach(name=>model.append(el('option',{value:name,textContent:name,selected:name===p.model})));model.onclick=e=>e.stopPropagation();children.push(el('small',{textContent:'Model'}),model)} children.push(stats);const label=el('label',{className:'choice'},children); providers.append(label)});
+ catalog.prompts.forEach((p,i)=>{const input=el('input',{type:'checkbox',value:p.id,checked:i===0}); const label=el('label',{className:'choice'},[input,el('strong',{textContent:`${i+1}. ${p.title}`}),el('small',{textContent:`${p.dimension} · ${p.genre||''} · ${p.tempo||''}`}),el('small',{textContent:p.prompt}),el('span',{className:'pill',textContent:`${p.duration_seconds}s`})]); prompts.append(label)});
+}
+
+function selected(id){return [...document.querySelectorAll(`#${id} input:checked`)].map(n=>n.value)}
+function providerOptions(){const options={};document.querySelectorAll('[data-provider-option]').forEach(input=>{const id=input.dataset.providerId;(options[id]??={})[input.dataset.providerOption]=input.value});return options}
+function percentile(values,p){if(!values.length)return null;const s=[...values].sort((a,b)=>a-b),i=(s.length-1)*p,a=Math.floor(i),b=Math.ceil(i);return s[a]+(s[b]-s[a])*(i-a)}
+function runCost(done){const costs=done.map(item=>item.estimated_output_cost_usd).filter(cost=>cost!=null);return costs.length?`$${costs.reduce((sum,cost)=>sum+cost,0).toFixed(3)}`:'—'}
+
+function renderRun(run){
+ const byId=Object.fromEntries(state.catalog.prompts.map(p=>[p.id,p])); const specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]));
+ Object.keys(specs).forEach(id=>{const stats=document.querySelector(`[data-provider-stats="${id}"]`),items=run.items.filter(item=>item.provider_id===id);if(!stats)return;if(!items.length){stats.classList.add('hidden');return}const done=items.filter(item=>item.status==='completed'),times=done.map(item=>item.latency_ms),mean=times.length?(times.reduce((a,b)=>a+b,0)/times.length/1000).toFixed(2)+' s':'—',p50=times.length?(percentile(times,.5)/1000).toFixed(2)+' s':'—',p95=times.length?(percentile(times,.95)/1000).toFixed(2)+' s':'—';stats.innerHTML=`<span>Done <strong>${done.length}/${items.length}</strong></span><span>Failed <strong>${items.length-done.length}</strong></span><span>Mean <strong>${mean}</strong></span><span>p50 <strong>${p50}</strong></span><span>p95 <strong>${p95}</strong></span>`;stats.classList.remove('hidden')});
+ Object.keys(specs).forEach(id=>{const stats=document.querySelector(`[data-provider-stats="${id}"]`),done=run.items.filter(item=>item.provider_id===id&&item.status==='completed');if(stats&&done.length)stats.insertAdjacentHTML('beforeend',`<span>Est. output cost <strong>${runCost(done)}</strong></span>`)});
+ (state.galleryView==='prompt'?renderPromptGallery:renderGallery)(run,byId,specs);
+}
+
+function makeResultCard(item,byId,specs){
+ const prompt=byId[item.prompt_id],provider=specs[item.provider_id];const card=el('article',{className:`result ${item.status==='failed'?'error':''}`});
+ if(item.audio_url){const wrapper=el('div',{className:'audio-wrapper'});const audio=el('audio',{controls:true,src:item.audio_url});wrapper.append(audio);card.append(wrapper)}
+ const body=el('div',{className:'result-body'});body.append(el('h3',{textContent:`${provider.name} · ${prompt.title} · run ${item.repetition}`}),el('p',{textContent:`${(item.latency_ms/1000).toFixed(2)} s · ${item.model||provider.model}`}));
+ if(item.error)body.append(el('p',{className:'error-text',textContent:item.error}));
+ const note=el('textarea',{className:'generation-note',placeholder:'Add music review note…',value:item.note||'',maxLength:2000,ariaLabel:'Review note'});
+ note.onchange=async()=>{note.disabled=true;try{await saveGenerationNote(item,note.value)}catch(error){alert(error.message)}finally{note.disabled=false}};
+ body.append(note);
+ card.append(body);return card
+}
+
+async function saveGenerationNote(item,note){
+ const response=await fetch(`/api/music-benchmark/runs/${state.run.id}/items/${item.id}/note`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({note})});
+ if(!response.ok)throw new Error((await response.json()).detail||'Could not save note.');
+ item.note=(await response.json()).note;
+}
+
+function renderGallery(run,byId=Object.fromEntries(state.catalog.prompts.map(p=>[p.id,p])),specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]))){
+ const gallery=document.querySelector('#gallery'),selector=document.querySelector('#galleryProvider'),grid=document.querySelector('#galleryResults');gallery.classList.remove('hidden');
+ const providerIds=[...new Set(run.items.map(item=>item.provider_id))];
+ if([...selector.options].map(x=>x.value).join('|')!==['all',...providerIds].join('|')){selector.innerHTML='';selector.append(el('option',{value:'all',textContent:'All providers'}));providerIds.forEach(id=>selector.append(el('option',{value:id,textContent:specs[id].name})))}
+ selector.value=state.galleryProvider;let items=run.items.filter(item=>state.galleryProvider==='all'||item.provider_id===state.galleryProvider);
+ items=[...items].sort((a,b)=>a.provider_id.localeCompare(b.provider_id)||a.prompt_id.localeCompare(b.prompt_id)||a.repetition-b.repetition);
+ const pageSize=12,totalPages=Math.max(1,Math.ceil(items.length/pageSize));state.galleryPage=Math.min(state.galleryPage,totalPages-1);const pageItems=items.slice(state.galleryPage*pageSize,(state.galleryPage+1)*pageSize);
+ grid.innerHTML='';pageItems.forEach(item=>grid.append(makeResultCard(item,byId,specs)));
+ document.querySelector('#galleryPage').textContent=`Page ${state.galleryPage+1} of ${totalPages} · ${items.length} track${items.length===1?'':'s'}`;
+ document.querySelector('#previousPage').disabled=state.galleryPage===0;document.querySelector('#nextPage').disabled=state.galleryPage>=totalPages-1
+}
+
+function renderPromptGallery(run,byId=Object.fromEntries(state.catalog.prompts.map(p=>[p.id,p])),specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]))){
+ const gallery=document.querySelector('#gallery'),selector=document.querySelector('#galleryProvider'),grid=document.querySelector('#galleryResults'),label=document.querySelector('#galleryFilterLabel'),detail=document.querySelector('#galleryPromptDetail');
+ label.firstChild.textContent='Prompt '; gallery.classList.remove('hidden');
+ const promptIds=[...new Set(run.items.map(item=>item.prompt_id))];
+ if([...selector.options].map(option=>option.value).join('|')!==['all',...promptIds].join('|')){selector.innerHTML='';selector.append(el('option',{value:'all',textContent:'All prompts'}));promptIds.forEach(id=>selector.append(el('option',{value:id,textContent:byId[id].title})))}
+ selector.value=state.galleryPrompt;const prompt=byId[state.galleryPrompt];
+ if(prompt){detail.innerHTML='';detail.append(el('strong',{textContent:prompt.title}),el('small',{textContent:`${prompt.dimension} · ${prompt.duration_seconds}s`}),el('small',{textContent:prompt.prompt}));detail.classList.remove('hidden')}else detail.classList.add('hidden');
+ let items=run.items.filter(item=>state.galleryPrompt==='all'||item.prompt_id===state.galleryPrompt);
+ items=[...items].sort((a,b)=>a.prompt_id.localeCompare(b.prompt_id)||a.provider_id.localeCompare(b.provider_id)||a.repetition-b.repetition);
+ const pageSize=12,totalPages=Math.max(1,Math.ceil(items.length/pageSize));state.galleryPage=Math.min(state.galleryPage,totalPages-1);grid.innerHTML='';
+ items.slice(state.galleryPage*pageSize,(state.galleryPage+1)*pageSize).forEach(item=>grid.append(makeResultCard(item,byId,specs)));
+ document.querySelector('#galleryPage').textContent=`Page ${state.galleryPage+1} of ${totalPages} - ${items.length} track${items.length===1?'':'s'}`;
+ document.querySelector('#previousPage').disabled=state.galleryPage===0;document.querySelector('#nextPage').disabled=state.galleryPage>=totalPages-1;
+}
+
+function renderSelectedGallery(){if(!state.run)return;if(state.galleryView==='prompt')renderPromptGallery(state.run);else{document.querySelector('#galleryFilterLabel').firstChild.textContent='Provider ';document.querySelector('#galleryPromptDetail').classList.add('hidden');renderGallery(state.run)}}
+document.querySelector('#galleryView').onchange=event=>{state.galleryView=event.target.value;if(state.galleryView==='prompt'&&state.galleryPrompt==='all'&&state.run)state.galleryPrompt=state.run.items[0]?.prompt_id||'all';state.galleryPage=0;renderSelectedGallery()};
+document.querySelector('#galleryProvider').onchange=event=>{if(state.galleryView==='prompt')state.galleryPrompt=event.target.value;else state.galleryProvider=event.target.value;state.galleryPage=0;renderSelectedGallery()};
+document.querySelector('#previousPage').onclick=()=>{state.galleryPage--;renderSelectedGallery()};
+document.querySelector('#nextPage').onclick=()=>{state.galleryPage++;renderSelectedGallery()};
+
+async function poll(id){const response=await fetch(`/api/music-benchmark/runs/${id}`);const run=await response.json();state.run=run;renderRun(run);document.querySelector('#status').textContent=run.status==='completed'?`Completed ${run.total} provider/prompt music comparisons.`:`Running ${run.items.length} of ${run.total} music comparisons…`;if(run.status!=='completed')state.poll=setTimeout(()=>poll(id),250);else document.querySelector('#run').disabled=false}
+document.querySelector('#selectAll').onclick=()=>document.querySelectorAll('#prompts input').forEach(n=>n.checked=true);
+document.querySelector('#run').onclick=async()=>{const provider_ids=selected('providers'),prompt_ids=selected('prompts'),repetitions=Number(document.querySelector('#repetitions').value);if(!provider_ids.length||!prompt_ids.length){document.querySelector('#status').textContent='Select an available music provider and at least one prompt.';return}document.querySelector('#run').disabled=true;state.galleryPage=0;state.galleryProvider='all';document.querySelector('#gallery').classList.add('hidden');const r=await fetch('/api/music-benchmark/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider_ids,prompt_ids,repetitions,provider_options:providerOptions()})});const payload=await r.json();if(!r.ok){document.querySelector('#status').textContent=payload.detail||'Could not start music benchmark.';document.querySelector('#run').disabled=false;return}poll(payload.id)};
+
+fetch('/api/music-benchmark/catalog').then(r=>r.json()).then(c=>{state.catalog=c;renderCatalog(c)}).catch(()=>document.querySelector('#status').textContent='Could not load music benchmark catalog.');
+</script>
+</body>
+</html>

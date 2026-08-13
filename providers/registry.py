@@ -10,6 +10,8 @@ from providers.fal_flux_klein_provider import FalFluxKleinProvider
 from providers.hybrid_image_provider import HybridImageProvider
 from providers.image_provider import ImageProvider, ImageProviderError
 from providers.openai_image_provider import OpenAIImageProvider
+from providers.lyria_music_provider import LyriaMusicProvider
+from providers.music_provider import MusicProvider, MusicProviderError
 
 
 _SPECS = (
@@ -64,6 +66,28 @@ _SPECS = (
 )
 
 
+_MUSIC_SPECS = (
+    {
+        "id": "lyria",
+        "name": "Google Lyria 3 Pro Preview",
+        "model": "lyria-3-pro-preview",
+        "model_options": ["lyria-3-pro-preview", "lyria-3-pro", "lyria-3"],
+        "estimated_cost_usd_per_generation": 0.080,
+        "estimated_cost_usd_30s": 0.080,
+        "status": "unconfigured",
+        "notes": "Google DeepMind Lyria 3 Pro Preview. Generates multiple minutes of audio at $0.08 per generation.",
+    },
+    {
+        "id": "seedance",
+        "name": "Seedance Music 1.0",
+        "model": "seedance-1.0",
+        "estimated_cost_usd_30s": 0.050,
+        "status": "planned",
+        "notes": "High-fidelity dynamic music generation provider.",
+    },
+)
+
+
 def list_image_provider_specs() -> list[dict[str, Any]]:
     specs = [dict(spec) for spec in _SPECS]
     for spec in specs:
@@ -99,3 +123,23 @@ def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) 
     if spec:
         raise ImageProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
     raise ImageProviderError(f"Unknown image provider: {provider_id}")
+
+
+def list_music_provider_specs() -> list[dict[str, Any]]:
+    specs = [dict(spec) for spec in _MUSIC_SPECS]
+    has_gemini = bool(os.getenv("LYRIA_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+    for spec in specs:
+        if spec["id"] == "lyria":
+            spec["status"] = "available" if has_gemini else "unconfigured"
+    return specs
+
+
+def get_music_provider(provider_id: str, options: dict[str, Any] | None = None) -> MusicProvider:
+    options = options or {}
+    if provider_id == "lyria":
+        return LyriaMusicProvider(model=str(options.get("model") or "lyria-3-pro-preview"))
+    spec = next((item for item in _MUSIC_SPECS if item["id"] == provider_id), None)
+    if spec:
+        raise MusicProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
+    raise MusicProviderError(f"Unknown music provider: {provider_id}")
+
