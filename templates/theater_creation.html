@@ -1079,6 +1079,22 @@
                             <textarea id="theaterSpecialInstructions" rows="3"
                                 placeholder="e.g. Keep the tone mysterious and ask before changing the scene."></textarea>
                             <small>Leave blank to use the default from <code>theater_default.yaml</code>.</small>
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 1rem;">
+                                <label class="checkbox-card">
+                                    <input type="checkbox" id="cfgMusicGeneration">
+                                    <div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">🎵 Music Generation</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">AI fills gaps in your playlists with generated music</div>
+                                    </div>
+                                </label>
+                                <label class="checkbox-card">
+                                    <input type="checkbox" id="cfgSceneAnimations">
+                                    <div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">✨ Scene Animations</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Adds transitions between scenes</div>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
                     </details>
 
@@ -2304,6 +2320,8 @@
                 formData.append('agent_style', style);
                 formData.append('agent_special_instructions', specialInstructions);
                 formData.append('advanced_config_canonical', advancedConfigIsCanonical);
+                formData.append('enable_music_generation', document.getElementById('cfgMusicGeneration')?.checked ? 'true' : 'false');
+                formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
 
                 const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
                 if (advancedConfigIsCanonical && theaterConfigYaml) {

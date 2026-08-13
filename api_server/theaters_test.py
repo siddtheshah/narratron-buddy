@@ -322,6 +322,46 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(config["agent"]["style"], "advanced style")
         self.assertEqual(config["agent"]["special_instructions"], "advanced instructions")
 
+    def test_feature_flags_forwarded_to_theater_config(self):
+        self.client.post("/api/auth/register", json={
+            "username": "flags_user",
+            "email": "flags@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Feature Flags Theater",
+                "enable_music_generation": "true",
+                "enable_scene_animations": "true",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        config = yaml.safe_load(
+            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
+        )
+        self.assertTrue(config["music"]["generation_enabled"])
+        self.assertTrue(config["animation"]["enabled"])
+
+    def test_feature_flags_default_to_false_when_omitted(self):
+        self.client.post("/api/auth/register", json={
+            "username": "flags_default_user",
+            "email": "flags-default@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "No Flags Theater"},
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        config = yaml.safe_load(
+            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
+        )
+        self.assertFalse(config["music"]["generation_enabled"])
+        self.assertFalse(config["animation"]["enabled"])
+
     def test_folder_upload_requires_theater_yaml(self):
         self.client.post("/api/auth/register", json={
             "username": "folder_config_user",

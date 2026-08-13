@@ -1,3 +1,14 @@
+Version 1.1.0 - 8/13/2026
+
+We have some really nice new features with triframe animation, and AI music generation.
+Of course, it's all still very expensive. Hopefully there'll be more powerful open models in
+the coming months. 
+
+We also have a Foundry VTT integration now, so enterprising DMs can really take advantage if they want.
+
+Besides that, lots of stability updates and performance improvements, though the base infrastructure needs to
+substantially improve to really support expansion.
+
 Version 1.0.0 launch! - 8/1/2026
 
 A very satisfying, but difficult journey to 1.0.0.

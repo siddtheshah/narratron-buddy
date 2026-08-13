@@ -313,6 +313,8 @@ async def create_and_deploy_theater(request: Request):
     advanced_config_canonical = str(form.get("advanced_config_canonical", "")).lower() == "true"
     creation_mode = str(form.get("creation_mode", "blank"))
     folder_config_yaml = form.get("folder_theater_config_yaml")
+    enable_music_generation = str(form.get("enable_music_generation", "false")).lower() == "true"
+    enable_scene_animations = str(form.get("enable_scene_animations", "false")).lower() == "true"
 
     reference_files = []
     playlists_data = {}
@@ -393,6 +395,14 @@ async def create_and_deploy_theater(request: Request):
             agent_config["style"] = style
         if special_instructions:
             agent_config["special_instructions"] = special_instructions
+        music_config = theater_config.setdefault("music", {})
+        if not isinstance(music_config, dict):
+            raise HTTPException(status_code=400, detail="Invalid theater configuration: music must be a mapping.")
+        music_config["generation_enabled"] = enable_music_generation
+        animation_config = theater_config.setdefault("animation", {})
+        if not isinstance(animation_config, dict):
+            raise HTTPException(status_code=400, detail="Invalid theater configuration: animation must be a mapping.")
+        animation_config["enabled"] = enable_scene_animations
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = theater_manager.create_theater(
