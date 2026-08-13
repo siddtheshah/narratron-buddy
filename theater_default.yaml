@@ -16,7 +16,7 @@ music:
     playlists_folder: "playlists"
     generation_cooldown: 90
     switch_cooldown: 15
-    style: "no lyrics, instrumental focus, steady volume"
+    style: "no lyrics, instrumental focus, steady volume, 90 second duration, loopable"
 
 named_elements: {}
 
