@@ -17,7 +17,7 @@
   - Allow specification of relative animation, e.g.  a character moving across a background.
 - [x] Tri-frame animation
   - We generate a trio of frames that chain together to form a loopable animation. 
-- [ ] Adventure Mode
+- [x] Adventure Mode
   - Let narratron do some more active decision making by generating its own story elements as an option.
   - We can use a text generation model to build out a script ahead of the current state and adjust it
   - continuously based on what the user is giving back.
@@ -26,6 +26,13 @@
 - [x] Music Generation
   - Need to find a model provider and assess latency. Probably have a testlab page for it.
   - Music needs to be saved to output/music and be referenceable by the live agent just like images are.
+
+## Adventure Mode
+- [ ] Give narratron more visibility into characters so that the characters can "talk".
+- [ ] Give narratron a character speech tool, which overlays a speech bubble. 
+- [ ] Or perhaps, we let Narratron hand over the user's response to the script tool and have it generate the reaction based on the script.
+- [ ] Need billing on text provider for adventure mode. It'll rack up too.
+
 
 ## Refactors
 
