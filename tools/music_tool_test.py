@@ -158,5 +158,30 @@ class TestMusicTools(BaseTestCase):
         self.assertEqual(tools.generation_cooldown, 30.0)
         self.assertEqual(tools.switch_cooldown, 12.0)
 
+    def test_style_default_loaded_from_config(self):
+        config = {"music": {"style": "  orchestral epic  "}}
+        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        self.assertEqual(tools.style_default, "orchestral epic")
+
+    def test_style_default_appended_when_absent(self):
+        config = {"music": {"style": "orchestral epic"}}
+        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        result = tools._apply_default_style("a triumphant fanfare")
+        self.assertEqual(result, "a triumphant fanfare\n\nStyle: orchestral epic")
+
+    def test_style_default_not_appended_when_style_present(self):
+        config = {"music": {"style": "orchestral epic"}}
+        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        prompt = "a triumphant fanfare. Style: jazz"
+        result = tools._apply_default_style(prompt)
+        self.assertEqual(result, prompt)
+
+    def test_style_default_empty_no_change(self):
+        config = {"music": {}}
+        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        prompt = "a triumphant fanfare"
+        result = tools._apply_default_style(prompt)
+        self.assertEqual(result, prompt)
+
 if __name__ == "__main__":
     unittest.main()

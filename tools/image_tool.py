@@ -47,7 +47,7 @@ class ImageTools(BaseTools):
 
         self.theater_manager = theater_manager
         self.theater = theater_manager.theater(self.active_theater_id)
-        self.default_style = str(raw_config.get("agent", {}).get("style", "")).strip()
+        self.default_style = str(subconfig.get("style", "")).strip()
         self.output_dir = str(self.theater.image_artifacts_dir())
         os.makedirs(self.output_dir, exist_ok=True)
         

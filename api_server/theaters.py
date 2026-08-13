@@ -391,10 +391,13 @@ async def create_and_deploy_theater(request: Request):
         agent_config = theater_config.setdefault("agent", {})
         if not isinstance(agent_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: agent must be a mapping.")
-        if style:
-            agent_config["style"] = style
         if special_instructions:
             agent_config["special_instructions"] = special_instructions
+        image_config = theater_config.setdefault("image_generation", {})
+        if not isinstance(image_config, dict):
+            raise HTTPException(status_code=400, detail="Invalid theater configuration: image_generation must be a mapping.")
+        if style:
+            image_config["style"] = style
         music_config = theater_config.setdefault("music", {})
         if not isinstance(music_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: music must be a mapping.")

@@ -104,3 +104,33 @@ class TestImageTools(BaseTestCase):
 
         self.assertIn("Reference image 'not-here' not found", result)
         mock_get_provider.assert_not_called()
+
+    def _make_tools_with_style(self, style: str) -> ImageTools:
+        config = {
+            "image_generation": {
+                **self.config["image_generation"],
+                "style": style,
+            },
+        }
+        return ImageTools(config, theater_id="style_test", theater_manager=self.manager)
+
+    def test_default_style_loaded_from_config(self):
+        tools = self._make_tools_with_style("  watercolor impressionist  ")
+        self.assertEqual(tools.default_style, "watercolor impressionist")
+
+    def test_default_style_appended_when_absent(self):
+        tools = self._make_tools_with_style("watercolor impressionist")
+        result = tools._apply_default_style("a lone samurai on a hill")
+        self.assertEqual(result, "a lone samurai on a hill\n\nStyle: watercolor impressionist")
+
+    def test_default_style_not_appended_when_style_present(self):
+        tools = self._make_tools_with_style("watercolor impressionist")
+        prompt = "a lone samurai on a hill. Style: oil painting"
+        result = tools._apply_default_style(prompt)
+        self.assertEqual(result, prompt)
+
+    def test_default_style_empty_no_change(self):
+        tools = ImageTools(self.config, theater_id="no_style", theater_manager=self.manager)
+        prompt = "a lone samurai on a hill"
+        result = tools._apply_default_style(prompt)
+        self.assertEqual(result, prompt)

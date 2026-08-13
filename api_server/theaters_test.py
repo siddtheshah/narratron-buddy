@@ -204,7 +204,7 @@ class TestTheaterAPI(BaseTestCase):
         response = self.client.get("/api/theaters/default-config")
         self.assertEqual(response.status_code, 200)
         config = yaml.safe_load(response.json()["config_yaml"])
-        self.assertEqual(config["agent"]["style"], get_theater_default_config()["agent"]["style"])
+        self.assertEqual(config["image_generation"]["style"], get_theater_default_config()["image_generation"]["style"])
         self.assertEqual(
             config["agent"]["special_instructions"],
             get_theater_default_config()["agent"]["special_instructions"],

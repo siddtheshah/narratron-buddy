@@ -2,10 +2,10 @@ agent:
     proactivity: false
     affective_dialog: false
     special_instructions: "be calm, serene, and encouraging to the orator"
-    style: "wistful and bygone glories"
 
 image_generation:
     cooldown_duration: 9
+    style: "wistful and bygone glories"
 
 animation:
     enabled: false
@@ -16,6 +16,7 @@ music:
     playlists_folder: "playlists"
     generation_cooldown: 90
     switch_cooldown: 15
+    style: "no lyrics, instrumental focus, steady volume"
 
 named_elements: {}
 

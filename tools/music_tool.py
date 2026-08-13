@@ -48,6 +48,7 @@ class MusicTools(BaseTools):
         self.generation_enabled = bool(subconfig.get("generation_enabled", subconfig.get("enabled", True)))
         self.generation_cooldown = float(subconfig.get("generation_cooldown", subconfig.get("cooldown_duration", 90.0)))
         self.switch_cooldown = float(subconfig.get("switch_cooldown", subconfig.get("cooldown_duration", 15.0)))
+        self.style_default = str(subconfig.get("style", "")).strip()
         self._cooldown_duration = self.switch_cooldown
 
         self.music_provider_id = str(subconfig.get("provider") or "lyria").strip()
@@ -156,6 +157,12 @@ class MusicTools(BaseTools):
         if thread and thread.is_alive():
             thread.join(timeout=timeout)
 
+    def _apply_default_style(self, music_prompt: str) -> str:
+        """Apply the agent's default style to the music prompt if no style is specified."""
+        if self.style_default and not re.search(r"\bstyle\b", music_prompt, flags=re.IGNORECASE):
+            return f"{music_prompt}\n\nStyle: {self.style_default}"
+        return music_prompt
+
     @with_cooldown("generating another music track")
     def create_music(
         self,
@@ -171,7 +178,8 @@ class MusicTools(BaseTools):
         Returns:
             A status string indicating background generation has started.
         """
-        logger.info(f"[create_music tool] prompt: {prompt}, handle: {handle}")
+        effective_prompt = self._apply_default_style(prompt)
+        logger.info(f"[create_music tool] prompt: {effective_prompt}, handle: {handle}")
         if not self.generation_enabled:
             return "Error: Music generation is disabled in theater configuration."
         self.record_tool_call("create_music")
@@ -179,8 +187,8 @@ class MusicTools(BaseTools):
         def _worker():
             try:
                 provider = self._get_music_provider()
-                logger.info(f"[create_music tool] Generating music with provider '{self.music_provider_id}' for prompt: '{prompt}'")
-                result = provider.generate(MusicGenerationRequest(prompt=prompt))
+                logger.info(f"[create_music tool] Generating music with provider '{self.music_provider_id}' for prompt: '{effective_prompt}'")
+                result = provider.generate(MusicGenerationRequest(prompt=effective_prompt))
                 audio_bytes = result.audio_bytes
 
                 if audio_bytes:
@@ -189,7 +197,7 @@ class MusicTools(BaseTools):
                         clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', handle)
                         filename = f"{clean_name}_{timestamp}.mp3"
                     else:
-                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', prompt[:20]).strip("_") or "track"
+                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', effective_prompt[:20]).strip("_") or "track"
                         filename = f"music_{clean_name}_{timestamp}.mp3"
 
                     filepath = os.path.join(self.output_dir, filename)
@@ -227,7 +235,7 @@ class MusicTools(BaseTools):
         t.start()
 
         handle_msg = f" with handle '{handle}'" if handle else ""
-        return f"Music generation started in background{handle_msg} for prompt: '{prompt[:80]}'. It will automatically play when ready."
+        return f"Music generation started in background{handle_msg} for prompt: '{effective_prompt[:80]}'. It will automatically play when ready."
 
     def _play_music_internal(self, music_id: str) -> str:
         try:
