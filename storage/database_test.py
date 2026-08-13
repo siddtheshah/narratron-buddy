@@ -776,6 +776,20 @@ class TestTheaterExportAndReconstruction(BaseTestCase):
         self.assertEqual(meta["theater_id"], "dep_only_theater")
         self.assertEqual(meta["join_key"], "KEY-DEP")
 
+    def test_get_theater_metadata_from_db_normalizes_legacy_canvas_only_state(self):
+        self.db.export_theater_to_db(
+            "legacy_canvas_theater",
+            {"canvas_state": {"chat_messages": []}},
+            [],
+            user_id=self.user["id"],
+            name="Legacy Canvas",
+        )
+
+        meta = self.db.get_theater_metadata_from_db("legacy_canvas_theater")
+
+        self.assertEqual(meta["theater_id"], "legacy_canvas_theater")
+        self.assertEqual(meta["name"], "Legacy Canvas")
+
     def test_reconstruct_theater_from_db_non_existent(self):
         target_dir = Path(self.temp_dir.name) / "non_existent_recon"
         self.assertFalse(self.db.reconstruct_theater_from_db("ghost_theater", target_dir))

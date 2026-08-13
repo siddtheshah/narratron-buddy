@@ -8,7 +8,9 @@ import { listenForSpeech } from "/static/js/device-aware-pcm.js";
 
 const SAMPLE_RATE = 16000;
 const PCM_BYTES_PER_SAMPLE = 2;
-const AUDIO_CHUNK_DURATION_SECONDS = 5;
+// Match the Live API's 30 ms PCM frames.  Audio must reach the model while
+// the speaker is still talking; turn boundaries remain VAD-driven below.
+const AUDIO_CHUNK_DURATION_SECONDS = 0.03;
 const AUDIO_CHUNK_BYTES = SAMPLE_RATE * PCM_BYTES_PER_SAMPLE * AUDIO_CHUNK_DURATION_SECONDS;
 const DEFAULT_VAD_THRESHOLD = 0.01;
 const DEFAULT_SILENCE_MS = 1200;
@@ -16,7 +18,6 @@ const DEFAULT_MIN_SPEECH_MS = 250;
 
 let stopListening = null;
 let speechActive = false;
-let chunkActive = false;
 let audioRecorderHandler = null;
 let pendingPcmBuffers = [];
 let pendingPcmBytes = 0;
@@ -65,37 +66,27 @@ function flushAudioChunk() {
   if (typeof audioRecorderHandler === "function") audioRecorderHandler(chunk.buffer);
 }
 
-function startAudioChunk(reason) {
-  if (chunkActive) return;
-  chunkActive = true;
-  emitVadEvent("start", reason);
-}
-
-function finishAudioChunk(reason) {
-  flushAudioChunk();
-  if (!chunkActive) return;
-  chunkActive = false;
-  emitVadEvent("stop", reason);
-}
-
 function appendPcm(pcm) {
   const source = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
   let offset = 0;
 
   while (offset < source.byteLength) {
-    startAudioChunk("chunk_start");
     const bytesToCopy = Math.min(AUDIO_CHUNK_BYTES - pendingPcmBytes, source.byteLength - offset);
     pendingPcmBuffers.push(source.slice(offset, offset + bytesToCopy));
     pendingPcmBytes += bytesToCopy;
     offset += bytesToCopy;
 
-    if (pendingPcmBytes === AUDIO_CHUNK_BYTES) finishAudioChunk("chunk_boundary");
+    // Flushing a transport frame is not the end of a user turn.  Sending an
+    // activity_end here followed by a new activity_start for continuous
+    // speech violates the Live API's manual-VAD sequencing precondition.
+    if (pendingPcmBytes === AUDIO_CHUNK_BYTES) flushAudioChunk();
   }
 }
 
 function finishSpeech() {
   if (!speechActive) return;
-  finishAudioChunk("speech_end");
+  flushAudioChunk();
+  emitVadEvent("stop", "speech_end");
   speechActive = false;
   emitSpeechActivity("end");
 }
@@ -109,7 +100,6 @@ export async function startAudioRecorderWorklet(handler) {
   stopMicrophone();
 
   speechActive = false;
-  chunkActive = false;
   pendingPcmBuffers = [];
   pendingPcmBytes = 0;
   audioRecorderHandler = handler;
@@ -128,7 +118,7 @@ export async function startAudioRecorderWorklet(handler) {
     onSpeechStart: () => {
       if (speechActive) return;
       speechActive = true;
-      startAudioChunk("speech_start");
+      emitVadEvent("start", "speech_start");
       emitSpeechActivity("start");
     },
     onSpeechEnd: () => {

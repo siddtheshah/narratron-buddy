@@ -1651,6 +1651,9 @@ class DatabaseManager:
                 }
             elif metadata:
                 metadata["theater_id"] = metadata.get("theater_id") or theater_id
+                metadata["name"] = metadata.get("name") or (
+                    theater_row["name"] if theater_row else theater_id
+                )
             return metadata
 
     def export_theater_to_db(

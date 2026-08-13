@@ -242,7 +242,21 @@ class TheaterManager:
         metadata_path = self._metadata_path(theater_id)
         if not metadata_path.exists():
             return None
-        return TheaterMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+        metadata_data = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        # Early canvas persistence wrote a canvas-only theater.json for some
+        # restored deployments.  Normalize those legacy records before
+        # validating so an agent restart cannot be blocked by missing identity
+        # fields.  Use the directory ID as the safe fallback display name when
+        # the original name was not persisted.
+        if not metadata_data.get("theater_id"):
+            metadata_data["theater_id"] = theater_id
+        if not metadata_data.get("name"):
+            metadata_data["name"] = theater_id
+
+        metadata = TheaterMetadata.model_validate(metadata_data)
+        self._save_metadata(metadata)
+        return metadata
 
     def list_theaters(self) -> List[TheaterMetadata]:
         theaters = []

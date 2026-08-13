@@ -67,6 +67,22 @@ class TestTheaterManager(unittest.TestCase):
         self.assertEqual(theater.deploy().status, "deployed")
         self.assertTrue(theater.destroy())
 
+    def test_get_theater_migrates_canvas_only_legacy_metadata(self):
+        theater_dir = Path(self.temp_dir.name) / "legacy"
+        theater_dir.mkdir()
+        (theater_dir / "theater.json").write_text(
+            '{"canvas_state": {"chat_messages": []}}', encoding="utf-8"
+        )
+
+        theater = self.manager.get_theater("legacy")
+
+        self.assertEqual(theater.theater_id, "legacy")
+        self.assertEqual(theater.name, "legacy")
+        self.assertEqual(theater.canvas_state, {"chat_messages": []})
+        persisted = (theater_dir / "theater.json").read_text(encoding="utf-8")
+        self.assertIn('"theater_id": "legacy"', persisted)
+        self.assertIn('"name": "legacy"', persisted)
+
     def test_extract_asset_package_groups_assets_and_rejects_oversize_input(self):
         archive = io.BytesIO()
         with zipfile.ZipFile(archive, "w") as zip_file:

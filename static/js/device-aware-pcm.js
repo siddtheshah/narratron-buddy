@@ -8,7 +8,9 @@ export async function listenForSpeech(options) {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), channelCount: 1, sampleRate: { ideal: sampleRate }, echoCancellation: true, noiseSuppression: true } });
     if (!listening) return cleanup();
     context = new AudioContext({ sampleRate });
-    const processor = `class P extends AudioWorkletProcessor { constructor(){super();this.b=new Float32Array(4096);this.i=0} process(inputs){const a=inputs[0]?.[0];if(!a)return true;for(const s of a){this.b[this.i++]=s;if(this.i===this.b.length){let q=0;for(const x of this.b)q+=x*x;const p=new Int16Array(this.b.length);for(let j=0;j<this.b.length;j++){const x=Math.max(-1,Math.min(1,this.b[j]));p[j]=x<0?x*32768:x*32767}this.port.postMessage({pcm:new Uint8Array(p.buffer),rms:Math.sqrt(q/this.b.length)});this.i=0}}return true} } registerProcessor('narratron-device-pcm',P);`;
+    // 480 samples = 30 ms at the 16 kHz capture rate.  This lets each PCM
+    // frame reach the Live API immediately instead of arriving in bursts.
+    const processor = `class P extends AudioWorkletProcessor { constructor(){super();this.b=new Float32Array(480);this.i=0} process(inputs){const a=inputs[0]?.[0];if(!a)return true;for(const s of a){this.b[this.i++]=s;if(this.i===this.b.length){let q=0;for(const x of this.b)q+=x*x;const p=new Int16Array(this.b.length);for(let j=0;j<this.b.length;j++){const x=Math.max(-1,Math.min(1,this.b[j]));p[j]=x<0?x*32768:x*32767}this.port.postMessage({pcm:new Uint8Array(p.buffer),rms:Math.sqrt(q/this.b.length)});this.i=0}}return true} } registerProcessor('narratron-device-pcm',P);`;
     const url = URL.createObjectURL(new Blob([processor], { type: "application/javascript" }));
     await context.audioWorklet.addModule(url); URL.revokeObjectURL(url);
     if (!listening) return cleanup();

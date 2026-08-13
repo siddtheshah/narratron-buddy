@@ -638,6 +638,11 @@ class CanvasStateManager:
                 except Exception:
                     metadata = {}
 
+            # A canvas update can be the first write after a restored
+            # deployment.  Always retain the minimum TheaterMetadata identity
+            # fields so later agent initialization can read theater.json.
+            metadata.setdefault("theater_id", self.theater_id)
+            metadata.setdefault("name", self.theater_id)
             metadata["canvas_state"] = canvas_state
 
             try:
