@@ -117,6 +117,9 @@ def get_theater_config(
     if "image_generation" in app_config:
         deep_merge(config.setdefault("image_generation", {}), app_config["image_generation"])
 
+    if "music" in app_config:
+        deep_merge(config.setdefault("music", {}), app_config["music"])
+
     return config
 
 def save_theater_config(

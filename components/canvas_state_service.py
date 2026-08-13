@@ -41,14 +41,14 @@ class CanvasStateService:
             )
         return self.states[resolved_theater_id]
 
-    def update_playlist(self, playlist_name: str, tracks: list[str], theater_id: Optional[str] = None) -> None:
-        self.get(theater_id).update_current_playlist(playlist_name, tracks)
+    def update_music(self, music_id: str, tracks: list[str], theater_id: Optional[str] = None) -> None:
+        self.get(theater_id).update_current_music(music_id, tracks)
 
-    def pause_playlist(self, theater_id: Optional[str] = None) -> None:
-        self.get(theater_id).pause_current_playlist()
+    def pause_music(self, theater_id: Optional[str] = None) -> None:
+        self.get(theater_id).pause_current_music()
 
-    def resume_playlist(self, theater_id: Optional[str] = None) -> None:
-        self.get(theater_id).resume_current_playlist()
+    def resume_music(self, theater_id: Optional[str] = None) -> None:
+        self.get(theater_id).resume_current_music()
 
     def show_image(
         self,

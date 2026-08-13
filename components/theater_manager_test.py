@@ -62,6 +62,7 @@ class TestTheaterManager(unittest.TestCase):
         self.assertEqual(theater.directory(), Path(self.temp_dir.name) / "bound")
         self.assertEqual(theater.references_dir(), theater.directory() / "references")
         self.assertEqual(theater.image_artifacts_dir(), theater.directory() / "output" / "artifacts" / "images")
+        self.assertEqual(theater.music_artifacts_dir(), theater.directory() / "output" / "music")
         self.assertEqual(theater.metadata.name, "Bound Theater")
         self.assertEqual(theater.deploy().status, "deployed")
         self.assertTrue(theater.destroy())

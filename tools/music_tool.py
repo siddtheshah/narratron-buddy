@@ -1,10 +1,17 @@
 import glob
 import logging
 import os
+import re
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from providers import (
+    MusicGenerationRequest,
+    MusicProviderError,
+    get_music_provider,
+)
 from tools.base_tool import BaseTools, with_cooldown
 from components.theater_manager import TheaterManager
 
@@ -28,12 +35,67 @@ class MusicTools(BaseTools):
         )
         self.theater_manager = theater_manager
         self.theater = theater_manager.theater(self.active_theater_id)
+        
+        # User-provided playlists directory
         self.theater_playlists_dir = str(self.theater.playlists_dir())
         os.makedirs(self.theater_playlists_dir, exist_ok=True)
 
-        self.on_play_playlist: Optional[Callable[[str, List[str]], None]] = None
-        self.on_pause_playlist: Optional[Callable[[], None]] = None
-        self.on_resume_playlist: Optional[Callable[[], None]] = None
+        # Output created music directory under output/music
+        self.output_dir = str(self.theater.music_artifacts_dir())
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        # Provider & Cooldown configuration
+        self.generation_enabled = bool(subconfig.get("generation_enabled", subconfig.get("enabled", True)))
+        self.generation_cooldown = float(subconfig.get("generation_cooldown", subconfig.get("cooldown_duration", 90.0)))
+        self.switch_cooldown = float(subconfig.get("switch_cooldown", subconfig.get("cooldown_duration", 15.0)))
+        self._cooldown_duration = self.switch_cooldown
+
+        self.music_provider_id = str(subconfig.get("provider") or "lyria").strip()
+        provider_options = subconfig.get("provider_options") or {}
+        self.music_provider_options = dict(provider_options) if isinstance(provider_options, dict) else {}
+        self._music_provider = None
+
+        # Callbacks
+        self.on_play_music: Optional[Callable[[str, List[str]], None]] = None
+        self.on_pause_music: Optional[Callable[[], None]] = None
+        self.on_resume_music: Optional[Callable[[], None]] = None
+        self.on_music_created: Optional[Callable] = None
+
+        # In-memory mapping of custom handles/aliases to file paths/track URLs
+        self.music_aliases: Dict[str, str] = {}
+        self.currently_playing_music_id: Optional[str] = None
+
+    @property
+    def cooldown_duration(self) -> float:
+        return self._cooldown_duration
+
+    @cooldown_duration.setter
+    def cooldown_duration(self, val: float) -> None:
+        val_float = float(val)
+        self._cooldown_duration = val_float
+        self.generation_cooldown = val_float
+        self.switch_cooldown = val_float
+
+    def check_cooldown(
+        self,
+        tool_name: str,
+        action_desc: Optional[str] = None,
+        duration: Optional[float] = None,
+    ) -> Optional[str]:
+        if duration is None:
+            if tool_name == "create_music":
+                duration = self.generation_cooldown
+            elif tool_name == "play_music":
+                duration = self.switch_cooldown
+        return super().check_cooldown(tool_name, action_desc, duration)
+
+    def record_tool_call(self, tool_name: str, duration: Optional[float] = None) -> None:
+        if duration is None:
+            if tool_name == "create_music":
+                duration = self.generation_cooldown
+            elif tool_name == "play_music":
+                duration = self.switch_cooldown
+        super().record_tool_call(tool_name, duration)
 
     @property
     def playlists_folder(self) -> str:
@@ -43,109 +105,191 @@ class MusicTools(BaseTools):
     def playlists_folder(self, val: str) -> None:
         self.theater_playlists_dir = str(val)
 
-    def get_playlists_context(self) -> str:
-        """Return available playlists for inclusion in the agent's startup prompt.
+    def _get_music_provider(self):
+        """Build the configured music provider once per session."""
+        if self._music_provider is None:
+            self._music_provider = get_music_provider(self.music_provider_id, self.music_provider_options)
+        return self._music_provider
 
-        Returns:
-            A formatted string of all available playlists, descriptions, and tracks.
-        """
-        try:
-            if not os.path.exists(self.theater_playlists_dir):
-                return "No playlists folder found."
+    def _resolve_music_tracks(self, music_id: str) -> Optional[List[str]]:
+        """Resolve a music_id (playlist folder name, created track handle, or filename) to track URLs."""
+        if not music_id:
+            return None
 
-            subdirs = [d for d in os.listdir(self.theater_playlists_dir)
-                       if os.path.isdir(os.path.join(self.theater_playlists_dir, d))]
+        clean_id = music_id.strip()
 
-            if not subdirs:
-                return "No playlists found. Please add playlist subfolders in the playlists directory."
+        # 1. Check in-memory aliases first
+        if clean_id in self.music_aliases:
+            return [self.music_aliases[clean_id]]
+        clean_stem = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_id)
+        if clean_stem in self.music_aliases:
+            return [self.music_aliases[clean_stem]]
 
-            result = []
-            for subdir in sorted(subdirs):
-                path = os.path.join(self.theater_playlists_dir, subdir)
-                desc_path = os.path.join(path, "description.txt")
-                desc = "No description available."
-                if os.path.exists(desc_path):
-                    with open(desc_path, "r", encoding="utf-8") as f:
-                        desc = f.read().strip()
+        # 2. Check user playlist directory (folder containing MP3 files)
+        playlist_path = os.path.join(self.theater_playlists_dir, clean_id)
+        if os.path.exists(playlist_path) and os.path.isdir(playlist_path):
+            mp3_paths = glob.glob(os.path.join(playlist_path, "*.mp3"))
+            if mp3_paths:
+                mp3_paths.sort()
+                if self.active_theater_id:
+                    return [f"/theaters/{self.active_theater_id}/playlists/{clean_id}/{os.path.basename(f)}" for f in mp3_paths]
+                return [f"/playlists/{clean_id}/{os.path.basename(f)}" for f in mp3_paths]
 
-                mp3_files = [os.path.basename(f) for f in glob.glob(os.path.join(path, "*.mp3"))]
-                if mp3_files:
-                    tracks_str = ", ".join(mp3_files)
-                    result.append(f"- Playlist: '{subdir}'\n  Description: {desc}\n  Tracks: {tracks_str}")
-                else:
-                    result.append(f"- Playlist: '{subdir}'\n  Description: {desc}\n  Tracks: (No mp3 tracks found)")
+        # 3. Check created music output directory output/music
+        if os.path.exists(self.output_dir):
+            for filename in os.listdir(self.output_dir):
+                if filename.lower().endswith((".mp3", ".wav", ".ogg")):
+                    stem = Path(filename).stem
+                    if clean_id == filename or clean_id == stem or clean_id.lower() == stem.lower() or clean_id.startswith(stem) or stem.startswith(clean_id):
+                        if self.active_theater_id:
+                            url = f"/theaters/{self.active_theater_id}/output/music/{filename}"
+                        else:
+                            url = f"/output/music/{filename}"
+                        self.music_aliases[clean_id] = url
+                        return [url]
 
-            return "\n\n".join(result)
-        except Exception as e:
-            logger.error(f"Error loading playlists context: {e}")
-            return f"Error loading playlists context: {e}"
+        return None
 
-    @with_cooldown("playing another playlist")
-    def play_playlist(self, playlist_name: str) -> str:
-        """Choose a playlist to play. This sends a signal to play the music on the canvas.
+    def join_generation(self, timeout: float = 10.0) -> None:
+        """Helper for unit tests or teardown to wait for background music generation thread."""
+        thread = getattr(self, "_last_generation_thread", None)
+        if thread and thread.is_alive():
+            thread.join(timeout=timeout)
+
+    @with_cooldown("generating another music track")
+    def create_music(
+        self,
+        prompt: str,
+        handle: Optional[str] = None,
+    ) -> str:
+        """Generates a custom background music track based on a prompt and optional handle.
 
         Args:
-            playlist_name: The name of the playlist to play.
+            prompt: Text prompt describing the music to generate.
+            handle: Optional handle or name alias for the created music track (e.g. 'desert_ambient').
+
+        Returns:
+            A status string indicating background generation has started.
+        """
+        logger.info(f"[create_music tool] prompt: {prompt}, handle: {handle}")
+        if not self.generation_enabled:
+            return "Error: Music generation is disabled in theater configuration."
+        self.record_tool_call("create_music")
+
+        def _worker():
+            try:
+                provider = self._get_music_provider()
+                logger.info(f"[create_music tool] Generating music with provider '{self.music_provider_id}' for prompt: '{prompt}'")
+                result = provider.generate(MusicGenerationRequest(prompt=prompt))
+                audio_bytes = result.audio_bytes
+
+                if audio_bytes:
+                    timestamp = int(time.time())
+                    if handle:
+                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', handle)
+                        filename = f"{clean_name}_{timestamp}.mp3"
+                    else:
+                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', prompt[:20]).strip("_") or "track"
+                        filename = f"music_{clean_name}_{timestamp}.mp3"
+
+                    filepath = os.path.join(self.output_dir, filename)
+                    with open(filepath, "wb") as f:
+                        f.write(audio_bytes)
+
+                    if self.active_theater_id:
+                        track_url = f"/theaters/{self.active_theater_id}/output/music/{filename}"
+                    else:
+                        track_url = f"/output/music/{filename}"
+
+                    alias_key = handle or clean_name
+                    self.music_aliases[alias_key] = track_url
+                    self.music_aliases[alias_key.lower()] = track_url
+                    self.music_aliases[filename] = track_url
+
+                    logger.info(f"[create_music tool] Saved music track to {filepath} with handle '{alias_key}'")
+
+                    if self.on_music_created:
+                        try:
+                            self.on_music_created(filepath)
+                        except Exception as cb_err:
+                            logger.error(f"[MusicTools] Callback on_music_created error: {cb_err}")
+
+                    self._play_music_internal(alias_key)
+                else:
+                    logger.error("[create_music tool] Provider returned no binary audio data.")
+            except MusicProviderError as e:
+                logger.error(f"[create_music tool] Music provider failed: {e}")
+            except Exception as e:
+                logger.error(f"[create_music tool] Error generating music in background: {e}")
+
+        t = threading.Thread(target=_worker, daemon=True)
+        self._last_generation_thread = t
+        t.start()
+
+        handle_msg = f" with handle '{handle}'" if handle else ""
+        return f"Music generation started in background{handle_msg} for prompt: '{prompt[:80]}'. It will automatically play when ready."
+
+    def _play_music_internal(self, music_id: str) -> str:
+        try:
+            tracks = self._resolve_music_tracks(music_id)
+            if not tracks:
+                return f"Error: Music or playlist '{music_id}' not found."
+
+            if self.canvas_state_service:
+                self.canvas_state_service.update_music(music_id, tracks, theater_id=self.active_theater_id)
+            if self.on_play_music:
+                self.on_play_music(music_id, tracks)
+
+            self.currently_playing_music_id = music_id
+            logger.info(f"Playing music '{music_id}' ({len(tracks)} tracks)")
+            return f"Successfully started playing music '{music_id}' containing {len(tracks)} tracks."
+        except Exception as e:
+            logger.error(f"Error playing music: {e}")
+            return f"Error playing music: {e}"
+
+    @with_cooldown("playing another music track")
+    def play_music(self, music_id: str) -> str:
+        """Choose music to play by its playlist name or generated track handle.
+
+        Args:
+            music_id: The playlist name or handle of the music track to play.
+
+        Returns:
+            A status message indicating success or failure.
+        """
+        self.record_tool_call("play_music")
+        return self._play_music_internal(music_id)
+
+    def pause_music(self) -> str:
+        """Pause the current playing music track or playlist on the canvas dashboard.
 
         Returns:
             A status message indicating success or failure.
         """
         try:
-            path = os.path.join(self.theater_playlists_dir, playlist_name)
-            if not os.path.exists(path) or not os.path.isdir(path):
-                return f"Error: Playlist '{playlist_name}' not found."
-
-            mp3_paths = glob.glob(os.path.join(path, "*.mp3"))
-            if not mp3_paths:
-                return f"Error: Playlist '{playlist_name}' does not contain any MP3 files."
-
-            mp3_paths.sort()
-            if self.active_theater_id:
-                tracks = [f"/theaters/{self.active_theater_id}/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
-            else:
-                tracks = [f"/playlists/{playlist_name}/{os.path.basename(f)}" for f in mp3_paths]
-
             if self.canvas_state_service:
-                self.canvas_state_service.update_playlist(playlist_name, tracks, theater_id=self.active_theater_id)
-            if self.on_play_playlist:
-                self.on_play_playlist(playlist_name, tracks)
-
-            logger.info(f"Playing playlist '{playlist_name}' ({len(tracks)} tracks)")
-            return f"Successfully started playing playlist '{playlist_name}' containing {len(tracks)} tracks."
+                self.canvas_state_service.pause_music(theater_id=self.theater_id)
+            if self.on_pause_music:
+                self.on_pause_music()
+            logger.info("Paused music")
+            return "Successfully paused the music."
         except Exception as e:
-            logger.error(f"Error playing playlist: {e}")
-            return f"Error playing playlist: {e}"
+            logger.error(f"Error pausing music: {e}")
+            return f"Error pausing music: {e}"
 
-    def pause_playlist(self) -> str:
-        """Pause the current playing music playlist on the canvas dashboard.
+    def resume_music(self) -> str:
+        """Resume the paused music track or playlist on the canvas dashboard.
 
         Returns:
             A status message indicating success or failure.
         """
         try:
             if self.canvas_state_service:
-                self.canvas_state_service.pause_playlist(theater_id=self.theater_id)
-            if self.on_pause_playlist:
-                self.on_pause_playlist()
-            logger.info("Paused playlist")
-            return "Successfully paused the playlist."
+                self.canvas_state_service.resume_music(theater_id=self.theater_id)
+            if self.on_resume_music:
+                self.on_resume_music()
+            logger.info("Resumed music")
+            return "Successfully resumed the music."
         except Exception as e:
-            logger.error(f"Error pausing playlist: {e}")
-            return f"Error pausing playlist: {e}"
-
-    def resume_playlist(self) -> str:
-        """Resume the paused music playlist on the canvas dashboard.
-
-        Returns:
-            A status message indicating success or failure.
-        """
-        try:
-            if self.canvas_state_service:
-                self.canvas_state_service.resume_playlist(theater_id=self.theater_id)
-            if self.on_resume_playlist:
-                self.on_resume_playlist()
-            logger.info("Resumed playlist")
-            return "Successfully resumed the playlist."
-        except Exception as e:
-            logger.error(f"Error resuming playlist: {e}")
-            return f"Error resuming playlist: {e}"
+            logger.error(f"Error resuming music: {e}")
+            return f"Error resuming music: {e}"

@@ -37,18 +37,19 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("/path/to/hero_character.png", instruction)
         self.assertIs(agent_inst, mock_agent_cls.return_value)
 
+    @patch("services.agent.get_playlists_context")
     @patch("services.agent.create_tool_bundle_for_session")
     @patch("services.agent.Agent")
     def test_create_agent_embeds_playlists_without_exposing_a_listing_tool(
-        self, mock_agent_cls, mock_bundle_fn
+        self, mock_agent_cls, mock_bundle_fn, mock_playlists_fn
     ):
         mock_bundle = MagicMock()
         mock_bundle.tools = [
-            MagicMock(name="play_playlist"),
-            MagicMock(name="pause_playlist"),
-            MagicMock(name="resume_playlist"),
+            MagicMock(name="play_music"),
+            MagicMock(name="pause_music"),
+            MagicMock(name="resume_music"),
         ]
-        mock_bundle.preloaded_playlists_context = (
+        mock_playlists_fn.return_value = (
             "- Playlist: 'moonlit forest'\n  Description: Quiet, mysterious woodland ambience.\n  Tracks: dusk.mp3"
         )
         mock_bundle_fn.return_value = mock_bundle
@@ -169,3 +170,79 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("## SPECIAL INSTRUCTIONS", instruction)
         self.assertIn("No preloaded reference images found.", instruction)
         self.assertIn("## Startup", instruction)
+
+    @patch("services.agent.ImageTools")
+    @patch("services.agent.ChatTools")
+    @patch("services.agent.NamedElementTools")
+    @patch("services.agent.MusicTools")
+    def test_create_tool_bundle_conditional_create_music(
+        self, mock_music_cls, mock_named_cls, mock_chat_cls, mock_image_cls
+    ):
+        from services.agent import create_tool_bundle_for_session
+        music_inst = mock_music_cls.return_value
+        music_inst.generation_enabled = False
+        bundle = create_tool_bundle_for_session("test_t", config={"music": {"generation_enabled": False}})
+        tool_funcs = [getattr(t, "func", t) for t in bundle.tools]
+        self.assertNotIn(music_inst.create_music, tool_funcs)
+
+        music_inst.generation_enabled = True
+        bundle_enabled = create_tool_bundle_for_session("test_t", config={"music": {"generation_enabled": True}})
+        tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
+        self.assertIn(music_inst.create_music, tool_funcs_enabled)
+
+    def test_get_references_context_with_references(self):
+        from services.agent import get_references_context
+        mock_tool = MagicMock()
+        mock_tool.name = "list_references"
+        mock_tool.func = MagicMock(return_value=[
+            {"name": "hero", "alias": "hero_alias", "description": "Hero desc", "path": "/path/hero.png"}
+        ])
+        bundle = MagicMock()
+        bundle.tools = [mock_tool]
+        res = get_references_context(bundle)
+        self.assertIn("hero", res)
+        self.assertIn("hero_alias", res)
+        self.assertIn("Hero desc", res)
+
+    def test_get_references_context_empty(self):
+        from services.agent import get_references_context
+        bundle = MagicMock()
+        bundle.tools = []
+        res = get_references_context(bundle)
+        self.assertEqual(res, "No preloaded reference images found.")
+
+    def test_get_playlists_context_empty(self):
+        from services.agent import get_playlists_context
+        mock_theater = MagicMock()
+        mock_theater.playlists_dir.return_value = "/nonexistent/playlists"
+        mock_theater.music_artifacts_dir.return_value = "/nonexistent/output"
+        res = get_playlists_context(mock_theater)
+        self.assertEqual(res, "No music playlists or generated tracks found.")
+
+    def test_get_playlists_context_with_files(self):
+        import tempfile
+        import shutil
+        import os
+        from services.agent import get_playlists_context
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            playlists_dir = os.path.join(tmp_dir, "playlists")
+            output_dir = os.path.join(tmp_dir, "output", "music")
+            playlist_sub = os.path.join(playlists_dir, "epic_theme")
+            os.makedirs(playlist_sub)
+            os.makedirs(output_dir)
+            with open(os.path.join(playlist_sub, "description.txt"), "w") as f:
+                f.write("Epic soundtrack")
+            with open(os.path.join(playlist_sub, "song.mp3"), "w") as f:
+                f.write("mp3 data")
+
+            mock_theater = MagicMock()
+            mock_theater.playlists_dir.return_value = playlists_dir
+            mock_theater.music_artifacts_dir.return_value = output_dir
+
+            res = get_playlists_context(mock_theater)
+            self.assertIn("epic_theme", res)
+            self.assertIn("Epic soundtrack", res)
+            self.assertIn("song.mp3", res)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -7,6 +7,11 @@ from pathlib import Path
 import shutil
 import time
 from typing import Any, Dict, List, Optional
+import os
+from pathlib import Path
+import shutil
+import time
+from typing import Any, Dict, List, Optional
 from fastapi import WebSocket
 
 from components.chat_manager import ChatManager
@@ -30,6 +35,7 @@ class CanvasStateManager:
         self.current_image_basename: Optional[str] = None  
         
         # Shared state for music
+        self.current_music_id: Optional[str] = None
         self.current_playlist: Optional[str] = None
         self.current_playlist_tracks: List[str] = []
         self.music_paused: bool = False
@@ -152,19 +158,20 @@ class CanvasStateManager:
             # sends state_ready and the browser performs a full refresh.
             pass
 
-    def update_current_playlist(self, playlist_name: str, tracks: List[str]):
-        self.current_playlist = playlist_name
+    def update_current_music(self, music_id: str, tracks: List[str]):
+        self.current_music_id = music_id
+        self.current_playlist = music_id
         self.current_playlist_tracks = tracks
         self.music_paused = False
         self.current_playlist_time = time.time()
         self._notify_state_changed("latest")
 
-    def pause_current_playlist(self):
+    def pause_current_music(self):
         self.music_paused = True
         self.current_playlist_time = time.time()
         self._notify_state_changed("latest")
 
-    def resume_current_playlist(self):
+    def resume_current_music(self):
         self.music_paused = False
         self.current_playlist_time = time.time()
         self._notify_state_changed("latest")
@@ -454,12 +461,12 @@ class CanvasStateManager:
         image_folder = str(self.theater.output_dir())
 
         music_state = {
-            "playlist": self.current_playlist,
+            "music_id": self.current_music_id or getattr(self, "current_playlist", None),
+            "playlist": self.current_music_id or getattr(self, "current_playlist", None),
             "tracks": self.current_playlist_tracks,
             "paused": self.music_paused,
             "time": self.current_playlist_time
         }
-
         # 1. Decide which image file to select: prioritize explicit show_image call if set & valid
         selected_file = None
         selected_time = 0.0
@@ -529,10 +536,6 @@ class CanvasStateManager:
             return {"latest": None, "time": 0, "music": music_state, "doodles_enabled": self.doodles_enabled, "viewer_collab_enabled": self.viewer_collab_enabled, "transition": getattr(self, "shown_image_transition", "fade") or "fade", "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3", "history": formatted_history, "tool_activity": self.get_tool_activity(), "agent_thought": self.get_agent_thought()}
             
         basename = os.path.basename(selected_file)
-        
-        if self.current_image_basename is not None and self.current_image_basename != basename:
-            self.chat_manager.export_and_reset(self.current_image_basename)
-            self.doodles_state.clear()
             
         self.current_image_basename = basename
         

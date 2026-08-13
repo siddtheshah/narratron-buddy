@@ -38,10 +38,10 @@ class TestBaseTools(BaseTestCase):
         mock_on_expired = MagicMock()
         self.base_tools.on_cooldown_expired = mock_on_expired
 
-        self.base_tools.record_tool_call("play_playlist")
+        self.base_tools.record_tool_call("play_music")
         time.sleep(0.25)
 
-        mock_on_expired.assert_called_with("play_playlist")
+        mock_on_expired.assert_called_with("play_music")
 
     def test_with_cooldown_decorator(self):
         sample = SampleTools({"cooldown_duration": 10.0}, theater_id="test_theater")

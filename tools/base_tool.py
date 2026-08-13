@@ -132,12 +132,12 @@ class BaseTools:
                 if tool_name == action or tool_name.startswith(f"{action}_"):
                     self._last_call_times[tool_name] = float(value)
                     return
-            target_key = f"{action}_image" if action in ("create", "show") else (f"{action}_playlist" if action == "play" else action)
+            target_key = f"{action}_image" if action in ("create", "show") else (f"{action}_music" if action == "play" else action)
             self._last_call_times[target_key] = float(value)
             return
         if name.startswith("_") and name.endswith("_cooldown_timer") and hasattr(self, "_cooldown_timers"):
             action = name[1:-15]
-            target_key = f"{action}_image" if action in ("create", "show") else (f"{action}_playlist" if action == "play" else action)
+            target_key = f"{action}_image" if action in ("create", "show") else (f"{action}_music" if action == "play" else action)
             if value:
                 self._cooldown_timers[target_key] = value
             else:

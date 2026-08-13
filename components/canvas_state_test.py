@@ -27,11 +27,11 @@ class TestCanvasStateManager(BaseTestCase):
 
     def test_canvas_state_manager(self):
         manager = CanvasStateManager(theater_id="test_theater", theater_manager=self.theater_manager)
-        manager.update_current_playlist("test_playlist", ["/playlists/test/1.mp3"])
-        self.assertEqual(manager.current_playlist, "test_playlist")
+        manager.update_current_music("test_playlist", ["/playlists/test/1.mp3"])
+        self.assertEqual(manager.current_music_id, "test_playlist")
         self.assertFalse(manager.music_paused)
 
-        manager.pause_current_playlist()
+        manager.pause_current_music()
         self.assertTrue(manager.music_paused)
 
         manager.current_image_basename = "test.jpg"
@@ -52,7 +52,7 @@ class TestCanvasStateManager(BaseTestCase):
             manager = CanvasStateManager(theater_id="state_socket", theater_manager=self.theater_manager)
             socket = RecordingWebSocket()
             manager.register_state_websocket(socket)
-            manager.update_current_playlist("test_playlist", ["/playlists/test/1.mp3"])
+            manager.update_current_music("test_playlist", ["/playlists/test/1.mp3"])
             await asyncio.sleep(0)
             self.assertEqual(manager.state_revision, 1)
             self.assertEqual(socket.messages, [{

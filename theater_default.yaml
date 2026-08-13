@@ -6,17 +6,16 @@ agent:
 
 image_generation:
     cooldown_duration: 9
-    # Gemini image models are published on Vertex's global endpoint. This is
-    # intentionally separate from GOOGLE_CLOUD_LOCATION used by Gemini Live.
-    location: global
 
 animation:
     enabled: false
     cooldown_duration: 20
 
 music:
+    generation_enabled: false
     playlists_folder: "playlists"
-    cooldown_duration: 15
+    generation_cooldown: 90
+    switch_cooldown: 15
 
 named_elements: {}
 

@@ -1,5 +1,6 @@
-"""Construction of the session-scoped Narratron ADK agent and its tools."""
-
+import glob
+import logging
+import os
 from typing import Any, Optional
 
 from google.adk.agents import Agent
@@ -16,6 +17,8 @@ from tools.named_element_tool import NamedElementTools
 from tools.tool_bundle import ToolBundle
 from utils.config_loader import get_app_config, get_theater_config
 
+logger = logging.getLogger(__name__)
+
 AGENT_INSTRUCTION_TEMPLATE = """
 # Objective
 
@@ -30,12 +33,12 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 ## Real-Time Execution & Low Latency (CRITICAL)
 - You operate in a live streaming environment.
 - Listen and execute tools while the orator is speaking. Wait for the narrator to complete their sentence before calling a canvas updating tools, but do not hold back beyond that.
-- As soon as you hear a request, theme, location, or strong visual description in the audio stream (e.g., "create an image of an oasis", "play desert adventure music", or key story cues), invoke the corresponding tool (`show_image`, `create_image`, `play_playlist`, `send_chat_message`).
+- As soon as you hear a request, theme, location, or strong visual description in the audio stream (e.g., "create an image of an oasis", "play desert adventure music", or key story cues), invoke the corresponding tool (`show_image`, `create_image`, `play_music`, `send_chat_message`).
 - Whenever cooldowns on image tools expire, use your tools IMMEDIATELY, BUT ONLY IF the user has provided more information since the last time you used a tool.
 
 ## Maximal User Engagement (CRITICAL)
 - The orator will speak, tell a story, or describe scenes (e.g. "Here is an image of...", "create an image of...", "play music...").
-- You MUST take proactive initiative to trigger visual images (`show_image` / `create_image`), background playlists (`play_playlist`), and chat confirmations (`send_chat_message`). These must be IMMEDIATE if the orator requests you specifically.
+- You MUST take proactive initiative to trigger visual images (`show_image` / `create_image`), background music (`play_music` / `create_music`), and chat confirmations (`send_chat_message`). These must be IMMEDIATE if the orator requests you specifically.
 - Do NOT require the orator to say "Narratron" or explicitly address you in order to operate normally. Actively assist the storytelling experience in real time.
 - If the user mentions named characters or places, check the preloaded references context provided in your initial instructions or use image browsing tools to find useful references, which will help create even more recognizable and poignant scenes. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.
 Note: The references are loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_references` on every turn.
@@ -65,7 +68,7 @@ Use them when they are off cooldown. You will be notified by the system whenever
 
 * list_references: List preloaded reference images from the session references directory. Note: Reference items are already preloaded into your initial context upon agent initialization, so you do not need to call this tool on every turn.
 * create_image <image_prompt> [image_name] [reference_images] [display] [effect]: Creates an image based on a prompt. You can specify a custom `image_name` (e.g. 'hero_portrait') for easy tracking and recall, and pass `reference_images` (names or paths of stock art or previously created images) to adapt visual style and maintain consistency across scenes. If it is displayed, optionally use an animation `effect`.
-* show_image <file_path_or_name> [transition] [effect]: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period. Optionally specify `transition`: `crossfade` (default â€” old image dissolves into new), `fade` (new image fades in from black), or `none` (instant cut). Optionally specify `effect`: `gleam3` (default), `none`, `creeping`, `dream`, `sparkle`, `bendy`, `haze`, or `trace`. The canvas selects the tuned intensity automatically. Choose an effect only when it supports the scene: `sparkle` for starry/magical light, `creeping` for ominous darkness, `dream` for fancyful splendor, `gleam3` for dramatics, `bendy` for silly springiness, `haze` for distortion and strangeness, and `trace` for making metal and energies pop.
+* show_image <file_path_or_name> [transition] [effect]: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period. Optionally specify `transition`: `crossfade` (default — old image dissolves into new), `fade` (new image fades in from black), or `none` (instant cut). Optionally specify `effect`: `gleam3` (default), `none`, `creeping`, `dream`, `sparkle`, `bendy`, `haze`, or `trace`. The canvas selects the tuned intensity automatically. Choose an effect only when it supports the scene: `sparkle` for starry/magical light, `creeping` for ominous darkness, `dream` for fancyful splendor, `gleam3` for dramatics, `bendy` for silly springiness, `haze` for distortion and strangeness, and `trace` for making metal and energies pop.
 * browse_images: Returns a list of all available generated image file paths.
 * search_image_by_metadata <metadata_query>: Returns a list of image file paths whose metadata description matches the query by keywords.
 
@@ -88,11 +91,12 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 * clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
 
 ## Music Management
-When a story begins or a scene/mood is described, invoke `play_playlist` immediately with an appropriate playlist from the preloaded music context below. You do not need to discover playlists during a turn.
+When a story begins or a scene/mood is described, invoke `play_music` immediately with an appropriate music ID or playlist from the music context below, or call `create_music` to generate dynamic background music.
 
-* play_playlist <playlist_name>: Choose a playlist to play. This sends a signal to play the music on the canvas.
-* pause_playlist: Pause the current music playlist playing on the canvas.
-* resume_playlist: Resume the paused music playlist playing on the canvas.
+* play_music <music_id>: Choose music or a playlist to play on the canvas.
+* create_music <prompt> [handle]: Generate custom background music for the scene and play it.
+* pause_music: Pause the current music track or playlist.
+* resume_music: Resume the paused music track or playlist.
 
 {{ ref_context }}
 
@@ -108,6 +112,54 @@ Be sure to greet the user in a chat message to begin with, to show you are there
 
 Cooldowns are now lifted. GO!
 """
+
+
+def get_playlists_context(theater: Any) -> str:
+    """Return available music context for inclusion in the agent's startup prompt.
+
+    Args:
+        theater: The Theater instance containing playlist and output directories.
+
+    Returns:
+        A formatted string of all available playlists and created tracks.
+    """
+    try:
+        result = []
+        playlists_dir = str(theater.playlists_dir())
+        output_dir = str(theater.music_artifacts_dir())
+
+        if os.path.exists(playlists_dir):
+            subdirs = [d for d in os.listdir(playlists_dir)
+                       if os.path.isdir(os.path.join(playlists_dir, d))]
+
+            for subdir in sorted(subdirs):
+                path = os.path.join(playlists_dir, subdir)
+                desc_path = os.path.join(path, "description.txt")
+                desc = "No description available."
+                if os.path.exists(desc_path):
+                    with open(desc_path, "r", encoding="utf-8") as f:
+                        desc = f.read().strip()
+
+                mp3_files = [os.path.basename(f) for f in glob.glob(os.path.join(path, "*.mp3"))]
+                if mp3_files:
+                    tracks_str = ", ".join(mp3_files)
+                    result.append(f"- Music ID: '{subdir}' (Playlist)\n  Description: {desc}\n  Tracks: {tracks_str}")
+                else:
+                    result.append(f"- Music ID: '{subdir}' (Playlist)\n  Description: {desc}\n  Tracks: (No mp3 tracks found)")
+
+        if os.path.exists(output_dir):
+            created_tracks = [f for f in os.listdir(output_dir) if f.lower().endswith((".mp3", ".wav", ".ogg"))]
+            if created_tracks:
+                tracks_str = ", ".join(sorted(created_tracks))
+                result.append(f"- Created Music Tracks in output/music:\n  Tracks: {tracks_str}")
+
+        if not result:
+            return "No music playlists or generated tracks found."
+
+        return "\n\n".join(result)
+    except Exception as e:
+        logger.error(f"Error loading playlists context: {e}")
+        return f"Error loading playlists context: {e}"
 
 
 def create_tool_bundle_for_session(
@@ -146,13 +198,40 @@ def create_tool_bundle_for_session(
         chat_tools.send_chat_message,
         named_element_tools.update_or_insert_named_element,
         named_element_tools.clear_scene,
-        music_tools.play_playlist,
-        music_tools.pause_playlist,
-        music_tools.resume_playlist,
+        music_tools.play_music,
+        music_tools.pause_music,
+        music_tools.resume_music,
     ]
+    if music_tools.generation_enabled:
+        tools.append(music_tools.create_music)
     if animation_tools:
         tools.extend([animation_tools.create_triframe, animation_tools.play_animation])
-    return ToolBundle(tools, preloaded_playlists_context=music_tools.get_playlists_context())
+    return ToolBundle(tools)
+
+
+def get_references_context(tool_bundle: Any) -> str:
+    """Return preloaded reference images context for inclusion in the agent's startup prompt.
+
+    Args:
+        tool_bundle: ToolBundle or object with tools list.
+
+    Returns:
+        Formatted string of preloaded reference images or fallback message.
+    """
+    if tool_bundle and hasattr(tool_bundle, "tools"):
+        for tool in tool_bundle.tools:
+            name = str(getattr(tool, "name", ""))
+            function = getattr(tool, "func", None)
+            if "list_references" in name or "list_references" in str(function):
+                references = function() if callable(function) else None
+                if references:
+                    lines = [
+                        f"- {item['name']} (alias: {item['alias']}): {item['description']} [path: {item['path']}]"
+                        for item in references
+                    ]
+                    return "\n".join(lines)
+                break
+    return "No preloaded reference images found."
 
 
 def create_agent(
@@ -168,28 +247,19 @@ def create_agent(
     if tool_bundle is None:
         tool_bundle = create_tool_bundle_for_session(theater_id, config, canvas_state_service, theater_manager)
 
-    ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\nNo preloaded reference images found."
-    for tool in tool_bundle.tools:
-        name = str(getattr(tool, "name", ""))
-        function = getattr(tool, "func", None)
-        if "list_references" in name or "list_references" in str(function):
-            references = function() if callable(function) else None
-            if references:
-                lines = [
-                    f"- {item['name']} (alias: {item['alias']}): {item['description']} [path: {item['path']}]"
-                    for item in references
-                ]
-                ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + "\n".join(lines)
-            break
+    references = get_references_context(tool_bundle)
+    if not isinstance(references, str) or not references.strip():
+        references = "No preloaded reference images found."
+    ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
-    playlists = getattr(tool_bundle, "preloaded_playlists_context", None)
+    theater_manager = theater_manager or TheaterManager()
+    theater = theater_manager.get_theater(theater_id)
+    playlists = get_playlists_context(theater)
     if not isinstance(playlists, str) or not playlists.strip():
         playlists = "No preloaded music playlists found."
     playlist_context = "\n\n## Preloaded Music Playlists Context (Loaded at Agent Init)\n" + playlists
 
     special_instructions = str(config.get("agent", {}).get("special_instructions", "")).strip()
-    theater_manager = theater_manager or TheaterManager()
-    theater = theater_manager.get_theater(theater_id)
     instruction = Template(
         AGENT_INSTRUCTION_TEMPLATE,
         undefined=StrictUndefined,
