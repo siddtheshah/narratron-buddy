@@ -16,6 +16,7 @@ from testing.base import BaseTestCase
 from storage.database import (
     DatabaseManager,
     DatabaseConnectionTimeout,
+    DatabaseOperationTimeout,
     _DictCursor,
     _ReusableConnection,
 )
@@ -154,6 +155,17 @@ class TestDictCursorAndReusableConnection(unittest.TestCase):
         # Ensure rollback and close exception handling inside _ReusableConnection doesn't crash
         reusable.rollback()
         reusable.close()
+
+    def test_reusable_connection_skips_rollback_for_discarded_lease(self):
+        mock_conn = MagicMock()
+        reusable = _ReusableConnection(mock_conn)
+        reusable._discard_connection = mock_conn
+
+        with self.assertRaises(DatabaseOperationTimeout):
+            with reusable:
+                raise DatabaseOperationTimeout("operation timed out")
+
+        mock_conn.rollback.assert_not_called()
 
 
 class TestLiveConnectionPool(unittest.TestCase):
@@ -539,6 +551,32 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         self.assertEqual(res["credits"], -150.0)
         self.assertEqual(res["total_voice_minutes"], 100.0)
         self.assertEqual(res["total_images_created"], 50)
+
+    def test_record_user_usage_idempotency_key_deducts_once(self):
+        key = "usage-event-1"
+        first = self.db.record_user_usage(
+            self.user["id"], voice_minutes=2.0, images_created=1,
+            credit_cost=3.0, idempotency_key=key,
+        )
+        second = self.db.record_user_usage(
+            self.user["id"], voice_minutes=2.0, images_created=1,
+            credit_cost=3.0, idempotency_key=key,
+        )
+
+        self.assertEqual(first["credits"], -3.0)
+        self.assertEqual(second["credits"], -3.0)
+        self.assertEqual(second["total_voice_minutes"], 2.0)
+        self.assertEqual(second["total_images_created"], 1)
+
+    def test_deployment_id_is_claimed_before_credits_are_deducted(self):
+        self.db.add_user_credits(self.user["id"], 10.0, 1.0)
+        self.db.record_deployment("idempotent-deployment", self.user["id"], "KEY", cost=3.0)
+        after_first = self.db.get_user_by_id(self.user["id"])["credits"]
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.record_deployment("idempotent-deployment", self.user["id"], "KEY", cost=3.0)
+
+        self.assertEqual(self.db.get_user_by_id(self.user["id"])["credits"], after_first)
 
     def test_record_user_usage_validation_errors(self):
         with self.assertRaises(ValueError) as ctx:

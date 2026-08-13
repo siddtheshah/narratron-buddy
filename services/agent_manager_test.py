@@ -321,22 +321,22 @@ class TestAgentSessionManager(unittest.TestCase):
         # 1. Record image created -> triggers immediate flush
         session.record_image_created("path/to/img.jpg")
         self.assertEqual(session.images_created_count, 1)
-        mock_db.record_user_usage.assert_called_once_with(
-            user_id=123,
-            voice_minutes=0.0,
-            images_created=1,
-        )
+        kwargs = mock_db.record_user_usage.call_args.kwargs
+        self.assertEqual(kwargs["user_id"], 123)
+        self.assertEqual(kwargs["voice_minutes"], 0.0)
+        self.assertEqual(kwargs["images_created"], 1)
+        self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
         # 2. Record PCM audio bytes (1,920,000 bytes = 1.0 minute)
         # Record 96,000 bytes (triggers automatic flush threshold)
         session.record_audio_input(96000)
         self.assertAlmostEqual(session.voice_minutes, 96000 / 1920000.0)
-        mock_db.record_user_usage.assert_called_once_with(
-            user_id=123,
-            voice_minutes=96000 / 1920000.0,
-            images_created=0,
-        )
+        kwargs = mock_db.record_user_usage.call_args.kwargs
+        self.assertEqual(kwargs["user_id"], 123)
+        self.assertEqual(kwargs["voice_minutes"], 96000 / 1920000.0)
+        self.assertEqual(kwargs["images_created"], 0)
+        self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
         # 3. Check get_usage dictionary

@@ -10,6 +10,7 @@ import sqlite3
 import secrets
 import threading
 import time
+import uuid
 from queue import Empty, Queue
 from typing import Any, Dict, Iterable, List, Optional
 import logging
@@ -213,7 +214,11 @@ class _ReusableConnection:
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             if exc_type is not None:
-                self.rollback()
+                # A timed-out live operation marks this lease as poisoned.
+                # Calling rollback after the driver has timed out can panic
+                # inside libsql's native layer, so discard the lease instead.
+                if getattr(self, "_discard_connection", None) is not self._conn:
+                    self.rollback()
             else:
                 self.commit()
         finally:
@@ -432,34 +437,36 @@ class DatabaseManager:
 
     def _release_live_connection(self, lease: _ReusableConnection, conn) -> None:
         """Return a lease to its pool, or close it after shutdown."""
+        should_close = False
         with self._connection_lock:
             pool = self._live_pool
             if getattr(lease, "_discard_connection", None) is conn:
                 self._live_pool_total = max(0, self._live_pool_total - 1)
-                return
+                should_close = True
             elif pool is not None and not self._live_pool_closed:
                 try:
                     pool.put_nowait(conn)
                     return
                 except Exception:
                     logger.warning("Failed to return live database connection to pool.", exc_info=True)
+            else:
+                should_close = True
         try:
-            conn.close()
+            # Close only after the database call has returned. Closing from
+            # the deadline timer races libsql's active Rust call.
+            if should_close:
+                conn.close()
         except Exception:
             pass
 
     def _discard_live_connection(self, lease: _ReusableConnection) -> None:
-        """Close a timed-out lease so it can never block another request in the pool."""
+        """Mark a timed-out lease for disposal after its active call returns."""
         conn = lease._conn
         lease._discard_connection = conn
         logger.warning(
-            "Live database operation exceeded %.1fs; closing its connection.",
+            "Live database operation exceeded %.1fs; discarding its connection after the operation returns.",
             self._live_connection_timeout,
         )
-        try:
-            conn.close()
-        except Exception:
-            logger.warning("Failed to close a timed-out live database connection.", exc_info=True)
 
     def _replace_live_cursor(self, lease: _ReusableConnection):
         """Replace only the failed lease before retrying an idempotent read."""
@@ -678,6 +685,21 @@ class DatabaseManager:
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_transactions_stripe_session "
                 "ON payment_transactions(stripe_session_id) WHERE stripe_session_id IS NOT NULL"
             )
+
+            # Each usage batch carries a caller-generated key.  Claiming this
+            # key in the same transaction as the balance update makes a retry
+            # safe after a client-side timeout with an unknown commit outcome.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS usage_events (
+                    idempotency_key TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    voice_minutes REAL NOT NULL,
+                    images_created INTEGER NOT NULL,
+                    credit_cost REAL NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -1117,15 +1139,17 @@ class DatabaseManager:
             if not user or user["credits"] < cost:
                 raise ValueError("Insufficient credits for theater deployment.")
 
-            cursor.execute(
-                "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
-                (cost, cost, user_id)
-            )
             persistent_val = 1 if is_persistent else 0
             last_billed_val = now_iso if is_persistent else None
+            # Claim the durable theater ID before debiting.  A retry with the
+            # same ID hits the primary-key constraint before it can deduct.
             cursor.execute(
                 "INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at, theater_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (theater_id, user_id, join_key, cost, now_iso, persistent_val, last_billed_val, config_str)
+            )
+            cursor.execute(
+                "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
+                (cost, cost, user_id)
             )
             conn.commit()
             return True
@@ -1222,6 +1246,7 @@ class DatabaseManager:
         voice_minutes: float = 0.0,
         images_created: int = 0,
         credit_cost: Optional[float] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Record voice minutes used and images created for a user while simultaneously updating credit balance.
 
@@ -1236,29 +1261,51 @@ class DatabaseManager:
             )
         elif credit_cost < 0:
             raise ValueError("credit_cost must be non-negative.")
+        event_key = idempotency_key or f"usage:{uuid.uuid4()}"
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                """
-                UPDATE users
-                SET total_voice_minutes = total_voice_minutes + ?,
-                    total_images_created = total_images_created + ?,
-                    credits = credits - ?,
-                    lifetime_credits_used = lifetime_credits_used + ?
-                WHERE id = ?
-                """,
-                (voice_minutes, images_created, credit_cost, credit_cost, user_id),
+                "INSERT OR IGNORE INTO usage_events "
+                "(idempotency_key, user_id, voice_minutes, images_created, credit_cost, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (event_key, user_id, voice_minutes, images_created, credit_cost, now_iso),
             )
-            if cursor.rowcount == 0:
-                raise ValueError("User not found.")
+            claimed = cursor.rowcount == 1
+            if not claimed:
+                cursor.execute(
+                    "SELECT user_id, voice_minutes, images_created, credit_cost FROM usage_events WHERE idempotency_key = ?",
+                    (event_key,),
+                )
+                existing = cursor.fetchone()
+                if not existing or (
+                    existing["user_id"] != user_id
+                    or existing["voice_minutes"] != voice_minutes
+                    or existing["images_created"] != images_created
+                    or existing["credit_cost"] != credit_cost
+                ):
+                    raise ValueError("Usage idempotency key was already used for different usage.")
+            if claimed:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET total_voice_minutes = total_voice_minutes + ?,
+                        total_images_created = total_images_created + ?,
+                        credits = credits - ?,
+                        lifetime_credits_used = lifetime_credits_used + ?
+                    WHERE id = ?
+                    """,
+                    (voice_minutes, images_created, credit_cost, credit_cost, user_id),
+                )
+                if cursor.rowcount == 0:
+                    raise ValueError("User not found.")
 
             cursor.execute(
                 "SELECT id, username, email, credits, total_voice_minutes, total_images_created, created_at FROM users WHERE id = ?",
                 (user_id,),
             )
             updated_user = dict(cursor.fetchone())
-            conn.commit()
             return updated_user
 
     def get_user_transactions(self, user_id: int) -> List[Dict[str, Any]]:
@@ -1458,18 +1505,27 @@ class DatabaseManager:
 
                         if user_credits >= charge_amount:
                             new_last_billed = (last_billed_dt + datetime.timedelta(hours=hours_to_bill)).isoformat()
+                            # Advance the billing cursor conditionally before
+                            # debiting.  A concurrent run or retry that already
+                            # committed this interval sees rowcount == 0 and
+                            # cannot charge it again.
                             cursor.execute(
-                                "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
-                                (charge_amount, charge_amount, user_id),
+                                "UPDATE canvas_deployments SET last_billed_at = ? "
+                                "WHERE theater_id = ? AND COALESCE(last_billed_at, created_at) = ?",
+                                (new_last_billed, theater_id, last_billed_str or created_at_str),
                             )
-                            cursor.execute("UPDATE canvas_deployments SET last_billed_at = ? WHERE theater_id = ?", (new_last_billed, theater_id))
-                            accrued_charges.append({
-                                "theater_id": theater_id,
-                                "user_id": user_id,
-                                "amount": charge_amount,
-                                "hours": hours_to_bill,
-                            })
-                            logger.info(f"[DatabaseDaemon] Accrued {charge_amount} credits charge for persistent theater_id={theater_id}")
+                            if cursor.rowcount:
+                                cursor.execute(
+                                    "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
+                                    (charge_amount, charge_amount, user_id),
+                                )
+                                accrued_charges.append({
+                                    "theater_id": theater_id,
+                                    "user_id": user_id,
+                                    "amount": charge_amount,
+                                    "hours": hours_to_bill,
+                                })
+                                logger.info(f"[DatabaseDaemon] Accrued {charge_amount} credits charge for persistent theater_id={theater_id}")
                         else:
                             logger.warning(f"[DatabaseDaemon] User user_id={user_id} has insufficient credits ({user_credits}) for persistent theater_id={theater_id}. Expiring session.")
                             cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))

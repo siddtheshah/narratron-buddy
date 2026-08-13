@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional, Any, Set
@@ -25,7 +26,7 @@ from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtif
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 from utils.config_loader import get_app_config, get_theater_config
 from components.theater_manager import TheaterManager
-from api_server.auth_cache import auth_session_cache
+from utils.auth_cache import auth_session_cache
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,9 @@ class AgentSession:
         self.audio_bytes_received: int = 0
         self.unbilled_images: int = 0
         self.unbilled_audio_bytes: int = 0
+        # Batches remain here until their durable idempotency key has been
+        # acknowledged, so a timeout can retry the exact same debit safely.
+        self._pending_usage_batches: list[tuple[str, int, int]] = []
         self.created_at = time.time()
         self.last_active_at = time.time()
         self.status = "ready"  # "ready", "active", "stopped"
@@ -527,46 +531,57 @@ class AgentSession:
 
     def flush_usage_to_db(self):
         """Deduct credits and record cumulative voice minutes / images created in database."""
-        if self.unbilled_audio_bytes <= 0 and self.unbilled_images <= 0:
-            return
-        unbilled_vm = self.unbilled_audio_bytes / 1920000.0
-        unbilled_img = self.unbilled_images
+        if self.unbilled_audio_bytes > 0 or self.unbilled_images > 0:
+            self._pending_usage_batches.append((
+                f"live-usage:{self.theater_id}:{uuid.uuid4()}",
+                self.unbilled_audio_bytes,
+                self.unbilled_images,
+            ))
+            self.unbilled_audio_bytes = 0
+            self.unbilled_images = 0
 
-        # Reset unbilled counters before DB call
-        self.unbilled_audio_bytes = 0
-        self.unbilled_images = 0
+        if not self._pending_usage_batches:
+            return
 
         db_inst = self._get_database()
         owner_id = self._get_owner_id(db_inst)
 
         if db_inst and owner_id:
-            try:
-                updated_user = db_inst.record_user_usage(
-                    user_id=owner_id,
-                    voice_minutes=unbilled_vm,
-                    images_created=unbilled_img,
-                )
-                auth_session_cache.invalidate_user(owner_id)
-                logger.info(
-                    f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}"
-                )
-                credits_remaining = updated_user.get("credits", 0.0) if updated_user else 1.0
-                if credits_remaining <= 0.0:
-                    logger.warning(
-                        f"[AgentSession] Owner user {owner_id} credit balance reached <= 0 ({credits_remaining:.2f}). Gracefully stopping agent session for theater {self.theater_id}."
+            while self._pending_usage_batches:
+                event_key, unbilled_audio_bytes, unbilled_img = self._pending_usage_batches[0]
+                unbilled_vm = unbilled_audio_bytes / 1920000.0
+                try:
+                    updated_user = db_inst.record_user_usage(
+                        user_id=owner_id,
+                        voice_minutes=unbilled_vm,
+                        images_created=unbilled_img,
+                        idempotency_key=event_key,
                     )
-                    try:
-                        loop = asyncio.get_running_loop()
-                        loop.create_task(self.broadcast_text(json.dumps({
-                            "type": "insufficient_credits",
-                            "detail": "Agent stopped because your credit balance reached 0 or less.",
-                            "credits": credits_remaining,
-                        })))
-                    except RuntimeError:
-                        pass
-                    self.close()
-            except Exception as e:
-                logger.error(f"[AgentSession] Error flushing usage to DB: {e}")
+                    self._pending_usage_batches.pop(0)
+                    auth_session_cache.invalidate_user(owner_id)
+                    logger.info(
+                        f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}"
+                    )
+                    credits_remaining = updated_user.get("credits", 0.0) if updated_user else 1.0
+                    if credits_remaining <= 0.0:
+                        logger.warning(
+                            f"[AgentSession] Owner user {owner_id} credit balance reached <= 0 ({credits_remaining:.2f}). Gracefully stopping agent session for theater {self.theater_id}."
+                        )
+                        try:
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(self.broadcast_text(json.dumps({
+                                "type": "insufficient_credits",
+                                "detail": "Agent stopped because your credit balance reached 0 or less.",
+                                "credits": credits_remaining,
+                            })))
+                        except RuntimeError:
+                            pass
+                        self.close()
+                except Exception as e:
+                    # Retain the exact event key and payload.  Retrying it is
+                    # safe whether the timed-out commit did or did not land.
+                    logger.error(f"[AgentSession] Error flushing usage to DB: {e}")
+                    return
 
     def get_usage(self) -> Dict[str, Any]:
         """Return usage summary dictionary for the active session."""

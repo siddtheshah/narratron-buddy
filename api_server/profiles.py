@@ -4,7 +4,7 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel
 
 from api_server.shared import app, db, get_current_user
-from api_server.auth_cache import auth_session_cache
+from utils.auth_cache import auth_session_cache
 
 
 class ProfileUpdate(BaseModel):

@@ -115,11 +115,11 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
 
         session.flush_usage_to_db()
 
-        mock_db.record_user_usage.assert_called_once_with(
-            user_id=10,
-            voice_minutes=1.0,
-            images_created=0,
-        )
+        kwargs = mock_db.record_user_usage.call_args.kwargs
+        self.assertEqual(kwargs["user_id"], 10)
+        self.assertEqual(kwargs["voice_minutes"], 1.0)
+        self.assertEqual(kwargs["images_created"], 0)
+        self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:t_exhaust:"))
         # Verify close was invoked due to 0 remaining credits
         session.close.assert_called_once()
 

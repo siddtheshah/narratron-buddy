@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from api_server import shared
-from api_server.auth_cache import AuthSessionCache, auth_session_cache
+from utils.auth_cache import AuthSessionCache, auth_session_cache
 from api_server.theater_access_cache import TheaterAccessCache, theater_access_cache
 
 

@@ -106,6 +106,15 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         self.assertEqual(res["accrued_charges"][0]["theater_id"], "persistent_theater")
         self.assertEqual(res["accrued_charges"][0]["amount"], 3.0)
 
+        # Replaying the same daemon interval must not charge the owner again.
+        retry_res = self.db.run_database_daemon(
+            ttl_seconds=604800.0,
+            hourly_cost=1.0,
+            current_time=now,
+        )
+        self.assertEqual(retry_res["accrued_charges"], [])
+        self.assertEqual(self.db.get_user_by_id(user_id)["credits"], user_after["credits"])
+
     def test_database_daemon_insufficient_credits_expiration(self):
         user = self.db.register_user("poor_owner", "poor@example.com", "Password123")
         user_id = user["id"]
