@@ -98,7 +98,7 @@
     </div>
 
     <script type="module">
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=effects-20260811-2";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=triframe-20260812-1";
         // Extract Theater ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
         let currenttheaterId = urlParams.get('theater_id') || '';
@@ -116,6 +116,7 @@
         let lastImageRawUrl = "";
         let lastImageEffect = null;
         let isFirstCanvasLoad = true;
+        let lastAnimationSignature = '';
         let doodleActions = [];
         let doodlesEnabled = true;
         // OBS Browser Sources capture audio produced by this page. Keep this
@@ -229,6 +230,7 @@
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
+        const playImageSequence = imageRenderer.playSequence;
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
@@ -256,10 +258,14 @@
                 }
 
                 const currentImageEffect = data.effect || 'gleam3';
+                const animationSignature = data.animation?.type === 'triframe' && Array.isArray(data.animation.frames)
+                    ? data.animation.frames.join('|')
+                    : '';
                 const isNewImage = data.latest && (
                     data.time > lastTime
                     || data.latest !== lastImageRawUrl
                     || currentImageEffect !== lastImageEffect
+                    || animationSignature !== lastAnimationSignature
                 );
 
                 if (isFirstCanvasLoad) {
@@ -268,20 +274,36 @@
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
                         lastImageEffect = currentImageEffect;
-                        const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                        applyImageTransition(newImgUrl, 'none', currentImageEffect);
+                        lastAnimationSignature = animationSignature;
+                        if (animationSignature) {
+                            playImageSequence(data.animation.frames, {
+                                frameDuration: data.animation.frame_duration_ms || 1400,
+                                crossfadeDuration: data.animation.crossfade_duration_ms || 500,
+                            });
+                        } else {
+                            const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                            applyImageTransition(newImgUrl, 'none', currentImageEffect);
+                        }
                     }
                 } else if (isNewImage) {
                     lastTime = data.time;
                     lastImageRawUrl = data.latest;
                     lastImageEffect = currentImageEffect;
-                    const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                    const transition = (data.transition || 'crossfade').toLowerCase().trim();
+                    lastAnimationSignature = animationSignature;
 
                     doodleActions = [];
                     redrawAllDoodles();
 
-                    applyImageTransition(newImgUrl, transition, currentImageEffect);
+                    if (animationSignature) {
+                        playImageSequence(data.animation.frames, {
+                            frameDuration: data.animation.frame_duration_ms || 1400,
+                            crossfadeDuration: data.animation.crossfade_duration_ms || 500,
+                        });
+                    } else {
+                        const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                        const transition = (data.transition || 'crossfade').toLowerCase().trim();
+                        applyImageTransition(newImgUrl, transition, currentImageEffect);
+                    }
                 }
             } catch (err) {
                 console.error("OBS Canvas fetch error:", err);

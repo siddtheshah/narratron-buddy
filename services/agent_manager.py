@@ -171,6 +171,7 @@ class AgentSession:
 
         # Retrieve bound tool instances safely
         self.image_tools = get_bound_tool_instance(self.agent, "create_image")
+        self.animation_tools = get_bound_tool_instance(self.agent, "create_triframe")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
         self.named_element_tools = get_bound_tool_instance(self.agent, "update_or_insert_named_element")
         self.music_tools = get_bound_tool_instance(self.agent, "play_playlist")
@@ -249,7 +250,7 @@ class AgentSession:
         def handle_after_image_tool(_tool_name: str, _canvas_info: dict):
             self.send_canvas_state(force=True)
 
-        for tool_suite in (self.image_tools, self.chat_tools, self.named_element_tools, self.music_tools):
+        for tool_suite in (self.image_tools, self.animation_tools, self.chat_tools, self.named_element_tools, self.music_tools):
             if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
                 tool_suite.on_cooldown_expired = handle_cooldown_expired
 

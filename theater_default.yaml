@@ -10,6 +10,10 @@ image_generation:
     # intentionally separate from GOOGLE_CLOUD_LOCATION used by Gemini Live.
     location: global
 
+animation:
+    enabled: false
+    cooldown_duration: 20
+
 music:
     playlists_folder: "playlists"
     cooldown_duration: 15

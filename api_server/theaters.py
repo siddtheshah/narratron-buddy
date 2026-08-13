@@ -86,13 +86,14 @@ async def serve_theater_playlist_track(request: Request, theater_id: str, playli
         raise HTTPException(status_code=404, detail="Theater playlist track not found")
     return FileResponse(file_path)
 
-@app.get("/theaters/{theater_id}/output/{filename}")
+@app.get("/theaters/{theater_id}/output/{filename:path}")
 async def serve_theater_output(request: Request, theater_id: str, filename: str):
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
-    _safe_path_param(filename, "filename")
     output_dir = theater_manager.theater(theater_id).output_dir()
-    file_path = output_dir / filename
+    file_path = (output_dir / filename).resolve()
+    if output_dir.resolve() not in file_path.parents:
+        raise HTTPException(status_code=400, detail="Invalid output path")
     if not file_path.exists():
         # Check subdirectories of output directory (e.g. output/images/filename)
         sub_path = output_dir / "images" / filename

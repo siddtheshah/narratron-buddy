@@ -10,6 +10,7 @@ from jinja2 import StrictUndefined, Template
 from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
+from tools.animation_tool import AnimationTools
 from tools.music_tool import MusicTools
 from tools.named_element_tool import NamedElementTools
 from tools.tool_bundle import ToolBundle
@@ -68,6 +69,13 @@ Use them when they are off cooldown. You will be notified by the system whenever
 * browse_images: Returns a list of all available generated image file paths.
 * search_image_by_metadata <metadata_query>: Returns a list of image file paths whose metadata description matches the query by keywords.
 
+{% if animation_enabled %}
+## Animation
+Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_triframe` with a complete `base_frame` prompt plus precise `second_frame_change` and `third_frame_change` instructions; add useful reference images when available. It returns an animation ID; then call `play_animation` with that ID after the frames are ready. Creating an animation does not change the canvas until you explicitly play it.
+
+To use the animations well, make sure there is a action difference between frames. For example, "walking", "further along", and "even further" is BAD. Use "walking" "further and looking back", "walks and waves back". 
+{% endif %}
+
 ## Chat
 Besides greeting the orator initially, use this in tandem with show_image to show that you understand what's going on.
 
@@ -111,6 +119,16 @@ def create_tool_bundle_for_session(
     """Build tools bound to one theater's canvas state."""
     theater_manager = theater_manager or TheaterManager()
     image_tools = ImageTools(config, theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
+    animation_enabled = bool(config.get("animation", {}).get("enabled", False))
+    animation_tools = (
+        AnimationTools(
+            image_tools,
+            image_tools._get_image_provider(),
+            config.get("animation", {}),
+        )
+        if animation_enabled
+        else None
+    )
     chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
     named_element_tools = NamedElementTools(
         config.get("named_elements", {}),
@@ -119,7 +137,7 @@ def create_tool_bundle_for_session(
     )
     music_tools = MusicTools(config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
 
-    return ToolBundle([
+    tools = [
         image_tools.list_references,
         image_tools.create_image,
         image_tools.show_image,
@@ -131,7 +149,10 @@ def create_tool_bundle_for_session(
         music_tools.play_playlist,
         music_tools.pause_playlist,
         music_tools.resume_playlist,
-    ], preloaded_playlists_context=music_tools.get_playlists_context())
+    ]
+    if animation_tools:
+        tools.extend([animation_tools.create_triframe, animation_tools.play_animation])
+    return ToolBundle(tools, preloaded_playlists_context=music_tools.get_playlists_context())
 
 
 def create_agent(
@@ -176,6 +197,7 @@ def create_agent(
         ref_context=ref_context,
         playlist_context=playlist_context,
         special_instructions=special_instructions,
+        animation_enabled=bool(config.get("animation", {}).get("enabled", False)),
         theater_id=theater_id,
         theater_name=theater.name if theater else theater_id,
         config=config,

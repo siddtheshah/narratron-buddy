@@ -61,12 +61,13 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("* list_playlists:", instruction)
 
     @patch("services.agent.ImageTools")
+    @patch("services.agent.AnimationTools")
     @patch("services.agent.ChatTools")
     @patch("services.agent.NamedElementTools")
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_create_agent_passes_canvas_state_service_to_every_tool(
-        self, mock_agent_cls, mock_music_cls, mock_named_elements_cls, mock_chat_cls, mock_image_cls
+        self, mock_agent_cls, mock_music_cls, mock_named_elements_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
     ):
         mock_image_cls.return_value.list_references.return_value = []
         canvas_state_service = MagicMock()
@@ -85,9 +86,44 @@ class TestCreateAgent(unittest.TestCase):
         expected_manager = mock_image_cls.call_args.kwargs["theater_manager"]
         managed_tool_kwargs = {**expected_kwargs, "theater_manager": expected_manager}
         mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
+        mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
         mock_named_elements_cls.assert_called_once_with(config.get("named_elements", {}), **expected_kwargs)
         mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)
+
+    @patch("services.agent.ImageTools")
+    @patch("services.agent.AnimationTools")
+    @patch("services.agent.ChatTools")
+    @patch("services.agent.NamedElementTools")
+    @patch("services.agent.MusicTools")
+    @patch("services.agent.Agent")
+    def test_animation_tools_are_created_only_when_theater_enables_them(
+        self, mock_agent_cls, mock_music_cls, mock_named_elements_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
+    ):
+        mock_image_cls.return_value.list_references.return_value = []
+        config = {"animation": {"enabled": True}}
+
+        create_agent(theater_id="animated_theater", config=config)
+
+        mock_animation_cls.assert_called_once_with(
+            mock_image_cls.return_value,
+            mock_image_cls.return_value._get_image_provider.return_value,
+            config["animation"],
+        )
+
+    @patch("services.agent.create_tool_bundle_for_session")
+    @patch("services.agent.Agent")
+    def test_animation_instructions_appear_only_when_enabled(self, mock_agent_cls, mock_bundle_fn):
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+        mock_bundle.preloaded_playlists_context = "No playlists."
+        mock_bundle_fn.return_value = mock_bundle
+
+        create_agent(theater_id="animated_prompt", config={"animation": {"enabled": True}})
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("## Animation", instruction)
+        self.assertIn("create_triframe", instruction)
 
     @patch("services.agent.create_tool_bundle_for_session")
     @patch("services.agent.Agent")

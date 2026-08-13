@@ -65,6 +65,23 @@ class CanvasStateService:
             effect=effect,
         )
 
+    def show_triframe(self, frame_paths: list[str], theater_id: Optional[str] = None) -> None:
+        state = self.get(theater_id)
+        state.show_triframe(frame_paths, theater_id=state.theater_id)
+
+    def show_triframe_if_current(
+        self,
+        frame_paths: list[str],
+        expected_image_revision: int,
+        theater_id: Optional[str] = None,
+    ) -> bool:
+        """Show an animation only if no newer image has replaced its source state."""
+        state = self.get(theater_id)
+        if state.image_revision != expected_image_revision:
+            return False
+        state.show_triframe(frame_paths, theater_id=state.theater_id)
+        return True
+
     def add_chat_message(self, text: str, author: str = "agent", theater_id: Optional[str] = None, profile_username: Optional[str] = None, profile_color: Optional[str] = None) -> None:
         self.get(theater_id).add_chat_message(text, author=author, profile_username=profile_username, profile_color=profile_color)
 

@@ -20,6 +20,8 @@ export function createImageRenderer({
     const context = canvas?.getContext("2d");
     let currentImage = null;
     let activeAnimation = null;
+    let sequenceTimer = null;
+    let sequenceGeneration = 0;
     let imageEffectController = null;
 
     function drawScaledImage(sourceImage, width, height, opacity = 1) {
@@ -127,8 +129,21 @@ export function createImageRenderer({
         layoutImageEffect();
     }
 
+    function stopSequence() {
+        sequenceGeneration += 1;
+        if (sequenceTimer) {
+            clearTimeout(sequenceTimer);
+            sequenceTimer = null;
+        }
+        if (activeAnimation) {
+            cancelAnimationFrame(activeAnimation);
+            activeAnimation = null;
+        }
+    }
+
     async function applyTransition(imageUrl, transition = "crossfade", effect = "gleam3") {
         if (!canvas || !context) return;
+        stopSequence();
         resize();
 
         const newImage = new Image();
@@ -200,7 +215,78 @@ export function createImageRenderer({
         if (backgroundLayer) backgroundLayer.style.backgroundImage = `url(${imageUrl})`;
     }
 
-    return { resize, applyTransition };
+    async function playSequence(imageUrls, {
+        frameDuration = 1400,
+        crossfadeDuration = 500,
+    } = {}) {
+        if (!canvas || !context || !Array.isArray(imageUrls) || imageUrls.length < 2) return;
+        stopSequence();
+        const generation = sequenceGeneration;
+        const frames = await Promise.all(imageUrls.map(async (imageUrl) => {
+            const frame = new Image();
+            frame.crossOrigin = "anonymous";
+            frame.src = imageUrl;
+            try {
+                await frame.decode();
+            } catch {
+                await new Promise((resolve) => {
+                    frame.onload = resolve;
+                    frame.onerror = resolve;
+                });
+            }
+            return frame;
+        }));
+        if (generation !== sequenceGeneration || frames.some((frame) => !frame.naturalWidth)) return;
+
+        if (imageEffectController) {
+            imageEffectController.setEffect("none");
+            imageEffectController.element.style.display = "none";
+        }
+        // The sequence is composited entirely on the renderer canvas. Hide
+        // the compatibility DOM image so it cannot sit on top of the canvas
+        // as an extra, stale frame during the crossfade.
+        if (image) {
+            image.classList.remove(...loadedClassNames);
+            image.style.opacity = "0";
+        }
+        // The enlarged, blurred backdrop is useful for a single image but it
+        // turns each sequence crossfade into a second, highly visible fade.
+        // Keep it empty for the entire animation; applyTransition restores it
+        // when the next normal canvas image is shown.
+        if (backgroundLayer) backgroundLayer.style.backgroundImage = "none";
+        let index = 0;
+        currentImage = frames[0];
+        if (image) image.src = imageUrls[0];
+        drawSingleImage(currentImage);
+
+        const advance = () => {
+            if (generation !== sequenceGeneration) return;
+            const previous = currentImage;
+            index = (index + 1) % frames.length;
+            const next = frames[index];
+            const rect = canvas.getBoundingClientRect();
+            const startTime = performance.now();
+            const fade = (now) => {
+                if (generation !== sequenceGeneration) return;
+                const progress = Math.min(1, (now - startTime) / crossfadeDuration);
+                context.clearRect(0, 0, rect.width, rect.height);
+                drawScaledImage(next, rect.width, rect.height);
+                drawScaledImage(previous, rect.width, rect.height, 1 - progress);
+                if (progress < 1) {
+                    activeAnimation = requestAnimationFrame(fade);
+                } else {
+                    activeAnimation = null;
+                    currentImage = next;
+                    if (image) image.src = imageUrls[index];
+                    sequenceTimer = setTimeout(advance, Math.max(0, frameDuration - crossfadeDuration));
+                }
+            };
+            activeAnimation = requestAnimationFrame(fade);
+        };
+        sequenceTimer = setTimeout(advance, Math.max(0, frameDuration - crossfadeDuration));
+    }
+
+    return { resize, applyTransition, playSequence };
 }
 
 /** Draws normalized doodle segments and replays them after canvas resizes. */

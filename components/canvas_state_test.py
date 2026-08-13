@@ -206,6 +206,32 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertEqual(state["history"][0]["path"], "/path/to/scene1.png")
         self.assertEqual(state["history"][1]["path"], "/path/to/scene2.png")
 
+    def test_triframe_is_exposed_as_a_looping_animation(self):
+        manager = CanvasStateManager(theater_id="triframe_payload", theater_manager=self.theater_manager)
+        frames = [f"/path/to/frame_{number}.jpg" for number in range(1, 4)]
+        manager.show_triframe(frames)
+
+        state = manager.get_latest_state()
+        self.assertEqual(state["latest"], "/theaters/triframe_payload/output/frame_1.jpg")
+        self.assertEqual(state["animation"]["type"], "triframe")
+        self.assertEqual(len(state["animation"]["frames"]), 3)
+        self.assertEqual(state["effect"], "none")
+
+    def test_newer_image_prevents_a_stale_triframe_from_being_shown(self):
+        service = CanvasStateService(self.theater_manager)
+        state = service.get("triframe_yield")
+        expected_revision = state.image_revision
+        service.show_image("/path/to/newer-scene.jpg", theater_id="triframe_yield")
+
+        displayed = service.show_triframe_if_current(
+            ["/path/to/frame_1.jpg", "/path/to/frame_2.jpg", "/path/to/frame_3.jpg"],
+            expected_revision,
+            theater_id="triframe_yield",
+        )
+
+        self.assertFalse(displayed)
+        self.assertEqual(state.shown_image_path, "/path/to/newer-scene.jpg")
+
     def test_tool_activity_is_transient_and_exposed_in_latest_state(self):
         manager = CanvasStateManager(theater_id="tool_activity", theater_manager=self.theater_manager)
         manager.set_tool_activity("image", True)

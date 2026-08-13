@@ -42,6 +42,10 @@ class CanvasStateManager:
         self.shown_images_history: List[str] = []
         self.shown_image_transition: str = "crossfade"
         self.shown_image_effect: str = "gleam3"
+        self.shown_animation_frames: List[str] = []
+        # Changes only when the displayed image/presentation changes. This lets
+        # long-running tools avoid replacing a newer image chosen meanwhile.
+        self.image_revision: int = 0
         
         # WebSocket and doodles
         self.active_ws_connections: List[WebSocket] = []
@@ -95,6 +99,7 @@ class CanvasStateManager:
                     self.shown_images_history = c_state.get("shown_images_history", [])
                     self.shown_image_transition = c_state.get("shown_image_transition", "fade")
                     self.shown_image_effect = c_state.get("shown_image_effect", "gleam3")
+                    self.shown_animation_frames = c_state.get("shown_animation_frames", [])
                     self.current_playlist = c_state.get("current_playlist")
                     self.current_playlist_tracks = c_state.get("current_playlist_tracks", [])
                     self.music_paused = c_state.get("music_paused", False)
@@ -167,11 +172,14 @@ class CanvasStateManager:
     def _get_url_for_path(self, file_path: str) -> str:
         if not file_path:
             return ""
-        basename = os.path.basename(file_path)
         sel_path_obj = Path(file_path).resolve()
         if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
-            return f"/theaters/{self.theater_id}/references/{basename}"
-        return f"/theaters/{self.theater_id}/output/{basename}"
+            return f"/theaters/{self.theater_id}/references/{sel_path_obj.name}"
+        try:
+            relative_path = sel_path_obj.relative_to(self.theater.output_dir().resolve()).as_posix()
+        except ValueError:
+            relative_path = sel_path_obj.name
+        return f"/theaters/{self.theater_id}/output/{relative_path}"
 
     def update_shown_image(
         self,
@@ -179,6 +187,7 @@ class CanvasStateManager:
         theater_id: Optional[str] = None,
         transition: str = "crossfade",
         effect: str = "gleam3",
+        clear_animation: bool = True,
     ):
         transition = transition or "crossfade"
         effect = effect or "gleam3"
@@ -198,6 +207,10 @@ class CanvasStateManager:
         self.shown_image_prompt = extract_image_prompt(file_path)
         self.shown_image_transition = transition
         self.shown_image_effect = effect
+        if clear_animation:
+            self.shown_animation_frames = []
+        if presentation_changed:
+            self.image_revision += 1
         self._notify_state_changed("latest")
 
         if file_path:
@@ -239,6 +252,20 @@ class CanvasStateManager:
                         shutil.copy2(file_path, target_path)
                     except Exception as e:
                         logger.warning(f"Failed to copy shown image to theater output dir: {e}")
+
+    def show_triframe(self, frame_paths: List[str], theater_id: Optional[str] = None) -> None:
+        """Display a generated three-frame sequence as a looping canvas animation."""
+        if len(frame_paths) != 3 or any(not path for path in frame_paths):
+            raise ValueError("A tri-frame animation requires exactly three image paths.")
+        self.update_shown_image(
+            frame_paths[0],
+            theater_id=theater_id,
+            transition="crossfade",
+            effect="none",
+            clear_animation=False,
+        )
+        self.shown_animation_frames = list(frame_paths)
+        self._notify_state_changed("latest")
 
     def add_chat_message(self, text: str, author: str = "agent", profile_username: Optional[str] = None, profile_color: Optional[str] = None):
         message = {"author": author, "text": text}
@@ -509,11 +536,7 @@ class CanvasStateManager:
             
         self.current_image_basename = basename
         
-        sel_path_obj = Path(selected_file).resolve()
-        if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
-            image_url = f"/theaters/{self.theater_id}/references/{basename}"
-        else:
-            image_url = f"/theaters/{self.theater_id}/output/{basename}"
+        image_url = self._get_url_for_path(selected_file)
 
         # Ensure history is populated if empty
         if not self.shown_images_history:
@@ -541,6 +564,13 @@ class CanvasStateManager:
             "tool_activity": self.get_tool_activity(),
             "agent_thought": self.get_agent_thought(),
         }
+        if self.shown_animation_frames:
+            res["animation"] = {
+                "type": "triframe",
+                "frames": [self._get_url_for_path(path) for path in self.shown_animation_frames],
+                "frame_duration_ms": 1400,
+                "crossfade_duration_ms": 500,
+            }
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, history_len={len(formatted_history)}, playlist={music_state['playlist']}")
         return res
 
@@ -553,6 +583,7 @@ class CanvasStateManager:
                 theater_id=theater_dir.name,
                 transition=getattr(self, "shown_image_transition", "fade"),
                 effect=getattr(self, "shown_image_effect", "gleam3"),
+                clear_animation=False,
             )
 
         canvas_state = {
@@ -562,6 +593,7 @@ class CanvasStateManager:
             "shown_images_history": self.shown_images_history,
             "shown_image_transition": getattr(self, "shown_image_transition", "fade"),
             "shown_image_effect": getattr(self, "shown_image_effect", "gleam3"),
+            "shown_animation_frames": list(self.shown_animation_frames),
             "current_playlist": self.current_playlist,
             "current_playlist_tracks": self.current_playlist_tracks,
             "music_paused": self.music_paused,

@@ -1949,7 +1949,7 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=effects-20260811-2";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=triframe-20260812-1";
 
         let lastTime = -1;
         let lastImageRawUrl = null;
@@ -2642,6 +2642,7 @@
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
+        const playImageSequence = imageRenderer.playSequence;
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
@@ -2650,6 +2651,19 @@
         let currentViewIndex = -1;
         let isPagedBack = false;
         let hasNewHeadWhilePagedBack = false;
+        let lastAnimationSignature = '';
+
+        function getAnimationSignature(animation) {
+            if (!animation || animation.type !== 'triframe' || !Array.isArray(animation.frames)) return '';
+            return animation.frames.join('|');
+        }
+
+        function playTriFrameAnimation(animation) {
+            playImageSequence(animation.frames.map((url) => url + (url.includes('?') ? '&' : '?') + 't=' + new Date().getTime()), {
+                frameDuration: animation.frame_duration_ms || 1400,
+                crossfadeDuration: animation.crossfade_duration_ms || 500,
+            });
+        }
 
         function updatePagingControlsUI() {
             const controls = document.getElementById('history-paging-controls');
@@ -2799,6 +2813,7 @@
                 }
 
                 const currentImageEffect = data.effect || 'gleam3';
+                const animationSignature = getAnimationSignature(data.animation);
                 // A show_image call may change only presentation (for example,
                 // applying haze to an image the fallback already displayed).
                 // Treat that as an update even when the URL has not changed.
@@ -2806,6 +2821,7 @@
                     data.time > lastTime
                     || data.latest !== lastImageRawUrl
                     || currentImageEffect !== lastImageEffect
+                    || animationSignature !== lastAnimationSignature
                 );
                 if (isFirstCanvasLoad) {
                     isFirstCanvasLoad = false;
@@ -2816,8 +2832,13 @@
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
                         lastImageEffect = currentImageEffect;
-                        const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                        applyImageTransition(newImgUrl, 'none', currentImageEffect);
+                        lastAnimationSignature = animationSignature;
+                        if (animationSignature) {
+                            playTriFrameAnimation(data.animation);
+                        } else {
+                            const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                            applyImageTransition(newImgUrl, 'none', currentImageEffect);
+                        }
                         if (data.prompt) {
                             promptTextSpan.textContent = data.prompt;
                             promptBtn.style.display = 'flex';
@@ -2828,6 +2849,7 @@
                     lastTime = data.time;
                     lastImageRawUrl = data.latest;
                     lastImageEffect = currentImageEffect;
+                    lastAnimationSignature = animationSignature;
                     const newImgUrl = data.latest + "?t=" + new Date().getTime();
                     const transition = (data.transition || 'crossfade').toLowerCase().trim();
 
@@ -2840,6 +2862,19 @@
                         redrawAllDoodles();
                         if (ws && ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({ type: 'clear' }));
+                        }
+
+                        if (animationSignature) {
+                            promptBtn.classList.remove('expanded');
+                            promptBtn.style.display = 'none';
+                            promptPinned = false;
+                            playTriFrameAnimation(data.animation);
+                            if (data.prompt) {
+                                promptTextSpan.textContent = data.prompt;
+                                promptBtn.style.display = 'flex';
+                            }
+                            updatePagingControlsUI();
+                            return;
                         }
 
                         const tempImage = new Image();
