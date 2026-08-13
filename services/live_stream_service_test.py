@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, AsyncMock
 from google.genai import types
 
 from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
-from tools.named_element_tool import NamedElementTools
+from tools.story_planning_tool import StoryPlanningTools
 
 
 def test_format_canvas_state_includes_present_scene_elements():
-    elements = NamedElementTools(theater_id="stage")
+    elements = StoryPlanningTools(theater_id="stage")
     elements.update_or_insert_named_element("hero", "Mara, a cartographer")
     elements.update_or_insert_named_element("tone", "Hopeful and tense")
 

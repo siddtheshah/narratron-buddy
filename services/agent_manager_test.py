@@ -443,12 +443,12 @@ class TestAgentSessionManager(unittest.TestCase):
             mock_ws = MagicMock()
             session.websockets.add(mock_ws)
 
-            mock_named_element_tools = MagicMock()
-            session.named_element_tools = mock_named_element_tools
+            mock_story_planning_tools = MagicMock()
+            session.story_planning_tools = mock_story_planning_tools
 
             await session.remove_websocket(mock_ws)
 
-            mock_named_element_tools.save_to_session_state.assert_called_once()
+            mock_story_planning_tools.save_to_session_state.assert_called_once()
 
         asyncio.run(run_test())
 

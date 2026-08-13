@@ -13,7 +13,7 @@ from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.animation_tool import AnimationTools
 from tools.music_tool import MusicTools
-from tools.named_element_tool import NamedElementTools
+from tools.story_planning_tool import StoryPlanningTools
 from tools.tool_bundle import ToolBundle
 from utils.config_loader import get_app_config, get_theater_config
 
@@ -32,7 +32,7 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 
 ## Real-Time Execution & Low Latency (CRITICAL)
 - You operate in a live streaming environment.
-- Listen and execute tools while the orator is speaking. Wait for the narrator to complete their sentence before calling a canvas updating tools, but do not hold back beyond that.
+- Listen and execute tools while the orator is speaking. Wait for the narrator to complete their sentence before calling canvas updating tools, but do not hold back beyond that.
 - As soon as you hear a request, theme, location, or strong visual description in the audio stream (e.g., "create an image of an oasis", "play desert adventure music", or key story cues), invoke the corresponding tool (`show_image`, `create_image`, `play_music`, `send_chat_message`).
 - Whenever cooldowns on image tools expire, use your tools IMMEDIATELY, BUT ONLY IF the user has provided more information since the last time you used a tool.
 
@@ -43,7 +43,19 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 - If the user mentions named characters or places, check the preloaded references context provided in your initial instructions or use image browsing tools to find useful references, which will help create even more recognizable and poignant scenes. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.
 Note: The references are loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_references` on every turn.
 - ALWAYS prioritize what the user is saying, over your own ideas and past images. Use past information only if it follows naturally.
+{% if not adventure_mode %}
 - NEVER take initiative to storytell on your own.
+{% endif %}
+
+{% if adventure_mode %}
+## Adventure Mode
+Adventure Mode is enabled for this session! Actively drive dramatic choices, interactive decision points, and high-stakes adventure beats. You have access to the `get_script_piece` tool to generate and preview upcoming script nodes ahead of time, ensuring smooth, highly engaging interactive storytelling.
+However, even though you have increased agency, always seek orator input before progressing to the next part of your script.
+
+You should ALWAYs update your named elements whenever the orator makes a decision so that the script can rebuild and adapt.
+Always yield to the orator if they deviate from the script, and lean into it. Trust the script tool will adapt the plan and provide a good experience.
+Be sure to continue using canvas updating tools to enhance the experience, as it is still your primary responsibility.
+{% endif %}
 
 ## Scene Context
 Maintain the current scene as a compact set of named elements. Add or update elements such as characters, locations, objects, and relationships.
@@ -76,7 +88,7 @@ Use them when they are off cooldown. You will be notified by the system whenever
 ## Animation
 Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_triframe` with a complete `base_frame` prompt plus precise `second_frame_change` and `third_frame_change` instructions; add useful reference images when available. It returns an animation ID; then call `play_animation` with that ID after the frames are ready. Creating an animation does not change the canvas until you explicitly play it.
 
-To use the animations well, make sure there is a action difference between frames. For example, "walking", "further along", and "even further" is BAD. Use "walking" "further and looking back", "walks and waves back". 
+To use the animations well, make sure there is a action difference between frames. For example, "walking", "further along", and "even further" is BAD. Use "walking", "further and looking back", "walks and waves back". 
 {% endif %}
 
 ## Chat
@@ -89,6 +101,9 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 
 * update_or_insert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
 * clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
+{% if adventure_mode %}
+* get_script_piece: Generate or update predictive script nodes for the upcoming story beats, interactive decision points, and expected user responses.
+{% endif %}
 
 ## Music Management
 When a story begins or a scene/mood is described, invoke `play_music` immediately with an appropriate music ID or playlist from the music context below, or call `create_music` to generate dynamic background music.
@@ -97,6 +112,7 @@ When a story begins or a scene/mood is described, invoke `play_music` immediatel
 * create_music <prompt> [handle]: Generate custom background music for the scene and play it.
 * pause_music: Pause the current music track or playlist.
 * resume_music: Resume the paused music track or playlist.
+
 
 {{ ref_context }}
 
@@ -182,8 +198,8 @@ def create_tool_bundle_for_session(
         else None
     )
     chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
-    named_element_tools = NamedElementTools(
-        config.get("named_elements", {}),
+    story_planning_tools = StoryPlanningTools(
+        config.get("story_planning", {}),
         theater_id=theater_id,
         canvas_state_service=canvas_state_service,
     )
@@ -196,12 +212,14 @@ def create_tool_bundle_for_session(
         image_tools.browse_images,
         image_tools.search_image_by_metadata,
         chat_tools.send_chat_message,
-        named_element_tools.update_or_insert_named_element,
-        named_element_tools.clear_scene,
+        story_planning_tools.update_or_insert_named_element,
+        story_planning_tools.clear_scene,
         music_tools.play_music,
         music_tools.pause_music,
         music_tools.resume_music,
     ]
+    if story_planning_tools.adventure_mode:
+        tools.append(story_planning_tools.get_script_piece)
     if music_tools.generation_enabled:
         tools.append(music_tools.create_music)
     if animation_tools:
@@ -268,6 +286,7 @@ def create_agent(
         playlist_context=playlist_context,
         special_instructions=special_instructions,
         animation_enabled=bool(config.get("animation", {}).get("enabled", False)),
+        adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         theater_id=theater_id,
         theater_name=theater.name if theater else theater_id,
         config=config,

@@ -18,7 +18,12 @@ music:
     switch_cooldown: 15
     style: "no lyrics, instrumental focus, steady volume, 90 second duration, loopable"
 
-named_elements: {}
+story_planning:
+    nodes_ahead: 3
+    adventure_mode: false
+    max_named_elements: 5
+    cooldown_duration: 3
+    initial_elements: {}
 
 chat:
     cooldown_duration: 9

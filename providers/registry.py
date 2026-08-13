@@ -91,6 +91,27 @@ _MUSIC_SPECS = (
 )
 
 
+_TEXT_RESPONSE_SPECS = (
+    {
+        "id": "gemini-2-5",
+        "name": "Gemini 2.5 Flash-Lite Text",
+        "model": "gemini-2.5-flash-lite",
+        "model_options": ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"],
+        "status": "unconfigured",
+        "notes": "Fast, cost-effective baseline text response provider.",
+    },
+    {
+        "id": "gemini-3",
+        "name": "Gemini 3 Flash Text",
+        "model": "gemini-3.6-flash",
+        "model_options": ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite"],
+        "status": "unconfigured",
+        "notes": "Next-generation high-capability text generation model for comparison.",
+    },
+)
+
+
+
 def list_image_provider_specs() -> list[dict[str, Any]]:
     specs = [dict(spec) for spec in _IMAGE_SPECS]
     for spec in specs:
@@ -145,27 +166,6 @@ def get_music_provider(provider_id: str, options: dict[str, Any] | None = None) 
     if spec:
         raise MusicProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
     raise MusicProviderError(f"Unknown music provider: {provider_id}")
-
-
-_TEXT_RESPONSE_SPECS = (
-    {
-        "id": "gemini-2-5",
-        "name": "Gemini 2.5 Flash-Lite Text",
-        "model": "gemini-2.5-flash-lite",
-        "model_options": ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"],
-        "status": "unconfigured",
-        "notes": "Fast, cost-effective baseline text response provider.",
-    },
-    {
-        "id": "gemini-3",
-        "name": "Gemini 3 Flash Text",
-        "model": "gemini-3.6-flash",
-        "model_options": ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite"],
-        "status": "unconfigured",
-        "notes": "Next-generation high-capability text generation model for comparison.",
-    },
-)
-
 
 def list_text_response_provider_specs() -> list[dict[str, Any]]:
     specs = [dict(spec) for spec in _TEXT_RESPONSE_SPECS]

@@ -71,6 +71,37 @@ class TestConfigLoader(BaseTestCase):
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def test_provider_configs_override_theater_yaml(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            theater_id = "provider_override_theater"
+            custom_data = {
+                "story_planning": {
+                    "provider": "user-custom-provider",
+                    "nodes_ahead": 10,
+                },
+                "music": {
+                    "provider": "user-music-provider",
+                },
+                "image_generation": {
+                    "provider": "user-image-provider",
+                },
+            }
+            save_theater_config(theater_id, custom_data, base_dir=temp_dir)
+            loaded = get_theater_config(theater_id, base_dir=temp_dir)
+            app_cfg = get_app_config()
+
+            # App.yaml provider selections should override theater settings
+            self.assertEqual(loaded["story_planning"]["provider"], app_cfg["story_planning"]["provider"])
+            self.assertEqual(loaded["music"]["provider"], app_cfg["music"]["provider"])
+            self.assertEqual(loaded["image_generation"]["provider"], app_cfg["image_generation"]["provider"])
+
+            # Theater specific options are preserved
+            self.assertEqual(loaded["story_planning"]["nodes_ahead"], 10)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 if __name__ == "__main__":
     unittest.main()
+
 

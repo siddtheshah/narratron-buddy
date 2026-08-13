@@ -712,11 +712,11 @@ def test_export_theater_requires_the_registry_deployment_owner():
 async def test_get_theater_suggestions_endpoint():
     mock_agent_mgr = MagicMock()
     mock_session = MagicMock()
-    mock_named_element_tools = MagicMock()
-    mock_named_element_tools.get_present_elements.return_value = [
+    mock_story_planning_tools = MagicMock()
+    mock_story_planning_tools.get_present_elements.return_value = [
         {"name": "hero", "content": "Mara, a bold cartographer"}
     ]
-    mock_session.named_element_tools = mock_named_element_tools
+    mock_session.story_planning_tools = mock_story_planning_tools
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_suggestion_svc = MagicMock()

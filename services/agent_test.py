@@ -64,11 +64,11 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")
     @patch("services.agent.ChatTools")
-    @patch("services.agent.NamedElementTools")
+    @patch("services.agent.StoryPlanningTools")
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_create_agent_passes_canvas_state_service_to_every_tool(
-        self, mock_agent_cls, mock_music_cls, mock_named_elements_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
+        self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
     ):
         mock_image_cls.return_value.list_references.return_value = []
         canvas_state_service = MagicMock()
@@ -89,17 +89,17 @@ class TestCreateAgent(unittest.TestCase):
         mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
-        mock_named_elements_cls.assert_called_once_with(config.get("named_elements", {}), **expected_kwargs)
+        mock_story_planning_cls.assert_called_once_with(config.get("story_planning", {}), **expected_kwargs)
         mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)
 
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")
     @patch("services.agent.ChatTools")
-    @patch("services.agent.NamedElementTools")
+    @patch("services.agent.StoryPlanningTools")
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_animation_tools_are_created_only_when_theater_enables_them(
-        self, mock_agent_cls, mock_music_cls, mock_named_elements_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
+        self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
     ):
         mock_image_cls.return_value.list_references.return_value = []
         config = {"animation": {"enabled": True}}
@@ -173,10 +173,10 @@ class TestCreateAgent(unittest.TestCase):
 
     @patch("services.agent.ImageTools")
     @patch("services.agent.ChatTools")
-    @patch("services.agent.NamedElementTools")
+    @patch("services.agent.StoryPlanningTools")
     @patch("services.agent.MusicTools")
     def test_create_tool_bundle_conditional_create_music(
-        self, mock_music_cls, mock_named_cls, mock_chat_cls, mock_image_cls
+        self, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_image_cls
     ):
         from services.agent import create_tool_bundle_for_session
         music_inst = mock_music_cls.return_value
@@ -246,3 +246,23 @@ class TestCreateAgent(unittest.TestCase):
             self.assertIn("song.mp3", res)
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    @patch("services.agent.get_playlists_context")
+    @patch("services.agent.create_tool_bundle_for_session")
+    @patch("services.agent.Agent")
+    def test_create_agent_adventure_mode_instructions(
+        self, mock_agent_cls, mock_bundle_fn, mock_playlists_fn
+    ):
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+        mock_bundle_fn.return_value = mock_bundle
+        mock_playlists_fn.return_value = ""
+
+        config = {
+            "story_planning": {"adventure_mode": True}
+        }
+        create_agent(theater_id="adv_agent_theater", config=config)
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("## Adventure Mode", instruction)
+        self.assertIn("get_script_piece", instruction)

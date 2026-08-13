@@ -8,6 +8,12 @@ image_generation:
     provider_options:
         classifier_model: "gemini-2.5-flash-lite"
 
+story_planning:
+    provider: "gemini-2-5"
+
+music:
+    provider: "lyria"
+
 smtp:
     from_email: "noreply@narratron.io"
     host: "smtp.gmail.com"

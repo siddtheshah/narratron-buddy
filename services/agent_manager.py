@@ -179,7 +179,7 @@ class AgentSession:
         self.image_tools = get_bound_tool_instance(self.agent, "create_image")
         self.animation_tools = get_bound_tool_instance(self.agent, "create_triframe")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
-        self.named_element_tools = get_bound_tool_instance(self.agent, "update_or_insert_named_element")
+        self.story_planning_tools = get_bound_tool_instance(self.agent, "update_or_insert_named_element")
         self.music_tools = get_bound_tool_instance(self.agent, "play_music")
 
         self.run_config = build_run_config(
@@ -256,7 +256,7 @@ class AgentSession:
         def handle_after_image_tool(_tool_name: str, _canvas_info: dict):
             self.send_canvas_state(force=True)
 
-        for tool_suite in (self.image_tools, self.animation_tools, self.chat_tools, self.named_element_tools, self.music_tools):
+        for tool_suite in (self.image_tools, self.animation_tools, self.chat_tools, self.story_planning_tools, self.music_tools):
             if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
                 tool_suite.on_cooldown_expired = handle_cooldown_expired
 
@@ -299,7 +299,7 @@ class AgentSession:
                 and now - self.last_canvas_state_sent < self.observability_interval
             ):
                 return False
-            msg = format_canvas_state(self.canvas_state_manager, self.named_element_tools)
+            msg = format_canvas_state(self.canvas_state_manager, self.story_planning_tools)
             try:
                 self.send_content(types.Content(parts=[types.Part(text=msg)]))
             except Exception as e:
@@ -625,13 +625,14 @@ class AgentSession:
 
     def save_named_elements_to_session_state(self):
         """Save named elements snapshot to canvas state / session state when agent connection drops."""
-        if self.named_element_tools:
-            if hasattr(self.named_element_tools, "save_to_session_state"):
-                self.named_element_tools.save_to_session_state()
-            elif hasattr(self.named_element_tools, "get_present_elements") and self.canvas_state_manager:
+        tools = self.story_planning_tools
+        if tools:
+            if hasattr(tools, "save_to_session_state"):
+                tools.save_to_session_state()
+            elif hasattr(tools, "get_present_elements") and self.canvas_state_manager:
                 if hasattr(self.canvas_state_manager, "set_named_elements"):
                     self.canvas_state_manager.set_named_elements(
-                        self.named_element_tools.get_present_elements()
+                        tools.get_present_elements()
                     )
 
     async def remove_websocket(self, websocket: WebSocket):

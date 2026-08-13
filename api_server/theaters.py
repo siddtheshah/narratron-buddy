@@ -674,9 +674,9 @@ async def get_theater_suggestions(theater_id: str, request: Request):
 
     session = agent_manager.get_session(theater_id)
     named_elements = []
-    if session and hasattr(session, "named_element_tools") and session.named_element_tools:
-        if hasattr(session.named_element_tools, "get_present_elements"):
-            named_elements = session.named_element_tools.get_present_elements()
+    session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
+    if session_tools and hasattr(session_tools, "get_present_elements"):
+        named_elements = session_tools.get_present_elements()
     if not named_elements and canvas_states:
         try:
             mgr = canvas_states.get(theater_id)

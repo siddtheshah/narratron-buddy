@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def format_canvas_state(
     canvas_state_manager: Optional[CanvasStateManager],
-    named_element_tools: Optional[Any] = None,
+    story_planning_tools: Optional[Any] = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
     image_path = getattr(canvas_state_manager, "shown_image_path", None)
@@ -40,8 +40,8 @@ def format_canvas_state(
             )
 
     elements = (
-        named_element_tools.get_present_elements()
-        if named_element_tools and hasattr(named_element_tools, "get_present_elements")
+        story_planning_tools.get_present_elements()
+        if story_planning_tools and hasattr(story_planning_tools, "get_present_elements")
         else []
     )
     if elements:
