@@ -49,8 +49,17 @@ def format_canvas_state(
             f"{element['name']}: {element['content']}" for element in elements
         )
         parts.append(f"[Present Scene Elements]: {rendered_elements}")
-    else:
-        parts.append("[Present Scene Elements]: none")
+    characters = (
+        story_planning_tools.get_present_characters()
+        if story_planning_tools and hasattr(story_planning_tools, "get_present_characters")
+        else []
+    )
+    if characters:
+        rendered_chars = "; ".join(
+            f"{c['name']} (Personality: {c.get('personality', 'N/A')}, Motivation: {c.get('motivation', 'N/A')}, Quirk: {c.get('quirk', 'N/A')})"
+            for c in characters
+        )
+        parts.append(f"[Active Characters]: {rendered_chars}")
 
     return "\n".join(parts)
 

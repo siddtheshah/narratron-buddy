@@ -26,6 +26,23 @@ def test_format_canvas_state_includes_present_scene_elements():
     assert "[Present Scene Elements]: hero: Mara, a cartographer; tone: Hopeful and tense" in state
 
 
+def test_format_canvas_state_includes_active_characters():
+    elements = StoryPlanningTools(config={"adventure_mode": True}, theater_id="stage_chars")
+    elements.generate_character(name="Vaelen", personality="Brave", motivation="Find the talisman", quirk="Flips a coin on choices")
+
+    state = format_canvas_state(
+        SimpleNamespace(
+            shown_image_path=None,
+            shown_image_prompt=None,
+            current_playlist=None,
+            viewer_collab_enabled=False,
+        ),
+        elements,
+    )
+
+    assert "[Active Characters]: Vaelen (Personality: Brave, Motivation: Find the talisman, Quirk: Flips a coin on choices)" in state
+
+
 class TestLiveStreamServiceAudioChunking(unittest.TestCase):
     def test_audio_chunking_accumulates_into_30ms_blobs(self):
         mock_ws = AsyncMock()

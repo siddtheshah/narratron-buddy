@@ -66,9 +66,10 @@ class CanvasStateManager:
         # Viewer collaboration mode — when enabled, the top audience suggestion
         # is fed to the Narratron agent on each observability cycle.
         self.viewer_collab_enabled: bool = False
-
-        # Named elements context
+        # Named elements & characters context
+        # Story planning state context (named elements, characters, script)
         self.named_elements: List[Dict[str, str]] = []
+        self.story_planning_state: Dict[str, Any] = {}
 
         # Transient agent tool activity. This is intentionally not persisted: a
         # reconnect should not show an activity indicator left over from a
@@ -113,6 +114,7 @@ class CanvasStateManager:
                     self.doodles_enabled = c_state.get("doodles_enabled", True)
                     self.viewer_collab_enabled = c_state.get("viewer_collab_enabled", False)
                     self.named_elements = c_state.get("named_elements", [])
+                    self.story_planning_state = c_state.get("story_planning_state", {})
                     chat_msgs = c_state.get("chat_messages", [])
                     if chat_msgs:
                         self.chat_manager.messages = chat_msgs
@@ -122,10 +124,25 @@ class CanvasStateManager:
                 logger.warning(f"Failed to load canvas state for {self.theater_id}: {e}")
 
     def get_named_elements(self) -> List[Dict[str, str]]:
+        if "named_elements" in self.story_planning_state:
+            return list(self.story_planning_state.get("named_elements", []))
         return list(self.named_elements)
 
     def set_named_elements(self, elements: List[Dict[str, str]]):
         self.named_elements = list(elements or [])
+        if isinstance(self.story_planning_state, dict):
+            self.story_planning_state["named_elements"] = list(elements or [])
+        sess_dir = self.theater.directory()
+        if sess_dir.exists():
+            self.export_theater_data(theater_dir=sess_dir)
+
+    def get_story_planning_state(self) -> Dict[str, Any]:
+        return dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
+
+    def set_story_planning_state(self, state: Dict[str, Any]):
+        self.story_planning_state = dict(state) if isinstance(state, dict) else {}
+        if "named_elements" in self.story_planning_state:
+            self.named_elements = list(self.story_planning_state["named_elements"])
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
@@ -604,6 +621,7 @@ class CanvasStateManager:
             "doodles_enabled": self.doodles_enabled,
             "viewer_collab_enabled": self.viewer_collab_enabled,
             "named_elements": list(self.named_elements),
+            "story_planning_state": dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {},
             "suggestions": self.chat_manager.export_suggestions(),
             "chat_messages": self.chat_manager.get_messages(),
         }

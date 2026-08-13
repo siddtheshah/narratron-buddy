@@ -265,4 +265,5 @@ class TestCreateAgent(unittest.TestCase):
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Adventure Mode", instruction)
+        self.assertIn("generate_character", instruction)
         self.assertIn("get_script_piece", instruction)

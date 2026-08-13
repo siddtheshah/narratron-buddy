@@ -49,10 +49,10 @@ Note: The references are loaded immediately on agent initialization so you alrea
 
 {% if adventure_mode %}
 ## Adventure Mode
-Adventure Mode is enabled for this session! Actively drive dramatic choices, interactive decision points, and high-stakes adventure beats. You have access to the `get_script_piece` tool to generate and preview upcoming script nodes ahead of time, ensuring smooth, highly engaging interactive storytelling.
+Adventure Mode is enabled for this session! Actively drive dramatic choices, interactive decision points, and high-stakes adventure beats. You have access to the `generate_character` tool to set character personalities and motivations, and the `get_script_piece` tool to generate and preview upcoming script nodes ahead of time, ensuring smooth, highly engaging interactive storytelling.
 However, even though you have increased agency, always seek orator input before progressing to the next part of your script.
 
-You should ALWAYs update your named elements whenever the orator makes a decision so that the script can rebuild and adapt.
+You should ALWAYs update your named elements and characters whenever the orator makes a decision so that the script can rebuild and adapt.
 Always yield to the orator if they deviate from the script, and lean into it. Trust the script tool will adapt the plan and provide a good experience.
 Be sure to continue using canvas updating tools to enhance the experience, as it is still your primary responsibility.
 {% endif %}
@@ -102,6 +102,7 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 * update_or_insert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
 * clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
 {% if adventure_mode %}
+* generate_character <name> [description] [personality] [motivation] [quirk]: Generate or update a character's motivation, personality, and distinct quirk for story planning and script updates.
 * get_script_piece: Generate or update predictive script nodes for the upcoming story beats, interactive decision points, and expected user responses.
 {% endif %}
 
@@ -219,7 +220,10 @@ def create_tool_bundle_for_session(
         music_tools.resume_music,
     ]
     if story_planning_tools.adventure_mode:
-        tools.append(story_planning_tools.get_script_piece)
+        tools.extend([
+            story_planning_tools.generate_character,
+            story_planning_tools.get_script_piece,
+        ])
     if music_tools.generation_enabled:
         tools.append(music_tools.create_music)
     if animation_tools:
