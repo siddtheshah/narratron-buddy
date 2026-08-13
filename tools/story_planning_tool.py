@@ -1,4 +1,15 @@
-"""Session-scoped story planning context and predictive script generation tool."""
+"""Session-scoped story planning context and predictive script generation tool.
+
+Logging & Script Inspection:
+----------------------------
+All script node updates, scene element mutations, and cache updates emit formatted log records
+tagged with ``[STORY_SCRIPT]``.
+
+To inspect story script outputs over time during server execution, filter console logging
+using the existing ``--log_prefix`` flag when running ``main.py``:
+
+    python main.py --log_prefix="[STORY_SCRIPT]"
+"""
 
 from collections import OrderedDict
 import hashlib
@@ -22,7 +33,6 @@ from providers.registry import get_text_response_provider
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_NAMED_ELEMENTS = 5
-MAX_NAMED_ELEMENTS = DEFAULT_MAX_NAMED_ELEMENTS
 
 _SCRIPT_PROMPT_TEMPLATE = Template(
 """Current scene elements:
@@ -97,7 +107,12 @@ def build_script_prompt(
 
 
 class StoryPlanningTools(BaseTools):
-    """Maintain named elements defining scene state and predict upcoming story script pieces."""
+    """Maintain named elements defining scene state and predict upcoming story script pieces.
+
+    Emits formatted logger records prefixed with ``[STORY_SCRIPT]`` whenever scene elements
+    or narrative script nodes are updated. Filter output to story script logs using:
+        python main.py --log_prefix="[STORY_SCRIPT]"
+    """
 
     def __init__(
         self,
@@ -160,7 +175,7 @@ class StoryPlanningTools(BaseTools):
                             for k, v in saved_elements.items():
                                 self._elements[str(k)] = str(v)
         except Exception as e:
-            logger.warning(f"Failed to reload named elements from session state: {e}")
+            logger.warning(f"[STORY_SCRIPT] Failed to reload named elements from session state: {e}")
 
     def save_to_session_state(self) -> None:
         """Persist current named elements snapshot to session state."""
@@ -176,7 +191,32 @@ class StoryPlanningTools(BaseTools):
             if state_mgr and hasattr(state_mgr, "set_named_elements"):
                 state_mgr.set_named_elements(self.get_present_elements())
         except Exception as e:
-            logger.warning(f"Failed to save named elements to session state: {e}")
+            logger.warning(f"[STORY_SCRIPT] Failed to save named elements to session state: {e}")
+
+    @staticmethod
+    def _format_script_log(nodes: List[Dict[str, Any]]) -> str:
+        """Format script nodes into a clean multiline debug string."""
+        if not nodes:
+            return "  (No script nodes available)"
+        lines = []
+        for node in nodes:
+            idx = node.get("node_index", "?")
+            narration = node.get("narration", "")
+            response = node.get("expected_user_response", "")
+            lines.append(f"  [Node {idx}] Narration: {narration}\n           Expected User Response: {response}")
+        return "\n".join(lines)
+
+    def _log_script_update(self, nodes: List[Dict[str, Any]], source: str, fingerprint: str = "") -> None:
+        """Emit formatted logger output for story script tracking over time."""
+        theater = self.theater_id or "default"
+        logger.info(
+            "[STORY_SCRIPT] Script nodes active (source=%s, theater=%s, fingerprint=%s, count=%d):\n%s",
+            source,
+            theater,
+            fingerprint,
+            len(nodes),
+            self._format_script_log(nodes),
+        )
 
     def get_tools(self) -> List[Any]:
         """Return bound tool methods exposed to the agent based on configuration."""
@@ -225,6 +265,13 @@ class StoryPlanningTools(BaseTools):
             self.update_script_async()
 
         action = "Updated" if is_update else "Added"
+        logger.info(
+            "[STORY_SCRIPT] %s named element '%s' (theater=%s). Active elements count: %d",
+            action,
+            clean_name,
+            self.theater_id or "default",
+            len(self._elements),
+        )
         return f"{action} named element '{clean_name}'."
 
     def clear_scene(self) -> str:
@@ -237,6 +284,12 @@ class StoryPlanningTools(BaseTools):
             self._cached_script.clear()
 
         self.save_to_session_state()
+
+        logger.info(
+            "[STORY_SCRIPT] Cleared %d scene element(s) and reset cached script (theater=%s).",
+            count,
+            self.theater_id or "default",
+        )
 
         if self.adventure_mode:
             self.update_script_async()
@@ -302,6 +355,7 @@ class StoryPlanningTools(BaseTools):
             res = reused_nodes[: self.nodes_ahead]
             with self._script_lock:
                 self._cached_script = list(res)
+            self._log_script_update(res, source="cache_hit", fingerprint=fingerprint)
             return res
 
         needed_count = self.nodes_ahead - len(reused_nodes)
@@ -312,6 +366,13 @@ class StoryPlanningTools(BaseTools):
             reused_nodes=reused_nodes,
             needed_count=needed_count,
             start_idx=start_idx,
+        )
+
+        logger.debug(
+            "[STORY_SCRIPT] Requesting %d new script node(s) from text provider (theater=%s, fingerprint=%s)",
+            needed_count,
+            self.theater_id or "default",
+            fingerprint,
         )
 
         provider = self._get_text_provider()
@@ -332,6 +393,7 @@ class StoryPlanningTools(BaseTools):
         final_script = reused_nodes + new_nodes
         with self._script_lock:
             self._cached_script = list(final_script)
+        self._log_script_update(final_script, source="llm_generated", fingerprint=fingerprint)
         return final_script
 
     @classmethod
@@ -414,7 +476,7 @@ class StoryPlanningTools(BaseTools):
                 if callback:
                     callback(updated)
             except Exception as exc:
-                logger.warning(f"Asynchronous script update failed: {exc}")
+                logger.warning(f"[STORY_SCRIPT] Asynchronous script update failed: {exc}")
 
         t = threading.Thread(target=_worker, daemon=True)
         t.start()

@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.story_planning_tool import (
-    MAX_NAMED_ELEMENTS,
+    DEFAULT_MAX_NAMED_ELEMENTS,
     StoryPlanningTools,
     compute_elements_fingerprint,
     build_script_prompt,
@@ -119,16 +119,16 @@ class TestStoryPlanningTools(unittest.TestCase):
         )
 
     def test_element_overflow_drops_oldest(self):
-        for index in range(MAX_NAMED_ELEMENTS):
+        for index in range(DEFAULT_MAX_NAMED_ELEMENTS):
             self.tools.update_or_insert_named_element(f"key_{index}", f"value_{index}")
 
         present = self.tools.get_present_elements()
-        self.assertEqual(len(present), MAX_NAMED_ELEMENTS)
+        self.assertEqual(len(present), DEFAULT_MAX_NAMED_ELEMENTS)
         self.assertEqual(present[0]["name"], "key_0")
 
         self.tools.update_or_insert_named_element("key_overflow", "value_overflow")
         present = self.tools.get_present_elements()
-        self.assertEqual(len(present), MAX_NAMED_ELEMENTS)
+        self.assertEqual(len(present), DEFAULT_MAX_NAMED_ELEMENTS)
         self.assertEqual(present[0]["name"], "key_1")
         self.assertEqual(present[-1]["name"], "key_overflow")
 
@@ -306,6 +306,51 @@ class TestStoryPlanningTools(unittest.TestCase):
 
         time.sleep(0.3)
         self.assertEqual(len(tools.get_cached_script()), 3)
+
+    def test_story_script_logging(self):
+        provider = MockTextResponseProvider()
+        tools = StoryPlanningTools(
+            config={"text_provider": provider},
+            theater_id="logging_stage",
+        )
+        with self.assertLogs("tools.story_planning_tool", level="INFO") as cm:
+            tools.update_or_insert_named_element("hero", "Mara")
+            tools.get_script_piece()
+            tools.clear_scene()
+
+        log_output = "\n".join(cm.output)
+        self.assertIn("[STORY_SCRIPT]", log_output)
+        self.assertIn("Script nodes active", log_output)
+        self.assertIn("[Node 0]", log_output)
+        self.assertIn("Cleared", log_output)
+
+    def test_log_filter_with_story_script_prefix(self):
+        from main import LogFilter
+        import logging
+
+        script_filter = LogFilter(prefix="[STORY_SCRIPT]")
+
+        rec_script = logging.LogRecord(
+            name="tools.story_planning_tool",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="[STORY_SCRIPT] Active nodes...",
+            args=(),
+            exc_info=None,
+        )
+        rec_other = logging.LogRecord(
+            name="api_server.app",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="GET /api/status HTTP/1.1",
+            args=(),
+            exc_info=None,
+        )
+
+        self.assertTrue(script_filter.filter(rec_script))
+        self.assertFalse(script_filter.filter(rec_other))
 
 
 if __name__ == "__main__":
