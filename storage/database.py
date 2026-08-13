@@ -777,7 +777,7 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
+                "SELECT id, username, email, password_hash, salt, credits, total_voice_minutes, total_images_created, total_music_created, mic_sensitivity, created_at FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
                 (query_val, query_val)
             )
             row = cursor.fetchone()
@@ -1217,10 +1217,7 @@ class DatabaseManager:
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, created_at "
-                "FROM users WHERE id = ?", (user_id,)
-            )
+            cursor.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
             if cursor.fetchone() is None:
                 raise ValueError("User not found.")
 
@@ -1408,14 +1405,14 @@ class DatabaseManager:
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            cursor.execute("SELECT last_billed_at FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
             dep = cursor.fetchone()
             if not dep:
                 return False
             
             persistent_val = 1 if is_persistent else 0
             if is_persistent:
-                last_billed = (dep["last_billed_at"] if isinstance(dep, dict) else dep[9]) if "last_billed_at" in dep else now_iso
+                last_billed = dep["last_billed_at"] if isinstance(dep, dict) else dep[0]
                 if not last_billed:
                     last_billed = now_iso
                 cursor.execute(
@@ -1473,7 +1470,7 @@ class DatabaseManager:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM canvas_deployments")
+            cursor.execute("SELECT theater_id, user_id, is_persistent, created_at, last_billed_at FROM canvas_deployments")
             rows = cursor.fetchall()
             deployments = [dict(r) if isinstance(r, dict) else dict(r) for r in rows]
 
@@ -1621,10 +1618,10 @@ class DatabaseManager:
         import json
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+            cursor.execute("SELECT state_json, name, exported_at FROM exported_theaters WHERE theater_id = ?", (theater_id,))
             theater_row = cursor.fetchone()
             
-            cursor.execute("SELECT * FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            cursor.execute("SELECT join_key, created_at FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
             dep_row = cursor.fetchone()
 
             if not theater_row and not dep_row:
@@ -1720,10 +1717,10 @@ class DatabaseManager:
         import json
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+            cursor.execute("SELECT user_id, name, state_json, exported_at FROM exported_theaters WHERE theater_id = ?", (theater_id,))
             theater_row = cursor.fetchone()
             if not theater_row:
-                cursor.execute("SELECT * FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+                cursor.execute("SELECT theater_id FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
                 dep_row = cursor.fetchone()
                 if not dep_row:
                     return False
