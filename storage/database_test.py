@@ -516,6 +516,25 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         # Deleting non-existent deployment returns False
         self.assertFalse(self.db.delete_deployment("theater_to_delete"))
 
+    def test_get_user_theater_records_is_scoped_and_uses_exported_metadata(self):
+        other_user = self.db.register_user("otherdepuser", "other-dep@test.com", "Pass12345")
+        self.db.record_deployment("my_theater", self.user["id"], "MY-KEY")
+        self.db.record_deployment("other_theater", other_user["id"], "OTHER-KEY")
+        self.db.export_theater_to_db(
+            "my_theater",
+            {"metadata": {"theater_id": "my_theater", "name": "My Theater", "status": "stopped"}},
+            [],
+            user_id=self.user["id"],
+            name="My Theater",
+        )
+
+        records = self.db.get_user_theater_records(self.user["id"])
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["theater_id"], "my_theater")
+        self.assertEqual(records[0]["metadata"]["name"], "My Theater")
+        self.assertEqual(records[0]["metadata"]["join_key"], "MY-KEY")
+
     def test_set_and_get_theater_persistence_edge_cases(self):
         # Non-existent theater
         self.assertFalse(self.db.set_theater_persistence("fake_theater", True))

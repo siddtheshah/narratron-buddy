@@ -1297,6 +1297,75 @@ class _DatabaseManagerBase:
                     deployments[deployment["theater_id"]] = deployment
         return deployments
 
+    def get_user_theater_records(self, user_id: int) -> List[Dict[str, Any]]:
+        """Return a user's deploy-page theater data with one database query.
+
+        The deploy page only displays theaters owned by the signed-in user.  Keeping
+        this lookup user-scoped avoids scanning every deployment, export, and view
+        record before the browser discards other users' theaters.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    deployments.theater_id,
+                    deployments.join_key,
+                    deployments.created_at,
+                    deployments.last_billed_at,
+                    exported.name AS exported_name,
+                    exported.exported_at,
+                    exported.state_json,
+                    (
+                        SELECT MAX(views.viewed_at)
+                        FROM theater_views AS views
+                        WHERE views.theater_id = deployments.theater_id
+                    ) AS last_viewed_at
+                FROM canvas_deployments AS deployments
+                LEFT JOIN exported_theaters AS exported
+                    ON exported.theater_id = deployments.theater_id
+                WHERE deployments.user_id = ?
+                """,
+                (user_id,),
+            )
+            rows = cursor.fetchall()
+
+        records: List[Dict[str, Any]] = []
+        for row in rows:
+            row = dict(row)
+            theater_id = row["theater_id"]
+            metadata = None
+            if row.get("state_json"):
+                try:
+                    metadata = json.loads(row["state_json"]).get("metadata")
+                except (TypeError, json.JSONDecodeError):
+                    logger.warning("Skipping invalid exported metadata for theater %s", theater_id)
+
+            if not isinstance(metadata, dict):
+                metadata = {
+                    "theater_id": theater_id,
+                    "name": row.get("exported_name") or theater_id,
+                    "status": "deployed",
+                    "join_key": row["join_key"],
+                    "created_at": row.get("exported_at") or row["created_at"],
+                    "mounted_references": [],
+                    "mounted_playlists": {},
+                    "config": {},
+                }
+            else:
+                metadata = dict(metadata)
+                metadata["theater_id"] = metadata.get("theater_id") or theater_id
+                metadata["name"] = metadata.get("name") or row.get("exported_name") or theater_id
+                # Deployment data is authoritative for the join key.
+                metadata["join_key"] = row["join_key"]
+
+            last_used_at = max(
+                value for value in (row.get("created_at"), row.get("last_billed_at"), row.get("exported_at"), row.get("last_viewed_at"))
+                if value
+            ) if any((row.get("created_at"), row.get("last_billed_at"), row.get("exported_at"), row.get("last_viewed_at"))) else ""
+            records.append({"theater_id": theater_id, "metadata": metadata, "last_used_at": last_used_at})
+        return records
+
     def save_theater_config(self, theater_id: str, config_data: Dict[str, Any]) -> bool:
         """Update theater_config column for an existing deployment."""
         config_str = json.dumps(config_data) if isinstance(config_data, dict) else config_data

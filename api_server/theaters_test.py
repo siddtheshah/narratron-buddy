@@ -658,23 +658,20 @@ def test_list_theaters_reads_disk_and_database_metadata_from_registry():
     metadata.theater_id = "disk-stage"
     metadata.model_dump.return_value = {"theater_id": "disk-stage", "join_key": "DISK"}
     manager = MagicMock()
-    manager.list_theaters.return_value = [metadata]
+    manager.get_theater.side_effect = lambda theater_id: metadata if theater_id == "disk-stage" else None
     registry_db = MagicMock()
-    registry_db.get_all_exported_theater_ids.return_value = ["disk-stage", "db-stage"]
-    registry_db.get_theater_metadata_from_db.return_value = {"theater_id": "db-stage", "join_key": "DB"}
-    registry_db.get_theaters_last_used.return_value = {"db-stage": "2026-01-01"}
-    registry_db.get_deployments.return_value = {
-        "disk-stage": {"user_id": 1},
-        "db-stage": {"user_id": 2},
-    }
+    registry_db.get_user_theater_records.return_value = [
+        {"theater_id": "disk-stage", "metadata": {"theater_id": "disk-stage", "join_key": "DISK"}, "last_used_at": "2026-01-01"},
+        {"theater_id": "db-stage", "metadata": {"theater_id": "db-stage", "join_key": "DB"}, "last_used_at": "2026-01-02"},
+    ]
 
     with patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user", return_value={"id": 1}):
         result = theaters.list_theaters(MagicMock())
 
     by_id = {item["theater_id"]: item for item in result}
     assert by_id["disk-stage"]["is_owner"] is True
-    assert by_id["db-stage"]["join_key"] == "\U0001f512 Owner Only"
-    registry_db.get_deployments.assert_called_once_with(["disk-stage", "db-stage"])
+    assert by_id["db-stage"]["join_key"] == "DB"
+    registry_db.get_user_theater_records.assert_called_once_with(1)
 
 
 def test_resolve_join_key_uses_registry_database_and_grants_verified_access():

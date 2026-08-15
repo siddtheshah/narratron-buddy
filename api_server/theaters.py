@@ -133,6 +133,21 @@ def list_theaters(request: Request):
     current_user = get_current_user(request)
     current_user_id = current_user["id"] if current_user else None
 
+    if current_user_id is not None:
+        # The deploy UI only shows personal sessions for authenticated users.  Do
+        # not load every user's disk and database metadata merely to filter it in
+        # the browser afterwards.
+        result = []
+        for record in db.get_user_theater_records(current_user_id):
+            theater_id = record["theater_id"]
+            disk_metadata = theater_manager.get_theater(theater_id)
+            theater = disk_metadata.model_dump() if disk_metadata else record["metadata"]
+            theater["is_owner"] = True
+            theater["last_used_at"] = record["last_used_at"] or theater.get("created_at") or ""
+            result.append(theater)
+        result.sort(key=lambda theater: theater.get("last_used_at", "") or theater.get("created_at", ""), reverse=True)
+        return result
+
     # Get theaters currently on disk
     disk_theaters = theater_manager.list_theaters()
     all_theaters_dict = {s.theater_id: s.model_dump() for s in disk_theaters}
