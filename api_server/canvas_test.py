@@ -77,3 +77,18 @@ def test_collaboration_mode_checks_owner_before_updating_registry_state():
         canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
     assert error.value.status_code == 403
     service.set_viewer_collab_enabled.assert_not_called()
+
+
+def test_collaboration_mode_requests_agent_observability_update():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3}
+    service = MagicMock()
+    session = MagicMock()
+    manager = MagicMock()
+    manager.get_session.return_value = session
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(object_registry, "agent_manager", manager), patch.object(canvas, "get_current_user", return_value={"id": 3}):
+        result = canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
+
+    assert result == {"theater_id": "stage", "viewer_collab_enabled": True}
+    service.set_viewer_collab_enabled.assert_called_once_with(True, "stage")
+    session.send_collaboration_toggle_observability.assert_called_once_with()

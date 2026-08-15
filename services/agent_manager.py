@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 TOOL_INJECTION_INTERVAL_SECONDS = 30.0
 DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
+DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
 
 
 
@@ -151,6 +152,13 @@ class AgentSession:
             ),
             "observability_interval",
         )
+        self.collaboration_observability_cooldown = self._get_nonnegative_config_seconds(
+            agent_internal.get(
+                "collaboration_observability_cooldown",
+                DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS,
+            ),
+            "collaboration_observability_cooldown",
+        )
 
 
 
@@ -199,6 +207,7 @@ class AgentSession:
         self.tool_injection_task: Optional[asyncio.Task] = None
         self.observability_available_at = time.monotonic() + self.observability_startup_delay
         self.last_canvas_state_sent: Optional[float] = None
+        self.last_collaboration_observability_sent: Optional[float] = None
         self.state_lock = threading.Lock()
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._doodle_snapshot_task: Optional[asyncio.Task] = None
@@ -259,7 +268,7 @@ class AgentSession:
                 logger.error(f"[AgentSession] Failed to send cooldown expired notification: {e}")
 
         def handle_after_image_tool(_tool_name: str, _canvas_info: dict):
-            self.send_canvas_state(force=True)
+            self.send_canvas_state()
 
         def handle_scene_reaction(result: Dict[str, Any]) -> None:
             """Place asynchronous planner output onto the live queue safely."""
@@ -306,7 +315,7 @@ class AgentSession:
         if self.chat_tools:
             self.chat_tools.on_send_chat_message = handle_session_chat_message
 
-    def send_canvas_state(self, *, force: bool = False) -> bool:
+    def send_canvas_state(self) -> bool:
         """Inject current canvas image/music state into LiveRequestQueue."""
         if not self.websocket_connected:
             logger.debug(f"[AgentSession] User disconnected; suppressing canvas state update for session {self.theater_id}.")
@@ -316,8 +325,7 @@ class AgentSession:
             if now < self.observability_available_at:
                 return False
             if (
-                not force
-                and self.last_canvas_state_sent is not None
+                self.last_canvas_state_sent is not None
                 and now - self.last_canvas_state_sent < self.observability_interval
             ):
                 return False
@@ -330,6 +338,49 @@ class AgentSession:
             self.last_canvas_state_sent = now
         self._schedule_doodle_snapshot()
         logger.info("[AgentSession] Canvas state update: %s", msg.replace("\n", " | "))
+        return True
+
+    def send_collaboration_toggle_observability(self) -> bool:
+        """Send a canvas update for a collaboration toggle, subject to a cooldown.
+
+        A successful update also refreshes ``last_canvas_state_sent``, naturally
+        deferring the next periodic canvas observability update.
+        """
+        if not self.websocket_connected:
+            logger.debug(
+                "[AgentSession] User disconnected; suppressing collaboration toggle update for session %s.",
+                self.theater_id,
+            )
+            return False
+
+        now = time.monotonic()
+        with self.state_lock:
+            if (
+                self.last_collaboration_observability_sent is not None
+                and now - self.last_collaboration_observability_sent
+                < self.collaboration_observability_cooldown
+            ):
+                logger.debug(
+                    "[AgentSession] Collaboration toggle update is cooling down for session %s.",
+                    self.theater_id,
+                )
+                return False
+
+            msg = format_canvas_state(self.canvas_state_manager, self.story_planning_tools)
+            try:
+                self.send_content(types.Content(parts=[types.Part(text=msg)]))
+            except Exception as e:
+                logger.error(
+                    "[AgentSession] Failed to send collaboration toggle observability update: %s",
+                    e,
+                    exc_info=True,
+                )
+                return False
+            self.last_canvas_state_sent = now
+            self.last_collaboration_observability_sent = now
+
+        self._schedule_doodle_snapshot()
+        logger.info("[AgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
         return True
 
     def _schedule_doodle_snapshot(self) -> None:
@@ -497,7 +548,7 @@ class AgentSession:
 
         if was_disconnected:
             logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
-            self.send_canvas_state(force=True)
+            self.send_canvas_state()
 
     async def revoke_websockets_except(self, active_user_id: int) -> None:
         """Close agent-control sockets belonging to a previous baton holder."""

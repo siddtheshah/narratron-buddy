@@ -16,6 +16,7 @@ from api_server.shared import (
     _require_canvas_access,
     _require_canvas_access_async,
 )
+from api_server.dependencies import agent_manager
 
 
 class ChatMessage(BaseModel):
@@ -206,6 +207,9 @@ def set_viewer_collab_mode(
         raise HTTPException(status_code=403, detail="Only the theater owner can change collaboration mode.")
 
     canvas_states.set_viewer_collab_enabled(payload.enabled, theater_id)
+    session = agent_manager.get_session(theater_id)
+    if session:
+        session.send_collaboration_toggle_observability()
     return {
         "theater_id": theater_id,
         "viewer_collab_enabled": payload.enabled,

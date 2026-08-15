@@ -198,7 +198,7 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertFalse(session.send_realtime(dummy_blob))
         session.live_request_queue.send_realtime.assert_not_called()
 
-        self.assertFalse(session.send_canvas_state(force=True))
+        self.assertFalse(session.send_canvas_state())
 
     def test_scene_reaction_callback_enqueues_planner_result(self):
         class PlannerTools:
@@ -242,10 +242,10 @@ class TestAgentSessionManager(unittest.TestCase):
             # Initially disconnected
             self.assertFalse(session.websocket_connected)
 
-            # Connect websocket -> should trigger send_canvas_state(force=True)
+            # Connect websocket -> should trigger a regular canvas state update.
             asyncio.run(session.add_websocket(mock_ws))
             self.assertTrue(session.websocket_connected)
-            mock_send_canvas.assert_called_once_with(force=True)
+            mock_send_canvas.assert_called_once_with()
 
     def test_canvas_observability_respects_startup_delay_and_interval(self):
         mock_agent = MagicMock()
@@ -274,7 +274,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
         session.observability_available_at = 110.0
         with patch("services.agent_manager.time.monotonic", return_value=100.0):
-            self.assertFalse(session.send_canvas_state(force=True))
+            self.assertFalse(session.send_canvas_state())
 
         with patch("services.agent_manager.time.monotonic", return_value=110.0):
             self.assertTrue(session.send_canvas_state())
@@ -285,6 +285,43 @@ class TestAgentSessionManager(unittest.TestCase):
 
         with patch("services.agent_manager.time.monotonic", return_value=140.0):
             self.assertTrue(session.send_canvas_state())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+
+    def test_collaboration_toggle_observability_is_cooled_down_and_defers_periodic_update(self):
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(
+            theater_id="test_collaboration_observability",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            config={
+                "agent_internal": {
+                    "observability_interval": 30,
+                    "collaboration_observability_cooldown": 5,
+                }
+            },
+        )
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+        session.canvas_state_manager = SimpleNamespace(
+            shown_image_path=None,
+            shown_image_prompt=None,
+            current_playlist=None,
+        )
+        session.observability_available_at = 0.0
+
+        with patch("services.agent_manager.time.monotonic", return_value=100.0):
+            self.assertTrue(session.send_collaboration_toggle_observability())
+        with patch("services.agent_manager.time.monotonic", return_value=102.0):
+            self.assertFalse(session.send_collaboration_toggle_observability())
+        with patch("services.agent_manager.time.monotonic", return_value=129.0):
+            self.assertFalse(session.send_canvas_state())
+        with patch("services.agent_manager.time.monotonic", return_value=130.0):
+            self.assertTrue(session.send_canvas_state())
+
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
     def test_doodle_snapshot_is_rendered_off_the_event_loop(self):
