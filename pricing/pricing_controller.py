@@ -3,6 +3,9 @@
 import os
 from typing import Dict, Any, Optional
 
+DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL = 4000
+DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE = 5.0
+
 
 class PricingController:
     """Manages credit consumption rates, exchange rates, and cost calculations."""
@@ -16,6 +19,8 @@ class PricingController:
         storage_gb_monthly_rate: Optional[float] = None,
         storage_gb_daily_rate: Optional[float] = None,
         credits_per_usd: Optional[float] = None,
+        adventure_mode_tokens_per_call: Optional[int] = None,
+        adventure_mode_calls_per_minute: Optional[float] = None,
     ):
         self.voice_credit_rate = voice_credit_rate if voice_credit_rate is not None else 1.0
         self.image_credit_rate = image_credit_rate if image_credit_rate is not None else 1.0
@@ -24,6 +29,16 @@ class PricingController:
         self.storage_gb_monthly_rate = storage_gb_monthly_rate if storage_gb_monthly_rate is not None else 1.0
         self.storage_gb_daily_rate = storage_gb_daily_rate if storage_gb_daily_rate is not None else 0.033
         self.credits_per_usd = credits_per_usd if credits_per_usd is not None else 20.0
+        self.adventure_mode_tokens_per_call = (
+            adventure_mode_tokens_per_call
+            if adventure_mode_tokens_per_call is not None
+            else DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL
+        )
+        self.adventure_mode_calls_per_minute = (
+            adventure_mode_calls_per_minute
+            if adventure_mode_calls_per_minute is not None
+            else DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE
+        )
 
     @property
     def usd_per_credit(self) -> float:
@@ -45,6 +60,16 @@ class PricingController:
                         pass
             return default
 
+        def _get_int_env(keys: list, default: int) -> int:
+            for k in keys:
+                val = os.environ.get(k)
+                if val is not None:
+                    try:
+                        return int(val)
+                    except ValueError:
+                        pass
+            return default
+
         return cls(
             voice_credit_rate=_get_float_env(["VOICE_CREDIT_RATE", "PRICING_VOICE_CREDIT_RATE"], 1.0),
             image_credit_rate=_get_float_env(["IMAGE_CREDIT_RATE", "PRICING_IMAGE_CREDIT_RATE"], 1.0),
@@ -55,6 +80,12 @@ class PricingController:
             storage_gb_monthly_rate=_get_float_env(["STORAGE_GB_MONTHLY_CREDIT_RATE", "PRICING_STORAGE_GB_MONTHLY_CREDIT_RATE"], 1.0),
             storage_gb_daily_rate=_get_float_env(["STORAGE_GB_DAILY_CREDIT_RATE", "PRICING_STORAGE_GB_DAILY_CREDIT_RATE"], 0.033),
             credits_per_usd=_get_float_env(["CREDITS_PER_USD", "PRICING_CREDITS_PER_USD"], 20.0),
+            adventure_mode_tokens_per_call=_get_int_env(
+                ["ADVENTURE_MODE_TOKENS_PER_CALL", "PRICING_ADVENTURE_MODE_TOKENS_PER_CALL"], DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL
+            ),
+            adventure_mode_calls_per_minute=_get_float_env(
+                ["ADVENTURE_MODE_CALLS_PER_MINUTE", "PRICING_ADVENTURE_MODE_CALLS_PER_MINUTE"], DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE
+            ),
         )
 
     def get_rates(self) -> Dict[str, float]:
@@ -68,6 +99,10 @@ class PricingController:
             "storage_gb_daily_rate": self.storage_gb_daily_rate,
             "credits_per_usd": self.credits_per_usd,
             "usd_per_credit": self.usd_per_credit,
+            "adventure_mode_tokens_per_call": float(self.adventure_mode_tokens_per_call),
+            "adventure_mode_calls_per_minute": self.adventure_mode_calls_per_minute,
+            "adventure_mode_credit_rate_per_action": self.story_planning_credit_rate,
+            "adventure_mode_credit_rate_per_minute": self.story_planning_credit_rate * self.adventure_mode_calls_per_minute,
         }
 
     def calculate_usage_cost(
@@ -76,18 +111,59 @@ class PricingController:
         images_created: int = 0,
         music_created: int = 0,
         story_plans: int = 0,
+        adventure_actions: int = 0,
     ) -> float:
-        """Calculate total credit cost for voice, image, music, and story-planning usage."""
-        if voice_minutes < 0 or images_created < 0 or music_created < 0 or story_plans < 0:
+        """Calculate total credit cost for voice, image, music, and story-planning/adventure-mode usage."""
+        if voice_minutes < 0 or images_created < 0 or music_created < 0 or story_plans < 0 or adventure_actions < 0:
             raise ValueError(
-                "Usage parameters (voice_minutes, images_created, music_created, story_plans) must be non-negative."
+                "Usage parameters (voice_minutes, images_created, music_created, story_plans, adventure_actions) must be non-negative."
             )
+        total_story_plans = story_plans + adventure_actions
         return (
             (voice_minutes * self.voice_credit_rate)
             + (images_created * self.image_credit_rate)
             + (music_created * self.music_credit_rate)
-            + (story_plans * self.story_planning_credit_rate)
+            + (total_story_plans * self.story_planning_credit_rate)
         )
+
+    def calculate_adventure_mode_cost(
+        self,
+        actions: int = 0,
+        duration_minutes: float = 0.0,
+        calls_per_minute: Optional[float] = None,
+    ) -> float:
+        """Calculate credit cost for adventure mode based on user actions and/or session duration in minutes.
+
+        Each user action uses a Gemini 3.7 Flash call (defaulting to 4k tokens/call and 5 calls/min).
+        """
+        if actions < 0 or duration_minutes < 0:
+            raise ValueError("Adventure mode parameters (actions, duration_minutes) must be non-negative.")
+        if calls_per_minute is not None and calls_per_minute < 0:
+            raise ValueError("calls_per_minute must be non-negative.")
+
+        cpm = calls_per_minute if calls_per_minute is not None else self.adventure_mode_calls_per_minute
+        total_actions = float(actions) + (duration_minutes * cpm)
+        return total_actions * self.story_planning_credit_rate
+
+    def estimate_adventure_mode_tokens(
+        self,
+        actions: int = 0,
+        duration_minutes: float = 0.0,
+        calls_per_minute: Optional[float] = None,
+        tokens_per_call: Optional[int] = None,
+    ) -> int:
+        """Estimate total tokens consumed in adventure mode based on user actions or session duration."""
+        if actions < 0 or duration_minutes < 0:
+            raise ValueError("Adventure mode parameters (actions, duration_minutes) must be non-negative.")
+        if calls_per_minute is not None and calls_per_minute < 0:
+            raise ValueError("calls_per_minute must be non-negative.")
+        if tokens_per_call is not None and tokens_per_call < 0:
+            raise ValueError("tokens_per_call must be non-negative.")
+
+        cpm = calls_per_minute if calls_per_minute is not None else self.adventure_mode_calls_per_minute
+        tpc = tokens_per_call if tokens_per_call is not None else self.adventure_mode_tokens_per_call
+        total_actions = float(actions) + (duration_minutes * cpm)
+        return int(total_actions * tpc)
 
     def calculate_storage_cost(self, gb_amount: float, days: float = 1.0) -> float:
         """Calculate storage cost in credits given GB size and duration in days."""

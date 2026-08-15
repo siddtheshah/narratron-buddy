@@ -306,6 +306,8 @@ def get_pricing_rates(
     images_created: Optional[int] = None,
     music_created: Optional[int] = None,
     story_plans: Optional[int] = None,
+    adventure_actions: Optional[int] = None,
+    adventure_minutes: Optional[float] = None,
     gb_amount: Optional[float] = None,
     days: Optional[float] = 1.0,
     usd_amount: Optional[float] = None,
@@ -319,6 +321,10 @@ def get_pricing_rates(
         raise HTTPException(status_code=400, detail="music_created must be non-negative.")
     if story_plans is not None and story_plans < 0:
         raise HTTPException(status_code=400, detail="story_plans must be non-negative.")
+    if adventure_actions is not None and adventure_actions < 0:
+        raise HTTPException(status_code=400, detail="adventure_actions must be non-negative.")
+    if adventure_minutes is not None and adventure_minutes < 0:
+        raise HTTPException(status_code=400, detail="adventure_minutes must be non-negative.")
     if gb_amount is not None and gb_amount < 0:
         raise HTTPException(status_code=400, detail="gb_amount must be non-negative.")
     if days is not None and days < 0:
@@ -330,14 +336,27 @@ def get_pricing_rates(
     rates = pricing.get_rates()
 
     calculation = {}
-    if voice_minutes is not None or images_created is not None or music_created is not None or story_plans is not None:
+    if (
+        voice_minutes is not None
+        or images_created is not None
+        or music_created is not None
+        or story_plans is not None
+        or adventure_actions is not None
+    ):
         vm = voice_minutes if voice_minutes is not None else 0.0
         ic = images_created if images_created is not None else 0
         mc = music_created if music_created is not None else 0
         sp = story_plans if story_plans is not None else 0
+        aa = adventure_actions if adventure_actions is not None else 0
         calculation["usage_credits"] = pricing.calculate_usage_cost(
-            voice_minutes=vm, images_created=ic, music_created=mc, story_plans=sp
+            voice_minutes=vm, images_created=ic, music_created=mc, story_plans=sp, adventure_actions=aa
         )
+
+    if adventure_actions is not None or adventure_minutes is not None:
+        aa = adventure_actions if adventure_actions is not None else 0
+        am = adventure_minutes if adventure_minutes is not None else 0.0
+        calculation["adventure_mode_credits"] = pricing.calculate_adventure_mode_cost(actions=aa, duration_minutes=am)
+        calculation["adventure_mode_estimated_tokens"] = pricing.estimate_adventure_mode_tokens(actions=aa, duration_minutes=am)
 
     if gb_amount is not None:
         d = days if days is not None else 1.0

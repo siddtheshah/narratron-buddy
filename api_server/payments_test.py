@@ -148,6 +148,24 @@ class TestPaymentsFlow(BaseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Stripe webhook signature is required.")
 
+    def test_pricing_endpoint_adventure_mode_calculation(self):
+        """Verify /api/pricing endpoint returns adventure rates and performs adventure mode cost/token calculations."""
+        res = self.client.get("/api/pricing?adventure_actions=10&adventure_minutes=5")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("adventure_mode_tokens_per_call", data)
+        self.assertEqual(data["adventure_mode_tokens_per_call"], 4000.0)
+        self.assertEqual(data["adventure_mode_calls_per_minute"], 5.0)
+
+        calc = data.get("calculation", {})
+        # 10 actions + (5 mins * 5 calls/min = 25 actions) = 35 total actions
+        # 35 * 0.65 = 22.75 credits
+        self.assertAlmostEqual(calc["adventure_mode_credits"], 22.75)
+        # 35 * 4000 = 140,000 tokens
+        self.assertEqual(calc["adventure_mode_estimated_tokens"], 140000)
+        self.assertAlmostEqual(calc["usage_credits"], 6.5)
+
+
 
 if __name__ == "__main__":
     unittest.main()
