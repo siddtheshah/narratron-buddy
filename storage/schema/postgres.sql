@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     total_voice_minutes DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     total_images_created INTEGER NOT NULL DEFAULT 0,
     total_music_created INTEGER NOT NULL DEFAULT 0,
+    total_story_plans INTEGER NOT NULL DEFAULT 0,
     mic_sensitivity DOUBLE PRECISION NOT NULL DEFAULT 0.5,
     bio TEXT NOT NULL DEFAULT '',
     stats_visible BOOLEAN NOT NULL DEFAULT FALSE,
@@ -95,6 +96,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
     voice_minutes DOUBLE PRECISION NOT NULL,
     images_created INTEGER NOT NULL,
     music_created INTEGER NOT NULL DEFAULT 0,
+    story_plans INTEGER NOT NULL DEFAULT 0,
     credit_cost DOUBLE PRECISION NOT NULL,
     created_at TEXT NOT NULL
 );

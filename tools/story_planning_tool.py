@@ -189,6 +189,9 @@ class StoryPlanningTools(BaseTools):
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
         self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = self.config.get("on_scene_reaction")
+        # Bound by AgentSession so completed planner turns can be billed using
+        # the same idempotent usage path as image and music generation.
+        self.on_story_plan_completed: Optional[Callable[[], None]] = self.config.get("on_story_plan_completed")
 
         initial_elements = self.config.get("initial_elements", {})
         if isinstance(initial_elements, dict):
@@ -817,6 +820,12 @@ For the user action provided, return one complete scene delta. Include exactly {
         self._publish_scene_dialogue(dialogue)
         self.save_to_session_state()
         self._log_story_update(plot_beats, source="user_action")
+        callback = self.on_story_plan_completed
+        if callback:
+            try:
+                callback()
+            except Exception:
+                logger.exception("[STORY_SCRIPT] Story-planning usage callback failed")
         return result
 
     @staticmethod

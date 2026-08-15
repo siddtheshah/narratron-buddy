@@ -347,6 +347,7 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(kwargs["voice_minutes"], 0.0)
         self.assertEqual(kwargs["images_created"], 1)
         self.assertEqual(kwargs["music_created"], 0)
+        self.assertEqual(kwargs["story_plans"], 0)
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
@@ -358,6 +359,7 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(kwargs["voice_minutes"], 0.0)
         self.assertEqual(kwargs["images_created"], 0)
         self.assertEqual(kwargs["music_created"], 1)
+        self.assertEqual(kwargs["story_plans"], 0)
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
@@ -370,6 +372,7 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(kwargs["voice_minutes"], 96000 / 1920000.0)
         self.assertEqual(kwargs["images_created"], 0)
         self.assertEqual(kwargs["music_created"], 0)
+        self.assertEqual(kwargs["story_plans"], 0)
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
@@ -379,6 +382,12 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(usage["owner_user_id"], 123)
         self.assertEqual(usage["images_created"], 1)
         self.assertEqual(usage["music_created"], 1)
+        self.assertEqual(usage["story_plans"], 0)
+
+        session.record_story_plan_completed()
+        self.assertEqual(session.story_plans_count, 1)
+        kwargs = mock_db.record_user_usage.call_args.kwargs
+        self.assertEqual(kwargs["story_plans"], 1)
         self.assertEqual(usage["total_audio_bytes"], 96000)
 
     def test_inject_tool_definitions(self):

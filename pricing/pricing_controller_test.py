@@ -18,6 +18,7 @@ class TestPricingController(BaseTestCase):
         self.assertEqual(rates["voice_credit_rate"], 1.0)
         self.assertEqual(rates["image_credit_rate"], 1.0)
         self.assertEqual(rates["music_credit_rate"], 2.0)
+        self.assertEqual(rates["story_planning_credit_rate"], 0.65)
         self.assertEqual(rates["storage_gb_monthly_rate"], 1.0)
         self.assertEqual(rates["storage_gb_daily_rate"], 0.033)
         self.assertEqual(rates["credits_per_usd"], 20.0)
@@ -28,6 +29,7 @@ class TestPricingController(BaseTestCase):
             "VOICE_CREDIT_RATE": "2.5",
             "IMAGE_CREDIT_RATE": "0.5",
             "MUSIC_CREDIT_RATE": "1.5",
+            "STORY_PLANNING_CREDIT_RATE": "0.75",
             "STORAGE_GB_MONTHLY_CREDIT_RATE": "1.5",
             "STORAGE_GB_DAILY_CREDIT_RATE": "0.05",
             "CREDITS_PER_USD": "10.0",
@@ -38,6 +40,7 @@ class TestPricingController(BaseTestCase):
             self.assertEqual(rates["voice_credit_rate"], 2.5)
             self.assertEqual(rates["image_credit_rate"], 0.5)
             self.assertEqual(rates["music_credit_rate"], 1.5)
+            self.assertEqual(rates["story_planning_credit_rate"], 0.75)
             self.assertEqual(rates["storage_gb_monthly_rate"], 1.5)
             self.assertEqual(rates["storage_gb_daily_rate"], 0.05)
             self.assertEqual(rates["credits_per_usd"], 10.0)
@@ -53,9 +56,9 @@ class TestPricingController(BaseTestCase):
             _ = invalid_controller.usd_per_credit
 
     def test_calculate_usage_cost(self):
-        controller = PricingController(voice_credit_rate=2.0, image_credit_rate=1.5, music_credit_rate=1.0)
-        # 10 mins * 2.0 + 4 images * 1.5 + 3 music * 1.0 = 20.0 + 6.0 + 3.0 = 29.0
-        self.assertEqual(controller.calculate_usage_cost(10.0, 4, 3), 29.0)
+        controller = PricingController(voice_credit_rate=2.0, image_credit_rate=1.5, music_credit_rate=1.0, story_planning_credit_rate=0.5)
+        # 10 mins * 2.0 + 4 images * 1.5 + 3 music * 1.0 + 2 plans * 0.5 = 30.0
+        self.assertEqual(controller.calculate_usage_cost(10.0, 4, 3, 2), 30.0)
 
         with self.assertRaises(ValueError):
             controller.calculate_usage_cost(-1.0, 4, 1)
@@ -65,6 +68,9 @@ class TestPricingController(BaseTestCase):
 
         with self.assertRaises(ValueError):
             controller.calculate_usage_cost(10.0, 4, -1)
+
+        with self.assertRaises(ValueError):
+            controller.calculate_usage_cost(10.0, 4, 1, -1)
 
     def test_calculate_storage_cost_and_credits_for_usd(self):
         controller = PricingController(storage_gb_daily_rate=0.1, credits_per_usd=20.0)

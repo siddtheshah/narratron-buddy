@@ -123,6 +123,7 @@ class TestStoryPlanningTools(unittest.TestCase):
     def test_planner_action_is_nonblocking_and_commits_plot_beats(self):
         completed = threading.Event()
         results = []
+        billed_plans = []
 
         def planner_executor(action, snapshot):
             self.assertEqual(action, "I light my torch.")
@@ -152,6 +153,7 @@ class TestStoryPlanningTools(unittest.TestCase):
                 "nodes_ahead": 2,
                 "planner_executor": planner_executor,
                 "on_scene_reaction": on_scene_reaction,
+                "on_story_plan_completed": lambda: billed_plans.append(1),
             },
             theater_id="planner",
             canvas_state_service=state,
@@ -163,6 +165,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertTrue(completed.wait(timeout=1))
         self.assertEqual(results[0]["narration"], "The hidden doorway opens.")
         self.assertEqual(len(tools.get_plot_beats()), 2)
+        self.assertEqual(billed_plans, [1])
         self.assertIn("plot_beats", tools.export_story_planning_state())
         self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
         state.get.return_value.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])

@@ -305,6 +305,7 @@ def get_pricing_rates(
     voice_minutes: Optional[float] = None,
     images_created: Optional[int] = None,
     music_created: Optional[int] = None,
+    story_plans: Optional[int] = None,
     gb_amount: Optional[float] = None,
     days: Optional[float] = 1.0,
     usd_amount: Optional[float] = None,
@@ -316,6 +317,8 @@ def get_pricing_rates(
         raise HTTPException(status_code=400, detail="images_created must be non-negative.")
     if music_created is not None and music_created < 0:
         raise HTTPException(status_code=400, detail="music_created must be non-negative.")
+    if story_plans is not None and story_plans < 0:
+        raise HTTPException(status_code=400, detail="story_plans must be non-negative.")
     if gb_amount is not None and gb_amount < 0:
         raise HTTPException(status_code=400, detail="gb_amount must be non-negative.")
     if days is not None and days < 0:
@@ -327,11 +330,14 @@ def get_pricing_rates(
     rates = pricing.get_rates()
 
     calculation = {}
-    if voice_minutes is not None or images_created is not None or music_created is not None:
+    if voice_minutes is not None or images_created is not None or music_created is not None or story_plans is not None:
         vm = voice_minutes if voice_minutes is not None else 0.0
         ic = images_created if images_created is not None else 0
         mc = music_created if music_created is not None else 0
-        calculation["usage_credits"] = pricing.calculate_usage_cost(voice_minutes=vm, images_created=ic, music_created=mc)
+        sp = story_plans if story_plans is not None else 0
+        calculation["usage_credits"] = pricing.calculate_usage_cost(
+            voice_minutes=vm, images_created=ic, music_created=mc, story_plans=sp
+        )
 
     if gb_amount is not None:
         d = days if days is not None else 1.0
