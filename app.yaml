@@ -23,8 +23,8 @@ agent_internal:
     model_id: "gemini-3.1-flash-live-preview"
     enable_tool_injection: false
     # Delay state-observability messages so the live agent can receive initial user input.
-    observability_startup_delay: 20
-    observability_interval: 20
+    observability_startup_delay: 30
+    observability_interval: 30
     compaction:
         trigger_tokens: 20000
         target_tokens: 8000

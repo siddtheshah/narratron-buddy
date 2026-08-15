@@ -30,8 +30,14 @@ def format_canvas_state(
     playlist = getattr(canvas_state_manager, "current_playlist", None) or "none"
     parts = [f"[Canvas Image]: {image_name}, {image_prompt}", f"[Canvas music]: {playlist}"]
 
-    # Viewer Collaboration Mode: inject one ranked suggestion for the agent.
-    if getattr(canvas_state_manager, "viewer_collab_enabled", False) and canvas_state_manager is not None:
+    # Collaboration observability consumes the leading suggestion. When it is
+    # disabled, a canvas pulse must be read-only so audience work is retained
+    # until collaboration is enabled again.
+    collaboration_enabled = bool(
+        canvas_state_manager
+        and getattr(canvas_state_manager, "viewer_collab_enabled", False)
+    )
+    if collaboration_enabled:
         suggestion = canvas_state_manager.consume_top_suggestion()
         if suggestion:
             parts.append(

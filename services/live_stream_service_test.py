@@ -43,6 +43,23 @@ def test_format_canvas_state_includes_active_characters():
     assert "[Active Characters]: Vaelen (Personality: Brave, Motivation: Find the talisman, Quirk: Flips a coin on choices)" in state
 
 
+def test_canvas_observability_preserves_collaboration_data_when_disabled():
+    doodles = [{"type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1}]
+    canvas = SimpleNamespace(
+        shown_image_path=None,
+        shown_image_prompt=None,
+        current_playlist=None,
+        viewer_collab_enabled=False,
+        doodles_state=doodles,
+        consume_top_suggestion=MagicMock(),
+    )
+
+    format_canvas_state(canvas)
+
+    canvas.consume_top_suggestion.assert_not_called()
+    assert canvas.doodles_state == doodles
+
+
 class TestLiveStreamServiceAudioChunking(unittest.TestCase):
     def test_audio_chunking_accumulates_into_30ms_blobs(self):
         mock_ws = AsyncMock()

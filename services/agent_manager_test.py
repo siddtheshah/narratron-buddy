@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import tempfile
 import time
 import unittest
 from types import SimpleNamespace
@@ -7,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from components.theater_manager import TheaterManager
 from services.agent_manager import AgentSessionManager, AgentSession
+from tools.observability_tool import ObservabilityTools
 
 
 class TestAgentSessionManager(unittest.TestCase):
@@ -323,6 +326,49 @@ class TestAgentSessionManager(unittest.TestCase):
             self.assertTrue(session.send_canvas_state())
 
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+
+    def test_agent_requested_observability_defers_the_next_regular_pulse(self):
+        observability_tools = ObservabilityTools({"cooldown_duration": 0})
+        mock_agent = MagicMock()
+        mock_agent.tools = [SimpleNamespace(
+            name="request_canvas_observability",
+            func=observability_tools.request_canvas_observability,
+        )]
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(
+            theater_id="test_agent_requested_observability",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            config={"agent_internal": {"observability_interval": 30}},
+        )
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as image_file:
+            image_file.write(b"canvas-image")
+            image_path = image_file.name
+        try:
+            session.canvas_state_manager = SimpleNamespace(
+                shown_image_path=image_path,
+                shown_image_prompt=None,
+                current_playlist=None,
+            )
+            session.observability_available_at = 0.0
+
+            with patch("services.agent_manager.time.monotonic", return_value=100.0):
+                self.assertIn("Current canvas state sent", observability_tools.request_canvas_observability())
+            with patch("services.agent_manager.time.monotonic", return_value=129.0):
+                self.assertFalse(session.send_canvas_state())
+            with patch("services.agent_manager.time.monotonic", return_value=130.0):
+                self.assertTrue(session.send_canvas_state())
+
+            first_content = session.live_request_queue.send_content.call_args_list[0].args[0]
+            self.assertEqual(first_content.parts[1].inline_data.mime_type, "image/png")
+            self.assertEqual(first_content.parts[1].inline_data.data, b"canvas-image")
+            self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+        finally:
+            os.remove(image_path)
 
     def test_doodle_snapshot_is_rendered_off_the_event_loop(self):
         async def run_test():

@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import mimetypes
 import threading
 import time
 import uuid
@@ -194,6 +195,10 @@ class AgentSession:
             or get_bound_tool_instance(self.agent, "update_or_insert_named_element")
         )
         self.music_tools = get_bound_tool_instance(self.agent, "play_music")
+        self.observability_tools = get_bound_tool_instance(
+            self.agent,
+            "request_canvas_observability",
+        )
 
         self.run_config = build_run_config(
             agent=self.agent,
@@ -283,7 +288,14 @@ class AgentSession:
             else:
                 enqueue()
 
-        for tool_suite in (self.image_tools, self.animation_tools, self.chat_tools, self.story_planning_tools, self.music_tools):
+        for tool_suite in (
+            self.image_tools,
+            self.animation_tools,
+            self.chat_tools,
+            self.story_planning_tools,
+            self.music_tools,
+            self.observability_tools,
+        ):
             if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
                 tool_suite.on_cooldown_expired = handle_cooldown_expired
 
@@ -297,6 +309,11 @@ class AgentSession:
 
         if self.music_tools:
             self.music_tools.on_music_created = self.record_music_created
+
+        if self.observability_tools:
+            self.observability_tools.on_observability_requested = (
+                self.send_agent_requested_observability
+            )
 
         def handle_session_chat_message(text: str):
             async def send_to_ws():
@@ -382,6 +399,66 @@ class AgentSession:
         self._schedule_doodle_snapshot()
         logger.info("[AgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
         return True
+
+    def send_agent_requested_observability(self) -> bool:
+        """Send an explicit agent-requested canvas update and defer regular pulses.
+
+        Unlike the regular text pulse, this request includes the current
+        on-screen image when it is available so the agent can inspect it.
+        """
+        if not self.websocket_connected:
+            logger.debug(
+                "[AgentSession] User disconnected; suppressing agent-requested canvas update for session %s.",
+                self.theater_id,
+            )
+            return False
+
+        now = time.monotonic()
+        with self.state_lock:
+            msg = format_canvas_state(self.canvas_state_manager, self.story_planning_tools)
+            parts = [types.Part(text=msg)]
+            image_part = self._get_current_canvas_image_part()
+            if image_part:
+                parts.append(image_part)
+            try:
+                self.send_content(types.Content(parts=parts))
+            except Exception as e:
+                logger.error(
+                    "[AgentSession] Failed to send agent-requested canvas observability update: %s",
+                    e,
+                    exc_info=True,
+                )
+                return False
+            # Share the periodic timestamp with every observation source.
+            self.last_canvas_state_sent = now
+
+        self._schedule_doodle_snapshot()
+        logger.info("[AgentSession] Agent-requested canvas state update: %s", msg.replace("\n", " | "))
+        return True
+
+    def _get_current_canvas_image_part(self) -> Optional[types.Part]:
+        """Return the current canvas image as an inline part, when readable."""
+        image_path = getattr(self.canvas_state_manager, "shown_image_path", None)
+        if not image_path:
+            return None
+        try:
+            path = Path(image_path)
+            if not path.is_file():
+                return None
+            mime_type, _ = mimetypes.guess_type(path.name)
+            if not mime_type or not mime_type.startswith("image/"):
+                return None
+            image_data = path.read_bytes()
+            if not image_data:
+                return None
+            return types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_data))
+        except OSError as error:
+            logger.warning(
+                "[AgentSession] Could not load current canvas image for observability in theater %s: %s",
+                self.theater_id,
+                error,
+            )
+            return None
 
     def _schedule_doodle_snapshot(self) -> None:
         """Schedule one composite doodle render without blocking the event loop."""

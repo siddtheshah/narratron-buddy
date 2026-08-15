@@ -3,6 +3,10 @@ agent:
     affective_dialog: false
     special_instructions: "be calm, serene, and encouraging to the orator"
 
+observability_tool:
+    enabled: false
+    cooldown_duration: 30
+
 image_generation:
     cooldown_duration: 9
     style: "wistful and bygone glories"

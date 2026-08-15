@@ -13,6 +13,7 @@ from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.animation_tool import AnimationTools
 from tools.music_tool import MusicTools
+from tools.observability_tool import ObservabilityTools
 from tools.story_planning_tool import StoryPlanningTools
 from tools.tool_bundle import ToolBundle
 from utils.config_loader import get_app_config, get_theater_config
@@ -232,6 +233,10 @@ def create_tool_bundle_for_session(
         tools.append(music_tools.create_music)
     if animation_tools:
         tools.extend([animation_tools.create_triframe, animation_tools.play_animation])
+    observability_config = config.get("observability_tool", {})
+    if isinstance(observability_config, dict) and observability_config.get("enabled", False):
+        observability_tools = ObservabilityTools(observability_config, theater_id=theater_id)
+        tools.append(observability_tools.request_canvas_observability)
     return ToolBundle(tools)
 
 

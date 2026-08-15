@@ -190,6 +190,27 @@ class TestCreateAgent(unittest.TestCase):
         tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
 
+    def test_create_tool_bundle_only_includes_observability_tool_when_enabled(self):
+        from services.agent import create_tool_bundle_for_session
+
+        base_config = {
+            "image_generation": {"provider": "hybrid-flux-gemini"},
+            "music": {"provider": "lyria"},
+        }
+        disabled = create_tool_bundle_for_session(
+            "test_t",
+            config={**base_config, "observability_tool": {"enabled": False}},
+        )
+        enabled = create_tool_bundle_for_session(
+            "test_t",
+            config={**base_config, "observability_tool": {"enabled": True}},
+        )
+
+        disabled_names = [tool.name for tool in disabled.tools]
+        enabled_names = [tool.name for tool in enabled.tools]
+        self.assertNotIn("request_canvas_observability", disabled_names)
+        self.assertIn("request_canvas_observability", enabled_names)
+
     def test_get_references_context_with_references(self):
         from services.agent import get_references_context
         mock_tool = MagicMock()
