@@ -330,6 +330,10 @@ async def create_and_deploy_theater(request: Request):
     folder_config_yaml = form.get("folder_theater_config_yaml")
     enable_music_generation = str(form.get("enable_music_generation", "false")).lower() == "true"
     enable_scene_animations = str(form.get("enable_scene_animations", "false")).lower() == "true"
+    enable_adventure_mode = (
+        creation_mode == "adventure"
+        or str(form.get("enable_adventure_mode", "false")).lower() == "true"
+    )
 
     reference_files = []
     playlists_data = {}
@@ -337,7 +341,7 @@ async def create_and_deploy_theater(request: Request):
 
     # Important to provide music for first time experience. Blank theater will not have any music tracks by default
     # otherwise.
-    if creation_mode == "blank":
+    if creation_mode in ("blank", "adventure"):
         quick_deploy_track = PROJECT_ROOT / "playlists" / "default" / "new story.mp3"
         if quick_deploy_track.is_file():
             playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]
@@ -439,6 +443,10 @@ async def create_and_deploy_theater(request: Request):
         if not isinstance(animation_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: animation must be a mapping.")
         animation_config["enabled"] = enable_scene_animations
+        story_planning_config = theater_config.setdefault("story_planning", {})
+        if not isinstance(story_planning_config, dict):
+            raise HTTPException(status_code=400, detail="Invalid theater configuration: story_planning must be a mapping.")
+        story_planning_config["adventure_mode"] = enable_adventure_mode
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = theater_manager.create_theater(

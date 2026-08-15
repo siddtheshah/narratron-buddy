@@ -1,3 +1,7 @@
+Version 1.2.0 - 8/15/2026
+
+Adventure mode is now live. Should be engaging.
+
 Version 1.1.0 - 8/13/2026
 
 We have some really nice new features with triframe animation, and AI music generation.

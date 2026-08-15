@@ -555,7 +555,7 @@
             font-size: 0.74rem;
         }
 
-        /* 3 Theater Creation Path Cards */
+        /* Theater Creation Path Cards */
         .creation-paths-container {
             margin-bottom: 1.25rem;
             padding-bottom: 1rem;
@@ -564,7 +564,7 @@
 
         .creation-paths-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 10px;
         }
 
@@ -1034,13 +1034,19 @@
                     </div>
                 </div>
 
-                <!-- 3 Theater Creation Path Cards -->
+                <!-- Theater Creation Path Cards -->
                 <div class="creation-paths-container">
                     <div class="creation-paths-grid">
                         <div class="path-card active" id="pathCardBlank" onclick="selectCreationPath('blank')">
                             <div class="path-icon">✨</div>
-                            <div class="path-title">Quick Deploy</div>
+                            <div class="path-title">Fresh Blank Slate</div>
                             <div class="path-desc">First-timer's demo with default assets and configs</div>
+                        </div>
+
+                        <div class="path-card" id="pathCardAdventure" onclick="selectCreationPath('adventure')">
+                            <div class="path-icon">🗺️</div>
+                            <div class="path-title">Adventure Mode</div>
+                            <div class="path-desc">Jump into a player-led, choice-driven story</div>
                         </div>
 
                         <div class="path-card" id="pathCardIndividual" onclick="selectCreationPath('individual')">
@@ -1079,19 +1085,33 @@
                             <textarea id="theaterSpecialInstructions" rows="3"
                                 placeholder="e.g. Keep the tone mysterious and ask before changing the scene."></textarea>
                             <small>Leave blank to use the default from <code>theater_default.yaml</code>.</small>
-                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 1rem;">
+                            <div
+                                style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 1rem;">
                                 <label class="checkbox-card">
                                     <input type="checkbox" id="cfgMusicGeneration">
                                     <div>
-                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">🎵 Music Generation</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">AI fills gaps in your playlists with generated music</div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                            🎵 Music Generation</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">AI fills gaps in
+                                            your playlists with generated music</div>
                                     </div>
                                 </label>
                                 <label class="checkbox-card">
                                     <input type="checkbox" id="cfgSceneAnimations">
                                     <div>
-                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">✨ Scene Animations</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Adds transitions between scenes</div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">✨
+                                            Scene Animations</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Adds transitions
+                                            between scenes</div>
+                                    </div>
+                                </label>
+                                <label class="checkbox-card">
+                                    <input type="checkbox" id="cfgAdventureMode">
+                                    <div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                            🗺️ Adventure Mode</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets players
+                                            guide a persistent, choice-driven story</div>
                                     </div>
                                 </label>
                             </div>
@@ -1219,6 +1239,20 @@
                     </div>
                 </div>
 
+                <!-- Adventure Mode -->
+                <div id="pathSectionAdventure" class="creation-path-section" style="display: none;">
+                    <div
+                        style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(196, 181, 253, 0.35); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+                        <span style="font-size: 2rem; display: block; margin-bottom: 0.4rem;">🗺️</span>
+                        <h4 style="font-size: 0.95rem; font-weight: 700; color: #c4b5fd; margin-bottom: 0.25rem;">
+                            Adventure Ready</h4>
+                        <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45;">
+                            Start a choice-driven adventure immediately. Just tell narratron what kind of story you
+                            want.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- PATH 2: Individual Asset Upload -->
                 <div id="pathSectionIndividual" class="creation-path-section" style="display: none;">
                     <div class="form-group">
@@ -1282,7 +1316,8 @@
                                             <span>⚡</span>
                                             <span><strong>Auto-Extraction:</strong> References and audio tracks are
                                                 parsed & mounted instantly. Put character and world background in
-                                                <code>lore/</code> as UTF-8 <code>.txt</code> files; the story planner can
+                                                <code>lore/</code> as UTF-8 <code>.txt</code> files; the story planner
+                                                can
                                                 browse them when creating characters.</span>
                                         </div>
                                         <div class="tutorial-bullet-item">
@@ -1554,7 +1589,8 @@
             </div>
 
             <!-- Pricing Rates Summary Grid -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 1.25rem;">
+            <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 1.25rem;">
                 <div
                     style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; padding: 1rem;">
                     <div
@@ -2201,7 +2237,11 @@
         }
 
         // 3 Creation Path State & Switcher
-        let currentCreationPath = 'blank';
+        const deployQuery = new URLSearchParams(window.location.search);
+        const requestedCreationPath = deployQuery.get('creation_path');
+        let currentCreationPath = ['blank', 'adventure', 'individual', 'folder'].includes(requestedCreationPath)
+            ? requestedCreationPath
+            : 'blank';
 
         function selectCreationPath(mode) {
             currentCreationPath = mode;
@@ -2209,21 +2249,27 @@
             const cardFolder = document.getElementById('pathCardFolder');
             const cardIndividual = document.getElementById('pathCardIndividual');
             const cardBlank = document.getElementById('pathCardBlank');
+            const cardAdventure = document.getElementById('pathCardAdventure');
 
             const secFolder = document.getElementById('pathSectionFolder');
             const secIndividual = document.getElementById('pathSectionIndividual');
             const secBlank = document.getElementById('pathSectionBlank');
+            const secAdventure = document.getElementById('pathSectionAdventure');
 
             const deployBtnText = document.getElementById('deployBtnText');
             const customConfigOptions = document.getElementById('customConfigOptions');
             const theaterNameConfig = document.getElementById('theaterNameConfig');
 
-            [cardFolder, cardIndividual, cardBlank].forEach(c => c && c.classList.remove('active'));
-            [secFolder, secIndividual, secBlank].forEach(s => s && (s.style.display = 'none'));
+            [cardFolder, cardIndividual, cardBlank, cardAdventure].forEach(c => c && c.classList.remove('active'));
+            [secFolder, secIndividual, secBlank, secAdventure].forEach(s => s && (s.style.display = 'none'));
             if (customConfigOptions) customConfigOptions.style.display = mode === 'individual' ? 'block' : 'none';
-            if (theaterNameConfig) theaterNameConfig.style.display = mode === 'blank' ? 'none' : 'block';
+            if (theaterNameConfig) theaterNameConfig.style.display = ['blank', 'adventure'].includes(mode) ? 'none' : 'block';
 
-            if (mode === 'folder') {
+            if (mode === 'adventure') {
+                if (cardAdventure) cardAdventure.classList.add('active');
+                if (secAdventure) secAdventure.style.display = 'block';
+                if (deployBtnText) deployBtnText.innerText = 'Start Adventure';
+            } else if (mode === 'folder') {
                 if (cardFolder) cardFolder.classList.add('active');
                 if (secFolder) secFolder.style.display = 'block';
                 if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater from Folder';
@@ -2242,6 +2288,10 @@
         let theaterDefaultConfigRequest = null;
         let advancedConfigIsCanonical = false;
 
+        if (deployQuery.get('adventure_mode') === 'true') {
+            const adventureModeInput = document.getElementById('cfgAdventureMode');
+            if (adventureModeInput) adventureModeInput.checked = true;
+        }
         selectCreationPath(currentCreationPath);
 
         async function loadTheaterDefaultConfig() {
@@ -2326,6 +2376,8 @@
                 formData.append('advanced_config_canonical', advancedConfigIsCanonical);
                 formData.append('enable_music_generation', document.getElementById('cfgMusicGeneration')?.checked ? 'true' : 'false');
                 formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
+                formData.append('enable_adventure_mode',
+                    currentCreationPath === 'adventure' || document.getElementById('cfgAdventureMode')?.checked ? 'true' : 'false');
 
                 const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
                 if (advancedConfigIsCanonical && theaterConfigYaml) {

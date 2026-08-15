@@ -51,6 +51,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Join a Live Story Theater", response.text)
         self.assertIn("Narratron Buddy", response.text)
+        self.assertIn("Adventure Mode is here", response.text)
 
         join_response = self.client.get("/join")
         self.assertEqual(join_response.status_code, 200)
@@ -65,6 +66,9 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Theater Deployer", response.text)
         self.assertIn("Deploy Theater", response.text)
+        self.assertIn("Fresh Blank Slate", response.text)
+        self.assertIn('id="pathCardAdventure"', response.text)
+        self.assertIn('id="cfgAdventureMode"', response.text)
         self.assertIn('href="/about"', response.text)
         self.assertIn("pricingModal", response.text)
         self.assertIn("openPricingModal", response.text)
@@ -334,6 +338,7 @@ class TestTheaterAPI(BaseTestCase):
                 "name": "Feature Flags Theater",
                 "enable_music_generation": "true",
                 "enable_scene_animations": "true",
+                "enable_adventure_mode": "true",
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -343,6 +348,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertTrue(config["music"]["generation_enabled"])
         self.assertTrue(config["animation"]["enabled"])
+        self.assertTrue(config["story_planning"]["adventure_mode"])
 
     def test_feature_flags_default_to_false_when_omitted(self):
         self.client.post("/api/auth/register", json={
@@ -361,6 +367,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertFalse(config["music"]["generation_enabled"])
         self.assertFalse(config["animation"]["enabled"])
+        self.assertFalse(config["story_planning"]["adventure_mode"])
 
     def test_folder_upload_requires_theater_yaml(self):
         self.client.post("/api/auth/register", json={
@@ -389,6 +396,23 @@ class TestTheaterAPI(BaseTestCase):
         theater_id = response.json()["theater_id"]
         track = theater_manager.theater(theater_id).playlists_dir() / "default" / "new_story.mp3"
         self.assertTrue(track.is_file())
+
+    def test_adventure_creation_mode_enables_adventure_story_planning(self):
+        self.client.post("/api/auth/register", json={
+            "username": "adventure_user",
+            "email": "adventure@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Adventure Theater", "creation_mode": "adventure"},
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        theater_dir = theater_manager.theater(theater_id).directory()
+        config = yaml.safe_load((theater_dir / "theater.yaml").read_text(encoding="utf-8"))
+        self.assertTrue(config["story_planning"]["adventure_mode"])
+        self.assertTrue((theater_dir / "playlists" / "default" / "new_story.mp3").is_file())
 
     def test_theater_output_route_uses_theater_bound_output_directory(self):
         reg_res = self.client.post("/api/auth/register", json={
