@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 from api_server.app import app, get_theater_owner_credits
-from storage.database import DatabaseManager
 
 
 class TestAgentCreditsEnforcement(unittest.TestCase):

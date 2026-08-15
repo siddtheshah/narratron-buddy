@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # Ensure project root is in python path
 project_root = Path(__file__).resolve().parent.parent
@@ -21,7 +21,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from dotenv import load_dotenv
-from storage.database import DatabaseManager
+from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
 from components.theater_manager import TheaterManager
 
 load_dotenv()
@@ -38,7 +38,7 @@ class StorageDaemon:
 
     def __init__(
         self,
-        db: Optional[DatabaseManager] = None,
+        db: Optional[Any] = None,
         theater_manager: Optional[TheaterManager] = None,
         interval_seconds: float = 60.0,
         ttl_seconds: float = 604800.0,
@@ -54,11 +54,11 @@ class StorageDaemon:
             use_live = os.getenv("USE_LIVE_DB", "false").lower() in ("true", "1", "yes")
             db_path = os.getenv("DB_PATH", "deployer.db")
             if use_live:
-                logger.info("Initializing DatabaseManager in LIVE mode (Turso).")
-                self.db = DatabaseManager.from_live()
+                logger.info("Initializing DatabaseManager in LIVE mode (Cloud SQL PostgreSQL).")
+                self.db = CloudPostgresDatabaseManager()
             else:
                 logger.info(f"Initializing DatabaseManager in LOCAL mode with db_path={db_path}.")
-                self.db = DatabaseManager.from_local(db_path)
+                self.db = LocalDatabaseManager(db_path)
 
         if theater_manager is not None:
             self.theater_manager = theater_manager
@@ -150,16 +150,16 @@ def main():
     parser.add_argument(
         "--use-live-db",
         action="store_true",
-        help="Connect to live Turso database.",
+        help="Connect to live Cloud SQL PostgreSQL database.",
     )
 
     args = parser.parse_args()
 
     db = None
     if args.use_live_db:
-        db = DatabaseManager.from_live()
+        db = CloudPostgresDatabaseManager()
     elif args.db_path:
-        db = DatabaseManager.from_local(args.db_path)
+        db = LocalDatabaseManager(args.db_path)
 
     daemon = StorageDaemon(
         db=db,

@@ -15,7 +15,6 @@ from queue import Empty, Queue
 from typing import Any, Dict, Iterable, List, Optional
 import logging
 import re
-import libsql
 from dotenv import load_dotenv
 from pricing.pricing_controller import PricingController
 
@@ -35,7 +34,7 @@ class DatabaseOperationTimeout(TimeoutError):
 class _DictCursor:
     """Wraps a DB-API cursor so fetchone/fetchall return dicts keyed by column name.
 
-    libsql does not support row_factory, so this uses cursor.description
+    pg8000 returns tuples, so this uses cursor.description
     to map tuple positions to column names after each query.
     """
 
@@ -45,17 +44,19 @@ class _DictCursor:
         retry_cursor_factory=None,
         operation_timeout: Optional[float] = None,
         timeout_callback=None,
+        sql_adapter=None,
     ):
         self._cursor = cursor
         self._retry_cursor_factory = retry_cursor_factory
         self._operation_timeout = operation_timeout
         self._timeout_callback = timeout_callback
+        self._sql_adapter = sql_adapter
 
     def execute(self, sql, params=()):
         try:
             self._execute_with_deadline(sql, params)
         except Exception as exc:
-            # A response timeout can leave a remote libsql connection unusable.
+            # A response timeout can leave a remote connection unusable.
             # Retrying reads is safe; retrying a write after an unknown outcome
             # could duplicate a credit charge or another state change.
             if not self._retry_cursor_factory or not _is_retryable_read_error(sql, exc):
@@ -66,10 +67,11 @@ class _DictCursor:
 
     def _execute_with_deadline(self, sql, params) -> None:
         """Execute a statement and tear down a connection that outlives its deadline."""
+        sql = self._sql_adapter(sql) if self._sql_adapter else sql
         self._run_with_deadline(lambda: self._cursor.execute(sql, params))
 
     def _run_with_deadline(self, operation):
-        """Run one libsql call while ensuring its lease cannot outlive the deadline."""
+        """Run one remote database call within its deadline."""
         if self._operation_timeout is None:
             return operation()
 
@@ -117,7 +119,7 @@ class _DictCursor:
 
 
 def _is_retryable_read_error(sql: str, exc: Exception) -> bool:
-    """Return whether a failed idempotent query may use a fresh libsql connection."""
+    """Return whether a failed idempotent query may use a fresh connection."""
     statement = sql.lstrip().upper()
     if not statement.startswith(("SELECT", "PRAGMA", "EXPLAIN")):
         return False
@@ -139,6 +141,7 @@ class _ReusableConnection:
         release_callback=None,
         operation_timeout: Optional[float] = None,
         timeout_callback=None,
+        sql_adapter=None,
     ):
         self._conn = conn
         self._is_dict_cursor = is_dict_cursor
@@ -147,6 +150,7 @@ class _ReusableConnection:
         self._release_callback = release_callback
         self._operation_timeout = operation_timeout
         self._timeout_callback = timeout_callback
+        self._sql_adapter = sql_adapter
 
     def cursor(self):
         if self._is_dict_cursor:
@@ -155,6 +159,7 @@ class _ReusableConnection:
                 self._retry_cursor_factory,
                 operation_timeout=self._operation_timeout,
                 timeout_callback=self._timeout_callback,
+                sql_adapter=self._sql_adapter,
             )
         return self._conn.cursor()
 
@@ -216,7 +221,7 @@ class _ReusableConnection:
             if exc_type is not None:
                 # A timed-out live operation marks this lease as poisoned.
                 # Calling rollback after the driver has timed out can panic
-                # inside libsql's native layer, so discard the lease instead.
+                # while the driver is still processing it, so discard the lease instead.
                 if getattr(self, "_discard_connection", None) is not self._conn:
                     self.rollback()
             else:
@@ -232,38 +237,15 @@ class _ReusableConnection:
         return getattr(self._conn, name)
 
 
-class DatabaseManager:
-    """Manages SQLite database storage for users, authentication tokens, and deployments."""
+class _DatabaseManagerBase:
+    """Shared Narratron queries; concrete backends own connection details."""
 
-    def __init__(
-        self,
-        is_live: bool,
-        db_path: Optional[str] = None,
-        pricing_controller: Optional[PricingController] = None,
-        live_connection_timeout: Optional[float] = None,
-        live_pool_size: Optional[int] = None,
-        live_checkout_timeout: Optional[float] = None,
-    ):
-        self.is_live = is_live
-        self.db_path = db_path
-        self._conn = None
-        self._cached_db_path = None
-        self._cached_is_live = None
-        # libsql's Python client connection is not safe to share between the
-        # synchronous request worker threads and the application's async routes.
-        # Keep a single operation on the cached connection at a time.
-        self._connection_lock = threading.RLock()
-        self._live_connection_timeout = self._get_live_connection_timeout(live_connection_timeout)
-        self._live_pool_size = self._get_live_pool_size(live_pool_size)
-        self._live_checkout_timeout = self._get_live_checkout_timeout(live_checkout_timeout)
-        self._live_pool: Optional[Queue] = None
-        self._live_pool_total = 0
-        self._live_pool_closed = False
+    def __init__(self, pricing_controller: Optional[PricingController] = None):
         self.pricing_controller = pricing_controller or PricingController.from_env()
 
     @staticmethod
     def _get_live_connection_timeout(value: Optional[float]) -> float:
-        """Return a bounded timeout for each live libsql operation."""
+        """Return a bounded timeout for each Cloud SQL operation."""
         try:
             timeout = float(5.0 if value is None else value)
         except (TypeError, ValueError):
@@ -291,85 +273,11 @@ class DatabaseManager:
         """Return current pricing rates dictionary for polling."""
         return self.pricing_controller.get_rates()
 
-    @classmethod
-    def from_live(
-        cls,
-        pricing_controller: Optional[PricingController] = None,
-        live_connection_timeout: Optional[float] = None,
-        live_pool_size: Optional[int] = None,
-        live_checkout_timeout: Optional[float] = None,
-    ) -> "DatabaseManager":
-        return cls(
-            is_live=True,
-            db_path=None,
-            pricing_controller=pricing_controller,
-            live_connection_timeout=live_connection_timeout,
-            live_pool_size=live_pool_size,
-            live_checkout_timeout=live_checkout_timeout,
-        )
-
-    @classmethod
-    def from_local(cls, db_path: str, pricing_controller: Optional[PricingController] = None) -> "DatabaseManager":
-        return cls(is_live=False, db_path=db_path, pricing_controller=pricing_controller)
-
-    def close(self) -> None:
-        """Close idle database connections without waiting for active requests."""
-        with self._connection_lock:
-            self._live_pool_closed = True
-            pool = self._live_pool
-            self._live_pool = None
-            self._live_pool_total = 0
-            if pool is not None:
-                logger.info("Closing idle live database connections.")
-                while True:
-                    try:
-                        pool.get_nowait().close()
-                    except Empty:
-                        break
-                    except Exception:
-                        logger.warning("Failed to close an idle live database connection.", exc_info=True)
-            if self._conn is not None:
-                logger.info("Closing active database connection.")
-                self._conn.close()
-                self._conn = None
-            self._cached_db_path = None
-            self._cached_is_live = None
-
     def _get_connection(self):
-        if self.is_live:
-            self._ensure_live_pool()
-            return self._checkout_live_connection()
-
-        with self._connection_lock:
-            str_db_path = str(self.db_path) if self.db_path is not None else None
-            if (
-                self._conn is not None
-                and (self._cached_db_path != str_db_path or self._cached_is_live != self.is_live)
-            ):
-                self.close()
-
-            if self._conn is None:
-                db_file = str(self.db_path or "deployer.db")
-                conn = sqlite3.connect(db_file, check_same_thread=False)
-                conn.row_factory = sqlite3.Row
-                conn.execute("PRAGMA journal_mode=WAL")
-                self._conn = _ReusableConnection(conn, is_dict_cursor=False, lock=self._connection_lock)
-                self._ensure_tables_exist()
-                self._cached_db_path = str_db_path
-                self._cached_is_live = self.is_live
-
-            return self._conn
+        raise NotImplementedError
 
     def _open_live_connection(self):
-        turso_url = os.environ.get("TURSO_DATABASE_URL")
-        turso_token = os.environ.get("TURSO_DB_TOKEN")
-        if not turso_url or not turso_token:
-            raise ValueError("Missing Turso database credentials.")
-        return libsql.connect(
-            database=turso_url,
-            auth_token=turso_token,
-            timeout=self._live_connection_timeout,
-        )
+        raise NotImplementedError
 
     def _ensure_live_pool(self) -> None:
         """Create the live connection pool once, before serving requests."""
@@ -378,7 +286,7 @@ class DatabaseManager:
                 return
 
             logger.info(
-                "Preparing live libsql connection pool (max size=%d, connection timeout=%.1fs).",
+                "Preparing Cloud SQL PostgreSQL connection pool (max size=%d, connection timeout=%.1fs).",
                 self._live_pool_size,
                 self._live_connection_timeout,
             )
@@ -429,6 +337,7 @@ class DatabaseManager:
             conn,
             is_dict_cursor=True,
             operation_timeout=self._live_connection_timeout,
+            sql_adapter=self._adapt_sql,
         )
         lease._release_callback = lambda returned: self._release_live_connection(lease, returned)
         lease._retry_cursor_factory = lambda: self._replace_live_cursor(lease)
@@ -453,7 +362,7 @@ class DatabaseManager:
                 should_close = True
         try:
             # Close only after the database call has returned. Closing from
-            # the deadline timer races libsql's active Rust call.
+            # the deadline timer races an active driver call.
             if should_close:
                 conn.close()
         except Exception:
@@ -470,7 +379,7 @@ class DatabaseManager:
 
     def _replace_live_cursor(self, lease: _ReusableConnection):
         """Replace only the failed lease before retrying an idempotent read."""
-        logger.warning("Retrying a failed libsql read with a new connection.")
+        logger.warning("Retrying a failed Cloud SQL read with a new connection.")
         replacement = self._open_live_connection()
         old_connection = lease._conn
         lease._conn = replacement
@@ -728,6 +637,15 @@ class DatabaseManager:
             """)
             conn.commit()
 
+    @staticmethod
+    def _adapt_sql(sql: str) -> str:
+        """Translate the small SQLite SQL subset used by this module to PostgreSQL."""
+        translated = sql.replace("?", "%s")
+        translated = translated.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+        if "INSERT OR IGNORE INTO" in sql:
+            translated = translated.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+        return translated
+
     def register_user(self, username: str, email: str, password: str) -> Dict:
         """Register a new user account."""
         username_clean = username.strip()
@@ -743,10 +661,10 @@ class DatabaseManager:
             cursor = conn.cursor()
             try:
                 cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits) VALUES (?, ?, ?, ?, ?, 0.0)",
+                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits) VALUES (?, ?, ?, ?, ?, 0.0) RETURNING id",
                     (username_clean, email_clean, password_hash, salt, created_at)
                 )
-                user_id = cursor.lastrowid
+                user_id = cursor.fetchone()["id"]
                 conn.commit()
                 return {
                     "id": user_id,
@@ -759,14 +677,15 @@ class DatabaseManager:
                     "mic_sensitivity": 0.5,
                     "created_at": created_at
                 }
-            except sqlite3.IntegrityError as e:
+            except Exception as e:
                 err_msg = str(e).lower()
-                if "username" in err_msg:
+                if "username" in err_msg and ("unique" in err_msg or "duplicate" in err_msg or "constraint" in err_msg):
                     raise ValueError("Username already exists.")
-                elif "email" in err_msg:
+                elif "email" in err_msg and ("unique" in err_msg or "duplicate" in err_msg or "constraint" in err_msg):
                     raise ValueError("Email already registered.")
-                else:
+                elif "unique" in err_msg or "duplicate" in err_msg or "constraint" in err_msg:
                     raise ValueError("Username or email already exists.")
+                raise
 
     def authenticate_user(self, username_or_email: str, password: str) -> Optional[Dict]:
         """Authenticate user credentials."""
@@ -1002,7 +921,7 @@ class DatabaseManager:
                 FROM theater_views v
                 LEFT JOIN exported_theaters es ON v.theater_id = es.theater_id
                 LEFT JOIN canvas_deployments cd ON v.theater_id = cd.theater_id
-                GROUP BY v.theater_id
+                GROUP BY v.theater_id, es.name, cd.theater_id
                 ORDER BY views DESC
                 LIMIT 10
             """)
@@ -1188,10 +1107,10 @@ class DatabaseManager:
             
             cursor.execute(
                 """INSERT INTO payment_transactions (user_id, amount_usd, credits_added, payment_method, status, created_at)
-                   VALUES (?, ?, ?, ?, 'completed', ?)""",
+                   VALUES (?, ?, ?, ?, 'completed', ?) RETURNING id""",
                 (user_id, usd_amount, credits_amount, payment_method, now_iso)
             )
-            tx_id = cursor.lastrowid
+            tx_id = cursor.fetchone()["id"]
             
             cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, created_at FROM users WHERE id = ?", (user_id,))
             updated_user = dict(cursor.fetchone())
@@ -1225,12 +1144,13 @@ class DatabaseManager:
             # unique index makes this safe when a Checkout return and webhook
             # delivery (or webhook retries) arrive concurrently.
             cursor.execute(
-                "INSERT OR IGNORE INTO payment_transactions "
+                "INSERT INTO payment_transactions "
                 "(user_id, amount_usd, credits_added, payment_method, status, created_at, stripe_session_id) "
-                "VALUES (?, ?, ?, ?, 'completed', ?, ?)",
+                "VALUES (?, ?, ?, ?, 'completed', ?, ?) ON CONFLICT DO NOTHING RETURNING id",
                 (user_id, usd_amount, credits_amount, payment_method, now_iso, stripe_session_id),
             )
-            credited = cursor.rowcount == 1
+            inserted = cursor.fetchone()
+            credited = inserted is not None
             if credited:
                 cursor.execute("UPDATE users SET credits = credits + ? WHERE id = ?", (credits_amount, user_id))
             else:
@@ -1247,7 +1167,7 @@ class DatabaseManager:
             )
             updated_user = dict(cursor.fetchone())
             if credited:
-                tx_id = cursor.lastrowid
+                tx_id = inserted["id"]
                 created_at = now_iso
             return {"transaction_id": tx_id, "user": updated_user,
                     "credits_added": credits_amount if credited else 0.0,
@@ -2091,3 +2011,110 @@ class DatabaseManager:
 
     async def take_back_baton_async(self, theater_id: str, owner_id: int) -> Dict[str, Any]:
         return await asyncio.to_thread(self.take_back_baton, theater_id, owner_id)
+
+
+class LocalDatabaseManager(_DatabaseManagerBase):
+    """Narratron storage backed by a local SQLite file, used for development and tests."""
+
+    def __init__(self, db_path: str, pricing_controller: Optional[PricingController] = None):
+        super().__init__(pricing_controller=pricing_controller)
+        self.is_live = False
+        self.db_path = db_path
+        self._conn = None
+        self._cached_db_path = None
+        self._connection_lock = threading.RLock()
+
+    def close(self) -> None:
+        with self._connection_lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+            self._cached_db_path = None
+
+    def _get_connection(self):
+        with self._connection_lock:
+            db_path = str(self.db_path)
+            if self._conn is not None and self._cached_db_path != db_path:
+                self.close()
+            if self._conn is None:
+                conn = sqlite3.connect(db_path, check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                self._conn = _ReusableConnection(conn, lock=self._connection_lock)
+                self._ensure_tables_exist()
+                self._cached_db_path = db_path
+            return self._conn
+
+
+class CloudPostgresDatabaseManager(_DatabaseManagerBase):
+    """Narratron storage backed by Cloud SQL PostgreSQL with IAM authentication."""
+
+    def __init__(
+        self,
+        connection_name: Optional[str] = None,
+        database: Optional[str] = None,
+        iam_user: Optional[str] = None,
+        pricing_controller: Optional[PricingController] = None,
+        connection_timeout: Optional[float] = None,
+        pool_size: Optional[int] = None,
+        checkout_timeout: Optional[float] = None,
+    ):
+        super().__init__(pricing_controller=pricing_controller)
+        self.is_live = True
+        self.cloud_sql_instance = connection_name or os.environ.get("CLOUD_SQL_CONNECTION_NAME")
+        self.cloud_sql_database = database or os.environ.get("CLOUD_SQL_DATABASE", "narratron-db")
+        self.cloud_sql_iam_user = iam_user or os.environ.get("CLOUD_SQL_IAM_USER")
+        self._cloud_sql_connector = None
+        self._connection_lock = threading.RLock()
+        self._live_connection_timeout = self._get_live_connection_timeout(connection_timeout)
+        self._live_pool_size = self._get_live_pool_size(pool_size)
+        self._live_checkout_timeout = self._get_live_checkout_timeout(checkout_timeout)
+        self._live_pool: Optional[Queue] = None
+        self._live_pool_total = 0
+        self._live_pool_closed = False
+
+    def close(self) -> None:
+        with self._connection_lock:
+            self._live_pool_closed = True
+            pool, self._live_pool = self._live_pool, None
+            self._live_pool_total = 0
+            while pool is not None:
+                try:
+                    pool.get_nowait().close()
+                except Empty:
+                    break
+            if self._cloud_sql_connector is not None:
+                self._cloud_sql_connector.close()
+                self._cloud_sql_connector = None
+
+    def _get_connection(self):
+        self._ensure_live_pool()
+        return self._checkout_live_connection()
+
+    def _open_live_connection(self):
+        if not self.cloud_sql_instance or not self.cloud_sql_iam_user:
+            raise ValueError("CLOUD_SQL_CONNECTION_NAME and CLOUD_SQL_IAM_USER are required for Cloud SQL IAM authentication.")
+        try:
+            from google.cloud.sql.connector import Connector
+        except ImportError as exc:
+            raise RuntimeError("Cloud SQL PostgreSQL requires cloud-sql-python-connector[pg8000].") from exc
+        with self._connection_lock:
+            if self._cloud_sql_connector is None:
+                self._cloud_sql_connector = Connector()
+            connector = self._cloud_sql_connector
+        return connector.connect(
+            self.cloud_sql_instance, "pg8000", user=self.cloud_sql_iam_user,
+            db=self.cloud_sql_database, enable_iam_auth=True,
+        )
+
+    def _ensure_tables_exist(self) -> None:
+        if self._live_pool is None:
+            return
+        try:
+            with self._get_connection() as conn:
+                conn.cursor().execute("SELECT 1 FROM users LIMIT 1")
+        except Exception as exc:
+            raise RuntimeError(
+                "Cloud SQL schema is unavailable. Import storage/schema/postgres.sql before starting "
+                f"the application. PostgreSQL reported: {exc}"
+            ) from exc

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from storage.database import DatabaseManager
+from storage.database import LocalDatabaseManager
 from storage.storage_daemon import StorageDaemon
 from components.theater_manager import TheaterManager
 
@@ -20,7 +20,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         self.theaters_dir = Path(self.test_dir) / "theaters"
         self.theaters_dir.mkdir(parents=True, exist_ok=True)
 
-        self.db = DatabaseManager.from_local(str(self.db_path))
+        self.db = LocalDatabaseManager(str(self.db_path))
         self.theater_manager = TheaterManager(base_theaters_dir=self.theaters_dir)
 
         self.daemon = StorageDaemon(

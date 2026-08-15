@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from testing.base import BaseTestCase
 from pricing.pricing_controller import PricingController
-from storage.database import DatabaseManager
+from storage.database import LocalDatabaseManager
 
 
 class TestPricingController(BaseTestCase):
@@ -80,7 +80,7 @@ class TestPricingController(BaseTestCase):
 
     def test_database_manager_pricing_controller_integration(self):
         custom_controller = PricingController(voice_credit_rate=3.0, image_credit_rate=2.0)
-        db = DatabaseManager.from_local(":memory:", pricing_controller=custom_controller)
+        db = LocalDatabaseManager(":memory:", pricing_controller=custom_controller)
         self.assertIs(db.pricing_controller, custom_controller)
         self.assertEqual(db.get_pricing_rates()["voice_credit_rate"], 3.0)
 

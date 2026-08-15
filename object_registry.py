@@ -20,7 +20,7 @@ from pricing.pricing_controller import PricingController
 from services.agent_manager import AgentSessionManager
 from services.quirk_service import QuirkGeneratorService
 from services.suggestion_service import SuggestionService
-from storage.database import DatabaseManager
+from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
 from utils.config_loader import get_app_config
 
 
@@ -50,19 +50,19 @@ flags.DEFINE_integer("port", 8000, "Port to run the app on.")
 flags.DEFINE_string("log_prefix", "", "Only show logs containing this substring.")
 flags.DEFINE_bool("suppress_polling", True, "Suppress frequent polling logs.")
 flags.DEFINE_float(
-    "libsql_connection_timeout_seconds",
+    "database_connection_timeout_seconds",
     5.0,
-    "Maximum duration of a live libSQL operation.",
+    "Maximum duration of a live database operation.",
 )
 flags.DEFINE_integer(
-    "libsql_pool_size",
+    "database_pool_size",
     8,
-    "Maximum number of live libSQL connections.",
+    "Maximum number of live database connections.",
 )
 flags.DEFINE_float(
-    "libsql_pool_checkout_timeout_seconds",
+    "database_pool_checkout_timeout_seconds",
     5.0,
-    "Maximum duration a request waits for an idle live libSQL connection.",
+    "Maximum duration a request waits for an idle database connection.",
 )
 
 FLAGS = flags.FLAGS
@@ -86,13 +86,13 @@ app = FastAPI(lifespan=lifespan)
 theater_manager = TheaterManager()
 pricing_controller = PricingController.from_env()
 db = (
-    DatabaseManager.from_local("deployer.db", pricing_controller=pricing_controller)
-    if FLAGS.testing_use_local_database
-    else DatabaseManager.from_live(
+    LocalDatabaseManager("deployer.db", pricing_controller=pricing_controller)
+    if FLAGS.testing_use_local_database or "pytest" in sys.modules
+    else CloudPostgresDatabaseManager(
         pricing_controller=pricing_controller,
-        live_connection_timeout=FLAGS.libsql_connection_timeout_seconds,
-        live_pool_size=FLAGS.libsql_pool_size,
-        live_checkout_timeout=FLAGS.libsql_pool_checkout_timeout_seconds,
+        connection_timeout=FLAGS.database_connection_timeout_seconds,
+        pool_size=FLAGS.database_pool_size,
+        checkout_timeout=FLAGS.database_pool_checkout_timeout_seconds,
     )
 )
 canvas_states = CanvasStateService(theater_manager)
