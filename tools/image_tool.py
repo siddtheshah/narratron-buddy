@@ -370,7 +370,7 @@ class ImageTools(BaseTools):
             self._image_provider = get_image_provider(self.image_provider_id, self.image_provider_options)
         return self._image_provider
 
-    @with_cooldown("showing another image", duration=4.0)
+    @with_cooldown("showing another image", duration=6.0)
     def show_image(
         self,
         file_path: str,

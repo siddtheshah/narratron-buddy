@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from tools.story_planning_tool import (
     DEFAULT_MAX_NAMED_ELEMENTS,
+    SCENE_REACTION_SYSTEM_INSTRUCTION,
     SceneReaction,
     StoryPlanningTools,
     VertexGemini,
@@ -16,6 +17,10 @@ from components.theater_manager import TheaterManager
 
 
 class TestStoryPlanningTools(unittest.TestCase):
+    def test_planner_instruction_reserves_player_agency(self):
+        self.assertIn("Never invent the player's actions, speech, thoughts, feelings, decisions", SCENE_REACTION_SYSTEM_INSTRUCTION)
+        self.assertIn("Dialogue may be spoken only by NPCs", SCENE_REACTION_SYSTEM_INSTRUCTION)
+
     def test_planner_model_uses_explicit_vertex_client(self):
         with patch("tools.story_planning_tool.genai.Client") as client:
             model = VertexGemini(model="gemini-2.5-flash", project_id="test-project", location="global")
@@ -169,6 +174,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("plot_beats", tools.export_story_planning_state())
         self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
         state.get.return_value.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
+        self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
     def test_clear_scene_removes_plot_beats_and_characters(self):
         tools = StoryPlanningTools(config={"adventure_mode": True}, theater_id="clear")

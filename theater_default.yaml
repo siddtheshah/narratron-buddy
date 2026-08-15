@@ -26,7 +26,7 @@ story_planning:
     nodes_ahead: 3
     adventure_mode: false
     max_named_elements: 5
-    cooldown_duration: 3
+    cooldown_duration: 10
     initial_elements: {}
 
 chat:

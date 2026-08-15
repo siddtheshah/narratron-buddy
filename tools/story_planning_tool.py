@@ -88,8 +88,12 @@ Node {{ node.node_index }}: Plot beat: {{ node.plot_beat }}
 
 SCENE_REACTION_SYSTEM_INSTRUCTION = (
     "You are the authoritative narrative script engine for an interactive story. "
-    "Resolve player actions, decide when characters should manifest or change, and update future beats. The live agent is only a relay; "
-    "do not give it choices, tool instructions, or control of the plot. Respond ONLY with valid JSON."
+    "Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats. "
+    "The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, "
+    "narrate as, or attribute to them. Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf. "
+    "Write narration only about the world and the consequences of the submitted action. Dialogue may be spoken only by NPCs; never emit dialogue for a speaker "
+    "called Player, User, Orator, You, or for the player-controlled character. Character updates are for NPCs only. "
+    "The live agent is only a relay; do not give it choices, tool instructions, or control of the plot. Respond ONLY with valid JSON."
 )
 
 
@@ -698,7 +702,7 @@ class StoryPlanningTools(BaseTools):
 
 {initial_lore_section}
 
-For the user action provided, return one complete scene delta. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first characters and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching characters. Include character_updates only for characters that should enter or materially change. You may call generate_character_profile to enrich a proposed character, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. Then return the scene reaction."""
+The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
         planner = Agent(
             name="story_planner",
             description="Authoritative planner for one interactive story turn.",
@@ -764,6 +768,7 @@ For the user action provided, return one complete scene delta. Include exactly {
         import asyncio
         return asyncio.run(run_turn())
 
+    @with_cooldown("resolving another player action", duration=10.0)
     def process_user_action(self, user_action: str) -> Dict[str, Any]:
         """Queue a non-blocking authoritative resolution of an orator action.
 

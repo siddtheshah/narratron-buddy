@@ -288,3 +288,4 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("## Adventure Mode", instruction)
         self.assertNotIn("* generate_character", instruction)
         self.assertIn("process_user_action", instruction)
+        self.assertIn("never speak, act, decide, think, or feel for the player", instruction)

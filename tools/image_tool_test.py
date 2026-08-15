@@ -97,6 +97,15 @@ class TestImageTools(BaseTestCase):
             ImageTools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
 
     @patch("tools.image_tool.get_image_provider")
+    def test_show_image_has_six_second_minimum_cooldown(self, mock_get_provider):
+        tools = ImageTools(self.config, theater_id="show_cooldown", theater_manager=self.manager)
+        image_path = os.path.join(tools.reference_dir, "scene.jpg")
+        Image.new("RGB", (10, 10), color="blue").save(image_path)
+
+        self.assertIn("Successfully displayed", tools.show_image("scene.jpg"))
+        self.assertIn("show_image is on cooldown", tools.show_image("scene.jpg"))
+
+    @patch("tools.image_tool.get_image_provider")
     def test_missing_reference_returns_error_without_calling_provider(self, mock_get_provider):
         tools = ImageTools(self.config, theater_id="missing_reference", theater_manager=self.manager)
 
