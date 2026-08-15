@@ -22,19 +22,24 @@ from providers import (
     ImageReference,
     MusicGenerationRequest,
     MusicProviderError,
+    SpeechProviderError,
+    SpeechSynthesisRequest,
     TextResponseRequest,
     TextResponseProviderError,
     get_image_provider,
     get_music_provider,
     get_text_response_provider,
+    get_speech_provider,
     list_image_provider_specs,
     list_music_provider_specs,
     list_music_adapter_specs,
     list_text_response_provider_specs,
+    list_speech_provider_specs,
 )
 from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, get_prompt, prompt_catalog
 from testlab.music_benchmark import get_music_prompt, music_prompt_catalog
 from testlab.text_response_benchmark import get_text_prompt, text_prompt_catalog
+from testlab.speech_benchmark import get_speech_prompt, speech_prompt_catalog
 from tools.story_planning_tool import StoryPlanningTools
 
 ROOT = Path(__file__).resolve().parent
@@ -54,9 +59,14 @@ BENCHMARK_MUSIC_OUTPUT = ROOT / "benchmark_music_output"
 BENCHMARK_MUSIC_OUTPUT.mkdir(exist_ok=True)
 app.mount("/benchmark-audio", StaticFiles(directory=BENCHMARK_MUSIC_OUTPUT), name="benchmark-audio")
 
+BENCHMARK_SPEECH_OUTPUT = ROOT / "benchmark_speech_output"
+BENCHMARK_SPEECH_OUTPUT.mkdir(exist_ok=True)
+app.mount("/benchmark-speech", StaticFiles(directory=BENCHMARK_SPEECH_OUTPUT), name="benchmark-speech")
+
 _runs: dict[str, dict[str, Any]] = {}
 _music_runs: dict[str, dict[str, Any]] = {}
 _text_runs: dict[str, dict[str, Any]] = {}
+_speech_runs: dict[str, dict[str, Any]] = {}
 _story_planner_runs: dict[str, dict[str, Any]] = {}
 _runs_lock = threading.Lock()
 
@@ -91,6 +101,11 @@ def music_benchmark_lab():
 @app.get("/text-benchmark", include_in_schema=False)
 def text_benchmark_lab():
     return FileResponse(ROOT / "text_response_benchmark.html", media_type="text/html")
+
+
+@app.get("/speech-benchmark", include_in_schema=False)
+def speech_benchmark_lab():
+    return FileResponse(ROOT / "speech_benchmark.html", media_type="text/html")
 
 
 @app.get("/story-planner", include_in_schema=False)
@@ -187,6 +202,11 @@ def text_benchmark_catalog():
     return {"prompts": text_prompt_catalog(), "providers": list_text_response_provider_specs()}
 
 
+@app.get("/api/speech-benchmark/catalog")
+def speech_benchmark_catalog():
+    return {"prompts": speech_prompt_catalog(), "providers": list_speech_provider_specs()}
+
+
 
 @app.post("/api/image-benchmark/runs")
 def start_benchmark_run(body: dict[str, Any]):
@@ -257,6 +277,28 @@ def start_text_benchmark_run(body: dict[str, Any]):
     return run
 
 
+@app.post("/api/speech-benchmark/runs")
+def start_speech_benchmark_run(body: dict[str, Any]):
+    provider_ids = body.get("provider_ids") or []
+    prompt_ids = body.get("prompt_ids") or []
+    repetitions = body.get("repetitions", 1)
+    provider_options = body.get("provider_options") or {}
+    if not provider_ids or not prompt_ids:
+        raise HTTPException(status_code=400, detail="Select at least one speech provider and one dialogue line.")
+    if not isinstance(repetitions, int) or not 1 <= repetitions <= 20:
+        raise HTTPException(status_code=400, detail="Repetitions must be a whole number between 1 and 20.")
+    try:
+        prompts = [get_speech_prompt(prompt_id) for prompt_id in prompt_ids]
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=f"Unknown speech prompt: {exc.args[0]}") from exc
+    run_id = uuid.uuid4().hex
+    run = {"id": run_id, "status": "running", "started_at": time.time(), "completed_at": None, "items": [], "total": len(prompts) * len(provider_ids) * repetitions, "repetitions": repetitions}
+    with _runs_lock:
+        _speech_runs[run_id] = run
+    threading.Thread(target=_run_speech_benchmark, args=(run_id, provider_ids, prompts, repetitions, provider_options), daemon=True).start()
+    return run
+
+
 @app.get("/api/image-benchmark/runs/{run_id}")
 def benchmark_run(run_id: str):
     with _runs_lock:
@@ -305,6 +347,15 @@ def text_benchmark_run(run_id: str):
         run = _text_runs.get(run_id)
         if not run:
             raise HTTPException(status_code=404, detail="Text benchmark run not found.")
+        return dict(run)
+
+
+@app.get("/api/speech-benchmark/runs/{run_id}")
+def speech_benchmark_run(run_id: str):
+    with _runs_lock:
+        run = _speech_runs.get(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Speech benchmark run not found.")
         return dict(run)
 
 
@@ -582,6 +633,67 @@ def _estimated_music_output_cost(
         return spec["estimated_cost_usd_per_generation"]
     rate_30s = spec.get("estimated_cost_usd_30s")
     return round((duration_seconds / 30.0) * rate_30s, 6) if rate_30s is not None else None
+
+
+def _run_speech_benchmark(run_id: str, provider_ids: list[str], prompts: list[Any], repetitions: int, provider_options: dict[str, Any]) -> None:
+    task_count = len(provider_ids) * len(prompts) * repetitions
+    worker_count = min(task_count, MAX_IN_FLIGHT_PER_PROVIDER * len(provider_ids))
+    provider_semaphores = {provider_id: threading.BoundedSemaphore(MAX_IN_FLIGHT_PER_PROVIDER) for provider_id in provider_ids}
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="speech-benchmark") as executor:
+        futures = [
+            executor.submit(_benchmark_one_speech_limited, provider_id, prompt, repetition, provider_options.get(provider_id) or {}, provider_semaphores[provider_id])
+            for repetition in range(1, repetitions + 1)
+            for prompt in prompts
+            for provider_id in provider_ids
+        ]
+        for future in as_completed(futures):
+            item = future.result()
+            with _runs_lock:
+                _speech_runs[run_id]["items"].append(item)
+    with _runs_lock:
+        _speech_runs[run_id]["status"] = "completed"
+        _speech_runs[run_id]["completed_at"] = time.time()
+
+
+def _benchmark_one_speech_limited(provider_id: str, prompt: Any, repetition: int, provider_options: dict[str, Any], semaphore: threading.BoundedSemaphore) -> dict[str, Any]:
+    with semaphore:
+        return _benchmark_one_speech(provider_id, prompt, repetition, provider_options)
+
+
+def _benchmark_one_speech(provider_id: str, prompt: Any, repetition: int, provider_options: dict[str, Any] | None = None) -> dict[str, Any]:
+    started = time.perf_counter()
+    item: dict[str, Any] = {"id": uuid.uuid4().hex, "provider_id": provider_id, "prompt_id": prompt.id, "repetition": repetition, "started_at": time.time(), "status": "failed"}
+    try:
+        options = provider_options or {}
+        result = get_speech_provider(provider_id, options).synthesize(SpeechSynthesisRequest(
+            text=prompt.text,
+            voice=str(options["voice"]) if options.get("voice") else None,
+            voice_instruction=str(options.get("voice_instruction") or prompt.voice_instruction),
+            speed=float(options["speed"]) if options.get("speed") is not None else None,
+            sample_rate_hz=int(options["sample_rate_hz"]) if options.get("sample_rate_hz") else None,
+        ))
+        extension = mimetypes.guess_extension(result.mime_type) or ".mp3"
+        filename = f"{item['id']}{extension}"
+        (BENCHMARK_SPEECH_OUTPUT / filename).write_bytes(result.audio_bytes)
+        item.update({
+            "status": "completed", "audio_url": f"/benchmark-speech/{filename}", "model": result.model,
+            "request_id": result.request_id, "usage": dict(result.usage),
+            "estimated_output_cost_usd": _estimated_speech_output_cost(provider_id, prompt.text),
+        })
+    except (SpeechProviderError, OSError, ValueError) as exc:
+        item["error"] = str(exc)
+    except Exception as exc:
+        item["error"] = f"Unexpected error: {exc}"
+    finally:
+        item["completed_at"] = time.time()
+        item["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    return item
+
+
+def _estimated_speech_output_cost(provider_id: str, text: str) -> float | None:
+    spec = next((item for item in list_speech_provider_specs() if item["id"] == provider_id), None)
+    rate = spec.get("estimated_cost_usd_1k_chars") if spec else None
+    return round(len(text) / 1_000 * rate, 6) if rate is not None else None
 
 
 def _run_text_benchmark(run_id: str, provider_ids: list[str], prompts: list[Any], repetitions: int, provider_options: dict[str, Any]) -> None:

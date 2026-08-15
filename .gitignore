@@ -11,6 +11,7 @@ theaters/
 evaluation_results/
 testlab/benchmark_output/
 testlab/benchmark_music_output/
+testlab/benchmark_speech_output/
 .env
 *.db
 deployer.db*

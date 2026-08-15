@@ -2,6 +2,7 @@ fastapi
 uvicorn
 google-adk
 google-genai
+google-cloud-texttospeech
 openai>=1.0
 pyyaml
 Pillow

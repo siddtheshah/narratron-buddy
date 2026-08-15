@@ -29,6 +29,10 @@ from providers.text_response_provider import (
     TextResponseResult,
 )
 from providers.gemini_text_response_provider import GeminiTextResponseProvider
+from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisRequest, SpeechSynthesisResult
+from providers.gemini_speech_provider import GeminiSpeechProvider
+from providers.fal_seed_speech_provider import FalSeedSpeechProvider
+from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
 from providers.registry import (
     get_image_provider,
     get_music_provider,
@@ -38,6 +42,8 @@ from providers.registry import (
     list_music_provider_specs,
     list_music_adapter_specs,
     list_text_response_provider_specs,
+    get_speech_provider,
+    list_speech_provider_specs,
 )
 
 __all__ = [
@@ -64,6 +70,13 @@ __all__ = [
     "TextResponseProvider",
     "TextResponseProviderError",
     "GeminiTextResponseProvider",
+    "SpeechProvider",
+    "SpeechProviderError",
+    "SpeechSynthesisRequest",
+    "SpeechSynthesisResult",
+    "GeminiSpeechProvider",
+    "FalSeedSpeechProvider",
+    "GoogleChirpSpeechProvider",
     "get_image_provider",
     "get_music_provider",
     "get_text_response_provider",
@@ -72,6 +85,8 @@ __all__ = [
     "get_music_adapter",
     "list_music_adapter_specs",
     "list_text_response_provider_specs",
+    "get_speech_provider",
+    "list_speech_provider_specs",
 ]
 
 
