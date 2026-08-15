@@ -89,7 +89,7 @@ class TestCreateAgent(unittest.TestCase):
         mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
-        mock_story_planning_cls.assert_called_once_with(config.get("story_planning", {}), **expected_kwargs)
+        mock_story_planning_cls.assert_called_once_with(config.get("story_planning", {}), **managed_tool_kwargs)
         mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)
 
     @patch("services.agent.ImageTools")

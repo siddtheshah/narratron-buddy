@@ -206,6 +206,7 @@ def create_tool_bundle_for_session(
         config.get("story_planning", {}),
         theater_id=theater_id,
         canvas_state_service=canvas_state_service,
+        theater_manager=theater_manager,
     )
     music_tools = MusicTools(config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
 

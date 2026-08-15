@@ -1,5 +1,7 @@
 import json
+from pathlib import Path
 import threading
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +12,7 @@ from tools.story_planning_tool import (
     VertexGemini,
     build_story_context_prompt,
 )
+from components.theater_manager import TheaterManager
 
 
 class TestStoryPlanningTools(unittest.TestCase):
@@ -40,6 +43,40 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(profile["name"], "Mara")
         self.assertEqual(profile["personality"], "Bold")
         self.assertEqual(tools.get_present_characters(), [])
+
+    def test_planner_can_list_and_read_text_only_lore_documents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Lore Theater",
+                theater_id="lore-theater",
+                lore_files=[("lore/characters.txt", b"Mara is the royal cartographer.")],
+            )
+            tools = StoryPlanningTools(theater_id="lore-theater", theater_manager=theater_manager)
+
+            self.assertIn("characters.txt", tools.browse_lore())
+            self.assertIn("royal cartographer", tools.browse_lore("characters.txt"))
+            self.assertTrue(tools.browse_lore("characters.md").startswith("Error:"))
+
+    def test_empty_script_automatically_injects_all_lore_documents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Lore Theater",
+                theater_id="lore-theater",
+                lore_files=[
+                    ("lore/characters.txt", b"Mara is the royal cartographer."),
+                    ("lore/world.txt", b"The capital floats above the sea."),
+                ],
+            )
+            tools = StoryPlanningTools(theater_id="lore-theater", theater_manager=theater_manager)
+
+            context = tools._get_initial_lore_context()
+
+            self.assertIn("Lore document: characters.txt", context)
+            self.assertIn("royal cartographer", context)
+            self.assertIn("Lore document: world.txt", context)
+            self.assertIn("capital floats", context)
 
     def test_character_profile_uses_the_planner_vertex_model(self):
         with patch("tools.story_planning_tool.genai.Client") as client:

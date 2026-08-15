@@ -18,6 +18,8 @@ from absl import flags
 logger = logging.getLogger(__name__)
 
 MAX_ZIP_BYTES = 10 * 1024 * 1024
+LORE_TEXT_EXTENSION = ".txt"
+MAX_LORE_DOCUMENT_BYTES = 256 * 1024
 
 
 flags.DEFINE_boolean(
@@ -76,6 +78,10 @@ class Theater:
     def playlists_dir(self) -> Path:
         return self.manager._get_theater_playlists_dir(self.theater_id)
 
+    def lore_dir(self) -> Path:
+        """Directory containing text-only story reference documents."""
+        return self.manager._get_theater_lore_dir(self.theater_id)
+
     def output_dir(self) -> Path:
         return self.manager._get_theater_output_dir(self.theater_id)
 
@@ -111,13 +117,14 @@ class Theater:
 
 def extract_asset_package(
     zip_bytes: bytes, max_bytes: int = MAX_ZIP_BYTES,
-) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]], Optional[str]]:
-    """Read supported assets and an optional ``theater.yaml`` from a ZIP archive."""
+) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]], List[Tuple[str, bytes]], Optional[str]]:
+    """Read supported assets, text-only lore, and an optional ``theater.yaml`` from a ZIP archive."""
     if len(zip_bytes) > max_bytes:
         raise ValueError(f"ZIP archive exceeds max allowed size of {max_bytes // (1024 * 1024)}MB.")
 
     reference_files: List[Tuple[str, bytes]] = []
     playlists_data: Dict[str, List[Tuple[str, bytes]]] = {}
+    lore_files: List[Tuple[str, bytes]] = []
     theater_config_yaml: Optional[str] = None
     total_uncompressed = 0
     try:
@@ -138,6 +145,16 @@ def extract_asset_package(
                     index = parts.index("playlists")
                     playlist = parts[index + 1] if index + 1 < len(parts) - 1 else "default"
                     playlists_data.setdefault(playlist, []).append((filename, content))
+                elif "lore" in parts and filename.lower().endswith(LORE_TEXT_EXTENSION):
+                    if len(content) > MAX_LORE_DOCUMENT_BYTES:
+                        raise ValueError(
+                            f"Lore document '{filename}' exceeds the {MAX_LORE_DOCUMENT_BYTES // 1024}KB limit."
+                        )
+                    try:
+                        content.decode("utf-8")
+                    except UnicodeDecodeError:
+                        raise ValueError(f"Lore document '{filename}' must be UTF-8 encoded text.")
+                    lore_files.append((info.filename, content))
                 elif filename.lower() == "theater.yaml":
                     try:
                         theater_config_yaml = content.decode("utf-8")
@@ -147,7 +164,7 @@ def extract_asset_package(
         raise
     except Exception as error:
         logger.error("Error parsing asset ZIP package: %s", error)
-    return reference_files, playlists_data, theater_config_yaml
+    return reference_files, playlists_data, lore_files, theater_config_yaml
 
 
 class TheaterManager:
@@ -170,6 +187,9 @@ class TheaterManager:
     def _get_theater_playlists_dir(self, theater_id: str) -> Path:
         return self._get_theater_dir(theater_id) / "playlists"
 
+    def _get_theater_lore_dir(self, theater_id: str) -> Path:
+        return self._get_theater_dir(theater_id) / "lore"
+
     def _get_theater_output_dir(self, theater_id: str) -> Path:
         return self._get_theater_dir(theater_id) / "output"
 
@@ -191,7 +211,7 @@ class TheaterManager:
         theater_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_path(metadata.theater_id).write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
 
-    def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, theater_config: Optional[Dict] = None) -> TheaterMetadata:
+    def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, lore_files: Optional[List[tuple[str, bytes]]] = None, theater_config: Optional[Dict] = None) -> TheaterMetadata:
         # Import lazily so config loading can reuse the theater-root helper.
         from utils.config_loader import deep_merge, get_theater_default_config, save_theater_config
 
@@ -200,8 +220,10 @@ class TheaterManager:
             raise ValueError(f"Theater with ID '{theater_id}' already exists.")
         reference_dir = self._get_theater_reference_dir(theater_id)
         playlists_dir = self._get_theater_playlists_dir(theater_id)
+        lore_dir = self._get_theater_lore_dir(theater_id)
         reference_dir.mkdir(parents=True)
         playlists_dir.mkdir()
+        lore_dir.mkdir()
         self._get_theater_output_dir(theater_id).mkdir()
         mounted_references = []
         for relative_filename, content in reference_files or []:
@@ -230,6 +252,23 @@ class TheaterManager:
                 (playlist_dir / clean_name).write_bytes(content)
                 mounted_playlists[playlist_name].append(clean_name)
 
+        for relative_filename, content in lore_files or []:
+            parts = [part for part in relative_filename.replace("\\", "/").split("/") if part]
+            if not parts or parts[-1].lower().endswith(LORE_TEXT_EXTENSION) is False:
+                raise ValueError("Lore documents must be .txt files.")
+            if len(content) > MAX_LORE_DOCUMENT_BYTES:
+                raise ValueError(f"Lore documents must be at most {MAX_LORE_DOCUMENT_BYTES // 1024}KB.")
+            try:
+                content.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise ValueError("Lore documents must be UTF-8 encoded text.") from error
+            relative_path = Path(*parts[parts.index("lore") + 1:]) if "lore" in parts else Path(parts[-1])
+            if not relative_path.parts:
+                continue
+            target = lore_dir / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+
         config = get_theater_default_config()
         if theater_config:
             deep_merge(config, theater_config)
@@ -257,6 +296,33 @@ class TheaterManager:
         metadata = TheaterMetadata.model_validate(metadata_data)
         self._save_metadata(metadata)
         return metadata
+
+    def get_lore_documents(self, theater_id: str) -> List[str]:
+        """List text documents available to the story planner for a theater."""
+        lore_dir = self._get_theater_lore_dir(theater_id)
+        if not lore_dir.is_dir():
+            return []
+        return sorted(
+            path.relative_to(lore_dir).as_posix()
+            for path in lore_dir.rglob(f"*{LORE_TEXT_EXTENSION}")
+            if path.is_file()
+        )
+
+    def read_lore_document(self, theater_id: str, document: str) -> str:
+        """Read one UTF-8 ``.txt`` lore document without leaving its theater workspace."""
+        lore_dir = self._get_theater_lore_dir(theater_id).resolve()
+        requested = Path(str(document or "").replace("\\", "/"))
+        if not document or requested.is_absolute() or requested.suffix.lower() != LORE_TEXT_EXTENSION:
+            raise ValueError("Lore documents must be relative .txt paths.")
+        target = (lore_dir / requested).resolve()
+        if lore_dir not in target.parents or not target.is_file():
+            raise ValueError("Lore document was not found.")
+        if target.stat().st_size > MAX_LORE_DOCUMENT_BYTES:
+            raise ValueError(f"Lore documents must be at most {MAX_LORE_DOCUMENT_BYTES // 1024}KB.")
+        try:
+            return target.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError("Lore documents must be UTF-8 encoded text.") from error
 
     def list_theaters(self) -> List[TheaterMetadata]:
         theaters = []

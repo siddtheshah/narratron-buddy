@@ -1259,7 +1259,8 @@
                                     </div>
                                     <p class="tutorial-desc">
                                         Upload a structured folder or <code>.zip</code> package to automatically
-                                        populate references, playlists, and canvas defaults.
+                                        populate references, playlists, optional <code>lore/</code> text documents,
+                                        and canvas defaults.
                                     </p>
                                     <div class="folder-tree-card">
                                         <div class="tree-root">📁 my_theater_assets/</div>
@@ -1280,7 +1281,9 @@
                                         <div class="tutorial-bullet-item">
                                             <span>⚡</span>
                                             <span><strong>Auto-Extraction:</strong> References and audio tracks are
-                                                parsed & mounted instantly.</span>
+                                                parsed & mounted instantly. Put character and world background in
+                                                <code>lore/</code> as UTF-8 <code>.txt</code> files; the story planner can
+                                                browse them when creating characters.</span>
                                         </div>
                                         <div class="tutorial-bullet-item">
                                             <span>💡</span>
@@ -1308,8 +1311,9 @@
                                 here</p>
                             <small
                                 style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; display: block;">
-                                Supports full directory folders containing <code>references/</code> and
-                                <code>playlists/</code>, and <code>theater.yaml</code>
+                                Supports full directory folders containing <code>references/</code>,
+                                <code>playlists/</code>, optional text-only <code>lore/</code>, and
+                                <code>theater.yaml</code>
                             </small>
                             <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
                                 <button type="button" class="btn btn-secondary btn-sm"
@@ -2335,7 +2339,7 @@
 
                     if (mountedFolderFiles && mountedFolderFiles.length > 0) {
                         mountedFolderFiles.forEach(file => {
-                            formData.append('asset_folder_files', file);
+                            formData.append('asset_folder_files', file, file.webkitRelativePath || file.name);
                         });
                     }
                     if (folderTheaterConfigYaml) {

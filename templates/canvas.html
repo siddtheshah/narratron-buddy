@@ -1995,6 +1995,15 @@
                 const sceneDialogueOverlay = document.getElementById('scene-dialogue-overlay');
                 let sceneDialogueSignature = '';
                 let sceneDialogueRenderId = 0;
+                const dialogueSpeakerColors = new Map();
+                const dialogueSpeakerPalette = ['#fbbf24', '#67e8f9', '#f9a8d4', '#a7f3d0', '#c4b5fd', '#fdba74', '#93c5fd', '#f0abfc'];
+
+                function getDialogueSpeakerColor(speaker) {
+                    if (!dialogueSpeakerColors.has(speaker)) {
+                        dialogueSpeakerColors.set(speaker, dialogueSpeakerPalette[dialogueSpeakerColors.size % dialogueSpeakerPalette.length]);
+                    }
+                    return dialogueSpeakerColors.get(speaker);
+                }
 
         const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
         const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
@@ -3040,7 +3049,7 @@
                     const lines = (Array.isArray(dialogue) ? dialogue : [])
                         .filter(item => item && item.text)
                         .map(item => ({
-                            speaker: item.speaker || 'Narrator',
+                            speaker: String(item.speaker || 'Narrator'),
                             text: String(item.text),
                             kind: item.kind === 'thought' ? 'thought' : 'speech',
                         }));
@@ -3059,6 +3068,7 @@
                             const speaker = document.createElement('span');
                             speaker.className = 'scene-dialogue-speaker';
                             speaker.textContent = item.speaker;
+                            speaker.style.color = getDialogueSpeakerColor(item.speaker);
                             const text = document.createElement('span');
                             bubble.append(speaker, text);
                             sceneDialogueOverlay.appendChild(bubble);

@@ -88,11 +88,32 @@ class TestTheaterManager(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as zip_file:
             zip_file.writestr("assets/references/hero.png", b"image")
             zip_file.writestr("assets/playlists/ambient/rain.mp3", b"audio")
+            zip_file.writestr("assets/lore/kingdom_history.txt", "The kingdom was founded by navigators.")
+            zip_file.writestr("assets/lore/secret.pdf", b"not text")
             zip_file.writestr("assets/theater.yaml", "agent:\n  style: folder style\n")
 
-        references, playlists, theater_config_yaml = extract_asset_package(archive.getvalue())
+        references, playlists, lore, theater_config_yaml = extract_asset_package(archive.getvalue())
         self.assertEqual(references, [("assets/references/hero.png", b"image")])
         self.assertEqual(playlists, {"ambient": [("rain.mp3", b"audio")]})
+        self.assertEqual(lore, [("assets/lore/kingdom_history.txt", b"The kingdom was founded by navigators.")])
         self.assertEqual(theater_config_yaml, "agent:\n  style: folder style\n")
         with self.assertRaises(ValueError):
             extract_asset_package(b"0" * (10 * 1024 * 1024 + 1))
+
+    def test_lore_documents_are_text_only_and_cannot_escape_lore_directory(self):
+        self.manager.create_theater(
+            name="Lore Theater",
+            theater_id="lore",
+            lore_files=[("lore/world/setting.txt", b"Floating cities." )],
+        )
+
+        self.assertEqual(self.manager.get_lore_documents("lore"), ["world/setting.txt"])
+        self.assertEqual(self.manager.read_lore_document("lore", "world/setting.txt"), "Floating cities.")
+        with self.assertRaises(ValueError):
+            self.manager.read_lore_document("lore", "../theater.yaml")
+        with self.assertRaises(ValueError):
+            self.manager.create_theater(
+                name="Invalid Lore",
+                theater_id="invalid-lore",
+                lore_files=[("lore/notes.md", b"Not accepted.")],
+            )

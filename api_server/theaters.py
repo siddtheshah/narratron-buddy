@@ -31,7 +31,7 @@ from api_server.shared import (
 from api_server.dependencies import agent_manager, suggestion_service, canvas_states
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
-from components.theater_manager import TheaterMetadata, extract_asset_package
+from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
 
 
@@ -333,6 +333,7 @@ async def create_and_deploy_theater(request: Request):
 
     reference_files = []
     playlists_data = {}
+    lore_files = []
 
     # Important to provide music for first time experience. Blank theater will not have any music tracks by default
     # otherwise.
@@ -349,10 +350,11 @@ async def create_and_deploy_theater(request: Request):
                 # Check for uploaded ZIP package
                 if key in ("asset_zip", "asset_package") or filename.lower().endswith(".zip"):
                     try:
-                        zip_refs, zip_playlists, zip_config_yaml = extract_asset_package(content)
+                        zip_refs, zip_playlists, zip_lore, zip_config_yaml = extract_asset_package(content)
                     except ValueError as ve:
                         raise HTTPException(status_code=400, detail=str(ve))
                     reference_files.extend(zip_refs)
+                    lore_files.extend(zip_lore)
                     for pl_name, tracks in zip_playlists.items():
                         if pl_name not in playlists_data:
                             playlists_data[pl_name] = []
@@ -377,6 +379,22 @@ async def create_and_deploy_theater(request: Request):
                             if pl_name not in playlists_data:
                                 playlists_data[pl_name] = []
                             playlists_data[pl_name].append((clean_name, content))
+                    elif "lore" in parts:
+                        if not clean_name.lower().endswith(".txt"):
+                            raise HTTPException(status_code=400, detail="Lore documents must be .txt files.")
+                        if len(content) > MAX_LORE_DOCUMENT_BYTES:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Lore documents must be at most {MAX_LORE_DOCUMENT_BYTES // 1024}KB.",
+                            )
+                        try:
+                            content.decode("utf-8")
+                        except UnicodeDecodeError:
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Lore documents must be UTF-8 encoded text.",
+                            )
+                        lore_files.append((rel_path, content))
                 elif key == "reference_files":
                     reference_files.append((filename, content))
                 elif key.startswith("playlist_"):
@@ -428,6 +446,7 @@ async def create_and_deploy_theater(request: Request):
         theater_id=theater_id,
         reference_files=reference_files,
         playlists_data=playlists_data,
+        lore_files=lore_files,
         theater_config=theater_config,
     )
     deployed_meta = theater_manager.deploy_theater(metadata.theater_id)

@@ -30,6 +30,7 @@ from google.adk.sessions import InMemorySessionService
 from google import genai
 from google.genai import types
 
+from components.theater_manager import TheaterManager
 from tools.base_tool import BaseTools, with_cooldown
 from services.quirk_service import get_quirk_generator_service
 
@@ -153,6 +154,7 @@ class StoryPlanningTools(BaseTools):
         config: dict | None = None,
         theater_id: str = "",
         canvas_state_service: Any = None,
+        theater_manager: Optional[TheaterManager] = None,
     ):
         super().__init__(
             config=config or {},
@@ -166,6 +168,7 @@ class StoryPlanningTools(BaseTools):
         self._plot_beats: List[Dict[str, str]] = []
         self._plot_beats_lock = Lock()
         self._last_scene_reaction: Dict[str, Any] = {}
+        self.theater_manager = theater_manager or TheaterManager()
 
         self.nodes_ahead: int = int(self.config.get("nodes_ahead", 3))
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
@@ -377,6 +380,43 @@ class StoryPlanningTools(BaseTools):
                 location=self.vertex_location,
             )
         return self._vertex_client
+
+    def browse_lore(self, document: str = "") -> str:
+        """List or read the theater's text-only lore documents.
+
+        Call without ``document`` to list available ``.txt`` paths. Call again
+        with one listed relative path to read it before planning characters or
+        scenes. This tool is read-only and cannot access files outside ``lore/``.
+        """
+        if not self.theater_id:
+            return "No theater is active, so no lore documents are available."
+        if not document:
+            documents = self.theater_manager.get_lore_documents(self.theater_id)
+            return (
+                "Available lore documents:\n" + "\n".join(f"- {path}" for path in documents)
+                if documents
+                else "No lore documents are available for this theater."
+            )
+        try:
+            content = self.theater_manager.read_lore_document(self.theater_id, document)
+        except ValueError as error:
+            return f"Error: {error}"
+        return f"Lore document: {document}\n\n{content}"
+
+    def _get_initial_lore_context(self) -> str:
+        """Load every lore document for the first, otherwise context-free planner turn."""
+        documents = self.theater_manager.get_lore_documents(self.theater_id)
+        if not documents:
+            return ""
+        sections = []
+        for document in documents:
+            try:
+                content = self.theater_manager.read_lore_document(self.theater_id, document)
+            except ValueError as error:
+                logger.warning("[STORY_SCRIPT] Could not inject lore document '%s': %s", document, error)
+                continue
+            sections.append(f"Lore document: {document}\n{content}")
+        return "\n\n".join(sections)
 
     def generate_character_profile(
         self,
@@ -634,6 +674,13 @@ class StoryPlanningTools(BaseTools):
         if self.planner_executor:
             return self.planner_executor(user_action, snapshot)
 
+        initial_lore_context = self._get_initial_lore_context() if not snapshot["plot_beats"] else ""
+        initial_lore_section = (
+            "Complete theater lore for this initial planning turn:\n" + initial_lore_context
+            if initial_lore_context
+            else ""
+        )
+
         planner_context = build_story_context_prompt(
             elements=snapshot["elements"],
             characters=snapshot["characters"],
@@ -646,7 +693,9 @@ class StoryPlanningTools(BaseTools):
 
 {planner_context}
 
-For the user action provided, return one complete scene delta. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. Include character_updates only for characters that should enter or materially change. You may call generate_character_profile to enrich a proposed character, then include its returned profile in character_updates. That tool only provides information: the scene delta is the sole source of changes. Then return the scene reaction."""
+{initial_lore_section}
+
+For the user action provided, return one complete scene delta. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first characters and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching characters. Include character_updates only for characters that should enter or materially change. You may call generate_character_profile to enrich a proposed character, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. Then return the scene reaction."""
         planner = Agent(
             name="story_planner",
             description="Authoritative planner for one interactive story turn.",
@@ -656,7 +705,7 @@ For the user action provided, return one complete scene delta. Include exactly {
                 location=self.vertex_location,
             ),
             instruction=instruction,
-            tools=[self.generate_character_profile],
+            tools=[self.browse_lore, self.generate_character_profile],
             output_schema=SceneReaction,
             output_key="scene_reaction",
             disallow_transfer_to_parent=True,
