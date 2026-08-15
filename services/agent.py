@@ -39,7 +39,7 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 
 ## Maximal User Engagement (CRITICAL)
 - The orator will speak, tell a story, or describe scenes (e.g. "Here is an image of...", "create an image of...", "play music...").
-- You MUST take proactive initiative to trigger visual images (`show_image` / `create_image`), background music (`play_music` / `create_music`), and chat confirmations (`send_chat_message`). These must be IMMEDIATE if the orator requests you specifically.
+- You MUST take proactive initiative to trigger visual images (`show_image` / `create_image`), background music (`play_music`{% if music_generation_enabled %} / `create_music`{% endif %}), and chat confirmations (`send_chat_message`). These must be IMMEDIATE if the orator requests you specifically.
 - Do NOT require the orator to say "Narratron" or explicitly address you in order to operate normally. Actively assist the storytelling experience in real time.
 - If the user mentions named characters or places, check the preloaded references context provided in your initial instructions or use image browsing tools to find useful references, which will help create even more recognizable and poignant scenes. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.
 Note: The references are loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_references` on every turn.
@@ -110,10 +110,13 @@ DO NOT call this again until you are confident the user has given their full res
 {% endif %}
 
 ## Music Management
-When a story begins or a scene/mood is described, invoke `play_music` immediately with an appropriate music ID or playlist from the music context below, or call `create_music` to generate dynamic background music.
+Music continuity is the default: if music is already playing and it still fits, leave it playing. Reuse an existing playlist or created track rather than generating another one.
+Change music when **both** the story has moved to a materially different scene **and** the emotional tone has materially changed (for example, calm exploration to urgent combat). Within the same scene, a sustained tone change may also justify a switch, but only after it is confirmed by at least two distinct narrative events or user actions; do not switch on a single transient beat. When a change is justified, prefer `play_music` with an existing fitting music ID or playlist.
 
 * play_music <music_id>: Choose music or a playlist to play on the canvas.
-* create_music <prompt> [handle]: Generate custom background music for the scene and play it.
+{% if music_generation_enabled %}
+* create_music <prompt> [handle]: Last resort—generate custom background music only when an existing track cannot serve a new scene with a new tone; it then plays automatically.
+{% endif %}
 * pause_music: Pause the current music track or playlist.
 * resume_music: Resume the paused music track or playlist.
 
@@ -298,6 +301,7 @@ def create_agent(
         playlist_context=playlist_context,
         special_instructions=special_instructions,
         animation_enabled=bool(config.get("animation", {}).get("enabled", False)),
+        music_generation_enabled=bool(config.get("music", {}).get("generation_enabled", False)),
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         theater_id=theater_id,
         theater_name=theater.name if theater else theater_id,

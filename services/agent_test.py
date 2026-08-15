@@ -3,10 +3,16 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from services.agent import create_agent
+from services.agent import AGENT_INSTRUCTION_TEMPLATE, create_agent
 
 
 class TestCreateAgent(unittest.TestCase):
+    def test_music_instruction_prefers_reuse_and_requires_scene_and_tone_change(self):
+        self.assertIn("Music continuity is the default", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("both** the story has moved to a materially different scene **and** the emotional tone", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("confirmed by at least two distinct narrative events or user actions", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("music_generation_enabled", AGENT_INSTRUCTION_TEMPLATE)
+
     @patch("services.agent.create_tool_bundle_for_session")
     @patch("services.agent.Agent")
     def test_create_agent_calls_list_references_on_init(
@@ -54,12 +60,30 @@ class TestCreateAgent(unittest.TestCase):
         )
         mock_bundle_fn.return_value = mock_bundle
 
-        create_agent(theater_id="music_context_theater")
+        create_agent(theater_id="music_context_theater", config={"music": {"generation_enabled": False}})
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("Preloaded Music Playlists Context", instruction)
         self.assertIn("moonlit forest", instruction)
         self.assertNotIn("* list_playlists:", instruction)
+        self.assertNotIn("create_music", instruction)
+
+    @patch("services.agent.get_playlists_context")
+    @patch("services.agent.create_tool_bundle_for_session")
+    @patch("services.agent.Agent")
+    def test_create_agent_includes_create_music_instruction_only_when_enabled(
+        self, mock_agent_cls, mock_bundle_fn, mock_playlists_fn
+    ):
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+        mock_bundle_fn.return_value = mock_bundle
+        mock_playlists_fn.return_value = "No music playlists or generated tracks found."
+
+        create_agent(theater_id="music_enabled", config={"music": {"generation_enabled": True}})
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("create_music", instruction)
+        self.assertIn("Last resort", instruction)
 
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")
