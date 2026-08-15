@@ -3178,6 +3178,16 @@
                 let doodleActions = [];
                 let pendingDrawBatch = null;
                 let drawBatchFrame = null;
+                // Keep drawing responsive even while reconnecting.  The queue
+                // is flushed only after the server's initial snapshot arrives,
+                // so that snapshot cannot overwrite locally drawn strokes.
+                const pendingDoodleMessages = [];
+                const inFlightDoodleMessages = new Map();
+                let nextDoodleMessageId = 0;
+                let ws = null;
+                let doodleSocketReady = false;
+                let doodleReconnectTimer = null;
+                const DOODLE_RECONNECT_DELAY_MS = 5000;
 
                 function renderDoodleBatch(data) {
                     const points = data.points;
@@ -3199,7 +3209,49 @@
                     if (!pendingDrawBatch) return;
                     const batch = pendingDrawBatch;
                     pendingDrawBatch = null;
-                    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(batch));
+                    sendOrQueueDoodleMessage(batch);
+                }
+
+                function isActiveCanvasWindow() {
+                    return document.visibilityState === 'visible' && document.hasFocus();
+                }
+
+                function sendOrQueueDoodleMessage(message) {
+                    if (!message.client_message_id) {
+                        nextDoodleMessageId += 1;
+                        message.client_message_id = `${Date.now()}-${nextDoodleMessageId}`;
+                    }
+                    if (ws && ws.readyState === WebSocket.OPEN && doodleSocketReady) {
+                        try {
+                            ws.send(JSON.stringify(message));
+                            inFlightDoodleMessages.set(message.client_message_id, message);
+                        } catch (_) {
+                            pendingDoodleMessages.push(message);
+                            scheduleDoodleReconnect(0);
+                        }
+                        return;
+                    }
+                    pendingDoodleMessages.push(message);
+                    scheduleDoodleReconnect(0);
+                }
+
+                function flushQueuedDoodleMessages() {
+                    if (!ws || ws.readyState !== WebSocket.OPEN || !doodleSocketReady) return;
+                    const queuedMessages = pendingDoodleMessages.splice(0);
+                    for (const message of queuedMessages) {
+                        sendOrQueueDoodleMessage(message);
+                    }
+                }
+
+                function scheduleDoodleReconnect(delay = DOODLE_RECONNECT_DELAY_MS) {
+                    // A closed socket does not need to be revived merely to
+                    // redraw server-persisted strokes. Reconnect only when
+                    // this browser has local doodle changes to deliver.
+                    if (!pendingDoodleMessages.length || doodleReconnectTimer || !isActiveCanvasWindow()) return;
+                    doodleReconnectTimer = setTimeout(() => {
+                        doodleReconnectTimer = null;
+                        connectDoodleSocket();
+                    }, delay);
                 }
 
                 function setDoodlesDisplay(enabled) {
@@ -3223,9 +3275,7 @@
                         if (!isOrator) return;
                         const newEnabled = !doodlesEnabled;
                         setDoodlesDisplay(newEnabled);
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'toggle_doodles', enabled: newEnabled }));
-                        }
+                        sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: newEnabled });
                     });
                 }
 
@@ -3282,9 +3332,32 @@
 
                 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
-                const ws = new WebSocket(wsUrl);
+                function connectDoodleSocket(initialConnection = false) {
+                    // The first connection must not depend on focus: on a
+                    // newly opened page, the script can run before the window
+                    // has received focus. Subsequent retries stay limited to
+                    // an active window by scheduleDoodleReconnect.
+                    if ((!initialConnection && !isActiveCanvasWindow()) || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) return;
+                    const socket = new WebSocket(wsUrl);
+                    ws = socket;
+                    doodleSocketReady = false;
 
-                ws.onmessage = (event) => {
+                    socket.onopen = () => {
+                        // The server always follows this with doodles_toggle and
+                        // doodle_snapshot; wait for the latter before flushing.
+                    };
+                    socket.onclose = () => {
+                        if (ws === socket) {
+                            doodleSocketReady = false;
+                            for (const message of inFlightDoodleMessages.values()) {
+                                pendingDoodleMessages.push(message);
+                            }
+                            inFlightDoodleMessages.clear();
+                            scheduleDoodleReconnect();
+                        }
+                    };
+                    socket.onerror = () => socket.close();
+                    socket.onmessage = (event) => {
                     const data = JSON.parse(event.data);
                     if (data.type === 'doodles_toggle') {
                         setDoodlesDisplay(data.enabled);
@@ -3295,6 +3368,10 @@
                         doodleActions = [];
                         redrawAllDoodles();
                         (data.batches || []).forEach(renderDoodleBatch);
+                        doodleSocketReady = true;
+                        flushQueuedDoodleMessages();
+                    } else if (data.type === 'doodle_ack') {
+                        inFlightDoodleMessages.delete(data.client_message_id);
                     } else if (data.type === 'draw_batch') {
                         renderDoodleBatch(data);
                     } else if (data.type === 'draw') {
@@ -3314,7 +3391,14 @@
                             updateBatonStateUI(data.baton_state, data.active_viewers);
                         }
                     }
-                };
+                    };
+                }
+
+                document.addEventListener('visibilitychange', () => {
+                    if (isActiveCanvasWindow()) scheduleDoodleReconnect(0);
+                });
+                window.addEventListener('focus', () => scheduleDoodleReconnect(0));
+                connectDoodleSocket(true);
 
                 function drawLine(nx0, ny0, nx1, ny1, color, size, emit) {
                     const action = {
@@ -3395,11 +3479,11 @@
 
                 clearBtn.addEventListener('click', () => {
                     flushDrawBatch();
+                    pendingDoodleMessages.length = 0;
+                    inFlightDoodleMessages.clear();
                     doodleActions = [];
                     redrawAllDoodles();
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'clear' }));
-                    }
+                    sendOrQueueDoodleMessage({ type: 'clear' });
                 });
 
                 resizeDoodleCanvas();

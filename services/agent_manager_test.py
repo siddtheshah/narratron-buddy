@@ -370,6 +370,36 @@ class TestAgentSessionManager(unittest.TestCase):
         finally:
             os.remove(image_path)
 
+    def test_agent_requested_observability_attaches_doodles_with_state(self):
+        """The live model must receive the annotation before it can respond."""
+        mock_runner = MagicMock()
+        mock_runner.agent = MagicMock(tools=[])
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(
+            theater_id="test_observability_doodles",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+        )
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+        canvas = MagicMock()
+        canvas.viewer_collab_enabled = True
+        canvas.get_doodle_snapshot_data.return_value = [{"type": "draw"}]
+        canvas.get_doodle_snapshot_png.return_value = b"annotated-png"
+        canvas.shown_image_path = None
+        canvas.shown_image_prompt = None
+        canvas.current_playlist = None
+        session.canvas_state_manager = canvas
+
+        self.assertTrue(session.send_agent_requested_observability())
+
+        content = session.live_request_queue.send_content.call_args.args[0]
+        self.assertEqual(len(content.parts), 3)
+        self.assertIn("audience annotations", content.parts[1].text)
+        self.assertEqual(content.parts[2].inline_data.mime_type, "image/png")
+        self.assertEqual(content.parts[2].inline_data.data, b"annotated-png")
+        canvas.get_doodle_snapshot_png.assert_called_once_with()
+
     def test_doodle_snapshot_is_rendered_off_the_event_loop(self):
         async def run_test():
             mock_agent = MagicMock()

@@ -181,12 +181,30 @@ class CanvasStateService:
         sender: WebSocket,
     ) -> None:
         """Persist and broadcast one doodle protocol message."""
+        message_id = data.get("client_message_id")
+        message_id = message_id if isinstance(message_id, str) and len(message_id) <= 128 else None
+
+        async def acknowledge() -> None:
+            if not message_id:
+                return
+            state._processed_doodle_message_ids.add(message_id)
+            # Keep bounded transient de-duplication state for long sessions.
+            if len(state._processed_doodle_message_ids) > 2_000:
+                state._processed_doodle_message_ids.clear()
+                state._processed_doodle_message_ids.add(message_id)
+            await sender.send_json({"type": "doodle_ack", "client_message_id": message_id})
+
+        if message_id and message_id in state._processed_doodle_message_ids:
+            await sender.send_json({"type": "doodle_ack", "client_message_id": message_id})
+            return
+
         if data.get("type") == "toggle_doodles":
             state.set_doodles_enabled(bool(data.get("enabled", True)))
             await state.broadcast_ws_message(
                 {"type": "doodles_toggle", "enabled": state.doodles_enabled},
                 sender=None,
             )
+            await acknowledge()
             return
 
         if data.get("type") == "draw_batch":
@@ -216,11 +234,13 @@ class CanvasStateService:
                 {"type": "draw_batch", "color": color, "size": size, "points": points},
                 sender=sender,
             )
+            await acknowledge()
             return
 
         if data.get("type") == "clear":
             state.add_doodle(data)
             await state.broadcast_ws_message(data, sender=sender)
+            await acknowledge()
             return
 
         # Accept the pre-batching protocol during rolling deploys and from
@@ -228,6 +248,7 @@ class CanvasStateService:
         if data.get("type") == "draw":
             state.add_doodle(data)
             await state.broadcast_ws_message(data, sender=sender)
+            await acknowledge()
 
     async def toggle_microphone(self, theater_id: Optional[str] = None) -> int:
         """Ask connected canvas clients to toggle their microphone input."""

@@ -62,6 +62,10 @@ class CanvasStateManager:
         self.state_revision: int = 0
         self.doodles_state: List[Dict[str, Any]] = []
         self.doodles_enabled: bool = True
+        # Delivery ids are intentionally transient. They make a client retry
+        # idempotent while this server process is alive without persisting
+        # protocol bookkeeping into theater exports.
+        self._processed_doodle_message_ids: set[str] = set()
 
         # Viewer collaboration mode — when enabled, the top audience suggestion
         # is fed to the Narratron agent on each observability cycle.

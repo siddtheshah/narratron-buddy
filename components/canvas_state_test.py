@@ -139,6 +139,24 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertEqual(recipient.messages[0]["points"], [0.1, 0.1, 0.2, 0.2, 0.3, 0.3])
         self.assertEqual(sender.messages, [])
 
+    def test_doodle_batch_acknowledges_and_deduplicates_retries(self):
+        service = CanvasStateService(self.theater_manager)
+        state = service.get("acknowledged_doodles")
+        sender = RecordingWebSocket()
+        message = {
+            "type": "draw_batch", "color": "#ffffff", "size": 3,
+            "points": [0.1, 0.1, 0.2, 0.2], "client_message_id": "doodle-1",
+        }
+
+        asyncio.run(service.apply_doodle_message(state, message, sender))
+        asyncio.run(service.apply_doodle_message(state, message, sender))
+
+        self.assertEqual(len(state.doodles_state), 1)
+        self.assertEqual(sender.messages, [
+            {"type": "doodle_ack", "client_message_id": "doodle-1"},
+            {"type": "doodle_ack", "client_message_id": "doodle-1"},
+        ])
+
     def test_doodle_snapshot_groups_connected_segments_by_style(self):
         manager = CanvasStateManager(theater_id="snapshot_batches", theater_manager=self.theater_manager)
         manager.doodles_state = [

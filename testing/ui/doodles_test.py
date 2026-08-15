@@ -1,11 +1,24 @@
 """Tests for persisting and resetting canvas doodles."""
 
 import json
+from pathlib import Path
 
 from testing.ui.base import UITestCase
 
 
 class TestDoodles(UITestCase):
+
+    def test_canvas_retries_active_doodle_websocket_connections(self):
+        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        self.assertIn("function connectDoodleSocket(initialConnection = false)", canvas)
+        self.assertIn("scheduleDoodleReconnect", canvas)
+        self.assertIn("document.visibilityState === 'visible' && document.hasFocus()", canvas)
+        self.assertIn("pendingDoodleMessages", canvas)
+        self.assertIn("inFlightDoodleMessages", canvas)
+        self.assertIn("doodle_ack", canvas)
+        self.assertIn("if (!pendingDoodleMessages.length || doodleReconnectTimer || !isActiveCanvasWindow()) return;", canvas)
+        self.assertIn("connectDoodleSocket(true);", canvas)
+
     def test_doodles_persist_and_reset_when_the_image_changes(self):
         theater_id = "doodle_persistence"
         first_image = self.workspace / "img1.jpg"

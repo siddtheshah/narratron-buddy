@@ -403,8 +403,12 @@ class AgentSession:
     def send_agent_requested_observability(self) -> bool:
         """Send an explicit agent-requested canvas update and defer regular pulses.
 
-        Unlike the regular text pulse, this request includes the current
-        on-screen image when it is available so the agent can inspect it.
+        Unlike the regular text pulse, this request includes a visual snapshot
+        of the current canvas when it is available so the agent can inspect it.
+        When viewer doodles are active, the annotated composite is attached in
+        the *same* content item as the state text.  Sending the base image and
+        then an asynchronous doodle image made it easy for a live turn to act
+        on the unannotated image before the annotation arrived.
         """
         if not self.websocket_connected:
             logger.debug(
@@ -419,6 +423,14 @@ class AgentSession:
             parts = [types.Part(text=msg)]
             image_part = self._get_current_canvas_image_part()
             if image_part:
+                if (
+                    getattr(self.canvas_state_manager, "viewer_collab_enabled", False)
+                    and hasattr(self.canvas_state_manager, "get_doodle_snapshot_data")
+                    and self.canvas_state_manager.get_doodle_snapshot_data()
+                ):
+                    parts.append(types.Part(
+                        text="[Viewer Doodles]: The attached image is the current canvas with the audience annotations applied."
+                    ))
                 parts.append(image_part)
             try:
                 self.send_content(types.Content(parts=parts))
@@ -432,13 +444,40 @@ class AgentSession:
             # Share the periodic timestamp with every observation source.
             self.last_canvas_state_sent = now
 
-        self._schedule_doodle_snapshot()
+        # The visual attached above already includes viewer doodles when
+        # collaboration is enabled, so do not enqueue a second, late image.
         logger.info("[AgentSession] Agent-requested canvas state update: %s", msg.replace("\n", " | "))
         return True
 
     def _get_current_canvas_image_part(self) -> Optional[types.Part]:
-        """Return the current canvas image as an inline part, when readable."""
-        image_path = getattr(self.canvas_state_manager, "shown_image_path", None)
+        """Return the current visible canvas image as an inline part.
+
+        Prefer the server-rendered doodle composite during collaboration.  It
+        is PNG regardless of the source-image format and is therefore also a
+        reliable decode path for the Live API.  Fall back to the source image
+        when there is no visible annotation or the composite cannot be made.
+        """
+        canvas = self.canvas_state_manager
+        if (
+            canvas
+            and getattr(canvas, "viewer_collab_enabled", False)
+            and hasattr(canvas, "get_doodle_snapshot_data")
+            and canvas.get_doodle_snapshot_data()
+            and hasattr(canvas, "get_doodle_snapshot_png")
+        ):
+            try:
+                snapshot = canvas.get_doodle_snapshot_png()
+                if snapshot:
+                    return types.Part(
+                        inline_data=types.Blob(mime_type="image/png", data=snapshot)
+                    )
+            except Exception:
+                logger.exception(
+                    "Could not render doodle composite for observability in theater %s",
+                    self.theater_id,
+                )
+
+        image_path = getattr(canvas, "shown_image_path", None)
         if not image_path:
             return None
         try:
