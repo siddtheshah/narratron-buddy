@@ -257,14 +257,18 @@ class TestCanvasStateManager(BaseTestCase):
         manager = CanvasStateManager(theater_id="tool_activity", theater_manager=self.theater_manager)
         manager.set_tool_activity("image", True)
         manager.set_tool_activity("live", True)
+        manager.set_tool_activity("dice", True)
 
         self.assertTrue(manager.get_latest_state()["tool_activity"]["image_generating"])
         self.assertTrue(manager.get_latest_state()["tool_activity"]["live_ready"])
+        self.assertTrue(manager.get_latest_state()["tool_activity"]["dice_rolling"])
 
         manager.set_tool_activity("image", False)
         manager.set_tool_activity("live", False)
+        manager.set_tool_activity("dice", False)
         self.assertFalse(manager.get_latest_state()["tool_activity"]["image_generating"])
         self.assertFalse(manager.get_latest_state()["tool_activity"]["live_ready"])
+        self.assertFalse(manager.get_latest_state()["tool_activity"]["dice_rolling"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,7 @@ class TestStoryPlanningTools(unittest.TestCase):
     def test_planner_instruction_reserves_player_agency(self):
         self.assertIn("Never invent the player's actions, speech, thoughts, feelings, decisions", SCENE_REACTION_SYSTEM_INSTRUCTION)
         self.assertIn("Dialogue may be spoken only by NPCs", SCENE_REACTION_SYSTEM_INSTRUCTION)
+        self.assertIn("'yes, and' improv posture", SCENE_REACTION_SYSTEM_INSTRUCTION)
 
     def test_planner_model_uses_explicit_vertex_client(self):
         with patch("tools.story_planning_tool.genai.Client") as client:
@@ -32,9 +33,12 @@ class TestStoryPlanningTools(unittest.TestCase):
             elements=[],
             characters=[{"name": "Mara", "personality": "Bold", "motivation": "Explore", "quirk": "Hums"}],
             reused_nodes=[{"node_index": 0, "plot_beat": "The tide rises."}],
+            recent_turns=[{"action": "I light the beacon.", "response": "The harbor answers with bells."}],
         )
         self.assertIn("- Mara: Personality: Bold", context)
         self.assertIn("Node 0: Plot beat: The tide rises.", context)
+        self.assertIn("Player action: I light the beacon.", context)
+        self.assertIn("Story response: The harbor answers with bells.", context)
 
     def test_character_profile_tool_does_not_change_story_state(self):
         tools = StoryPlanningTools(theater_id="character-profile")
@@ -48,6 +52,26 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(profile["name"], "Mara")
         self.assertEqual(profile["personality"], "Bold")
         self.assertEqual(tools.get_present_characters(), [])
+
+    def test_dice_roll_returns_a_dnd_style_total(self):
+        canvas_state_service = MagicMock()
+        tools = StoryPlanningTools(theater_id="dice", canvas_state_service=canvas_state_service)
+
+        result = tools.roll_dice(sides=20, count=2, modifier=3, reason="Leap across the chasm")
+
+        self.assertEqual(result["notation"], "2d20+3")
+        self.assertEqual(len(result["rolls"]), 2)
+        self.assertTrue(all(1 <= roll <= 20 for roll in result["rolls"]))
+        self.assertEqual(result["total"], sum(result["rolls"]) + 3)
+        self.assertEqual(result["reason"], "Leap across the chasm")
+        canvas_state_service.set_tool_activity.assert_called_once_with(
+            "dice", active=True, theater_id="dice", recent_seconds=2.5,
+        )
+
+    def test_dice_roll_rejects_unsafe_ranges(self):
+        tools = StoryPlanningTools(theater_id="dice")
+        self.assertIn("sides", tools.roll_dice(sides=1)["error"])
+        self.assertIn("count", tools.roll_dice(count=11)["error"])
 
     def test_planner_can_list_and_read_text_only_lore_documents(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -191,6 +215,53 @@ class TestStoryPlanningTools(unittest.TestCase):
             "plot_beats": [{"plot_beat": "A bell rings."}],
         })
         self.assertEqual(tools.get_plot_beats(), [{"plot_beat": "A bell rings."}])
+
+    def test_planner_receives_the_three_most_recent_resolved_turns(self):
+        snapshots = []
+
+        def planner_executor(_action, snapshot):
+            snapshots.append(snapshot)
+            return {
+                "narration": "The world changes.",
+                "plot_beats": ["A new consequence gathers."],
+            }
+
+        tools = StoryPlanningTools(config={
+            "adventure_mode": True,
+            "nodes_ahead": 1,
+            "planner_executor": planner_executor,
+        })
+
+        for action in ("Action 1", "Action 2", "Action 3", "Action 4"):
+            tools._resolve_user_action(action)
+
+        self.assertEqual(
+            [turn["action"] for turn in snapshots[-1]["recent_turns"]],
+            ["Action 1", "Action 2", "Action 3"],
+        )
+        self.assertEqual(
+            [turn["action"] for turn in tools.get_recent_story_turns()],
+            ["Action 2", "Action 3", "Action 4"],
+        )
+
+    def test_recent_turns_survive_story_state_round_trip(self):
+        tools = StoryPlanningTools(theater_id="history")
+        for index in range(4):
+            tools._append_recent_story_turn(
+                f"Action {index}", {"narration": f"Response {index}", "dialogue": []},
+            )
+
+        restored = StoryPlanningTools(theater_id="history-restored")
+        restored.import_story_planning_state(tools.export_story_planning_state())
+
+        self.assertEqual(
+            restored.get_recent_story_turns(),
+            [
+                {"action": "Action 1", "response": "Response 1"},
+                {"action": "Action 2", "response": "Response 2"},
+                {"action": "Action 3", "response": "Response 3"},
+            ],
+        )
 
 
 if __name__ == "__main__":

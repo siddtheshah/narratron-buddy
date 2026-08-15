@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from threading import Lock
 import time
 from typing import Any, Callable, List, Dict, Optional
@@ -37,6 +38,7 @@ from services.quirk_service import get_quirk_generator_service
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_NAMED_ELEMENTS = 5
+RECENT_STORY_TURNS_LIMIT = 3
 
 _CHARACTER_GEN_PROMPT_TEMPLATE = Template(
 """Character name: {{ name }}
@@ -83,12 +85,25 @@ Node {{ node.node_index }}: Plot beat: {{ node.plot_beat }}
 {% else -%}
 (No upcoming plot beats)
 {% endif -%}
+
+Recent resolved player turns (oldest first):
+{% if recent_turns -%}
+{% for turn in recent_turns -%}
+- Player action: {{ turn.action }}
+  Story response: {{ turn.response }}
+{% endfor -%}
+{% else -%}
+(No previous resolved player turns)
+{% endif -%}
 """
 )
 
 SCENE_REACTION_SYSTEM_INSTRUCTION = (
     "You are the authoritative narrative script engine for an interactive story. "
     "Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats. "
+    "Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, "
+    "and move the story forward with an interesting consequence, opportunity, complication, or escalation. Do not stonewall with a flat refusal or erase "
+    "the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead. "
     "The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, "
     "narrate as, or attribute to them. Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf. "
     "Write narration only about the world and the consequences of the submitted action. Dialogue may be spoken only by NPCs; never emit dialogue for a speaker "
@@ -136,12 +151,14 @@ def build_story_context_prompt(
     elements: List[Dict[str, str]],
     characters: List[Dict[str, Any]],
     reused_nodes: List[Dict[str, Any]],
+    recent_turns: Optional[List[Dict[str, str]]] = None,
 ) -> str:
     """Render shared scene, character, and plot context for every planner task."""
     return _STORY_CONTEXT_PROMPT_TEMPLATE.render(
         elements=elements or [],
         characters=characters or [],
         reused_nodes=reused_nodes or [],
+        recent_turns=recent_turns or [],
     ).strip()
 
 
@@ -172,6 +189,10 @@ class StoryPlanningTools(BaseTools):
         self._plot_beats: List[Dict[str, str]] = []
         self._plot_beats_lock = Lock()
         self._last_scene_reaction: Dict[str, Any] = {}
+        # A compact, persisted transcript gives the stateless planner enough
+        # continuity without repeatedly replaying its entire conversation.
+        self._recent_story_turns: List[Dict[str, str]] = []
+        self._recent_story_turns_lock = Lock()
         self.theater_manager = theater_manager or TheaterManager()
 
         self.nodes_ahead: int = int(self.config.get("nodes_ahead", 3))
@@ -231,7 +252,7 @@ class StoryPlanningTools(BaseTools):
         self.reload_from_session_state()
 
     def export_story_planning_state(self) -> Dict[str, Any]:
-        """Export the scene elements, characters, durable plot beats, and latest reaction."""
+        """Export durable story state plus the most recent resolved turns."""
         with self._elements_lock:
             elements_list = [
                 {"name": name, "content": content}
@@ -241,12 +262,15 @@ class StoryPlanningTools(BaseTools):
             chars_list = [dict(c) for c in self._characters.values()]
         with self._plot_beats_lock:
             plot_beats = list(self._plot_beats)
+        with self._recent_story_turns_lock:
+            recent_turns = [dict(turn) for turn in self._recent_story_turns]
 
         return {
             "named_elements": elements_list,
             "characters": chars_list,
             "plot_beats": plot_beats,
             "last_scene_reaction": dict(self._last_scene_reaction),
+            "recent_story_turns": recent_turns,
         }
 
     def import_story_planning_state(self, state: Dict[str, Any]) -> None:
@@ -287,6 +311,9 @@ class StoryPlanningTools(BaseTools):
                 if isinstance(item, dict) and item.get("plot_beat")
             ] if isinstance(beats, list) else []
         self._last_scene_reaction = state.get("last_scene_reaction", {}) if isinstance(state.get("last_scene_reaction", {}), dict) else {}
+        recent_turns = state.get("recent_story_turns", [])
+        with self._recent_story_turns_lock:
+            self._recent_story_turns = self._normalize_recent_story_turns(recent_turns)
 
     def reload_from_session_state(self) -> None:
         """Reload story planning state from session state manager if present."""
@@ -409,6 +436,58 @@ class StoryPlanningTools(BaseTools):
         except ValueError as error:
             return f"Error: {error}"
         return f"Lore document: {document}\n\n{content}"
+
+    def roll_dice(
+        self,
+        sides: int = 20,
+        count: int = 1,
+        modifier: int = 0,
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        """Roll dice to resolve a genuinely uncertain story outcome.
+
+        Use this when chance should decide how well a player attempt works,
+        such as a risky feat, a contest, or an unpredictable discovery. The
+        returned values are authoritative for the current scene delta. Do not
+        roll for ordinary actions with obvious consequences. Supports 1-10
+        dice, 2-1000 sides per die, and a -1000 to +1000 modifier. High is a GOOD,
+        well aligned outcome for what the player is attempting. Low is BAD, but should
+        still lead to interesting situations even if misaligned with the player goal.
+        """
+        try:
+            clean_sides = int(sides)
+            clean_count = int(count)
+            clean_modifier = int(modifier)
+        except (TypeError, ValueError):
+            return {"error": "sides, count, and modifier must be integers."}
+        if not 2 <= clean_sides <= 1_000:
+            return {"error": "sides must be between 2 and 1000."}
+        if not 1 <= clean_count <= 10:
+            return {"error": "count must be between 1 and 10."}
+        if not -1_000 <= clean_modifier <= 1_000:
+            return {"error": "modifier must be between -1000 and 1000."}
+
+        rolls = [secrets.randbelow(clean_sides) + 1 for _ in range(clean_count)]
+        total = sum(rolls) + clean_modifier
+        result = {
+            "notation": f"{clean_count}d{clean_sides}" + (f"{clean_modifier:+d}" if clean_modifier else ""),
+            "rolls": rolls,
+            "modifier": clean_modifier,
+            "total": total,
+        }
+        if str(reason or "").strip():
+            result["reason"] = str(reason).strip()[:300]
+        if self.canvas_state_service:
+            self.canvas_state_service.set_tool_activity(
+                "dice", active=True, theater_id=self.theater_id, recent_seconds=2.5,
+            )
+        logger.info(
+            "[STORY_SCRIPT] Dice roll (theater=%s, reason=%s): %s",
+            self.theater_id or "default",
+            result.get("reason", "unspecified"),
+            result,
+        )
+        return result
 
     def _get_initial_lore_context(self) -> str:
         """Load every lore document for the first, otherwise context-free planner turn."""
@@ -615,6 +694,11 @@ class StoryPlanningTools(BaseTools):
         with self._plot_beats_lock:
             return list(self._plot_beats)
 
+    def get_recent_story_turns(self) -> List[Dict[str, str]]:
+        """Return the bounded action/response transcript used by the planner."""
+        with self._recent_story_turns_lock:
+            return [dict(turn) for turn in self._recent_story_turns]
+
     @staticmethod
     def _clean_dialogue(dialogue: Any) -> List[Dict[str, str]]:
         if not isinstance(dialogue, list):
@@ -677,6 +761,7 @@ class StoryPlanningTools(BaseTools):
             "characters": self.get_present_characters(),
             "plot_beats": [node.get("plot_beat", "") for node in self.get_plot_beats()],
             "nodes_ahead": self.nodes_ahead,
+            "recent_turns": self.get_recent_story_turns(),
         }
         if self.planner_executor:
             return self.planner_executor(user_action, snapshot)
@@ -695,6 +780,7 @@ class StoryPlanningTools(BaseTools):
                 {"node_index": index, "plot_beat": beat}
                 for index, beat in enumerate(snapshot["plot_beats"])
             ],
+            recent_turns=snapshot["recent_turns"],
         )
         instruction = f"""{SCENE_REACTION_SYSTEM_INSTRUCTION}
 
@@ -702,7 +788,7 @@ class StoryPlanningTools(BaseTools):
 
 {initial_lore_section}
 
-The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
+The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
         planner = Agent(
             name="story_planner",
             description="Authoritative planner for one interactive story turn.",
@@ -712,7 +798,7 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
                 location=self.vertex_location,
             ),
             instruction=instruction,
-            tools=[self.browse_lore, self.generate_character_profile],
+            tools=[self.browse_lore, self.generate_character_profile, self.roll_dice],
             output_schema=SceneReaction,
             output_key="scene_reaction",
             disallow_transfer_to_parent=True,
@@ -822,6 +908,7 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
             "plot_beats": list(plot_beats),
         }
         self._last_scene_reaction = result
+        self._append_recent_story_turn(action, result)
         self._publish_scene_dialogue(dialogue)
         self.save_to_session_state()
         self._log_story_update(plot_beats, source="user_action")
@@ -849,3 +936,34 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
             if beat:
                 normalized.append({"plot_beat": beat})
         return normalized
+
+    @staticmethod
+    def _normalize_recent_story_turns(raw_turns: Any) -> List[Dict[str, str]]:
+        """Validate a persisted transcript and retain only its final three turns."""
+        if not isinstance(raw_turns, list):
+            return []
+        normalized: List[Dict[str, str]] = []
+        for turn in raw_turns[-RECENT_STORY_TURNS_LIMIT:]:
+            if not isinstance(turn, dict):
+                continue
+            action = str(turn.get("action") or "").strip()
+            response = str(turn.get("response") or "").strip()
+            if action and response:
+                normalized.append({"action": action[:1_000], "response": response[:2_000]})
+        return normalized
+
+    def _append_recent_story_turn(self, action: str, result: Dict[str, Any]) -> None:
+        """Persist one resolved action and its visible story response for later turns."""
+        narration = str(result.get("narration") or "").strip()
+        dialogue = self._clean_dialogue(result.get("dialogue"))
+        dialogue_text = " ".join(
+            f"{item['speaker']}: {item['text']}" for item in dialogue
+        )
+        response = " ".join(part for part in (narration, dialogue_text) if part).strip()
+        if not action or not response:
+            return
+        with self._recent_story_turns_lock:
+            self._recent_story_turns = self._normalize_recent_story_turns([
+                *self._recent_story_turns,
+                {"action": action, "response": response},
+            ])

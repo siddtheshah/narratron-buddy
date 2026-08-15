@@ -84,6 +84,7 @@ class CanvasStateManager:
         self.image_generation_active: bool = False
         self.live_connection_active: bool = False
         self.live_connection_until: float = 0.0
+        self.dice_roll_until: float = 0.0
 
         # The agent's latest chat-tool update is kept separately from the
         # public chat transcript. It is intentionally transient so a restarted
@@ -481,6 +482,12 @@ class CanvasStateManager:
                 self.live_connection_until = time.time() + max(0.0, recent_seconds)
             elif not active:
                 self.live_connection_until = 0.0
+        elif tool == "dice":
+            self.dice_roll_until = (
+                time.time() + max(0.0, recent_seconds)
+                if active and recent_seconds > 0
+                else 0.0
+            )
         self._notify_state_changed("latest")
 
     def get_tool_activity(self) -> Dict[str, bool]:
@@ -488,6 +495,7 @@ class CanvasStateManager:
         return {
             "image_generating": self.image_generation_active,
             "live_ready": self.live_connection_active or (now < self.live_connection_until),
+            "dice_rolling": now < self.dice_roll_until,
         }
 
     def get_latest_state(self) -> Dict[str, Any]:
