@@ -369,6 +369,27 @@ class TestTheaterAPI(BaseTestCase):
         self.assertFalse(config["animation"]["enabled"])
         self.assertFalse(config["story_planning"]["adventure_mode"])
 
+    def test_story_planning_style_is_saved_for_adventure_mode(self):
+        self.client.post("/api/auth/register", json={
+            "username": "style_user",
+            "email": "style@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Hard Adventure",
+                "creation_mode": "adventure",
+                "story_planning_style": "harsh and unforgiving, but never arbitrary",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        config = yaml.safe_load(
+            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(config["story_planning"]["style"], "harsh and unforgiving, but never arbitrary")
+
     def test_folder_upload_requires_theater_yaml(self):
         self.client.post("/api/auth/register", json={
             "username": "folder_config_user",

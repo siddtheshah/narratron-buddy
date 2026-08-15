@@ -1251,6 +1251,12 @@
                             want.
                         </p>
                     </div>
+                    <div class="form-group" style="margin-top: 1rem;">
+                        <label for="storyPlanningStyle">Story Planning Style</label>
+                        <textarea id="storyPlanningStyle" rows="3" maxlength="500"
+                            placeholder="e.g. Harsh and unforgiving: failures leave lasting scars, enemies exploit mistakes, and victories must be earned—but never take away player agency."></textarea>
+                        <small>Sets the planner's tone, pacing, opposition, and consequences. Leave blank for a balanced, consequence-driven adventure.</small>
+                    </div>
                 </div>
 
                 <!-- PATH 2: Individual Asset Upload -->
@@ -2378,6 +2384,7 @@
                 formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
                 formData.append('enable_adventure_mode',
                     currentCreationPath === 'adventure' || document.getElementById('cfgAdventureMode')?.checked ? 'true' : 'false');
+                formData.append('story_planning_style', document.getElementById('storyPlanningStyle')?.value.trim() || '');
 
                 const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
                 if (advancedConfigIsCanonical && theaterConfigYaml) {

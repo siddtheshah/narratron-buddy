@@ -25,6 +25,10 @@ music:
 story_planning:
     nodes_ahead: 3
     adventure_mode: false
+    # Guidance for the Adventure Mode story planner. Theater creators can
+    # override this with a voice, tone, or consequence philosophy (for
+    # example: "harsh and unforgiving, but never arbitrary").
+    style: "balanced, consequence-driven, and player-agency-first"
     max_named_elements: 5
     cooldown_duration: 10
     # Each completed planner response adds one second per 5 returned words,

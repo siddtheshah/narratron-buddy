@@ -40,6 +40,18 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_NAMED_ELEMENTS = 5
 RECENT_STORY_TURNS_LIMIT = 3
+DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
+MAX_STORY_PLANNING_STYLE_CHARS = 500
+MAX_PLAYER_ACTION_CHARS = 2_000
+MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
+MAX_INITIAL_LORE_CONTEXT_CHARS = 24_000
+MAX_CONTEXT_FIELD_CHARS = 500
+MAX_PLOT_BEAT_CHARS = 500
+MAX_NARRATION_CHARS = 2_000
+MAX_NODES_AHEAD = 10
+MAX_NAMED_ELEMENTS = 10
+MAX_ACTIVE_CHARACTERS = 5
+MAX_LORE_DOCUMENTS_LISTED = 100
 
 _CHARACTER_GEN_PROMPT_TEMPLATE = Template(
 """Character name: {{ name }}
@@ -197,9 +209,11 @@ class StoryPlanningTools(BaseTools):
         self._recent_story_turns_lock = Lock()
         self.theater_manager = theater_manager or TheaterManager()
 
-        self.nodes_ahead: int = int(self.config.get("nodes_ahead", 3))
+        self.nodes_ahead: int = max(1, min(int(self.config.get("nodes_ahead", 3)), MAX_NODES_AHEAD))
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
-        self.max_named_elements: int = int(self.config.get("max_named_elements", DEFAULT_MAX_NAMED_ELEMENTS))
+        configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
+        self.style: str = str(configured_style).strip()[:MAX_STORY_PLANNING_STYLE_CHARS] or DEFAULT_STORY_PLANNING_STYLE
+        self.max_named_elements: int = max(1, min(int(self.config.get("max_named_elements", DEFAULT_MAX_NAMED_ELEMENTS)), MAX_NAMED_ELEMENTS))
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
         self.action_cooldown_base_seconds: float = max(
             0.0, float(self.config.get("action_cooldown_base_seconds", self.cooldown_duration or 10.0))
@@ -234,9 +248,13 @@ class StoryPlanningTools(BaseTools):
         initial_elements = self.config.get("initial_elements", {})
         if isinstance(initial_elements, dict):
             for k, v in initial_elements.items():
+                if len(self._elements) >= self.max_named_elements:
+                    break
                 self._elements[str(k)] = str(v)
         elif isinstance(initial_elements, list):
             for elem in initial_elements:
+                if len(self._elements) >= self.max_named_elements:
+                    break
                 if isinstance(elem, dict) and "name" in elem and "content" in elem:
                     self._elements[str(elem["name"])] = str(elem["content"])
 
@@ -439,8 +457,14 @@ class StoryPlanningTools(BaseTools):
             return "No theater is active, so no lore documents are available."
         if not document:
             documents = self.theater_manager.get_lore_documents(self.theater_id)
+            listed_documents = documents[:MAX_LORE_DOCUMENTS_LISTED]
+            omission = (
+                f"\n[+{len(documents) - len(listed_documents)} additional documents omitted.]"
+                if len(documents) > len(listed_documents)
+                else ""
+            )
             return (
-                "Available lore documents:\n" + "\n".join(f"- {path}" for path in documents)
+                "Available lore documents:\n" + "\n".join(f"- {path}" for path in listed_documents) + omission
                 if documents
                 else "No lore documents are available for this theater."
             )
@@ -448,7 +472,9 @@ class StoryPlanningTools(BaseTools):
             content = self.theater_manager.read_lore_document(self.theater_id, document)
         except ValueError as error:
             return f"Error: {error}"
-        return f"Lore document: {document}\n\n{content}"
+        excerpt = content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
+        suffix = "\n[Excerpt truncated for planner context.]" if len(content) > len(excerpt) else ""
+        return f"Lore document: {document}\n\n{excerpt}{suffix}"
 
     def roll_dice(
         self,
@@ -503,18 +529,28 @@ class StoryPlanningTools(BaseTools):
         return result
 
     def _get_initial_lore_context(self) -> str:
-        """Load every lore document for the first, otherwise context-free planner turn."""
+        """Load a bounded lore excerpt for the first, otherwise context-free planner turn."""
         documents = self.theater_manager.get_lore_documents(self.theater_id)
         if not documents:
             return ""
         sections = []
+        remaining = MAX_INITIAL_LORE_CONTEXT_CHARS
         for document in documents:
+            if remaining <= 0:
+                break
             try:
                 content = self.theater_manager.read_lore_document(self.theater_id, document)
             except ValueError as error:
                 logger.warning("[STORY_SCRIPT] Could not inject lore document '%s': %s", document, error)
                 continue
-            sections.append(f"Lore document: {document}\n{content}")
+            excerpt = content[:min(MAX_LORE_DOCUMENT_CONTEXT_CHARS, remaining)]
+            if len(content) > len(excerpt):
+                excerpt += "\n[Excerpt truncated for planner context.]"
+            section = f"Lore document: {document}\n{excerpt}"
+            sections.append(section)
+            remaining -= len(section)
+        if len(documents) > len(sections):
+            sections.append("[Additional lore documents omitted from this initial planner context.]")
         return "\n\n".join(sections)
 
     def generate_character_profile(
@@ -694,14 +730,17 @@ class StoryPlanningTools(BaseTools):
         """Return a stable snapshot for live-agent observability."""
         with self._elements_lock:
             return [
-                {"name": name, "content": content}
-                for name, content in self._elements.items()
+                {"name": name[:MAX_CONTEXT_FIELD_CHARS], "content": content[:MAX_CONTEXT_FIELD_CHARS]}
+                for name, content in list(self._elements.items())[-self.max_named_elements:]
             ]
 
     def get_present_characters(self) -> list[dict[str, str]]:
         """Return a stable snapshot of active characters with personalities and motivations."""
         with self._characters_lock:
-            return [dict(char) for char in self._characters.values()]
+            return [
+                {key: str(value)[:MAX_CONTEXT_FIELD_CHARS] for key, value in char.items()}
+                for char in list(self._characters.values())[-MAX_ACTIVE_CHARACTERS:]
+            ]
 
     def get_plot_beats(self) -> List[Dict[str, str]]:
         """Return the durable, non-consumable plot beats."""
@@ -786,6 +825,7 @@ class StoryPlanningTools(BaseTools):
             "characters": self.get_present_characters(),
             "plot_beats": [node.get("plot_beat", "") for node in self.get_plot_beats()],
             "nodes_ahead": self.nodes_ahead,
+            "style": self.style,
             "recent_turns": self.get_recent_story_turns(),
         }
         if self.planner_executor:
@@ -813,7 +853,9 @@ class StoryPlanningTools(BaseTools):
 
 {initial_lore_section}
 
-The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Keep responses focused: narration should normally be 60-120 words, dialogue should have at most three short lines, and scene_description is optional but, when supplied, must be an evocative visual caption of at most 45 words. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
+Story-planning style: {self.style}
+
+Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction. Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes. The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Keep responses focused: narration should normally be 60-120 words, dialogue should have at most three short lines, and scene_description is optional but, when supplied, must be an evocative visual caption of at most 45 words. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
         planner = Agent(
             name="story_planner",
             description="Authoritative planner for one interactive story turn.",
@@ -889,6 +931,8 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
         action = str(user_action or "").strip()
         if not action:
             return {"error": "User action cannot be empty."}
+        if len(action) > MAX_PLAYER_ACTION_CHARS:
+            return {"error": f"Player actions must be {MAX_PLAYER_ACTION_CHARS} characters or fewer."}
 
         def resolve_and_notify() -> None:
             try:
@@ -926,7 +970,7 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
             raise ValueError("Story planner must return a JSON object.")
 
         manifested_characters = self._apply_planner_character_updates(parsed.get("character_updates"))
-        narration = str(parsed.get("narration") or "The scene shifts in response to your action.").strip()
+        narration = str(parsed.get("narration") or "The scene shifts in response to your action.").strip()[:MAX_NARRATION_CHARS]
         scene_description = self._clean_scene_description(parsed.get("scene_description"))
         dialogue = self._clean_dialogue(parsed.get("dialogue"))
         plot_beats = self._normalize_plot_beats(parsed.get("plot_beats", []))
@@ -974,7 +1018,7 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
             else:
                 beat = ""
             if beat:
-                normalized.append({"plot_beat": beat})
+                normalized.append({"plot_beat": beat[:MAX_PLOT_BEAT_CHARS]})
         return normalized
 
     @staticmethod

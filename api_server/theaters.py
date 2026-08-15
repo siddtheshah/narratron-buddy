@@ -334,6 +334,9 @@ async def create_and_deploy_theater(request: Request):
         creation_mode == "adventure"
         or str(form.get("enable_adventure_mode", "false")).lower() == "true"
     )
+    story_planning_style = str(form.get("story_planning_style", "")).strip()
+    if len(story_planning_style) > 500:
+        raise HTTPException(status_code=400, detail="Story planning style must be 500 characters or fewer.")
 
     reference_files = []
     playlists_data = {}
@@ -447,6 +450,8 @@ async def create_and_deploy_theater(request: Request):
         if not isinstance(story_planning_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: story_planning must be a mapping.")
         story_planning_config["adventure_mode"] = enable_adventure_mode
+        if story_planning_style:
+            story_planning_config["style"] = story_planning_style
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = theater_manager.create_theater(

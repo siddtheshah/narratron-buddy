@@ -7,6 +7,10 @@ from unittest.mock import MagicMock, patch
 
 from tools.story_planning_tool import (
     DEFAULT_MAX_NAMED_ELEMENTS,
+    DEFAULT_STORY_PLANNING_STYLE,
+    MAX_INITIAL_LORE_CONTEXT_CHARS,
+    MAX_PLAYER_ACTION_CHARS,
+    MAX_STORY_PLANNING_STYLE_CHARS,
     SCENE_REACTION_SYSTEM_INSTRUCTION,
     SceneReaction,
     StoryPlanningTools,
@@ -39,6 +43,32 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Node 0: Plot beat: The tide rises.", context)
         self.assertIn("Player action: I light the beacon.", context)
         self.assertIn("Story response: The harbor answers with bells.", context)
+
+    def test_story_planning_style_defaults_and_is_supplied_to_the_planner(self):
+        default_tools = StoryPlanningTools()
+        self.assertEqual(default_tools.style, DEFAULT_STORY_PLANNING_STYLE)
+
+        seen_snapshot = {}
+
+        def planner_executor(_action, snapshot):
+            seen_snapshot.update(snapshot)
+            return {"narration": "The bridge groans.", "plot_beats": ["The storm worsens."]}
+
+        tools = StoryPlanningTools(config={
+            "adventure_mode": True,
+            "nodes_ahead": 1,
+            "style": "harsh and unforgiving, but never arbitrary",
+            "planner_executor": planner_executor,
+        })
+        tools._resolve_user_action("I cross the bridge.")
+
+        self.assertEqual(tools.style, "harsh and unforgiving, but never arbitrary")
+        self.assertEqual(seen_snapshot["style"], tools.style)
+
+    def test_story_planning_style_is_bounded_when_loaded_from_advanced_config(self):
+        tools = StoryPlanningTools(config={"style": "x" * (MAX_STORY_PLANNING_STYLE_CHARS + 1)})
+
+        self.assertEqual(len(tools.style), MAX_STORY_PLANNING_STYLE_CHARS)
 
     def test_character_profile_tool_does_not_change_story_state(self):
         tools = StoryPlanningTools(theater_id="character-profile")
@@ -106,6 +136,36 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertIn("royal cartographer", context)
             self.assertIn("Lore document: world.txt", context)
             self.assertIn("capital floats", context)
+
+    def test_initial_lore_context_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Large Lore Theater",
+                theater_id="large-lore",
+                lore_files=[
+                    ("lore/first.txt", b"a" * 20_000),
+                    ("lore/second.txt", b"b" * 20_000),
+                ],
+            )
+            tools = StoryPlanningTools(theater_id="large-lore", theater_manager=theater_manager)
+
+            context = tools._get_initial_lore_context()
+
+            self.assertLessEqual(len(context), MAX_INITIAL_LORE_CONTEXT_CHARS + 200)
+            self.assertIn("Excerpt truncated for planner context", context)
+
+    def test_overlong_player_actions_are_rejected_before_a_planner_turn(self):
+        executor = MagicMock()
+        tools = StoryPlanningTools(config={
+            "adventure_mode": True,
+            "planner_executor": executor,
+        })
+
+        result = tools.process_user_action("x" * (MAX_PLAYER_ACTION_CHARS + 1))
+
+        self.assertIn("characters or fewer", result["error"])
+        executor.assert_not_called()
 
     def test_character_profile_uses_the_planner_vertex_model(self):
         with patch("tools.story_planning_tool.genai.Client") as client:
