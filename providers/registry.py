@@ -11,7 +11,9 @@ from providers.hybrid_image_provider import HybridImageProvider
 from providers.image_provider import ImageProvider, ImageProviderError
 from providers.openai_image_provider import OpenAIImageProvider
 from providers.lyria_music_provider import LyriaMusicProvider
-from providers.music_provider import MusicProvider, MusicProviderError
+from providers.fal_stable_audio_adapter import FalStableAudioAdapter
+from providers.adapted_music_provider import AdaptedMusicProvider
+from providers.music_provider import MusicAdapter, MusicProvider, MusicProviderError
 from providers.gemini_text_response_provider import GeminiTextResponseProvider
 from providers.text_response_provider import TextResponseProvider, TextResponseProviderError
 
@@ -88,6 +90,26 @@ _MUSIC_SPECS = (
         "status": "planned",
         "notes": "High-fidelity dynamic music generation provider.",
     },
+    {
+        "id": "test-base-plus-adapter",
+        "name": "TEST ONLY: Generate base + audio adapter",
+        "model": "Select a base provider and audio adapter",
+        "estimated_cost_usd_30s": None,
+        "status": "unconfigured",
+        "notes": "Test Lab A/B fixture: generates a source track, then adapts it. Production variants should adapt an existing stored track.",
+    },
+)
+
+
+_MUSIC_ADAPTER_SPECS = (
+    {
+        "id": "fal-stable-audio-3-base-a2a",
+        "name": "Stable Audio 3 Small Music Base A2A (FAL)",
+        "model": "fal-ai/stable-audio-3/small/music/base/audio-to-audio",
+        "estimated_cost_usd_per_generation": 0.032,
+        "status": "unconfigured",
+        "notes": "Base checkpoint; use a lower noise level to preserve the source track. FAL lists $0.032/audio.",
+    },
 )
 
 
@@ -155,13 +177,50 @@ def list_music_provider_specs() -> list[dict[str, Any]]:
     for spec in specs:
         if spec["id"] == "lyria":
             spec["status"] = "available" if has_gemini else "unconfigured"
+    has_base_provider = any(spec["id"] != "test-base-plus-adapter" and spec["status"] == "available" for spec in specs)
+    for spec in specs:
+        if spec["id"] == "test-base-plus-adapter":
+            spec["status"] = "available" if has_base_provider and bool(os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
     return specs
+
+
+def list_music_adapter_specs() -> list[dict[str, Any]]:
+    specs = [dict(spec) for spec in _MUSIC_ADAPTER_SPECS]
+    for spec in specs:
+        if spec["id"] == "fal-stable-audio-3-base-a2a":
+            spec["status"] = "available" if (os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
+    return specs
+
+
+def get_music_adapter(adapter_id: str, options: dict[str, Any] | None = None) -> MusicAdapter:
+    options = options or {}
+    if adapter_id == "fal-stable-audio-3-base-a2a":
+        return FalStableAudioAdapter(
+            init_noise_level=float(options.get("init_noise_level", 0.35)),
+            num_inference_steps=int(options.get("num_inference_steps", 50)),
+            guidance_scale=float(options.get("guidance_scale", 7.0)),
+            output_format=str(options.get("output_format", "mp3")),
+            bitrate=str(options.get("bitrate", "192k")),
+        )
+    spec = next((item for item in _MUSIC_ADAPTER_SPECS if item["id"] == adapter_id), None)
+    if spec:
+        raise MusicProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
+    raise MusicProviderError(f"Unknown music adapter: {adapter_id}")
 
 
 def get_music_provider(provider_id: str, options: dict[str, Any] | None = None) -> MusicProvider:
     options = options or {}
     if provider_id == "lyria":
         return LyriaMusicProvider(model=str(options.get("model") or "lyria-3-pro-preview"))
+    if provider_id == "test-base-plus-adapter":
+        base_provider_id = str(options.get("base_provider") or "lyria")
+        adapter_id = str(options.get("adapter") or "fal-stable-audio-3-base-a2a")
+        if base_provider_id == provider_id:
+            raise MusicProviderError("The Test Lab base-plus-adapter fixture cannot use itself as its base provider.")
+        return AdaptedMusicProvider(
+            base=get_music_provider(base_provider_id, dict(options.get("base_options") or {})),
+            adapter=get_music_adapter(adapter_id, dict(options.get("adapter_options") or {})),
+        )
     spec = next((item for item in _MUSIC_SPECS if item["id"] == provider_id), None)
     if spec:
         raise MusicProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
