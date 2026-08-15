@@ -159,11 +159,11 @@ class TestPaymentsFlow(BaseTestCase):
 
         calc = data.get("calculation", {})
         # 10 actions + (5 mins * 5 calls/min = 25 actions) = 35 total actions
-        # 35 * 0.65 = 22.75 credits
-        self.assertAlmostEqual(calc["adventure_mode_credits"], 22.75)
+        # 35 * 0.5 = 17.5 credits
+        self.assertAlmostEqual(calc["adventure_mode_credits"], 17.5)
         # 35 * 4000 = 140,000 tokens
         self.assertEqual(calc["adventure_mode_estimated_tokens"], 140000)
-        self.assertAlmostEqual(calc["usage_credits"], 6.5)
+        self.assertAlmostEqual(calc["usage_credits"], 5.0)
 
 
 

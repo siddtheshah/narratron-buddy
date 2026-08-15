@@ -23,6 +23,12 @@
 - [ ] Or perhaps, we let Narratron hand over the user's response to the script tool and have it generate the reaction based on the script.
 - [ ] Need billing on text provider for adventure mode. It'll rack up too.
 
+## Music Cost & Variants
+- [ ] Add a lower-cost music-variant workflow: generate a base track once, reuse it by default, and use local loop/crossfade/tempo/EQ transformations where they preserve quality.
+- [ ] Evaluate an audio-to-audio music editor for substantive variants (for example, extensions or mood/section changes) and add a provider adapter that accepts a source track plus an edit instruction.
+  - Lyria 3 does not currently support iterative editing of its generated clips, so this requires a separate provider.
+  - Record source generation and variant costs separately before setting a variant credit rate.
+
 ## Observability Tool
 - [ ] Let agent pull observability if it wants. Reset auto-observabiiity interval when it does, give it some cooldown.
 

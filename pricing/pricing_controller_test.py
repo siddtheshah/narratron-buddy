@@ -25,16 +25,16 @@ class TestPricingController(BaseTestCase):
         rates = controller.get_rates()
         self.assertEqual(rates["voice_credit_rate"], 1.0)
         self.assertEqual(rates["image_credit_rate"], 1.0)
-        self.assertEqual(rates["music_credit_rate"], 2.0)
-        self.assertEqual(rates["story_planning_credit_rate"], 0.65)
+        self.assertEqual(rates["music_credit_rate"], 3.0)
+        self.assertEqual(rates["story_planning_credit_rate"], 0.5)
         self.assertEqual(rates["storage_gb_monthly_rate"], 1.0)
         self.assertEqual(rates["storage_gb_daily_rate"], 0.033)
         self.assertEqual(rates["credits_per_usd"], 20.0)
         self.assertEqual(rates["usd_per_credit"], 0.05)
         self.assertEqual(rates["adventure_mode_tokens_per_call"], 4000.0)
         self.assertEqual(rates["adventure_mode_calls_per_minute"], 5.0)
-        self.assertEqual(rates["adventure_mode_credit_rate_per_action"], 0.65)
-        self.assertEqual(rates["adventure_mode_credit_rate_per_minute"], 3.25)
+        self.assertEqual(rates["adventure_mode_credit_rate_per_action"], 0.5)
+        self.assertEqual(rates["adventure_mode_credit_rate_per_minute"], 2.5)
 
     def test_from_env_overrides(self):
         env_vars = {
@@ -95,16 +95,16 @@ class TestPricingController(BaseTestCase):
 
     def test_calculate_adventure_mode_cost_and_tokens(self):
         controller = PricingController(
-            story_planning_credit_rate=0.65,
+            story_planning_credit_rate=0.5,
             adventure_mode_tokens_per_call=4000,
             adventure_mode_calls_per_minute=5.0,
         )
-        # 10 actions * 0.65 = 6.5 credits
-        self.assertEqual(controller.calculate_adventure_mode_cost(actions=10), 6.5)
+        # 10 actions * 0.5 = 5.0 credits
+        self.assertEqual(controller.calculate_adventure_mode_cost(actions=10), 5.0)
         self.assertEqual(controller.estimate_adventure_mode_tokens(actions=10), 40000)
 
-        # 30 mins @ 5 calls/min = 150 actions * 0.65 = 97.5 credits
-        self.assertEqual(controller.calculate_adventure_mode_cost(duration_minutes=30.0), 97.5)
+        # 30 mins @ 5 calls/min = 150 actions * 0.5 = 75.0 credits
+        self.assertEqual(controller.calculate_adventure_mode_cost(duration_minutes=30.0), 75.0)
         # 150 actions * 4k tokens = 600,000 tokens
         self.assertEqual(controller.estimate_adventure_mode_tokens(duration_minutes=30.0), 600000)
 
