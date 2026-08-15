@@ -86,10 +86,10 @@
             opacity: 1;
         }
 
-        #scene-dialogue-overlay { position: absolute; inset: 7% 6% auto; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 0.7rem; pointer-events: none; }
-        .scene-dialogue-bubble { max-width: min(75vw, 720px); padding: 0.75rem 1.1rem; border: 2px solid rgba(255,255,255,.9); border-radius: 1.25rem; background: rgba(8,12,28,.84); color: #fff; font-size: clamp(1rem,2vw,1.4rem); line-height: 1.3; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.42); }
-        .scene-dialogue-bubble.thought { border-radius: 2.5rem; border-style: dashed; font-style: italic; }
-        .scene-dialogue-speaker { display: block; color: #c4b5fd; font-size: .72em; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-bottom: .2rem; }
+        #scene-dialogue-overlay { position: absolute; right: 0; bottom: clamp(1.25rem,5vh,3.5rem); left: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: 0 6%; box-sizing: border-box; pointer-events: none; }
+        .scene-dialogue-bubble { max-width: min(88vw,900px); color: #fff; font-size: clamp(1.05rem,2.1vw,1.65rem); font-weight: 600; line-height: 1.25; text-align: center; text-shadow: 0 2px 5px rgba(0,0,0,.95), 0 0 12px rgba(0,0,0,.7); }
+        .scene-dialogue-bubble.thought { font-style: italic; }
+        .scene-dialogue-speaker { color: inherit; font-size: .78em; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-right: .4em; }
     </style>
 </head>
 
@@ -119,6 +119,8 @@
         const doodleCanvas = document.getElementById('doodle-canvas');
         const currentImage = document.getElementById('current-image');
         const sceneDialogueOverlay = document.getElementById('scene-dialogue-overlay');
+        let sceneDialogueSignature = '';
+        let sceneDialogueRenderId = 0;
         let lastTime = 0;
         let lastImageRawUrl = "";
         let lastImageEffect = null;
@@ -243,19 +245,46 @@
         const renderSegment = doodleRenderer.renderSegment;
 
         function updateSceneDialogue(dialogue) {
+            const lines = (Array.isArray(dialogue) ? dialogue : [])
+                .filter(item => item && item.text)
+                .map(item => ({
+                    speaker: item.speaker || 'Narrator',
+                    text: String(item.text),
+                    kind: item.kind === 'thought' ? 'thought' : 'speech',
+                }));
+            const signature = JSON.stringify(lines);
+            if (signature === sceneDialogueSignature) return;
+            sceneDialogueSignature = signature;
+            const renderId = ++sceneDialogueRenderId;
             sceneDialogueOverlay.replaceChildren();
-            (Array.isArray(dialogue) ? dialogue : []).forEach(item => {
-                if (!item || !item.text) return;
-                const bubble = document.createElement('div');
-                bubble.className = `scene-dialogue-bubble ${item.kind === 'thought' ? 'thought' : 'speech'}`;
-                const speaker = document.createElement('span');
-                speaker.className = 'scene-dialogue-speaker';
-                speaker.textContent = item.speaker || 'Narrator';
-                const text = document.createElement('span');
-                text.textContent = item.text;
-                bubble.append(speaker, text);
-                sceneDialogueOverlay.appendChild(bubble);
-            });
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            (async () => {
+                for (const item of lines) {
+                    if (renderId !== sceneDialogueRenderId) return;
+                    const bubble = document.createElement('div');
+                    bubble.className = `scene-dialogue-bubble ${item.kind}`;
+                    const speaker = document.createElement('span');
+                    speaker.className = 'scene-dialogue-speaker';
+                    speaker.textContent = item.speaker;
+                    const text = document.createElement('span');
+                    bubble.append(speaker, text);
+                    sceneDialogueOverlay.appendChild(bubble);
+
+                    if (reduceMotion) {
+                        text.textContent = item.text;
+                        continue;
+                    }
+                    const characters = Array.from(item.text);
+                    const wordCount = item.text.trim().split(/\s+/).filter(Boolean).length;
+                    const delay = Math.round((wordCount * 1000) / (4.5 * Math.max(characters.length, 1)));
+                    for (const character of characters) {
+                        if (renderId !== sceneDialogueRenderId) return;
+                        text.textContent += character;
+                        await new Promise(resolve => window.setTimeout(resolve, delay));
+                    }
+                }
+            })();
         }
 
         window.addEventListener('resize', () => {
