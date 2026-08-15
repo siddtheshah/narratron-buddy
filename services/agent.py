@@ -49,15 +49,16 @@ Note: The references are loaded immediately on agent initialization so you alrea
 
 {% if adventure_mode %}
 ## Adventure Mode
-Adventure Mode is enabled for this session! Actively drive dramatic choices, interactive decision points, and high-stakes adventure beats. You have access to the `generate_character` tool to set character personalities and motivations, and the `get_script_piece` tool to generate and preview upcoming script nodes ahead of time, ensuring smooth, highly engaging interactive storytelling.
-However, even though you have increased agency, always seek orator input before progressing to the next part of your script.
+Adventure Mode is enabled for this session. The script tool—not you—is the authority over story progression. After every meaningful orator action, choice, or in-character speech, call `process_user_action` with the user's words. It returns immediately; wait for its `[Story Planner Result]` notification and relay that narration faithfully. Do not select, consume, rewrite, or advance script nodes yourself. Its dialogue is rendered directly as a speech or thought bubble on the canvas.
+Your agency remains in theater peripherals: visuals, music, animation, and concise status updates that support the tool-authored scene reaction.
+Do not author or alter story nodes, characters, named elements, or scene state yourself.
 
-You should ALWAYs update your named elements and characters whenever the orator makes a decision so that the script can rebuild and adapt.
 Always yield to the orator if they deviate from the script, and lean into it. Trust the script tool will adapt the plan and provide a good experience.
 Be sure to continue using canvas updating tools to enhance the experience, as it is still your primary responsibility.
 {% endif %}
 
 ## Scene Context
+{% if not adventure_mode %}
 Maintain the current scene as a compact set of named elements. Add or update elements such as characters, locations, objects, and relationships.
 Pay close attention to what the orator focuses on and gives detail to. If the orator describes something, more so than just offhandedly mentioning them,
 then ensure they are tracked. You should not only be listing the elements, but keeping dutifully accurate descriptions of them. If any of the elements explicitly leaves
@@ -67,6 +68,9 @@ You should use these named elements to improve image creation by ensuring that r
 and reference images.
 
 When the story moves to a new scene and the old context no longer applies, call `clear_scene` before adding the new elements.
+{% else %}
+The planner owns scene context and characters in Adventure Mode. Submit the orator's words through `process_user_action`; do not infer or mutate scene state yourself.
+{% endif %}
 The present elements are included in your regular observability updates.
 The log of named elements are not themselves a transcript or image history. Images should always prioritize
 orator speech over previous named elements, and named elements are just additional context.
@@ -102,8 +106,7 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 * update_or_insert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
 * clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
 {% if adventure_mode %}
-* generate_character <name> [description] [personality] [motivation] [quirk]: Generate or update a character's motivation, personality, and distinct quirk for story planning and script updates.
-* get_script_piece: Generate or update predictive script nodes for the upcoming story beats, interactive decision points, and expected user responses.
+* process_user_action <user_action>: Submit the orator's action/speech to the authoritative script engine. It returns immediately; wait for the `[Story Planner Result]` system notification, then relay its narration and use only peripheral tools to stage it. Dialogue is displayed automatically on the canvas.
 {% endif %}
 
 ## Music Management
@@ -213,16 +216,16 @@ def create_tool_bundle_for_session(
         image_tools.browse_images,
         image_tools.search_image_by_metadata,
         chat_tools.send_chat_message,
-        story_planning_tools.update_or_insert_named_element,
-        story_planning_tools.clear_scene,
         music_tools.play_music,
         music_tools.pause_music,
         music_tools.resume_music,
     ]
     if story_planning_tools.adventure_mode:
+        tools.append(story_planning_tools.process_user_action)
+    else:
         tools.extend([
-            story_planning_tools.generate_character,
-            story_planning_tools.get_script_piece,
+            story_planning_tools.update_or_insert_named_element,
+            story_planning_tools.clear_scene,
         ])
     if music_tools.generation_enabled:
         tools.append(music_tools.create_music)

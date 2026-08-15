@@ -200,6 +200,27 @@ class TestAgentSessionManager(unittest.TestCase):
 
         self.assertFalse(session.send_canvas_state(force=True))
 
+    def test_scene_reaction_callback_enqueues_planner_result(self):
+        class PlannerTools:
+            def process_user_action(self, user_action):
+                return {"status": "processing"}
+
+        planner_tools = PlannerTools()
+        mock_agent = MagicMock()
+        mock_agent.tools = [SimpleNamespace(name="process_user_action", func=planner_tools.process_user_action)]
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(theater_id="planner_queue", runner=mock_runner, tool_bundle=MagicMock())
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+
+        planner_tools.on_scene_reaction({"narration": "A door opens."})
+
+        args, _ = session.live_request_queue.send_content.call_args
+        self.assertIn("[Story Planner Result]", args[0].parts[0].text)
+        self.assertIn("A door opens.", args[0].parts[0].text)
+
     def test_reenable_state_on_reconnect(self):
         import asyncio
         mock_agent = MagicMock()

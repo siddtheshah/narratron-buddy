@@ -77,7 +77,7 @@ class TestConfigLoader(BaseTestCase):
             theater_id = "provider_override_theater"
             custom_data = {
                 "story_planning": {
-                    "provider": "user-custom-provider",
+                    "planner_model": "user-custom-model",
                     "nodes_ahead": 10,
                 },
                 "music": {
@@ -91,8 +91,8 @@ class TestConfigLoader(BaseTestCase):
             loaded = get_theater_config(theater_id, base_dir=temp_dir)
             app_cfg = get_app_config()
 
-            # App.yaml provider selections should override theater settings
-            self.assertEqual(loaded["story_planning"]["provider"], app_cfg["story_planning"]["provider"])
+            # App.yaml model selections should override theater settings
+            self.assertEqual(loaded["story_planning"]["planner_model"], app_cfg["story_planning"]["planner_model"])
             self.assertEqual(loaded["music"]["provider"], app_cfg["music"]["provider"])
             self.assertEqual(loaded["image_generation"]["provider"], app_cfg["image_generation"]["provider"])
 

@@ -43,6 +43,9 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertEqual(manager.get_agent_thought()["text"], "I am choosing the next scene.")
         self.assertGreater(manager.get_latest_state()["agent_thought"]["time"], 0)
 
+        manager.set_scene_dialogue([{"speaker": "Mara", "text": "The door is open.", "kind": "speech"}])
+        self.assertEqual(manager.get_latest_state()["scene_dialogue"][0]["speaker"], "Mara")
+
         manager.set_agent_thought("x" * (MAX_AGENT_THOUGHT_LENGTH + 50))
         self.assertEqual(len(manager.get_agent_thought()["text"]), MAX_AGENT_THOUGHT_LENGTH)
         self.assertTrue(manager.get_agent_thought()["text"].endswith("…"))

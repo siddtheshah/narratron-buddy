@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Story Planner Lab · Narratron</title>
+  <style>
+    :root { color-scheme: dark; --panel: #151b2e; --border: #303c60; --accent: #9b87f5; --muted: #aab4cc; }
+    * { box-sizing: border-box; } body { margin: 0; font: 16px/1.45 Inter, system-ui, sans-serif; background: #0b1020; color: #f4f5fb; }
+    main { max-width: 1200px; margin: auto; padding: 2rem; } h1 { margin: 0; } .lede, label { color: var(--muted); }
+    .controls, .action { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; margin: 1.5rem 0; }
+    label { display: grid; gap: .35rem; font-size: .85rem; } input, textarea, button { font: inherit; border-radius: .5rem; border: 1px solid var(--border); }
+    input, textarea { background: #090d1a; color: inherit; padding: .65rem; } textarea { flex: 1; min-width: 300px; min-height: 85px; }
+    button { background: var(--accent); color: #160f38; font-weight: 750; padding: .65rem 1rem; cursor: pointer; } button:disabled { opacity: .5; cursor: wait; }
+    #ack { min-height: 1.5rem; color: #d6ceff; } .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    section { background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; min-width: 0; }
+    section.wide { grid-column: 1 / -1; } h2 { margin: 0 0 .7rem; font-size: 1rem; } pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; color: #dce5ff; }
+    .empty { color: var(--muted); font-style: italic; } @media (max-width: 700px) { main { padding: 1rem; } .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Story Planner Lab</h1>
+    <p class="lede">Exercise the nonblocking planner bridge. Each action returns immediately; the final reaction arrives through the simulated live-agent callback queue.</p>
+    <div class="controls">
+      <label>Planner model<input id="model" value="gemini-3.7-flash"></label>
+      <label>Plot beats ahead<input id="nodes" type="number" min="1" max="8" value="3"></label>
+      <button id="new-session">New isolated session</button>
+    </div>
+    <div class="action">
+      <textarea id="action" placeholder="The player/orator's action or speech…" disabled></textarea>
+      <button id="submit" disabled>Submit action</button>
+    </div>
+    <div id="ack" aria-live="polite">Create a session to begin.</div>
+    <div class="grid">
+      <section><h2>Characters</h2><pre id="characters" class="empty">—</pre></section>
+      <section><h2>Upcoming plot beats</h2><pre id="beats" class="empty">—</pre></section>
+      <section class="wide"><h2>Callback queue / final scene reactions</h2><pre id="events" class="empty">No completed planner turns yet.</pre></section>
+    </div>
+  </main>
+  <script>
+    let sessionId = null, poller = null, lastEventCount = 0;
+    const $ = id => document.getElementById(id);
+    const show = (id, value, empty = '—') => { const el = $(id); el.textContent = value || empty; el.classList.toggle('empty', !value); };
+    function render(payload) {
+      const state = payload.state || {};
+      show('characters', JSON.stringify(state.characters || [], null, 2));
+      show('beats', JSON.stringify(state.plot_beats || [], null, 2));
+      const events = payload.events || [];
+      if (events.length !== lastEventCount && events.length) $('ack').textContent = 'Planner result received through callback queue.';
+      lastEventCount = events.length;
+      show('events', events.length ? JSON.stringify(events, null, 2) : '');
+    }
+    async function refresh() {
+      if (!sessionId) return;
+      const response = await fetch(`/api/story-planner/sessions/${sessionId}`);
+      if (response.ok) render(await response.json());
+    }
+    $('new-session').onclick = async () => {
+      $('new-session').disabled = true;
+      try {
+        const response = await fetch('/api/story-planner/sessions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({planner_model: $('model').value, nodes_ahead: Number($('nodes').value)}) });
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not create session.');
+        sessionId = payload.id; lastEventCount = 0; render(payload); $('action').disabled = $('submit').disabled = false;
+        $('ack').textContent = `Session ${sessionId.slice(0, 8)} is ready.`;
+        clearInterval(poller); poller = setInterval(refresh, 500);
+      } catch (error) { $('ack').textContent = error.message; } finally { $('new-session').disabled = false; }
+    };
+    $('submit').onclick = async () => {
+      const action = $('action').value.trim(); if (!action || !sessionId) return;
+      $('submit').disabled = true;
+      try {
+        const response = await fetch(`/api/story-planner/sessions/${sessionId}/actions`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action}) });
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not submit action.');
+        $('ack').textContent = payload.acknowledgement.message || payload.acknowledgement.status; $('action').value = ''; render(payload.session);
+      } catch (error) { $('ack').textContent = error.message; } finally { $('submit').disabled = false; }
+    };
+  </script>
+</body>
+</html>

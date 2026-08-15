@@ -11,7 +11,7 @@ from typing import Any
 
 from PIL import Image
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
@@ -33,6 +33,7 @@ from providers import (
 from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, get_prompt, prompt_catalog
 from testlab.music_benchmark import get_music_prompt, music_prompt_catalog
 from testlab.text_response_benchmark import get_text_prompt, text_prompt_catalog
+from tools.story_planning_tool import StoryPlanningTools
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
@@ -54,6 +55,7 @@ app.mount("/benchmark-audio", StaticFiles(directory=BENCHMARK_MUSIC_OUTPUT), nam
 _runs: dict[str, dict[str, Any]] = {}
 _music_runs: dict[str, dict[str, Any]] = {}
 _text_runs: dict[str, dict[str, Any]] = {}
+_story_planner_runs: dict[str, dict[str, Any]] = {}
 _runs_lock = threading.Lock()
 
 MAX_IN_FLIGHT_PER_PROVIDER = 5
@@ -61,7 +63,7 @@ MAX_IN_FLIGHT_PER_PROVIDER = 5
 
 @app.get("/", include_in_schema=False)
 def index():
-    return RedirectResponse("/vad")
+    return FileResponse(ROOT / "index.html", media_type="text/html")
 
 
 @app.get("/vad", include_in_schema=False)
@@ -87,6 +89,81 @@ def music_benchmark_lab():
 @app.get("/text-benchmark", include_in_schema=False)
 def text_benchmark_lab():
     return FileResponse(ROOT / "text_response_benchmark.html", media_type="text/html")
+
+
+@app.get("/story-planner", include_in_schema=False)
+def story_planner_lab():
+    return FileResponse(ROOT / "story_planner_lab.html", media_type="text/html")
+
+
+@app.post("/api/story-planner/sessions")
+def create_story_planner_session(body: dict[str, Any]):
+    """Create an isolated in-memory planner session for interactive diagnosis."""
+    model = str(body.get("planner_model") or "gemini-3.7-flash").strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="A planner model is required.")
+    nodes_ahead = body.get("nodes_ahead", 3)
+    if not isinstance(nodes_ahead, int) or not 1 <= nodes_ahead <= 8:
+        raise HTTPException(status_code=400, detail="nodes_ahead must be an integer between 1 and 8.")
+
+    run_id = uuid.uuid4().hex
+    run: dict[str, Any] = {"id": run_id, "events": [], "created_at": time.time()}
+
+    def on_scene_reaction(result: dict[str, Any]) -> None:
+        with _runs_lock:
+            active = _story_planner_runs.get(run_id)
+            if active:
+                active["events"].append({"time": time.time(), "result": result})
+
+    tools = StoryPlanningTools(
+        config={
+            "adventure_mode": True,
+            "nodes_ahead": nodes_ahead,
+            "planner_model": model,
+            "on_scene_reaction": on_scene_reaction,
+        },
+        theater_id=f"testlab_{run_id}",
+    )
+    run["tools"] = tools
+    with _runs_lock:
+        _story_planner_runs[run_id] = run
+    return _story_planner_payload(run)
+
+
+@app.post("/api/story-planner/sessions/{run_id}/actions")
+def submit_story_planner_action(run_id: str, body: dict[str, Any]):
+    action = str(body.get("action") or "").strip()
+    if not action:
+        raise HTTPException(status_code=400, detail="An action is required.")
+    with _runs_lock:
+        run = _story_planner_runs.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Story planner session not found.")
+    acknowledgement = run["tools"].process_user_action(action)
+    return {"acknowledgement": acknowledgement, "session": _story_planner_payload(run)}
+
+
+@app.get("/api/story-planner/sessions/{run_id}")
+def get_story_planner_session(run_id: str):
+    with _runs_lock:
+        run = _story_planner_runs.get(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Story planner session not found.")
+        return _story_planner_payload(run)
+
+
+def _story_planner_payload(run: dict[str, Any]) -> dict[str, Any]:
+    tools = run["tools"]
+    return {
+        "id": run["id"],
+        "created_at": run["created_at"],
+        "events": list(run["events"]),
+        "state": {
+            "characters": tools.get_present_characters(),
+            "plot_beats": tools.get_plot_beats(),
+            "last_scene_reaction": dict(getattr(tools, "_last_scene_reaction", {})),
+        },
+    }
 
 
 @app.get("/api/image-benchmark/catalog")

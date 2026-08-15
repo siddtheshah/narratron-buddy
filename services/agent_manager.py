@@ -179,7 +179,10 @@ class AgentSession:
         self.image_tools = get_bound_tool_instance(self.agent, "create_image")
         self.animation_tools = get_bound_tool_instance(self.agent, "create_triframe")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
-        self.story_planning_tools = get_bound_tool_instance(self.agent, "update_or_insert_named_element")
+        self.story_planning_tools = (
+            get_bound_tool_instance(self.agent, "process_user_action")
+            or get_bound_tool_instance(self.agent, "update_or_insert_named_element")
+        )
         self.music_tools = get_bound_tool_instance(self.agent, "play_music")
 
         self.run_config = build_run_config(
@@ -256,9 +259,25 @@ class AgentSession:
         def handle_after_image_tool(_tool_name: str, _canvas_info: dict):
             self.send_canvas_state(force=True)
 
+        def handle_scene_reaction(result: Dict[str, Any]) -> None:
+            """Place asynchronous planner output onto the live queue safely."""
+            message = "[Story Planner Result] " + json.dumps(result, ensure_ascii=False)
+            content = types.Content(parts=[types.Part(text=message)])
+
+            def enqueue() -> None:
+                self.send_content(content)
+
+            if self._event_loop and self._event_loop.is_running():
+                self._event_loop.call_soon_threadsafe(enqueue)
+            else:
+                enqueue()
+
         for tool_suite in (self.image_tools, self.animation_tools, self.chat_tools, self.story_planning_tools, self.music_tools):
             if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
                 tool_suite.on_cooldown_expired = handle_cooldown_expired
+
+        if self.story_planning_tools:
+            self.story_planning_tools.on_scene_reaction = handle_scene_reaction
 
         if self.image_tools:
             self.image_tools.on_after_tool_call = handle_after_image_tool

@@ -85,6 +85,11 @@
             object-fit: fill;
             opacity: 1;
         }
+
+        #scene-dialogue-overlay { position: absolute; inset: 7% 6% auto; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 0.7rem; pointer-events: none; }
+        .scene-dialogue-bubble { max-width: min(75vw, 720px); padding: 0.75rem 1.1rem; border: 2px solid rgba(255,255,255,.9); border-radius: 1.25rem; background: rgba(8,12,28,.84); color: #fff; font-size: clamp(1rem,2vw,1.4rem); line-height: 1.3; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.42); }
+        .scene-dialogue-bubble.thought { border-radius: 2.5rem; border-style: dashed; font-style: italic; }
+        .scene-dialogue-speaker { display: block; color: #c4b5fd; font-size: .72em; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-bottom: .2rem; }
     </style>
 </head>
 
@@ -95,6 +100,7 @@
         <img id="current-image" src="" alt="Narratron Generation">
         <img id="ghost-image" src="" alt="" aria-hidden="true">
         <canvas id="doodle-canvas"></canvas>
+        <div id="scene-dialogue-overlay" aria-live="polite"></div>
     </div>
 
     <script type="module">
@@ -112,6 +118,7 @@
         const rendererCanvas = document.getElementById('canvas-renderer');
         const doodleCanvas = document.getElementById('doodle-canvas');
         const currentImage = document.getElementById('current-image');
+        const sceneDialogueOverlay = document.getElementById('scene-dialogue-overlay');
         let lastTime = 0;
         let lastImageRawUrl = "";
         let lastImageEffect = null;
@@ -235,6 +242,22 @@
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
 
+        function updateSceneDialogue(dialogue) {
+            sceneDialogueOverlay.replaceChildren();
+            (Array.isArray(dialogue) ? dialogue : []).forEach(item => {
+                if (!item || !item.text) return;
+                const bubble = document.createElement('div');
+                bubble.className = `scene-dialogue-bubble ${item.kind === 'thought' ? 'thought' : 'speech'}`;
+                const speaker = document.createElement('span');
+                speaker.className = 'scene-dialogue-speaker';
+                speaker.textContent = item.speaker || 'Narrator';
+                const text = document.createElement('span');
+                text.textContent = item.text;
+                bubble.append(speaker, text);
+                sceneDialogueOverlay.appendChild(bubble);
+            });
+        }
+
         window.addEventListener('resize', () => {
             resizeRendererCanvas();
             resizeDoodleCanvas();
@@ -245,6 +268,7 @@
                 const apiUrl = currenttheaterId ? `/api/latest?theater_id=${encodeURIComponent(currenttheaterId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
+                updateSceneDialogue(data.scene_dialogue);
 
                 if (data.music && (!hasReceivedMusicState || data.music.time > lastMusicTime)) {
                     lastMusicTime = data.music.time;

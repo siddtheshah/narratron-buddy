@@ -1,8 +1,8 @@
-"""Session-scoped story planning context and predictive script generation tool.
+"""Session-scoped story planning and planner-owned plot-beat tools.
 
 Logging & Script Inspection:
 ----------------------------
-All script node updates, scene element mutations, and cache updates emit formatted log records
+All plot-beat updates, character mutations, and scene element mutations emit formatted log records
 tagged with ``[STORY_SCRIPT]``.
 
 To inspect story script outputs over time during server execution, filter console logging
@@ -12,23 +12,25 @@ using the existing ``--log_prefix`` flag when running ``main.py``:
 """
 
 from collections import OrderedDict
-import hashlib
+from functools import cached_property
 import json
 import logging
+import os
 import re
 from threading import Lock
 import time
 from typing import Any, Callable, List, Dict, Optional
 
 from jinja2 import Template
+from pydantic import BaseModel, Field
+from google.adk.agents import Agent
+from google.adk.models.google_llm import Gemini
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google import genai
+from google.genai import types
 
 from tools.base_tool import BaseTools, with_cooldown
-from providers.text_response_provider import (
-    TextResponseProvider,
-    TextResponseRequest,
-    TextResponseProviderError,
-)
-from providers.registry import get_text_response_provider
 from services.quirk_service import get_quirk_generator_service
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,7 @@ Generate a compelling personality description and core motivation for this chara
 Return ONLY a JSON object with keys 'personality' (string) and 'motivation' (string)."""
 )
 
-_SCRIPT_PROMPT_TEMPLATE = Template(
+_STORY_CONTEXT_PROMPT_TEMPLATE = Template(
 """Current scene elements:
 {% if not elements -%}
 (No active named elements)
@@ -73,98 +75,76 @@ Active characters, personalities, motivations & distinct quirks:
 {% endif -%}
 
 {% if reused_nodes -%}
-Prior narrative nodes already established:
+Current upcoming plot beats:
 {% for node in reused_nodes -%}
-Node {{ node.node_index }}: Narration: {{ node.narration }} | Expected user response: {{ node.expected_user_response }}
+Node {{ node.node_index }}: Plot beat: {{ node.plot_beat }}
 {% endfor -%}
+{% else -%}
+(No upcoming plot beats)
 {% endif -%}
-Generate exactly {{ needed_count }} new upcoming script node(s) starting at node_index {{ start_idx }}.
-Return a JSON array of objects with keys 'node_index' (integer), 'narration' (string), and 'expected_user_response' (string)."""
+"""
 )
 
-SYSTEM_INSTRUCTION = (
-    "You are a narrative script planner for an interactive audio/text story experience.\n"
-    "You write script nodes that progress the narrative towards expected user response points, where the user makes a choice or takes action.\n"
-    "Crucially, drive narrative beats, dramatic tension, and decision points using character personalities, internal motivations, and their distinct quirks alongside scene elements.\n"
-    "Craft dramatic interactive decision points, high-stakes branching choices, and vivid adventure steps for the player.\n"
-    "Respond ONLY with a valid JSON array of node objects."
+SCENE_REACTION_SYSTEM_INSTRUCTION = (
+    "You are the authoritative narrative script engine for an interactive story. "
+    "Resolve player actions, decide when characters should manifest or change, and update future beats. The live agent is only a relay; "
+    "do not give it choices, tool instructions, or control of the plot. Respond ONLY with valid JSON."
 )
 
 
-def compute_elements_fingerprint(
-    named_elements: List[Dict[str, str]],
-    characters: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    """Compute a deterministic MD5 fingerprint for scene elements and active characters."""
-    normalized_elems = [
-        {"name": str(elem.get("name", "")).strip(), "content": str(elem.get("content", "")).strip()}
-        for elem in (named_elements or [])
-    ]
-    normalized_elems.sort(key=lambda x: x["name"])
-
-    normalized_chars = [
-        {
-            "name": str(c.get("name", "")).strip(),
-            "personality": str(c.get("personality", "")).strip(),
-            "motivation": str(c.get("motivation", "")).strip(),
-            "quirk": str(c.get("quirk", "")).strip(),
-        }
-        for c in (characters or [])
-    ]
-    normalized_chars.sort(key=lambda x: x["name"])
-
-    raw_str = json.dumps({"elements": normalized_elems, "characters": normalized_chars}, sort_keys=True)
-    return hashlib.md5(raw_str.encode("utf-8")).hexdigest()
+class PlannerDialogue(BaseModel):
+    speaker: str = "Narrator"
+    text: str
+    kind: str = "speech"
 
 
-def build_script_prompt(
+class PlannerCharacter(BaseModel):
+    name: str
+    description: str = ""
+    personality: str = ""
+    motivation: str = ""
+    quirk: str = ""
+
+
+class SceneReaction(BaseModel):
+    """Complete, typed scene delta emitted by the ephemeral ADK story planner."""
+    narration: str
+    dialogue: List[PlannerDialogue] = Field(default_factory=list)
+    # These are a structured fallback when the model finalizes directly
+    # instead of issuing the equivalent staged ADK tool call.
+    plot_beats: List[str] = Field(default_factory=list)
+    character_updates: List[PlannerCharacter] = Field(default_factory=list)
+
+
+class VertexGemini(Gemini):
+    """ADK Gemini model with an explicit Vertex AI client, independent of env defaults."""
+
+    project_id: Optional[str] = None
+    location: str = "global"
+
+    @cached_property
+    def api_client(self):
+        return genai.Client(vertexai=True, project=self.project_id, location=self.location)
+
+
+def build_story_context_prompt(
     elements: List[Dict[str, str]],
+    characters: List[Dict[str, Any]],
     reused_nodes: List[Dict[str, Any]],
-    needed_count: int,
-    start_idx: int,
-    characters: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    """Build prompt string for generating upcoming script nodes using Jinja2 template."""
-    cleaned_elements = [
-        {
-            "name": str(elem.get("name", "")).strip(),
-            "content": str(elem.get("content", "")).strip(),
-        }
-        for elem in (elements or [])
-    ]
-    cleaned_chars = [
-        {
-            "name": str(c.get("name", "")).strip(),
-            "description": str(c.get("description", "")).strip(),
-            "personality": str(c.get("personality", "")).strip(),
-            "motivation": str(c.get("motivation", "")).strip(),
-            "quirk": str(c.get("quirk", "")).strip(),
-        }
-        for c in (characters or [])
-    ]
-    cleaned_reused = [
-        {
-            "node_index": node.get("node_index", 0),
-            "narration": node.get("narration", ""),
-            "expected_user_response": node.get("expected_user_response", ""),
-        }
-        for node in (reused_nodes or [])
-    ]
-
-    return _SCRIPT_PROMPT_TEMPLATE.render(
-        elements=cleaned_elements,
-        characters=cleaned_chars,
-        reused_nodes=cleaned_reused,
-        needed_count=needed_count,
-        start_idx=start_idx,
+    """Render shared scene, character, and plot context for every planner task."""
+    return _STORY_CONTEXT_PROMPT_TEMPLATE.render(
+        elements=elements or [],
+        characters=characters or [],
+        reused_nodes=reused_nodes or [],
     ).strip()
 
 
 class StoryPlanningTools(BaseTools):
-    """Maintain named elements and character motivations defining scene state, predicting upcoming story script pieces.
+    """Maintain scene context, characters, and planner-owned durable plot beats.
 
     Emits formatted logger records prefixed with ``[STORY_SCRIPT]`` whenever scene elements
-    or narrative script nodes are updated. Filter output to story script logs using:
+    or plot beats are updated. Filter output to story script logs using:
         python main.py --log_prefix="[STORY_SCRIPT]"
     """
 
@@ -183,18 +163,29 @@ class StoryPlanningTools(BaseTools):
         self._elements_lock = Lock()
         self._characters: OrderedDict[str, Dict[str, str]] = OrderedDict()
         self._characters_lock = Lock()
-        self._cached_script: List[Dict[str, Any]] = []
-        self._script_lock = Lock()
+        self._plot_beats: List[Dict[str, str]] = []
+        self._plot_beats_lock = Lock()
+        self._last_scene_reaction: Dict[str, Any] = {}
 
         self.nodes_ahead: int = int(self.config.get("nodes_ahead", 3))
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         self.max_named_elements: int = int(self.config.get("max_named_elements", DEFAULT_MAX_NAMED_ELEMENTS))
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
-        self.text_provider: Optional[TextResponseProvider] = self.config.get("text_provider")
-        self.provider_id: str = str(self.config.get("provider") or "gemini-2-5").strip()
-        provider_options = self.config.get("provider_options") or {}
-        self.provider_options: dict = dict(provider_options) if isinstance(provider_options, dict) else {}
-        self._default_text_provider: Optional[TextResponseProvider] = None
+        self.planner_model: str = str(self.config.get("planner_model") or "gemini-3.7-flash")
+        self.vertex_project: Optional[str] = (
+            self.config.get("vertex_project")
+            or self.config.get("gcloud", {}).get("project_id")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+        )
+        self.vertex_location: str = str(
+            self.config.get("vertex_location") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
+        )
+        self._vertex_client: Optional[Any] = None
+        # Test/dev seam. Production uses a fresh ADK agent run for each action.
+        self.planner_executor: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = self.config.get("planner_executor")
+        # Bound by AgentSession after its live queue is running. The callback
+        # receives the completed planner result from a background worker.
+        self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = self.config.get("on_scene_reaction")
 
         initial_elements = self.config.get("initial_elements", {})
         if isinstance(initial_elements, dict):
@@ -230,7 +221,7 @@ class StoryPlanningTools(BaseTools):
         self.reload_from_session_state()
 
     def export_story_planning_state(self) -> Dict[str, Any]:
-        """Export full story planning state as a unified dict containing elements, characters, and cached script."""
+        """Export the scene elements, characters, durable plot beats, and latest reaction."""
         with self._elements_lock:
             elements_list = [
                 {"name": name, "content": content}
@@ -238,13 +229,14 @@ class StoryPlanningTools(BaseTools):
             ]
         with self._characters_lock:
             chars_list = [dict(c) for c in self._characters.values()]
-        with self._script_lock:
-            script_list = list(self._cached_script)
+        with self._plot_beats_lock:
+            plot_beats = list(self._plot_beats)
 
         return {
             "named_elements": elements_list,
             "characters": chars_list,
-            "cached_script": script_list,
+            "plot_beats": plot_beats,
+            "last_scene_reaction": dict(self._last_scene_reaction),
         }
 
     def import_story_planning_state(self, state: Dict[str, Any]) -> None:
@@ -277,9 +269,14 @@ class StoryPlanningTools(BaseTools):
                             "quirk": str(char.get("quirk", "")),
                         }
 
-        with self._script_lock:
-            script = state.get("cached_script", [])
-            self._cached_script = list(script) if isinstance(script, list) else []
+        with self._plot_beats_lock:
+            beats = state.get("plot_beats", [])
+            self._plot_beats = [
+                {"plot_beat": str(item.get("plot_beat") or "").strip()}
+                for item in beats
+                if isinstance(item, dict) and item.get("plot_beat")
+            ] if isinstance(beats, list) else []
+        self._last_scene_reaction = state.get("last_scene_reaction", {}) if isinstance(state.get("last_scene_reaction", {}), dict) else {}
 
     def reload_from_session_state(self) -> None:
         """Reload story planning state from session state manager if present."""
@@ -331,8 +328,8 @@ class StoryPlanningTools(BaseTools):
         except Exception as e:
             logger.warning(f"[STORY_SCRIPT] Failed to save story planning state to session state: {e}")
 
-    def _format_script_log(self, nodes: List[Dict[str, Any]]) -> str:
-        """Format active characters and script nodes into a clean multiline debug string."""
+    def _format_story_log(self, plot_beats: List[Dict[str, Any]]) -> str:
+        """Format active characters and durable plot beats into a clean debug string."""
         lines = []
         chars = self.get_present_characters()
         if chars:
@@ -344,64 +341,56 @@ class StoryPlanningTools(BaseTools):
                     f"Motivation: {c.get('motivation', 'N/A')} | Quirk: {c.get('quirk', 'N/A')}"
                 )
 
-        if not nodes:
-            lines.append("  (No script nodes available)")
+        if not plot_beats:
+            lines.append("  (No plot beats available)")
         else:
-            lines.append("  Upcoming Script Nodes:")
-            for node in nodes:
-                idx = node.get("node_index", "?")
-                narration = node.get("narration", "")
-                response = node.get("expected_user_response", "")
-                lines.append(f"    [Node {idx}] Narration: {narration}\n             Expected User Response: {response}")
+            lines.append("  Upcoming Plot Beats:")
+            for index, node in enumerate(plot_beats):
+                lines.append(f"    [Beat {index}] {node.get('plot_beat', '')}")
         return "\n".join(lines)
 
-    def _log_script_update(self, nodes: List[Dict[str, Any]], source: str, fingerprint: str = "") -> None:
-        """Emit formatted logger output for story script tracking over time."""
+    def _log_story_update(self, plot_beats: List[Dict[str, Any]], source: str) -> None:
+        """Emit formatted logger output for durable story-state tracking."""
         theater = self.theater_id or "default"
         logger.info(
-            "[STORY_SCRIPT] Script nodes active (source=%s, theater=%s, fingerprint=%s, count=%d):\n%s",
+            "[STORY_SCRIPT] Plot beats active (source=%s, theater=%s, count=%d):\n%s",
             source,
             theater,
-            fingerprint,
-            len(nodes),
-            self._format_script_log(nodes),
+            len(plot_beats),
+            self._format_story_log(plot_beats),
         )
 
     def get_tools(self) -> List[Any]:
         """Return bound tool methods exposed to the agent based on configuration."""
-        tools: List[Any] = [
-            self.update_or_insert_named_element,
-            self.clear_scene,
-        ]
         if self.adventure_mode:
-            tools.extend([
-                self.generate_character,
-                self.get_script_piece,
-            ])
-        return tools
+            # In Adventure Mode the planner owns story context and progression;
+            # the live agent only relays player input to this authority.
+            return [self.process_user_action]
+        return [self.update_or_insert_named_element, self.clear_scene]
 
-    def _get_text_provider(self) -> TextResponseProvider:
-        """Return explicit text provider or construct default provider from config."""
-        if self.text_provider:
-            return self.text_provider
-        if self._default_text_provider is None:
-            self._default_text_provider = get_text_response_provider(self.provider_id, self.provider_options)
-        return self._default_text_provider
+    def _get_vertex_client(self) -> Any:
+        """Return the explicitly configured Vertex client used for all planner calls."""
+        if self._vertex_client is None:
+            self._vertex_client = genai.Client(
+                vertexai=True,
+                project=self.vertex_project,
+                location=self.vertex_location,
+            )
+        return self._vertex_client
 
-    @with_cooldown("generating character")
-    def generate_character(
+    def generate_character_profile(
         self,
         name: str,
         description: str = "",
         personality: str = "",
         motivation: str = "",
         quirk: str = "",
-    ) -> str:
-        """Generate or update a character's motivation, personality, and distinct quirk for story planning.
+    ) -> Dict[str, str]:
+        """Return an enriched character profile without changing CanvasState.
 
-        Stored in story_planning and used to update upcoming script nodes in Adventure Mode.
-        If personality or motivation are left blank, dynamic descriptions will be generated using LLM text provider.
-        If quirk is left blank, a distinct random quirk will be assigned from QuirkGeneratorService.
+        This is the planner's sole input tool: it helps draft a character that
+        the planner may include in its returned scene delta. Persistence happens
+        only when that delta is committed.
         """
         clean_name = str(name or "").strip()
         clean_desc = str(description or "").strip()
@@ -410,7 +399,7 @@ class StoryPlanningTools(BaseTools):
         clean_quirk = str(quirk or "").strip()
 
         if not clean_name:
-            return "Error: Character name cannot be empty."
+            return {"error": "Character name cannot be empty."}
 
         # Assign random quirk from QuirkGeneratorService if not specified
         if not clean_quirk:
@@ -428,14 +417,16 @@ class StoryPlanningTools(BaseTools):
             ).strip()
 
             try:
-                provider = self._get_text_provider()
-                req = TextResponseRequest(
-                    prompt=prompt,
-                    system_instruction="You are a character design assistant for an adventure story. Respond ONLY with valid JSON.",
-                    temperature=0.7,
+                response = self._get_vertex_client().models.generate_content(
+                    model=self.planner_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction="You are a character design assistant for an adventure story. Respond ONLY with valid JSON.",
+                        response_mime_type="application/json",
+                        temperature=0.7,
+                    ),
                 )
-                resp = provider.generate(req)
-                resp_text = resp.text.strip()
+                resp_text = str(getattr(response, "text", "") or "").strip()
                 if resp_text.startswith("```"):
                     resp_text = re.sub(r"^```(?:json)?\s*", "", resp_text)
                     resp_text = re.sub(r"\s*```$", "", resp_text)
@@ -453,7 +444,7 @@ class StoryPlanningTools(BaseTools):
             if not clean_motiv:
                 clean_motiv = "To navigate scene challenges and drive the narrative forward."
 
-        char_data = {
+        return {
             "name": clean_name,
             "description": clean_desc,
             "personality": clean_pers,
@@ -461,18 +452,39 @@ class StoryPlanningTools(BaseTools):
             "quirk": clean_quirk,
         }
 
+    @with_cooldown("generating character")
+    def generate_character(
+        self,
+        name: str,
+        description: str = "",
+        personality: str = "",
+        motivation: str = "",
+        quirk: str = "",
+    ) -> str:
+        """Generate or update a persisted character outside a planner turn."""
+        char_data = self.generate_character_profile(
+            name=name,
+            description=description,
+            personality=personality,
+            motivation=motivation,
+            quirk=quirk,
+        )
+        if "error" in char_data:
+            return f"Error: {char_data['error']}"
+        clean_name = char_data["name"]
+
         with self._characters_lock:
             self._characters[clean_name] = char_data
             self._characters.move_to_end(clean_name)
 
         self.save_to_session_state()
 
-        self._log_script_update(self.get_cached_script(), source="character_added", fingerprint="")
+        self._log_story_update(self.get_plot_beats(), source="character_added")
 
-        if self.adventure_mode:
-            self.update_script_async()
-
-        return f"Created/Updated character '{clean_name}'. Personality: {clean_pers}. Motivation: {clean_motiv}. Quirk: {clean_quirk}."
+        return (
+            f"Created/Updated character '{clean_name}'. Personality: {char_data['personality']}. "
+            f"Motivation: {char_data['motivation']}. Quirk: {char_data['quirk']}."
+        )
 
     @with_cooldown("updating scene elements")
     def update_or_insert_named_element(self, name: str, content: str) -> str:
@@ -486,9 +498,6 @@ class StoryPlanningTools(BaseTools):
             return "Error: Named element name cannot be empty."
         if not clean_content:
             return "Error: Named element content cannot be empty."
-
-        # Snapshot fingerprint before mutation so we can decide whether to rewrite the script
-        pre_fp = compute_elements_fingerprint(self.get_present_elements(), self.get_present_characters())
 
         with self._elements_lock:
             is_update = clean_name in self._elements
@@ -511,21 +520,6 @@ class StoryPlanningTools(BaseTools):
             len(self._elements),
         )
 
-        if self.adventure_mode:
-            post_fp = compute_elements_fingerprint(self.get_present_elements(), self.get_present_characters())
-            if post_fp != pre_fp:
-                # Scene changed — immediately discard stale cached nodes so get_script_piece
-                # cannot pop an outdated node before the async refill completes.
-                with self._script_lock:
-                    self._cached_script.clear()
-                logger.info(
-                    "[STORY_SCRIPT] Scene fingerprint changed (%s→%s); script cache invalidated (theater=%s).",
-                    pre_fp[:8],
-                    post_fp[:8],
-                    self.theater_id or "default",
-                )
-                self.update_script_async()
-
         return f"{action} named element '{clean_name}'."
 
     def clear_scene(self) -> str:
@@ -538,20 +532,19 @@ class StoryPlanningTools(BaseTools):
             char_count = len(self._characters)
             self._characters.clear()
 
-        with self._script_lock:
-            self._cached_script.clear()
+        with self._plot_beats_lock:
+            self._plot_beats.clear()
+        self._last_scene_reaction = {}
+        self._publish_scene_dialogue([])
 
         self.save_to_session_state()
 
         logger.info(
-            "[STORY_SCRIPT] Cleared %d scene element(s), %d character(s), and reset cached script (theater=%s).",
+            "[STORY_SCRIPT] Cleared %d scene element(s), %d character(s), and plot beats (theater=%s).",
             elem_count,
             char_count,
             self.theater_id or "default",
         )
-
-        if self.adventure_mode:
-            self.update_script_async()
 
         if char_count > 0:
             return f"Cleared {elem_count} named element(s) and {char_count} character(s) from the scene."
@@ -570,203 +563,226 @@ class StoryPlanningTools(BaseTools):
         with self._characters_lock:
             return [dict(char) for char in self._characters.values()]
 
-    def get_cached_script(self) -> List[Dict[str, Any]]:
-        """Return a copy of the current cached script nodes."""
-        with self._script_lock:
-            return list(self._cached_script)
+    def get_plot_beats(self) -> List[Dict[str, str]]:
+        """Return the durable, non-consumable plot beats."""
+        with self._plot_beats_lock:
+            return list(self._plot_beats)
 
-    def _build_script_prompt(
-        self,
-        elements: List[Dict[str, str]],
-        reused_nodes: List[Dict[str, Any]],
-        needed_count: int,
-        start_idx: int,
-        characters: Optional[List[Dict[str, Any]]] = None,
-    ) -> str:
-        """Build prompt using the external build_script_prompt helper."""
-        return build_script_prompt(
-            elements=elements,
-            reused_nodes=reused_nodes,
-            needed_count=needed_count,
-            start_idx=start_idx,
-            characters=characters,
-        )
-
-    def _refill_cache(self) -> None:
-        """Generate new script nodes and append them to the cache to maintain the nodes_ahead buffer.
-
-        Validates existing cached nodes against the current element+character fingerprint and
-        discards stale ones before topping up. Safe to call from background threads.
-        """
-        if self.nodes_ahead <= 0:
-            raise ValueError("nodes_ahead must be positive.")
-
-        elements = self.get_present_elements()
-        characters = self.get_present_characters()
-        fingerprint = compute_elements_fingerprint(elements, characters)
-
-        with self._script_lock:
-            valid_nodes = [
-                n for n in self._cached_script
-                if not n.get("elements_fingerprint") or n.get("elements_fingerprint") == fingerprint
-            ]
-            needed_count = self.nodes_ahead - len(valid_nodes)
-            start_idx = len(valid_nodes)
-
-        if needed_count <= 0:
-            return
-
-        prompt = self._build_script_prompt(
-            elements=elements,
-            reused_nodes=valid_nodes,
-            needed_count=needed_count,
-            start_idx=start_idx,
-            characters=characters,
-        )
-
-        logger.debug(
-            "[STORY_SCRIPT] Refilling cache: generating %d node(s) (theater=%s, fingerprint=%s)",
-            needed_count,
-            self.theater_id or "default",
-            fingerprint,
-        )
-
-        provider = self._get_text_provider()
-        request = TextResponseRequest(
-            prompt=prompt,
-            system_instruction=SYSTEM_INSTRUCTION,
-            temperature=0.7,
-        )
-        response_result = provider.generate(request)
-        new_nodes = self._parse_script_nodes(
-            response_result.text,
-            needed_count=needed_count,
-            start_index=start_idx,
-            fingerprint=fingerprint,
-        )
-
-        with self._script_lock:
-            # Re-filter in case fingerprint changed while we were generating
-            self._cached_script = [
-                n for n in self._cached_script
-                if not n.get("elements_fingerprint") or n.get("elements_fingerprint") == fingerprint
-            ]
-            self._cached_script.extend(new_nodes)
-
-        self._log_script_update(self.get_cached_script(), source="cache_refill", fingerprint=fingerprint)
-
-    @with_cooldown("generating script piece")
-    def get_script_piece(self) -> Dict[str, Any]:
-        """Pop and return the next script node from the cache.
-
-        Each call consumes one node from the front of the buffer.  An async refill is
-        triggered when the buffer drops to 1, so a fresh node is being generated while
-        the last buffered one is still available — avoiding a sync wait on the next call.
-        If the cache is empty at call time a synchronous refill runs first as a safety net.
-        """
-        if self.nodes_ahead <= 0:
-            raise ValueError("nodes_ahead must be positive.")
-
-        with self._script_lock:
-            cache_empty = len(self._cached_script) == 0
-
-        if cache_empty:
-            # Nothing buffered yet — generate synchronously so we can return immediately
-            self._refill_cache()
-
-        with self._script_lock:
-            if self._cached_script:
-                node = self._cached_script.pop(0)
-                remaining = len(self._cached_script)
-            else:
-                raise ValueError("Script cache is empty and could not be refilled.")
-
-        if remaining == 1:
-            self.update_script_async()
-
-        return node
-
-    @classmethod
-    def _parse_script_nodes(
-        cls,
-        text: str,
-        needed_count: int,
-        start_index: int,
-        fingerprint: str,
-    ) -> List[Dict[str, Any]]:
-        """Parse text into structured script node dicts."""
-        nodes: List[Dict[str, Any]] = []
-
-        cleaned_text = text.strip()
-        if cleaned_text.startswith("```"):
-            cleaned_text = re.sub(r"^```(?:json)?\s*", "", cleaned_text)
-            cleaned_text = re.sub(r"\s*```$", "", cleaned_text)
-
-        parsed_json: Any = None
-        try:
-            parsed_json = json.loads(cleaned_text)
-        except Exception:
-            pass
-
-        if isinstance(parsed_json, list):
-            for idx, item in enumerate(parsed_json):
-                if isinstance(item, dict):
-                    narration = str(item.get("narration") or item.get("text") or item.get("description") or "").strip()
-                    expected_resp = str(
-                        item.get("expected_user_response")
-                        or item.get("user_response")
-                        or item.get("response_point")
-                        or ""
-                    ).strip()
-                    if narration or expected_resp:
-                        nodes.append({
-                            "node_index": start_index + len(nodes),
-                            "narration": narration or "Narrator continues the story...",
-                            "expected_user_response": expected_resp or "What do you do next?",
-                            "elements_fingerprint": fingerprint,
-                        })
-                        if len(nodes) >= needed_count:
-                            break
-
-        if not nodes:
-            # Fallback parsing for non-JSON or raw text
-            lines = [l.strip() for l in cleaned_text.splitlines() if l.strip()]
-            narr = " ".join(lines[:2]) if lines else "The narrative unfolds as scene elements align."
-            resp = lines[2] if len(lines) > 2 else "What action do you take?"
-            for i in range(needed_count):
-                nodes.append({
-                    "node_index": start_index + i,
-                    "narration": f"{narr} (Step {i + 1})",
-                    "expected_user_response": f"{resp} (Option {i + 1})",
-                    "elements_fingerprint": fingerprint,
-                })
-
-        # Ensure we return exactly needed_count nodes
-        while len(nodes) < needed_count:
-            next_idx = start_index + len(nodes)
-            nodes.append({
-                "node_index": next_idx,
-                "narration": f"The story advances to key decision point {next_idx}.",
-                "expected_user_response": f"How do you react at step {next_idx}?",
-                "elements_fingerprint": fingerprint,
+    @staticmethod
+    def _clean_dialogue(dialogue: Any) -> List[Dict[str, str]]:
+        if not isinstance(dialogue, list):
+            return []
+        cleaned: List[Dict[str, str]] = []
+        for item in dialogue[:3]:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            kind = str(item.get("kind") or "speech").strip().lower()
+            cleaned.append({
+                "speaker": str(item.get("speaker") or "Narrator").strip()[:80],
+                "text": text[:500],
+                "kind": kind if kind in {"speech", "thought"} else "speech",
             })
+        return cleaned
 
-        return nodes[:needed_count]
+    def _publish_scene_dialogue(self, dialogue: List[Dict[str, str]]) -> None:
+        """Persist dialogue for the canvas without making the live agent own it."""
+        if not self.canvas_state_service or not self.theater_id:
+            return
+        try:
+            state_mgr = self.canvas_state_service.get(self.theater_id) if hasattr(self.canvas_state_service, "get") else self.canvas_state_service
+            if hasattr(state_mgr, "set_scene_dialogue"):
+                state_mgr.set_scene_dialogue(dialogue)
+        except Exception as exc:
+            logger.warning("[STORY_SCRIPT] Failed to publish scene dialogue: %s", exc)
 
-    def update_script_async(
-        self,
-        callback: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
-    ) -> None:
-        """Asynchronously refill the internal cached script buffer."""
-        import threading
+    def _apply_planner_character_updates(self, updates: Any) -> List[Dict[str, str]]:
+        """Execute planner-selected character manifestations without live-agent control."""
+        if not isinstance(updates, list):
+            return []
+        manifested: List[Dict[str, str]] = []
+        for update in updates[:2]:
+            if not isinstance(update, dict):
+                continue
+            name = str(update.get("name") or "").strip()
+            if not name:
+                continue
+            # This is an internal planner action, not a live-agent tool call;
+            # it must not be rejected because a previous character was just
+            # manifested during the same scene resolution.
+            type(self).generate_character.__wrapped__(
+                self,
+                name=name,
+                description=str(update.get("description") or "").strip(),
+                personality=str(update.get("personality") or "").strip(),
+                motivation=str(update.get("motivation") or "").strip(),
+                quirk=str(update.get("quirk") or "").strip(),
+            )
+            manifested.extend([character for character in self.get_present_characters() if character["name"] == name])
+        return manifested
 
-        def _worker():
+    def _run_planner_agent(self, user_action: str) -> Dict[str, Any]:
+        """Run one stateless ADK planner turn against a CanvasState snapshot."""
+        snapshot = {
+            "elements": self.get_present_elements(),
+            "characters": self.get_present_characters(),
+            "plot_beats": [node.get("plot_beat", "") for node in self.get_plot_beats()],
+            "nodes_ahead": self.nodes_ahead,
+        }
+        if self.planner_executor:
+            return self.planner_executor(user_action, snapshot)
+
+        planner_context = build_story_context_prompt(
+            elements=snapshot["elements"],
+            characters=snapshot["characters"],
+            reused_nodes=[
+                {"node_index": index, "plot_beat": beat}
+                for index, beat in enumerate(snapshot["plot_beats"])
+            ],
+        )
+        instruction = f"""{SCENE_REACTION_SYSTEM_INSTRUCTION}
+
+{planner_context}
+
+For the user action provided, return one complete scene delta. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. Include character_updates only for characters that should enter or materially change. You may call generate_character_profile to enrich a proposed character, then include its returned profile in character_updates. That tool only provides information: the scene delta is the sole source of changes. Then return the scene reaction."""
+        planner = Agent(
+            name="story_planner",
+            description="Authoritative planner for one interactive story turn.",
+            model=VertexGemini(
+                model=self.planner_model,
+                project_id=self.vertex_project,
+                location=self.vertex_location,
+            ),
+            instruction=instruction,
+            tools=[self.generate_character_profile],
+            output_schema=SceneReaction,
+            output_key="scene_reaction",
+            disallow_transfer_to_parent=True,
+            disallow_transfer_to_peers=True,
+        )
+
+        async def run_turn() -> Dict[str, Any]:
+            sessions = InMemorySessionService()
+            runner = Runner(app_name="narratron_story_planner", agent=planner, session_service=sessions)
+            session_id = f"planner_{self.theater_id or 'default'}_{time.time_ns()}"
+            await sessions.create_session(app_name="narratron_story_planner", user_id="story_planner", session_id=session_id)
+            final_text = ""
+            async for event in runner.run_async(
+                user_id="story_planner",
+                session_id=session_id,
+                new_message=types.Content(role="user", parts=[types.Part(text=user_action)]),
+            ):
+                if event.is_final_response() and event.content and event.content.parts:
+                    final_text = "".join(part.text or "" for part in event.content.parts)
+            session = await sessions.get_session(
+                app_name="narratron_story_planner",
+                user_id="story_planner",
+                session_id=session_id,
+            )
+            stored_reaction = (session.state or {}).get("scene_reaction") if session else None
             try:
-                self._refill_cache()
-                if callback:
-                    callback(self.get_cached_script())
+                if isinstance(stored_reaction, BaseModel):
+                    reaction = stored_reaction.model_dump()
+                elif isinstance(stored_reaction, dict):
+                    reaction = stored_reaction
+                elif isinstance(stored_reaction, str):
+                    reaction = json.loads(stored_reaction)
+                else:
+                    reaction = json.loads(final_text) if final_text else {}
+            except json.JSONDecodeError as exc:
+                raise ValueError("Story planner returned invalid structured output.") from exc
+            if not isinstance(reaction, dict):
+                raise ValueError("Story planner returned an invalid scene reaction.")
+            if not reaction:
+                state_keys = sorted((session.state or {}).keys()) if session else []
+                raise ValueError(
+                    "Story planner returned no scene delta "
+                    f"(final_response_chars={len(final_text)}, state_keys={state_keys})."
+                )
+            try:
+                scene_delta = SceneReaction.model_validate(reaction)
             except Exception as exc:
-                logger.warning(f"[STORY_SCRIPT] Asynchronous script update failed: {exc}")
+                raise ValueError("Story planner returned an invalid scene delta.") from exc
+            if len(scene_delta.plot_beats) != self.nodes_ahead:
+                raise ValueError("Story planner must return the complete plot-beat buffer in its scene delta.")
+            return scene_delta.model_dump()
 
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
+        import asyncio
+        return asyncio.run(run_turn())
+
+    def process_user_action(self, user_action: str) -> Dict[str, Any]:
+        """Queue a non-blocking authoritative resolution of an orator action.
+
+        The final reaction is delivered through ``on_scene_reaction``. Callers
+        receive immediately so a slow planner cannot stall the Live session.
+        """
+        action = str(user_action or "").strip()
+        if not action:
+            return {"error": "User action cannot be empty."}
+
+        def resolve_and_notify() -> None:
+            try:
+                result = self._resolve_user_action(action)
+            except Exception as exc:
+                logger.exception("[STORY_SCRIPT] Scene reaction failed")
+                result = {"error": f"Story planner failed: {exc}"}
+            callback = self.on_scene_reaction
+            if callback:
+                try:
+                    callback(result)
+                except Exception:
+                    logger.exception("[STORY_SCRIPT] Scene reaction callback failed")
+
+        import threading
+        threading.Thread(target=resolve_and_notify, daemon=True).start()
+        return {"status": "processing", "message": "Story planner is resolving the action."}
+
+    def _resolve_user_action(self, action: str) -> Dict[str, Any]:
+        """Run and commit one planner turn in a background worker."""
+        if not self.adventure_mode:
+            return {"error": "Adventure Mode is not enabled for this theater."}
+        if self.nodes_ahead <= 0:
+            raise ValueError("nodes_ahead must be positive.")
+
+        parsed = self._run_planner_agent(action)
+        if not isinstance(parsed, dict):
+            raise ValueError("Story planner must return a JSON object.")
+
+        manifested_characters = self._apply_planner_character_updates(parsed.get("character_updates"))
+        narration = str(parsed.get("narration") or "The scene shifts in response to your action.").strip()
+        dialogue = self._clean_dialogue(parsed.get("dialogue"))
+        plot_beats = self._normalize_plot_beats(parsed.get("plot_beats", []))
+        if len(plot_beats) != self.nodes_ahead:
+            raise ValueError("Story planner must produce the complete plot-beat buffer.")
+        with self._plot_beats_lock:
+            self._plot_beats = plot_beats
+        result = {
+            "narration": narration,
+            "dialogue": dialogue,
+            "manifested_characters": manifested_characters,
+            "plot_beats": list(plot_beats),
+        }
+        self._last_scene_reaction = result
+        self._publish_scene_dialogue(dialogue)
+        self.save_to_session_state()
+        self._log_story_update(plot_beats, source="user_action")
+        return result
+
+    @staticmethod
+    def _normalize_plot_beats(raw_beats: Any) -> List[Dict[str, str]]:
+        """Convert typed scene-delta beats to the persisted CanvasState shape."""
+        if not isinstance(raw_beats, list):
+            return []
+        normalized: List[Dict[str, str]] = []
+        for item in raw_beats:
+            if isinstance(item, str):
+                beat = item.strip()
+            elif isinstance(item, dict):
+                beat = str(item.get("plot_beat") or "").strip()
+            else:
+                beat = ""
+            if beat:
+                normalized.append({"plot_beat": beat})
+        return normalized

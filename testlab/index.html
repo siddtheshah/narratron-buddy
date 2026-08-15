@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Test Lab</title>
+  <style>
+    :root { color-scheme: dark; --panel: #151b2e; --border: #303c60; --accent: #9b87f5; --muted: #aab4cc; }
+    * { box-sizing: border-box; } body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 2rem; background: #0b1020; color: #f4f5fb; font: 16px/1.5 Inter, system-ui, sans-serif; }
+    main { width: min(940px, 100%); } h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); } .lede { color: var(--muted); margin: .5rem 0 2rem; }
+    .labs { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 1rem; } a { color: inherit; text-decoration: none; }
+    article { height: 100%; padding: 1.25rem; border: 1px solid var(--border); border-radius: .85rem; background: var(--panel); transition: border-color .15s, transform .15s; }
+    a:hover article, a:focus-visible article { border-color: var(--accent); transform: translateY(-2px); } h2 { margin: 0 0 .4rem; color: #dcd5ff; font-size: 1.1rem; } p { margin: 0; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Narratron Test Lab</h1>
+    <p class="lede">Focused diagnostics and benchmarks that run without the full Narratron theater server.</p>
+    <div class="labs">
+      <a href="/story-planner"><article><h2>Story Planner Lab</h2><p>Submit actions, inspect persistent plot and character state, and observe callback-queue reactions.</p></article></a>
+      <a href="/text-benchmark"><article><h2>Text Provider Bench</h2><p>Compare text-response providers using repeatable narrative and structured-output prompts.</p></article></a>
+      <a href="/image-benchmark"><article><h2>Image Provider Bench</h2><p>Compare image-generation providers with reusable visual prompts.</p></article></a>
+      <a href="/music-benchmark"><article><h2>Music Provider Bench</h2><p>Compare music-generation providers and output artifacts.</p></article></a>
+      <a href="/vad"><article><h2>Audio VAD Lab</h2><p>Test microphone capture and voice-activity detection behavior.</p></article></a>
+      <a href="/effects"><article><h2>Image Effects Lab</h2><p>Preview the canvas image effects in isolation.</p></article></a>
+    </div>
+  </main>
+</body>
+</html>
