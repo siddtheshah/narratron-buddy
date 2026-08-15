@@ -74,3 +74,11 @@ class TestCrossfade(UITestCase):
         self.assertIn('id="agent-dice-indicator"', content)
         self.assertIn("toolActivity.dice_rolling", content)
         self.assertIn("data.tool_activity", content)
+
+    def test_canvas_template_renders_scene_descriptions_in_white_italics(self):
+        template_path = PROJECT_ROOT / "templates" / "canvas.html"
+        content = template_path.read_text(encoding="utf-8")
+
+        self.assertIn(".scene-description", content)
+        self.assertIn("font-style: italic", content)
+        self.assertIn("data.scene_description", content)

@@ -160,6 +160,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(snapshot["plot_beats"], [])
             return {
                 "narration": "The hidden doorway opens.",
+                "scene_description": "Torchlight shivers across the mossy archway.",
                 "dialogue": [{"speaker": "Mara", "text": "There!", "kind": "speech"}],
                 "character_updates": [{
                     "name": "Lantern Warden", "description": "Armored keeper", "personality": "Stern",
@@ -193,11 +194,13 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(acknowledgement["status"], "processing")
         self.assertTrue(completed.wait(timeout=1))
         self.assertEqual(results[0]["narration"], "The hidden doorway opens.")
+        self.assertEqual(results[0]["scene_description"], "Torchlight shivers across the mossy archway.")
         self.assertEqual(len(tools.get_plot_beats()), 2)
         self.assertEqual(billed_plans, [1])
         self.assertIn("plot_beats", tools.export_story_planning_state())
         self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
         state.get.return_value.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
+        state.get.return_value.set_scene_description.assert_called_once_with(results[0]["scene_description"])
         self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
     def test_clear_scene_removes_plot_beats_and_characters(self):
@@ -262,6 +265,19 @@ class TestStoryPlanningTools(unittest.TestCase):
                 {"action": "Action 3", "response": "Response 3"},
             ],
         )
+
+    def test_scene_description_is_compact_and_action_cooldown_scales_with_response(self):
+        tools = StoryPlanningTools(config={
+            "action_cooldown_base_seconds": 10,
+            "action_cooldown_words_per_second": 10,
+            "action_cooldown_max_seconds": 20,
+        })
+        long_description = " ".join(f"word{index}" for index in range(60))
+
+        self.assertEqual(len(tools._clean_scene_description(long_description).split()), 45)
+        tools._last_action_response_word_count = 26
+
+        self.assertEqual(tools.get_user_action_cooldown_seconds(), 13)
 
 
 if __name__ == "__main__":

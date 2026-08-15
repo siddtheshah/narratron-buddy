@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def with_cooldown(
     func_or_desc=None,
     action_desc: Optional[str] = None,
-    duration: Optional[float] = None,
+    duration: Optional[Any] = None,
 ):
     """Decorator annotation for BaseTools methods that enforces cooldown tracking.
 
@@ -156,7 +156,7 @@ class BaseTools:
         If on cooldown, schedules the timer and returns an error message.
         Otherwise returns None.
         """
-        cooldown_duration = self.cooldown_duration if duration is None else float(duration)
+        cooldown_duration = self._resolve_cooldown_duration(duration)
         now = time.time()
         last_time = self._last_call_times.get(tool_name, 0.0)
         elapsed = now - last_time
@@ -176,9 +176,20 @@ class BaseTools:
 
     def record_tool_call(self, tool_name: str, duration: Optional[float] = None) -> None:
         """Records the timestamp of a successful tool call and schedules the expiration timer."""
-        cooldown_duration = self.cooldown_duration if duration is None else float(duration)
+        cooldown_duration = self._resolve_cooldown_duration(duration)
         self._last_call_times[tool_name] = time.time()
         self._schedule_cooldown_timer(tool_name, cooldown_duration)
+
+    def _resolve_cooldown_duration(self, duration: Optional[Any]) -> float:
+        """Resolve a fixed or tool-suite-specific cooldown duration safely."""
+        configured_duration = self.cooldown_duration if duration is None else duration
+        if callable(configured_duration):
+            configured_duration = configured_duration(self)
+        try:
+            return max(0.0, float(configured_duration))
+        except (TypeError, ValueError):
+            logger.warning("Invalid cooldown duration %r; using 0 seconds.", configured_duration)
+            return 0.0
 
     def _schedule_cooldown_timer(self, tool_name: str, remaining_seconds: float) -> None:
         """Schedules a background timer to invoke callbacks when a tool's cooldown expires."""

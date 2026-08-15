@@ -1290,6 +1290,16 @@
         }
         .scene-dialogue-bubble.thought { font-style: italic; }
         .scene-dialogue-speaker { color: inherit; font-size: 0.78em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 0.4em; }
+        .scene-description {
+            max-width: min(88vw, 900px);
+            color: #fff;
+            font-size: clamp(1rem, 1.85vw, 1.45rem);
+            font-style: italic;
+            font-weight: 500;
+            line-height: 1.35;
+            text-align: center;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.7);
+        }
 
         .chat-message {
             background: rgba(255, 255, 255, 0.05);
@@ -2899,7 +2909,7 @@
                         const data = await response.json();
                         updateAgentActivity(data.tool_activity);
                         updateAgentThought(data.agent_thought);
-                        updateSceneDialogue(data.scene_dialogue);
+                        updateSceneDialogue(data.scene_dialogue, data.scene_description);
                         if (data.viewer_collab_enabled !== undefined && data.viewer_collab_enabled !== viewerCollabEnabled) {
                             viewerCollabEnabled = Boolean(data.viewer_collab_enabled);
                             if (viewerCollabToggleBtn) {
@@ -3133,7 +3143,7 @@
                     lastAgentThought = text;
                 }
 
-                function updateSceneDialogue(dialogue) {
+                function updateSceneDialogue(dialogue, sceneDescription) {
                     if (!sceneDialogueOverlay) return;
                     const lines = (Array.isArray(dialogue) ? dialogue : [])
                         .filter(item => item && item.text)
@@ -3142,12 +3152,20 @@
                             text: String(item.text),
                             kind: item.kind === 'thought' ? 'thought' : 'speech',
                         }));
-                    const signature = JSON.stringify(lines);
+                    const description = String(sceneDescription || '').trim();
+                    const signature = JSON.stringify({ lines, description });
                     if (signature === sceneDialogueSignature) return;
                     sceneDialogueSignature = signature;
                     const renderId = ++sceneDialogueRenderId;
                     sceneDialogueOverlay.replaceChildren();
                     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+                    if (description) {
+                        const caption = document.createElement('div');
+                        caption.className = 'scene-description';
+                        caption.textContent = description;
+                        sceneDialogueOverlay.appendChild(caption);
+                    }
 
                     (async () => {
                         for (const item of lines) {

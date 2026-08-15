@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import secrets
+import math
 from threading import Lock
 import time
 from typing import Any, Callable, List, Dict, Optional
@@ -129,6 +130,7 @@ class PlannerCharacter(BaseModel):
 class SceneReaction(BaseModel):
     """Complete, typed scene delta emitted by the ephemeral ADK story planner."""
     narration: str
+    scene_description: str = ""
     dialogue: List[PlannerDialogue] = Field(default_factory=list)
     # These are a structured fallback when the model finalizes directly
     # instead of issuing the equivalent staged ADK tool call.
@@ -199,6 +201,17 @@ class StoryPlanningTools(BaseTools):
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         self.max_named_elements: int = int(self.config.get("max_named_elements", DEFAULT_MAX_NAMED_ELEMENTS))
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
+        self.action_cooldown_base_seconds: float = max(
+            0.0, float(self.config.get("action_cooldown_base_seconds", self.cooldown_duration or 10.0))
+        )
+        self.action_cooldown_words_per_second: float = max(
+            1.0, float(self.config.get("action_cooldown_words_per_second", 5.0))
+        )
+        self.action_cooldown_max_seconds: float = max(
+            self.action_cooldown_base_seconds,
+            float(self.config.get("action_cooldown_max_seconds", 30.0)),
+        )
+        self._last_action_response_word_count: int = 0
         self.planner_model: str = str(self.config.get("planner_model") or "gemini-3.7-flash")
         self.vertex_project: Optional[str] = (
             self.config.get("vertex_project")
@@ -662,6 +675,7 @@ class StoryPlanningTools(BaseTools):
             self._plot_beats.clear()
         self._last_scene_reaction = {}
         self._publish_scene_dialogue([])
+        self._publish_scene_description("")
 
         self.save_to_session_state()
 
@@ -729,6 +743,17 @@ class StoryPlanningTools(BaseTools):
         except Exception as exc:
             logger.warning("[STORY_SCRIPT] Failed to publish scene dialogue: %s", exc)
 
+    def _publish_scene_description(self, description: str) -> None:
+        """Persist the planner's visual scene caption for the canvas."""
+        if not self.canvas_state_service or not self.theater_id:
+            return
+        try:
+            state_mgr = self.canvas_state_service.get(self.theater_id) if hasattr(self.canvas_state_service, "get") else self.canvas_state_service
+            if hasattr(state_mgr, "set_scene_description"):
+                state_mgr.set_scene_description(description)
+        except Exception as exc:
+            logger.warning("[STORY_SCRIPT] Failed to publish scene description: %s", exc)
+
     def _apply_planner_character_updates(self, updates: Any) -> List[Dict[str, str]]:
         """Execute planner-selected character manifestations without live-agent control."""
         if not isinstance(updates, list):
@@ -788,7 +813,7 @@ class StoryPlanningTools(BaseTools):
 
 {initial_lore_section}
 
-The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
+The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Keep responses focused: narration should normally be 60-120 words, dialogue should have at most three short lines, and scene_description is optional but, when supplied, must be an evocative visual caption of at most 45 words. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
         planner = Agent(
             name="story_planner",
             description="Authoritative planner for one interactive story turn.",
@@ -854,7 +879,7 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
         import asyncio
         return asyncio.run(run_turn())
 
-    @with_cooldown("resolving another player action", duration=10.0)
+    @with_cooldown("resolving another player action", duration=lambda tools: tools.get_user_action_cooldown_seconds())
     def process_user_action(self, user_action: str) -> Dict[str, Any]:
         """Queue a non-blocking authoritative resolution of an orator action.
 
@@ -882,6 +907,13 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
         threading.Thread(target=resolve_and_notify, daemon=True).start()
         return {"status": "processing", "message": "Story planner is resolving the action."}
 
+    def get_user_action_cooldown_seconds(self) -> float:
+        """Scale the next action cooldown from the previous completed response."""
+        extra_seconds = math.ceil(
+            self._last_action_response_word_count / self.action_cooldown_words_per_second
+        )
+        return min(self.action_cooldown_max_seconds, self.action_cooldown_base_seconds + extra_seconds)
+
     def _resolve_user_action(self, action: str) -> Dict[str, Any]:
         """Run and commit one planner turn in a background worker."""
         if not self.adventure_mode:
@@ -895,6 +927,7 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
 
         manifested_characters = self._apply_planner_character_updates(parsed.get("character_updates"))
         narration = str(parsed.get("narration") or "The scene shifts in response to your action.").strip()
+        scene_description = self._clean_scene_description(parsed.get("scene_description"))
         dialogue = self._clean_dialogue(parsed.get("dialogue"))
         plot_beats = self._normalize_plot_beats(parsed.get("plot_beats", []))
         if len(plot_beats) != self.nodes_ahead:
@@ -903,13 +936,20 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
             self._plot_beats = plot_beats
         result = {
             "narration": narration,
+            "scene_description": scene_description,
             "dialogue": dialogue,
             "manifested_characters": manifested_characters,
             "plot_beats": list(plot_beats),
         }
         self._last_scene_reaction = result
+        self._last_action_response_word_count = self._count_response_words(result)
+        last_action_time = self._last_call_times.get("process_user_action")
+        if last_action_time is not None:
+            remaining = self.get_user_action_cooldown_seconds() - (time.time() - last_action_time)
+            self._schedule_cooldown_timer("process_user_action", remaining)
         self._append_recent_story_turn(action, result)
         self._publish_scene_dialogue(dialogue)
+        self._publish_scene_description(scene_description)
         self.save_to_session_state()
         self._log_story_update(plot_beats, source="user_action")
         callback = self.on_story_plan_completed
@@ -938,6 +978,23 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
         return normalized
 
     @staticmethod
+    def _clean_scene_description(value: Any) -> str:
+        """Keep the optional visual caption compact enough for the canvas."""
+        words = str(value or "").strip().split()
+        return " ".join(words[:45])[:500]
+
+    @staticmethod
+    def _count_response_words(result: Dict[str, Any]) -> int:
+        """Count visible planner response words for the next action cooldown."""
+        text_parts = [
+            str(result.get("narration") or ""),
+            str(result.get("scene_description") or ""),
+        ]
+        text_parts.extend(str(item.get("text") or "") for item in result.get("dialogue", []) if isinstance(item, dict))
+        text_parts.extend(str(item.get("plot_beat") or "") for item in result.get("plot_beats", []) if isinstance(item, dict))
+        return len(re.findall(r"\b[\w'-]+\b", " ".join(text_parts)))
+
+    @staticmethod
     def _normalize_recent_story_turns(raw_turns: Any) -> List[Dict[str, str]]:
         """Validate a persisted transcript and retain only its final three turns."""
         if not isinstance(raw_turns, list):
@@ -959,7 +1016,8 @@ The user action is immutable player input. Do not repeat it as dialogue or conve
         dialogue_text = " ".join(
             f"{item['speaker']}: {item['text']}" for item in dialogue
         )
-        response = " ".join(part for part in (narration, dialogue_text) if part).strip()
+        scene_description = str(result.get("scene_description") or "").strip()
+        response = " ".join(part for part in (scene_description, narration, dialogue_text) if part).strip()
         if not action or not response:
             return
         with self._recent_story_turns_lock:
