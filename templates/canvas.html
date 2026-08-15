@@ -1455,6 +1455,7 @@
         .color-btn {
             width: 24px;
             height: 24px;
+            padding: 0;
             border-radius: 50%;
             cursor: pointer;
             border: 2px solid transparent;
@@ -1467,6 +1468,52 @@
 
         .color-btn.active {
             border-color: var(--text-color);
+            box-shadow: 0 0 0 2px rgba(15, 17, 21, 0.75);
+        }
+
+        .doodle-palette {
+            position: relative;
+        }
+
+        .doodle-palette-toggle {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border: 1px solid var(--glass-border);
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.09);
+            color: #e2e8f0;
+            cursor: pointer;
+            font: inherit;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .doodle-palette-toggle:hover,
+        .doodle-palette-toggle[aria-expanded="true"] {
+            background: rgba(99, 102, 241, 0.25);
+            border-color: rgba(165, 180, 252, 0.7);
+        }
+
+        .doodle-palette-menu {
+            position: absolute;
+            right: 0;
+            bottom: calc(100% + 10px);
+            z-index: 30;
+            display: none;
+            grid-template-columns: repeat(5, 28px);
+            gap: 8px;
+            padding: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 12px;
+            background: rgba(15, 17, 21, 0.96);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+        }
+
+        .doodle-palette-menu.open {
+            display: grid;
         }
 
         .eraser-btn {
@@ -1730,12 +1777,32 @@
                     ✏️ Doodles: On
                 </button>
                 <div id="doodle-toolbar" style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div class="color-btn" style="background: #ef4444;" data-color="#ef4444"></div>
-                    <div class="color-btn" style="background: #22c55e;" data-color="#22c55e"></div>
-                    <div class="color-btn active" style="background: #ffffff;" data-color="#ffffff"></div>
-                    <div class="color-btn" style="background: #3b82f6;" data-color="#3b82f6"></div>
-                    <div class="color-btn" style="background: #eab308;" data-color="#eab308"></div>
-                    <div class="color-btn eraser-btn" data-color="erase" title="Eraser">
+                    <button class="color-btn" type="button" style="background: #ef4444;" data-color="#ef4444" aria-label="Red"></button>
+                    <button class="color-btn" type="button" style="background: #22c55e;" data-color="#22c55e" aria-label="Green"></button>
+                    <button class="color-btn active" type="button" style="background: #ffffff;" data-color="#ffffff" aria-label="White"></button>
+                    <button class="color-btn" type="button" style="background: #3b82f6;" data-color="#3b82f6" aria-label="Blue"></button>
+                    <button class="color-btn" type="button" style="background: #eab308;" data-color="#eab308" aria-label="Yellow"></button>
+                    <div class="doodle-palette">
+                        <button id="doodle-palette-toggle" class="doodle-palette-toggle" type="button" aria-label="More drawing colors" aria-expanded="false" aria-controls="doodle-palette-menu">🎨</button>
+                        <div id="doodle-palette-menu" class="doodle-palette-menu" role="group" aria-label="More drawing colors" hidden>
+                            <button class="color-btn" type="button" style="background: #f97316;" data-color="#f97316" aria-label="Orange"></button>
+                            <button class="color-btn" type="button" style="background: #ec4899;" data-color="#ec4899" aria-label="Pink"></button>
+                            <button class="color-btn" type="button" style="background: #a855f7;" data-color="#a855f7" aria-label="Purple"></button>
+                            <button class="color-btn" type="button" style="background: #06b6d4;" data-color="#06b6d4" aria-label="Cyan"></button>
+                            <button class="color-btn" type="button" style="background: #84cc16;" data-color="#84cc16" aria-label="Lime"></button>
+                            <button class="color-btn" type="button" style="background: #f43f5e;" data-color="#f43f5e" aria-label="Rose"></button>
+                            <button class="color-btn" type="button" style="background: #fb7185;" data-color="#fb7185" aria-label="Coral"></button>
+                            <button class="color-btn" type="button" style="background: #c084fc;" data-color="#c084fc" aria-label="Lavender"></button>
+                            <button class="color-btn" type="button" style="background: #60a5fa;" data-color="#60a5fa" aria-label="Sky blue"></button>
+                            <button class="color-btn" type="button" style="background: #2dd4bf;" data-color="#2dd4bf" aria-label="Teal"></button>
+                            <button class="color-btn" type="button" style="background: #facc15;" data-color="#facc15" aria-label="Gold"></button>
+                            <button class="color-btn" type="button" style="background: #a3e635;" data-color="#a3e635" aria-label="Light green"></button>
+                            <button class="color-btn" type="button" style="background: #a16207;" data-color="#a16207" aria-label="Brown"></button>
+                            <button class="color-btn" type="button" style="background: #94a3b8;" data-color="#94a3b8" aria-label="Gray"></button>
+                            <button class="color-btn" type="button" style="background: #0f172a;" data-color="#0f172a" aria-label="Black"></button>
+                        </div>
+                    </div>
+                    <button class="color-btn eraser-btn" type="button" data-color="erase" title="Eraser" aria-label="Eraser">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path
@@ -1744,7 +1811,7 @@
                             <path d="M22 21H7"></path>
                             <path d="m5 11 9 9"></path>
                         </svg>
-                    </div>
+                    </button>
                     <input type="range" id="brush-size" min="1" max="40" value="3" title="Brush Size">
                     <button id="clear-doodle-btn">Clear</button>
                 </div>
@@ -3097,6 +3164,8 @@
                 const brushSizeSlider = document.getElementById('brush-size');
                 const doodleToolbar = document.getElementById('doodle-toolbar');
                 const doodlesToggleBtn = document.getElementById('doodles-toggle-btn');
+                const paletteToggle = document.getElementById('doodle-palette-toggle');
+                const paletteMenu = document.getElementById('doodle-palette-menu');
 
                 let currentColor = '#ffffff';
                 let currentBrushSize = 3;
@@ -3176,11 +3245,38 @@
 
                 window.addEventListener('resize', resizeDoodleCanvas);
 
+                function setPaletteOpen(open) {
+                    if (!paletteToggle || !paletteMenu) return;
+                    paletteToggle.setAttribute('aria-expanded', String(open));
+                    paletteMenu.classList.toggle('open', open);
+                    paletteMenu.hidden = !open;
+                }
+
+                if (paletteToggle) {
+                    paletteToggle.addEventListener('click', () => {
+                        setPaletteOpen(paletteToggle.getAttribute('aria-expanded') !== 'true');
+                    });
+                }
+
+                document.addEventListener('pointerdown', (event) => {
+                    if (paletteMenu && !paletteMenu.hidden && !event.target.closest('.doodle-palette')) {
+                        setPaletteOpen(false);
+                    }
+                });
+
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape' && paletteMenu && !paletteMenu.hidden) {
+                        setPaletteOpen(false);
+                        paletteToggle?.focus();
+                    }
+                });
+
                 colorBtns.forEach(btn => {
                     btn.addEventListener('click', () => {
                         colorBtns.forEach(b => b.classList.remove('active'));
                         btn.classList.add('active');
                         currentColor = btn.dataset.color;
+                        setPaletteOpen(false);
                     });
                 });
 
