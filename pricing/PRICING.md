@@ -5,7 +5,7 @@
 * **Exchange Rate:** $1.00 USD = 20 Credits ($0.05 / Credit)
 * **Voice Minutes:** 1.0 Credit / minute ($0.05 / min)
 * **Images Generated:** 1.0 Credit / image ($0.05 / image)
-* **Music Generated:** 3.0 Credits / track ($0.15 / track)
+* **Music Generated:** 2.0 Credits / track ($0.10 / track)
 * **Adventure Mode / Story Planning:** 0.5 Credits / action ($0.025 / action, or ~2.5 Credits / min at 5 calls/min)
 * **Storage Used:** 1.0 Credit / GB / month ($0.05 / GB / month, or ~0.033 Credits / GB / day)
 
@@ -24,7 +24,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **1) Voice Minutes** | **Gemini Live Multimodal API** *(WebSockets bidirectional audio input/output)* | ~$0.010 – $0.018 / min | $0.05 / min | **1.0 Credit per minute** <br>*(or 0.5 Cr/min for standard voice)* |
 | **2) Images Generated** | **Gemini Image / Imagen 3 Fast** (`gemini-3.1-flash-lite-image`) | ~$0.020 – $0.030 / image | $0.05 / image | **1.0 Credit per image** <br>*(0.5 Cr for standard draft, 1.0 Cr for HD/ref)* |
-| **3) Music Generated** | **Lyria Music API** (`gemini-2.5-flash-lyria`) | ~$0.030 – $0.050 / track | $0.15 / track | **3.0 Credits per music track** |
+| **3) Music Generated** | **Lyria Music API** (`gemini-2.5-flash-lyria`) | ~$0.030 – $0.050 / track | $0.10 / track | **2.0 Credits per music track** |
 | **4) Adventure Mode / Story Planning** | **Gemini 3.7 Flash API** (`gemini-3.7-flash`) <br>*(4k tokens/call, ~5 calls/min = 20k tokens/min)* | ~$0.0006 – $0.0012 / action <br>*(~$0.003 – $0.006 / min)* | $0.025 / action <br>*(~$0.125 / min at 5 calls/min)* | **0.5 Credits per action / plan turn** <br>*(~2.5 Cr / min at 5 calls/min)* |
 | **5) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.023 / GB / month <br>*(~$0.00077 / GB / day)* | $0.05 / GB / month | **1.0 Credit per GB per month** <br>*(or ~0.033 Credits / GB / day)* |
 
@@ -54,7 +54,7 @@
 * **Raw API Pricing:**
   * `gemini-2.5-flash-lyria`: **~$0.030 – $0.050 per track**.
 * **Proposed Rates:**
-  * **Standard Music Generation:** **3 Credits / track** ($0.15 / track).
+  * **Standard Music Generation:** **2 Credits / track** ($0.10 / track).
   * **Margin:** ~2x – 3x margin.
 
 ### 4. Adventure Mode / Story Planning (Gemini 3.7 Flash API)
@@ -87,8 +87,8 @@ If a Theater Owner runs a **30-minute interactive live session** with 5 particip
 
 * **Voice:** 30 live minutes × 1 Cr/min = **30 Credits** ($1.50)
 * **Images:** 30 dynamic scene images generated × 1 Cr/img = **30 Credits** ($1.50)
-* **Music:** 8 dynamic background music tracks generated × 3 Cr/track = **24 Credits** ($1.20)
+* **Music:** 8 dynamic background music tracks generated × 2 Cr/track = **16 Credits** ($0.80)
 * **Adventure Mode Actions:** 150 action calls (30 mins @ 5 calls/min × 4k tokens) × 0.5 Cr/action = **75 Credits** ($3.75)
 * **Storage:** 500 MB theater assets saved for 1 month = **0.5 Credits** ($0.025)
-* **Total Session Cost to Theater Owner:** **159.5 Credits** (~$7.98 USD total)
+* **Total Session Cost to Theater Owner:** **151.5 Credits** (~$7.58 USD total)
 

@@ -25,7 +25,7 @@ class TestPricingController(BaseTestCase):
         rates = controller.get_rates()
         self.assertEqual(rates["voice_credit_rate"], 1.0)
         self.assertEqual(rates["image_credit_rate"], 1.0)
-        self.assertEqual(rates["music_credit_rate"], 3.0)
+        self.assertEqual(rates["music_credit_rate"], 2.0)
         self.assertEqual(rates["story_planning_credit_rate"], 0.5)
         self.assertEqual(rates["storage_gb_monthly_rate"], 1.0)
         self.assertEqual(rates["storage_gb_daily_rate"], 0.033)

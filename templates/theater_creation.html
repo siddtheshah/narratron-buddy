@@ -1646,10 +1646,10 @@
                         🎵 Music Generation Rate
                     </div>
                     <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
-                        <span id="rateMusic">3.0</span> Cr / track
+                        <span id="rateMusic">2.0</span> Cr / track
                     </div>
                     <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-                        Lyria background tracks (~<span id="rateMusicUsd">$0.15</span> / track)
+                        Lyria background tracks (~<span id="rateMusicUsd">$0.10</span> / track)
                     </div>
                 </div>
 
@@ -2634,10 +2634,10 @@
                     document.getElementById('rateImageUsd').innerText = `$${(data.image_credit_rate * data.usd_per_credit).toFixed(2)}`;
                 }
                 if (document.getElementById('rateMusic')) {
-                    document.getElementById('rateMusic').innerText = (data.music_credit_rate || 3.0).toFixed(1);
+                    document.getElementById('rateMusic').innerText = (data.music_credit_rate || 2.0).toFixed(1);
                 }
                 if (document.getElementById('rateMusicUsd')) {
-                    document.getElementById('rateMusicUsd').innerText = `$${((data.music_credit_rate || 3.0) * data.usd_per_credit).toFixed(2)}`;
+                    document.getElementById('rateMusicUsd').innerText = `$${((data.music_credit_rate || 2.0) * data.usd_per_credit).toFixed(2)}`;
                 }
                 if (document.getElementById('rateStorageMonthly')) {
                     document.getElementById('rateStorageMonthly').innerText = data.storage_gb_monthly_rate.toFixed(1);
