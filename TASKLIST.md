@@ -17,20 +17,19 @@
   - Allow specification of relative animation, e.g.  a character moving across a background.
 
 ## Adventure Mode
-- [ ] Set theme.
-- [ ] Give narratron more visibility into characters so that the characters can "talk".
-- [ ] Give narratron a character speech tool, which overlays a speech bubble. 
-- [ ] Or perhaps, we let Narratron hand over the user's response to the script tool and have it generate the reaction based on the script.
-- [ ] Need billing on text provider for adventure mode. It'll rack up too.
+- [x] Set style.
+- [x] Give narratron more visibility into characters so that the characters can "talk".
+- [x] Give narratron a character speech tool, which overlays a speech bubble. 
+- [x] Or perhaps, we let Narratron hand over the user's response to the script tool and have it generate the reaction based on the script.
+- [x] Need billing on text provider for adventure mode. It'll rack up too.
+- [ ] Character voicing.
 
 ## Music Cost & Variants
-- [ ] Add a lower-cost music-variant workflow: generate a base track once, reuse it by default, and use local loop/crossfade/tempo/EQ transformations where they preserve quality.
-- [ ] Evaluate an audio-to-audio music editor for substantive variants (for example, extensions or mood/section changes) and add a provider adapter that accepts a source track plus an edit instruction.
-  - Lyria 3 does not currently support iterative editing of its generated clips, so this requires a separate provider.
-  - Record source generation and variant costs separately before setting a variant credit rate.
+- [x] Save music to a private global catalog; use TF-IDF candidates and LLM reranking to reuse a strong match before generating a new track.
+
 
 ## Observability Tool
-- [ ] Let agent pull observability if it wants. Reset auto-observabiiity interval when it does, give it some cooldown.
+- [x] Let agent pull observability if it wants. Reset auto-observabiiity interval when it does, give it some cooldown.
 
 ## Refactors
 

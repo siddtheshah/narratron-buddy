@@ -202,6 +202,10 @@ class TheaterManager:
     def _get_theater_music_artifacts_dir(self, theater_id: str) -> Path:
         return self._get_theater_output_dir(theater_id) / "music"
 
+    def music_catalog_dir(self) -> Path:
+        """Private catalog shared by theaters; it is intentionally not a theater."""
+        return self.base_dir / "_music_catalog"
+
 
     def _metadata_path(self, theater_id: str) -> Path:
         return self._get_theater_dir(theater_id) / "theater.json"

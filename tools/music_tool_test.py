@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from components.theater_manager import TheaterManager
@@ -110,6 +111,27 @@ class TestMusicTools(BaseTestCase):
         # Check playing by handle
         play_res = self.music_tools.play_music("hero_theme")
         self.assertIn("Successfully started playing music 'hero_theme'", play_res)
+
+        catalog_files = [name for name in os.listdir(self.theater_manager.music_catalog_dir()) if name.endswith(".mp3")]
+        self.assertEqual(len(catalog_files), 1)
+
+    def test_create_music_reuses_private_catalog_without_provider_call(self):
+        # The local TF-IDF pass nominates the candidate; a deterministic
+        # reranker avoids a network dependency while testing private copying.
+        catalog_source = Path(self.temp_dir) / "seed.mp3"
+        catalog_source.write_bytes(b"catalog audio")
+        entry = self.music_tools.music_catalog.add(catalog_source, "calm forest ambience", "lyria", "test")
+        self.music_tools.music_catalog._reranker = lambda _prompt, _candidates: (entry["id"], 0.97)
+        provider = MagicMock()
+        self.music_tools._music_provider = provider
+
+        result = self.music_tools.create_music("calm forest ambience", handle="forest")
+
+        self.assertIn("Reused a matching private catalog track", result)
+        provider.generate.assert_not_called()
+        created = list(Path(self.music_tools.output_dir).glob("forest_*.mp3"))
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].read_bytes(), b"catalog audio")
 
     def test_play_music_cooldown(self):
         self.music_tools.cooldown_duration = 5.0

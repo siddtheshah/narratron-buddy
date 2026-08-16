@@ -4,6 +4,7 @@ import os
 import re
 import threading
 import time
+import shutil
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -14,6 +15,7 @@ from providers import (
 )
 from tools.base_tool import BaseTools, with_cooldown
 from components.theater_manager import TheaterManager
+from tools.music_catalog import MusicCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,12 @@ class MusicTools(BaseTools):
         provider_options = subconfig.get("provider_options") or {}
         self.music_provider_options = dict(provider_options) if isinstance(provider_options, dict) else {}
         self._music_provider = None
+        self.music_catalog = MusicCatalog(
+            theater_manager.music_catalog_dir(),
+            match_threshold=float(subconfig.get("catalog_match_threshold", 0.86)),
+            candidate_count=int(subconfig.get("catalog_candidate_count", 5)),
+            reranker_model=str(subconfig.get("catalog_reranker_model", "gemini-2.5-flash-lite")),
+        )
 
         # Callbacks
         self.on_play_music: Optional[Callable[[str, List[str]], None]] = None
@@ -163,7 +171,6 @@ class MusicTools(BaseTools):
             return f"{music_prompt}\n\nStyle: {self.style_default}"
         return music_prompt
 
-    @with_cooldown("generating another music track")
     def create_music(
         self,
         prompt: str,
@@ -182,6 +189,23 @@ class MusicTools(BaseTools):
         logger.info(f"[create_music tool] prompt: {effective_prompt}, handle: {handle}")
         if not self.generation_enabled:
             return "Error: Music generation is disabled in theater configuration."
+
+        match = self.music_catalog.find_match(effective_prompt)
+        if match:
+            alias_key = handle or re.sub(r'[^a-zA-Z0-9_-]', '_', Path(match["filename"]).stem)
+            filename = f"{alias_key}_{int(time.time())}.mp3"
+            destination = Path(self.output_dir) / filename
+            shutil.copy2(match["path"], destination)
+            track_url = f"/theaters/{self.active_theater_id}/output/music/{filename}" if self.active_theater_id else f"/output/music/{filename}"
+            self.music_aliases[alias_key] = track_url
+            self.music_aliases[alias_key.lower()] = track_url
+            self.music_aliases[filename] = track_url
+            self._play_music_internal(alias_key)
+            return f"Reused a matching private catalog track (similarity {match['score']:.2f}) and started playing it as '{alias_key}'."
+
+        cooldown_error = self.check_cooldown("create_music", "generating another music track")
+        if cooldown_error:
+            return cooldown_error
         self.record_tool_call("create_music")
 
         def _worker():
@@ -203,6 +227,13 @@ class MusicTools(BaseTools):
                     filepath = os.path.join(self.output_dir, filename)
                     with open(filepath, "wb") as f:
                         f.write(audio_bytes)
+
+                    try:
+                        self.music_catalog.add(Path(filepath), effective_prompt, result.provider, result.model)
+                    except Exception as catalog_error:
+                        # Generation must still complete if the optional cost-saving
+                        # index cannot be written.
+                        logger.error("[create_music tool] Could not add track to private catalog: %s", catalog_error)
 
                     if self.active_theater_id:
                         track_url = f"/theaters/{self.active_theater_id}/output/music/{filename}"
