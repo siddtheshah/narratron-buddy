@@ -49,13 +49,14 @@ class GeminiTextResponseProvider(TextResponseProvider):
                     "GOOGLE_CLOUD_PROJECT or Vertex AI credentials are not configured for Gemini Text Response."
                 )
 
-            client_kwargs: dict[str, Any] = {"vertexai": True}
             if project_id:
-                client_kwargs["project"] = project_id
+                client_kwargs: dict[str, Any] = {"vertexai": True, "project": project_id}
                 if loc:
                     client_kwargs["location"] = loc
             elif api_key:
-                client_kwargs["api_key"] = api_key
+                client_kwargs = {"api_key": api_key}
+            else:
+                client_kwargs = {"vertexai": True}
                 if loc:
                     client_kwargs["location"] = loc
 

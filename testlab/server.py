@@ -518,7 +518,9 @@ def _benchmark_one(provider_id: str, prompt: Any, repetition: int, provider_opti
             path = BENCHMARK_ROOT / relative_path
             mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
             references.append(ImageReference(name=path.name, data=path.read_bytes(), mime_type=mime_type))
-        result = get_image_provider(provider_id, provider_options).generate(ImageGenerationRequest(prompt=prompt.prompt, references=references))
+        result = get_image_provider(provider_id, provider_options).generate(
+            ImageGenerationRequest(prompt=prompt.prompt, references=references, aspect_ratio="16:9")
+        )
         extension = mimetypes.guess_extension(result.mime_type) or ".png"
         filename = f"{item['id']}{extension}"
         (BENCHMARK_OUTPUT / filename).write_bytes(result.image_bytes)

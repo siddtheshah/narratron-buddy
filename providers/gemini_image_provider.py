@@ -40,8 +40,17 @@ class GeminiImageProvider(ImageProvider):
             for ref in request.references
         ]
         parts.append(request.prompt)
+        aspect_ratio = self._normalize_aspect_ratio(request.resolved_aspect_ratio)
+        config = types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+        )
         try:
-            response = self.client.models.generate_content(model=self.model, contents=parts)
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=parts,
+                config=config,
+            )
         except Exception as exc:
             raise ImageProviderError(f"Gemini request failed: {exc}") from exc
 
@@ -57,6 +66,13 @@ class GeminiImageProvider(ImageProvider):
             request_id=getattr(response, "response_id", None),
             usage=usage,
         )
+
+    @staticmethod
+    def _normalize_aspect_ratio(aspect_ratio: str) -> str:
+        supported = {"1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"}
+        if aspect_ratio in supported:
+            return aspect_ratio
+        return "16:9"
 
     @staticmethod
     def _first_image(response: Any) -> tuple[bytes | None, str | None]:

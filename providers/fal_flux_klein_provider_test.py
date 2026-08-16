@@ -40,3 +40,4 @@ def test_fal_klein_uses_edit_endpoint_and_data_uri_for_references():
 
     assert calls[0][0] == "fal-ai/flux-2/klein/9b/edit"
     assert calls[0][1]["image_urls"] == ["data:image/png;base64,YWJj"]
+    assert calls[0][1]["image_size"] == "landscape_16_9"

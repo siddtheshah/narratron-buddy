@@ -296,7 +296,11 @@ class ImageTools(BaseTools):
                     effective_prompt[:100],
                 )
                 result = provider.generate(
-                    ImageGenerationRequest(prompt=effective_prompt, references=provider_references)
+                    ImageGenerationRequest(
+                        prompt=effective_prompt,
+                        references=provider_references,
+                        aspect_ratio="16:9",
+                    )
                 )
                 image_bytes = result.image_bytes
                 generation_details = f"provider '{result.provider}' model '{result.model}'"

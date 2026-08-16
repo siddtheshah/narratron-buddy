@@ -30,7 +30,7 @@ class OpenAIImageProvider(ImageProvider):
         kwargs = {
             "model": self.model,
             "prompt": request.prompt,
-            "size": self._size(request.width, request.height),
+            "size": self._size(request.width, request.height, request.resolved_aspect_ratio),
             "quality": self.quality,
             "n": 1,
             "output_format": "png",
@@ -58,10 +58,16 @@ class OpenAIImageProvider(ImageProvider):
         )
 
     @staticmethod
-    def _size(width: int | None, height: int | None) -> str:
+    def _size(width: int | None, height: int | None, aspect_ratio: str | None = None) -> str:
         # GPT Image offers fixed landscape/square/portrait sizes. The 16:9
         # benchmark is closest to 1536x1024.
-        return "1024x1024" if width and height and width == height else "1536x1024"
+        if width and height and width == height:
+            return "1024x1024"
+        if aspect_ratio == "1:1":
+            return "1024x1024"
+        if (width and height and height > width) or aspect_ratio in ("9:16", "3:4", "2:3"):
+            return "1024x1536"
+        return "1536x1024"
 
     @staticmethod
     def _usage(response: Any) -> dict[str, Any]:

@@ -25,10 +25,33 @@ class ImageGenerationRequest:
     width: int | None = None
     height: int | None = None
     count: int = 1
+    aspect_ratio: str = "16:9"
 
     def __post_init__(self) -> None:
         if self.count != 1:
             raise ValueError("Narratron image requests must request exactly one output image.")
+
+    @property
+    def resolved_aspect_ratio(self) -> str:
+        """Return the effective aspect ratio string (e.g. '16:9', '1:1', '4:3')."""
+        if self.width and self.height:
+            ratio = self.width / self.height
+            if ratio > 2.0:
+                return "21:9"
+            if ratio >= 1.6:
+                return "16:9"
+            if ratio >= 1.4:
+                return "3:2"
+            if ratio >= 1.2:
+                return "4:3"
+            if ratio >= 0.85:
+                return "1:1"
+            if ratio >= 0.7:
+                return "3:4"
+            if ratio >= 0.6:
+                return "2:3"
+            return "9:16"
+        return self.aspect_ratio or "16:9"
 
 
 @dataclass(frozen=True)

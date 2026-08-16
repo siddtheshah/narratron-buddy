@@ -117,6 +117,7 @@ class AnimationTools(BaseTools):
                         ImageGenerationRequest(
                             prompt=frame_prompt,
                             references=([previous_frame] if previous_frame else []) + provider_references,
+                            aspect_ratio="16:9",
                         )
                     )
                     filepath = self._save_frame(

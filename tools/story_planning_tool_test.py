@@ -83,7 +83,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Available theater lore (top-level documents and directories):", prompt)
         self.assertIn("- world.txt", prompt)
         self.assertIn("- factions/ (directory)", prompt)
-        self.assertIn("narration should normally be 60-120 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone", prompt)
+        self.assertIn("narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone", prompt)
 
     def test_scene_reaction_schema_describes_action_resolution(self):
         field = SceneReaction.model_fields["narration"]

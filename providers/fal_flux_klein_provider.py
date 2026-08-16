@@ -48,6 +48,8 @@ class FalFluxKleinProvider(ImageProvider):
         }
         if request.width and request.height:
             payload["image_size"] = {"width": request.width, "height": request.height}
+        else:
+            payload["image_size"] = self._fal_image_size(request.resolved_aspect_ratio)
         if request.references:
             payload["image_urls"] = [self._data_uri(reference.data, reference.mime_type) for reference in request.references]
 
@@ -66,6 +68,20 @@ class FalFluxKleinProvider(ImageProvider):
             request_id=response.get("request_id") or response.get("requestId"),
             usage={key: response[key] for key in ("seed", "timings", "has_nsfw_concepts") if key in response},
         )
+
+    @staticmethod
+    def _fal_image_size(aspect_ratio: str) -> str | dict[str, int]:
+        mapping: dict[str, str | dict[str, int]] = {
+            "16:9": "landscape_16_9",
+            "4:3": "landscape_4_3",
+            "1:1": "square_hd",
+            "9:16": "portrait_16_9",
+            "3:4": "portrait_4_3",
+            "3:2": {"width": 1536, "height": 1024},
+            "2:3": {"width": 1024, "height": 1536},
+            "21:9": {"width": 1536, "height": 658},
+        }
+        return mapping.get(aspect_ratio, "landscape_16_9")
 
     def _post_json(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
         request = Request(
