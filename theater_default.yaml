@@ -28,6 +28,9 @@ story_planning:
     initial_elements: {}
 
     adventure_mode: false
+    # When Adventure Mode NPC dialogue is enabled, synthesize each spoken line
+    # with a stable, automatically assigned Seed Speech voice.
+    character_voicing: false
     nodes_ahead: 3
     # Guidance for the Adventure Mode story planner. Theater creators can
     # override this with a voice, tone, or consequence philosophy (for

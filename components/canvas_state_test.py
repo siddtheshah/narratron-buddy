@@ -65,6 +65,15 @@ class TestCanvasStateManager(BaseTestCase):
 
         asyncio.run(exercise())
 
+    def test_character_voice_assignments_persist_with_canvas_state(self):
+        theater_id = "voice_state"
+        manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
+        manager.character_voice_assignments = {"mara": "dacey_en"}
+        manager.export_theater_data(theater_dir=manager.theater.directory())
+
+        restored = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
+        self.assertEqual(restored.character_voice_assignments, {"mara": "dacey_en"})
+
     def test_update_shown_image_empty_folder(self):
         with tempfile.TemporaryDirectory() as empty_dir:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:

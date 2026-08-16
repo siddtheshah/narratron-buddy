@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import WebSocket
 
 from components.chat_manager import ChatManager
+from components.scene_speech import SceneSpeechDispatcher
 from utils.image_utils import extract_image_prompt
 from components.theater_manager import TheaterManager
 
@@ -78,6 +79,10 @@ class CanvasStateManager:
         # top of the current scene image.
         self.scene_dialogue: List[Dict[str, str]] = []
         self.scene_description: str = ""
+        # Normalized speaker name -> assigned Seed voice.  This is persisted
+        # alongside the canvas so returning theaters keep their cast voices.
+        self.character_voice_assignments: Dict[str, str] = {}
+        self._scene_speech: Optional[SceneSpeechDispatcher] = None
 
         # Transient agent tool activity. This is intentionally not persisted: a
         # reconnect should not show an activity indicator left over from a
@@ -126,6 +131,10 @@ class CanvasStateManager:
                     self.story_planning_state = c_state.get("story_planning_state", {})
                     self.scene_dialogue = c_state.get("scene_dialogue", [])
                     self.scene_description = str(c_state.get("scene_description", "") or "")
+                    assignments = c_state.get("character_voice_assignments", {})
+                    self.character_voice_assignments = {
+                        str(key): str(value) for key, value in assignments.items()
+                    } if isinstance(assignments, dict) else {}
                     chat_msgs = c_state.get("chat_messages", [])
                     if chat_msgs:
                         self.chat_manager.messages = chat_msgs
@@ -165,6 +174,32 @@ class CanvasStateManager:
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
+        if self._scene_speech:
+            self._scene_speech.dispatch(self.scene_dialogue)
+
+    def enable_scene_speech(self) -> None:
+        """Start automatic Seed Speech delivery; no theater configuration needed."""
+        if self._scene_speech is None:
+            self._scene_speech = SceneSpeechDispatcher(
+                theater_id=self.theater_id,
+                output_dir=self.theater.output_dir(),
+                assignments=self.character_voice_assignments,
+                persist_assignments=self._persist_voice_assignments,
+                publish_audio=self._publish_scene_audio,
+            )
+
+    def _persist_voice_assignments(self) -> None:
+        sess_dir = self.theater.directory()
+        if sess_dir.exists():
+            self.export_theater_data(theater_dir=sess_dir)
+
+    def _publish_scene_audio(self, message: Dict[str, Any]) -> None:
+        if not self.active_state_ws_connections or not self._state_ws_loop or self._state_ws_loop.is_closed():
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self.broadcast_state_ws_message(message), self._state_ws_loop)
+        except RuntimeError:
+            pass
 
     def set_scene_description(self, description: str):
         """Set the planner-authored visual caption shown in white italics."""
@@ -621,6 +656,7 @@ class CanvasStateManager:
             "agent_thought": self.get_agent_thought(),
             "scene_dialogue": list(self.scene_dialogue),
             "scene_description": self.scene_description,
+            "character_voice_assignments": dict(self.character_voice_assignments),
         }
         if self.shown_animation_frames:
             res["animation"] = {
@@ -662,6 +698,7 @@ class CanvasStateManager:
             "story_planning_state": dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {},
             "scene_dialogue": list(self.scene_dialogue),
             "scene_description": self.scene_description,
+            "character_voice_assignments": dict(self.character_voice_assignments),
             "suggestions": self.chat_manager.export_suggestions(),
             "chat_messages": self.chat_manager.get_messages(),
         }

@@ -930,6 +930,15 @@ class AgentSessionManager:
         canvas_mgr = canvas_state_service.get(theater_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
 
         theater_config = get_theater_config(theater_id, base_dir=self.theater_manager.base_dir)
+        story_planning_config = theater_config.get("story_planning", {})
+        if (
+            canvas_mgr
+            and isinstance(story_planning_config, dict)
+            and bool(story_planning_config.get("adventure_mode", False))
+            and bool(story_planning_config.get("character_voicing", False))
+            and hasattr(canvas_mgr, "enable_scene_speech")
+        ):
+            canvas_mgr.enable_scene_speech()
         tool_bundle = create_tool_bundle_for_session(
             theater_id=theater_id,
             config=theater_config,

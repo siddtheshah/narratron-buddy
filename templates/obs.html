@@ -123,6 +123,23 @@
         let sceneDialogueRenderId = 0;
         const dialogueSpeakerColors = new Map();
         const dialogueSpeakerPalette = ['#fbbf24', '#67e8f9', '#f9a8d4', '#a7f3d0', '#c4b5fd', '#fdba74', '#93c5fd', '#f0abfc'];
+        const sceneSpeechQueue = [];
+        let sceneSpeechPlaying = false;
+
+        function enqueueSceneSpeech(audioUrl) {
+            if (!audioEnabled || !audioUrl) return;
+            sceneSpeechQueue.push(audioUrl);
+            if (sceneSpeechPlaying) return;
+            const playNext = () => {
+                const next = sceneSpeechQueue.shift();
+                if (!next) { sceneSpeechPlaying = false; return; }
+                sceneSpeechPlaying = true;
+                const audio = new Audio(next);
+                audio.onended = audio.onerror = playNext;
+                audio.play().catch(playNext);
+            };
+            playNext();
+        }
 
         function getDialogueSpeakerColor(speaker) {
             if (!dialogueSpeakerColors.has(speaker)) {
@@ -459,6 +476,8 @@
                     if (message.type === 'state_ready' ||
                         (message.type === 'state_changed' && message.domains?.includes('latest'))) {
                         fetchLatestImage();
+                    } else if (message.type === 'scene_speech_ready') {
+                        enqueueSceneSpeech(message.audio_url);
                     }
                 } catch (error) {
                     console.warn('Ignoring invalid canvas-state message.', error);
