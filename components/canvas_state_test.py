@@ -279,16 +279,14 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertFalse(manager.get_latest_state()["tool_activity"]["live_ready"])
         self.assertFalse(manager.get_latest_state()["tool_activity"]["dice_rolling"])
 
-    def test_scene_description_is_exposed_and_compact(self):
-        manager = CanvasStateManager(theater_id="scene_description", theater_manager=self.theater_manager)
-        description = " ".join(f"word{index}" for index in range(50))
+    def test_narration_is_exposed_and_compact(self):
+        manager = CanvasStateManager(theater_id="test_narration", theater_manager=self.theater_manager)
+        narration = " ".join(f"word{index}" for index in range(50))
 
-        manager.set_scene_description(description)
+        manager.set_narration(narration)
 
-        self.assertEqual(len(manager.scene_description.split()), 45)
-        self.assertEqual(manager.get_latest_state()["scene_description"], manager.scene_description)
+        self.assertEqual(len(manager.narration.split()), 45)
+        self.assertEqual(manager.get_latest_state()["narration"], manager.narration)
 
 if __name__ == "__main__":
     unittest.main()
-
-

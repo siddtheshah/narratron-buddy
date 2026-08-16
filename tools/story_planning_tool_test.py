@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 import threading
@@ -5,14 +6,17 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+from google.adk.apps.app import EventsCompactionConfig
+from google.adk.models.google_llm import Gemini
+from google.adk.models.llm_response import LlmResponse
+from google.genai import types
+
 from tools.story_planning_tool import (
     DEFAULT_MAX_NAMED_ELEMENTS,
     DEFAULT_STORY_PLANNING_STYLE,
     MAX_LORE_DOCUMENTS_LISTED,
     MAX_PLAYER_ACTION_CHARS,
     MAX_STORY_PLANNING_STYLE_CHARS,
-    SCENE_REACTION_SYSTEM_INSTRUCTION,
-    SCENE_REACTION_SYSTEM_INSTRUCTIONS,
     SceneReaction,
     StoryPlanningTools,
     VertexGemini,
@@ -79,7 +83,12 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Available theater lore (top-level documents and directories):", prompt)
         self.assertIn("- world.txt", prompt)
         self.assertIn("- factions/ (directory)", prompt)
-        self.assertIn("you MUST prioritize and ground the narrative, characters, factions, and setting in that established theater lore", prompt)
+        self.assertIn("narration should normally be 60-120 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone", prompt)
+
+    def test_scene_reaction_schema_describes_action_resolution(self):
+        field = SceneReaction.model_fields["narration"]
+        self.assertIn("resolution", field.description.lower())
+        self.assertIn("action", field.description.lower())
 
     def test_planner_model_uses_explicit_vertex_client(self):
         with patch("tools.story_planning_tool.genai.Client") as client:
@@ -92,12 +101,9 @@ class TestStoryPlanningTools(unittest.TestCase):
             elements=[],
             characters=[{"name": "Mara", "personality": "Bold", "motivation": "Explore", "quirk": "Hums"}],
             reused_nodes=[{"node_index": 0, "plot_beat": "The tide rises."}],
-            recent_turns=[{"action": "I light the beacon.", "response": "The harbor answers with bells."}],
         )
         self.assertIn("- Mara: Personality: Bold", context)
         self.assertIn("Node 0: Plot beat: The tide rises.", context)
-        self.assertIn("Player action: I light the beacon.", context)
-        self.assertIn("Story response: The harbor answers with bells.", context)
 
     def test_story_planning_style_defaults_and_is_supplied_to_the_planner(self):
         default_tools = self._make_tools()
@@ -211,7 +217,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertNotIn("guild.txt", context)
             self.assertNotIn("royal cartographer", context)
 
-    def test_initial_lore_context_is_bounded(self):
+    def test_lore_context_is_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
             theater_manager.create_theater(
@@ -302,7 +308,6 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(snapshot["plot_beats"], [])
             return {
                 "narration": "The hidden doorway opens.",
-                "scene_description": "Torchlight shivers across the mossy archway.",
                 "dialogue": [{"speaker": "Mara", "text": "There!", "kind": "speech"}],
                 "character_updates": [{
                     "name": "Lantern Warden", "description": "Armored keeper", "personality": "Stern",
@@ -336,13 +341,12 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(acknowledgement["status"], "processing")
         self.assertTrue(completed.wait(timeout=1))
         self.assertEqual(results[0]["narration"], "The hidden doorway opens.")
-        self.assertEqual(results[0]["scene_description"], "Torchlight shivers across the mossy archway.")
         self.assertEqual(len(tools.get_plot_beats()), 2)
         self.assertEqual(billed_plans, [1])
         self.assertIn("plot_beats", tools.export_story_planning_state())
         self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
         state.get.return_value.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
-        state.get.return_value.set_scene_description.assert_called_once_with(results[0]["scene_description"])
+        state.get.return_value.set_narration.assert_called_once_with(results[0]["narration"])
         self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
     def test_clear_scene_removes_plot_beats_and_characters(self):
@@ -361,65 +365,131 @@ class TestStoryPlanningTools(unittest.TestCase):
         })
         self.assertEqual(tools.get_plot_beats(), [{"plot_beat": "A bell rings."}])
 
-    def test_planner_receives_the_three_most_recent_resolved_turns(self):
-        snapshots = []
-
-        def planner_executor(_action, snapshot):
-            snapshots.append(snapshot)
-            return {
-                "narration": "The world changes.",
-                "plot_beats": ["A new consequence gathers."],
-            }
-
-        tools = self._make_tools(config={
-            "adventure_mode": True,
-            "nodes_ahead": 1,
-            "planner_executor": planner_executor,
-        })
-
-        for action in ("Action 1", "Action 2", "Action 3", "Action 4"):
-            tools._resolve_user_action(action)
-
-        self.assertEqual(
-            [turn["action"] for turn in snapshots[-1]["recent_turns"]],
-            ["Action 1", "Action 2", "Action 3"],
-        )
-        self.assertEqual(
-            [turn["action"] for turn in tools.get_recent_story_turns()],
-            ["Action 2", "Action 3", "Action 4"],
-        )
-
-    def test_recent_turns_survive_story_state_round_trip(self):
-        tools = self._make_tools(theater_id="history")
-        for index in range(4):
-            tools._append_recent_story_turn(
-                f"Action {index}", {"narration": f"Response {index}", "dialogue": []},
-            )
-
-        restored = self._make_tools(theater_id="history-restored")
-        restored.import_story_planning_state(tools.export_story_planning_state())
-
-        self.assertEqual(
-            restored.get_recent_story_turns(),
-            [
-                {"action": "Action 1", "response": "Response 1"},
-                {"action": "Action 2", "response": "Response 2"},
-                {"action": "Action 3", "response": "Response 3"},
-            ],
-        )
-
-    def test_scene_description_is_compact_and_action_cooldown_scales_with_response(self):
+    def test_action_cooldown_scales_with_response_word_count(self):
         tools = self._make_tools(config={
             "action_cooldown_base_seconds": 10,
             "action_cooldown_words_per_second": 10,
             "action_cooldown_max_seconds": 20,
         })
-        long_description = " ".join(f"word{index}" for index in range(60))
-
-        self.assertEqual(len(tools._clean_scene_description(long_description).split()), 45)
         tools._last_action_response_word_count = 26
 
         self.assertEqual(tools.get_user_action_cooldown_seconds(), 13)
+
+    def test_session_id_is_instance_variable_and_configurable(self):
+        tools = self._make_tools(theater_id="theater-1")
+        self.assertTrue(tools.session_id.startswith("planner_theater-1_"))
+
+        custom_tools = self._make_tools(config={"session_id": "custom-session-999"}, theater_id="theater-1")
+        self.assertEqual(custom_tools.session_id, "custom-session-999")
+
+    def test_compaction_config_is_initialized_and_customizable(self):
+        tools = self._make_tools()
+        self.assertIsNotNone(tools.compaction_config)
+        self.assertEqual(tools.compaction_config.compaction_interval, 3)
+        self.assertEqual(tools.compaction_config.overlap_size, 1)
+        self.assertEqual(tools.compaction_config.token_threshold, 12000)
+        self.assertEqual(tools.compaction_config.event_retention_size, 6)
+        self.assertIsNotNone(tools._run_compression_config)
+        self.assertEqual(tools._run_compression_config.trigger_tokens, 12000)
+        self.assertEqual(tools._run_compression_config.sliding_window.target_tokens, 6000)
+
+        custom_tools = self._make_tools(config={
+            "compaction": {
+                "compaction_interval": 5,
+                "overlap_size": 2,
+                "token_threshold": 10000,
+                "target_tokens": 4000,
+            }
+        })
+        self.assertIsNotNone(custom_tools.compaction_config)
+        self.assertEqual(custom_tools.compaction_config.compaction_interval, 5)
+        self.assertEqual(custom_tools.compaction_config.overlap_size, 2)
+        self.assertEqual(custom_tools.compaction_config.token_threshold, 10000)
+        self.assertIsNotNone(custom_tools._run_compression_config)
+        self.assertEqual(custom_tools._run_compression_config.trigger_tokens, 10000)
+        self.assertEqual(custom_tools._run_compression_config.sliding_window.target_tokens, 4000)
+
+        disabled_tools = self._make_tools(config={"compaction": False})
+        self.assertIsNone(disabled_tools.compaction_config)
+        self.assertIsNone(disabled_tools._run_compression_config)
+
+    def test_planner_agent_resumes_from_adk_session_across_turns(self):
+        turn_count = 0
+        tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
+
+        async def fake_generate_content_async(self, llm_request, stream=False):
+            nonlocal turn_count
+            turn_count += 1
+            reaction = SceneReaction(
+                narration=f"Narration for turn {turn_count}",
+                plot_beats=[f"Beat {turn_count}"],
+            )
+            content = types.Content(role="model", parts=[types.Part(text=reaction.model_dump_json())])
+            gen_resp = types.GenerateContentResponse(
+                candidates=[types.Candidate(content=content, finish_reason="STOP")]
+            )
+            yield LlmResponse.create(gen_resp)
+
+        with patch.object(Gemini, "generate_content_async", fake_generate_content_async):
+            res1 = tools._run_planner_agent("I open the gate.")
+            self.assertEqual(res1["narration"], "Narration for turn 1")
+
+            session = asyncio.run(
+                tools.session_service.get_session(
+                    app_name="narratron_story_planner",
+                    user_id="story_planner",
+                    session_id=tools.session_id,
+                )
+            )
+            self.assertIsNotNone(session)
+            self.assertEqual(len(session.events), 2)
+
+            res2 = tools._run_planner_agent("I step inside.")
+            self.assertEqual(res2["narration"], "Narration for turn 2")
+
+            session_after_2 = asyncio.run(
+                tools.session_service.get_session(
+                    app_name="narratron_story_planner",
+                    user_id="story_planner",
+                    session_id=tools.session_id,
+                )
+            )
+            self.assertGreaterEqual(len(session_after_2.events), 4)
+
+    def test_planner_compaction_triggers_on_interval(self):
+        turn_count = 0
+        tools = self._make_tools(config={
+            "nodes_ahead": 1,
+            "adventure_mode": True,
+            "compaction": {"compaction_interval": 2, "overlap_size": 1},
+        })
+
+        async def fake_generate_content_async(self, llm_request, stream=False):
+            nonlocal turn_count
+            turn_count += 1
+            reaction = SceneReaction(
+                narration=f"Narration for turn {turn_count}",
+                plot_beats=[f"Beat {turn_count}"],
+            )
+            content = types.Content(role="model", parts=[types.Part(text=reaction.model_dump_json())])
+            gen_resp = types.GenerateContentResponse(
+                candidates=[types.Candidate(content=content, finish_reason="STOP")]
+            )
+            yield LlmResponse.create(gen_resp)
+
+        with patch.object(Gemini, "generate_content_async", fake_generate_content_async):
+            tools._run_planner_agent("Action 1")
+            tools._run_planner_agent("Action 2")
+
+            session = asyncio.run(
+                tools.session_service.get_session(
+                    app_name="narratron_story_planner",
+                    user_id="story_planner",
+                    session_id=tools.session_id,
+                )
+            )
+            compaction_events = [e for e in session.events if e.actions and e.actions.compaction]
+            self.assertEqual(len(compaction_events), 1)
 
 
 if __name__ == "__main__":

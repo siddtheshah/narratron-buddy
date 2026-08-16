@@ -79,6 +79,8 @@ class TestCrossfade(UITestCase):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"
         content = template_path.read_text(encoding="utf-8")
 
+        self.assertIn(".narration", content)
         self.assertIn(".scene-description", content)
+        self.assertIn(".scene-narration", content)
         self.assertIn("font-style: italic", content)
-        self.assertIn("data.scene_description", content)
+        self.assertIn("data.narration", content)

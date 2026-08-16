@@ -2,11 +2,12 @@
 
 Logging & Script Inspection:
 ----------------------------
-All plot-beat updates, character mutations, and scene element mutations emit formatted debug log records
-tagged with ``[StoryPlanningTools]``.
+All plot-beat updates, character mutations, and scene element mutations emit
+formatted debug log records tagged with ``[StoryPlanningTools]``.
 
-To inspect story script outputs over time during server execution, filter console logging
-using the existing ``--log_prefixes`` flag when running ``main.py``:
+To inspect story script outputs over time during server execution, filter
+console logging using the existing ``--log_prefixes`` flag when running
+``main.py``:
 
     python main.py --log_prefixes="[StoryPlanningTools]"
 """
@@ -26,8 +27,9 @@ from typing import Any, Callable, List, Dict, Optional
 from jinja2 import Template
 from pydantic import BaseModel, Field
 from google.adk.agents import Agent
+from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.models.google_llm import Gemini
-from google.adk.runners import Runner
+from google.adk.runners import RunConfig, Runner
 from google.adk.sessions import InMemorySessionService
 from google import genai
 from google.genai import types
@@ -43,13 +45,13 @@ from providers import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_COMPACTION_TRIGGER_TOKENS = 12_000
+DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
 DEFAULT_MAX_NAMED_ELEMENTS = 5
-RECENT_STORY_TURNS_LIMIT = 3
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 MAX_STORY_PLANNING_STYLE_CHARS = 500
 MAX_PLAYER_ACTION_CHARS = 2_000
 MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
-MAX_INITIAL_LORE_CONTEXT_CHARS = 24_000
 MAX_CONTEXT_FIELD_CHARS = 500
 MAX_PLOT_BEAT_CHARS = 500
 MAX_NARRATION_CHARS = 2_000
@@ -59,7 +61,7 @@ MAX_ACTIVE_CHARACTERS = 5
 MAX_LORE_DOCUMENTS_LISTED = 100
 
 _CHARACTER_GEN_PROMPT_TEMPLATE = Template(
-"""Character name: {{ name }}
+    """Character name: {{ name }}
 {% if description -%}
 Character concept/description: {{ description }}
 {% endif -%}
@@ -77,7 +79,7 @@ Return ONLY a JSON object with keys 'personality' (string) and 'motivation' (str
 )
 
 _STORY_CONTEXT_PROMPT_TEMPLATE = Template(
-"""Current scene elements:
+    """Current scene elements:
 {% if not elements -%}
 (No active named elements)
 {% else -%}
@@ -103,40 +105,46 @@ Node {{ node.node_index }}: Plot beat: {{ node.plot_beat }}
 {% else -%}
 (No upcoming plot beats)
 {% endif -%}
-
-Recent resolved player turns (oldest first):
-{% if recent_turns -%}
-{% for turn in recent_turns -%}
-- Player action: {{ turn.action }}
-  Story response: {{ turn.response }}
-{% endfor -%}
-{% else -%}
-(No previous resolved player turns)
-{% endif -%}
 """
 )
 
 _SCENE_REACTION_PROMPT_TEMPLATE = Template(
-"""You are the authoritative narrative script engine for an interactive story. Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats. Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation. Do not stonewall with a flat refusal or erase the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead. The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, narrate as, or attribute to them. Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf. Write narration only about the world and the consequences of the submitted action. Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character. Character updates are for NPCs only. The live agent is only a relay; do not give it choices, tool instructions, or control of the plot. Respond ONLY with valid JSON.
+"""You are the authoritative narrative script engine for an interactive story.
+Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats.
+Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation.
+Do not stonewall with a flat refusal or erase the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead.
+The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, narrate as, or attribute to them.
+Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf.
+Write narration only about the world and the consequences of the submitted action.
+Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character.
+Character updates are for NPCs only.
+The live agent is only a relay; do not give it choices, tool instructions, or control of the plot.
+Respond ONLY with valid JSON.
 
 {{ context }}
 {% if lore_context -%}
 
 Available theater lore (top-level documents and directories):
 {{ lore_context }}
-{% elif initial_lore_context -%}
-
-Available theater lore (top-level documents and directories):
-{{ initial_lore_context }}
 {% endif -%}
 
 Story-planning style: {{ style }}
 
-Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction. Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes. The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Keep responses focused: narration should normally be 60-120 words, dialogue should have at most three short lines, and scene_description is optional but, when supplied, must be an evocative visual caption of at most 45 words. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. When available theater lore documents or directories are listed above, you MUST prioritize and ground the narrative, characters, factions, and setting in that established theater lore; proactively call `browse_lore` to inspect relevant documents or directories before introducing or enriching NPCs, places, or events. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
+Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction.
+Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes.
+The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player.
+Follow the 'yes, and' posture from your system instruction.
+When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
+Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone; dialogue should have at most three short lines.
+Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
+Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions.
+When available theater lore documents or directories are listed above, you MUST prioritize and ground the narrative, characters, factions, and setting in that established theater lore; proactively call `browse_lore` to inspect relevant documents or directories before introducing or enriching NPCs, places, or events.
+Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character.
+You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
+Those tools only provide information: the scene delta is the sole source of changes.
+`dialogue` is optional and must contain NPC speech only.
+Then return the scene reaction."""
 )
-
-SCENE_REACTION_SYSTEM_INSTRUCTIONS = _SCENE_REACTION_PROMPT_TEMPLATE
-SCENE_REACTION_SYSTEM_INSTRUCTION = _SCENE_REACTION_PROMPT_TEMPLATE
 
 
 class PlannerDialogue(BaseModel):
@@ -155,8 +163,14 @@ class PlannerCharacter(BaseModel):
 
 class SceneReaction(BaseModel):
     """Complete, typed scene delta emitted by the ephemeral ADK story planner."""
-    narration: str
-    scene_description: str = ""
+    narration: str = Field(
+        default="",
+        description=(
+            "Evocative narrative prose (20-50 words) depicting the environment "
+            "and the visible resolution or outcome of the character's action, "
+            "not just scenery alone."
+        ),
+    )
     dialogue: List[PlannerDialogue] = Field(default_factory=list)
     # These are a structured fallback when the model finalizes directly
     # instead of issuing the equivalent staged ADK tool call.
@@ -179,14 +193,12 @@ def build_story_context_prompt(
     elements: List[Dict[str, str]],
     characters: List[Dict[str, Any]],
     reused_nodes: List[Dict[str, Any]],
-    recent_turns: Optional[List[Dict[str, str]]] = None,
 ) -> str:
     """Render shared scene, character, and plot context for every planner task."""
     return _STORY_CONTEXT_PROMPT_TEMPLATE.render(
         elements=elements or [],
         characters=characters or [],
         reused_nodes=reused_nodes or [],
-        recent_turns=recent_turns or [],
     ).strip()
 
 
@@ -195,16 +207,13 @@ def build_scene_reaction_prompt(
     style: str,
     nodes_ahead: int,
     lore_context: str = "",
-    initial_lore_context: str = "",
 ) -> str:
     """Render the authoritative scene reaction instruction for the planner agent."""
-    effective_lore = lore_context or initial_lore_context
     return _SCENE_REACTION_PROMPT_TEMPLATE.render(
         context=context,
         style=style,
         nodes_ahead=nodes_ahead,
-        lore_context=effective_lore,
-        initial_lore_context=effective_lore,
+        lore_context=lore_context,
     ).strip()
 
 
@@ -245,18 +254,23 @@ class StoryPlanningTools(BaseTools):
         self._plot_beats: List[Dict[str, str]] = []
         self._plot_beats_lock = Lock()
         self._last_scene_reaction: Dict[str, Any] = {}
-        # A compact, persisted transcript gives the stateless planner enough
-        # continuity without repeatedly replaying its entire conversation.
-        self._recent_story_turns: List[Dict[str, str]] = []
-        self._recent_story_turns_lock = Lock()
         self.theater_manager = theater_manager
         self.text_response_provider = text_response_provider
 
         self.nodes_ahead: int = max(1, min(int(self.config.get("nodes_ahead", 3)), MAX_NODES_AHEAD))
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
-        self.style: str = str(configured_style).strip()[:MAX_STORY_PLANNING_STYLE_CHARS] or DEFAULT_STORY_PLANNING_STYLE
-        self.max_named_elements: int = max(1, min(int(self.config.get("max_named_elements", DEFAULT_MAX_NAMED_ELEMENTS)), MAX_NAMED_ELEMENTS))
+        self.style: str = (
+            str(configured_style).strip()[:MAX_STORY_PLANNING_STYLE_CHARS]
+            or DEFAULT_STORY_PLANNING_STYLE
+        )
+        self.max_named_elements: int = max(
+            1,
+            min(
+                int(self.config.get("max_named_elements", DEFAULT_MAX_NAMED_ELEMENTS)),
+                MAX_NAMED_ELEMENTS,
+            ),
+        )
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
         self.action_cooldown_base_seconds: float = max(
             0.0, float(self.config.get("action_cooldown_base_seconds", self.cooldown_duration or 10.0))
@@ -280,13 +294,33 @@ class StoryPlanningTools(BaseTools):
         )
         self._vertex_client: Optional[Any] = None
         # Test/dev seam. Production uses a fresh ADK agent run for each action.
-        self.planner_executor: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = self.config.get("planner_executor")
+        self.planner_executor: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = (
+            self.config.get("planner_executor")
+        )
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
-        self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = self.config.get("on_scene_reaction")
+        self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = (
+            self.config.get("on_scene_reaction")
+        )
         # Bound by AgentSession so completed planner turns can be billed using
         # the same idempotent usage path as image and music generation.
-        self.on_story_plan_completed: Optional[Callable[[], None]] = self.config.get("on_story_plan_completed")
+        self.on_story_plan_completed: Optional[Callable[[], None]] = (
+            self.config.get("on_story_plan_completed")
+        )
+
+        self.session_id: str = str(
+            self.config.get("session_id") or f"planner_{self.theater_id}_{secrets.token_hex(8)}"
+        )
+        self.session_service: InMemorySessionService = (
+            self.config.get("session_service") or InMemorySessionService()
+        )
+        self.compaction_config: Optional[EventsCompactionConfig] = self._build_compaction_config()
+        self._run_compression_config: Optional[types.ContextWindowCompressionConfig] = (
+            self._build_run_compression_config()
+        )
+        self._planner_agent: Optional[Agent] = None
+        self._planner_app: Optional[App] = None
+        self._planner_runner: Optional[Runner] = None
 
         initial_elements = self.config.get("initial_elements", {})
         if isinstance(initial_elements, dict):
@@ -326,7 +360,7 @@ class StoryPlanningTools(BaseTools):
         self.reload_from_session_state()
 
     def export_story_planning_state(self) -> Dict[str, Any]:
-        """Export durable story state plus the most recent resolved turns."""
+        """Export durable story state."""
         with self._elements_lock:
             elements_list = [
                 {"name": name, "content": content}
@@ -336,15 +370,12 @@ class StoryPlanningTools(BaseTools):
             chars_list = [dict(c) for c in self._characters.values()]
         with self._plot_beats_lock:
             plot_beats = list(self._plot_beats)
-        with self._recent_story_turns_lock:
-            recent_turns = [dict(turn) for turn in self._recent_story_turns]
 
         return {
             "named_elements": elements_list,
             "characters": chars_list,
             "plot_beats": plot_beats,
             "last_scene_reaction": dict(self._last_scene_reaction),
-            "recent_story_turns": recent_turns,
         }
 
     def import_story_planning_state(self, state: Dict[str, Any]) -> None:
@@ -385,9 +416,6 @@ class StoryPlanningTools(BaseTools):
                 if isinstance(item, dict) and item.get("plot_beat")
             ] if isinstance(beats, list) else []
         self._last_scene_reaction = state.get("last_scene_reaction", {}) if isinstance(state.get("last_scene_reaction", {}), dict) else {}
-        recent_turns = state.get("recent_story_turns", [])
-        with self._recent_story_turns_lock:
-            self._recent_story_turns = self._normalize_recent_story_turns(recent_turns)
 
     def reload_from_session_state(self) -> None:
         """Reload story planning state from session state manager if present."""
@@ -419,7 +447,10 @@ class StoryPlanningTools(BaseTools):
                             for k, v in saved_elements.items():
                                 self._elements[str(k)] = str(v)
         except Exception as e:
-            logger.warning(f"[StoryPlanningTools] Failed to reload story planning state from session state: {e}")
+            logger.warning(
+                "[StoryPlanningTools] Failed to reload story planning state from session state: %s",
+                e,
+            )
 
     def save_to_session_state(self) -> None:
         """Persist story planning snapshot to session state."""
@@ -429,7 +460,10 @@ class StoryPlanningTools(BaseTools):
             state_mgr = None
             if hasattr(self.canvas_state_service, "get"):
                 state_mgr = self.canvas_state_service.get(self.theater_id)
-            elif hasattr(self.canvas_state_service, "set_story_planning_state") or hasattr(self.canvas_state_service, "set_named_elements"):
+            elif (
+                hasattr(self.canvas_state_service, "set_story_planning_state")
+                or hasattr(self.canvas_state_service, "set_named_elements")
+            ):
                 state_mgr = self.canvas_state_service
 
             if state_mgr and hasattr(state_mgr, "set_story_planning_state"):
@@ -437,7 +471,10 @@ class StoryPlanningTools(BaseTools):
             elif state_mgr and hasattr(state_mgr, "set_named_elements"):
                 state_mgr.set_named_elements(self.get_present_elements())
         except Exception as e:
-            logger.warning(f"[StoryPlanningTools] Failed to save story planning state to session state: {e}")
+            logger.warning(
+                "[StoryPlanningTools] Failed to save story planning state to session state: %s",
+                e,
+            )
 
     def _format_story_log(self, plot_beats: List[Dict[str, Any]]) -> str:
         """Format active characters and durable plot beats into a clean debug string."""
@@ -515,7 +552,10 @@ class StoryPlanningTools(BaseTools):
         clean_doc = str(document or "").strip().replace("\\", "/")
         if not clean_doc.lower().endswith(".txt"):
             prefix = clean_doc.rstrip("/") + "/"
-            matching = [doc for doc in self.theater_manager.get_lore_documents(self.theater_id) if doc.startswith(prefix)]
+            matching = [
+                doc for doc in self.theater_manager.get_lore_documents(self.theater_id)
+                if doc.startswith(prefix)
+            ]
             if matching:
                 listed_matching = matching[:MAX_LORE_DOCUMENTS_LISTED]
                 omission = (
@@ -607,10 +647,6 @@ class StoryPlanningTools(BaseTools):
             items = [f"- {doc}" for doc in documents[:MAX_LORE_DOCUMENTS_LISTED]]
         return "\n".join(items[:MAX_LORE_DOCUMENTS_LISTED])
 
-    def _get_initial_lore_context(self) -> str:
-        """Backwards-compatible alias for _get_lore_context."""
-        return self._get_lore_context()
-
     @logged_tool_call
     def generate_character_profile(
         self,
@@ -637,7 +673,9 @@ class StoryPlanningTools(BaseTools):
 
         # Assign random quirk from QuirkGeneratorService if not specified
         if not clean_quirk:
-            active_quirks = [c.get("quirk", "") for c in self.get_present_characters() if c.get("quirk")]
+            active_quirks = [
+                c.get("quirk", "") for c in self.get_present_characters() if c.get("quirk")
+            ]
             quirk_service = get_quirk_generator_service()
             clean_quirk = quirk_service.get_random_quirk(exclude=active_quirks)
 
@@ -652,7 +690,10 @@ class StoryPlanningTools(BaseTools):
 
             request = TextResponseRequest(
                 prompt=prompt,
-                system_instruction="You are a character design assistant for an adventure story. Respond ONLY with valid JSON.",
+                system_instruction=(
+                    "You are a character design assistant for an adventure story. "
+                    "Respond ONLY with valid JSON."
+                ),
                 temperature=0.7,
             )
             response = self.text_response_provider.generate(request)
@@ -760,7 +801,7 @@ class StoryPlanningTools(BaseTools):
             self._plot_beats.clear()
         self._last_scene_reaction = {}
         self._publish_scene_dialogue([])
-        self._publish_scene_description("")
+        self._publish_narration("")
 
         self.save_to_session_state()
 
@@ -796,11 +837,6 @@ class StoryPlanningTools(BaseTools):
         with self._plot_beats_lock:
             return list(self._plot_beats)
 
-    def get_recent_story_turns(self) -> List[Dict[str, str]]:
-        """Return the bounded action/response transcript used by the planner."""
-        with self._recent_story_turns_lock:
-            return [dict(turn) for turn in self._recent_story_turns]
-
     @staticmethod
     def _clean_dialogue(dialogue: Any) -> List[Dict[str, str]]:
         if not isinstance(dialogue, list):
@@ -825,22 +861,30 @@ class StoryPlanningTools(BaseTools):
         if not self.canvas_state_service or not self.theater_id:
             return
         try:
-            state_mgr = self.canvas_state_service.get(self.theater_id) if hasattr(self.canvas_state_service, "get") else self.canvas_state_service
+            state_mgr = (
+                self.canvas_state_service.get(self.theater_id)
+                if hasattr(self.canvas_state_service, "get")
+                else self.canvas_state_service
+            )
             if hasattr(state_mgr, "set_scene_dialogue"):
                 state_mgr.set_scene_dialogue(dialogue)
         except Exception as exc:
             logger.warning("[StoryPlanningTools] Failed to publish scene dialogue: %s", exc)
 
-    def _publish_scene_description(self, description: str) -> None:
-        """Persist the planner's visual scene caption for the canvas."""
+    def _publish_narration(self, narration: str) -> None:
+        """Persist the planner's narration for the canvas."""
         if not self.canvas_state_service or not self.theater_id:
             return
         try:
-            state_mgr = self.canvas_state_service.get(self.theater_id) if hasattr(self.canvas_state_service, "get") else self.canvas_state_service
-            if hasattr(state_mgr, "set_scene_description"):
-                state_mgr.set_scene_description(description)
+            state_mgr = (
+                self.canvas_state_service.get(self.theater_id)
+                if hasattr(self.canvas_state_service, "get")
+                else self.canvas_state_service
+            )
+            if hasattr(state_mgr, "set_narration"):
+                state_mgr.set_narration(narration)
         except Exception as exc:
-            logger.warning("[StoryPlanningTools] Failed to publish scene description: %s", exc)
+            logger.warning("[StoryPlanningTools] Failed to publish narration: %s", exc)
 
     def _apply_planner_character_updates(self, updates: Any) -> List[Dict[str, str]]:
         """Execute planner-selected character manifestations without live-agent control."""
@@ -864,24 +908,59 @@ class StoryPlanningTools(BaseTools):
                 motivation=str(update.get("motivation") or "").strip(),
                 quirk=str(update.get("quirk") or "").strip(),
             )
-            manifested.extend([character for character in self.get_present_characters() if character["name"] == name])
+            manifested.extend([
+                character for character in self.get_present_characters()
+                if character["name"] == name
+            ])
         return manifested
 
-    def _run_planner_agent(self, user_action: str) -> Dict[str, Any]:
-        """Run one stateless ADK planner turn against a CanvasState snapshot."""
+    def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
+        """Build ADK event compaction configuration for the story planner."""
+        compaction = self.config.get("compaction")
+        if compaction is False:
+            return None
+        if compaction is None:
+            compaction = {}
+        compaction_interval = int(compaction.get("compaction_interval", compaction.get("interval", 3)))
+        overlap_size = int(compaction.get("overlap_size", compaction.get("overlap", 1)))
+        token_threshold = compaction.get("token_threshold", compaction.get("trigger_tokens", DEFAULT_COMPACTION_TRIGGER_TOKENS))
+        event_retention_size = compaction.get("event_retention_size", 6)
+        if token_threshold is not None and event_retention_size is None:
+            event_retention_size = max(1, overlap_size * 2)
+        elif event_retention_size is not None and token_threshold is None:
+            token_threshold = DEFAULT_COMPACTION_TRIGGER_TOKENS
+
+        return EventsCompactionConfig(
+            compaction_interval=compaction_interval,
+            overlap_size=overlap_size,
+            token_threshold=int(token_threshold) if token_threshold is not None else None,
+            event_retention_size=int(event_retention_size) if event_retention_size is not None else None,
+        )
+
+    def _build_run_compression_config(self) -> Optional[types.ContextWindowCompressionConfig]:
+        """Build context window compression config for the ADK runner."""
+        compaction = self.config.get("compaction")
+        if compaction is False:
+            return None
+        if compaction is None:
+            compaction = {}
+        trigger = compaction.get("trigger_tokens", compaction.get("token_threshold", DEFAULT_COMPACTION_TRIGGER_TOKENS))
+        target = compaction.get("target_tokens", DEFAULT_COMPACTION_TARGET_TOKENS)
+        return types.ContextWindowCompressionConfig(
+            trigger_tokens=int(trigger) if trigger is not None else None,
+            sliding_window=types.SlidingWindow(target_tokens=int(target)) if target is not None else None,
+        )
+
+    def _build_planner_instruction(self, ctx: Any = None) -> str:
+        """Render the dynamic scene reaction instruction for the planner agent."""
         snapshot = {
             "elements": self.get_present_elements(),
             "characters": self.get_present_characters(),
             "plot_beats": [node.get("plot_beat", "") for node in self.get_plot_beats()],
             "nodes_ahead": self.nodes_ahead,
             "style": self.style,
-            "recent_turns": self.get_recent_story_turns(),
         }
-        if self.planner_executor:
-            return self.planner_executor(user_action, snapshot)
-
         lore_context = self._get_lore_context()
-
         planner_context = build_story_context_prompt(
             elements=snapshot["elements"],
             characters=snapshot["characters"],
@@ -889,23 +968,25 @@ class StoryPlanningTools(BaseTools):
                 {"node_index": index, "plot_beat": beat}
                 for index, beat in enumerate(snapshot["plot_beats"])
             ],
-            recent_turns=snapshot["recent_turns"],
         )
-        instruction = build_scene_reaction_prompt(
+        return build_scene_reaction_prompt(
             context=planner_context,
             style=self.style,
             nodes_ahead=self.nodes_ahead,
             lore_context=lore_context,
         )
-        planner = Agent(
+
+    def _create_planner_agent(self) -> Agent:
+        """Create the persistent ADK planner agent instance."""
+        return Agent(
             name="story_planner",
-            description="Authoritative planner for one interactive story turn.",
+            description="Authoritative planner for interactive story turns.",
             model=VertexGemini(
                 model=self.planner_model,
                 project_id=self.vertex_project,
                 location=self.vertex_location,
             ),
-            instruction=instruction,
+            instruction=self._build_planner_instruction,
             tools=[self.browse_lore, self.generate_character_profile, self.roll_dice],
             output_schema=SceneReaction,
             output_key="scene_reaction",
@@ -913,20 +994,53 @@ class StoryPlanningTools(BaseTools):
             disallow_transfer_to_peers=True,
         )
 
+    def _get_or_create_planner_runner(self) -> Runner:
+        """Return or lazily instantiate the reusable ADK runner for the planner session."""
+        if self._planner_runner is None:
+            self._planner_agent = self._create_planner_agent()
+            self._planner_app = App(
+                name="narratron_story_planner",
+                root_agent=self._planner_agent,
+                events_compaction_config=self.compaction_config,
+            )
+            self._planner_runner = Runner(
+                app=self._planner_app,
+                session_service=self.session_service,
+                auto_create_session=True,
+            )
+        return self._planner_runner
+
+    def _run_planner_agent(self, user_action: str) -> Dict[str, Any]:
+        """Run one ADK planner turn resumed from the session."""
+        snapshot = {
+            "elements": self.get_present_elements(),
+            "characters": self.get_present_characters(),
+            "plot_beats": [node.get("plot_beat", "") for node in self.get_plot_beats()],
+            "nodes_ahead": self.nodes_ahead,
+            "style": self.style,
+        }
+        if self.planner_executor:
+            return self.planner_executor(user_action, snapshot)
+
+        runner = self._get_or_create_planner_runner()
+        session_id = self.session_id
+
         async def run_turn() -> Dict[str, Any]:
-            sessions = InMemorySessionService()
-            runner = Runner(app_name="narratron_story_planner", agent=planner, session_service=sessions)
-            session_id = f"planner_{self.theater_id or 'default'}_{time.time_ns()}"
-            await sessions.create_session(app_name="narratron_story_planner", user_id="story_planner", session_id=session_id)
             final_text = ""
+            run_config = (
+                RunConfig(context_window_compression=self._run_compression_config)
+                if self._run_compression_config
+                else None
+            )
             async for event in runner.run_async(
                 user_id="story_planner",
                 session_id=session_id,
                 new_message=types.Content(role="user", parts=[types.Part(text=user_action)]),
+                run_config=run_config,
             ):
                 if event.is_final_response() and event.content and event.content.parts:
                     final_text = "".join(part.text or "" for part in event.content.parts)
-            session = await sessions.get_session(
+            session = await self.session_service.get_session(
                 app_name="narratron_story_planner",
                 user_id="story_planner",
                 session_id=session_id,
@@ -962,7 +1076,10 @@ class StoryPlanningTools(BaseTools):
         import asyncio
         return asyncio.run(run_turn())
 
-    @with_cooldown("resolving another player action", duration=lambda tools: tools.get_user_action_cooldown_seconds())
+    @with_cooldown(
+        "resolving another player action",
+        duration=lambda tools: tools.get_user_action_cooldown_seconds(),
+    )
     def process_user_action(self, user_action: str) -> Dict[str, Any]:
         """Queue a non-blocking authoritative resolution of an orator action.
 
@@ -1011,8 +1128,9 @@ class StoryPlanningTools(BaseTools):
             raise ValueError("Story planner must return a JSON object.")
 
         manifested_characters = self._apply_planner_character_updates(parsed.get("character_updates"))
-        narration = str(parsed.get("narration") or "The scene shifts in response to your action.").strip()[:MAX_NARRATION_CHARS]
-        scene_description = self._clean_scene_description(parsed.get("scene_description"))
+        narration = str(
+            parsed.get("narration") or "The scene shifts in response to your action."
+        ).strip()[:MAX_NARRATION_CHARS]
         dialogue = self._clean_dialogue(parsed.get("dialogue"))
         plot_beats = self._normalize_plot_beats(parsed.get("plot_beats", []))
         if len(plot_beats) != self.nodes_ahead:
@@ -1021,7 +1139,6 @@ class StoryPlanningTools(BaseTools):
             self._plot_beats = plot_beats
         result = {
             "narration": narration,
-            "scene_description": scene_description,
             "dialogue": dialogue,
             "manifested_characters": manifested_characters,
             "plot_beats": list(plot_beats),
@@ -1032,9 +1149,8 @@ class StoryPlanningTools(BaseTools):
         if last_action_time is not None:
             remaining = self.get_user_action_cooldown_seconds() - (time.time() - last_action_time)
             self._schedule_cooldown_timer("process_user_action", remaining)
-        self._append_recent_story_turn(action, result)
         self._publish_scene_dialogue(dialogue)
-        self._publish_scene_description(scene_description)
+        self._publish_narration(narration)
         self.save_to_session_state()
         self._log_story_update(plot_beats, source="user_action")
         callback = self.on_story_plan_completed
@@ -1063,50 +1179,19 @@ class StoryPlanningTools(BaseTools):
         return normalized
 
     @staticmethod
-    def _clean_scene_description(value: Any) -> str:
-        """Keep the optional visual caption compact enough for the canvas."""
-        words = str(value or "").strip().split()
-        return " ".join(words[:45])[:500]
-
-    @staticmethod
     def _count_response_words(result: Dict[str, Any]) -> int:
         """Count visible planner response words for the next action cooldown."""
         text_parts = [
             str(result.get("narration") or ""),
-            str(result.get("scene_description") or ""),
         ]
-        text_parts.extend(str(item.get("text") or "") for item in result.get("dialogue", []) if isinstance(item, dict))
-        text_parts.extend(str(item.get("plot_beat") or "") for item in result.get("plot_beats", []) if isinstance(item, dict))
-        return len(re.findall(r"\b[\w'-]+\b", " ".join(text_parts)))
-
-    @staticmethod
-    def _normalize_recent_story_turns(raw_turns: Any) -> List[Dict[str, str]]:
-        """Validate a persisted transcript and retain only its final three turns."""
-        if not isinstance(raw_turns, list):
-            return []
-        normalized: List[Dict[str, str]] = []
-        for turn in raw_turns[-RECENT_STORY_TURNS_LIMIT:]:
-            if not isinstance(turn, dict):
-                continue
-            action = str(turn.get("action") or "").strip()
-            response = str(turn.get("response") or "").strip()
-            if action and response:
-                normalized.append({"action": action[:1_000], "response": response[:2_000]})
-        return normalized
-
-    def _append_recent_story_turn(self, action: str, result: Dict[str, Any]) -> None:
-        """Persist one resolved action and its visible story response for later turns."""
-        narration = str(result.get("narration") or "").strip()
-        dialogue = self._clean_dialogue(result.get("dialogue"))
-        dialogue_text = " ".join(
-            f"{item['speaker']}: {item['text']}" for item in dialogue
+        text_parts.extend(
+            str(item.get("text") or "")
+            for item in result.get("dialogue", [])
+            if isinstance(item, dict)
         )
-        scene_description = str(result.get("scene_description") or "").strip()
-        response = " ".join(part for part in (scene_description, narration, dialogue_text) if part).strip()
-        if not action or not response:
-            return
-        with self._recent_story_turns_lock:
-            self._recent_story_turns = self._normalize_recent_story_turns([
-                *self._recent_story_turns,
-                {"action": action, "response": response},
-            ])
+        text_parts.extend(
+            str(item.get("plot_beat") or "")
+            for item in result.get("plot_beats", [])
+            if isinstance(item, dict)
+        )
+        return len(re.findall(r"\b[\w'-]+\b", " ".join(text_parts)))
