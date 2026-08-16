@@ -41,3 +41,29 @@ def test_update_profile_requires_login_and_updates_owner_settings():
         result = profiles.update_my_profile(profiles.ProfileUpdate(bio="Hi", stats_visible=True), request())
     assert result["username"] == "Ada"
     registry_db.update_user_profile.assert_called_once_with(8, "Hi", True, "#818cf8")
+
+
+def test_delete_my_account_requires_login():
+    resp = MagicMock()
+    with patch.object(profiles, "get_current_user", return_value=None), pytest.raises(HTTPException) as error:
+        profiles.delete_my_account(request(), resp)
+    assert error.value.status_code == 401
+
+
+def test_delete_my_account_deletes_user_and_clears_cookie():
+    req = SimpleNamespace(cookies={"auth_token": "token_123"})
+    resp = MagicMock()
+    registry_db = MagicMock()
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8, "username": "Ada"}), \
+         patch.object(profiles.auth_session_cache, "invalidate_token") as mock_inval_tok, \
+         patch.object(profiles.auth_session_cache, "invalidate_user") as mock_inval_user:
+        result = profiles.delete_my_account(req, resp)
+
+    assert result["status"] == "ok"
+    registry_db.invalidate_session_token.assert_called_once_with("token_123")
+    mock_inval_tok.assert_called_once_with("token_123")
+    mock_inval_user.assert_called_once_with(8)
+    registry_db.delete_user.assert_called_once_with(8)
+    resp.delete_cookie.assert_called_once_with("auth_token")
+

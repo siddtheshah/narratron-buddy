@@ -372,6 +372,81 @@ class TestUserManagementAndAuth(BaseTestCase):
         found = self.db.get_user_by_id(user["id"])
         self.assertEqual(found.get("mic_sensitivity"), 0.85)
 
+    def test_delete_user_cascades_foreign_keys(self):
+        user_a = self.db.register_user("user_a", "a@test.com", "Pass12345")
+        user_b = self.db.register_user("user_b", "b@test.com", "Pass12345")
+
+        # 1. Auth session
+        token = self.db.create_auth_session(user_a["id"])
+
+        # 2. Canvas deployments
+        self.db.record_deployment("theater_a", user_a["id"], "KEY-A")
+        self.db.record_deployment("theater_b", user_b["id"], "KEY-B")
+        with self.db._get_connection() as conn:
+            conn.cursor().execute("UPDATE canvas_deployments SET active_orator_id = ? WHERE theater_id = ?", (user_a["id"], "theater_b"))
+
+        # 3. Exported theaters & images
+        self.db.export_theater_to_db("theater_exp", {"name": "exp"}, [{"filename": "img1.png", "category": "bg", "data": b"123"}], user_id=user_a["id"])
+
+        # 4. Theater views
+        self.db.record_theater_view("theater_view_1", user_id=user_a["id"])
+
+        # 5. Payment transactions
+        self.db.add_stripe_session_credits(user_a["id"], 100.0, 10.0, stripe_session_id="sess_123")
+
+        # 6. Usage events
+        self.db.record_user_usage(user_a["id"], voice_minutes=2.0, images_created=1, idempotency_key="key_usage_1")
+
+        # 7. Password reset tokens
+        reset_token, _ = self.db.create_password_reset_token("a@test.com")
+
+        # Delete user_a
+        deleted = self.db.delete_user(user_a["id"])
+        self.assertTrue(deleted)
+        self.assertIsNone(self.db.get_user_by_id(user_a["id"]))
+
+        # Check cascading deletion and SET NULL constraints
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Auth session should be CASCADE deleted
+            cursor.execute("SELECT * FROM auth_sessions WHERE token = ?", (token,))
+            self.assertIsNone(cursor.fetchone())
+
+            # Deployment owned by user_a should be CASCADE deleted
+            cursor.execute("SELECT * FROM canvas_deployments WHERE theater_id = 'theater_a'")
+            self.assertIsNone(cursor.fetchone())
+
+            # Deployment where user_a was active_orator should have active_orator_id SET NULL
+            cursor.execute("SELECT active_orator_id FROM canvas_deployments WHERE theater_id = 'theater_b'")
+            row = cursor.fetchone()
+            self.assertIsNotNone(row)
+            self.assertIsNone(row["active_orator_id"])
+
+            # Exported theater should have user_id SET NULL
+            cursor.execute("SELECT user_id FROM exported_theaters WHERE theater_id = 'theater_exp'")
+            row = cursor.fetchone()
+            self.assertIsNotNone(row)
+            self.assertIsNone(row["user_id"])
+
+            # Theater views should have user_id SET NULL
+            cursor.execute("SELECT user_id FROM theater_views WHERE theater_id = 'theater_view_1'")
+            row = cursor.fetchone()
+            self.assertIsNotNone(row)
+            self.assertIsNone(row["user_id"])
+
+            # Payment transactions should be CASCADE deleted
+            cursor.execute("SELECT * FROM payment_transactions WHERE user_id = ?", (user_a["id"],))
+            self.assertEqual(len(cursor.fetchall()), 0)
+
+            # Usage events should be CASCADE deleted
+            cursor.execute("SELECT * FROM usage_events WHERE user_id = ?", (user_a["id"],))
+            self.assertEqual(len(cursor.fetchall()), 0)
+
+            # Password reset tokens should be CASCADE deleted
+            cursor.execute("SELECT * FROM password_reset_tokens WHERE token = ?", (reset_token,))
+            self.assertIsNone(cursor.fetchone())
+
 
 class TestAuthSessionsAndActivity(BaseTestCase):
     """Test auth session creation, expiration, validation, activity recording, and token deletion."""
@@ -995,6 +1070,8 @@ class TestAsyncDatabaseMethods(BaseTestCase):
             await self.db.request_baton_async("async_theater", user["id"], baton_user["id"])
             await self.db.decline_baton_async("async_theater", baton_user["id"])
             await self.db.remove_allowed_orator_async("async_theater", user["id"], baton_user["id"])
+            del_ok = await self.db.delete_user_async(user["id"])
+            self.assertTrue(del_ok)
 
         asyncio.run(_run())
 

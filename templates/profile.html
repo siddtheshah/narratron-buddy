@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/monolith.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
   <style>
-    :root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}header{padding:1.25rem 7vw;border-bottom:1px solid var(--border)}.brand{color:inherit;text-decoration:none;font-size:1.25rem;font-weight:700}main{max-width:760px;margin:4rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin:0}.identity{display:flex;align-items:center;gap:.7rem}.swatch{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.7)}.section{font-size:1rem;margin:2rem 0 .6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}p{line-height:1.55;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem}.stat{padding:1rem;border-radius:12px;background:rgba(255,255,255,.045)}.stat b{display:block;font-size:1.45rem}.stat span,label{color:var(--muted);font-size:.88rem}textarea{width:100%;min-height:130px;padding:.8rem;resize:vertical;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer}#status{margin-left:.75rem;color:#86efac}
+    :root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}header{padding:1.25rem 7vw;border-bottom:1px solid var(--border)}.brand{color:inherit;text-decoration:none;font-size:1.25rem;font-weight:700}main{max-width:760px;margin:4rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin:0}.identity{display:flex;align-items:center;gap:.7rem}.swatch{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.7)}.section{font-size:1rem;margin:2rem 0 .6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}p{line-height:1.55;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem}.stat{padding:1rem;border-radius:12px;background:rgba(255,255,255,.045)}.stat b{display:block;font-size:1.45rem}.stat span,label{color:var(--muted);font-size:.88rem}textarea,input[type="text"]{width:100%;padding:.8rem;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}textarea{min-height:130px;resize:vertical}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer;transition:all .15s ease}#status{margin-left:.75rem;color:#86efac}.danger-section{margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid rgba(239,68,68,.2)}.danger-box{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:1.25rem;margin-top:1rem}.danger-btn{background:transparent;color:#f87171;border:1px solid rgba(239,68,68,.4)}.danger-btn:hover{background:rgba(239,68,68,.15);border-color:#f87171}.danger-confirm-btn{background:#dc2626;color:white;border:0}.danger-confirm-btn:disabled{opacity:.4;cursor:not-allowed}.cancel-btn{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--border);margin-right:.75rem}.cancel-btn:hover{background:rgba(255,255,255,.14)}
   </style>
 </head>
 <body>
@@ -27,7 +27,31 @@
       const color = /^#[0-9a-fA-F]{6}$/.test(profile.profile_color || '') ? profile.profile_color : '#818cf8';
       const bio = profile.bio ? esc(profile.bio) : '<span class="empty">This user has not written a bio yet.</span>';
       const stats = profile.stats ? `<div class="stats"><div class="stat"><b>${Number(profile.stats.lifetime_credits_used).toFixed(1)}</b><span>Credits used</span></div><div class="stat"><b>${profile.stats.theater_views}</b><span>Theater views</span></div></div>` : '<p class="private">This user keeps their stats private.</p>';
-      const editor = profile.is_owner ? `<h2 class="section">Edit profile</h2><textarea id="bio" maxlength="1000" placeholder="Tell people about yourself">${esc(profile.bio)}</textarea><label>Name color <span id="color-picker"></span></label><label><input id="visible" type="checkbox" ${profile.stats_visible ? 'checked' : ''}> Show my stats publicly</label><button id="save">Save profile</button><span id="status"></span>` : '';
+      const editor = profile.is_owner ? `
+        <h2 class="section">Edit profile</h2>
+        <textarea id="bio" maxlength="1000" placeholder="Tell people about yourself">${esc(profile.bio)}</textarea>
+        <label>Name color <span id="color-picker"></span></label>
+        <label><input id="visible" type="checkbox" ${profile.stats_visible ? 'checked' : ''}> Show my stats publicly</label>
+        <div style="display:flex;align-items:center;margin-top:1rem;">
+          <button id="save">Save profile</button>
+          <span id="status"></span>
+        </div>
+        <div class="danger-section">
+          <h2 class="section" style="color:#f87171;margin-top:0;">Danger Zone</h2>
+          <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">Permanently remove your account along with all your deployed theaters, credits, and data.</p>
+          <button id="start-delete-btn" class="danger-btn" type="button">Delete Account</button>
+          <div id="delete-confirm-box" class="danger-box" style="display:none;">
+            <p style="margin:0 0 0.8rem;color:#fca5a5;font-weight:500;">Are you sure? This action is permanent and cannot be undone.</p>
+            <p style="margin:0;font-size:0.88rem;color:var(--muted);">Please type <b>${esc(profile.username)}</b> below to confirm:</p>
+            <input id="delete-confirm-input" type="text" placeholder="${esc(profile.username)}" autocomplete="off" style="margin:0.8rem 0;">
+            <div style="display:flex;align-items:center;margin-top:0.5rem;">
+              <button id="cancel-delete-btn" class="cancel-btn" type="button">Cancel</button>
+              <button id="confirm-delete-btn" class="danger-confirm-btn" type="button" disabled>Permanently Delete Account</button>
+              <span id="delete-status" style="margin-left:0.75rem;color:#f87171;"></span>
+            </div>
+          </div>
+        </div>
+      ` : '';
       el.innerHTML = `<div class="identity"><span class="swatch" style="background:${color}"></span><h1 style="color:${color}">${esc(profile.username)}</h1></div><h2 class="section">Bio</h2><p>${bio}</p><h2 class="section">Stats</h2>${stats}${editor}`;
       if (profilePicker) profilePicker.destroyAndRemove();
       selectedProfileColor = color;
@@ -42,8 +66,71 @@
         document.getElementById('status').textContent = result.ok ? 'Saved' : 'Could not save';
         if (result.ok) load();
       };
+
+      const startDeleteBtn = document.getElementById('start-delete-btn');
+      const deleteConfirmBox = document.getElementById('delete-confirm-box');
+      const deleteConfirmInput = document.getElementById('delete-confirm-input');
+      const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+      const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+      const deleteStatus = document.getElementById('delete-status');
+
+      if (startDeleteBtn && deleteConfirmBox) {
+        startDeleteBtn.onclick = () => {
+          startDeleteBtn.style.display = 'none';
+          deleteConfirmBox.style.display = 'block';
+          deleteConfirmInput.value = '';
+          confirmDeleteBtn.disabled = true;
+          deleteConfirmInput.focus();
+        };
+      }
+
+      if (cancelDeleteBtn && deleteConfirmBox) {
+        cancelDeleteBtn.onclick = () => {
+          deleteConfirmBox.style.display = 'none';
+          startDeleteBtn.style.display = 'inline-block';
+          deleteStatus.textContent = '';
+        };
+      }
+
+      if (deleteConfirmInput && confirmDeleteBtn) {
+        deleteConfirmInput.oninput = () => {
+          confirmDeleteBtn.disabled = deleteConfirmInput.value.trim() !== profile.username;
+        };
+      }
+
+      if (confirmDeleteBtn) {
+        confirmDeleteBtn.onclick = async () => {
+          if (deleteConfirmInput.value.trim() !== profile.username) return;
+          confirmDeleteBtn.disabled = true;
+          deleteConfirmInput.disabled = true;
+          deleteStatus.style.color = '#f87171';
+          deleteStatus.textContent = 'Deleting account…';
+          try {
+            const resp = await fetch('/api/users/me', { method: 'DELETE' });
+            if (resp.ok) {
+              deleteStatus.style.color = '#86efac';
+              deleteStatus.textContent = 'Account deleted. Redirecting…';
+              setTimeout(() => {
+                window.location.href = '/deploy';
+              }, 1000);
+            } else {
+              const data = await resp.json().catch(() => ({}));
+              deleteStatus.style.color = '#f87171';
+              deleteStatus.textContent = data.detail || 'Could not delete account.';
+              confirmDeleteBtn.disabled = false;
+              deleteConfirmInput.disabled = false;
+            }
+          } catch (err) {
+            deleteStatus.style.color = '#f87171';
+            deleteStatus.textContent = 'Network error while deleting account.';
+            confirmDeleteBtn.disabled = false;
+            deleteConfirmInput.disabled = false;
+          }
+        };
+      }
     }
     load();
   </script>
 </body>
 </html>
+

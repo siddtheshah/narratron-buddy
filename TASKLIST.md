@@ -16,20 +16,6 @@
   - Also would require an emplacer function. 
   - Allow specification of relative animation, e.g.  a character moving across a background.
 
-## Adventure Mode
-- [x] Set style.
-- [x] Give narratron more visibility into characters so that the characters can "talk".
-- [x] Give narratron a character speech tool, which overlays a speech bubble. 
-- [x] Or perhaps, we let Narratron hand over the user's response to the script tool and have it generate the reaction based on the script.
-- [x] Need billing on text provider for adventure mode. It'll rack up too.
-- [ ] Character voicing.
-
-## Music Cost & Variants
-- [x] Save music to a private global catalog; use TF-IDF candidates and LLM reranking to reuse a strong match before generating a new track.
-
-
-## Observability Tool
-- [x] Let agent pull observability if it wants. Reset auto-observabiiity interval when it does, give it some cooldown.
 
 ## Refactors
 
@@ -38,7 +24,7 @@
     - Important if postgres sql will become a necessary migration.
 
 ## User Profiles
-- [ ] Implement proper account deletion.
+- [x] Implement proper account deletion.
     - Create script to delete user data from DB and Cloud Storage.
     - Consider a soft-delete approach for auditability if needed, but user-facing must be complete removal.
     - Purge any theaters and assets the user has.

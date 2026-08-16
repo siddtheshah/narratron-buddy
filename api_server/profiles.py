@@ -1,6 +1,6 @@
 """Public user profile routes and owner profile settings."""
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel
 
 from api_server.shared import app, db, get_current_user
@@ -37,3 +37,20 @@ def update_my_profile(payload: ProfileUpdate, request: Request):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     auth_session_cache.invalidate_user(user["id"])
     return _profile_or_404(user["username"], request)
+
+
+@app.delete("/api/users/me")
+def delete_my_account(request: Request, response: Response):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    user_id = user["id"]
+    token = request.cookies.get("auth_token")
+    if token:
+        db.invalidate_session_token(token)
+        auth_session_cache.invalidate_token(token)
+    auth_session_cache.invalidate_user(user_id)
+    db.delete_user(user_id)
+    response.delete_cookie("auth_token")
+    return {"status": "ok", "message": "Account deleted successfully."}
+

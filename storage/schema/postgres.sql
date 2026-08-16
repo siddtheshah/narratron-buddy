@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS canvas_deployments (
     cost DOUBLE PRECISION NOT NULL DEFAULT 5.0,
     created_at TEXT NOT NULL,
     allowed_orators TEXT NOT NULL DEFAULT '[]',
-    active_orator_id BIGINT,
+    active_orator_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     baton_request TEXT,
     is_persistent BOOLEAN NOT NULL DEFAULT FALSE,
     last_billed_at TEXT,

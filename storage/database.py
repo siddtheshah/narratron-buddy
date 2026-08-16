@@ -617,7 +617,8 @@ class _DatabaseManagerBase:
                     allowed_orators TEXT DEFAULT '[]',
                     active_orator_id INTEGER DEFAULT NULL,
                     baton_request TEXT DEFAULT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (active_orator_id) REFERENCES users(id) ON DELETE SET NULL
                 )
             """)
 
@@ -848,6 +849,14 @@ class _DatabaseManagerBase:
             cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, mic_sensitivity, created_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    def delete_user(self, user_id: int) -> bool:
+        """Permanently delete a user account, cascading deletion to all dependent records."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+            return bool(cursor.rowcount and cursor.rowcount > 0)
 
     def get_users_by_ids(self, user_ids: Iterable[int]) -> Dict[int, Dict]:
         """Return the requested users in one batched lookup, keyed by user ID."""
@@ -1332,6 +1341,9 @@ class _DatabaseManagerBase:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
+            if not cursor.fetchone():
+                raise ValueError("User not found.")
             cursor.execute(
                 "INSERT OR IGNORE INTO usage_events "
                 "(idempotency_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, credit_cost, created_at) "
@@ -2220,6 +2232,9 @@ class _DatabaseManagerBase:
     async def take_back_baton_async(self, theater_id: str, owner_id: int) -> Dict[str, Any]:
         return await asyncio.to_thread(self.take_back_baton, theater_id, owner_id)
 
+    async def delete_user_async(self, user_id: int) -> bool:
+        return await asyncio.to_thread(self.delete_user, user_id)
+
 
 class LocalDatabaseManager(_DatabaseManagerBase):
     """Narratron storage backed by a local SQLite file, used for development and tests."""
@@ -2248,6 +2263,7 @@ class LocalDatabaseManager(_DatabaseManagerBase):
                 conn = sqlite3.connect(db_path, check_same_thread=False)
                 conn.row_factory = sqlite3.Row
                 conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA foreign_keys = ON")
                 self._conn = _ReusableConnection(conn, lock=self._connection_lock)
                 self._ensure_tables_exist()
                 self._cached_db_path = db_path
