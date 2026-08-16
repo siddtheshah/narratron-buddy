@@ -306,6 +306,7 @@ def get_pricing_rates(
     images_created: Optional[int] = None,
     music_created: Optional[int] = None,
     story_plans: Optional[int] = None,
+    character_voiced_turns: Optional[int] = None,
     adventure_actions: Optional[int] = None,
     adventure_minutes: Optional[float] = None,
     gb_amount: Optional[float] = None,
@@ -321,6 +322,8 @@ def get_pricing_rates(
         raise HTTPException(status_code=400, detail="music_created must be non-negative.")
     if story_plans is not None and story_plans < 0:
         raise HTTPException(status_code=400, detail="story_plans must be non-negative.")
+    if character_voiced_turns is not None and character_voiced_turns < 0:
+        raise HTTPException(status_code=400, detail="character_voiced_turns must be non-negative.")
     if adventure_actions is not None and adventure_actions < 0:
         raise HTTPException(status_code=400, detail="adventure_actions must be non-negative.")
     if adventure_minutes is not None and adventure_minutes < 0:
@@ -341,15 +344,18 @@ def get_pricing_rates(
         or images_created is not None
         or music_created is not None
         or story_plans is not None
+        or character_voiced_turns is not None
         or adventure_actions is not None
     ):
         vm = voice_minutes if voice_minutes is not None else 0.0
         ic = images_created if images_created is not None else 0
         mc = music_created if music_created is not None else 0
         sp = story_plans if story_plans is not None else 0
+        cvt = character_voiced_turns if character_voiced_turns is not None else 0
         aa = adventure_actions if adventure_actions is not None else 0
         calculation["usage_credits"] = pricing.calculate_usage_cost(
-            voice_minutes=vm, images_created=ic, music_created=mc, story_plans=sp, adventure_actions=aa
+            voice_minutes=vm, images_created=ic, music_created=mc, story_plans=sp,
+            adventure_actions=aa, character_voiced_turns=cvt,
         )
 
     if adventure_actions is not None or adventure_minutes is not None:

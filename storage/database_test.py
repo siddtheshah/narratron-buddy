@@ -573,6 +573,16 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         self.assertEqual(result["total_story_plans"], 2)
         self.assertEqual(result["credits"], -3.0)
 
+    def test_record_user_usage_character_voiced_turns_are_totaled_and_billed(self):
+        self.db.pricing_controller.story_planning_credit_rate = 0.5
+        self.db.pricing_controller.character_voicing_turn_credit_rate = 0.25
+        result = self.db.record_user_usage(
+            self.user["id"], story_plans=1, character_voiced_turns=1,
+        )
+        self.assertEqual(result["total_story_plans"], 1)
+        self.assertEqual(result["total_character_voiced_turns"], 1)
+        self.assertEqual(result["credits"], -0.75)
+
     def test_record_user_usage_negative_credits_allowed(self):
         # User has 0.0 credits; deduct 150.0 credits -> credits should become -150.0
         res = self.db.record_user_usage(self.user["id"], voice_minutes=100.0, images_created=50, credit_cost=150.0)

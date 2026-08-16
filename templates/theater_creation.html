@@ -139,6 +139,21 @@
             margin: 1.25rem 0;
         }
 
+        .pricing-rate-row {
+            display: grid;
+            grid-template-columns: minmax(150px, 1.2fr) minmax(135px, 0.9fr) minmax(180px, 1.4fr);
+            gap: 12px;
+            align-items: center;
+            padding: 0.75rem 1rem;
+        }
+
+        @media (max-width: 600px) {
+            .pricing-rate-row {
+                grid-template-columns: 1fr;
+                gap: 3px;
+            }
+        }
+
         @media (max-width: 650px) {
             .packages-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -1594,77 +1609,45 @@
                 </button>
             </div>
 
-            <!-- Pricing Rates Summary Grid -->
-            <div
-                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 1.25rem;">
-                <div
-                    style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; padding: 1rem;">
-                    <div
-                        style="font-size: 0.78rem; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-                        💵 Credit Exchange Rate
-                    </div>
-                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
-                        $1.00 = <span id="rateCreditsPerUsd">20.0</span> Cr
-                    </div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-                        1 Credit = <span id="rateUsdPerCredit">$0.05</span> USD
-                    </div>
+            <!-- Pricing rates: one compact row per billable capability. -->
+            <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; margin-bottom: 1.25rem;">
+                <div class="pricing-rate-row" style="background: rgba(30, 41, 59, 0.5); border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #818cf8;">💵 Credit exchange</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;">$1.00 = <span id="rateCreditsPerUsd">20.0</span> Cr</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">1 credit = <span id="rateUsdPerCredit">$0.05</span> USD</div>
                 </div>
-
-                <div
-                    style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 12px; padding: 1rem;">
-                    <div
-                        style="font-size: 0.78rem; font-weight: 700; color: #c084fc; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-                        🎙️ Voice Minutes Rate
-                    </div>
-                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
-                        <span id="rateVoice">1.0</span> Cr / min
-                    </div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-                        Gemini Live streaming (~<span id="rateVoiceUsd">$0.05</span> / min)
-                    </div>
+                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #c084fc;">🎙️ Live voice</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateVoice">1.0</span> Cr / min</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Gemini Live streaming (~<span id="rateVoiceUsd">$0.05</span> / min)</div>
                 </div>
-
-                <div
-                    style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: 12px; padding: 1rem;">
-                    <div
-                        style="font-size: 0.78rem; font-weight: 700; color: #22d3ee; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-                        🖼️ Image Generation Rate
-                    </div>
-                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
-                        <span id="rateImage">1.0</span> Cr / image
-                    </div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-                        Imagen / Flash scene images (~<span id="rateImageUsd">$0.05</span> / img)
-                    </div>
+                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #22d3ee;">🖼️ Image generation</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateImage">1.0</span> Cr / image</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Imagen / Flash scene images (~<span id="rateImageUsd">$0.05</span> / image)</div>
                 </div>
-
-                <div
-                    style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(244, 63, 94, 0.25); border-radius: 12px; padding: 1rem;">
-                    <div
-                        style="font-size: 0.78rem; font-weight: 700; color: #fb7185; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-                        🎵 Music Generation Rate
-                    </div>
-                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
-                        <span id="rateMusic">2.0</span> Cr / track
-                    </div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-                        Lyria background tracks (~<span id="rateMusicUsd">$0.10</span> / track)
-                    </div>
+                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #fb7185;">🎵 Music generation</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateMusic">2.0</span> Cr / track</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Lyria background tracks (~<span id="rateMusicUsd">$0.10</span> / track)</div>
                 </div>
-
-                <div
-                    style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 1rem;">
-                    <div
-                        style="font-size: 0.78rem; font-weight: 700; color: #34d399; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-                        💾 Persistent Storage
-                    </div>
-                    <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc;">
-                        <span id="rateStorageMonthly">1.0</span> Cr / GB / mo
-                    </div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-                        Daily rate: ~<span id="rateStorageDaily">0.033</span> Cr / GB / day
-                    </div>
+                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #34d399;">💾 Persistent storage</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateStorageMonthly">1.0</span> Cr / GB / mo</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Daily rate: ~<span id="rateStorageDaily">0.033</span> Cr / GB / day</div>
+                </div>
+                <div style="padding: 0.5rem 1rem; background: rgba(124, 58, 237, 0.12); border-bottom: 1px solid rgba(168, 85, 247, 0.25); color: #d8b4fe; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+                    🗺️ Adventure Mode
+                </div>
+                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #d8b4fe;">📖 Story planning</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateStoryPlanning">0.5</span> Cr / turn</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Each completed player action resolved by the story planner (~<span id="rateStoryPlanningUsd">$0.03</span> / turn)</div>
+                </div>
+                <div class="pricing-rate-row">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #fbbf24;">🗣️ Character voicing</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateCharacterVoicing">0.25</span> Cr / turn</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Seed Speech NPC dialogue (~<span id="rateCharacterVoicingUsd">$0.01</span> / turn)</div>
                 </div>
             </div>
 
@@ -1680,7 +1663,22 @@
                     <span style="font-size: 0.75rem; color: var(--text-muted);">Calculated live via API</span>
                 </div>
 
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1rem;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 10px; margin-bottom: 1rem;">
+                    <div>
+                        <label
+                            style="font-size: 0.75rem; font-weight: 600; color: #d8b4fe; display: block; margin-bottom: 4px;">Story
+                            Turns</label>
+                        <input type="number" id="calcStoryTurnsInput" min="0" max="1000" step="1" value="0"
+                            oninput="calculateLivePricingEstimate()"
+                            style="width: 100%; background: #0f172a; border: 1px solid rgba(168,85,247,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                    </div>
+                    <div style="display: flex; flex-direction: column; justify-content: flex-end;">
+                        <label style="font-size: 0.75rem; font-weight: 600; color: #fbbf24; display: flex; align-items: center; gap: 7px; min-height: 34px; cursor: pointer;">
+                            <input type="checkbox" id="calcCharacterVoicingInput" onchange="calculateLivePricingEstimate()"
+                                style="accent-color: #fbbf24; width: 16px; height: 16px; cursor: pointer;">
+                            Character voicing
+                        </label>
+                    </div>
                     <div>
                         <label
                             style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Voice
@@ -1722,7 +1720,7 @@
                             style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600;">
                             Estimated Session Cost</div>
                         <div style="font-size: 0.8rem; color: var(--text-muted);" id="calcBreakdownText">30 voice mins +
-                            10 images + 1.0 GB/mo</div>
+                            10 images + 2 music tracks + 0 story turns + 1.0 GB/mo</div>
                     </div>
                     <div style="text-align: right;">
                         <div style="font-size: 1.35rem; font-weight: 800; color: #34d399;" id="calcTotalCredits">⚡ 41.0
@@ -2627,6 +2625,20 @@
                 if (document.getElementById('rateVoiceUsd')) {
                     document.getElementById('rateVoiceUsd').innerText = `$${(data.voice_credit_rate * data.usd_per_credit).toFixed(2)}`;
                 }
+                const storyPlanningRate = data.story_planning_credit_rate ?? 0.5;
+                if (document.getElementById('rateStoryPlanning')) {
+                    document.getElementById('rateStoryPlanning').innerText = storyPlanningRate.toFixed(2);
+                }
+                if (document.getElementById('rateStoryPlanningUsd')) {
+                    document.getElementById('rateStoryPlanningUsd').innerText = `$${(storyPlanningRate * data.usd_per_credit).toFixed(2)}`;
+                }
+                const characterVoicingRate = data.character_voicing_turn_credit_rate ?? 0.25;
+                if (document.getElementById('rateCharacterVoicing')) {
+                    document.getElementById('rateCharacterVoicing').innerText = characterVoicingRate.toFixed(2);
+                }
+                if (document.getElementById('rateCharacterVoicingUsd')) {
+                    document.getElementById('rateCharacterVoicingUsd').innerText = `$${(characterVoicingRate * data.usd_per_credit).toFixed(2)}`;
+                }
                 if (document.getElementById('rateImage')) {
                     document.getElementById('rateImage').innerText = data.image_credit_rate.toFixed(1);
                 }
@@ -2663,6 +2675,8 @@
             const voiceInput = document.getElementById('calcVoiceInput');
             const imagesInput = document.getElementById('calcImagesInput');
             const musicInput = document.getElementById('calcMusicInput');
+            const storyTurnsInput = document.getElementById('calcStoryTurnsInput');
+            const characterVoicingInput = document.getElementById('calcCharacterVoicingInput');
             const storageInput = document.getElementById('calcStorageInput');
 
             if (!voiceInput || !imagesInput || !storageInput) return;
@@ -2670,6 +2684,8 @@
             const voiceMins = parseFloat(voiceInput.value) || 0;
             const images = parseInt(imagesInput.value) || 0;
             const music = musicInput ? (parseInt(musicInput.value) || 0) : 0;
+            const storyTurns = storyTurnsInput ? (parseInt(storyTurnsInput.value) || 0) : 0;
+            const voicedTurns = characterVoicingInput?.checked ? storyTurns : 0;
             const storageGb = parseFloat(storageInput.value) || 0;
 
             try {
@@ -2677,6 +2693,8 @@
                     voice_minutes: voiceMins,
                     images_created: images,
                     music_created: music,
+                    story_plans: storyTurns,
+                    character_voiced_turns: voicedTurns,
                     gb_amount: storageGb,
                     days: 30
                 });
@@ -2696,7 +2714,8 @@
                         document.getElementById('calcTotalUsd').innerText = `~$${totalUsd.toFixed(2)} USD`;
                     }
                     if (document.getElementById('calcBreakdownText')) {
-                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${music} music tracks + ${storageGb} GB/mo`;
+                        const voicingDetail = voicedTurns ? ` + character voicing` : '';
+                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${music} music tracks + ${storyTurns} story turns${voicingDetail} + ${storageGb} GB/mo`;
                     }
                 }
             } catch (e) {

@@ -35,6 +35,7 @@ class TestPricingController(BaseTestCase):
         self.assertEqual(rates["adventure_mode_calls_per_minute"], 5.0)
         self.assertEqual(rates["adventure_mode_credit_rate_per_action"], 0.5)
         self.assertEqual(rates["adventure_mode_credit_rate_per_minute"], 2.5)
+        self.assertEqual(rates["character_voicing_turn_credit_rate"], 0.25)
 
     def test_from_env_overrides(self):
         env_vars = {
@@ -47,6 +48,7 @@ class TestPricingController(BaseTestCase):
             "CREDITS_PER_USD": "10.0",
             "ADVENTURE_MODE_TOKENS_PER_CALL": "5000",
             "ADVENTURE_MODE_CALLS_PER_MINUTE": "6.0",
+            "CHARACTER_VOICING_TURN_CREDIT_RATE": "0.4",
         }
         with patch.dict(os.environ, env_vars):
             controller = PricingController.from_env()
@@ -61,6 +63,7 @@ class TestPricingController(BaseTestCase):
             self.assertEqual(rates["usd_per_credit"], 0.10)
             self.assertEqual(rates["adventure_mode_tokens_per_call"], 5000.0)
             self.assertEqual(rates["adventure_mode_calls_per_minute"], 6.0)
+            self.assertEqual(rates["character_voicing_turn_credit_rate"], 0.4)
 
     def test_usd_per_credit_property(self):
         controller = PricingController(credits_per_usd=25.0)
@@ -77,6 +80,10 @@ class TestPricingController(BaseTestCase):
         self.assertEqual(controller.calculate_usage_cost(10.0, 4, 3, 2), 30.0)
         # With adventure_actions: 2 plans + 10 actions = 12 total * 0.5 = 6.0
         self.assertEqual(controller.calculate_usage_cost(0.0, 0, 0, 2, adventure_actions=10), 6.0)
+        self.assertEqual(
+            controller.calculate_usage_cost(0.0, 0, 0, 1, character_voiced_turns=1),
+            0.75,
+        )
 
         with self.assertRaises(ValueError):
             controller.calculate_usage_cost(-1.0, 4, 1)

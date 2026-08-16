@@ -503,6 +503,50 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(kwargs["story_plans"], 1)
         self.assertEqual(usage["total_audio_bytes"], 96000)
 
+    def test_character_voicing_adds_usage_for_each_completed_planner_turn(self):
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        mock_db = MagicMock()
+        mock_db.get_deployment.return_value = {"user_id": 123}
+        mock_db.record_user_usage.return_value = {"credits": 5.0}
+        session = AgentSession(
+            theater_id="test_voiced_usage",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            database_manager=mock_db,
+            config={"story_planning": {"adventure_mode": True, "character_voicing": True}},
+        )
+
+        session.record_story_plan_completed()
+
+        kwargs = mock_db.record_user_usage.call_args.kwargs
+        self.assertEqual(kwargs["story_plans"], 1)
+        self.assertEqual(kwargs["character_voiced_turns"], 1)
+        self.assertEqual(session.get_usage()["character_voiced_turns"], 1)
+
+    def test_disabled_character_voicing_does_not_add_usage(self):
+        mock_runner = MagicMock()
+        mock_runner.agent = MagicMock(tools=[])
+        mock_runner.session_service = MagicMock()
+        mock_db = MagicMock()
+        mock_db.get_deployment.return_value = {"user_id": 123}
+        mock_db.record_user_usage.return_value = {"credits": 5.0}
+        session = AgentSession(
+            theater_id="test_unvoiced_usage",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            database_manager=mock_db,
+            config={"story_planning": {"adventure_mode": True, "character_voicing": False}},
+        )
+
+        session.record_story_plan_completed()
+
+        self.assertFalse(session.character_voicing_enabled)
+        self.assertEqual(mock_db.record_user_usage.call_args.kwargs["character_voiced_turns"], 0)
+
     def test_inject_tool_definitions(self):
         import asyncio
         from tools.tool_bundle import ToolBundle

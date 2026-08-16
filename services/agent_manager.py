@@ -174,7 +174,15 @@ class AgentSession:
         # acknowledged, so a timeout can retry the exact same debit safely.
         self.story_plans_count: int = 0
         self.unbilled_story_plans: int = 0
-        self._pending_usage_batches: list[tuple[str, int, int, int, int]] = []
+        story_planning_config = self.config.get("story_planning", {})
+        self.character_voicing_enabled = bool(
+            isinstance(story_planning_config, dict)
+            and story_planning_config.get("adventure_mode", False)
+            and story_planning_config.get("character_voicing", False)
+        )
+        self.character_voiced_turns_count: int = 0
+        self.unbilled_character_voiced_turns: int = 0
+        self._pending_usage_batches: list[tuple[str, int, int, int, int, int]] = []
         self.created_at = time.time()
         self.last_active_at = time.time()
         self.status = "ready"  # "ready", "active", "stopped"
@@ -724,6 +732,9 @@ class AgentSession:
         """Record a successfully resolved story-planning turn and flush it for billing."""
         self.story_plans_count += 1
         self.unbilled_story_plans += 1
+        if self.character_voicing_enabled:
+            self.character_voiced_turns_count += 1
+            self.unbilled_character_voiced_turns += 1
         logger.info(
             "[AgentSession] Story plan completed for theater %s (total=%s)",
             self.theater_id,
@@ -748,6 +759,7 @@ class AgentSession:
             or self.unbilled_images > 0
             or self.unbilled_music > 0
             or self.unbilled_story_plans > 0
+            or self.unbilled_character_voiced_turns > 0
         ):
             self._pending_usage_batches.append((
                 f"live-usage:{self.theater_id}:{uuid.uuid4()}",
@@ -755,11 +767,13 @@ class AgentSession:
                 self.unbilled_images,
                 self.unbilled_music,
                 self.unbilled_story_plans,
+                self.unbilled_character_voiced_turns,
             ))
             self.unbilled_audio_bytes = 0
             self.unbilled_images = 0
             self.unbilled_music = 0
             self.unbilled_story_plans = 0
+            self.unbilled_character_voiced_turns = 0
 
         if not self._pending_usage_batches:
             return
@@ -769,7 +783,7 @@ class AgentSession:
 
         if db_inst and owner_id:
             while self._pending_usage_batches:
-                event_key, unbilled_audio_bytes, unbilled_img, unbilled_mus, unbilled_story_plans = self._pending_usage_batches[0]
+                event_key, unbilled_audio_bytes, unbilled_img, unbilled_mus, unbilled_story_plans, unbilled_character_voiced_turns = self._pending_usage_batches[0]
                 unbilled_vm = unbilled_audio_bytes / 1920000.0
                 try:
                     updated_user = db_inst.record_user_usage(
@@ -778,12 +792,13 @@ class AgentSession:
                         images_created=unbilled_img,
                         music_created=unbilled_mus,
                         story_plans=unbilled_story_plans,
+                        character_voiced_turns=unbilled_character_voiced_turns,
                         idempotency_key=event_key,
                     )
                     self._pending_usage_batches.pop(0)
                     auth_session_cache.invalidate_user(owner_id)
                     logger.info(
-                        f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}"
+                        f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}, character_voiced_turns={unbilled_character_voiced_turns}"
                     )
                     credits_remaining = updated_user.get("credits", 0.0) if updated_user else 1.0
                     if credits_remaining <= 0.0:
@@ -815,6 +830,7 @@ class AgentSession:
             "images_created": self.images_created_count,
             "music_created": self.music_created_count,
             "story_plans": self.story_plans_count,
+            "character_voiced_turns": self.character_voiced_turns_count,
             "total_audio_bytes": self.audio_bytes_received,
         }
 

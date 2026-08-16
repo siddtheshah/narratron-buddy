@@ -530,6 +530,7 @@ class _DatabaseManagerBase:
                     total_images_created INTEGER DEFAULT 0,
                     total_music_created INTEGER DEFAULT 0,
                     total_story_plans INTEGER DEFAULT 0,
+                    total_character_voiced_turns INTEGER DEFAULT 0,
                     mic_sensitivity REAL DEFAULT 0.5,
                     bio TEXT DEFAULT '',
                     stats_visible INTEGER DEFAULT 0,
@@ -574,6 +575,11 @@ class _DatabaseManagerBase:
             if "total_story_plans" not in user_cols:
                 try:
                     cursor.execute("ALTER TABLE users ADD COLUMN total_story_plans INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+            if "total_character_voiced_turns" not in user_cols:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN total_character_voiced_turns INTEGER DEFAULT 0")
                 except Exception:
                     pass
 
@@ -714,6 +720,7 @@ class _DatabaseManagerBase:
                     images_created INTEGER NOT NULL,
                     music_created INTEGER DEFAULT 0,
                     story_plans INTEGER DEFAULT 0,
+                    character_voiced_turns INTEGER DEFAULT 0,
                     credit_cost REAL NOT NULL,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -729,6 +736,11 @@ class _DatabaseManagerBase:
             if "story_plans" not in usage_cols:
                 try:
                     cursor.execute("ALTER TABLE usage_events ADD COLUMN story_plans INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+            if "character_voiced_turns" not in usage_cols:
+                try:
+                    cursor.execute("ALTER TABLE usage_events ADD COLUMN character_voiced_turns INTEGER DEFAULT 0")
                 except Exception:
                     pass
 
@@ -782,6 +794,7 @@ class _DatabaseManagerBase:
                     "total_images_created": 0,
                     "total_music_created": 0,
                     "total_story_plans": 0,
+                    "total_character_voiced_turns": 0,
                     "mic_sensitivity": 0.5,
                     "created_at": created_at
                 }
@@ -804,7 +817,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, username, email, password_hash, salt, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, mic_sensitivity, created_at FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
+                "SELECT id, username, email, password_hash, salt, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, mic_sensitivity, created_at FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
                 (query_val, query_val)
             )
             row = cursor.fetchone()
@@ -823,6 +836,7 @@ class _DatabaseManagerBase:
                     "total_images_created": user_dict.get("total_images_created", 0),
                     "total_music_created": user_dict.get("total_music_created", 0),
                     "total_story_plans": user_dict.get("total_story_plans", 0),
+                    "total_character_voiced_turns": user_dict.get("total_character_voiced_turns", 0),
                     "mic_sensitivity": user_dict.get("mic_sensitivity", 0.5),
                     "created_at": user_dict["created_at"]
                 }
@@ -831,7 +845,7 @@ class _DatabaseManagerBase:
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, mic_sensitivity, created_at FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, mic_sensitivity, created_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -930,7 +944,7 @@ class _DatabaseManagerBase:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.total_music_created, u.total_story_plans, u.mic_sensitivity, u.profile_color, u.created_at, s.expires_at
+                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.total_music_created, u.total_story_plans, u.total_character_voiced_turns, u.mic_sensitivity, u.profile_color, u.created_at, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE s.token = ?
@@ -1221,7 +1235,7 @@ class _DatabaseManagerBase:
             )
             tx_id = cursor.fetchone()["id"]
             
-            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, created_at FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, created_at FROM users WHERE id = ?", (user_id,))
             updated_user = dict(cursor.fetchone())
             conn.commit()
             return {
@@ -1271,7 +1285,7 @@ class _DatabaseManagerBase:
                 tx_id = existing["id"] if isinstance(existing, dict) else existing[0]
                 created_at = existing["created_at"] if isinstance(existing, dict) else existing[1]
             cursor.execute(
-                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, created_at "
+                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, created_at "
                 "FROM users WHERE id = ?", (user_id,)
             )
             updated_user = dict(cursor.fetchone())
@@ -1290,6 +1304,7 @@ class _DatabaseManagerBase:
         images_created: int = 0,
         music_created: int = 0,
         story_plans: int = 0,
+        character_voiced_turns: int = 0,
         credit_cost: Optional[float] = None,
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -1297,9 +1312,9 @@ class _DatabaseManagerBase:
 
         Credits are allowed to go negative per user settings/preferences.
         """
-        if voice_minutes < 0 or images_created < 0 or music_created < 0 or story_plans < 0:
+        if voice_minutes < 0 or images_created < 0 or music_created < 0 or story_plans < 0 or character_voiced_turns < 0:
             raise ValueError(
-                "Usage parameters (voice_minutes, images_created, music_created, story_plans) must be non-negative."
+                "Usage parameters (voice_minutes, images_created, music_created, story_plans, character_voiced_turns) must be non-negative."
             )
 
         if credit_cost is None:
@@ -1308,6 +1323,7 @@ class _DatabaseManagerBase:
                 images_created=images_created,
                 music_created=music_created,
                 story_plans=story_plans,
+                character_voiced_turns=character_voiced_turns,
             )
         elif credit_cost < 0:
             raise ValueError("credit_cost must be non-negative.")
@@ -1318,25 +1334,27 @@ class _DatabaseManagerBase:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT OR IGNORE INTO usage_events "
-                "(idempotency_key, user_id, voice_minutes, images_created, music_created, story_plans, credit_cost, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (event_key, user_id, voice_minutes, images_created, music_created, story_plans, credit_cost, now_iso),
+                "(idempotency_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, credit_cost, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, credit_cost, now_iso),
             )
             claimed = cursor.rowcount == 1
             if not claimed:
                 cursor.execute(
-                    "SELECT user_id, voice_minutes, images_created, music_created, story_plans, credit_cost FROM usage_events WHERE idempotency_key = ?",
+                    "SELECT user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, credit_cost FROM usage_events WHERE idempotency_key = ?",
                     (event_key,),
                 )
                 existing = cursor.fetchone()
                 existing_music = existing["music_created"] if (existing and "music_created" in existing) else 0
                 existing_story_plans = existing["story_plans"] if (existing and "story_plans" in existing) else 0
+                existing_character_voiced_turns = existing["character_voiced_turns"] if (existing and "character_voiced_turns" in existing) else 0
                 if not existing or (
                     existing["user_id"] != user_id
                     or existing["voice_minutes"] != voice_minutes
                     or existing["images_created"] != images_created
                     or existing_music != music_created
                     or existing_story_plans != story_plans
+                    or existing_character_voiced_turns != character_voiced_turns
                     or existing["credit_cost"] != credit_cost
                 ):
                     raise ValueError("Usage idempotency key was already used for different usage.")
@@ -1348,17 +1366,18 @@ class _DatabaseManagerBase:
                         total_images_created = total_images_created + ?,
                         total_music_created = total_music_created + ?,
                         total_story_plans = total_story_plans + ?,
+                        total_character_voiced_turns = total_character_voiced_turns + ?,
                         credits = credits - ?,
                         lifetime_credits_used = lifetime_credits_used + ?
                     WHERE id = ?
                     """,
-                    (voice_minutes, images_created, music_created, story_plans, credit_cost, credit_cost, user_id),
+                    (voice_minutes, images_created, music_created, story_plans, character_voiced_turns, credit_cost, credit_cost, user_id),
                 )
                 if cursor.rowcount == 0:
                     raise ValueError("User not found.")
 
             cursor.execute(
-                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, created_at FROM users WHERE id = ?",
+                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, created_at FROM users WHERE id = ?",
                 (user_id,),
             )
             updated_user = dict(cursor.fetchone())
@@ -2012,11 +2031,12 @@ class _DatabaseManagerBase:
         images_created: int = 0,
         music_created: int = 0,
         story_plans: int = 0,
+        character_voiced_turns: int = 0,
         credit_cost: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Record user usage asynchronously."""
         return await asyncio.to_thread(
-            self.record_user_usage, user_id, voice_minutes, images_created, music_created, story_plans, credit_cost
+            self.record_user_usage, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, credit_cost
         )
 
     async def reset_password_with_token_async(self, token: str, new_password: str) -> bool:

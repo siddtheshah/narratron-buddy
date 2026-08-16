@@ -165,6 +165,12 @@ class TestPaymentsFlow(BaseTestCase):
         self.assertEqual(calc["adventure_mode_estimated_tokens"], 140000)
         self.assertAlmostEqual(calc["usage_credits"], 5.0)
 
+    def test_pricing_endpoint_includes_story_and_voiced_turns(self):
+        res = self.client.get("/api/pricing?story_plans=4&character_voiced_turns=3")
+        self.assertEqual(res.status_code, 200)
+        # 4 planner turns * 0.5 credits + 3 voiced turns * 0.25 credits.
+        self.assertAlmostEqual(res.json()["calculation"]["usage_credits"], 2.75)
+
 
 
 if __name__ == "__main__":
