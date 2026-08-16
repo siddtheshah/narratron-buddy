@@ -143,7 +143,14 @@ Include character_updates only for NPCs that should enter or materially change; 
 You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 Those tools only provide information: the scene delta is the sole source of changes.
 `dialogue` is optional and must contain NPC speech only.
-Then return the scene reaction."""
+Then return the scene reaction.
+
+# Scene Labeling
+Ensure the scene has a label. THe location name is generally a good choice. Keep using that label until a major shift occurs.
+
+# Reference Usage
+If the lore documents mention reference images for characters and images, communicate them via the reference_images field.
+"""
 )
 
 
@@ -171,9 +178,22 @@ class SceneReaction(BaseModel):
             "not just scenery alone."
         ),
     )
+    scene_label: str = Field(
+        default="",
+        description=(
+            "The label for this scene."
+        ),
+    )
     dialogue: List[PlannerDialogue] = Field(default_factory=list)
     # These are a structured fallback when the model finalizes directly
     # instead of issuing the equivalent staged ADK tool call.
+    reference_images: List[str] = Field(
+        default_factory=list,
+        description=(
+            "If the lore mentions a reference image and it would be suitable to use,"
+            "list it here (with its file extension)."
+        ),
+    )
     plot_beats: List[str] = Field(default_factory=list)
     character_updates: List[PlannerCharacter] = Field(default_factory=list)
 
@@ -293,10 +313,6 @@ class StoryPlanningTools(BaseTools):
             self.config.get("vertex_location") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
         )
         self._vertex_client: Optional[Any] = None
-        # Test/dev seam. Production uses a fresh ADK agent run for each action.
-        self.planner_executor: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = (
-            self.config.get("planner_executor")
-        )
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
         self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = (
@@ -318,9 +334,17 @@ class StoryPlanningTools(BaseTools):
         self._run_compression_config: Optional[types.ContextWindowCompressionConfig] = (
             self._build_run_compression_config()
         )
-        self._planner_agent: Optional[Agent] = None
-        self._planner_app: Optional[App] = None
-        self._planner_runner: Optional[Runner] = None
+        self._planner_agent: Agent = self._create_planner_agent()
+        self._planner_app: App = App(
+            name="narratron_story_planner",
+            root_agent=self._planner_agent,
+            events_compaction_config=self.compaction_config,
+        )
+        self._planner_runner: Runner = Runner(
+            app=self._planner_app,
+            session_service=self.session_service,
+            auto_create_session=True,
+        )
 
         initial_elements = self.config.get("initial_elements", {})
         if isinstance(initial_elements, dict):
@@ -1012,16 +1036,6 @@ class StoryPlanningTools(BaseTools):
 
     def _run_planner_agent(self, user_action: str) -> Dict[str, Any]:
         """Run one ADK planner turn resumed from the session."""
-        snapshot = {
-            "elements": self.get_present_elements(),
-            "characters": self.get_present_characters(),
-            "plot_beats": [node.get("plot_beat", "") for node in self.get_plot_beats()],
-            "nodes_ahead": self.nodes_ahead,
-            "style": self.style,
-        }
-        if self.planner_executor:
-            return self.planner_executor(user_action, snapshot)
-
         runner = self._get_or_create_planner_runner()
         session_id = self.session_id
 

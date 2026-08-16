@@ -16,18 +16,18 @@
   - Also would require an emplacer function. 
   - Allow specification of relative animation, e.g.  a character moving across a background.
 
+## Adventure mode
+- [ ] Smart voice selection
+- [ ] Improved coordination between live and story planner
+  - If the lore files mention reference_images, the story planner should communicate them to the live agent,
+  so that the live agent can use them correctly for visualization.
+  - Have the story planner title the scenes so that the live agent can page between them more effectively.
+  - Have story planner use 'pinned facts' that it can keep uncompacted.
 
 ## Refactors
-
 - [ ] Refactor canvas.html to be more modular.
 - [ ] Refactor database definitions to live as an external SQL schema, not baked in python code.
     - Important if postgres sql will become a necessary migration.
-
-## User Profiles
-- [x] Implement proper account deletion.
-    - Create script to delete user data from DB and Cloud Storage.
-    - Consider a soft-delete approach for auditability if needed, but user-facing must be complete removal.
-    - Purge any theaters and assets the user has.
 
 ## Performance
 - [ ] Add database and request observability before and after optimization.

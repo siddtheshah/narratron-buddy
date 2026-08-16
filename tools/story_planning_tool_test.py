@@ -84,11 +84,31 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("- world.txt", prompt)
         self.assertIn("- factions/ (directory)", prompt)
         self.assertIn("narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone", prompt)
+        self.assertIn("Scene Labeling", prompt)
+        self.assertIn("Ensure the scene has a label.", prompt)
+        self.assertIn("Reference Usage", prompt)
+        self.assertIn("communicate them via the reference_images field", prompt)
 
     def test_scene_reaction_schema_describes_action_resolution(self):
         field = SceneReaction.model_fields["narration"]
         self.assertIn("resolution", field.description.lower())
         self.assertIn("action", field.description.lower())
+
+    def test_scene_reaction_schema_includes_scene_label_and_reference_images(self):
+        label_field = SceneReaction.model_fields["scene_label"]
+        self.assertEqual(label_field.default, "")
+        self.assertIn("label for this scene", label_field.description.lower())
+
+        ref_field = SceneReaction.model_fields["reference_images"]
+        self.assertIn("reference image", ref_field.description.lower())
+
+        reaction = SceneReaction(
+            narration="The gatekeeper steps aside.",
+            scene_label="Courtyard",
+            reference_images=["gate.png", "guard_portrait.png"],
+        )
+        self.assertEqual(reaction.scene_label, "Courtyard")
+        self.assertEqual(reaction.reference_images, ["gate.png", "guard_portrait.png"])
 
     def test_planner_model_uses_explicit_vertex_client(self):
         with patch("tools.story_planning_tool.genai.Client") as client:
@@ -109,22 +129,18 @@ class TestStoryPlanningTools(unittest.TestCase):
         default_tools = self._make_tools()
         self.assertEqual(default_tools.style, DEFAULT_STORY_PLANNING_STYLE)
 
-        seen_snapshot = {}
-
-        def planner_executor(_action, snapshot):
-            seen_snapshot.update(snapshot)
-            return {"narration": "The bridge groans.", "plot_beats": ["The storm worsens."]}
-
         tools = self._make_tools(config={
             "adventure_mode": True,
             "nodes_ahead": 1,
             "style": "harsh and unforgiving, but never arbitrary",
-            "planner_executor": planner_executor,
         })
-        tools._resolve_user_action("I cross the bridge.")
+        with patch.object(tools, "_run_planner_agent", return_value={"narration": "The bridge groans.", "plot_beats": ["The storm worsens."]}) as mock_run:
+            tools._resolve_user_action("I cross the bridge.")
+            mock_run.assert_called_once_with("I cross the bridge.")
 
         self.assertEqual(tools.style, "harsh and unforgiving, but never arbitrary")
-        self.assertEqual(seen_snapshot["style"], tools.style)
+        prompt = tools._build_planner_instruction()
+        self.assertIn("Story-planning style: harsh and unforgiving, but never arbitrary", prompt)
 
     def test_story_planning_style_is_bounded_when_loaded_from_advanced_config(self):
         tools = self._make_tools(config={"style": "x" * (MAX_STORY_PLANNING_STYLE_CHARS + 1)})
@@ -233,16 +249,14 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertNotIn("5 additional lore documents omitted", context)
 
     def test_overlong_player_actions_are_rejected_before_a_planner_turn(self):
-        executor = MagicMock()
         tools = self._make_tools(config={
             "adventure_mode": True,
-            "planner_executor": executor,
         })
 
-        result = tools.process_user_action("x" * (MAX_PLAYER_ACTION_CHARS + 1))
-
-        self.assertIn("characters or fewer", result["error"])
-        executor.assert_not_called()
+        with patch.object(tools, "_resolve_user_action") as mock_resolve:
+            result = tools.process_user_action("x" * (MAX_PLAYER_ACTION_CHARS + 1))
+            self.assertIn("characters or fewer", result["error"])
+            mock_resolve.assert_not_called()
 
     def test_character_profile_uses_explicit_text_response_provider(self):
         mock_provider = MagicMock(spec=TextResponseProvider)
@@ -302,22 +316,18 @@ class TestStoryPlanningTools(unittest.TestCase):
         results = []
         billed_plans = []
 
-        def planner_executor(action, snapshot):
-            self.assertEqual(action, "I light my torch.")
-            self.assertEqual(snapshot["elements"], [])
-            self.assertEqual(snapshot["plot_beats"], [])
-            return {
-                "narration": "The hidden doorway opens.",
-                "dialogue": [{"speaker": "Mara", "text": "There!", "kind": "speech"}],
-                "character_updates": [{
-                    "name": "Lantern Warden", "description": "Armored keeper", "personality": "Stern",
-                    "motivation": "Protect the archive", "quirk": "Polishes lanterns",
-                }],
-                "plot_beats": [
-                    {"plot_beat": "Floodwater enters the archive."},
-                    {"plot_beat": "The Warden reveals a sealed map."},
-                ],
-            }
+        mock_reaction = {
+            "narration": "The hidden doorway opens.",
+            "dialogue": [{"speaker": "Mara", "text": "There!", "kind": "speech"}],
+            "character_updates": [{
+                "name": "Lantern Warden", "description": "Armored keeper", "personality": "Stern",
+                "motivation": "Protect the archive", "quirk": "Polishes lanterns",
+            }],
+            "plot_beats": [
+                {"plot_beat": "Floodwater enters the archive."},
+                {"plot_beat": "The Warden reveals a sealed map."},
+            ],
+        }
 
         def on_scene_reaction(result):
             results.append(result)
@@ -328,7 +338,6 @@ class TestStoryPlanningTools(unittest.TestCase):
             config={
                 "adventure_mode": True,
                 "nodes_ahead": 2,
-                "planner_executor": planner_executor,
                 "on_scene_reaction": on_scene_reaction,
                 "on_story_plan_completed": lambda: billed_plans.append(1),
             },
@@ -336,18 +345,20 @@ class TestStoryPlanningTools(unittest.TestCase):
             canvas_state_service=state,
         )
 
-        acknowledgement = tools.process_user_action("I light my torch.")
+        with patch.object(tools, "_run_planner_agent", return_value=mock_reaction) as mock_run:
+            acknowledgement = tools.process_user_action("I light my torch.")
 
-        self.assertEqual(acknowledgement["status"], "processing")
-        self.assertTrue(completed.wait(timeout=1))
-        self.assertEqual(results[0]["narration"], "The hidden doorway opens.")
-        self.assertEqual(len(tools.get_plot_beats()), 2)
-        self.assertEqual(billed_plans, [1])
-        self.assertIn("plot_beats", tools.export_story_planning_state())
-        self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
-        state.get.return_value.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
-        state.get.return_value.set_narration.assert_called_once_with(results[0]["narration"])
-        self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
+            self.assertEqual(acknowledgement["status"], "processing")
+            self.assertTrue(completed.wait(timeout=1))
+            mock_run.assert_called_once_with("I light my torch.")
+            self.assertEqual(results[0]["narration"], "The hidden doorway opens.")
+            self.assertEqual(len(tools.get_plot_beats()), 2)
+            self.assertEqual(billed_plans, [1])
+            self.assertIn("plot_beats", tools.export_story_planning_state())
+            self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
+            state.get.return_value.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
+            state.get.return_value.set_narration.assert_called_once_with(results[0]["narration"])
+            self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
     def test_clear_scene_removes_plot_beats_and_characters(self):
         tools = self._make_tools(config={"adventure_mode": True}, theater_id="clear")
@@ -490,6 +501,21 @@ class TestStoryPlanningTools(unittest.TestCase):
             )
             compaction_events = [e for e in session.events if e.actions and e.actions.compaction]
             self.assertEqual(len(compaction_events), 1)
+
+    def test_planner_agent_and_runner_initialized_once_at_init(self):
+        tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
+        self.assertIsNotNone(tools._planner_agent)
+        self.assertIsNotNone(tools._planner_app)
+        self.assertIsNotNone(tools._planner_runner)
+
+        agent_ref = tools._planner_agent
+        app_ref = tools._planner_app
+        runner_ref = tools._planner_runner
+
+        # Verify _get_or_create_planner_runner returns the exact instance created at init
+        self.assertIs(tools._get_or_create_planner_runner(), runner_ref)
+        self.assertIs(tools._planner_agent, agent_ref)
+        self.assertIs(tools._planner_app, app_ref)
 
 
 if __name__ == "__main__":
