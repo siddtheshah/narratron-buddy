@@ -8,6 +8,7 @@ from google.adk.planners import BuiltInPlanner
 from google.genai import types
 from jinja2 import StrictUndefined, Template
 
+from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
@@ -196,6 +197,7 @@ def create_tool_bundle_for_session(
 ) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
     theater_manager = theater_manager or TheaterManager()
+    canvas_state_service = canvas_state_service or CanvasStateService(theater_manager)
     image_tools = ImageTools(config, theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
     animation_enabled = bool(config.get("animation", {}).get("enabled", False))
     animation_tools = (
@@ -208,11 +210,17 @@ def create_tool_bundle_for_session(
         else None
     )
     chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
+    story_planning_config = config.get("story_planning", {})
+    story_planning_text_provider = get_text_response_provider(
+        str(story_planning_config.get("text_provider", "gemini-3")),
+        {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
+    )
     story_planning_tools = StoryPlanningTools(
-        config.get("story_planning", {}),
+        story_planning_config,
         theater_id=theater_id,
         canvas_state_service=canvas_state_service,
         theater_manager=theater_manager,
+        text_response_provider=story_planning_text_provider,
     )
     music_config = config.get("music", {})
     reranker_provider = get_text_response_provider(

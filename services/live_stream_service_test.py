@@ -9,7 +9,13 @@ from tools.story_planning_tool import StoryPlanningTools
 
 
 def test_format_canvas_state_includes_present_scene_elements():
-    elements = StoryPlanningTools(theater_id="stage")
+    elements = StoryPlanningTools(
+        config={},
+        theater_id="stage",
+        canvas_state_service=MagicMock(),
+        theater_manager=MagicMock(),
+        text_response_provider=MagicMock(),
+    )
     elements.update_or_insert_named_element("hero", "Mara, a cartographer")
     elements.update_or_insert_named_element("tone", "Hopeful and tense")
 
@@ -27,7 +33,13 @@ def test_format_canvas_state_includes_present_scene_elements():
 
 
 def test_format_canvas_state_includes_active_characters():
-    elements = StoryPlanningTools(config={"adventure_mode": True}, theater_id="stage_chars")
+    elements = StoryPlanningTools(
+        config={"adventure_mode": True},
+        theater_id="stage_chars",
+        canvas_state_service=MagicMock(),
+        theater_manager=MagicMock(),
+        text_response_provider=MagicMock(),
+    )
     elements.generate_character(name="Vaelen", personality="Brave", motivation="Find the talisman", quirk="Flips a coin on choices")
 
     state = format_canvas_state(

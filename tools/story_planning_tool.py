@@ -32,9 +32,14 @@ from google.adk.sessions import InMemorySessionService
 from google import genai
 from google.genai import types
 
+from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from services.quirk_service import get_quirk_generator_service
+from providers import (
+    TextResponseProvider,
+    TextResponseRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,18 +116,27 @@ Recent resolved player turns (oldest first):
 """
 )
 
-SCENE_REACTION_SYSTEM_INSTRUCTION = (
-    "You are the authoritative narrative script engine for an interactive story. "
-    "Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats. "
-    "Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, "
-    "and move the story forward with an interesting consequence, opportunity, complication, or escalation. Do not stonewall with a flat refusal or erase "
-    "the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead. "
-    "The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, "
-    "narrate as, or attribute to them. Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf. "
-    "Write narration only about the world and the consequences of the submitted action. Dialogue may be spoken only by NPCs; never emit dialogue for a speaker "
-    "called Player, User, Orator, You, or for the player-controlled character. Character updates are for NPCs only. "
-    "The live agent is only a relay; do not give it choices, tool instructions, or control of the plot. Respond ONLY with valid JSON."
+_SCENE_REACTION_PROMPT_TEMPLATE = Template(
+"""You are the authoritative narrative script engine for an interactive story. Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats. Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation. Do not stonewall with a flat refusal or erase the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead. The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, narrate as, or attribute to them. Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf. Write narration only about the world and the consequences of the submitted action. Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character. Character updates are for NPCs only. The live agent is only a relay; do not give it choices, tool instructions, or control of the plot. Respond ONLY with valid JSON.
+
+{{ context }}
+{% if lore_context -%}
+
+Available theater lore (top-level documents and directories):
+{{ lore_context }}
+{% elif initial_lore_context -%}
+
+Available theater lore (top-level documents and directories):
+{{ initial_lore_context }}
+{% endif -%}
+
+Story-planning style: {{ style }}
+
+Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction. Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes. The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Keep responses focused: narration should normally be 60-120 words, dialogue should have at most three short lines, and scene_description is optional but, when supplied, must be an evocative visual caption of at most 45 words. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. When available theater lore documents or directories are listed above, you MUST prioritize and ground the narrative, characters, factions, and setting in that established theater lore; proactively call `browse_lore` to inspect relevant documents or directories before introducing or enriching NPCs, places, or events. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
 )
+
+SCENE_REACTION_SYSTEM_INSTRUCTIONS = _SCENE_REACTION_PROMPT_TEMPLATE
+SCENE_REACTION_SYSTEM_INSTRUCTION = _SCENE_REACTION_PROMPT_TEMPLATE
 
 
 class PlannerDialogue(BaseModel):
@@ -176,6 +190,24 @@ def build_story_context_prompt(
     ).strip()
 
 
+def build_scene_reaction_prompt(
+    context: str,
+    style: str,
+    nodes_ahead: int,
+    lore_context: str = "",
+    initial_lore_context: str = "",
+) -> str:
+    """Render the authoritative scene reaction instruction for the planner agent."""
+    effective_lore = lore_context or initial_lore_context
+    return _SCENE_REACTION_PROMPT_TEMPLATE.render(
+        context=context,
+        style=style,
+        nodes_ahead=nodes_ahead,
+        lore_context=effective_lore,
+        initial_lore_context=effective_lore,
+    ).strip()
+
+
 class StoryPlanningTools(BaseTools):
     """Maintain scene context, characters, and planner-owned durable plot beats.
 
@@ -186,11 +218,21 @@ class StoryPlanningTools(BaseTools):
 
     def __init__(
         self,
-        config: dict | None = None,
-        theater_id: str = "",
-        canvas_state_service: Any = None,
-        theater_manager: Optional[TheaterManager] = None,
+        config: dict | None,
+        theater_id: str,
+        canvas_state_service: CanvasStateService,
+        theater_manager: TheaterManager,
+        text_response_provider: TextResponseProvider,
     ):
+        if not theater_id:
+            raise ValueError("theater_id is required.")
+        if canvas_state_service is None:
+            raise ValueError("canvas_state_service is required.")
+        if theater_manager is None:
+            raise ValueError("theater_manager is required.")
+        if text_response_provider is None:
+            raise ValueError("text_response_provider is required.")
+
         super().__init__(
             config=config or {},
             theater_id=theater_id,
@@ -207,7 +249,8 @@ class StoryPlanningTools(BaseTools):
         # continuity without repeatedly replaying its entire conversation.
         self._recent_story_turns: List[Dict[str, str]] = []
         self._recent_story_turns_lock = Lock()
-        self.theater_manager = theater_manager or TheaterManager()
+        self.theater_manager = theater_manager
+        self.text_response_provider = text_response_provider
 
         self.nodes_ahead: int = max(1, min(int(self.config.get("nodes_ahead", 3)), MAX_NODES_AHEAD))
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
@@ -469,13 +512,29 @@ class StoryPlanningTools(BaseTools):
                 if documents
                 else "No lore documents are available for this theater."
             )
+        clean_doc = str(document or "").strip().replace("\\", "/")
+        if not clean_doc.lower().endswith(".txt"):
+            prefix = clean_doc.rstrip("/") + "/"
+            matching = [doc for doc in self.theater_manager.get_lore_documents(self.theater_id) if doc.startswith(prefix)]
+            if matching:
+                listed_matching = matching[:MAX_LORE_DOCUMENTS_LISTED]
+                omission = (
+                    f"\n[+{len(matching) - len(listed_matching)} additional documents omitted.]"
+                    if len(matching) > len(listed_matching)
+                    else ""
+                )
+                return (
+                    f"Lore documents in '{clean_doc}':\n"
+                    + "\n".join(f"- {path}" for path in listed_matching)
+                    + omission
+                )
         try:
-            content = self.theater_manager.read_lore_document(self.theater_id, document)
+            content = self.theater_manager.read_lore_document(self.theater_id, clean_doc)
         except ValueError as error:
             return f"Error: {error}"
         excerpt = content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
         suffix = "\n[Excerpt truncated for planner context.]" if len(content) > len(excerpt) else ""
-        return f"Lore document: {document}\n\n{excerpt}{suffix}"
+        return f"Lore document: {clean_doc}\n\n{excerpt}{suffix}"
 
     @logged_tool_call
     def roll_dice(
@@ -530,30 +589,27 @@ class StoryPlanningTools(BaseTools):
         )
         return result
 
-    def _get_initial_lore_context(self) -> str:
-        """Load a bounded lore excerpt for the first, otherwise context-free planner turn."""
+    def _get_lore_context(self) -> str:
+        """List top-level lore documents and directories for the planner context."""
         documents = self.theater_manager.get_lore_documents(self.theater_id)
         if not documents:
             return ""
-        sections = []
-        remaining = MAX_INITIAL_LORE_CONTEXT_CHARS
-        for document in documents:
-            if remaining <= 0:
-                break
-            try:
-                content = self.theater_manager.read_lore_document(self.theater_id, document)
-            except ValueError as error:
-                logger.warning("[StoryPlanningTools] Could not inject lore document '%s': %s", document, error)
-                continue
-            excerpt = content[:min(MAX_LORE_DOCUMENT_CONTEXT_CHARS, remaining)]
-            if len(content) > len(excerpt):
-                excerpt += "\n[Excerpt truncated for planner context.]"
-            section = f"Lore document: {document}\n{excerpt}"
-            sections.append(section)
-            remaining -= len(section)
-        if len(documents) > len(sections):
-            sections.append("[Additional lore documents omitted from this initial planner context.]")
-        return "\n\n".join(sections)
+        top_level_files: list[str] = []
+        top_level_dirs: set[str] = set()
+        for doc in documents:
+            parts = doc.split("/")
+            if len(parts) == 1:
+                top_level_files.append(doc)
+            else:
+                top_level_dirs.add(parts[0] + "/")
+        items = [f"- {d} (directory)" for d in sorted(top_level_dirs)] + [f"- {f}" for f in sorted(top_level_files)]
+        if not items:
+            items = [f"- {doc}" for doc in documents[:MAX_LORE_DOCUMENTS_LISTED]]
+        return "\n".join(items[:MAX_LORE_DOCUMENTS_LISTED])
+
+    def _get_initial_lore_context(self) -> str:
+        """Backwards-compatible alias for _get_lore_context."""
+        return self._get_lore_context()
 
     @logged_tool_call
     def generate_character_profile(
@@ -594,33 +650,22 @@ class StoryPlanningTools(BaseTools):
                 elements=elements,
             ).strip()
 
-            try:
-                response = self._get_vertex_client().models.generate_content(
-                    model=self.planner_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction="You are a character design assistant for an adventure story. Respond ONLY with valid JSON.",
-                        response_mime_type="application/json",
-                        temperature=0.7,
-                    ),
-                )
-                resp_text = str(getattr(response, "text", "") or "").strip()
-                if resp_text.startswith("```"):
-                    resp_text = re.sub(r"^```(?:json)?\s*", "", resp_text)
-                    resp_text = re.sub(r"\s*```$", "", resp_text)
-                parsed = json.loads(resp_text)
-                if isinstance(parsed, dict):
-                    if not clean_pers:
-                        clean_pers = str(parsed.get("personality") or "").strip()
-                    if not clean_motiv:
-                        clean_motiv = str(parsed.get("motivation") or "").strip()
-            except Exception as exc:
-                logger.warning(f"[StoryPlanningTools] LLM character generation fallback for '{clean_name}': {exc}")
-
-            if not clean_pers:
-                clean_pers = "Resourceful and determined character with distinct flair."
-            if not clean_motiv:
-                clean_motiv = "To navigate scene challenges and drive the narrative forward."
+            request = TextResponseRequest(
+                prompt=prompt,
+                system_instruction="You are a character design assistant for an adventure story. Respond ONLY with valid JSON.",
+                temperature=0.7,
+            )
+            response = self.text_response_provider.generate(request)
+            resp_text = str(getattr(response, "text", "") or "").strip()
+            if resp_text.startswith("```"):
+                resp_text = re.sub(r"^```(?:json)?\s*", "", resp_text)
+                resp_text = re.sub(r"\s*```$", "", resp_text)
+            parsed = json.loads(resp_text)
+            if isinstance(parsed, dict):
+                if not clean_pers:
+                    clean_pers = str(parsed.get("personality") or "").strip()
+                if not clean_motiv:
+                    clean_motiv = str(parsed.get("motivation") or "").strip()
 
         return {
             "name": clean_name,
@@ -835,12 +880,7 @@ class StoryPlanningTools(BaseTools):
         if self.planner_executor:
             return self.planner_executor(user_action, snapshot)
 
-        initial_lore_context = self._get_initial_lore_context() if not snapshot["plot_beats"] else ""
-        initial_lore_section = (
-            "Complete theater lore for this initial planning turn:\n" + initial_lore_context
-            if initial_lore_context
-            else ""
-        )
+        lore_context = self._get_lore_context()
 
         planner_context = build_story_context_prompt(
             elements=snapshot["elements"],
@@ -851,15 +891,12 @@ class StoryPlanningTools(BaseTools):
             ],
             recent_turns=snapshot["recent_turns"],
         )
-        instruction = f"""{SCENE_REACTION_SYSTEM_INSTRUCTION}
-
-{planner_context}
-
-{initial_lore_section}
-
-Story-planning style: {self.style}
-
-Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction. Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes. The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player. The recent resolved player turns are historical context only: build on their consequences, but do not replay, quote, or respond to them again. Follow the 'yes, and' posture from your system instruction. When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll. Keep responses focused: narration should normally be 60-120 words, dialogue should have at most three short lines, and scene_description is optional but, when supplied, must be an evocative visual caption of at most 45 words. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open. Include exactly {self.nodes_ahead} general plot beats in plot_beats; they must not predict, request, or prescribe player actions. On an initial empty-script turn, the complete theater lore is included above; use it when planning the first NPCs and scene. On later turns, use browse_lore to inspect relevant theater lore before introducing or enriching NPCs. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates. Those tools only provide information: the scene delta is the sole source of changes. `dialogue` is optional and must contain NPC speech only. Then return the scene reaction."""
+        instruction = build_scene_reaction_prompt(
+            context=planner_context,
+            style=self.style,
+            nodes_ahead=self.nodes_ahead,
+            lore_context=lore_context,
+        )
         planner = Agent(
             name="story_planner",
             description="Authoritative planner for one interactive story turn.",

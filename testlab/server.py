@@ -40,8 +40,9 @@ from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, get_prompt, prompt_c
 from testlab.music_benchmark import get_music_prompt, music_prompt_catalog
 from testlab.text_response_benchmark import get_text_prompt, text_prompt_catalog
 from testlab.speech_benchmark import get_speech_prompt, speech_prompt_catalog
+from components.canvas_state_service import CanvasStateService
+from components.theater_manager import TheaterManager
 from tools.story_planning_tool import StoryPlanningTools
-
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 load_dotenv(PROJECT_ROOT / ".env")
@@ -132,6 +133,8 @@ def create_story_planner_session(body: dict[str, Any]):
             if active:
                 active["events"].append({"time": time.time(), "result": result})
 
+    theater_manager = TheaterManager()
+    canvas_state_service = CanvasStateService(theater_manager)
     tools = StoryPlanningTools(
         config={
             "adventure_mode": True,
@@ -140,6 +143,9 @@ def create_story_planner_session(body: dict[str, Any]):
             "on_scene_reaction": on_scene_reaction,
         },
         theater_id=f"testlab_{run_id}",
+        canvas_state_service=canvas_state_service,
+        theater_manager=theater_manager,
+        text_response_provider=get_text_response_provider("gemini-3", options={"model": model}),
     )
     run["tools"] = tools
     with _runs_lock:

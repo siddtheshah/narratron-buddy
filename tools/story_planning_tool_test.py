@@ -8,23 +8,78 @@ from unittest.mock import MagicMock, patch
 from tools.story_planning_tool import (
     DEFAULT_MAX_NAMED_ELEMENTS,
     DEFAULT_STORY_PLANNING_STYLE,
-    MAX_INITIAL_LORE_CONTEXT_CHARS,
+    MAX_LORE_DOCUMENTS_LISTED,
     MAX_PLAYER_ACTION_CHARS,
     MAX_STORY_PLANNING_STYLE_CHARS,
     SCENE_REACTION_SYSTEM_INSTRUCTION,
+    SCENE_REACTION_SYSTEM_INSTRUCTIONS,
     SceneReaction,
     StoryPlanningTools,
     VertexGemini,
+    build_scene_reaction_prompt,
     build_story_context_prompt,
 )
+from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
+from providers import TextResponseProvider, TextResponseRequest, TextResponseResult
 
 
 class TestStoryPlanningTools(unittest.TestCase):
+    def _make_tools(
+        self,
+        config=None,
+        theater_id="test-theater",
+        canvas_state_service=None,
+        theater_manager=None,
+        text_response_provider=None,
+    ):
+        return StoryPlanningTools(
+            config=config or {},
+            theater_id=theater_id,
+            canvas_state_service=canvas_state_service or MagicMock(),
+            theater_manager=theater_manager or MagicMock(),
+            text_response_provider=text_response_provider or MagicMock(),
+        )
+
+    def test_required_arguments_are_enforced(self):
+        mock_canvas = MagicMock()
+        mock_theater_mgr = MagicMock()
+        mock_provider = MagicMock()
+
+        with self.assertRaises(TypeError):
+            StoryPlanningTools()
+
+        with self.assertRaises(ValueError):
+            StoryPlanningTools(config={}, theater_id="", canvas_state_service=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=mock_provider)
+
+        with self.assertRaises(ValueError):
+            StoryPlanningTools(config={}, theater_id=None, canvas_state_service=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=mock_provider)
+
+        with self.assertRaises(ValueError):
+            StoryPlanningTools(config={}, theater_id="t", canvas_state_service=None, theater_manager=mock_theater_mgr, text_response_provider=mock_provider)
+
+        with self.assertRaises(ValueError):
+            StoryPlanningTools(config={}, theater_id="t", canvas_state_service=mock_canvas, theater_manager=None, text_response_provider=mock_provider)
+
+        with self.assertRaises(ValueError):
+            StoryPlanningTools(config={}, theater_id="t", canvas_state_service=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=None)
+
     def test_planner_instruction_reserves_player_agency(self):
-        self.assertIn("Never invent the player's actions, speech, thoughts, feelings, decisions", SCENE_REACTION_SYSTEM_INSTRUCTION)
-        self.assertIn("Dialogue may be spoken only by NPCs", SCENE_REACTION_SYSTEM_INSTRUCTION)
-        self.assertIn("'yes, and' improv posture", SCENE_REACTION_SYSTEM_INSTRUCTION)
+        prompt = build_scene_reaction_prompt(
+            context="Current scene elements: None",
+            style="balanced",
+            nodes_ahead=5,
+            lore_context="- world.txt\n- factions/ (directory)",
+        )
+        self.assertIn("Never invent the player's actions, speech, thoughts, feelings, decisions", prompt)
+        self.assertIn("Dialogue may be spoken only by NPCs", prompt)
+        self.assertIn("'yes, and' improv posture", prompt)
+        self.assertIn("Story-planning style: balanced", prompt)
+        self.assertIn("Include exactly 5 general plot beats", prompt)
+        self.assertIn("Available theater lore (top-level documents and directories):", prompt)
+        self.assertIn("- world.txt", prompt)
+        self.assertIn("- factions/ (directory)", prompt)
+        self.assertIn("you MUST prioritize and ground the narrative, characters, factions, and setting in that established theater lore", prompt)
 
     def test_planner_model_uses_explicit_vertex_client(self):
         with patch("tools.story_planning_tool.genai.Client") as client:
@@ -45,7 +100,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Story response: The harbor answers with bells.", context)
 
     def test_story_planning_style_defaults_and_is_supplied_to_the_planner(self):
-        default_tools = StoryPlanningTools()
+        default_tools = self._make_tools()
         self.assertEqual(default_tools.style, DEFAULT_STORY_PLANNING_STYLE)
 
         seen_snapshot = {}
@@ -54,7 +109,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             seen_snapshot.update(snapshot)
             return {"narration": "The bridge groans.", "plot_beats": ["The storm worsens."]}
 
-        tools = StoryPlanningTools(config={
+        tools = self._make_tools(config={
             "adventure_mode": True,
             "nodes_ahead": 1,
             "style": "harsh and unforgiving, but never arbitrary",
@@ -66,26 +121,37 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(seen_snapshot["style"], tools.style)
 
     def test_story_planning_style_is_bounded_when_loaded_from_advanced_config(self):
-        tools = StoryPlanningTools(config={"style": "x" * (MAX_STORY_PLANNING_STYLE_CHARS + 1)})
+        tools = self._make_tools(config={"style": "x" * (MAX_STORY_PLANNING_STYLE_CHARS + 1)})
 
         self.assertEqual(len(tools.style), MAX_STORY_PLANNING_STYLE_CHARS)
 
     def test_character_profile_tool_does_not_change_story_state(self):
-        tools = StoryPlanningTools(theater_id="character-profile")
+        tools = self._make_tools(theater_id="character-profile")
         profile = tools.generate_character_profile(
             name="Mara",
             description="Cartographer",
             personality="Bold",
             motivation="Find the archive",
-            quirk="Hums maps",
+            quirk="Hums sea shanties",
         )
         self.assertEqual(profile["name"], "Mara")
-        self.assertEqual(profile["personality"], "Bold")
+        self.assertEqual(profile["quirk"], "Hums sea shanties")
         self.assertEqual(tools.get_present_characters(), [])
+
+    def test_character_profile_generation_assigns_random_quirk_when_unspecified(self):
+        tools = self._make_tools(theater_id="quirk-theater")
+        profile = tools.generate_character_profile(
+            name="Orin",
+            description="Hermit",
+            personality="Quiet",
+            motivation="Guard the forest",
+        )
+        self.assertTrue(len(profile["quirk"]) > 0)
+        self.assertEqual(profile["name"], "Orin")
 
     def test_dice_roll_returns_a_dnd_style_total(self):
         canvas_state_service = MagicMock()
-        tools = StoryPlanningTools(theater_id="dice", canvas_state_service=canvas_state_service)
+        tools = self._make_tools(theater_id="dice", canvas_state_service=canvas_state_service)
 
         result = tools.roll_dice(sides=20, count=2, modifier=3, reason="Leap across the chasm")
 
@@ -99,25 +165,31 @@ class TestStoryPlanningTools(unittest.TestCase):
         )
 
     def test_dice_roll_rejects_unsafe_ranges(self):
-        tools = StoryPlanningTools(theater_id="dice")
+        tools = self._make_tools(theater_id="dice")
         self.assertIn("sides", tools.roll_dice(sides=1)["error"])
         self.assertIn("count", tools.roll_dice(count=11)["error"])
 
-    def test_planner_can_list_and_read_text_only_lore_documents(self):
+    def test_browse_lore_lists_and_reads_valid_documents(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
             theater_manager.create_theater(
                 name="Lore Theater",
                 theater_id="lore-theater",
-                lore_files=[("lore/characters.txt", b"Mara is the royal cartographer.")],
+                lore_files=[
+                    ("lore/characters.txt", b"Mara is the royal cartographer."),
+                    ("lore/factions/guild.txt", b"The Iron Guild controls the gates."),
+                ],
             )
-            tools = StoryPlanningTools(theater_id="lore-theater", theater_manager=theater_manager)
+            tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
 
             self.assertIn("characters.txt", tools.browse_lore())
+            self.assertIn("factions/guild.txt", tools.browse_lore())
             self.assertIn("royal cartographer", tools.browse_lore("characters.txt"))
+            self.assertIn("The Iron Guild", tools.browse_lore("factions/guild.txt"))
+            self.assertIn("factions/guild.txt", tools.browse_lore("factions"))
             self.assertTrue(tools.browse_lore("characters.md").startswith("Error:"))
 
-    def test_empty_script_automatically_injects_all_lore_documents(self):
+    def test_lore_context_lists_top_level_documents_and_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
             theater_manager.create_theater(
@@ -126,16 +198,18 @@ class TestStoryPlanningTools(unittest.TestCase):
                 lore_files=[
                     ("lore/characters.txt", b"Mara is the royal cartographer."),
                     ("lore/world.txt", b"The capital floats above the sea."),
+                    ("lore/factions/guild.txt", b"The guild controls trade."),
                 ],
             )
-            tools = StoryPlanningTools(theater_id="lore-theater", theater_manager=theater_manager)
+            tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
 
-            context = tools._get_initial_lore_context()
+            context = tools._get_lore_context()
 
-            self.assertIn("Lore document: characters.txt", context)
-            self.assertIn("royal cartographer", context)
-            self.assertIn("Lore document: world.txt", context)
-            self.assertIn("capital floats", context)
+            self.assertIn("- characters.txt", context)
+            self.assertIn("- world.txt", context)
+            self.assertIn("- factions/ (directory)", context)
+            self.assertNotIn("guild.txt", context)
+            self.assertNotIn("royal cartographer", context)
 
     def test_initial_lore_context_is_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -143,21 +217,18 @@ class TestStoryPlanningTools(unittest.TestCase):
             theater_manager.create_theater(
                 name="Large Lore Theater",
                 theater_id="large-lore",
-                lore_files=[
-                    ("lore/first.txt", b"a" * 20_000),
-                    ("lore/second.txt", b"b" * 20_000),
-                ],
+                lore_files=[(f"lore/doc_{i}.txt", b"content") for i in range(MAX_LORE_DOCUMENTS_LISTED + 5)],
             )
-            tools = StoryPlanningTools(theater_id="large-lore", theater_manager=theater_manager)
+            tools = self._make_tools(theater_id="large-lore", theater_manager=theater_manager)
 
-            context = tools._get_initial_lore_context()
+            context = tools._get_lore_context()
 
-            self.assertLessEqual(len(context), MAX_INITIAL_LORE_CONTEXT_CHARS + 200)
-            self.assertIn("Excerpt truncated for planner context", context)
+            self.assertIn("- doc_0.txt", context)
+            self.assertNotIn("5 additional lore documents omitted", context)
 
     def test_overlong_player_actions_are_rejected_before_a_planner_turn(self):
         executor = MagicMock()
-        tools = StoryPlanningTools(config={
+        tools = self._make_tools(config={
             "adventure_mode": True,
             "planner_executor": executor,
         })
@@ -167,25 +238,36 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("characters or fewer", result["error"])
         executor.assert_not_called()
 
-    def test_character_profile_uses_the_planner_vertex_model(self):
-        with patch("tools.story_planning_tool.genai.Client") as client:
-            client.return_value.models.generate_content.return_value.text = json.dumps({
-                "personality": "Careful",
-                "motivation": "Find the missing map",
-            })
-            tools = StoryPlanningTools(config={
-                "planner_model": "gemini-3.7-flash",
-                "vertex_project": "test-project",
-                "vertex_location": "global",
-            })
-            profile = tools.generate_character_profile(name="Mara")
-
-        client.assert_called_once_with(vertexai=True, project="test-project", location="global")
-        self.assertEqual(
-            client.return_value.models.generate_content.call_args.kwargs["model"],
-            "gemini-3.7-flash",
+    def test_character_profile_uses_explicit_text_response_provider(self):
+        mock_provider = MagicMock(spec=TextResponseProvider)
+        mock_provider.generate.return_value = TextResponseResult(
+            text=json.dumps({
+                "personality": "Bold explorer",
+                "motivation": "Discover uncharted territories",
+            }),
+            provider="mock-provider",
+            model="mock-model",
         )
-        self.assertEqual(profile["personality"], "Careful")
+        tools = self._make_tools(text_response_provider=mock_provider)
+        profile = tools.generate_character_profile(name="Kael")
+
+        self.assertEqual(profile["personality"], "Bold explorer")
+        self.assertEqual(profile["motivation"], "Discover uncharted territories")
+        mock_provider.generate.assert_called_once()
+        request = mock_provider.generate.call_args[0][0]
+        self.assertIsInstance(request, TextResponseRequest)
+        self.assertIn("Character name: Kael", request.prompt)
+        self.assertIn("character design assistant", request.system_instruction)
+
+    def test_character_profile_surfaces_provider_errors(self):
+        mock_provider = MagicMock(spec=TextResponseProvider)
+        mock_provider.generate.side_effect = RuntimeError("Provider connection failed")
+        tools = self._make_tools(text_response_provider=mock_provider)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            tools.generate_character_profile(name="Kael")
+
+        self.assertIn("Provider connection failed", str(ctx.exception))
 
     def test_scene_reaction_supports_direct_structured_plot_beat_fallback(self):
         reaction = SceneReaction(
@@ -203,7 +285,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         )
 
     def test_named_elements_are_bounded(self):
-        tools = StoryPlanningTools(theater_id="elements")
+        tools = self._make_tools(theater_id="elements")
         for index in range(DEFAULT_MAX_NAMED_ELEMENTS + 1):
             tools.update_or_insert_named_element(f"key_{index}", f"value_{index}")
         self.assertEqual(len(tools.get_present_elements()), DEFAULT_MAX_NAMED_ELEMENTS)
@@ -237,7 +319,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             completed.set()
 
         state = MagicMock()
-        tools = StoryPlanningTools(
+        tools = self._make_tools(
             config={
                 "adventure_mode": True,
                 "nodes_ahead": 2,
@@ -264,7 +346,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
     def test_clear_scene_removes_plot_beats_and_characters(self):
-        tools = StoryPlanningTools(config={"adventure_mode": True}, theater_id="clear")
+        tools = self._make_tools(config={"adventure_mode": True}, theater_id="clear")
         tools._characters["Mara"] = {"name": "Mara", "description": "", "personality": "Bold", "motivation": "Explore", "quirk": "Hums"}
         tools._plot_beats = [{"plot_beat": "The tide rises."}]
         tools.clear_scene()
@@ -272,7 +354,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(tools.get_plot_beats(), [])
 
     def test_import_uses_plot_beats_contract(self):
-        tools = StoryPlanningTools(theater_id="import")
+        tools = self._make_tools(theater_id="import")
         tools.import_story_planning_state({
             "characters": [],
             "plot_beats": [{"plot_beat": "A bell rings."}],
@@ -289,7 +371,7 @@ class TestStoryPlanningTools(unittest.TestCase):
                 "plot_beats": ["A new consequence gathers."],
             }
 
-        tools = StoryPlanningTools(config={
+        tools = self._make_tools(config={
             "adventure_mode": True,
             "nodes_ahead": 1,
             "planner_executor": planner_executor,
@@ -308,13 +390,13 @@ class TestStoryPlanningTools(unittest.TestCase):
         )
 
     def test_recent_turns_survive_story_state_round_trip(self):
-        tools = StoryPlanningTools(theater_id="history")
+        tools = self._make_tools(theater_id="history")
         for index in range(4):
             tools._append_recent_story_turn(
                 f"Action {index}", {"narration": f"Response {index}", "dialogue": []},
             )
 
-        restored = StoryPlanningTools(theater_id="history-restored")
+        restored = self._make_tools(theater_id="history-restored")
         restored.import_story_planning_state(tools.export_story_planning_state())
 
         self.assertEqual(
@@ -327,7 +409,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         )
 
     def test_scene_description_is_compact_and_action_cooldown_scales_with_response(self):
-        tools = StoryPlanningTools(config={
+        tools = self._make_tools(config={
             "action_cooldown_base_seconds": 10,
             "action_cooldown_words_per_second": 10,
             "action_cooldown_max_seconds": 20,

@@ -85,6 +85,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("create_music", instruction)
         self.assertIn("Last resort", instruction)
 
+    @patch("services.agent.get_text_response_provider")
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")
     @patch("services.agent.ChatTools")
@@ -92,7 +93,7 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_create_agent_passes_canvas_state_service_to_every_tool(
-        self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
+        self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
     ):
         mock_image_cls.return_value.list_references.return_value = []
         canvas_state_service = MagicMock()
@@ -113,13 +114,18 @@ class TestCreateAgent(unittest.TestCase):
         mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
-        mock_story_planning_cls.assert_called_once_with(config.get("story_planning", {}), **managed_tool_kwargs)
+        mock_story_planning_cls.assert_called_once_with(
+            config.get("story_planning", {}),
+            **managed_tool_kwargs,
+            text_response_provider=ANY,
+        )
         mock_music_cls.assert_called_once_with(
             config.get("music", {}),
             **managed_tool_kwargs,
             music_catalog=ANY,
         )
 
+    @patch("services.agent.get_text_response_provider")
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")
     @patch("services.agent.ChatTools")
@@ -127,7 +133,7 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_animation_tools_are_created_only_when_theater_enables_them(
-        self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls
+        self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
     ):
         mock_image_cls.return_value.list_references.return_value = []
         config = {"animation": {"enabled": True}}
@@ -199,12 +205,13 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("No preloaded reference images found.", instruction)
         self.assertIn("## Startup", instruction)
 
+    @patch("services.agent.get_text_response_provider")
     @patch("services.agent.ImageTools")
     @patch("services.agent.ChatTools")
     @patch("services.agent.StoryPlanningTools")
     @patch("services.agent.MusicTools")
     def test_create_tool_bundle_conditional_create_music(
-        self, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_image_cls
+        self, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_image_cls, mock_get_text_provider
     ):
         from services.agent import create_tool_bundle_for_session
         music_inst = mock_music_cls.return_value
@@ -218,7 +225,8 @@ class TestCreateAgent(unittest.TestCase):
         tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
 
-    def test_create_tool_bundle_only_includes_observability_tool_when_enabled(self):
+    @patch("services.agent.get_text_response_provider")
+    def test_create_tool_bundle_only_includes_observability_tool_when_enabled(self, mock_get_text_provider):
         from services.agent import create_tool_bundle_for_session
 
         base_config = {
