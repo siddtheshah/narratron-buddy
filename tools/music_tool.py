@@ -25,6 +25,7 @@ class MusicTools(BaseTools):
         config: dict,
         theater_id: str,
         theater_manager: TheaterManager,
+        music_catalog: MusicCatalog,
         canvas_state_service: Any = None,
     ):
         raw_config = config or {}
@@ -57,12 +58,7 @@ class MusicTools(BaseTools):
         provider_options = subconfig.get("provider_options") or {}
         self.music_provider_options = dict(provider_options) if isinstance(provider_options, dict) else {}
         self._music_provider = None
-        self.music_catalog = MusicCatalog(
-            theater_manager.music_catalog_dir(),
-            match_threshold=float(subconfig.get("catalog_match_threshold", 0.86)),
-            candidate_count=int(subconfig.get("catalog_candidate_count", 5)),
-            reranker_model=str(subconfig.get("catalog_reranker_model", "gemini-2.5-flash-lite")),
-        )
+        self.music_catalog = music_catalog
 
         # Callbacks
         self.on_play_music: Optional[Callable[[str, List[str]], None]] = None
@@ -186,7 +182,7 @@ class MusicTools(BaseTools):
             A status string indicating background generation has started.
         """
         effective_prompt = self._apply_default_style(prompt)
-        logger.info(f"[create_music tool] prompt: {effective_prompt}, handle: {handle}")
+        logger.info("[MusicTools] create_music requested for theater=%s handle=%s.", self.active_theater_id, handle)
         if not self.generation_enabled:
             return "Error: Music generation is disabled in theater configuration."
 
@@ -200,6 +196,10 @@ class MusicTools(BaseTools):
             self.music_aliases[alias_key] = track_url
             self.music_aliases[alias_key.lower()] = track_url
             self.music_aliases[filename] = track_url
+            logger.info(
+                "[MusicTools] Reused catalog music id=%s score=%.2f for theater=%s as %s",
+                match["id"], match["score"], self.active_theater_id, filename,
+            )
             self._play_music_internal(alias_key)
             return f"Reused a matching private catalog track (similarity {match['score']:.2f}) and started playing it as '{alias_key}'."
 
@@ -211,7 +211,7 @@ class MusicTools(BaseTools):
         def _worker():
             try:
                 provider = self._get_music_provider()
-                logger.info(f"[create_music tool] Generating music with provider '{self.music_provider_id}' for prompt: '{effective_prompt}'")
+                logger.debug("[MusicTools] Generating with provider=%s.", self.music_provider_id)
                 result = provider.generate(MusicGenerationRequest(prompt=effective_prompt))
                 audio_bytes = result.audio_bytes
 
@@ -233,7 +233,7 @@ class MusicTools(BaseTools):
                     except Exception as catalog_error:
                         # Generation must still complete if the optional cost-saving
                         # index cannot be written.
-                        logger.error("[create_music tool] Could not add track to private catalog: %s", catalog_error)
+                        logger.error("[MusicTools] Could not add track to private catalog: %s", catalog_error)
 
                     if self.active_theater_id:
                         track_url = f"/theaters/{self.active_theater_id}/output/music/{filename}"
@@ -245,7 +245,7 @@ class MusicTools(BaseTools):
                     self.music_aliases[alias_key.lower()] = track_url
                     self.music_aliases[filename] = track_url
 
-                    logger.info(f"[create_music tool] Saved music track to {filepath} with handle '{alias_key}'")
+                    logger.debug("[MusicTools] Saved generated track handle=%s path=%s.", alias_key, filepath)
 
                     if self.on_music_created:
                         try:
@@ -255,11 +255,11 @@ class MusicTools(BaseTools):
 
                     self._play_music_internal(alias_key)
                 else:
-                    logger.error("[create_music tool] Provider returned no binary audio data.")
+                    logger.error("[MusicTools] Provider returned no binary audio data.")
             except MusicProviderError as e:
-                logger.error(f"[create_music tool] Music provider failed: {e}")
+                logger.error("[MusicTools] Music provider failed: %s", e)
             except Exception as e:
-                logger.error(f"[create_music tool] Error generating music in background: {e}")
+                logger.error("[MusicTools] Background music generation failed: %s", e)
 
         t = threading.Thread(target=_worker, daemon=True)
         self._last_generation_thread = t
@@ -280,10 +280,10 @@ class MusicTools(BaseTools):
                 self.on_play_music(music_id, tracks)
 
             self.currently_playing_music_id = music_id
-            logger.info(f"Playing music '{music_id}' ({len(tracks)} tracks)")
+            logger.debug("[MusicTools] Started playback music_id=%s tracks=%d.", music_id, len(tracks))
             return f"Successfully started playing music '{music_id}' containing {len(tracks)} tracks."
         except Exception as e:
-            logger.error(f"Error playing music: {e}")
+            logger.error("[MusicTools] Error playing music: %s", e)
             return f"Error playing music: {e}"
 
     @with_cooldown("playing another music track")
@@ -296,6 +296,7 @@ class MusicTools(BaseTools):
         Returns:
             A status message indicating success or failure.
         """
+        logger.info("[MusicTools] play_music requested for theater=%s music_id=%s.", self.active_theater_id, music_id)
         self.record_tool_call("play_music")
         return self._play_music_internal(music_id)
 
@@ -310,10 +311,10 @@ class MusicTools(BaseTools):
                 self.canvas_state_service.pause_music(theater_id=self.theater_id)
             if self.on_pause_music:
                 self.on_pause_music()
-            logger.info("Paused music")
+            logger.info("[MusicTools] pause_music requested for theater=%s.", self.active_theater_id)
             return "Successfully paused the music."
         except Exception as e:
-            logger.error(f"Error pausing music: {e}")
+            logger.error("[MusicTools] Error pausing music: %s", e)
             return f"Error pausing music: {e}"
 
     def resume_music(self) -> str:
@@ -327,8 +328,8 @@ class MusicTools(BaseTools):
                 self.canvas_state_service.resume_music(theater_id=self.theater_id)
             if self.on_resume_music:
                 self.on_resume_music()
-            logger.info("Resumed music")
+            logger.info("[MusicTools] resume_music requested for theater=%s.", self.active_theater_id)
             return "Successfully resumed the music."
         except Exception as e:
-            logger.error(f"Error resuming music: {e}")
+            logger.error("[MusicTools] Error resuming music: %s", e)
             return f"Error resuming music: {e}"

@@ -20,9 +20,6 @@ music:
     playlists_folder: "playlists"
     generation_cooldown: 90
     switch_cooldown: 15
-    catalog_match_threshold: 0.86
-    catalog_candidate_count: 5
-    catalog_reranker_model: "gemini-2.5-flash-lite"
     style: "no lyrics, instrumental focus, steady volume, 90 second duration, loopable ambiance"
 
 story_planning:

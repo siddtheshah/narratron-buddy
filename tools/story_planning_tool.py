@@ -6,9 +6,9 @@ All plot-beat updates, character mutations, and scene element mutations emit for
 tagged with ``[STORY_SCRIPT]``.
 
 To inspect story script outputs over time during server execution, filter console logging
-using the existing ``--log_prefix`` flag when running ``main.py``:
+using the existing ``--log_prefixes`` flag when running ``main.py``:
 
-    python main.py --log_prefix="[STORY_SCRIPT]"
+    python main.py --log_prefixes="[STORY_SCRIPT]"
 """
 
 from collections import OrderedDict
@@ -181,7 +181,7 @@ class StoryPlanningTools(BaseTools):
 
     Emits formatted logger records prefixed with ``[STORY_SCRIPT]`` whenever scene elements
     or plot beats are updated. Filter output to story script logs using:
-        python main.py --log_prefix="[STORY_SCRIPT]"
+        python main.py --log_prefixes="[STORY_SCRIPT]"
     """
 
     def __init__(

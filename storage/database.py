@@ -276,6 +276,100 @@ class _DatabaseManagerBase:
     def _get_connection(self):
         raise NotImplementedError
 
+    def add_music_catalog_track(
+        self,
+        track_id: str,
+        artifact_filename: str,
+        prompt: str,
+        provider: str,
+        model: str,
+        term_frequencies: Dict[str, int],
+    ) -> None:
+        """Persist one private catalog document and its corpus statistics.
+
+        This index deliberately lives only in Cloud SQL PostgreSQL. Local
+        development can generate music normally without attempting a database
+        connection or maintaining a divergent search index.
+        """
+        if not self.is_live:
+            return
+        token_count = sum(term_frequencies.values())
+        if not token_count:
+            return
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO music_catalog_tracks "
+                "(id, artifact_filename, prompt, provider, model, token_count, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (track_id, artifact_filename, prompt, provider, model, token_count, now),
+            )
+            for term, frequency in term_frequencies.items():
+                cursor.execute(
+                    "INSERT INTO music_catalog_terms (track_id, term, term_frequency) VALUES (?, ?, ?)",
+                    (track_id, term, frequency),
+                )
+                cursor.execute(
+                    "INSERT INTO music_catalog_term_stats (term, document_frequency) VALUES (?, 1) "
+                    "ON CONFLICT (term) DO UPDATE SET document_frequency = "
+                    "music_catalog_term_stats.document_frequency + 1",
+                    (term,),
+                )
+            cursor.execute(
+                "UPDATE music_catalog_stats SET document_count = document_count + 1, "
+                "total_token_count = total_token_count + ? WHERE id = TRUE",
+                (token_count,),
+            )
+
+    def find_music_catalog_candidates(
+        self, term_frequencies: Dict[str, int], limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Return BM25-ranked private catalog candidates from PostgreSQL."""
+        if not self.is_live or not term_frequencies:
+            return []
+        values_sql = ", ".join("(?, ?)" for _ in term_frequencies)
+        params: list[Any] = [value for item in term_frequencies.items() for value in item]
+        params.append(max(1, int(limit)))
+        sql = f"""
+            WITH raw_query_terms(term, query_tf) AS (VALUES {values_sql}),
+            query_terms AS (
+                -- pg8000 may bind VALUES parameters as text.  Cast here so
+                -- BM25 arithmetic never depends on driver type inference.
+                SELECT term::TEXT, query_tf::DOUBLE PRECISION
+                FROM raw_query_terms
+            ),
+            corpus AS (
+                SELECT document_count, total_token_count,
+                       total_token_count::DOUBLE PRECISION / NULLIF(document_count, 0) AS average_length
+                FROM music_catalog_stats WHERE id = TRUE
+            ), scores AS (
+                SELECT terms.track_id,
+                    SUM(
+                        LN(1 + (corpus.document_count - stats.document_frequency + 0.5)
+                           / (stats.document_frequency + 0.5))
+                        * ((terms.term_frequency * 2.2)
+                           / (terms.term_frequency + 1.2 * (1 - 0.75
+                              + 0.75 * tracks.token_count / NULLIF(corpus.average_length, 0))))
+                        * query_terms.query_tf
+                    ) AS bm25_score
+                FROM query_terms
+                JOIN music_catalog_terms AS terms ON terms.term = query_terms.term
+                JOIN music_catalog_term_stats AS stats ON stats.term = terms.term
+                JOIN music_catalog_tracks AS tracks ON tracks.id = terms.track_id
+                CROSS JOIN corpus
+                GROUP BY terms.track_id
+            )
+            SELECT tracks.id, tracks.artifact_filename AS filename, tracks.prompt, scores.bm25_score
+            FROM scores JOIN music_catalog_tracks AS tracks ON tracks.id = scores.track_id
+            ORDER BY scores.bm25_score DESC
+            LIMIT ?
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, tuple(params))
+            return cursor.fetchall()
+
     def _open_live_connection(self):
         raise NotImplementedError
 

@@ -935,6 +935,7 @@ class AgentSessionManager:
             config=theater_config,
             canvas_state_service=canvas_state_service,
             theater_manager=self.theater_manager,
+            database_manager=self.database_manager,
         )
 
         session_agent = create_agent(
@@ -943,6 +944,7 @@ class AgentSessionManager:
             canvas_state_service=canvas_state_service,
             tool_bundle=tool_bundle,
             theater_manager=self.theater_manager,
+            database_manager=self.database_manager,
         )
 
         disk_service_path = self.theater_manager.theater(theater_id).artifacts_dir()

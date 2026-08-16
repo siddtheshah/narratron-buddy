@@ -13,9 +13,11 @@ from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.animation_tool import AnimationTools
 from tools.music_tool import MusicTools
+from tools.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
 from tools.story_planning_tool import StoryPlanningTools
 from tools.tool_bundle import ToolBundle
+from providers import TextResponseProviderError, get_text_response_provider
 from utils.config_loader import get_app_config, get_theater_config
 
 logger = logging.getLogger(__name__)
@@ -190,6 +192,7 @@ def create_tool_bundle_for_session(
     config: dict,
     canvas_state_service: Optional[Any] = None,
     theater_manager: Optional[TheaterManager] = None,
+    database_manager: Optional[Any] = None,
 ) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
     theater_manager = theater_manager or TheaterManager()
@@ -211,7 +214,22 @@ def create_tool_bundle_for_session(
         canvas_state_service=canvas_state_service,
         theater_manager=theater_manager,
     )
-    music_tools = MusicTools(config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
+    music_config = config.get("music", {})
+    reranker_provider = get_text_response_provider(
+        str(music_config.get("catalog_reranker_provider", "gemini-2-5")),
+        {"model": str(music_config.get("catalog_reranker_model", "gemini-2.5-flash-lite"))},
+    )
+    music_catalog = MusicCatalog(
+        theater_manager.music_catalog_dir(),
+        match_threshold=float(music_config.get("catalog_match_threshold", 0.86)),
+        candidate_count=int(music_config.get("catalog_candidate_count", 5)),
+        reranker_provider=reranker_provider,
+        database_manager=database_manager,
+    )
+    music_tools = MusicTools(
+        config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager,
+        music_catalog=music_catalog, canvas_state_service=canvas_state_service,
+    )
 
     tools = [
         image_tools.list_references,
@@ -273,12 +291,15 @@ def create_agent(
     canvas_state_service: Optional[Any] = None,
     tool_bundle: Optional[ToolBundle] = None,
     theater_manager: Optional[TheaterManager] = None,
+    database_manager: Optional[Any] = None,
 ) -> Agent:
     """Create a session-scoped agent whose tools write through canvas state service."""
     if config is None:
         config = get_theater_config(theater_id)
     if tool_bundle is None:
-        tool_bundle = create_tool_bundle_for_session(theater_id, config, canvas_state_service, theater_manager)
+        tool_bundle = create_tool_bundle_for_session(
+            theater_id, config, canvas_state_service, theater_manager, database_manager
+        )
 
     references = get_references_context(tool_bundle)
     if not isinstance(references, str) or not references.strip():

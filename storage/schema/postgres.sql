@@ -111,3 +111,35 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 );
 CREATE INDEX IF NOT EXISTS password_reset_tokens_user_id_idx ON password_reset_tokens(user_id);
 CREATE INDEX IF NOT EXISTS password_reset_tokens_expires_at_idx ON password_reset_tokens(expires_at);
+
+-- Private music-catalog search index. Audio stays in private artifact storage;
+-- this schema stores only descriptions and the corpus statistics needed for BM25.
+CREATE TABLE IF NOT EXISTS music_catalog_tracks (
+    id TEXT PRIMARY KEY,
+    artifact_filename TEXT NOT NULL UNIQUE,
+    prompt TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    token_count INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS music_catalog_terms (
+    track_id TEXT NOT NULL REFERENCES music_catalog_tracks(id) ON DELETE CASCADE,
+    term TEXT NOT NULL,
+    term_frequency INTEGER NOT NULL,
+    PRIMARY KEY (track_id, term)
+);
+CREATE INDEX IF NOT EXISTS music_catalog_terms_term_track_idx ON music_catalog_terms(term, track_id);
+
+CREATE TABLE IF NOT EXISTS music_catalog_term_stats (
+    term TEXT PRIMARY KEY,
+    document_frequency INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS music_catalog_stats (
+    id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    document_count INTEGER NOT NULL DEFAULT 0,
+    total_token_count BIGINT NOT NULL DEFAULT 0
+);
+INSERT INTO music_catalog_stats (id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING;

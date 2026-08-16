@@ -47,7 +47,7 @@ flags.DEFINE_boolean(
 )
 flags.DEFINE_string("host", "localhost", "Host to run the app on.")
 flags.DEFINE_integer("port", 8000, "Port to run the app on.")
-flags.DEFINE_string("log_prefix", "", "Only show logs containing this substring.")
+flags.DEFINE_string("log_prefixes", "", "Comma-separated substrings; only matching logs are shown.")
 flags.DEFINE_bool("suppress_polling", True, "Suppress frequent polling logs.")
 flags.DEFINE_float(
     "database_connection_timeout_seconds",

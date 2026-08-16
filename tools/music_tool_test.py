@@ -10,7 +10,21 @@ from components.theater_manager import TheaterManager
 from providers.music_provider import MusicGenerationResult
 from testing.base import BaseTestCase
 from services.agent import get_playlists_context
+from tools.music_catalog import MusicCatalog
 from tools.music_tool import MusicTools
+
+
+class FakeMusicCatalogDatabase:
+    """In-memory stand-in for the PostgreSQL BM25 candidate query."""
+    def __init__(self):
+        self.entries = []
+
+    def add_music_catalog_track(self, track_id, artifact_filename, prompt, provider, model, term_frequencies):
+        self.entries.append({"id": track_id, "filename": artifact_filename, "prompt": prompt})
+
+    def find_music_catalog_candidates(self, term_frequencies, limit):
+        return self.entries[:limit]
+
 
 class TestMusicTools(BaseTestCase):
     def setUp(self):
@@ -41,13 +55,21 @@ class TestMusicTools(BaseTestCase):
         with open(os.path.join(self.combat_dir, "battle.mp3"), "w") as f:
             f.write("dummy audio")
 
-        self.music_tools = MusicTools(self.config, theater_id="test_theater", theater_manager=self.theater_manager)
+        self.music_tools = self.make_tools(self.config)
         self.music_tools.playlists_folder = os.path.join(self.temp_dir, "test_theater", "playlists")
         self.music_tools.cooldown_duration = 0.0
         self.music_tools._last_call_times.clear()
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def make_tools(self, config):
+        return MusicTools(
+            config,
+            theater_id="test_theater",
+            theater_manager=self.theater_manager,
+            music_catalog=MusicCatalog(self.theater_manager.music_catalog_dir()),
+        )
 
     def test_get_playlists_context(self):
         theater = self.theater_manager.theater("test_theater")
@@ -118,6 +140,7 @@ class TestMusicTools(BaseTestCase):
     def test_create_music_reuses_private_catalog_without_provider_call(self):
         # The local TF-IDF pass nominates the candidate; a deterministic
         # reranker avoids a network dependency while testing private copying.
+        self.music_tools.music_catalog.database_manager = FakeMusicCatalogDatabase()
         catalog_source = Path(self.temp_dir) / "seed.mp3"
         catalog_source.write_bytes(b"catalog audio")
         entry = self.music_tools.music_catalog.add(catalog_source, "calm forest ambience", "lyria", "test")
@@ -148,7 +171,7 @@ class TestMusicTools(BaseTestCase):
                 "generation_cooldown": 25.0,
             }
         }
-        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        tools = self.make_tools(config)
         self.assertFalse(tools.generation_enabled)
         self.assertEqual(tools.generation_cooldown, 25.0)
 
@@ -176,31 +199,31 @@ class TestMusicTools(BaseTestCase):
                 "switch_cooldown": 12.0,
             }
         }
-        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        tools = self.make_tools(config)
         self.assertEqual(tools.generation_cooldown, 30.0)
         self.assertEqual(tools.switch_cooldown, 12.0)
 
     def test_style_default_loaded_from_config(self):
         config = {"music": {"style": "  orchestral epic  "}}
-        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        tools = self.make_tools(config)
         self.assertEqual(tools.style_default, "orchestral epic")
 
     def test_style_default_appended_when_absent(self):
         config = {"music": {"style": "orchestral epic"}}
-        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        tools = self.make_tools(config)
         result = tools._apply_default_style("a triumphant fanfare")
         self.assertEqual(result, "a triumphant fanfare\n\nStyle: orchestral epic")
 
     def test_style_default_not_appended_when_style_present(self):
         config = {"music": {"style": "orchestral epic"}}
-        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        tools = self.make_tools(config)
         prompt = "a triumphant fanfare. Style: jazz"
         result = tools._apply_default_style(prompt)
         self.assertEqual(result, prompt)
 
     def test_style_default_empty_no_change(self):
         config = {"music": {}}
-        tools = MusicTools(config, theater_id="test_theater", theater_manager=self.theater_manager)
+        tools = self.make_tools(config)
         prompt = "a triumphant fanfare"
         result = tools._apply_default_style(prompt)
         self.assertEqual(result, prompt)

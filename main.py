@@ -11,24 +11,28 @@ from object_registry import FLAGS, app
 
 
 class LogFilter(logging.Filter):
-    def __init__(self, prefix: str = "", filter_polling: bool = True):
+    def __init__(self, prefixes: str = "", filter_polling: bool = True):
         super().__init__()
-        self.prefix = prefix
+        self.prefixes = tuple(prefix.strip() for prefix in prefixes.split(",") if prefix.strip())
         self.filter_polling = filter_polling
 
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
         if self.filter_polling and ("/api/latest" in message or "/agent/status" in message):
             return False
-        return not self.prefix or self.prefix in message or self.prefix in record.name
+        return not self.prefixes or any(prefix in message or prefix in record.name for prefix in self.prefixes)
 
 
 def configure_logging() -> None:
+    level = logging.DEBUG if FLAGS.log_prefixes else logging.INFO
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    log_filter = LogFilter(FLAGS.log_prefix, FLAGS.suppress_polling)
+    # api_server.app may have configured handlers before this entry point is
+    # reached, so basicConfig alone cannot reliably change the effective level.
+    logging.getLogger().setLevel(level)
+    log_filter = LogFilter(FLAGS.log_prefixes, FLAGS.suppress_polling)
     for handler in logging.getLogger().handlers:
         handler.addFilter(log_filter)
     logging.getLogger("uvicorn.access").addFilter(log_filter)

@@ -31,28 +31,29 @@ load_dotenv()
 
 # Configure logging filter
 class LogFilter(logging.Filter):
-    def __init__(self, prefix: str = "", filter_polling: bool = True):
+    def __init__(self, prefixes: str = "", filter_polling: bool = True):
         super().__init__()
-        self.prefix = prefix
+        self.prefixes = tuple(prefix.strip() for prefix in prefixes.split(",") if prefix.strip())
         self.filter_polling = filter_polling
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         if self.filter_polling and ("/api/latest" in msg or "/agent/status" in msg):
             return False
-        if self.prefix and (self.prefix not in msg and self.prefix not in record.name):
+        if self.prefixes and not any(prefix in msg or prefix in record.name for prefix in self.prefixes):
             return False
         return True
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG if FLAGS.log_prefixes else logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+logging.getLogger().setLevel(logging.DEBUG if FLAGS.log_prefixes else logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Apply filter to root logger and uvicorn access logger
-log_filter = LogFilter(prefix=FLAGS.log_prefix, filter_polling=FLAGS.suppress_polling)
+log_filter = LogFilter(prefixes=FLAGS.log_prefixes, filter_polling=FLAGS.suppress_polling)
 for handler in logging.getLogger().handlers:
     handler.addFilter(log_filter)
 
