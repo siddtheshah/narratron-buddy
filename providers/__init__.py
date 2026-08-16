@@ -29,10 +29,17 @@ from providers.text_response_provider import (
     TextResponseResult,
 )
 from providers.gemini_text_response_provider import GeminiTextResponseProvider
-from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisRequest, SpeechSynthesisResult
-from providers.gemini_speech_provider import GeminiSpeechProvider
-from providers.fal_seed_speech_provider import FalSeedSpeechProvider
-from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
+from providers.speech_provider import (
+    SpeechProvider,
+    SpeechProviderError,
+    SpeechSynthesisRequest,
+    SpeechSynthesisResult,
+    extract_character_description,
+    extract_voice_tags,
+)
+from providers.gemini_speech_provider import GEMINI_VOICES, GeminiSpeechProvider
+from providers.fal_seed_speech_provider import SEED_CHARACTER_VOICES, FalSeedSpeechProvider
+from providers.google_chirp_speech_provider import CHIRP_VOICES, GoogleChirpSpeechProvider
 from providers.registry import (
     get_image_provider,
     get_music_provider,
@@ -74,9 +81,14 @@ __all__ = [
     "SpeechProviderError",
     "SpeechSynthesisRequest",
     "SpeechSynthesisResult",
+    "extract_character_description",
+    "extract_voice_tags",
     "GeminiSpeechProvider",
+    "GEMINI_VOICES",
     "FalSeedSpeechProvider",
+    "SEED_CHARACTER_VOICES",
     "GoogleChirpSpeechProvider",
+    "CHIRP_VOICES",
     "get_image_provider",
     "get_music_provider",
     "get_text_response_provider",

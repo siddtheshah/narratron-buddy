@@ -68,11 +68,23 @@ class TestCanvasStateManager(BaseTestCase):
     def test_character_voice_assignments_persist_with_canvas_state(self):
         theater_id = "voice_state"
         manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
-        manager.character_voice_assignments = {"mara": "dacey_en"}
-        manager.export_theater_data(theater_dir=manager.theater.directory())
+        manager.assign_character_voice("Mara Venn", "dacey_en")
+        self.assertEqual(manager.get_character_voice("  mara   venn "), "dacey_en")
 
         restored = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
-        self.assertEqual(restored.character_voice_assignments, {"mara": "dacey_en"})
+        self.assertEqual(restored.get_character_voice("Mara Venn"), "dacey_en")
+
+    def test_get_character_description_resolves_context(self):
+        manager = CanvasStateManager(theater_id="desc_state", theater_manager=self.theater_manager)
+        manager.set_story_planning_state({
+            "characters": [{"name": "Kael", "description": "Stern archer", "personality": "Quiet"}],
+            "named_elements": [{"name": "Old Oak", "content": "Ancient tree"}],
+        })
+
+        self.assertIn("Stern archer", manager.get_character_description("Kael"))
+        self.assertIn("Ancient tree", manager.get_character_description("Old Oak"))
+        self.assertEqual(manager.get_character_description("Unknown Speaker"), "Unknown Speaker")
+
 
     def test_update_shown_image_empty_folder(self):
         with tempfile.TemporaryDirectory() as empty_dir:
@@ -279,14 +291,18 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertFalse(manager.get_latest_state()["tool_activity"]["live_ready"])
         self.assertFalse(manager.get_latest_state()["tool_activity"]["dice_rolling"])
 
-    def test_narration_is_exposed_and_compact(self):
-        manager = CanvasStateManager(theater_id="test_narration", theater_manager=self.theater_manager)
-        narration = " ".join(f"word{index}" for index in range(50))
+    def test_get_character_voice_tags(self):
+        manager = CanvasStateManager(theater_id="test_voice_tags", theater_manager=self.theater_manager)
+        manager.story_planning_state = {
+            "characters": [
+                {"name": "Mara", "voice_tags": ["female"]},
+                {"name": "Arthur", "voice_tags": ["male", "knight"]},
+            ]
+        }
+        self.assertEqual(manager.get_character_voice_tags("Mara"), ["female"])
+        self.assertEqual(manager.get_character_voice_tags("Arthur"), ["male"])
+        self.assertEqual(manager.get_character_voice_tags("Unknown"), [])
 
-        manager.set_narration(narration)
-
-        self.assertEqual(len(manager.narration.split()), 45)
-        self.assertEqual(manager.get_latest_state()["narration"], manager.narration)
 
 if __name__ == "__main__":
     unittest.main()

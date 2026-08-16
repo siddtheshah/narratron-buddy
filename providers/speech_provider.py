@@ -4,7 +4,38 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+import re
+from typing import Any, Iterable, Mapping
+
+
+def extract_voice_tags(tags: Any = None) -> list[str]:
+    """Extract and normalize voice tags ('male' or 'female')."""
+    if not tags:
+        return []
+    if isinstance(tags, Mapping):
+        tags = tags.get("voice_tags", [])
+    if isinstance(tags, str):
+        tags = [tags]
+    return [str(t).strip().lower() for t in tags if str(t).strip().lower() in ("male", "female")]
+
+
+def extract_character_description(character: str | Mapping[str, Any] | None) -> str:
+    """Normalize string or structured character dictionary into a text description."""
+    if not character:
+        return ""
+    if isinstance(character, str):
+        return character.strip()
+    if isinstance(character, Mapping):
+        parts: list[str] = []
+        for key in ("name", "gender", "role", "description", "personality", "motivation", "quirk", "tone", "background"):
+            val = character.get(key)
+            if val:
+                parts.append(str(val))
+        for key, val in character.items():
+            if key not in ("name", "gender", "role", "description", "personality", "motivation", "quirk", "tone", "background") and isinstance(val, (str, int, float)):
+                parts.append(f"{key}: {val}")
+        return " ".join(parts).strip()
+    return str(character).strip()
 
 
 class SpeechProviderError(RuntimeError):
@@ -50,3 +81,14 @@ class SpeechProvider(ABC):
     @abstractmethod
     def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResult:
         """Generate speech or raise :class:`SpeechProviderError`."""
+
+    def select_voice(
+        self,
+        voice_tags: Iterable[str] | str | Mapping[str, Any] | None = None,
+        *,
+        exclude: Iterable[str] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Select a voice based on voice tags (e.g. 'male' or 'female')."""
+        return getattr(self, "model", "") or "default"
+

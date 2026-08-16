@@ -3,14 +3,28 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import os
+import re
+from typing import Any, Iterable, Mapping
 import wave
-from typing import Any
 
 from google import genai
 
-from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisRequest, SpeechSynthesisResult
+from providers.speech_provider import (
+    SpeechProvider,
+    SpeechProviderError,
+    SpeechSynthesisRequest,
+    SpeechSynthesisResult,
+    extract_voice_tags,
+)
+
+GEMINI_VOICES = (
+    "Kore", "Puck", "Charon", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr",
+)
+GEMINI_FEMALE_VOICES = ("Kore", "Aoede", "Leda")
+GEMINI_MALE_VOICES = ("Puck", "Charon", "Fenrir", "Orus", "Zephyr")
 
 
 class GeminiSpeechProvider(SpeechProvider):
@@ -19,17 +33,43 @@ class GeminiSpeechProvider(SpeechProvider):
 
     def __init__(self, model: str = "gemini-3.1-flash-tts-preview", client: Any = None) -> None:
         self.model = model
-        if client is None:
+        self.client = client
+
+    def select_voice(
+        self,
+        voice_tags: Iterable[str] | str | Mapping[str, Any] | None = None,
+        *,
+        exclude: Iterable[str] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        tags = extract_voice_tags(voice_tags)
+        excluded = set(exclude or ())
+
+        if "female" in tags and "male" not in tags:
+            pool = GEMINI_FEMALE_VOICES
+        elif "male" in tags and "female" not in tags:
+            pool = GEMINI_MALE_VOICES
+        else:
+            pool = GEMINI_VOICES
+
+        available = [v for v in pool if v not in excluded]
+        if not available:
+            available = [v for v in GEMINI_VOICES if v not in excluded]
+        if not available:
+            available = list(pool) or list(GEMINI_VOICES)
+
+        return available[0]
+
+    def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResult:
+        if self.client is None:
             api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
             if not api_key:
                 raise SpeechProviderError("GEMINI_API_KEY or GOOGLE_API_KEY is not configured for Gemini TTS.")
             try:
-                client = genai.Client(api_key=api_key)
+                self.client = genai.Client(api_key=api_key)
             except Exception as exc:
                 raise SpeechProviderError(f"Failed to initialize Gemini TTS client: {exc}") from exc
-        self.client = client
 
-    def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResult:
         # The Interactions API is Gemini's current TTS API.  It returns raw
         # 24 kHz PCM, which we package as WAV so browsers can preview it.
         voice = request.voice or "Kore"

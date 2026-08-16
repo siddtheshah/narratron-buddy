@@ -2,10 +2,29 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
-from typing import Any
+import re
+from typing import Any, Iterable, Mapping
 
-from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisRequest, SpeechSynthesisResult
+from providers.speech_provider import (
+    SpeechProvider,
+    SpeechProviderError,
+    SpeechSynthesisRequest,
+    SpeechSynthesisResult,
+    extract_voice_tags,
+)
+
+CHIRP_VOICES = (
+    "en-US-Chirp3-HD-Charon", "en-US-Chirp3-HD-Puck", "en-US-Chirp3-HD-Fenrir",
+    "en-US-Chirp3-HD-Aoede", "en-US-Chirp3-HD-Kore", "en-US-Chirp3-HD-Leda",
+)
+CHIRP_FEMALE_VOICES = (
+    "en-US-Chirp3-HD-Aoede", "en-US-Chirp3-HD-Kore", "en-US-Chirp3-HD-Leda",
+)
+CHIRP_MALE_VOICES = (
+    "en-US-Chirp3-HD-Charon", "en-US-Chirp3-HD-Puck", "en-US-Chirp3-HD-Fenrir",
+)
 
 
 class GoogleChirpSpeechProvider(SpeechProvider):
@@ -14,18 +33,49 @@ class GoogleChirpSpeechProvider(SpeechProvider):
 
     def __init__(self, model: str = "en-US-Chirp3-HD-Charon", client: Any = None, texttospeech_module: Any = None) -> None:
         self.model = model
-        if texttospeech_module is None:
+        self.client = client
+        self.texttospeech = texttospeech_module
+
+    def _ensure_client(self) -> None:
+        if self.texttospeech is None:
             try:
                 from google.cloud import texttospeech as texttospeech_module
+                self.texttospeech = texttospeech_module
             except ImportError as exc:
                 raise SpeechProviderError("google-cloud-texttospeech is required for Google Cloud Chirp TTS.") from exc
-        self.texttospeech = texttospeech_module
-        try:
-            self.client = client or texttospeech_module.TextToSpeechClient()
-        except Exception as exc:
-            raise SpeechProviderError(f"Failed to initialize Google Cloud Text-to-Speech: {exc}") from exc
+        if self.client is None:
+            try:
+                self.client = self.texttospeech.TextToSpeechClient()
+            except Exception as exc:
+                raise SpeechProviderError(f"Failed to initialize Google Cloud Text-to-Speech: {exc}") from exc
+
+    def select_voice(
+        self,
+        voice_tags: Iterable[str] | str | Mapping[str, Any] | None = None,
+        *,
+        exclude: Iterable[str] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        tags = extract_voice_tags(voice_tags)
+        excluded = set(exclude or ())
+
+        if "female" in tags and "male" not in tags:
+            pool = CHIRP_FEMALE_VOICES
+        elif "male" in tags and "female" not in tags:
+            pool = CHIRP_MALE_VOICES
+        else:
+            pool = CHIRP_VOICES
+
+        available = [v for v in pool if v not in excluded]
+        if not available:
+            available = [v for v in CHIRP_VOICES if v not in excluded]
+        if not available:
+            available = list(pool) or list(CHIRP_VOICES)
+
+        return available[0]
 
     def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResult:
+        self._ensure_client()
         voice_name = request.voice or self.model
         language_code = "-".join(voice_name.split("-")[:2]) if voice_name.count("-") >= 1 else "en-US"
         try:

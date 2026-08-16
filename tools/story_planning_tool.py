@@ -59,6 +59,26 @@ MAX_NODES_AHEAD = 10
 MAX_NAMED_ELEMENTS = 10
 MAX_ACTIVE_CHARACTERS = 5
 MAX_LORE_DOCUMENTS_LISTED = 100
+SUPPORTED_VOICE_TAGS = {"male", "female"}
+
+
+def normalize_voice_tags(tags: Any) -> List[str]:
+    """Normalize input into a list containing only supported voice tags ('male' or 'female')."""
+    if not tags:
+        return []
+    if isinstance(tags, str):
+        candidates = [t.strip().lower() for t in re.split(r"[,\s]+", tags) if t.strip()]
+    elif isinstance(tags, (list, tuple, set)):
+        candidates = [str(t).strip().lower() for t in tags if str(t).strip()]
+    else:
+        candidates = [str(tags).strip().lower()]
+    seen = set()
+    result = []
+    for c in candidates:
+        if c in SUPPORTED_VOICE_TAGS and c not in seen:
+            seen.add(c)
+            result.append(c)
+    return result
 
 _CHARACTER_GEN_PROMPT_TEMPLATE = Template(
     """Character name: {{ name }}
@@ -74,8 +94,9 @@ Current scene elements:
 (No active scene elements)
 {% endif -%}
 
-Generate a compelling personality description and core motivation for this character in an adventure story experience.
-Return ONLY a JSON object with keys 'personality' (string) and 'motivation' (string)."""
+Generate a compelling personality description, core motivation, and voice tags for this character in an adventure story experience.
+The only supported voice tags are 'male' or 'female'.
+Return ONLY a JSON object with keys 'personality' (string), 'motivation' (string), and 'voice_tags' (list of strings with 'male' or 'female')."""
 )
 
 _STORY_CONTEXT_PROMPT_TEMPLATE = Template(
@@ -93,7 +114,7 @@ Active characters, personalities, motivations & distinct quirks:
 (No active character motivations set)
 {% else -%}
 {% for char in characters -%}
-- {{ char.name }}: Personality: {{ char.personality }} | Motivation: {{ char.motivation }} | Distinct Quirk: {{ char.quirk }}{% if char.description %} (Description: {{ char.description }}){% endif %}
+- {{ char.name }}: Personality: {{ char.personality }} | Motivation: {{ char.motivation }} | Distinct Quirk: {{ char.quirk }}{% if char.voice_tags %} | Voice Tags: {{ char.voice_tags | join(', ') }}{% endif %}{% if char.description %} (Description: {{ char.description }}){% endif %}
 {% endfor -%}
 {% endif -%}
 
@@ -139,7 +160,7 @@ Keep responses focused: narration should normally be 20-50 words that also descr
 Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
 Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions.
 When available theater lore documents or directories are listed above, you MUST prioritize and ground the narrative, characters, factions, and setting in that established theater lore; proactively call `browse_lore` to inspect relevant documents or directories before introducing or enriching NPCs, places, or events.
-Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character.
+Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, define voice_tags as a list containing 'male' or 'female' to guide speech synthesis.
 You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 Those tools only provide information: the scene delta is the sole source of changes.
 `dialogue` is optional and must contain NPC speech only.
@@ -166,6 +187,10 @@ class PlannerCharacter(BaseModel):
     personality: str = ""
     motivation: str = ""
     quirk: str = ""
+    voice_tags: List[str] = Field(
+        default_factory=list,
+        description="Voice classification tags ('male' or 'female') to guide speech synthesis.",
+    )
 
 
 class SceneReaction(BaseModel):
@@ -369,6 +394,7 @@ class StoryPlanningTools(BaseTools):
                         "personality": str(v.get("personality", "")),
                         "motivation": str(v.get("motivation", "")),
                         "quirk": str(v.get("quirk", "")),
+                        "voice_tags": normalize_voice_tags(v.get("voice_tags", v.get("voice_type"))),
                     }
         elif isinstance(initial_characters, list):
             for char in initial_characters:
@@ -379,6 +405,7 @@ class StoryPlanningTools(BaseTools):
                         "personality": str(char.get("personality", "")),
                         "motivation": str(char.get("motivation", "")),
                         "quirk": str(char.get("quirk", "")),
+                        "voice_tags": normalize_voice_tags(char.get("voice_tags", char.get("voice_type"))),
                     }
 
         self.reload_from_session_state()
@@ -430,6 +457,7 @@ class StoryPlanningTools(BaseTools):
                             "personality": str(char.get("personality", "")),
                             "motivation": str(char.get("motivation", "")),
                             "quirk": str(char.get("quirk", "")),
+                            "voice_tags": normalize_voice_tags(char.get("voice_tags", char.get("voice_type"))),
                         }
 
         with self._plot_beats_lock:
@@ -508,9 +536,10 @@ class StoryPlanningTools(BaseTools):
             lines.append("  Active Characters:")
             for c in chars:
                 desc_str = f" ({c['description']})" if c.get("description") else ""
+                voice_part = f" | Voice Tags: {', '.join(c['voice_tags'])}" if c.get("voice_tags") else ""
                 lines.append(
                     f"    - {c['name']}{desc_str}: Personality: {c.get('personality', 'N/A')} | "
-                    f"Motivation: {c.get('motivation', 'N/A')} | Quirk: {c.get('quirk', 'N/A')}"
+                    f"Motivation: {c.get('motivation', 'N/A')} | Quirk: {c.get('quirk', 'N/A')}{voice_part}"
                 )
 
         if not plot_beats:
@@ -679,7 +708,8 @@ class StoryPlanningTools(BaseTools):
         personality: str = "",
         motivation: str = "",
         quirk: str = "",
-    ) -> Dict[str, str]:
+        voice_tags: List[str] | str | None = None,
+    ) -> Dict[str, Any]:
         """Return an enriched character profile without changing CanvasState.
 
         This is the planner's sole input tool: it helps draft a character that
@@ -691,6 +721,7 @@ class StoryPlanningTools(BaseTools):
         clean_pers = str(personality or "").strip()
         clean_motiv = str(motivation or "").strip()
         clean_quirk = str(quirk or "").strip()
+        clean_tags = normalize_voice_tags(voice_tags)
 
         if not clean_name:
             return {"error": "Character name cannot be empty."}
@@ -703,8 +734,8 @@ class StoryPlanningTools(BaseTools):
             quirk_service = get_quirk_generator_service()
             clean_quirk = quirk_service.get_random_quirk(exclude=active_quirks)
 
-        # If personality or motivation are missing, generate them via text provider
-        if not clean_pers or not clean_motiv:
+        # If personality, motivation, or voice_tags are missing, generate them via text provider
+        if not clean_pers or not clean_motiv or not clean_tags:
             elements = self.get_present_elements()
             prompt = _CHARACTER_GEN_PROMPT_TEMPLATE.render(
                 name=clean_name,
@@ -725,12 +756,17 @@ class StoryPlanningTools(BaseTools):
             if resp_text.startswith("```"):
                 resp_text = re.sub(r"^```(?:json)?\s*", "", resp_text)
                 resp_text = re.sub(r"\s*```$", "", resp_text)
-            parsed = json.loads(resp_text)
+            try:
+                parsed = json.loads(resp_text)
+            except Exception:
+                parsed = {}
             if isinstance(parsed, dict):
                 if not clean_pers:
                     clean_pers = str(parsed.get("personality") or "").strip()
                 if not clean_motiv:
                     clean_motiv = str(parsed.get("motivation") or "").strip()
+                if not clean_tags:
+                    clean_tags = normalize_voice_tags(parsed.get("voice_tags", parsed.get("voice_type")))
 
         return {
             "name": clean_name,
@@ -738,6 +774,7 @@ class StoryPlanningTools(BaseTools):
             "personality": clean_pers,
             "motivation": clean_motiv,
             "quirk": clean_quirk,
+            "voice_tags": clean_tags,
         }
 
     @with_cooldown("generating character")
@@ -748,6 +785,7 @@ class StoryPlanningTools(BaseTools):
         personality: str = "",
         motivation: str = "",
         quirk: str = "",
+        voice_tags: List[str] | str | None = None,
     ) -> str:
         """Generate or update a persisted character outside a planner turn."""
         char_data = self.generate_character_profile(
@@ -756,6 +794,7 @@ class StoryPlanningTools(BaseTools):
             personality=personality,
             motivation=motivation,
             quirk=quirk,
+            voice_tags=voice_tags,
         )
         if "error" in char_data:
             return f"Error: {char_data['error']}"
@@ -769,9 +808,10 @@ class StoryPlanningTools(BaseTools):
 
         self._log_story_update(self.get_plot_beats(), source="character_added")
 
+        tags_str = f". Voice Tags: {', '.join(char_data['voice_tags'])}" if char_data.get("voice_tags") else ""
         return (
             f"Created/Updated character '{clean_name}'. Personality: {char_data['personality']}. "
-            f"Motivation: {char_data['motivation']}. Quirk: {char_data['quirk']}."
+            f"Motivation: {char_data['motivation']}. Quirk: {char_data['quirk']}{tags_str}."
         )
 
     @with_cooldown("updating scene elements")
@@ -848,11 +888,11 @@ class StoryPlanningTools(BaseTools):
                 for name, content in list(self._elements.items())[-self.max_named_elements:]
             ]
 
-    def get_present_characters(self) -> list[dict[str, str]]:
+    def get_present_characters(self) -> list[dict[str, Any]]:
         """Return a stable snapshot of active characters with personalities and motivations."""
         with self._characters_lock:
             return [
-                {key: str(value)[:MAX_CONTEXT_FIELD_CHARS] for key, value in char.items()}
+                dict(char)
                 for char in list(self._characters.values())[-MAX_ACTIVE_CHARACTERS:]
             ]
 
@@ -931,6 +971,7 @@ class StoryPlanningTools(BaseTools):
                 personality=str(update.get("personality") or "").strip(),
                 motivation=str(update.get("motivation") or "").strip(),
                 quirk=str(update.get("quirk") or "").strip(),
+                voice_tags=normalize_voice_tags(update.get("voice_tags", update.get("voice_type"))),
             )
             manifested.extend([
                 character for character in self.get_present_characters()

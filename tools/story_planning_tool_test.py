@@ -264,6 +264,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             text=json.dumps({
                 "personality": "Bold explorer",
                 "motivation": "Discover uncharted territories",
+                "voice_tags": ["female"],
             }),
             provider="mock-provider",
             model="mock-model",
@@ -273,11 +274,31 @@ class TestStoryPlanningTools(unittest.TestCase):
 
         self.assertEqual(profile["personality"], "Bold explorer")
         self.assertEqual(profile["motivation"], "Discover uncharted territories")
+        self.assertEqual(profile["voice_tags"], ["female"])
         mock_provider.generate.assert_called_once()
         request = mock_provider.generate.call_args[0][0]
         self.assertIsInstance(request, TextResponseRequest)
         self.assertIn("Character name: Kael", request.prompt)
+        self.assertIn("voice_tags", request.prompt)
         self.assertIn("character design assistant", request.system_instruction)
+
+    def test_character_creation_and_planner_prompt_includes_voice_tags(self):
+        tools = self._make_tools(theater_id="voice-tags-test")
+        result = tools.generate_character(
+            name="Vane",
+            description="Captain",
+            personality="Ruthless",
+            motivation="Claim the seas",
+            quirk="Taps cutlass",
+            voice_tags=["male", "unsupported_tag"],
+        )
+        self.assertIn("Voice Tags: male", result)
+        char = tools.get_present_characters()[0]
+        self.assertEqual(char["voice_tags"], ["male"])
+
+        prompt = tools._build_planner_instruction()
+        self.assertIn("voice_tags", prompt)
+        self.assertIn("Voice Tags: male", prompt)
 
     def test_character_profile_surfaces_provider_errors(self):
         mock_provider = MagicMock(spec=TextResponseProvider)

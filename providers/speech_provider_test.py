@@ -72,3 +72,67 @@ def test_google_chirp_speech_uses_chirp_voice_and_mp3():
     assert result.audio_bytes == b"mp3"
     assert client.kwargs["voice"].kwargs["name"] == "en-US-Chirp3-HD-Charon"
     assert client.kwargs["audio_config"].kwargs["speaking_rate"] == 1.25
+
+
+def test_fal_seed_speech_voice_selection_cues_and_exclusion():
+    from providers.fal_seed_speech_provider import FEMALE_SEED_VOICES, MALE_SEED_VOICES, SEED_CHARACTER_VOICES
+
+    provider = FalSeedSpeechProvider(api_key="test")
+    # Female voice tag
+    female_voice = provider.select_voice(["female"])
+    assert female_voice in FEMALE_SEED_VOICES
+
+    # Dict character metadata with voice_tags
+    male_voice = provider.select_voice({
+        "name": "Cedric",
+        "description": "Looking for his sister and mother",
+        "voice_tags": ["male"],
+    })
+    assert male_voice in MALE_SEED_VOICES
+
+    # Stable selection for same voice tags
+    assert provider.select_voice(["female"]) == provider.select_voice(["female"])
+
+    # Exclude already used voice
+    excluded_voice = provider.select_voice(["female"])
+    next_voice = provider.select_voice(["female"], exclude=[excluded_voice])
+    assert next_voice != excluded_voice
+    assert next_voice in FEMALE_SEED_VOICES
+
+
+def test_gemini_speech_voice_selection():
+    from providers.gemini_speech_provider import GEMINI_FEMALE_VOICES, GEMINI_MALE_VOICES
+
+    provider = GeminiSpeechProvider()
+    female_voice = provider.select_voice(["female"])
+    assert female_voice in GEMINI_FEMALE_VOICES
+
+    male_voice = provider.select_voice(["male"])
+    assert male_voice in GEMINI_MALE_VOICES
+
+
+def test_google_chirp_speech_voice_selection():
+    from providers.google_chirp_speech_provider import CHIRP_FEMALE_VOICES, CHIRP_MALE_VOICES
+
+    provider = GoogleChirpSpeechProvider()
+    female_voice = provider.select_voice(["female"])
+    assert female_voice in CHIRP_FEMALE_VOICES
+
+    male_voice = provider.select_voice(["male"])
+    assert male_voice in CHIRP_MALE_VOICES
+
+
+def test_speech_provider_synthesize_uses_selected_voice():
+    calls = []
+
+    def post(endpoint, payload):
+        calls.append((endpoint, payload))
+        return {"request_id": "fal-req", "audio": {"url": "https://audio.example/out.mp3"}}
+
+    provider = FalSeedSpeechProvider(api_key="test", request_json=post, download=lambda _: (b"mp3", "audio/mpeg"))
+    chosen_voice = provider.select_voice(["female"])
+    result = provider.synthesize(SpeechSynthesisRequest(text="Cast the spell.", voice=chosen_voice))
+
+    assert calls[0][1]["voice"] == chosen_voice
+    assert result.audio_bytes == b"mp3"
+

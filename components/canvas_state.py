@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import glob
 import io
 import asyncio
@@ -7,15 +9,11 @@ from pathlib import Path
 import shutil
 import time
 from typing import Any, Dict, List, Optional
-import os
-from pathlib import Path
-import shutil
-import time
-from typing import Any, Dict, List, Optional
 from fastapi import WebSocket
 
 from components.chat_manager import ChatManager
-from components.scene_speech import SceneSpeechDispatcher
+from components.scene_speech import SceneSpeechDispatcher, speaker_key
+from providers.speech_provider import SpeechProvider
 from utils.image_utils import extract_image_prompt
 from components.theater_manager import TheaterManager
 
@@ -177,21 +175,73 @@ class CanvasStateManager:
         if self._scene_speech:
             self._scene_speech.dispatch(self.scene_dialogue)
 
-    def enable_scene_speech(self) -> None:
+    def get_character_voice(self, speaker: str) -> Optional[str]:
+        """Get assigned voice for a character, if any."""
+        return self.character_voice_assignments.get(speaker_key(speaker))
+
+    def assign_character_voice(self, speaker: str, voice: str) -> None:
+        """Assign a specific voice to a character in canvas state."""
+        self.character_voice_assignments[speaker_key(speaker)] = str(voice)
+        self._persist_voice_assignments()
+
+    def get_character_voice_tags(self, speaker: str) -> list[str]:
+        """Find character voice tags in story planning state."""
+        normalized = speaker.strip().lower()
+        characters = self.story_planning_state.get("characters", [])
+        if isinstance(characters, list):
+            for char in characters:
+                if isinstance(char, dict) and str(char.get("name", "")).strip().lower() == normalized:
+                    tags = char.get("voice_tags", [])
+                    if isinstance(tags, (list, tuple, set)):
+                        return [str(t).strip().lower() for t in tags if str(t).strip().lower() in ("male", "female")]
+                    if isinstance(tags, str) and tags.strip().lower() in ("male", "female"):
+                        return [tags.strip().lower()]
+        return []
+
+    def get_character_description(self, speaker: str) -> str:
+        """Find character metadata in story planning state or named elements."""
+        normalized = speaker.strip().lower()
+        characters = self.story_planning_state.get("characters", [])
+        if isinstance(characters, list):
+            for char in characters:
+                if isinstance(char, dict) and str(char.get("name", "")).strip().lower() == normalized:
+                    desc_parts = [
+                        char.get("name", ""),
+                        char.get("description", ""),
+                        char.get("personality", ""),
+                        char.get("motivation", ""),
+                        char.get("quirk", ""),
+                    ]
+                    return " ".join(str(p) for p in desc_parts if p).strip()
+        for elem in self.get_named_elements():
+            if isinstance(elem, dict) and str(elem.get("name", "")).strip().lower() == normalized:
+                content = elem.get("content") or elem.get("description") or ""
+                return f"{elem.get('name', '')} {content}".strip()
+        return speaker
+
+    def enable_scene_speech(self, provider: SpeechProvider | None = None) -> None:
         """Start automatic Seed Speech delivery; no theater configuration needed."""
         if self._scene_speech is None:
+            if provider is None:
+                from providers import get_speech_provider, SpeechProviderError
+                try:
+                    provider = get_speech_provider("fal-seed-speech")
+                except SpeechProviderError:
+                    from providers.fal_seed_speech_provider import FalSeedSpeechProvider
+                    provider = FalSeedSpeechProvider()
             self._scene_speech = SceneSpeechDispatcher(
                 theater_id=self.theater_id,
                 output_dir=self.theater.output_dir(),
                 assignments=self.character_voice_assignments,
                 persist_assignments=self._persist_voice_assignments,
                 publish_audio=self._publish_scene_audio,
+                provider=provider,
+                character_lookup=self.get_character_voice_tags,
             )
 
     def _persist_voice_assignments(self) -> None:
         sess_dir = self.theater.directory()
-        if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+        self.export_theater_data(theater_dir=sess_dir)
 
     def _publish_scene_audio(self, message: Dict[str, Any]) -> None:
         if not self.active_state_ws_connections or not self._state_ws_loop or self._state_ws_loop.is_closed():

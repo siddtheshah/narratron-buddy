@@ -2,13 +2,38 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-from typing import Any, Callable, Mapping
+import re
+from typing import Any, Callable, Iterable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisRequest, SpeechSynthesisResult
+from providers.speech_provider import (
+    SpeechProvider,
+    SpeechProviderError,
+    SpeechSynthesisRequest,
+    SpeechSynthesisResult,
+    extract_voice_tags,
+)
+
+SEED_CHARACTER_VOICES = (
+    "mindy_en_es_id_pt_zh", "stokie_en", "dacey_en", "tim_en",
+    "kian_en_zh", "cedric_en_zh", "sophie_en_zh", "jean_en_zh",
+    "magnus_en_zh", "mabel_en_zh", "nadia_en_zh", "opal_en_zh",
+    "pearl_en_zh", "quentin_en_zh", "jess_ja_es_id_pt_en_zh",
+)
+
+FEMALE_SEED_VOICES = (
+    "mindy_en_es_id_pt_zh", "dacey_en", "sophie_en_zh", "jean_en_zh",
+    "mabel_en_zh", "nadia_en_zh", "opal_en_zh", "pearl_en_zh",
+    "jess_ja_es_id_pt_en_zh",
+)
+
+MALE_SEED_VOICES = (
+    "stokie_en", "tim_en", "kian_en_zh", "cedric_en_zh", "magnus_en_zh", "quentin_en_zh",
+)
 
 
 class FalSeedSpeechProvider(SpeechProvider):
@@ -18,14 +43,39 @@ class FalSeedSpeechProvider(SpeechProvider):
 
     def __init__(self, *, api_key: str | None = None, request_json: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None, download: Callable[[str], tuple[bytes, str]] | None = None, output_format: str = "mp3", sample_rate_hz: int = 24_000) -> None:
         self.api_key = api_key or os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")
-        if not self.api_key:
-            raise SpeechProviderError("FAL_KEY or FAL_API_KEY is not configured for Seed Speech.")
         self.output_format = output_format
         self.sample_rate_hz = sample_rate_hz
         self._request_json = request_json or self._post_json
         self._download = download or self._download_audio
 
+    def select_voice(
+        self,
+        voice_tags: Iterable[str] | str | Mapping[str, Any] | None = None,
+        *,
+        exclude: Iterable[str] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        tags = extract_voice_tags(voice_tags)
+        excluded = set(exclude or ())
+
+        if "female" in tags and "male" not in tags:
+            pool = FEMALE_SEED_VOICES
+        elif "male" in tags and "female" not in tags:
+            pool = MALE_SEED_VOICES
+        else:
+            pool = SEED_CHARACTER_VOICES
+
+        available = [v for v in pool if v not in excluded]
+        if not available:
+            available = [v for v in SEED_CHARACTER_VOICES if v not in excluded]
+        if not available:
+            available = list(pool) or list(SEED_CHARACTER_VOICES)
+
+        return available[0]
+
     def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResult:
+        if not self.api_key:
+            raise SpeechProviderError("FAL_KEY or FAL_API_KEY is not configured for Seed Speech.")
         payload: dict[str, Any] = {
             "text": request.text,
             "voice": request.voice or "stokie_en",
