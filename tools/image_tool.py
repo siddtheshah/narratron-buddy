@@ -15,7 +15,7 @@ from providers import (
     ImageReference,
     get_image_provider,
 )
-from tools.base_tool import BaseTools, with_cooldown
+from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from utils.image_utils import (
     embed_image_metadata,
     extract_image_metadata_description,
@@ -154,7 +154,7 @@ class ImageTools(BaseTools):
                             self.references_manifest[stem.lower()] = entry
                             self.references_manifest[clean_stem.lower()] = entry
             unique_count = len(set(item['path'] for item in self.references_manifest.values())) if self.references_manifest else 0
-            logger.info(f"[ImageTools] Loaded {unique_count} reference images into references manifest.")
+            logger.debug(f"[ImageTools] Loaded {unique_count} reference images into references manifest.")
         except Exception as e:
             logger.warning(f"[ImageTools] Failed to load references: {e}")
 
@@ -248,7 +248,7 @@ class ImageTools(BaseTools):
             A string indicating that background image generation has started, or an error message.
         """
         effective_prompt = self._apply_default_style(image_prompt)
-        logging.info(f"[create_image_tool] image_prompt: {effective_prompt}, image_name: {image_name}, reference_images: {reference_images}, display: {display}")
+        logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, reference_images={reference_images}, display={display}")
         
         resolved_refs = []
         if reference_images:
@@ -262,7 +262,7 @@ class ImageTools(BaseTools):
                 if ref_path:
                     resolved_refs.append((ref, ref_path))
                 else:
-                    logger.error(f"[create_image tool] Reference image '{ref}' not found.")
+                    logger.error(f"[ImageTools] Reference image '{ref}' not found.")
                     res = f"Error: Reference image '{ref}' not found."
                     self._trigger_after_tool_call("create_image")
                     return res
@@ -276,12 +276,12 @@ class ImageTools(BaseTools):
                     mime_type = "image/png" if ref_path.lower().endswith(".png") else "image/jpeg"
                     provider_references.append(ImageReference(name=Path(ref_path).name, data=img_bytes, mime_type=mime_type))
                 except Exception as e:
-                    logger.error(f"[create_image tool] Error loading reference image {ref_path}: {e}")
+                    logger.error(f"[ImageTools] Error loading reference image {ref_path}: {e}")
                     res = f"Error loading reference image '{ref_key}': {e}"
                     self._trigger_after_tool_call("create_image")
                     return res
             
-            logger.info(f"[create_image tool] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
+            logger.debug(f"[ImageTools] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
 
         self.record_tool_call("create_image")
 
@@ -290,8 +290,8 @@ class ImageTools(BaseTools):
             try:
                 saved_paths = []
                 provider = self._get_image_provider()
-                logger.info(
-                    "[create_image tool] Generating image using provider '%s' from prompt: %s...",
+                logger.debug(
+                    "[ImageTools] Generating image using provider '%s' from prompt: %s...",
                     self.image_provider_id,
                     effective_prompt[:100],
                 )
@@ -330,7 +330,7 @@ class ImageTools(BaseTools):
                         self.image_aliases[image_name.lower()] = filepath
                         self.image_aliases[clean_name.lower()] = filepath
                     
-                    logger.info(f"[create_image tool] Saved image from {generation_details} to {filepath} (Name alias: {image_name})")
+                    logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} (Name alias: {image_name})")
                     if self.on_image_created:
                         try:
                             self.on_image_created(filepath)
@@ -346,13 +346,13 @@ class ImageTools(BaseTools):
                     if display:
                         show_res = self.show_image(saved_paths[0], effect=effect)
                         if show_res.startswith("Error:"):
-                            logger.warning(f"[create_image tool] Generated image but could not display: {show_res}")
+                            logger.warning(f"[ImageTools] Generated image but could not display: {show_res}")
                 else:
-                    logger.error("[create_image tool] Failed to generate image: provider returned no binary image data.")
+                    logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
             except ImageProviderError as e:
-                logger.error("[create_image tool] Image provider '%s' failed: %s", self.image_provider_id, e)
+                logger.error("[ImageTools] Image provider '%s' failed: %s", self.image_provider_id, e)
             except Exception as e:
-                logger.error(f"[create_image tool] Error generating image in background: {e}")
+                logger.error(f"[ImageTools] Error generating image in background: {e}")
             finally:
                 self._set_canvas_activity(False)
                 self._trigger_after_tool_call("create_image")
@@ -403,10 +403,10 @@ class ImageTools(BaseTools):
             effect = str(effect or "gleam3").lower().strip()
             if effect not in supported_effects:
                 return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
-            logger.info(f"[show_image tool] Called — file_path='{file_path}', transition='{transition}', effect='{effect}'")
+            logger.debug(f"[ImageTools] Showing image file_path='{file_path}', transition='{transition}', effect='{effect}'")
 
             resolved_path = self._find_image_path(file_path)
-            logger.info(f"[show_image tool] Showing image from '{file_path}' (resolved: '{resolved_path}', transition: '{transition}')")
+            logger.debug(f"[ImageTools] Resolved image '{file_path}' to '{resolved_path}' (transition='{transition}')")
             if resolved_path:
                 canvas_state_service = getattr(self, "canvas_state_service", None)
                 if canvas_state_service:
@@ -417,7 +417,7 @@ class ImageTools(BaseTools):
                         effect=effect,
                     )
                 if self.on_show_image:
-                    logger.debug(f"[show_image tool] Invoking on_show_image callback with '{resolved_path}', transition='{transition}', effect='{effect}'")
+                    logger.debug(f"[ImageTools] Invoking on_show_image callback with '{resolved_path}', transition='{transition}', effect='{effect}'")
                     try:
                         self.on_show_image(
                             resolved_path,
@@ -425,24 +425,25 @@ class ImageTools(BaseTools):
                             effect=effect,
                         )
                     except Exception as e:
-                        logger.error(f"[show_image tool] Exception in on_show_image callback: {e}")
+                        logger.error(f"[ImageTools] Exception in on_show_image callback: {e}")
                 elif not canvas_state_service:
-                    logger.warning("[show_image tool] on_show_image callback is not set")
+                    logger.warning("[ImageTools] on_show_image callback is not set")
                 self.currently_displayed_image_path = resolved_path
                 self.currently_displayed_image_transition = transition
                 self.currently_displayed_image_effect = effect
                 res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
             else:
-                logger.warning(f"[show_image tool] Image path or alias '{file_path}' could not be resolved.")
+                logger.warning(f"[ImageTools] Image path or alias '{file_path}' could not be resolved.")
                 res = f"Error: Image '{file_path}' not found."
             self._trigger_after_tool_call("show_image")
             return res
         except Exception as e:
-            logger.error(f"[show_image tool] Exception occurred while showing image '{file_path}': {e}", exc_info=True)
+            logger.error(f"[ImageTools] Exception occurred while showing image '{file_path}': {e}", exc_info=True)
             res = f"Error showing image: {e}"
             self._trigger_after_tool_call("show_image")
             return res
 
+    @logged_tool_call
     def browse_images(self) -> list[str]:
         """Browse all available images, including preloaded reference assets and generated outputs.
 
@@ -478,6 +479,7 @@ class ImageTools(BaseTools):
             self._trigger_after_tool_call("browse_images")
             return [f"Error browsing images: {e}"]
 
+    @logged_tool_call
     def search_image_by_metadata(self, metadata_query: str) -> list[str]:
         """Search for images that match a given metadata description across generated images and references.
 

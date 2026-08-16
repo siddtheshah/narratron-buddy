@@ -1,7 +1,7 @@
 """Tests for session-scoped Narratron agent construction."""
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from services.agent import AGENT_INSTRUCTION_TEMPLATE, create_agent
 
@@ -114,7 +114,11 @@ class TestCreateAgent(unittest.TestCase):
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
         mock_story_planning_cls.assert_called_once_with(config.get("story_planning", {}), **managed_tool_kwargs)
-        mock_music_cls.assert_called_once_with(config.get("music", {}), **managed_tool_kwargs)
+        mock_music_cls.assert_called_once_with(
+            config.get("music", {}),
+            **managed_tool_kwargs,
+            music_catalog=ANY,
+        )
 
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")

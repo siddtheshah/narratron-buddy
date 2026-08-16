@@ -556,16 +556,16 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         self.assertEqual(res["total_voice_minutes"], 15.5)
         self.assertEqual(res["total_images_created"], 4)
         self.assertEqual(res["total_music_created"], 2)
-        # Default cost: 15.5 (voice) + 4.0 (images) + 6.0 (2 music * 3.0 cr) = 25.5 credits deducted -> 0.0 - 25.5 = -25.5
-        self.assertEqual(res["credits"], -25.5)
+        # Default cost: 15.5 (voice) + 4.0 (images) + 4.0 (2 music * 2.0 cr) = 23.5 credits deducted -> 0.0 - 23.5 = -23.5
+        self.assertEqual(res["credits"], -23.5)
 
         # Record subsequent usage
         res2 = self.db.record_user_usage(self.user["id"], voice_minutes=10.0, images_created=2, music_created=1, credit_cost=5.0)
         self.assertEqual(res2["total_voice_minutes"], 25.5)
         self.assertEqual(res2["total_images_created"], 6)
         self.assertEqual(res2["total_music_created"], 3)
-        # Explicit cost 5.0 deducted -> -25.5 - 5.0 = -30.5
-        self.assertEqual(res2["credits"], -30.5)
+        # Explicit cost 5.0 deducted -> -23.5 - 5.0 = -28.5
+        self.assertEqual(res2["credits"], -28.5)
 
     def test_record_user_usage_story_plans_are_totaled_and_billed(self):
         self.db.pricing_controller.story_planning_credit_rate = 1.5

@@ -13,7 +13,7 @@ from providers import (
     MusicProviderError,
     get_music_provider,
 )
-from tools.base_tool import BaseTools, with_cooldown
+from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from components.theater_manager import TheaterManager
 from tools.music_catalog import MusicCatalog
 
@@ -167,6 +167,7 @@ class MusicTools(BaseTools):
             return f"{music_prompt}\n\nStyle: {self.style_default}"
         return music_prompt
 
+    @logged_tool_call
     def create_music(
         self,
         prompt: str,
@@ -182,7 +183,7 @@ class MusicTools(BaseTools):
             A status string indicating background generation has started.
         """
         effective_prompt = self._apply_default_style(prompt)
-        logger.info("[MusicTools] create_music requested for theater=%s handle=%s.", self.active_theater_id, handle)
+        logger.debug("[MusicTools] create_music requested for theater=%s handle=%s.", self.active_theater_id, handle)
         if not self.use_generated_music:
             return "Error: Music generation is disabled in theater configuration."
 
@@ -196,7 +197,7 @@ class MusicTools(BaseTools):
             self.music_aliases[alias_key] = track_url
             self.music_aliases[alias_key.lower()] = track_url
             self.music_aliases[filename] = track_url
-            logger.info(
+            logger.debug(
                 "[MusicTools] Reused catalog music id=%s score=%.2f for theater=%s as %s",
                 match["id"], match["score"], self.active_theater_id, filename,
             )
@@ -296,10 +297,11 @@ class MusicTools(BaseTools):
         Returns:
             A status message indicating success or failure.
         """
-        logger.info("[MusicTools] play_music requested for theater=%s music_id=%s.", self.active_theater_id, music_id)
+        logger.debug("[MusicTools] play_music requested for theater=%s music_id=%s.", self.active_theater_id, music_id)
         self.record_tool_call("play_music")
         return self._play_music_internal(music_id)
 
+    @logged_tool_call
     def pause_music(self) -> str:
         """Pause the current playing music track or playlist on the canvas dashboard.
 
@@ -311,12 +313,13 @@ class MusicTools(BaseTools):
                 self.canvas_state_service.pause_music(theater_id=self.theater_id)
             if self.on_pause_music:
                 self.on_pause_music()
-            logger.info("[MusicTools] pause_music requested for theater=%s.", self.active_theater_id)
+            logger.debug("[MusicTools] pause_music requested for theater=%s.", self.active_theater_id)
             return "Successfully paused the music."
         except Exception as e:
             logger.error("[MusicTools] Error pausing music: %s", e)
             return f"Error pausing music: {e}"
 
+    @logged_tool_call
     def resume_music(self) -> str:
         """Resume the paused music track or playlist on the canvas dashboard.
 
@@ -328,7 +331,7 @@ class MusicTools(BaseTools):
                 self.canvas_state_service.resume_music(theater_id=self.theater_id)
             if self.on_resume_music:
                 self.on_resume_music()
-            logger.info("[MusicTools] resume_music requested for theater=%s.", self.active_theater_id)
+            logger.debug("[MusicTools] resume_music requested for theater=%s.", self.active_theater_id)
             return "Successfully resumed the music."
         except Exception as e:
             logger.error("[MusicTools] Error resuming music: %s", e)

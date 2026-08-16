@@ -26,12 +26,12 @@ class ChatTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
-            logger.info(f"[chat_tool] Updating agent thought: {text}")
+            logger.debug(f"[ChatTools] Updating agent thought: {text}")
             if self.canvas_state_service:
                 self.canvas_state_service.set_agent_thought(text, theater_id=self.theater_id)
             if self.on_send_chat_message:
                 self.on_send_chat_message(text)
             return f"Successfully updated the Narratron thought panel: {text}"
         except Exception as e:
-            logger.error(f"[chat_tool] Error sending chat message: {e}")
+            logger.error(f"[ChatTools] Error sending chat message: {e}")
             return f"Error sending chat message: {e}"

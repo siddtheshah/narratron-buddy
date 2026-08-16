@@ -2,13 +2,13 @@
 
 Logging & Script Inspection:
 ----------------------------
-All plot-beat updates, character mutations, and scene element mutations emit formatted log records
-tagged with ``[STORY_SCRIPT]``.
+All plot-beat updates, character mutations, and scene element mutations emit formatted debug log records
+tagged with ``[StoryPlanningTools]``.
 
 To inspect story script outputs over time during server execution, filter console logging
 using the existing ``--log_prefixes`` flag when running ``main.py``:
 
-    python main.py --log_prefixes="[STORY_SCRIPT]"
+    python main.py --log_prefixes="[StoryPlanningTools]"
 """
 
 from collections import OrderedDict
@@ -33,7 +33,7 @@ from google import genai
 from google.genai import types
 
 from components.theater_manager import TheaterManager
-from tools.base_tool import BaseTools, with_cooldown
+from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from services.quirk_service import get_quirk_generator_service
 
 logger = logging.getLogger(__name__)
@@ -179,9 +179,9 @@ def build_story_context_prompt(
 class StoryPlanningTools(BaseTools):
     """Maintain scene context, characters, and planner-owned durable plot beats.
 
-    Emits formatted logger records prefixed with ``[STORY_SCRIPT]`` whenever scene elements
+    Emits formatted logger records prefixed with ``[StoryPlanningTools]`` whenever scene elements
     or plot beats are updated. Filter output to story script logs using:
-        python main.py --log_prefixes="[STORY_SCRIPT]"
+        python main.py --log_prefixes="[StoryPlanningTools]"
     """
 
     def __init__(
@@ -376,7 +376,7 @@ class StoryPlanningTools(BaseTools):
                             for k, v in saved_elements.items():
                                 self._elements[str(k)] = str(v)
         except Exception as e:
-            logger.warning(f"[STORY_SCRIPT] Failed to reload story planning state from session state: {e}")
+            logger.warning(f"[StoryPlanningTools] Failed to reload story planning state from session state: {e}")
 
     def save_to_session_state(self) -> None:
         """Persist story planning snapshot to session state."""
@@ -394,7 +394,7 @@ class StoryPlanningTools(BaseTools):
             elif state_mgr and hasattr(state_mgr, "set_named_elements"):
                 state_mgr.set_named_elements(self.get_present_elements())
         except Exception as e:
-            logger.warning(f"[STORY_SCRIPT] Failed to save story planning state to session state: {e}")
+            logger.warning(f"[StoryPlanningTools] Failed to save story planning state to session state: {e}")
 
     def _format_story_log(self, plot_beats: List[Dict[str, Any]]) -> str:
         """Format active characters and durable plot beats into a clean debug string."""
@@ -420,8 +420,8 @@ class StoryPlanningTools(BaseTools):
     def _log_story_update(self, plot_beats: List[Dict[str, Any]], source: str) -> None:
         """Emit formatted logger output for durable story-state tracking."""
         theater = self.theater_id or "default"
-        logger.info(
-            "[STORY_SCRIPT] Plot beats active (source=%s, theater=%s, count=%d):\n%s",
+        logger.debug(
+            "[StoryPlanningTools] Plot beats active (source=%s, theater=%s, count=%d):\n%s",
             source,
             theater,
             len(plot_beats),
@@ -446,6 +446,7 @@ class StoryPlanningTools(BaseTools):
             )
         return self._vertex_client
 
+    @logged_tool_call
     def browse_lore(self, document: str = "") -> str:
         """List or read the theater's text-only lore documents.
 
@@ -476,6 +477,7 @@ class StoryPlanningTools(BaseTools):
         suffix = "\n[Excerpt truncated for planner context.]" if len(content) > len(excerpt) else ""
         return f"Lore document: {document}\n\n{excerpt}{suffix}"
 
+    @logged_tool_call
     def roll_dice(
         self,
         sides: int = 20,
@@ -520,8 +522,8 @@ class StoryPlanningTools(BaseTools):
             self.canvas_state_service.set_tool_activity(
                 "dice", active=True, theater_id=self.theater_id, recent_seconds=2.5,
             )
-        logger.info(
-            "[STORY_SCRIPT] Dice roll (theater=%s, reason=%s): %s",
+        logger.debug(
+            "[StoryPlanningTools] Dice roll (theater=%s, reason=%s): %s",
             self.theater_id or "default",
             result.get("reason", "unspecified"),
             result,
@@ -541,7 +543,7 @@ class StoryPlanningTools(BaseTools):
             try:
                 content = self.theater_manager.read_lore_document(self.theater_id, document)
             except ValueError as error:
-                logger.warning("[STORY_SCRIPT] Could not inject lore document '%s': %s", document, error)
+                logger.warning("[StoryPlanningTools] Could not inject lore document '%s': %s", document, error)
                 continue
             excerpt = content[:min(MAX_LORE_DOCUMENT_CONTEXT_CHARS, remaining)]
             if len(content) > len(excerpt):
@@ -553,6 +555,7 @@ class StoryPlanningTools(BaseTools):
             sections.append("[Additional lore documents omitted from this initial planner context.]")
         return "\n\n".join(sections)
 
+    @logged_tool_call
     def generate_character_profile(
         self,
         name: str,
@@ -612,7 +615,7 @@ class StoryPlanningTools(BaseTools):
                     if not clean_motiv:
                         clean_motiv = str(parsed.get("motivation") or "").strip()
             except Exception as exc:
-                logger.warning(f"[STORY_SCRIPT] LLM character generation fallback for '{clean_name}': {exc}")
+                logger.warning(f"[StoryPlanningTools] LLM character generation fallback for '{clean_name}': {exc}")
 
             if not clean_pers:
                 clean_pers = "Resourceful and determined character with distinct flair."
@@ -687,8 +690,8 @@ class StoryPlanningTools(BaseTools):
         self.save_to_session_state()
 
         action = "Updated" if is_update else "Added"
-        logger.info(
-            "[STORY_SCRIPT] %s named element '%s' (theater=%s). Active elements count: %d",
+        logger.debug(
+            "[StoryPlanningTools] %s named element '%s' (theater=%s). Active elements count: %d",
             action,
             clean_name,
             self.theater_id or "default",
@@ -697,6 +700,7 @@ class StoryPlanningTools(BaseTools):
 
         return f"{action} named element '{clean_name}'."
 
+    @logged_tool_call
     def clear_scene(self) -> str:
         """Clear every named element and character from the current scene before starting a new one."""
         with self._elements_lock:
@@ -715,8 +719,8 @@ class StoryPlanningTools(BaseTools):
 
         self.save_to_session_state()
 
-        logger.info(
-            "[STORY_SCRIPT] Cleared %d scene element(s), %d character(s), and plot beats (theater=%s).",
+        logger.debug(
+            "[StoryPlanningTools] Cleared %d scene element(s), %d character(s), and plot beats (theater=%s).",
             elem_count,
             char_count,
             self.theater_id or "default",
@@ -780,7 +784,7 @@ class StoryPlanningTools(BaseTools):
             if hasattr(state_mgr, "set_scene_dialogue"):
                 state_mgr.set_scene_dialogue(dialogue)
         except Exception as exc:
-            logger.warning("[STORY_SCRIPT] Failed to publish scene dialogue: %s", exc)
+            logger.warning("[StoryPlanningTools] Failed to publish scene dialogue: %s", exc)
 
     def _publish_scene_description(self, description: str) -> None:
         """Persist the planner's visual scene caption for the canvas."""
@@ -791,7 +795,7 @@ class StoryPlanningTools(BaseTools):
             if hasattr(state_mgr, "set_scene_description"):
                 state_mgr.set_scene_description(description)
         except Exception as exc:
-            logger.warning("[STORY_SCRIPT] Failed to publish scene description: %s", exc)
+            logger.warning("[StoryPlanningTools] Failed to publish scene description: %s", exc)
 
     def _apply_planner_character_updates(self, updates: Any) -> List[Dict[str, str]]:
         """Execute planner-selected character manifestations without live-agent control."""
@@ -938,14 +942,14 @@ Apply the stated style to pacing, narration, opposition, and consequences, while
             try:
                 result = self._resolve_user_action(action)
             except Exception as exc:
-                logger.exception("[STORY_SCRIPT] Scene reaction failed")
+                logger.exception("[StoryPlanningTools] Scene reaction failed")
                 result = {"error": f"Story planner failed: {exc}"}
             callback = self.on_scene_reaction
             if callback:
                 try:
                     callback(result)
                 except Exception:
-                    logger.exception("[STORY_SCRIPT] Scene reaction callback failed")
+                    logger.exception("[StoryPlanningTools] Scene reaction callback failed")
 
         import threading
         threading.Thread(target=resolve_and_notify, daemon=True).start()
@@ -1001,7 +1005,7 @@ Apply the stated style to pacing, narration, opposition, and consequences, while
             try:
                 callback()
             except Exception:
-                logger.exception("[STORY_SCRIPT] Story-planning usage callback failed")
+                logger.exception("[StoryPlanningTools] Story-planning usage callback failed")
         return result
 
     @staticmethod

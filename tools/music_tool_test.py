@@ -37,6 +37,7 @@ class TestMusicTools(BaseTestCase):
                 "generation_cooldown": 0.0,
                 "switch_cooldown": 0.0,
                 "provider": "lyria",
+                "use_generated_music": True,
             }
         }
         

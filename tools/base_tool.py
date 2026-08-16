@@ -7,6 +7,16 @@ from typing import Any, Callable, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+def logged_tool_call(func: Callable):
+    """Log a public tool invocation without changing its cooldown behavior."""
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        self.log_tool_call(func.__name__)
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
 def with_cooldown(
     func_or_desc=None,
     action_desc: Optional[str] = None,
@@ -33,6 +43,7 @@ def with_cooldown(
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
             tool_name = func.__name__
+            self.log_tool_call(tool_name)
             cooldown_err = self.check_cooldown(tool_name, desc, duration)
             if cooldown_err:
                 trigger_cb = getattr(self, "_trigger_after_tool_call", None)
@@ -53,6 +64,7 @@ def with_cooldown(
             @functools.wraps(func)
             def wrapper(self, *args, **kwargs):
                 tool_name = func.__name__
+                self.log_tool_call(tool_name)
                 cooldown_err = self.check_cooldown(tool_name, desc, duration)
                 if cooldown_err:
                     trigger_cb = getattr(self, "_trigger_after_tool_call", None)
@@ -165,7 +177,7 @@ class BaseTools:
             remaining = int(remaining_sec)
             self._schedule_cooldown_timer(tool_name, remaining_sec)
             logger.warning(
-                f"[{tool_name} tool] On cooldown. Elapsed: {elapsed:.2f}s, "
+                f"[{self.__class__.__name__}] {tool_name} is on cooldown. Elapsed: {elapsed:.2f}s, "
                 f"Cooldown: {cooldown_duration}s, Remaining: {remaining}s"
             )
             desc_text = action_desc or "executing this action again"
@@ -173,6 +185,10 @@ class BaseTools:
                 f"Error: {tool_name} is on cooldown. "
             )
         return None
+
+    def log_tool_call(self, tool_name: str) -> None:
+        """Emit the single INFO-level record that marks a public tool call."""
+        logger.info("[%s] %s called (theater=%s).", self.__class__.__name__, tool_name, self.active_theater_id or "default")
 
     def record_tool_call(self, tool_name: str, duration: Optional[float] = None) -> None:
         """Records the timestamp of a successful tool call and schedules the expiration timer."""
@@ -188,13 +204,13 @@ class BaseTools:
         try:
             return max(0.0, float(configured_duration))
         except (TypeError, ValueError):
-            logger.warning("Invalid cooldown duration %r; using 0 seconds.", configured_duration)
+            logger.warning("[%s] Invalid cooldown duration %r; using 0 seconds.", self.__class__.__name__, configured_duration)
             return 0.0
 
     def _schedule_cooldown_timer(self, tool_name: str, remaining_seconds: float) -> None:
         """Schedules a background timer to invoke callbacks when a tool's cooldown expires."""
         def _timer_callback():
-            logger.info(f"[{self.__class__.__name__}] Cooldown for '{tool_name}' has expired.")
+            logger.debug(f"[{self.__class__.__name__}] Cooldown for '{tool_name}' has expired.")
             cb_expired = getattr(self, "on_cooldown_expired", None)
             if cb_expired:
                 try:

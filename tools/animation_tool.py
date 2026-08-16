@@ -133,19 +133,19 @@ class AnimationTools(BaseTools):
                     )
                     self._register_frame_aliases(animation_id, frame_number, filepath)
                     self._notify_image_created(filepath)
-                    logger.info(
-                        "[create_triframe tool] Saved frame %s using provider '%s' model '%s' to %s",
+                    logger.debug(
+                        "[AnimationTools] Saved frame %s using provider '%s' model '%s' to %s",
                         frame_number,
                         result.provider,
                         result.model,
                         filepath,
                     )
                 self._animations[animation_id] = saved_paths
-                logger.info("[create_triframe tool] Animation '%s' is ready to play.", animation_id)
+                logger.debug("[AnimationTools] Animation '%s' is ready to play.", animation_id)
             except ImageProviderError as exc:
-                logger.error("[create_triframe tool] Image provider failed: %s", exc)
+                logger.error("[AnimationTools] Image provider failed: %s", exc)
             except Exception:
-                logger.exception("[create_triframe tool] Failed to generate tri-frame animation")
+                logger.exception("[AnimationTools] Failed to generate tri-frame animation")
             finally:
                 self.image_tools._set_canvas_activity(False)
                 self.image_tools._trigger_after_tool_call("create_triframe")
@@ -247,7 +247,6 @@ class AnimationTools(BaseTools):
                 try:
                     callback()
                 except Exception:
-                    logger.exception("[create_triframe tool] Image-created callback failed")
+                    logger.exception("[AnimationTools] Image-created callback failed")
             except Exception:
-                logger.exception("[create_triframe tool] Image-created callback failed")
-
+                logger.exception("[AnimationTools] Image-created callback failed")
