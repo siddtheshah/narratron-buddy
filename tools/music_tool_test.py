@@ -164,15 +164,15 @@ class TestMusicTools(BaseTestCase):
         res2 = self.music_tools.play_music("combat")
         self.assertIn("play_music is on cooldown", res2)
 
-    def test_generation_enabled_config_disabled(self):
+    def test_use_generated_music_config_disabled(self):
         config = {
             "music": {
-                "generation_enabled": False,
+                "use_generated_music": False,
                 "generation_cooldown": 25.0,
             }
         }
         tools = self.make_tools(config)
-        self.assertFalse(tools.generation_enabled)
+        self.assertFalse(tools.use_generated_music)
         self.assertEqual(tools.generation_cooldown, 25.0)
 
         res = tools.create_music("test prompt")
@@ -194,7 +194,7 @@ class TestMusicTools(BaseTestCase):
     def test_switch_cooldown_config(self):
         config = {
             "music": {
-                "generation_enabled": True,
+                "use_generated_music": True,
                 "generation_cooldown": 30.0,
                 "switch_cooldown": 12.0,
             }

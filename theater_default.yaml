@@ -16,7 +16,7 @@ animation:
     cooldown_duration: 20
 
 music:
-    generation_enabled: false
+    use_generated_music: false
     playlists_folder: "playlists"
     generation_cooldown: 90
     switch_cooldown: 15

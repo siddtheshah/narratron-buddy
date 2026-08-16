@@ -336,7 +336,7 @@ class TestTheaterAPI(BaseTestCase):
             "/api/theaters/create-and-deploy",
             data={
                 "name": "Feature Flags Theater",
-                "enable_music_generation": "true",
+                "use_generated_music": "true",
                 "enable_scene_animations": "true",
                 "enable_adventure_mode": "true",
             },
@@ -346,7 +346,7 @@ class TestTheaterAPI(BaseTestCase):
         config = yaml.safe_load(
             (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
         )
-        self.assertTrue(config["music"]["generation_enabled"])
+        self.assertTrue(config["music"]["use_generated_music"])
         self.assertTrue(config["animation"]["enabled"])
         self.assertTrue(config["story_planning"]["adventure_mode"])
 
@@ -365,7 +365,7 @@ class TestTheaterAPI(BaseTestCase):
         config = yaml.safe_load(
             (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
         )
-        self.assertFalse(config["music"]["generation_enabled"])
+        self.assertFalse(config["music"]["use_generated_music"])
         self.assertFalse(config["animation"]["enabled"])
         self.assertFalse(config["story_planning"]["adventure_mode"])
 

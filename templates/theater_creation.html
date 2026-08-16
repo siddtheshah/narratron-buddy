@@ -1088,10 +1088,10 @@
                             <div
                                 style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 1rem;">
                                 <label class="checkbox-card">
-                                    <input type="checkbox" id="cfgMusicGeneration">
+                                    <input type="checkbox" id="cfgUseGeneratedMusic">
                                     <div>
                                         <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
-                                            🎵 Music Generation</div>
+                                            🎵 Use Generated Music</div>
                                         <div style="font-size: 0.72rem; color: var(--text-secondary);">AI fills gaps in
                                             your playlists with generated music</div>
                                     </div>
@@ -2380,7 +2380,7 @@
                 formData.append('agent_style', style);
                 formData.append('agent_special_instructions', specialInstructions);
                 formData.append('advanced_config_canonical', advancedConfigIsCanonical);
-                formData.append('enable_music_generation', document.getElementById('cfgMusicGeneration')?.checked ? 'true' : 'false');
+                formData.append('use_generated_music', document.getElementById('cfgUseGeneratedMusic')?.checked ? 'true' : 'false');
                 formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
                 formData.append('enable_adventure_mode',
                     currentCreationPath === 'adventure' || document.getElementById('cfgAdventureMode')?.checked ? 'true' : 'false');

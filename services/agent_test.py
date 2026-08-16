@@ -11,7 +11,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Music continuity is the default", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("both** the story has moved to a materially different scene **and** the emotional tone", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("confirmed by at least two distinct narrative events or user actions", AGENT_INSTRUCTION_TEMPLATE)
-        self.assertIn("music_generation_enabled", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("use_generated_music", AGENT_INSTRUCTION_TEMPLATE)
 
     @patch("services.agent.create_tool_bundle_for_session")
     @patch("services.agent.Agent")
@@ -60,7 +60,7 @@ class TestCreateAgent(unittest.TestCase):
         )
         mock_bundle_fn.return_value = mock_bundle
 
-        create_agent(theater_id="music_context_theater", config={"music": {"generation_enabled": False}})
+        create_agent(theater_id="music_context_theater", config={"music": {"use_generated_music": False}})
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("Preloaded Music Playlists Context", instruction)
@@ -79,7 +79,7 @@ class TestCreateAgent(unittest.TestCase):
         mock_bundle_fn.return_value = mock_bundle
         mock_playlists_fn.return_value = "No music playlists or generated tracks found."
 
-        create_agent(theater_id="music_enabled", config={"music": {"generation_enabled": True}})
+        create_agent(theater_id="music_enabled", config={"music": {"use_generated_music": True}})
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("create_music", instruction)
@@ -204,13 +204,13 @@ class TestCreateAgent(unittest.TestCase):
     ):
         from services.agent import create_tool_bundle_for_session
         music_inst = mock_music_cls.return_value
-        music_inst.generation_enabled = False
-        bundle = create_tool_bundle_for_session("test_t", config={"music": {"generation_enabled": False}})
+        music_inst.use_generated_music = False
+        bundle = create_tool_bundle_for_session("test_t", config={"music": {"use_generated_music": False}})
         tool_funcs = [getattr(t, "func", t) for t in bundle.tools]
         self.assertNotIn(music_inst.create_music, tool_funcs)
 
-        music_inst.generation_enabled = True
-        bundle_enabled = create_tool_bundle_for_session("test_t", config={"music": {"generation_enabled": True}})
+        music_inst.use_generated_music = True
+        bundle_enabled = create_tool_bundle_for_session("test_t", config={"music": {"use_generated_music": True}})
         tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
 

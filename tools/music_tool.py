@@ -48,7 +48,7 @@ class MusicTools(BaseTools):
         os.makedirs(self.output_dir, exist_ok=True)
 
         # Provider & Cooldown configuration
-        self.generation_enabled = bool(subconfig.get("generation_enabled", subconfig.get("enabled", True)))
+        self.use_generated_music = bool(subconfig.get("use_generated_music", False))
         self.generation_cooldown = float(subconfig.get("generation_cooldown", subconfig.get("cooldown_duration", 90.0)))
         self.switch_cooldown = float(subconfig.get("switch_cooldown", subconfig.get("cooldown_duration", 15.0)))
         self.style_default = str(subconfig.get("style", "")).strip()
@@ -183,7 +183,7 @@ class MusicTools(BaseTools):
         """
         effective_prompt = self._apply_default_style(prompt)
         logger.info("[MusicTools] create_music requested for theater=%s handle=%s.", self.active_theater_id, handle)
-        if not self.generation_enabled:
+        if not self.use_generated_music:
             return "Error: Music generation is disabled in theater configuration."
 
         match = self.music_catalog.find_match(effective_prompt)
