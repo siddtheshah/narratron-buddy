@@ -325,3 +325,6 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("* generate_character", instruction)
         self.assertIn("process_user_action", instruction)
         self.assertIn("never speak, act, decide, think, or feel for the player", instruction)
+        self.assertIn("AFTER the user action is processed", instruction)
+        self.assertIn("CRITICAL TIMING FOR ADVENTURE MODE", instruction)
+        self.assertIn("ONLY invoke `create_image` / `show_image` and `play_music` / `create_music` AFTER the user action is processed", instruction)
