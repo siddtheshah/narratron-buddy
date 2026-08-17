@@ -39,7 +39,7 @@ story_planning:
     cooldown_duration: 10
     # Each completed planner response adds one second per 5 returned words,
     # up to this limit, before accepting the next player action.
-    action_cooldown_words_per_second: 5
+    action_cooldown_words_per_second: 15
     action_cooldown_max_seconds: 30
 
 chat:

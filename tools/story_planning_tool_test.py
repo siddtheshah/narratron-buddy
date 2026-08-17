@@ -117,6 +117,32 @@ class TestStoryPlanningTools(unittest.TestCase):
             _ = model.api_client
         client.assert_called_once_with(vertexai=True, project="test-project", location="global")
 
+    def test_planner_model_creates_separate_clients_per_event_loop(self):
+        with patch("tools.story_planning_tool.genai.Client", side_effect=[MagicMock(), MagicMock(), MagicMock()]) as mock_client_factory:
+            model = VertexGemini(model="gemini-2.5-flash", project_id="test-project", location="global")
+            
+            # Outside loop
+            client_none = model.api_client
+            client_none_again = model.api_client
+            self.assertIs(client_none, client_none_again)
+
+            # In loop 1
+            loop1 = asyncio.new_event_loop()
+            async def get_client_in_loop():
+                return model.api_client
+            
+            client_loop1 = loop1.run_until_complete(get_client_in_loop())
+            loop1.close()
+
+            # In loop 2
+            loop2 = asyncio.new_event_loop()
+            client_loop2 = loop2.run_until_complete(get_client_in_loop())
+            loop2.close()
+
+            self.assertIsNot(client_none, client_loop1)
+            self.assertIsNot(client_loop1, client_loop2)
+            self.assertEqual(mock_client_factory.call_count, 3)
+
     def test_story_context_renders_characters_and_plot_beats(self):
         context = build_story_context_prompt(
             elements=[],

@@ -22,10 +22,11 @@ import secrets
 import math
 from threading import Lock
 import time
+import asyncio
 from typing import Any, Callable, List, Dict, Optional
 
 from jinja2 import Template
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.models.google_llm import Gemini
@@ -229,10 +230,17 @@ class VertexGemini(Gemini):
 
     project_id: Optional[str] = None
     location: str = "global"
+    _client_cache: dict = PrivateAttr(default_factory=dict)
 
-    @cached_property
+    @property
     def api_client(self):
-        return genai.Client(vertexai=True, project=self.project_id, location=self.location)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop not in self._client_cache:
+            self._client_cache[loop] = genai.Client(vertexai=True, project=self.project_id, location=self.location)
+        return self._client_cache[loop]
 
 
 def build_story_context_prompt(
