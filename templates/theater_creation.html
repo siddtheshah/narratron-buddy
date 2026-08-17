@@ -2267,7 +2267,7 @@
             [cardFolder, cardIndividual, cardBlank, cardAdventure].forEach(c => c && c.classList.remove('active'));
             [secFolder, secIndividual, secBlank, secAdventure].forEach(s => s && (s.style.display = 'none'));
             if (customConfigOptions) customConfigOptions.style.display = mode === 'individual' ? 'block' : 'none';
-            if (theaterNameConfig) theaterNameConfig.style.display = ['blank', 'adventure'].includes(mode) ? 'none' : 'block';
+            if (theaterNameConfig) theaterNameConfig.style.display = 'block';
 
             if (mode === 'adventure') {
                 if (cardAdventure) cardAdventure.classList.add('active');
