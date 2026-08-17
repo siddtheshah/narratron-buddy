@@ -1092,6 +1092,12 @@ class StoryPlanningTools(BaseTools):
         """Run one ADK planner turn resumed from the session."""
         runner = self._get_or_create_planner_runner()
         session_id = self.session_id
+        theater = self.theater_id or "default"
+        logger.debug(
+            "[StoryPlanningTools] Running planner agent (theater=%s): user_action=%r",
+            theater,
+            user_action,
+        )
 
         async def run_turn() -> Dict[str, Any]:
             final_text = ""
@@ -1190,7 +1196,6 @@ class StoryPlanningTools(BaseTools):
             return {"error": "Adventure Mode is not enabled for this theater."}
         if self.nodes_ahead <= 0:
             raise ValueError("nodes_ahead must be positive.")
-
         parsed = self._run_planner_agent(action)
         if not isinstance(parsed, dict):
             raise ValueError("Story planner must return a JSON object.")
@@ -1221,6 +1226,13 @@ class StoryPlanningTools(BaseTools):
         self._publish_narration(narration)
         self.save_to_session_state()
         self._log_story_update(plot_beats, source="user_action")
+        scene_name = str(parsed.get("scene_label") or "").strip()
+        reference_images = parsed.get("reference_images") or []
+        logger.debug(
+            "[StoryPlanningTools] Scene name: %s | Reference images: %s",
+            scene_name or "(unspecified)",
+            reference_images,
+        )
         callback = self.on_story_plan_completed
         if callback:
             try:
