@@ -5401,8 +5401,6 @@
         const configModalSaveBtn = document.getElementById('config-modal-save-btn');
         const theaterConfigEditor = document.getElementById('theater-config-editor');
         const theaterConfigStatus = document.getElementById('theater-config-status');
-        let yamlValidationTimer = null;
-
         async function openTheaterConfigModal() {
             if (!theaterConfigModal) return;
             closePulloutMenu();
@@ -5547,15 +5545,6 @@
             }
         }
 
-        // Live input validation debounced while user edits
-        if (theaterConfigEditor) {
-            theaterConfigEditor.addEventListener('input', () => {
-                if (yamlValidationTimer) clearTimeout(yamlValidationTimer);
-                yamlValidationTimer = setTimeout(() => {
-                    formatTheaterConfig(true);
-                }, 600);
-            });
-        }
 
         if (menuItemTheaterConfig) menuItemTheaterConfig.addEventListener('click', openTheaterConfigModal);
         if (configModalCloseBtn) configModalCloseBtn.addEventListener('click', closeTheaterConfigModal);

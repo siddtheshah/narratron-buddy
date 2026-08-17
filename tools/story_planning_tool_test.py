@@ -14,6 +14,7 @@ from google.genai import types
 from tools.story_planning_tool import (
     DEFAULT_MAX_NAMED_ELEMENTS,
     DEFAULT_STORY_PLANNING_STYLE,
+    DEFAULT_THINKING_BUDGET,
     MAX_LORE_DOCUMENTS_LISTED,
     MAX_PLAYER_ACTION_CHARS,
     MAX_STORY_PLANNING_STYLE_CHARS,
@@ -146,6 +147,26 @@ class TestStoryPlanningTools(unittest.TestCase):
         tools = self._make_tools(config={"style": "x" * (MAX_STORY_PLANNING_STYLE_CHARS + 1)})
 
         self.assertEqual(len(tools.style), MAX_STORY_PLANNING_STYLE_CHARS)
+
+    def test_thinking_budget_defaults_and_is_configurable(self):
+        default_tools = self._make_tools()
+        self.assertEqual(default_tools.thinking_budget, DEFAULT_THINKING_BUDGET)
+        self.assertIsNotNone(default_tools._planner_agent.generate_content_config)
+        self.assertEqual(
+            default_tools._planner_agent.generate_content_config.thinking_config.thinking_budget,
+            1024,
+        )
+
+        custom_tools = self._make_tools(config={"thinking_budget": 512})
+        self.assertEqual(custom_tools.thinking_budget, 512)
+        self.assertEqual(
+            custom_tools._planner_agent.generate_content_config.thinking_config.thinking_budget,
+            512,
+        )
+
+        disabled_tools = self._make_tools(config={"thinking_budget": None})
+        self.assertIsNone(disabled_tools.thinking_budget)
+        self.assertIsNone(disabled_tools._planner_agent.generate_content_config.thinking_config)
 
     def test_character_profile_tool_does_not_change_story_state(self):
         tools = self._make_tools(theater_id="character-profile")

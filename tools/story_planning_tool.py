@@ -49,6 +49,7 @@ DEFAULT_COMPACTION_TRIGGER_TOKENS = 12_000
 DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
 DEFAULT_MAX_NAMED_ELEMENTS = 5
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
+DEFAULT_THINKING_BUDGET = 1024
 MAX_STORY_PLANNING_STYLE_CHARS = 500
 MAX_PLAYER_ACTION_CHARS = 2_000
 MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
@@ -159,7 +160,7 @@ When an action's outcome is genuinely uncertain, call roll_dice and use the retu
 Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone; dialogue should have at most three short lines.
 Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
 Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions.
-When available theater lore documents or directories are listed above, you MUST prioritize and ground the narrative, characters, factions, and setting in that established theater lore; proactively call `browse_lore` to inspect relevant documents or directories before introducing or enriching NPCs, places, or events.
+When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore. Do not call `browse_lore` to list or read files on ordinary turns unless a specific unlisted lore fact is strictly necessary to resolve the immediate action.
 Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, define voice_tags as a list containing 'male' or 'female' to guide speech synthesis.
 You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 Those tools only provide information: the scene delta is the sole source of changes.
@@ -328,16 +329,6 @@ class StoryPlanningTools(BaseTools):
             float(self.config.get("action_cooldown_max_seconds", 30.0)),
         )
         self._last_action_response_word_count: int = 0
-        self.planner_model: str = str(self.config.get("planner_model") or "gemini-3.7-flash")
-        self.vertex_project: Optional[str] = (
-            self.config.get("vertex_project")
-            or self.config.get("gcloud", {}).get("project_id")
-            or os.getenv("GOOGLE_CLOUD_PROJECT")
-        )
-        self.vertex_location: str = str(
-            self.config.get("vertex_location") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
-        )
-        self._vertex_client: Optional[Any] = None
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
         self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = (
@@ -358,6 +349,21 @@ class StoryPlanningTools(BaseTools):
         self.compaction_config: Optional[EventsCompactionConfig] = self._build_compaction_config()
         self._run_compression_config: Optional[types.ContextWindowCompressionConfig] = (
             self._build_run_compression_config()
+        )
+
+        self.planner_model: str = str(self.config.get("planner_model") or "gemini-3.7-flash")
+        if "thinking_budget" in self.config:
+            raw_budget = self.config.get("thinking_budget")
+            self.thinking_budget: Optional[int] = int(raw_budget) if raw_budget is not None else None
+        else:
+            self.thinking_budget: Optional[int] = DEFAULT_THINKING_BUDGET
+        self.vertex_project: Optional[str] = (
+            self.config.get("vertex_project")
+            or self.config.get("gcloud", {}).get("project_id")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+        )
+        self.vertex_location: str = str(
+            self.config.get("vertex_location") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
         )
         self._planner_agent: Agent = self._create_planner_agent()
         self._planner_app: App = App(
@@ -569,15 +575,6 @@ class StoryPlanningTools(BaseTools):
             return [self.process_user_action]
         return [self.update_or_insert_named_element, self.clear_scene]
 
-    def _get_vertex_client(self) -> Any:
-        """Return the explicitly configured Vertex client used for all planner calls."""
-        if self._vertex_client is None:
-            self._vertex_client = genai.Client(
-                vertexai=True,
-                project=self.vertex_project,
-                location=self.vertex_location,
-            )
-        return self._vertex_client
 
     @logged_tool_call
     def browse_lore(self, document: str = "") -> str:
@@ -1043,6 +1040,13 @@ class StoryPlanningTools(BaseTools):
 
     def _create_planner_agent(self) -> Agent:
         """Create the persistent ADK planner agent instance."""
+        generate_content_config = None
+        if self.thinking_budget is not None:
+            generate_content_config = types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=self.thinking_budget
+                )
+            )
         return Agent(
             name="story_planner",
             description="Authoritative planner for interactive story turns.",
@@ -1057,6 +1061,7 @@ class StoryPlanningTools(BaseTools):
             output_key="scene_reaction",
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
+            generate_content_config=generate_content_config,
         )
 
     def _get_or_create_planner_runner(self) -> Runner:
