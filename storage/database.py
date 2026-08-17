@@ -1527,6 +1527,30 @@ class _DatabaseManagerBase:
             conn.commit()
             return cursor.rowcount > 0
 
+    def update_theater_name(self, theater_id: str, new_name: str) -> bool:
+        """Update the display name of a theater in exported_theaters table and state_json."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state_json FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+            row = cursor.fetchone()
+            if row:
+                state_json = row["state_json"]
+                if state_json:
+                    try:
+                        state_data = json.loads(state_json)
+                        if isinstance(state_data, dict) and "metadata" in state_data and isinstance(state_data["metadata"], dict):
+                            state_data["metadata"]["name"] = new_name
+                            state_json = json.dumps(state_data)
+                    except Exception:
+                        pass
+                cursor.execute(
+                    "UPDATE exported_theaters SET name = ?, state_json = ? WHERE theater_id = ?",
+                    (new_name, state_json, theater_id)
+                )
+                conn.commit()
+                return True
+            return False
+
     def delete_deployment(self, theater_id: str) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()

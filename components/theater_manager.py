@@ -215,6 +215,14 @@ class TheaterManager:
         theater_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_path(metadata.theater_id).write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
 
+    def update_theater_name(self, theater_id: str, new_name: str) -> Optional[TheaterMetadata]:
+        metadata = self.get_theater(theater_id)
+        if not metadata:
+            return None
+        metadata.name = new_name
+        self._save_metadata(metadata)
+        return metadata
+
     def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, lore_files: Optional[List[tuple[str, bytes]]] = None, theater_config: Optional[Dict] = None) -> TheaterMetadata:
         # Import lazily so config loading can reuse the theater-root helper.
         from utils.config_loader import deep_merge, get_theater_default_config, save_theater_config

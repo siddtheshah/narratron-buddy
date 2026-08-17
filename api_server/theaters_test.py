@@ -72,6 +72,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn('id="theaterNameConfig"', response.text)
         self.assertIn('id="theaterName"', response.text)
         self.assertIn("if (theaterNameConfig) theaterNameConfig.style.display = 'block';", response.text)
+        self.assertNotIn("<th>Status</th>", response.text)
         self.assertIn('href="/about"', response.text)
         self.assertIn("pricingModal", response.text)
         self.assertIn("openPricingModal", response.text)
@@ -206,6 +207,42 @@ class TestTheaterAPI(BaseTestCase):
 
         fmt_invalid = self.client.post("/api/theaters/format-yaml", json={"config_yaml": "invalid: yaml: :"})
         self.assertEqual(fmt_invalid.status_code, 400)
+
+    def test_retitle_theater(self):
+        owner = db.register_user("retitle_owner", "retitle-owner@example.com", "Password123")
+        other = db.register_user("other_user", "other-user@example.com", "Password123")
+        db.add_user_credits(owner["id"], 50.0, 2.5)
+
+        # Login as owner
+        login_res = self.client.post("/api/auth/login", json={"username_or_email": "retitle_owner", "password": "Password123"})
+        self.assertEqual(login_res.status_code, 200)
+
+        # Deploy a theater as owner
+        deploy_res = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Original Theater Title", "creation_mode": "blank"}
+        )
+        self.assertEqual(deploy_res.status_code, 200)
+        tid = deploy_res.json()["theater_id"]
+
+        # 1. Owner retitles theater
+        retitle_res = self.client.post(f"/api/theaters/{tid}/retitle", json={"name": "Renamed Epic Theater"})
+        self.assertEqual(retitle_res.status_code, 200)
+        self.assertEqual(retitle_res.json()["name"], "Renamed Epic Theater")
+
+        # Verify disk metadata updated
+        meta = theater_manager.get_theater(tid)
+        self.assertIsNotNone(meta)
+        self.assertEqual(meta.name, "Renamed Epic Theater")
+
+        # 2. Retitle with empty name should fail (400)
+        bad_retitle = self.client.post(f"/api/theaters/{tid}/retitle", json={"name": "  "})
+        self.assertEqual(bad_retitle.status_code, 400)
+
+        # 3. Non-owner cannot retitle
+        self.client.post("/api/auth/login", json={"username_or_email": "other_user", "password": "Password123"})
+        forbidden_res = self.client.post(f"/api/theaters/{tid}/retitle", json={"name": "Hacked Title"})
+        self.assertEqual(forbidden_res.status_code, 403)
 
     def test_default_config_exposes_agent_defaults(self):
         response = self.client.get("/api/theaters/default-config")

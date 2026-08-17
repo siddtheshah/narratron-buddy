@@ -53,6 +53,9 @@ class ResolveJoinKeyRequest(BaseModel):
 class SaveTheaterConfigRequest(BaseModel):
     config_yaml: str
 
+class RetitleTheaterRequest(BaseModel):
+    name: str
+
 class AddAllowedOratorRequest(BaseModel):
     target_user_id: int
 
@@ -530,6 +533,32 @@ def destroy_theater(theater_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Theater not found or could not be removed")
 
     return {"status": "ok", "theater_id": theater_id}
+
+@app.patch("/api/theaters/{theater_id}")
+@app.post("/api/theaters/{theater_id}/retitle")
+async def retitle_theater(theater_id: str, req: RetitleTheaterRequest, request: Request):
+    """Update the title of an existing theater. Requires owner authentication."""
+    user = await get_current_user_async(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required to retitle theater.")
+
+    dep = db.get_deployment(theater_id)
+    if dep and dep.get("user_id") is not None and dep["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can retitle this theater.")
+
+    new_name = req.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Theater title cannot be empty.")
+
+    meta = theater_manager.get_theater(theater_id)
+    if meta:
+        meta.name = new_name
+        theater_manager._save_metadata(meta)
+
+    db.update_theater_name(theater_id, new_name)
+    theater_access_cache.invalidate_theater(theater_id)
+
+    return {"status": "ok", "theater_id": theater_id, "name": new_name}
 
 # ========================================
 # Baton Passing API Endpoints

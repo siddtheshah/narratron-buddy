@@ -1417,7 +1417,6 @@
                         <tr>
                             <th>Theater ID</th>
                             <th>Name</th>
-                            <th>Status</th>
                             <th>Join Key</th>
                             <th>Mounted Assets</th>
                             <th>Actions</th>
@@ -1425,7 +1424,7 @@
                     </thead>
                     <tbody id="theatersTableBody">
                         <tr>
-                            <td colspan="6" class="empty-state">Loading active theaters...</td>
+                            <td colspan="5" class="empty-state">Loading active theaters...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -2448,6 +2447,24 @@
             }
         }
 
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function escapeJs(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '\\"');
+        }
+
         // Active Theaters / Personal Sessions List
         async function loadTheaters() {
             currentUser = window.currentUser || currentUser;
@@ -2478,15 +2495,13 @@
                     const emptyMsg = currentUser
                         ? 'No personal sessions found. Create your first theater above!'
                         : 'No global theaters deployed yet.';
-                    body.innerHTML = `<tr><td colspan="6" class="empty-state">${emptyMsg}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="5" class="empty-state">${emptyMsg}</td></tr>`;
                     return;
                 }
 
                 body.innerHTML = '';
                 displayTheaters.forEach(s => {
                     const tr = document.createElement('tr');
-                    const badgeClass = s.status === 'deployed' ? 'badge-deployed' : (s.status === 'created' ? 'badge-created' : 'badge-stopped');
-
                     const refCount = s.mounted_references ? s.mounted_references.length : 0;
                     const plCount = s.mounted_playlists ? Object.keys(s.mounted_playlists).length : 0;
 
@@ -2501,10 +2516,20 @@
                         actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroyTheater('${s.theater_id}')">Destroy</button>`;
                     }
 
+                    const safeName = escapeHtml(s.name);
+                    const jsName = escapeJs(s.name);
+                    const ownerBadge = s.is_owner ? '<span style="color:#a78bfa; font-size:0.75rem;">(Owner)</span>' : '';
+                    const editIconHtml = s.is_owner
+                        ? `<button class="copy-key-btn" onclick="startEditingTitle('${s.theater_id}', '${jsName}')" title="Retitle Theater" style="margin-left:6px; padding:2px 6px; font-size:0.75rem;">✏️ Edit</button>`
+                        : '';
+
                     tr.innerHTML = `
                         <td><code>${s.theater_id}</code></td>
-                        <td><strong>${s.name}</strong> ${s.is_owner ? '<span style="color:#a78bfa; font-size:0.75rem;">(Owner)</span>' : ''}</td>
-                        <td><span class="badge ${badgeClass}">${s.status}</span></td>
+                        <td>
+                            <div id="nameCell-${s.theater_id}" style="display:flex; align-items:center; gap:6px;">
+                                <strong>${safeName}</strong> ${ownerBadge} ${editIconHtml}
+                            </div>
+                        </td>
                         <td>${joinKeyHtml}</td>
                         <td>${refCount} refs, ${plCount} playlists</td>
                         <td>${actionsHtml}</td>
@@ -2513,7 +2538,47 @@
                 });
             } catch (err) {
                 console.error('Error loading theaters:', err);
-                body.innerHTML = `<tr><td colspan="6" class="empty-state">Error loading active theaters.</td></tr>`;
+                body.innerHTML = `<tr><td colspan="5" class="empty-state">Error loading active theaters.</td></tr>`;
+            }
+        }
+
+        function startEditingTitle(theaterId, currentName) {
+            const cell = document.getElementById(`nameCell-${theaterId}`);
+            if (!cell) return;
+            cell.innerHTML = `
+                <input type="text" id="editTitleInput-${theaterId}" value="${escapeHtml(currentName)}" style="padding:4px 8px; font-size:0.85rem; border-radius:6px; background:rgba(11,13,18,0.9); border:1px solid var(--accent-primary); color:var(--text-primary); width:180px;" onkeydown="if(event.key==='Enter'){ event.preventDefault(); saveTheaterTitle('${theaterId}'); } else if(event.key==='Escape'){ loadTheaters(); }">
+                <button class="btn-sm btn-success" style="padding:2px 8px; font-size:0.75rem;" onclick="saveTheaterTitle('${theaterId}')">Save</button>
+                <button class="btn-sm btn-secondary" style="padding:2px 8px; font-size:0.75rem;" onclick="loadTheaters()">Cancel</button>
+            `;
+            const input = document.getElementById(`editTitleInput-${theaterId}`);
+            if (input) {
+                input.focus();
+                input.select();
+            }
+        }
+
+        async function saveTheaterTitle(theaterId) {
+            const input = document.getElementById(`editTitleInput-${theaterId}`);
+            if (!input) return;
+            const newName = input.value.trim();
+            if (!newName) {
+                alert('Theater title cannot be empty.');
+                return;
+            }
+            try {
+                const res = await fetch(`/api/theaters/${theaterId}/retitle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    loadTheaters();
+                } else {
+                    alert('Error updating title: ' + (data.detail || 'Failed to rename theater.'));
+                }
+            } catch (e) {
+                alert('Failed to update title: ' + e.message);
             }
         }
 
