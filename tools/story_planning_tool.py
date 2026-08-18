@@ -161,7 +161,7 @@ When an action's outcome is genuinely uncertain, call roll_dice and use the retu
 Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone; dialogue should have at most three short lines.
 Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
 Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions.
-When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore. Do not call `browse_lore` to list or read files on ordinary turns unless a specific unlisted lore fact is strictly necessary to resolve the immediate action.
+When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore.
 Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, define voice_tags as a list containing 'male' or 'female' to guide speech synthesis.
 You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 Those tools only provide information: the scene delta is the sole source of changes.
@@ -191,7 +191,7 @@ class PlannerCharacter(BaseModel):
     quirk: str = ""
     voice_tags: List[str] = Field(
         default_factory=list,
-        description="Voice classification tags ('male' or 'female') to guide speech synthesis.",
+        description="Voice classification tags ('male' or 'female') to guide speech synthesis. Required if gendered.",
     )
 
 
@@ -593,6 +593,7 @@ class StoryPlanningTools(BaseTools):
         scenes. This tool is read-only and cannot access files outside ``lore/``.
         """
         if not self.theater_id:
+            logger.warning("[StoryPlanningTools] Browse lore called without active theater.")
             return "No theater is active, so no lore documents are available."
         if not document:
             documents = self.theater_manager.get_lore_documents(self.theater_id)
@@ -601,6 +602,12 @@ class StoryPlanningTools(BaseTools):
                 f"\n[+{len(documents) - len(listed_documents)} additional documents omitted.]"
                 if len(documents) > len(listed_documents)
                 else ""
+            )
+            logger.debug(
+                "[StoryPlanningTools] Listing lore documents for theater=%s (total=%d, listed=%d)",
+                self.theater_id,
+                len(documents),
+                len(listed_documents),
             )
             return (
                 "Available lore documents:\n" + "\n".join(f"- {path}" for path in listed_documents) + omission
@@ -621,6 +628,12 @@ class StoryPlanningTools(BaseTools):
                     if len(matching) > len(listed_matching)
                     else ""
                 )
+                logger.debug(
+                    "[StoryPlanningTools] Browsing lore directory '%s' for theater=%s (matching=%d)",
+                    clean_doc,
+                    self.theater_id,
+                    len(matching),
+                )
                 return (
                     f"Lore documents in '{clean_doc}':\n"
                     + "\n".join(f"- {path}" for path in listed_matching)
@@ -629,7 +642,19 @@ class StoryPlanningTools(BaseTools):
         try:
             content = self.theater_manager.read_lore_document(self.theater_id, clean_doc)
         except ValueError as error:
+            logger.warning(
+                "[StoryPlanningTools] Failed to read lore document '%s' for theater=%s: %s",
+                clean_doc,
+                self.theater_id,
+                error,
+            )
             return f"Error: {error}"
+        logger.debug(
+            "[StoryPlanningTools] Read lore document '%s' for theater=%s (chars=%d)",
+            clean_doc,
+            self.theater_id,
+            len(content),
+        )
         excerpt = content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
         suffix = "\n[Excerpt truncated for planner context.]" if len(content) > len(excerpt) else ""
         return f"Lore document: {clean_doc}\n\n{excerpt}{suffix}"
@@ -688,19 +713,36 @@ class StoryPlanningTools(BaseTools):
         return result
 
     def _get_lore_context(self) -> str:
-        """List top-level lore documents and directories for the planner context."""
+        """List top-level lore documents and directories for the planner context, automatically expanding files prefixed with 'read'."""
         documents = self.theater_manager.get_lore_documents(self.theater_id)
         if not documents:
             return ""
         top_level_files: list[str] = []
         top_level_dirs: set[str] = set()
+        expanded_files: list[str] = []
         for doc in documents:
             parts = doc.split("/")
-            if len(parts) == 1:
-                top_level_files.append(doc)
+            filename = parts[-1]
+            if filename.lower().startswith("read") or doc.lower().startswith("read"):
+                content = self.theater_manager.read_lore_document(self.theater_id, doc)
+                if len(content) > MAX_LORE_DOCUMENT_CONTEXT_CHARS:
+                    content = (
+                        content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
+                        + "\n[Excerpt truncated for planner context.]"
+                    )
+                expanded_files.append(f"- {doc}:\n{content}")
+                if len(parts) > 1:
+                    top_level_dirs.add(parts[0] + "/")
             else:
-                top_level_dirs.add(parts[0] + "/")
-        items = [f"- {d} (directory)" for d in sorted(top_level_dirs)] + [f"- {f}" for f in sorted(top_level_files)]
+                if len(parts) == 1:
+                    top_level_files.append(doc)
+                else:
+                    top_level_dirs.add(parts[0] + "/")
+        items = (
+            [f"- {d} (directory)" for d in sorted(top_level_dirs)]
+            + [f"- {f}" for f in sorted(top_level_files)]
+            + expanded_files
+        )
         if not items:
             items = [f"- {doc}" for doc in documents[:MAX_LORE_DOCUMENTS_LISTED]]
         return "\n".join(items[:MAX_LORE_DOCUMENTS_LISTED])

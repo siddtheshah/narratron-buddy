@@ -258,6 +258,28 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertIn("factions/guild.txt", tools.browse_lore("factions"))
             self.assertTrue(tools.browse_lore("characters.md").startswith("Error:"))
 
+    def test_browse_lore_logs_activity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Lore Theater",
+                theater_id="lore-theater",
+                lore_files=[
+                    ("lore/characters.txt", b"Mara is the royal cartographer."),
+                ],
+            )
+            tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
+
+            with self.assertLogs("tools.story_planning_tool", level="DEBUG") as cm:
+                tools.browse_lore()
+                tools.browse_lore("characters.txt")
+                tools.browse_lore("invalid.md")
+
+            logs = "\n".join(cm.output)
+            self.assertIn("Listing lore documents for theater=lore-theater", logs)
+            self.assertIn("Read lore document 'characters.txt' for theater=lore-theater", logs)
+            self.assertIn("Failed to read lore document 'invalid.md' for theater=lore-theater", logs)
+
     def test_lore_context_lists_top_level_documents_and_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
@@ -279,6 +301,28 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertIn("- factions/ (directory)", context)
             self.assertNotIn("guild.txt", context)
             self.assertNotIn("royal cartographer", context)
+
+    def test_lore_context_expands_files_prefixed_with_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Read Lore Theater",
+                theater_id="read-lore-theater",
+                lore_files=[
+                    ("lore/characters.txt", b"Mara is the royal cartographer."),
+                    ("lore/read_world.txt", b"The capital floats above the sea."),
+                    ("lore/factions/read_guild.txt", b"The guild controls all trade routes."),
+                ],
+            )
+            tools = self._make_tools(theater_id="read-lore-theater", theater_manager=theater_manager)
+
+            context = tools._get_lore_context()
+
+            self.assertIn("- characters.txt", context)
+            self.assertNotIn("royal cartographer", context)
+            self.assertIn("- read_world.txt:\nThe capital floats above the sea.", context)
+            self.assertIn("- factions/read_guild.txt:\nThe guild controls all trade routes.", context)
+            self.assertIn("- factions/ (directory)", context)
 
     def test_lore_context_is_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
