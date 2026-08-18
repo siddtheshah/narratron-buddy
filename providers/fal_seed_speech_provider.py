@@ -32,7 +32,7 @@ FEMALE_SEED_VOICES = (
 )
 
 MALE_SEED_VOICES = (
-    "stokie_en", "tim_en", "kian_en_zh", "cedric_en_zh", "magnus_en_zh", "quentin_en_zh",
+    "tim_en", "kian_en_zh", "cedric_en_zh", "magnus_en_zh", "quentin_en_zh",
 )
 
 
