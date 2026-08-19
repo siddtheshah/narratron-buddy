@@ -235,6 +235,15 @@ class AgentSession:
             return 0.0
 
     @property
+    def is_alive(self) -> bool:
+        """Return True if session is running and not stopped or terminated."""
+        if getattr(self, "status", None) == "stopped":
+            return False
+        if getattr(self, "downstream_task", None) is not None and self.downstream_task.done():
+            return False
+        return True
+
+    @property
     def websocket_connected(self) -> bool:
         return len(self.websockets) > 0
 
@@ -866,7 +875,7 @@ class AgentSession:
             self.websocket_user_ids.pop(websocket, None)
             self.last_active_at = time.time()
             is_now_disconnected = len(self.websockets) == 0
-            if is_now_disconnected:
+            if is_now_disconnected and getattr(self, "status", None) != "stopped":
                 self.status = "ready"
             logger.info(f"[AgentSession] WebSocket detached from session {self.theater_id} (remaining={len(self.websockets)})")
             if is_now_disconnected:
@@ -937,9 +946,14 @@ class AgentSessionManager:
     ) -> AgentSession:
         """Fetch an existing active session or instantiate a new AgentSession."""
         existing = self.get_session(theater_id)
-        if existing and existing.status != "stopped":
+        if existing and existing.is_alive:
             existing.last_active_at = time.time()
             return existing
+
+        if existing:
+            logger.info(f"[AgentSessionManager] Existing session for theater_id={theater_id} is dead or stopped (status={existing.status}). Purging and recreating.")
+            existing.close()
+            self._sessions.pop(theater_id, None)
 
         logger.info(f"[AgentSessionManager] Creating new AgentSession for theater_id={theater_id}")
 

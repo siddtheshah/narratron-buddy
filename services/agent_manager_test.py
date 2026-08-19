@@ -613,10 +613,8 @@ class TestAgentSessionManager(unittest.TestCase):
                 session_enabled.downstream_task.cancel()
             if session_enabled.refresh_task:
                 session_enabled.refresh_task.cancel()
-            if session_enabled.tool_injection_task:
-                session_enabled.tool_injection_task.cancel()
 
-        asyncio.run(run_test())
+
 
     def test_remove_websocket_saves_named_elements_to_session_state(self):
         async def run_test():
@@ -634,14 +632,121 @@ class TestAgentSessionManager(unittest.TestCase):
             session.story_planning_tools = mock_story_planning_tools
 
             await session.remove_websocket(mock_ws)
-
             mock_story_planning_tools.save_to_session_state.assert_called_once()
+
+        asyncio.run(run_test())
+
+    def test_remove_websocket_preserves_stopped_status(self):
+        async def run_test():
+            session = AgentSession.__new__(AgentSession)
+            session.theater_id = "theater_stopped_test"
+            session.ws_lock = asyncio.Lock()
+            session.websockets = set()
+            session.websocket_user_ids = {}
+            session.flush_usage_to_db = MagicMock()
+            session.story_planning_tools = None
+            session.status = "stopped"
+
+            mock_ws = MagicMock()
+            session.websockets.add(mock_ws)
+
+            await session.remove_websocket(mock_ws)
+
+            # status should NOT be reset to 'ready' when session is stopped
+            self.assertEqual(session.status, "stopped")
+
+        asyncio.run(run_test())
+
+    def test_is_alive_property(self):
+        session = AgentSession.__new__(AgentSession)
+        session.status = "ready"
+        session.downstream_task = None
+        # Before tasks are started, status='ready' is considered alive
+        self.assertTrue(session.is_alive)
+
+        # Mock a running task
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        session.downstream_task = mock_task
+        self.assertTrue(session.is_alive)
+
+        # When task is done
+        mock_task.done.return_value = True
+        self.assertFalse(session.is_alive)
+
+        # When status is stopped
+        mock_task.done.return_value = False
+        session.status = "stopped"
+        self.assertFalse(session.is_alive)
+
+    def test_reconnection_after_downstream_error_creates_fresh_session_on_attempt_1(self):
+        async def run_test():
+            from unittest.mock import AsyncMock, patch
+
+            mock_agent = MagicMock()
+            mock_agent.tools = []
+
+            mock_runner = MagicMock()
+            mock_runner.app_name = "test_app"
+            mock_runner.agent = mock_agent
+
+            call_count = 0
+            async def mock_run_live(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise RuntimeError("Gemini Live Disconnected")
+                else:
+                    while True:
+                        await asyncio.sleep(1)
+                        yield MagicMock()
+
+            mock_runner.run_live = MagicMock(side_effect=mock_run_live)
+            mock_session_service = MagicMock()
+            mock_session_service.get_session = AsyncMock(return_value=None)
+            mock_session_service.create_session = AsyncMock()
+            mock_runner.session_service = mock_session_service
+
+            with patch("services.agent_manager.create_tool_bundle_for_session"), \
+                 patch("services.agent_manager.create_agent", return_value=mock_agent), \
+                 patch("services.agent_manager.Runner", return_value=mock_runner):
+
+                from services.agent_manager import AgentSessionManager, TheaterManager
+                manager = AgentSessionManager(
+                    theater_manager=TheaterManager(),
+                    database_manager=MagicMock()
+                )
+
+                # Initial session
+                session1 = manager.get_or_create_session(theater_id="test_reconnect")
+                mock_ws1 = MagicMock()
+                mock_ws1.send_text = AsyncMock()
+                await session1.add_websocket(mock_ws1)
+
+                # Allow downstream task to hit the error and close
+                await asyncio.sleep(0.05)
+
+                self.assertEqual(session1.status, "stopped")
+                self.assertFalse(session1.is_alive)
+
+                # Client disconnects upon error
+                await session1.remove_websocket(mock_ws1)
+                self.assertEqual(session1.status, "stopped")
+
+                # First reconnection attempt:
+                session_reconnect_1 = manager.get_or_create_session(theater_id="test_reconnect")
+                self.assertIsNot(session_reconnect_1, session1)
+                self.assertTrue(session_reconnect_1.is_alive)
+
+                # Allow second downstream task to run
+                await asyncio.sleep(0.05)
+                self.assertEqual(call_count, 2)
+
+                # Clean up background tasks
+                session_reconnect_1.close()
 
         asyncio.run(run_test())
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-

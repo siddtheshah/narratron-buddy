@@ -174,8 +174,6 @@ async def get_agent_status_endpoint(theater_id: str):
         "insufficient_credits": False,
         "credits": credits_bal,
     }
-
-
 # ========================================
 # Live Agent WebSocket Endpoint
 # ========================================
@@ -217,6 +215,7 @@ async def agent_websocket_endpoint(
         theater_id=theater_id,
         agent_manager=agent_manager,
         user_id=current_user["id"],
+        canvas_state_service=canvas_states,
     )
     # Perform periodic cleanup of old idle sessions
     agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)
@@ -228,5 +227,3 @@ if __name__ == "__main__":
     logger.info("PORT: %s", FLAGS.port)
     logger.info("====================================================")
     uvicorn.run(app, host=FLAGS.host, port=FLAGS.port)
-
-
