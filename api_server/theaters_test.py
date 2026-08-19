@@ -890,9 +890,12 @@ async def test_create_and_deploy_theater_with_preset_adventure():
         ("enable_adventure_mode", "true"),
     ]))
 
+    mock_adv_meta = {"id": "lesovik-station", "title": "Lesovik Station", "cover_image": "references/cover.jpg"}
+
     with patch.object(theaters, "get_current_user_async", AsyncMock(return_value=mock_user)), \
          patch.object(theaters, "theater_manager", mock_manager), \
          patch.object(theaters, "db", mock_db), \
+         patch.object(theaters.adventure_service, "get_adventure", return_value=mock_adv_meta), \
          patch.object(theaters.adventure_service, "load_adventure_assets", return_value=(mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)):
 
         res = await theaters.create_and_deploy_theater(request)
@@ -906,6 +909,7 @@ async def test_create_and_deploy_theater_with_preset_adventure():
         assert "arctic" in create_args["playlists_data"]
         assert create_args["theater_config"]["agent"]["style"] == "eerie"
         assert create_args["theater_config"]["story_planning"]["adventure_mode"] is True
+        assert create_args["metadata_json"] == mock_adv_meta
 
 
 

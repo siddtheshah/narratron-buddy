@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import WebSocket
 
 from components.chat_manager import ChatManager
@@ -594,36 +594,125 @@ class CanvasStateManager:
             "dice_rolling": now < self.dice_roll_until,
         }
 
-    def get_latest_state(self) -> Dict[str, Any]:
-        image_folder = str(self.theater.output_dir())
-
-        music_state = {
-            "music_id": self.current_music_id or getattr(self, "current_playlist", None),
-            "playlist": self.current_music_id or getattr(self, "current_playlist", None),
+    def _get_music_state(self) -> Dict[str, Any]:
+        """Return the current music playback state payload."""
+        playlist_id = self.current_music_id or getattr(self, "current_playlist", None)
+        return {
+            "music_id": playlist_id,
+            "playlist": playlist_id,
             "tracks": self.current_playlist_tracks,
             "paused": self.music_paused,
-            "time": self.current_playlist_time
+            "time": self.current_playlist_time,
         }
-        # 1. Decide which image file to select: prioritize explicit show_image call if set & valid
-        selected_file = None
-        selected_time = 0.0
-        prompt_text = ""
 
+    def _resolve_adventure_cover(self) -> Optional[Tuple[Path, str]]:
+        """Look up adventure cover image from metadata.json if present."""
+        if not self.theater_id:
+            return None
+        theater_dir = self.theater.directory()
+        theater_ref_dir = self.theater.references_dir()
+        metadata_file = theater_dir / "metadata.json"
+        if not metadata_file.exists():
+            return None
+
+        try:
+            import json
+            meta = json.loads(metadata_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning(f"Failed to read metadata.json for theater {self.theater_id}: {e}")
+            return None
+
+        cover_image_setting = meta.get("cover_image")
+        cover_file = None
+        if cover_image_setting:
+            clean_cover = cover_image_setting
+            for prefix in ("references/", "reference_library/"):
+                if clean_cover.startswith(prefix):
+                    clean_cover = clean_cover[len(prefix):]
+
+            candidates = [
+                theater_ref_dir / cover_image_setting,
+                theater_dir / cover_image_setting,
+                theater_ref_dir / clean_cover,
+                theater_dir / clean_cover,
+                theater_ref_dir / Path(cover_image_setting).name,
+            ]
+            for cand in candidates:
+                if cand.exists() and cand.is_file():
+                    cover_file = cand
+                    break
+
+            if not cover_file and theater_ref_dir.exists():
+                match_name = Path(cover_image_setting).name.lower()
+                for f in theater_ref_dir.rglob("*"):
+                    if f.is_file() and f.name.lower() == match_name:
+                        cover_file = f
+                        break
+
+        if cover_file:
+            title = meta.get("title")
+            prompt = extract_image_prompt(str(cover_file)) or (f"Adventure Cover: {title}" if title else f"Mounted Reference: {cover_file.stem}")
+            return cover_file, prompt
+        return None
+
+    def _resolve_reference_fallback(self) -> Optional[Tuple[Path, str]]:
+        """Fallback to first reference image (prioritizing cover-named images)."""
+        if not self.theater_id:
+            return None
+        theater_ref_dir = self.theater.references_dir()
+        if not theater_ref_dir.exists():
+            return None
+        ref_images = [f for f in theater_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        if not ref_images:
+            return None
+        cover_candidates = [f for f in ref_images if "cover" in f.stem.lower()]
+        chosen = cover_candidates[0] if cover_candidates else ref_images[0]
+        prompt = extract_image_prompt(str(chosen)) or f"Mounted Reference: {chosen.stem}"
+        return chosen, prompt
+
+    def _resolve_active_image(self) -> Tuple[Optional[str], Optional[str], float, str]:
+        """Resolve current displayed image: explicit shown image, newest artifact, adventure cover, or mounted reference.
+
+        Returns:
+            Tuple of (image_url, file_path_str, timestamp, prompt_text)
+        """
+        # 1. Explicit shown image
         if self.shown_image_path:
-            selected_file = self.shown_image_path
-            selected_time = self.shown_image_time
-            prompt_text = self.shown_image_prompt
-        else:
+            return self._get_url_for_path(self.shown_image_path), self.shown_image_path, self.shown_image_time, self.shown_image_prompt
+
+        # 2. Output directory latest generated image
+        image_folder = str(self.theater.output_dir())
+        if os.path.exists(image_folder):
             files = []
-            if os.path.exists(image_folder):
-                files.extend(glob.glob(os.path.join(image_folder, "*.png")))
-                files.extend(glob.glob(os.path.join(image_folder, "*.jpg")))
-                files.extend(glob.glob(os.path.join(image_folder, "*.jpeg")))
-                
+            for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp"):
+                files.extend(glob.glob(os.path.join(image_folder, ext)))
             if files:
-                selected_file = max(files, key=os.path.getmtime)
-                selected_time = os.path.getmtime(selected_file)
-                prompt_text = extract_image_prompt(selected_file)
+                newest = max(files, key=os.path.getmtime)
+                return self._get_url_for_path(newest), newest, os.path.getmtime(newest), extract_image_prompt(newest)
+
+        # 3. Adventure cover from metadata.json
+        cover = self._resolve_adventure_cover()
+        if cover:
+            cover_path, prompt = cover
+            return self._get_url_for_path(str(cover_path)), str(cover_path), 0.0, prompt
+
+        # 4. Mounted reference fallback
+        ref = self._resolve_reference_fallback()
+        if ref:
+            ref_path, prompt = ref
+            return self._get_url_for_path(str(ref_path)), str(ref_path), 0.0, prompt
+
+        return None, None, 0.0, ""
+
+    def get_latest_state(self) -> Dict[str, Any]:
+        music_state = self._get_music_state()
+        image_url, selected_file, selected_time, prompt_text = self._resolve_active_image()
+
+        if selected_file:
+            self.current_image_basename = os.path.basename(selected_file)
+
+        transition = getattr(self, "shown_image_transition", "fade") or "fade"
+        effect = getattr(self, "shown_image_effect", "gleam3") or "gleam3"
 
         formatted_history = []
         for h in self.shown_images_history:
@@ -635,73 +724,18 @@ class CanvasStateManager:
                     "url": self._get_url_for_path(h),
                     "prompt": extract_image_prompt(h),
                     "time": 0.0,
-                    "transition": getattr(self, "shown_image_transition", "fade") or "fade",
-                    "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
+                    "transition": transition,
+                    "effect": effect,
                 })
 
-        # 2. If no image selected, fallback to theater references
-        if not selected_file:
-            if self.theater_id:
-                theater_ref_dir = self.theater.references_dir()
-                if theater_ref_dir.exists():
-                    ref_images = [f for f in theater_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
-                    if ref_images:
-                        ref_url = f"/theaters/{self.theater_id}/references/{ref_images[0].name}"
-                        ref_prompt = f"Mounted Reference: {ref_images[0].stem}"
-                        if not formatted_history:
-                            formatted_history.append({
-                                "path": str(ref_images[0]),
-                                "url": ref_url,
-                                "prompt": ref_prompt,
-                                "time": 0,
-                                "transition": getattr(self, "shown_image_transition", "fade") or "fade",
-                                "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
-                            })
-                        return {
-                            "latest": ref_url,
-                            "time": 0,
-                            "prompt": ref_prompt,
-                            "music": music_state,
-                            "doodles_enabled": self.doodles_enabled,
-                            "viewer_collab_enabled": self.viewer_collab_enabled,
-                            "transition": getattr(self, "shown_image_transition", "fade") or "fade",
-                            "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
-                            "history": formatted_history,
-                            "tool_activity": self.get_tool_activity(),
-                            "agent_thought": self.get_agent_thought(),
-                            "scene_dialogue": list(self.scene_dialogue),
-                            "narration": self.narration,
-                        }
-            return {
-                "latest": None,
-                "time": 0,
-                "music": music_state,
-                "doodles_enabled": self.doodles_enabled,
-                "viewer_collab_enabled": self.viewer_collab_enabled,
-                "transition": getattr(self, "shown_image_transition", "fade") or "fade",
-                "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
-                "history": formatted_history,
-                "tool_activity": self.get_tool_activity(),
-                "agent_thought": self.get_agent_thought(),
-                "scene_dialogue": list(self.scene_dialogue),
-                "narration": self.narration,
-            }
-            
-        basename = os.path.basename(selected_file)
-            
-        self.current_image_basename = basename
-        
-        image_url = self._get_url_for_path(selected_file)
-
-        # Ensure history is populated if empty
-        if not self.shown_images_history:
+        if selected_file and not self.shown_images_history:
             item = {
                 "path": selected_file,
                 "url": image_url,
                 "prompt": prompt_text,
                 "time": selected_time,
-                "transition": getattr(self, "shown_image_transition", "fade") or "fade",
-                "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
+                "transition": transition,
+                "effect": effect,
             }
             self.shown_images_history.append(item)
             formatted_history.append(item)
@@ -713,8 +747,8 @@ class CanvasStateManager:
             "music": music_state,
             "doodles_enabled": self.doodles_enabled,
             "viewer_collab_enabled": self.viewer_collab_enabled,
-            "transition": getattr(self, "shown_image_transition", "fade") or "fade",
-            "effect": getattr(self, "shown_image_effect", "gleam3") or "gleam3",
+            "transition": transition,
+            "effect": effect,
             "history": formatted_history,
             "tool_activity": self.get_tool_activity(),
             "agent_thought": self.get_agent_thought(),

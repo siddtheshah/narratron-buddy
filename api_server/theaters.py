@@ -69,13 +69,15 @@ class RequestBatonRequest(BaseModel):
 # Theater Asset Dynamic Routes
 # ========================================
 
-@app.get("/theaters/{theater_id}/references/{filename}")
+@app.get("/theaters/{theater_id}/references/{filename:path}")
 async def serve_theater_reference(request: Request, theater_id: str, filename: str):
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
-    _safe_path_param(filename, "filename")
-    file_path = theater_manager.theater(theater_id).references_dir() / filename
-    if not file_path.exists():
+    ref_dir = theater_manager.theater(theater_id).references_dir()
+    file_path = (ref_dir / filename).resolve()
+    if ref_dir.resolve() not in file_path.parents and file_path != ref_dir:
+        raise HTTPException(status_code=400, detail="Invalid reference path")
+    if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Theater reference file not found")
     return FileResponse(file_path)
 
@@ -373,6 +375,7 @@ async def create_and_deploy_theater(request: Request):
     reference_files = []
     playlists_data = {}
     lore_files = []
+    adventure_metadata = None
 
     # If an adventure preset is chosen, load its assets first
     adv_config: Dict = {}
@@ -384,6 +387,7 @@ async def create_and_deploy_theater(request: Request):
             if pl_name not in playlists_data:
                 playlists_data[pl_name] = []
             playlists_data[pl_name].extend(tracks)
+        adventure_metadata = adventure_service.get_adventure(preset_adventure_id)
 
     # Important to provide music for first time experience. Blank theater will not have any music tracks by default
     # otherwise.
@@ -417,7 +421,13 @@ async def create_and_deploy_theater(request: Request):
                     parts = [p for p in rel_path.split("/") if p]
                     clean_name = parts[-1] if parts else filename
 
-                    if "references" in parts or (
+                    if clean_name.lower() == "metadata.json" or filename.lower() == "metadata.json":
+                        try:
+                            adventure_metadata = json.loads(content.decode("utf-8"))
+                        except Exception:
+                            pass
+                        reference_files.append(("metadata.json", content))
+                    elif "references" in parts or (
                         clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
                         and "playlists" not in parts
                     ):
@@ -511,6 +521,7 @@ async def create_and_deploy_theater(request: Request):
         playlists_data=playlists_data,
         lore_files=lore_files,
         theater_config=theater_config,
+        metadata_json=adventure_metadata,
     )
     deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
 

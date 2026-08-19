@@ -8,7 +8,7 @@ from pathlib import Path
 import secrets
 import shutil
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import zipfile
 
 from pydantic import BaseModel, Field
@@ -223,7 +223,7 @@ class TheaterManager:
         self._save_metadata(metadata)
         return metadata
 
-    def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, lore_files: Optional[List[tuple[str, bytes]]] = None, theater_config: Optional[Dict] = None) -> TheaterMetadata:
+    def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, lore_files: Optional[List[tuple[str, bytes]]] = None, theater_config: Optional[Dict] = None, metadata_json: Optional[Any] = None) -> TheaterMetadata:
         # Import lazily so config loading can reuse the theater-root helper.
         from utils.config_loader import deep_merge, get_theater_default_config, save_theater_config
 
@@ -237,9 +237,22 @@ class TheaterManager:
         playlists_dir.mkdir()
         lore_dir.mkdir()
         self._get_theater_output_dir(theater_id).mkdir()
+
+        if metadata_json is not None:
+            meta_file = theater_dir / "metadata.json"
+            if isinstance(metadata_json, dict):
+                meta_file.write_text(json.dumps(metadata_json, indent=2), encoding="utf-8")
+            elif isinstance(metadata_json, str):
+                meta_file.write_text(metadata_json, encoding="utf-8")
+            elif isinstance(metadata_json, (bytes, bytearray)):
+                meta_file.write_bytes(metadata_json)
+
         mounted_references = []
         for relative_filename, content in reference_files or []:
             parts = [part for part in relative_filename.replace("\\", "/").split("/") if part]
+            if relative_filename == "metadata.json" or (parts and parts[-1].lower() == "metadata.json"):
+                (theater_dir / "metadata.json").write_bytes(content)
+                continue
             relative_path = Path(*parts[parts.index("references") + 1:]) if "references" in parts else Path(parts[-1])
             target = reference_dir / relative_path
             target.parent.mkdir(parents=True, exist_ok=True)

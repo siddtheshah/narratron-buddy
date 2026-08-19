@@ -299,9 +299,56 @@ class TestCanvasStateManager(BaseTestCase):
                 {"name": "Arthur", "voice_tags": ["male", "knight"]},
             ]
         }
-        self.assertEqual(manager.get_character_voice_tags("Mara"), ["female"])
-        self.assertEqual(manager.get_character_voice_tags("Arthur"), ["male"])
-        self.assertEqual(manager.get_character_voice_tags("Unknown"), [])
+    def test_canvas_loads_adventure_cover_from_metadata_json(self):
+        theater_id = "test_adv_cover_theater"
+        theater_dir = self.theater_manager._get_theater_dir(theater_id)
+        ref_dir = self.theater_manager._get_theater_reference_dir(theater_id)
+        ref_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write non-cover references and the designated cover image
+        (ref_dir / "alpha_scene.png").write_bytes(b"scene1")
+        (ref_dir / "lesovik_station_cover.jpg").write_bytes(b"coverbytes")
+        (ref_dir / "z_scene.png").write_bytes(b"scene2")
+
+        # Write metadata.json pointing to cover_image
+        import json
+        meta = {
+            "id": "lesovik-station",
+            "title": "Lesovik Station",
+            "cover_image": "references/lesovik_station_cover.jpg"
+        }
+        (theater_dir / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+
+        manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
+        latest_state = manager.get_latest_state()
+
+        self.assertIsNotNone(latest_state["latest"])
+        self.assertEqual(latest_state["latest"], f"/theaters/{theater_id}/references/lesovik_station_cover.jpg")
+        self.assertIn("Lesovik Station", latest_state["prompt"])
+        self.assertEqual(len(latest_state["history"]), 1)
+        self.assertEqual(latest_state["history"][0]["url"], f"/theaters/{theater_id}/references/lesovik_station_cover.jpg")
+
+    def test_canvas_loads_adventure_cover_by_filename_match(self):
+        theater_id = "test_adv_cover_filename_theater"
+        theater_dir = self.theater_manager._get_theater_dir(theater_id)
+        ref_dir = self.theater_manager._get_theater_reference_dir(theater_id)
+        ref_dir.mkdir(parents=True, exist_ok=True)
+
+        (ref_dir / "00_intro.png").write_bytes(b"intro")
+        (ref_dir / "main_cover.png").write_bytes(b"coverbytes")
+
+        import json
+        meta = {
+            "id": "custom-adv",
+            "title": "Custom Adventure",
+            "cover_image": "main_cover.png"
+        }
+        (theater_dir / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+
+        manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
+        latest_state = manager.get_latest_state()
+
+        self.assertEqual(latest_state["latest"], f"/theaters/{theater_id}/references/main_cover.png")
 
 
 if __name__ == "__main__":

@@ -87,7 +87,7 @@ async def canvas_state_websocket_endpoint(websocket: WebSocket, theater_id: Opti
         # lets the server promptly notice a disconnected browser.
         while True:
             await websocket.receive()
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         state.unregister_state_websocket(websocket)
