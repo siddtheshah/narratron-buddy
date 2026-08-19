@@ -141,4 +141,74 @@ def test_text_response_provider_registry(monkeypatch):
         get_text_response_provider("invalid_id")
 
 
+from pydantic import BaseModel, Field
+
+
+class AdventureSummary(BaseModel):
+    title: str
+    danger_level: int = 1
+    tags: list[str] = Field(default_factory=list)
+
+
+def test_gemini_text_provider_structured_schema_success():
+    client = DummyClient()
+
+    def _generate_content(**kwargs):
+        client.models.last_kwargs = kwargs
+        return DummyTextResponse(
+            text='{"title": "Dragon Cave", "danger_level": 5, "tags": ["dragon", "fire"]}'
+        )
+
+    client.models.generate_content = _generate_content
+    provider = GeminiTextResponseProvider(client=client)
+
+    req = TextResponseRequest(
+        prompt="Generate an adventure summary",
+        response_schema=AdventureSummary,
+    )
+    result = provider.generate(req)
+
+    config = client.models.last_kwargs["config"]
+    assert config.response_mime_type == "application/json"
+    assert config.response_schema == AdventureSummary
+
+    assert isinstance(result.parsed, AdventureSummary)
+    assert result.parsed.title == "Dragon Cave"
+    assert result.parsed.danger_level == 5
+    assert result.parsed.tags == ["dragon", "fire"]
+
+
+
+def test_gemini_text_provider_structured_schema_validation_error():
+    client = DummyClient()
+    client.models.generate_content = lambda **kwargs: DummyTextResponse(
+        text='{"invalid_json": true, "missing_title": 123}'
+    )
+    provider = GeminiTextResponseProvider(client=client)
+
+    req = TextResponseRequest(
+        prompt="Generate an adventure summary",
+        response_schema=AdventureSummary,
+    )
+    with pytest.raises(TextResponseProviderError, match="Response failed schema validation for AdventureSummary"):
+        provider.generate(req)
+
+
+def test_gemini_text_provider_structured_schema_invalid_json():
+    client = DummyClient()
+    client.models.generate_content = lambda **kwargs: DummyTextResponse(
+        text="Not valid JSON at all!"
+    )
+    provider = GeminiTextResponseProvider(client=client)
+
+    req = TextResponseRequest(
+        prompt="Generate an adventure summary",
+        response_schema=AdventureSummary,
+    )
+    with pytest.raises(TextResponseProviderError, match="Response is not valid JSON for structured schema"):
+        provider.generate(req)
+
+
+
+
 

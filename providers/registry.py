@@ -195,11 +195,13 @@ def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) 
     if provider_id == "flux-klein":
         return FalFluxKleinProvider()
     if provider_id == "hybrid-flux-gemini":
+        classifier_model = str(options.get("classifier_model") or options.get("model") or "gemini-2.5-flash-lite")
         return HybridImageProvider(
             primary=FalFluxKleinProvider(),
             fallback=GeminiImageProvider(),
-            classifier_model=str(options.get("classifier_model") or "gemini-2.5-flash-lite"),
+            text_provider=GeminiTextResponseProvider(model=classifier_model),
         )
+
     spec = next((item for item in _IMAGE_SPECS if item["id"] == provider_id), None)
     if spec:
         raise ImageProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")

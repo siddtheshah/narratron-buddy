@@ -79,6 +79,11 @@ class GeminiTextResponseProvider(TextResponseProvider):
         if request.stop_sequences:
             config_kwargs["stop_sequences"] = list(request.stop_sequences)
 
+        if request.response_schema is not None:
+            config_kwargs["response_mime_type"] = "application/json"
+            config_kwargs["response_schema"] = request.response_schema
+
+
         config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
 
         try:
@@ -97,6 +102,11 @@ class GeminiTextResponseProvider(TextResponseProvider):
         if not text:
             raise TextResponseProviderError(self._failure_message(response))
 
+        parsed = None
+        if request.response_schema is not None:
+            parsed = self.validate_structured_response(request.response_schema, text)
+
+
         finish_reason = self._extract_finish_reason(response)
         usage = self._extract_usage(response)
         request_id = getattr(response, "response_id", None) or getattr(response, "request_id", None)
@@ -108,7 +118,9 @@ class GeminiTextResponseProvider(TextResponseProvider):
             request_id=request_id,
             finish_reason=finish_reason,
             usage=usage,
+            parsed=parsed,
         )
+
 
     @classmethod
     def _extract_text(cls, response: Any) -> str | None:

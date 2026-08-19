@@ -16,6 +16,8 @@ from providers.music_provider import (
     MusicAdapter,
     MusicGenerationRequest,
     MusicGenerationResult,
+    MusicGenerationRequest,
+    MusicGenerationResult,
     MusicProvider,
     MusicProviderError,
 )
@@ -27,6 +29,7 @@ from providers.text_response_provider import (
     TextResponseProviderError,
     TextResponseRequest,
     TextResponseResult,
+    parse_and_validate_structured_response,
 )
 from providers.gemini_text_response_provider import GeminiTextResponseProvider
 from providers.speech_provider import (
@@ -77,6 +80,7 @@ __all__ = [
     "TextResponseProvider",
     "TextResponseProviderError",
     "GeminiTextResponseProvider",
+    "parse_and_validate_structured_response",
     "SpeechProvider",
     "SpeechProviderError",
     "SpeechSynthesisRequest",
