@@ -72,6 +72,18 @@ class ImageTools(BaseTools):
 
         # In-memory mapping of custom image names/aliases to file paths
         self.image_aliases: Dict[str, str] = {}
+
+        # Image cycle configuration and state
+        self.cycle_length: float = float(subconfig.get("cycle_length", subconfig.get("cooldown_duration", 20.0)))
+        self._cycle_lock = threading.RLock()
+        self._cycle_timer: Optional[threading.Timer] = None
+        self._cycle_active: bool = False
+
+        self.current_cycle_image: Optional[dict] = None
+        self.next_cycle_image: Optional[dict] = None
+
+        self.PRIORITY_SHOW = 1
+        self.PRIORITY_CREATE = 2
         
         # Reuse cached references manifest if directory hasn't changed
         if ImageTools._reference_dir_cached == self.reference_dir and ImageTools._references_cache:
@@ -347,10 +359,30 @@ class ImageTools(BaseTools):
                             logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
 
                 if saved_paths:
+                    saved_path = saved_paths[0]
                     if display:
-                        show_res = self.show_image(saved_paths[0], effect=effect)
-                        if show_res.startswith("Error:"):
-                            logger.warning(f"[ImageTools] Generated image but could not display: {show_res}")
+                        with self._cycle_lock:
+                            if self.current_cycle_image is None and not self.currently_displayed_image_path:
+                                self.current_cycle_image = {
+                                    "path": saved_path,
+                                    "transition": "crossfade",
+                                    "effect": effect,
+                                    "priority": self.PRIORITY_CREATE,
+                                    "source": "create_image",
+                                }
+                                self._display_image(saved_path, transition="crossfade", effect=effect)
+                                self._schedule_next_cycle_tick()
+                            else:
+                                self.next_cycle_image = {
+                                    "path": saved_path,
+                                    "transition": "crossfade",
+                                    "effect": effect,
+                                    "priority": self.PRIORITY_CREATE,
+                                    "source": "create_image",
+                                }
+                                if not self._cycle_active and self.cycle_length > 0:
+                                    self._schedule_next_cycle_tick()
+                                logger.info(f"[ImageTools] Generated image queued with priority for the next cycle: {saved_path}")
                 else:
                     logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
             except ImageProviderError as e:
@@ -374,14 +406,77 @@ class ImageTools(BaseTools):
             self._image_provider = get_image_provider(self.image_provider_id, self.image_provider_options)
         return self._image_provider
 
-    @with_cooldown("showing another image", duration=6.0)
+    def advance_cycle(self) -> Optional[dict]:
+        """Advance to the next image cycle.
+
+        If next_cycle_image is set, promote it to current_cycle_image,
+        display it on the canvas, and clear next_cycle_image.
+        If next_cycle_image is None, reuse the current image.
+        Returns the new current_cycle_image.
+        """
+        with self._cycle_lock:
+            if self.next_cycle_image is not None:
+                staged = self.next_cycle_image
+                self.next_cycle_image = None
+                self.current_cycle_image = staged
+                path = staged["path"]
+                transition = staged.get("transition", "crossfade")
+                effect = staged.get("effect", "gleam3")
+                logger.info(f"[ImageTools] Cycle rollover: displaying new image {path} (source={staged.get('source')})")
+                self._display_image(path, transition=transition, effect=effect)
+            else:
+                logger.debug("[ImageTools] Cycle rollover: no next image staged, retaining current image.")
+
+            cb_expired = getattr(self, "on_cooldown_expired", None)
+            if cb_expired:
+                try:
+                    cb_expired("image_cycle")
+                except Exception as e:
+                    logger.error(f"[ImageTools] Exception in on_cooldown_expired callback: {e}")
+
+            return self.current_cycle_image
+
+    def _schedule_next_cycle_tick(self):
+        with self._cycle_lock:
+            if self._cycle_timer:
+                self._cycle_timer.cancel()
+                self._cycle_timer = None
+            if self.cycle_length > 0:
+                self._cycle_timer = threading.Timer(self.cycle_length, self._on_cycle_tick)
+                self._cycle_timer.daemon = True
+                self._cycle_timer.start()
+                self._cycle_active = True
+
+    def stop_cycle(self):
+        """Stop the background image cycle timer."""
+        with self._cycle_lock:
+            if self._cycle_timer:
+                self._cycle_timer.cancel()
+                self._cycle_timer = None
+            self._cycle_active = False
+
+    def __del__(self):
+        try:
+            self.stop_cycle()
+        except Exception:
+            pass
+
+    def _on_cycle_tick(self):
+        try:
+            self.advance_cycle()
+        finally:
+            with self._cycle_lock:
+                if self._cycle_active and self.cycle_length > 0:
+                    self._schedule_next_cycle_tick()
+
+    @with_cooldown("showing another image")
     def show_image(
         self,
         file_path: str,
         transition: str = "crossfade",
         effect: str = "gleam3",
     ) -> str:
-        """Shows an image from a file path or friendly name to the user with a specified canvas transition effect.
+        """Sets an image to be displayed in the next cycle, or displays immediately if no image is currently shown.
 
         Args:
             file_path: The file path or friendly name/alias of the image to show.
@@ -391,9 +486,52 @@ class ImageTools(BaseTools):
                     'none', 'creeping', 'dream', 'sparkle', 'gleam3', 'bendy', 'haze', and 'trace'.
 
         Returns:
-            A status message indicating success or failure.
+            A status message indicating success, queued status, or an error message.
         """
-        return self._display_image(file_path, transition=transition, effect=effect)
+        supported_effects = {"none", "creeping", "dream", "sparkle", "gleam3", "bendy", "haze", "trace"}
+        effect = str(effect or "gleam3").lower().strip()
+        if effect not in supported_effects:
+            return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
+
+        resolved_path = self._find_image_path(file_path)
+        if not resolved_path:
+            logger.warning(f"[ImageTools] Image path or alias '{file_path}' could not be resolved.")
+            res = f"Error: Image '{file_path}' not found."
+            self._trigger_after_tool_call("show_image")
+            return res
+
+        with self._cycle_lock:
+            # If no image is currently displayed (cold start), display immediately and start cycle
+            if self.current_cycle_image is None and not self.currently_displayed_image_path:
+                self.current_cycle_image = {
+                    "path": resolved_path,
+                    "transition": transition,
+                    "effect": effect,
+                    "priority": self.PRIORITY_SHOW,
+                    "source": "show_image",
+                }
+                res = self._display_image(resolved_path, transition=transition, effect=effect)
+                self._schedule_next_cycle_tick()
+                return res
+
+            # If next_cycle_image already has a higher priority (create_image), do not override
+            if self.next_cycle_image and self.next_cycle_image.get("priority", 0) >= self.PRIORITY_CREATE:
+                logger.info(f"[ImageTools] show_image called for '{file_path}', but create_image already has priority for next cycle.")
+                self._trigger_after_tool_call("show_image")
+                return f"Image '{file_path}' was not queued because a generated image already has priority for the next cycle."
+
+            self.next_cycle_image = {
+                "path": resolved_path,
+                "transition": transition,
+                "effect": effect,
+                "priority": self.PRIORITY_SHOW,
+                "source": "show_image",
+            }
+            if not self._cycle_active and self.cycle_length > 0:
+                self._schedule_next_cycle_tick()
+
+            self._trigger_after_tool_call("show_image")
+            return f"Image '{file_path}' queued for the next image cycle with transition '{transition}' and effect '{effect}'."
 
     def _display_image(
         self,

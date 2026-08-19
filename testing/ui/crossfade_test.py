@@ -40,6 +40,8 @@ class TestCrossfade(UITestCase):
 
         for transition, effect in (("crossfade", "gleam3"), ("fade", "sparkle"), ("none", "none")):
             tool.last_show_time = 0
+            tool.current_cycle_image = None
+            tool.currently_displayed_image_path = None
             result = tool.show_image("test_image", transition=transition, effect=effect)
             self.assertIn("Successfully", result)
             tool.on_show_image.assert_called_once_with(
