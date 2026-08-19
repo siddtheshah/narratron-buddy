@@ -240,6 +240,20 @@ async def get_theater(theater_id: str, request: Request):
     current_user = await get_current_user_async(request, record_activity=False)
     owner_id = deployment.get("user_id")
     is_owner = (current_user is not None and owner_id == current_user["id"])
+    active_orator_id = deployment.get("active_orator_id")
+    is_active_orator = (
+        current_user is not None
+        and (
+            active_orator_id == current_user["id"]
+            or (active_orator_id is None and is_owner)
+        )
+    )
+    raw_allowed = deployment.get("allowed_orators") or "[]"
+    try:
+        allowed_ids = json.loads(raw_allowed) if isinstance(raw_allowed, str) else list(raw_allowed)
+    except Exception:
+        allowed_ids = []
+    is_allowed_orator = current_user is not None and current_user["id"] in allowed_ids
 
     # Analytics must not hold up the canvas reload, especially with a remote DB.
     client_ip = request.client.host if request.client else None
@@ -253,6 +267,8 @@ async def get_theater(theater_id: str, request: Request):
 
     meta_dict = meta.model_dump()
     meta_dict["is_owner"] = is_owner
+    meta_dict["is_active_orator"] = is_active_orator
+    meta_dict["is_allowed_orator"] = is_allowed_orator
     if deployment.get("join_key"):
         meta_dict["join_key"] = deployment["join_key"]
     elif not is_owner:

@@ -2380,6 +2380,14 @@
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
         const urlParams = new URLSearchParams(window.location.search);
         const theaterId = urlParams.get('theater_id');
+        const initialRoleIsOrator = urlParams.get('role') === 'orator';
+
+        function isCurrentOrator() {
+            if (typeof window._isActiveOratorState === 'boolean') {
+                return window._isActiveOratorState;
+            }
+            return initialRoleIsOrator;
+        }
         const suggestionsHiddenStorageKey = `narratron-suggestions-hidden:${theaterId || 'default'}`;
         let suggestionsHidden = false;
         if (!theaterId) {
@@ -3377,7 +3385,7 @@
 
         if (doodlesToggleBtn) {
             doodlesToggleBtn.addEventListener('click', () => {
-                if (!isOrator) return;
+                if (!isCurrentOrator()) return;
                 const newEnabled = !doodlesEnabled;
                 setDoodlesDisplay(newEnabled);
                 sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: newEnabled });
@@ -3488,7 +3496,7 @@
                         data.color, data.size || 3
                     );
                 } else if (data.type === 'toggle_mic') {
-                    if (isOrator && agentConnectBtn && !agentConnectBtn.disabled) {
+                    if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
                         agentConnectBtn.click();
                     }
                 } else if (data.type === 'baton_state') {
@@ -3683,8 +3691,6 @@
         // ========================================
         // Orator vs Viewer Logic
         // ========================================
-        const isOrator = urlParams.get('role') === 'orator';
-
         const roleBadge = document.getElementById('role-badge');
         const oratorControls = document.getElementById('orator-controls');
         const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
@@ -3742,7 +3748,7 @@
         // Initialize UI based on role
         const backBtn = document.getElementById('back-btn');
         const suggestionsToggleBtn = document.getElementById('suggestions-toggle-btn');
-        if (isOrator) {
+        if (isCurrentOrator()) {
             if (backBtn) backBtn.href = '/deploy?from=canvas';
             roleBadge.textContent = 'Orator';
             roleBadge.style.color = '#f97316';
@@ -3783,7 +3789,7 @@
         }
 
 
-        // Theater ownership verification for Orator controls
+        // Theater ownership & orator verification for Orator controls
         const activetheaterId = urlParams.get('theater_id');
         if (activetheaterId) {
             fetch(`/api/theaters/${activetheaterId}`)
@@ -3791,9 +3797,11 @@
                 .then(data => {
                     if (data && data.metadata) {
                         const isOwner = data.metadata.is_owner;
-                        if (!isOwner) {
-                            if (isOrator) {
-                                alert("🔒 Only the theater owner can become the Orator.");
+                        const isActiveOrator = data.metadata.is_active_orator;
+                        const isAllowedOrator = data.metadata.is_allowed_orator;
+                        if (!isOwner && !isActiveOrator && !isAllowedOrator) {
+                            if (isCurrentOrator()) {
+                                alert("🔒 Only the theater owner or co-orators can become the Orator.");
                                 const params = new URLSearchParams(window.location.search);
                                 params.delete('role');
                                 window.location.search = params.toString() ? `?${params.toString()}` : '';
@@ -3866,33 +3874,53 @@
                 menuTakeBackBatonBtn.style.display = (isOwner && !isActiveOrator) ? 'inline-flex' : 'none';
             }
 
-
             const wasActiveOrator = window._isActiveOratorState;
-            window._isActiveOratorState = isActiveOrator;
+            window._isActiveOratorState = Boolean(isActiveOrator || (isOwner && !batonState.active_orator));
+            const isNowOrator = window._isActiveOratorState;
 
             // Role & Orator Controls activation based on active orator status
-            if (isActiveOrator) {
+            if (isNowOrator) {
+                if (backBtn) backBtn.href = '/deploy?from=canvas';
                 roleBadge.textContent = 'Orator';
                 roleBadge.style.color = '#f97316';
                 roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
                 roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
-                oratorControls.style.display = 'flex';
+                if (oratorControls) oratorControls.style.display = 'flex';
+                if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
                 if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
-                if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                if (collabSection) collabSection.style.display = 'flex';
+                if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'inline-flex';
+                if (viewerCollabGuideBtn) viewerCollabGuideBtn.style.display = 'none';
+
+                if (!wasActiveOrator) {
+                    checkAgentStatus().then(status => {
+                        if (status && status.agent_running) {
+                            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                                connectAgent().catch(err => console.warn("Auto-connect agent on baton pass failed:", err));
+                            }
+                        }
+                    }).catch(() => {});
+                } else if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
                     statusIndicator.classList.add('disconnected');
                 }
             } else {
+                if (backBtn) backBtn.href = '/';
                 roleBadge.textContent = 'Viewer';
                 roleBadge.style.color = '#a5b4fc';
                 roleBadge.style.background = 'rgba(99, 102, 241, 0.2)';
                 roleBadge.style.borderColor = 'rgba(99, 102, 241, 0.4)';
-                oratorControls.style.display = 'none';
+                if (oratorControls) oratorControls.style.display = 'none';
+                if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
                 if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
+                if (collabSection) collabSection.style.display = 'none';
+                if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
+                if (viewerCollabGuideBtn) viewerCollabGuideBtn.style.display = 'inline-flex';
+
                 // Keep the live agent socket alive through baton transfers.
                 // The server ignores input from anyone who no longer holds it.
                 if (isRecording) stopMicStream();
+                statusIndicator.classList.remove('disconnected');
             }
-
 
             // Check pending request targeting local user
             if (batonState.baton_request && currentUser && batonState.baton_request.target_user_id === currentUser.id) {
@@ -4222,7 +4250,7 @@
                 }
 
                 // Send to agent if connected (only non-suggestion messages)
-                if (result.type !== 'suggestion' && isOrator && agentWs && agentWs.readyState === WebSocket.OPEN) {
+                if (result.type !== 'suggestion' && isCurrentOrator() && agentWs && agentWs.readyState === WebSocket.OPEN) {
                     agentWs.send(JSON.stringify({
                         type: "text",
                         text: text
@@ -4394,7 +4422,7 @@
         }
 
         // Check agent status on page load for Orators
-        if (isOrator) {
+        if (isCurrentOrator()) {
             checkAgentStatus();
         }
 
@@ -4672,7 +4700,7 @@
 
         // Global Keydown Listener for Hotkey
         window.addEventListener('keydown', (e) => {
-            if (!isOrator) return;
+            if (!isCurrentOrator()) return;
 
             // Rebinding hotkey state
             if (isRebindingHotkey) {
@@ -4955,7 +4983,7 @@
             const left = window.screen.width - width - 50;
             const top = 100;
 
-            const url = `/popout?theater_id=${encodeURIComponent(theaterId)}&role=${isOrator ? 'orator' : 'viewer'}`;
+            const url = `/popout?theater_id=${encodeURIComponent(theaterId)}&role=${isCurrentOrator() ? 'orator' : 'viewer'}`;
             popoutWindowRef = window.open(url, 'NarratronPopoutPanel', `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
 
             if (popoutWindowRef) {
