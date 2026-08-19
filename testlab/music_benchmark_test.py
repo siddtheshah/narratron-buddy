@@ -79,3 +79,30 @@ def test_composed_music_benchmark_saves_a_playable_base_artifact(monkeypatch, tm
     assert (tmp_path / item["base_audio_url"].rsplit("/", 1)[-1]).read_bytes() == b"base"
     assert progress[0][0] == "submitted"
     assert progress[-1][0] == "completed"
+
+
+def test_music_benchmark_custom_prompt_run(monkeypatch):
+    monkeypatch.setattr(server, "_run_music_benchmark", lambda *args, **kwargs: None)
+    client = TestClient(app)
+    response = client.post(
+        "/api/music-benchmark/runs",
+        json={
+            "provider_ids": ["lyria"],
+            "custom_prompts": [
+                {
+                    "prompt": "Custom dark synth groove",
+                    "genre": "Synthwave",
+                    "duration_seconds": 20,
+                }
+            ],
+            "repetitions": 1,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["prompts"]) == 1
+    assert data["prompts"][0]["title"] == "Custom Music"
+    assert data["prompts"][0]["prompt"] == "Custom dark synth groove"
+    assert data["prompts"][0]["genre"] == "Synthwave"
+

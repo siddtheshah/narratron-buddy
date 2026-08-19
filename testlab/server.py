@@ -36,10 +36,10 @@ from providers import (
     list_text_response_provider_specs,
     list_speech_provider_specs,
 )
-from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, get_prompt, prompt_catalog
-from testlab.music_benchmark import get_music_prompt, music_prompt_catalog
-from testlab.text_response_benchmark import get_text_prompt, text_prompt_catalog
-from testlab.speech_benchmark import get_speech_prompt, speech_prompt_catalog
+from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, BenchmarkPrompt, get_prompt, prompt_catalog
+from testlab.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, music_prompt_catalog
+from testlab.text_response_benchmark import BenchmarkTextPrompt, get_text_prompt, text_prompt_catalog
+from testlab.speech_benchmark import BenchmarkSpeechPrompt, get_speech_prompt, speech_prompt_catalog
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from tools.story_planning_tool import StoryPlanningTools
@@ -220,17 +220,53 @@ def start_benchmark_run(body: dict[str, Any]):
     prompt_ids = body.get("prompt_ids") or []
     repetitions = body.get("repetitions", 1)
     provider_options = body.get("provider_options") or {}
-    if not provider_ids or not prompt_ids:
-        raise HTTPException(status_code=400, detail="Select at least one provider and one benchmark prompt.")
+    custom_prompts_input = body.get("custom_prompts") or ([] if body.get("custom_prompt") is None else [body.get("custom_prompt")])
+
+    custom_prompts = []
+    for idx, cp in enumerate(custom_prompts_input):
+        if isinstance(cp, str) and cp.strip():
+            custom_prompts.append(BenchmarkPrompt(
+                id=f"custom-image-{idx + 1}" if len(custom_prompts_input) > 1 else "custom",
+                title="Custom Prompt" if len(custom_prompts_input) == 1 else f"Custom Prompt {idx + 1}",
+                dimension="Manual Prompt",
+                prompt=cp.strip(),
+            ))
+        elif isinstance(cp, dict) and str(cp.get("prompt") or "").strip():
+            custom_prompts.append(BenchmarkPrompt(
+                id=str(cp.get("id") or (f"custom-image-{idx + 1}" if len(custom_prompts_input) > 1 else "custom")),
+                title=str(cp.get("title") or ("Custom Prompt" if len(custom_prompts_input) == 1 else f"Custom Prompt {idx + 1}")),
+                dimension=str(cp.get("dimension") or "Manual Prompt"),
+                prompt=str(cp["prompt"]).strip(),
+                reference_files=tuple(cp.get("reference_files") or ()),
+            ))
+
+    if not provider_ids:
+        raise HTTPException(status_code=400, detail="Select at least one provider.")
+    if not prompt_ids and not custom_prompts:
+        raise HTTPException(status_code=400, detail="Select at least one benchmark prompt or enter a custom prompt.")
     if not isinstance(repetitions, int) or not 1 <= repetitions <= 20:
         raise HTTPException(status_code=400, detail="Repetitions must be a whole number between 1 and 20.")
     try:
-        prompts = [get_prompt(prompt_id) for prompt_id in prompt_ids]
+        prompts = [get_prompt(prompt_id) for prompt_id in prompt_ids] + custom_prompts
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"Unknown benchmark prompt: {exc.args[0]}") from exc
 
     run_id = uuid.uuid4().hex
-    run = {"id": run_id, "status": "running", "started_at": time.time(), "completed_at": None, "items": [], "events": [], "total": len(prompts) * len(provider_ids) * repetitions, "repetitions": repetitions}
+    prompts_meta = [
+        {"id": p.id, "title": p.title, "dimension": p.dimension, "prompt": p.prompt, "reference_count": len(p.reference_files)}
+        for p in prompts
+    ]
+    run = {
+        "id": run_id,
+        "status": "running",
+        "started_at": time.time(),
+        "completed_at": None,
+        "items": [],
+        "events": [],
+        "prompts": prompts_meta,
+        "total": len(prompts) * len(provider_ids) * repetitions,
+        "repetitions": repetitions,
+    }
     with _runs_lock:
         _runs[run_id] = run
     threading.Thread(target=_run_benchmark, args=(run_id, provider_ids, prompts, repetitions, provider_options), daemon=True).start()
@@ -243,17 +279,64 @@ def start_music_benchmark_run(body: dict[str, Any]):
     prompt_ids = body.get("prompt_ids") or []
     repetitions = body.get("repetitions", 1)
     provider_options = body.get("provider_options") or {}
-    if not provider_ids or not prompt_ids:
-        raise HTTPException(status_code=400, detail="Select at least one provider and one benchmark music prompt.")
+    custom_prompts_input = body.get("custom_prompts") or ([] if body.get("custom_prompt") is None else [body.get("custom_prompt")])
+
+    custom_prompts = []
+    for idx, cp in enumerate(custom_prompts_input):
+        if isinstance(cp, str) and cp.strip():
+            custom_prompts.append(BenchmarkMusicPrompt(
+                id=f"custom-music-{idx + 1}" if len(custom_prompts_input) > 1 else "custom",
+                title="Custom Music" if len(custom_prompts_input) == 1 else f"Custom Music {idx + 1}",
+                dimension="Manual Music",
+                prompt=cp.strip(),
+                duration_seconds=30.0,
+            ))
+        elif isinstance(cp, dict) and str(cp.get("prompt") or "").strip():
+            custom_prompts.append(BenchmarkMusicPrompt(
+                id=str(cp.get("id") or (f"custom-music-{idx + 1}" if len(custom_prompts_input) > 1 else "custom")),
+                title=str(cp.get("title") or ("Custom Music" if len(custom_prompts_input) == 1 else f"Custom Music {idx + 1}")),
+                dimension=str(cp.get("dimension") or "Manual Music"),
+                prompt=str(cp["prompt"]).strip(),
+                duration_seconds=float(cp.get("duration_seconds", 30.0)),
+                tempo=str(cp["tempo"]) if cp.get("tempo") else None,
+                genre=str(cp["genre"]) if cp.get("genre") else None,
+            ))
+
+    if not provider_ids:
+        raise HTTPException(status_code=400, detail="Select at least one provider.")
+    if not prompt_ids and not custom_prompts:
+        raise HTTPException(status_code=400, detail="Select at least one benchmark music prompt or enter a custom prompt.")
     if not isinstance(repetitions, int) or not 1 <= repetitions <= 20:
         raise HTTPException(status_code=400, detail="Repetitions must be a whole number between 1 and 20.")
     try:
-        prompts = [get_music_prompt(prompt_id) for prompt_id in prompt_ids]
+        prompts = [get_music_prompt(prompt_id) for prompt_id in prompt_ids] + custom_prompts
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"Unknown music prompt: {exc.args[0]}") from exc
 
     run_id = uuid.uuid4().hex
-    run = {"id": run_id, "status": "running", "started_at": time.time(), "completed_at": None, "items": [], "events": [], "total": len(prompts) * len(provider_ids) * repetitions, "repetitions": repetitions}
+    prompts_meta = [
+        {
+            "id": p.id,
+            "title": p.title,
+            "dimension": p.dimension,
+            "prompt": p.prompt,
+            "duration_seconds": p.duration_seconds,
+            "tempo": p.tempo,
+            "genre": p.genre,
+        }
+        for p in prompts
+    ]
+    run = {
+        "id": run_id,
+        "status": "running",
+        "started_at": time.time(),
+        "completed_at": None,
+        "items": [],
+        "events": [],
+        "prompts": prompts_meta,
+        "total": len(prompts) * len(provider_ids) * repetitions,
+        "repetitions": repetitions,
+    }
     with _runs_lock:
         _music_runs[run_id] = run
     threading.Thread(target=_run_music_benchmark, args=(run_id, provider_ids, prompts, repetitions, provider_options), daemon=True).start()
@@ -266,17 +349,64 @@ def start_text_benchmark_run(body: dict[str, Any]):
     prompt_ids = body.get("prompt_ids") or []
     repetitions = body.get("repetitions", 1)
     provider_options = body.get("provider_options") or {}
-    if not provider_ids or not prompt_ids:
-        raise HTTPException(status_code=400, detail="Select at least one provider and one benchmark text prompt.")
+    custom_prompts_input = body.get("custom_prompts") or ([] if body.get("custom_prompt") is None else [body.get("custom_prompt")])
+
+    custom_prompts = []
+    for idx, cp in enumerate(custom_prompts_input):
+        if isinstance(cp, str) and cp.strip():
+            custom_prompts.append(BenchmarkTextPrompt(
+                id=f"custom-text-{idx + 1}" if len(custom_prompts_input) > 1 else "custom",
+                title="Custom Text Prompt" if len(custom_prompts_input) == 1 else f"Custom Text Prompt {idx + 1}",
+                dimension="Manual Prompt",
+                prompt=cp.strip(),
+                temperature=0.7,
+                max_output_tokens=1000,
+            ))
+        elif isinstance(cp, dict) and str(cp.get("prompt") or "").strip():
+            custom_prompts.append(BenchmarkTextPrompt(
+                id=str(cp.get("id") or (f"custom-text-{idx + 1}" if len(custom_prompts_input) > 1 else "custom")),
+                title=str(cp.get("title") or ("Custom Text Prompt" if len(custom_prompts_input) == 1 else f"Custom Text Prompt {idx + 1}")),
+                dimension=str(cp.get("dimension") or "Manual Prompt"),
+                prompt=str(cp["prompt"]).strip(),
+                system_instruction=str(cp["system_instruction"]) if cp.get("system_instruction") else None,
+                temperature=float(cp.get("temperature", 0.7)) if cp.get("temperature") is not None else 0.7,
+                max_output_tokens=int(cp.get("max_output_tokens", 1000)) if cp.get("max_output_tokens") is not None else 1000,
+            ))
+
+    if not provider_ids:
+        raise HTTPException(status_code=400, detail="Select at least one provider.")
+    if not prompt_ids and not custom_prompts:
+        raise HTTPException(status_code=400, detail="Select at least one benchmark text prompt or enter a custom prompt.")
     if not isinstance(repetitions, int) or not 1 <= repetitions <= 20:
         raise HTTPException(status_code=400, detail="Repetitions must be a whole number between 1 and 20.")
     try:
-        prompts = [get_text_prompt(prompt_id) for prompt_id in prompt_ids]
+        prompts = [get_text_prompt(prompt_id) for prompt_id in prompt_ids] + custom_prompts
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"Unknown text prompt: {exc.args[0]}") from exc
 
     run_id = uuid.uuid4().hex
-    run = {"id": run_id, "status": "running", "started_at": time.time(), "completed_at": None, "items": [], "total": len(prompts) * len(provider_ids) * repetitions, "repetitions": repetitions}
+    prompts_meta = [
+        {
+            "id": p.id,
+            "title": p.title,
+            "dimension": p.dimension,
+            "prompt": p.prompt,
+            "system_instruction": p.system_instruction,
+            "temperature": p.temperature,
+            "max_output_tokens": p.max_output_tokens,
+        }
+        for p in prompts
+    ]
+    run = {
+        "id": run_id,
+        "status": "running",
+        "started_at": time.time(),
+        "completed_at": None,
+        "items": [],
+        "prompts": prompts_meta,
+        "total": len(prompts) * len(provider_ids) * repetitions,
+        "repetitions": repetitions,
+    }
     with _runs_lock:
         _text_runs[run_id] = run
     threading.Thread(target=_run_text_benchmark, args=(run_id, provider_ids, prompts, repetitions, provider_options), daemon=True).start()
@@ -289,16 +419,59 @@ def start_speech_benchmark_run(body: dict[str, Any]):
     prompt_ids = body.get("prompt_ids") or []
     repetitions = body.get("repetitions", 1)
     provider_options = body.get("provider_options") or {}
-    if not provider_ids or not prompt_ids:
-        raise HTTPException(status_code=400, detail="Select at least one speech provider and one dialogue line.")
+    custom_prompts_input = body.get("custom_prompts") or ([] if body.get("custom_prompt") is None else [body.get("custom_prompt")])
+
+    custom_prompts = []
+    for idx, cp in enumerate(custom_prompts_input):
+        if isinstance(cp, str) and cp.strip():
+            custom_prompts.append(BenchmarkSpeechPrompt(
+                id=f"custom-speech-{idx + 1}" if len(custom_prompts_input) > 1 else "custom",
+                title="Custom Dialogue" if len(custom_prompts_input) == 1 else f"Custom Dialogue {idx + 1}",
+                dimension="Manual Dialogue",
+                text=cp.strip(),
+                voice_instruction="",
+            ))
+        elif isinstance(cp, dict) and (str(cp.get("text") or cp.get("prompt") or "").strip()):
+            text_val = str(cp.get("text") or cp.get("prompt")).strip()
+            custom_prompts.append(BenchmarkSpeechPrompt(
+                id=str(cp.get("id") or (f"custom-speech-{idx + 1}" if len(custom_prompts_input) > 1 else "custom")),
+                title=str(cp.get("title") or ("Custom Dialogue" if len(custom_prompts_input) == 1 else f"Custom Dialogue {idx + 1}")),
+                dimension=str(cp.get("dimension") or "Manual Dialogue"),
+                text=text_val,
+                voice_instruction=str(cp.get("voice_instruction") or ""),
+            ))
+
+    if not provider_ids:
+        raise HTTPException(status_code=400, detail="Select at least one speech provider.")
+    if not prompt_ids and not custom_prompts:
+        raise HTTPException(status_code=400, detail="Select at least one dialogue line or enter a custom dialogue prompt.")
     if not isinstance(repetitions, int) or not 1 <= repetitions <= 20:
         raise HTTPException(status_code=400, detail="Repetitions must be a whole number between 1 and 20.")
     try:
-        prompts = [get_speech_prompt(prompt_id) for prompt_id in prompt_ids]
+        prompts = [get_speech_prompt(prompt_id) for prompt_id in prompt_ids] + custom_prompts
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"Unknown speech prompt: {exc.args[0]}") from exc
     run_id = uuid.uuid4().hex
-    run = {"id": run_id, "status": "running", "started_at": time.time(), "completed_at": None, "items": [], "total": len(prompts) * len(provider_ids) * repetitions, "repetitions": repetitions}
+    prompts_meta = [
+        {
+            "id": p.id,
+            "title": p.title,
+            "dimension": p.dimension,
+            "text": p.text,
+            "voice_instruction": p.voice_instruction,
+        }
+        for p in prompts
+    ]
+    run = {
+        "id": run_id,
+        "status": "running",
+        "started_at": time.time(),
+        "completed_at": None,
+        "items": [],
+        "prompts": prompts_meta,
+        "total": len(prompts) * len(provider_ids) * repetitions,
+        "repetitions": repetitions,
+    }
     with _runs_lock:
         _speech_runs[run_id] = run
     threading.Thread(target=_run_speech_benchmark, args=(run_id, provider_ids, prompts, repetitions, provider_options), daemon=True).start()

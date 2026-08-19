@@ -13,16 +13,43 @@
     main{width:min(1420px,calc(100% - 36px));margin:auto;padding:38px 0 70px}.eyebrow{color:#93c5fd;font-size:.75rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase}h1{margin:8px 0;font-size:clamp(2rem,4vw,3.4rem);letter-spacing:-.05em}.intro{max-width:780px;color:var(--muted);line-height:1.55}
     .panel{border:1px solid var(--line);border-radius:18px;background:var(--panel);padding:18px;margin-top:20px}.section-title{font-weight:700;margin:0 0 12px}.provider-grid,.prompt-grid{display:grid;gap:10px}.provider-grid{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}.prompt-grid{grid-template-columns:repeat(auto-fit,minmax(205px,1fr));max-height:420px;overflow:auto;padding-right:4px}
     .choice{display:block;border:1px solid var(--line);border-radius:12px;padding:12px;background:#111528;cursor:pointer}.choice:has(input:checked){outline:2px solid var(--accent);border-color:transparent}.choice:has(input:disabled){opacity:.55;cursor:not-allowed}.choice input{margin-right:7px;accent-color:var(--accent)}.choice strong{display:block}.choice small{display:block;color:var(--muted);line-height:1.35;margin:5px 0 0}.pill{display:inline-block;padding:2px 6px;border-radius:99px;background:#1e293b;color:#93c5fd;font-size:.72rem;margin:6px 4px 0 0}.actions{display:flex;align-items:center;gap:14px;margin-top:18px}button{border:0;border-radius:999px;padding:11px 17px;background:var(--accent);color:white;font:600 .92rem Outfit,sans-serif;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.status{color:var(--muted)}
-    .provider-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);color:var(--muted);font-size:.76rem}.provider-stats strong{color:var(--ink);font-weight:600}.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-top:18px}.result{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#101425}.text-wrapper{padding:14px;background:#090b14;border-bottom:1px solid var(--line);max-height:300px;overflow-y:auto;white-space:pre-wrap;font-family:'Fira Code',monospace;font-size:.84rem;line-height:1.45;color:#e2e8f0}.result-body{padding:12px}.result h3{font-size:1rem;margin:0 0 6px}.result p{margin:4px 0;color:var(--muted);font-size:.86rem}.result.error{border-color:rgba(251,113,133,.6)}.error-text{color:#fda4af!important;word-break:break-word}.generation-note{width:100%;min-height:58px;margin-top:9px;padding:8px;border:1px solid var(--line);border-radius:8px;background:#0b0e1c;color:var(--ink);font:inherit;font-size:.8rem;resize:vertical}.gallery-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.gallery-controls select{margin:0}.hidden{display:none}@media(max-width:620px){main{width:min(100% - 24px,1420px);padding-top:24px}}
+    .custom-panel{margin-top:14px;padding:14px;border:1px dashed var(--line);border-radius:12px;background:rgba(20,24,40,.6);transition:border-color .15s}
+    .custom-panel:focus-within{border-color:var(--accent);border-style:solid}
+    .custom-panel-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+    .custom-prompt-input{width:100%;min-height:72px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#0b0e1c;color:var(--ink);font:inherit;font-size:.88rem;resize:vertical;box-sizing:border-box}
+    .custom-prompt-input:focus{outline:2px solid var(--accent);border-color:transparent}
+    .custom-options-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:10px}
+    .custom-options-row label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:.78rem}
+    .custom-options-row input{padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:#0b0e1c;color:var(--ink);font:inherit;font-size:.84rem}
+    .custom-options-row input:focus{outline:2px solid var(--accent);border-color:transparent}
   </style>
 </head>
 <body>
 <main>
   <div class="eyebrow">Narratron Test Lab</div>
   <h1>Text Response Provider Bench</h1>
-  <p class="intro">Run fixed text generation prompts through selected LLM providers. Benchmark request latency, evaluate prompt adherence, character dialogue, DM narration quality, and system instruction execution for Adventure Mode.</p>
+  <p class="intro">Run fixed or custom text generation prompts through selected LLM providers. Benchmark request latency, evaluate prompt adherence, character dialogue, DM narration quality, and system instruction execution for Adventure Mode.</p>
   <section class="panel"><h2 class="section-title">Providers</h2><div id="providers" class="provider-grid"></div></section>
-  <section class="panel"><h2 class="section-title">Fixed prompts</h2><div class="actions" style="margin-top:0"><button id="selectAll" type="button">Select all</button><label class="status">Runs per provider/prompt <input id="repetitions" type="number" min="1" max="20" value="1" style="width:58px;margin-left:6px"></label></div><div id="prompts" class="prompt-grid" style="margin-top:14px"></div></section>
+  <section class="panel">
+    <h2 class="section-title">Prompts</h2>
+    <div class="actions" style="margin-top:0"><button id="selectAll" type="button">Select all</button><button id="deselectAll" type="button" style="background:#1e293b">Deselect all</button><label class="status">Runs per provider/prompt <input id="repetitions" type="number" min="1" max="20" value="1" style="width:58px;margin-left:6px"></label></div>
+    <div id="prompts" class="prompt-grid" style="margin-top:14px"></div>
+    <div class="custom-panel">
+      <div class="custom-panel-header">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer">
+          <input id="useCustomPrompt" type="checkbox">
+          <span>Manual prompt</span>
+        </label>
+        <span class="status" style="font-size:.78rem">Type any custom prompt for LLM comparison</span>
+      </div>
+      <textarea id="customPromptText" class="custom-prompt-input" placeholder="Enter custom prompt (e.g. Describe a mysterious mechanical puzzle room discovered deep under the mountains...)"></textarea>
+      <div class="custom-options-row">
+        <label style="grid-column:1/-1">System instruction (optional)<input id="customSystemInstruction" type="text" placeholder="e.g. You are an expert fantasy dungeon master..."></label>
+        <label>Temperature<input id="customTemperature" type="number" min="0" max="2" step="0.05" value="0.7"></label>
+        <label>Max output tokens<input id="customMaxTokens" type="number" min="50" max="4000" step="50" value="1000"></label>
+      </div>
+    </div>
+  </section>
   <div class="actions"><button id="run" type="button">Run selected text benchmark</button><span id="status" class="status">One prompt is preselected; increase runs to measure repeatability.</span></div>
   <section id="gallery" class="panel hidden"><h2 class="section-title">Generation gallery</h2><div class="gallery-controls"><label>Slice by <select id="galleryView"><option value="provider">Provider</option><option value="prompt">Prompt</option></select></label><label id="galleryFilterLabel">Provider <select id="galleryProvider"></select></label><button id="previousPage" type="button">Previous</button><button id="nextPage" type="button">Next</button><span id="galleryPage" class="status"></span></div><div id="galleryPromptDetail" class="choice hidden" style="margin-top:14px"></div><div id="galleryResults" class="results"></div></section>
 </main>
@@ -30,6 +57,11 @@
 <script>
 const state={catalog:null,run:null,poll:null,galleryPage:0,galleryProvider:'all',galleryPrompt:'all',galleryView:'provider'};
 function el(tag,attrs={},children=[]){const n=document.createElement(tag);Object.assign(n,attrs);for(const c of children)n.append(c);return n}
+function getPromptMap(run){
+  const map=Object.fromEntries((state.catalog?.prompts||[]).map(p=>[p.id,p]));
+  (run?.prompts||[]).forEach(p=>{map[p.id]=p});
+  return map;
+}
 
 function renderCatalog(catalog){
  const providers=document.querySelector('#providers'); const prompts=document.querySelector('#prompts');
@@ -42,13 +74,13 @@ function providerOptions(){const options={};document.querySelectorAll('[data-pro
 function percentile(values,p){if(!values.length)return null;const s=[...values].sort((a,b)=>a-b),i=(s.length-1)*p,a=Math.floor(i),b=Math.ceil(i);return s[a]+(s[b]-s[a])*(i-a)}
 
 function renderRun(run){
- const byId=Object.fromEntries(state.catalog.prompts.map(p=>[p.id,p])); const specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]));
+ const byId=getPromptMap(run); const specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]));
  Object.keys(specs).forEach(id=>{const stats=document.querySelector(`[data-provider-stats="${id}"]`),items=run.items.filter(item=>item.provider_id===id);if(!stats)return;if(!items.length){stats.classList.add('hidden');return}const done=items.filter(item=>item.status==='completed'),times=done.map(item=>item.latency_ms),mean=times.length?(times.reduce((a,b)=>a+b,0)/times.length/1000).toFixed(2)+' s':'—',p50=times.length?(percentile(times,.5)/1000).toFixed(2)+' s':'—',p95=times.length?(percentile(times,.95)/1000).toFixed(2)+' s':'—';stats.innerHTML=`<span>Done <strong>${done.length}/${items.length}</strong></span><span>Failed <strong>${items.length-done.length}</strong></span><span>Mean <strong>${mean}</strong></span><span>p50 <strong>${p50}</strong></span><span>p95 <strong>${p95}</strong></span>`;stats.classList.remove('hidden')});
  (state.galleryView==='prompt'?renderPromptGallery:renderGallery)(run,byId,specs);
 }
 
-function makeResultCard(item,byId,specs){
- const prompt=byId[item.prompt_id],provider=specs[item.provider_id];const card=el('article',{className:`result ${item.status==='failed'?'error':''}`});
+function makeResultCard(item,byId=getPromptMap(state.run),specs=Object.fromEntries((state.catalog?.providers||[]).map(p=>[p.id,p]))){
+ const prompt=byId[item.prompt_id]||{title:'Custom Text Prompt',dimension:'Manual Prompt',prompt:''},provider=specs[item.provider_id]||{name:item.provider_id,model:''};const card=el('article',{className:`result ${item.status==='failed'?'error':''}`});
  if(item.text){const wrapper=el('div',{className:'text-wrapper',textContent:item.text});card.append(wrapper)}
  const body=el('div',{className:'result-body'});body.append(el('h3',{textContent:`${provider.name} · ${prompt.title} · run ${item.repetition}`}),el('p',{textContent:`${(item.latency_ms/1000).toFixed(2)} s · ${item.model||provider.model}${item.finish_reason?' · '+item.finish_reason:''}`}));
  if(item.error)body.append(el('p',{className:'error-text',textContent:item.error}));
@@ -64,10 +96,10 @@ async function saveGenerationNote(item,note){
  item.note=(await response.json()).note;
 }
 
-function renderGallery(run,byId=Object.fromEntries(state.catalog.prompts.map(p=>[p.id,p])),specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]))){
+function renderGallery(run,byId=getPromptMap(run),specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]))){
  const gallery=document.querySelector('#gallery'),selector=document.querySelector('#galleryProvider'),grid=document.querySelector('#galleryResults');gallery.classList.remove('hidden');
  const providerIds=[...new Set(run.items.map(item=>item.provider_id))];
- if([...selector.options].map(x=>x.value).join('|')!==['all',...providerIds].join('|')){selector.innerHTML='';selector.append(el('option',{value:'all',textContent:'All providers'}));providerIds.forEach(id=>selector.append(el('option',{value:id,textContent:specs[id].name})))}
+ if([...selector.options].map(x=>x.value).join('|')!==['all',...providerIds].join('|')){selector.innerHTML='';selector.append(el('option',{value:'all',textContent:'All providers'}));providerIds.forEach(id=>selector.append(el('option',{value:id,textContent:specs[id]?.name||id})))}
  selector.value=state.galleryProvider;let items=run.items.filter(item=>state.galleryProvider==='all'||item.provider_id===state.galleryProvider);
  items=[...items].sort((a,b)=>a.provider_id.localeCompare(b.provider_id)||a.prompt_id.localeCompare(b.prompt_id)||a.repetition-b.repetition);
  const pageSize=12,totalPages=Math.max(1,Math.ceil(items.length/pageSize));state.galleryPage=Math.min(state.galleryPage,totalPages-1);const pageItems=items.slice(state.galleryPage*pageSize,(state.galleryPage+1)*pageSize);
@@ -76,12 +108,12 @@ function renderGallery(run,byId=Object.fromEntries(state.catalog.prompts.map(p=>
  document.querySelector('#previousPage').disabled=state.galleryPage===0;document.querySelector('#nextPage').disabled=state.galleryPage>=totalPages-1
 }
 
-function renderPromptGallery(run,byId=Object.fromEntries(state.catalog.prompts.map(p=>[p.id,p])),specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]))){
+function renderPromptGallery(run,byId=getPromptMap(run),specs=Object.fromEntries(state.catalog.providers.map(p=>[p.id,p]))){
  const gallery=document.querySelector('#gallery'),selector=document.querySelector('#galleryProvider'),grid=document.querySelector('#galleryResults'),label=document.querySelector('#galleryFilterLabel'),detail=document.querySelector('#galleryPromptDetail');
  label.firstChild.textContent='Prompt '; gallery.classList.remove('hidden');
  const promptIds=[...new Set(run.items.map(item=>item.prompt_id))];
- if([...selector.options].map(option=>option.value).join('|')!==['all',...promptIds].join('|')){selector.innerHTML='';selector.append(el('option',{value:'all',textContent:'All prompts'}));promptIds.forEach(id=>selector.append(el('option',{value:id,textContent:byId[id].title})))}
- selector.value=state.galleryPrompt;const prompt=byId[state.galleryPrompt];
+ if([...selector.options].map(option=>option.value).join('|')!==['all',...promptIds].join('|')){selector.innerHTML='';selector.append(el('option',{value:'all',textContent:'All prompts'}));promptIds.forEach(id=>selector.append(el('option',{value:id,textContent:byId[id]?.title||id})))}
+ selector.value=state.galleryPrompt;const prompt=byId[state.galleryPrompt]||(state.galleryPrompt==='all'?null:{title:'Custom Text Prompt',dimension:'Manual Prompt',prompt:''});
  if(prompt){detail.innerHTML='';detail.append(el('strong',{textContent:prompt.title}),el('small',{textContent:prompt.dimension}),el('small',{textContent:prompt.prompt}));detail.classList.remove('hidden')}else detail.classList.add('hidden');
  let items=run.items.filter(item=>state.galleryPrompt==='all'||item.prompt_id===state.galleryPrompt);
  items=[...items].sort((a,b)=>a.prompt_id.localeCompare(b.prompt_id)||a.provider_id.localeCompare(b.provider_id)||a.repetition-b.repetition);
@@ -96,30 +128,49 @@ document.querySelector('#galleryView').onchange=event=>{state.galleryView=event.
 document.querySelector('#galleryProvider').onchange=event=>{if(state.galleryView==='prompt')state.galleryPrompt=event.target.value;else state.galleryProvider=event.target.value;state.galleryPage=0;renderSelectedGallery()};
 document.querySelector('#previousPage').onclick=()=>{state.galleryPage--;renderSelectedGallery()};
 document.querySelector('#nextPage').onclick=()=>{state.galleryPage++;renderSelectedGallery()};
-document.querySelector('#selectAll').onclick=()=>{const boxes=document.querySelectorAll('#prompts input');const allChecked=[...boxes].every(b=>b.checked);boxes.forEach(b=>b.checked=!allChecked)};
+document.querySelector('#selectAll').onclick=()=>{document.querySelectorAll('#prompts input').forEach(b=>b.checked=true)};
+document.querySelector('#deselectAll').onclick=()=>{document.querySelectorAll('#prompts input').forEach(b=>b.checked=false)};
+const customPromptInput=document.querySelector('#customPromptText');
+customPromptInput.oninput=()=>{if(customPromptInput.value.trim()){document.querySelector('#useCustomPrompt').checked=true}};
 
 document.querySelector('#run').onclick=async()=>{
- const provider_ids=selected('providers'),prompt_ids=selected('prompts'),repetitions=Number(document.querySelector('#repetitions').value),options=providerOptions();
- if(!provider_ids.length||!prompt_ids.length){alert('Select at least one provider and one prompt.');return}
- document.querySelector('#run').disabled=true;document.querySelector('#status').textContent='Starting benchmark run…';
- try{
-   const res=await fetch('/api/text-benchmark/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider_ids,prompt_ids,repetitions,provider_options:options})});
-   if(!res.ok)throw new Error((await res.json()).detail||'Failed to start run.');
-   state.run=await res.json();state.galleryPage=0;
-   clearInterval(state.poll);
-   state.poll=setInterval(async()=>{
-     const statusRes=await fetch(`/api/text-benchmark/runs/${state.run.id}`);
-     if(statusRes.ok){state.run=await statusRes.json();renderRun(state.run);
-       document.querySelector('#status').textContent=`Run ${state.run.status}: ${state.run.items.length}/${state.run.total} responses generated`;
-       if(state.run.status==='completed'){clearInterval(state.poll);document.querySelector('#run').disabled=false}}
-   },1000)
- }catch(err){alert(err.message);document.querySelector('#run').disabled=false;document.querySelector('#status').textContent='Run failed to start.'}
+  const provider_ids=selected('providers'),prompt_ids=selected('prompts'),repetitions=Number(document.querySelector('#repetitions').value),options=providerOptions();
+  const useCustom=document.querySelector('#useCustomPrompt').checked;
+  const customText=customPromptInput.value.trim();
+  const custom_prompts=[];
+  if(useCustom&&customText){
+    custom_prompts.push({
+      prompt: customText,
+      title: 'Custom Text Prompt',
+      dimension: 'Manual Prompt',
+      system_instruction: document.querySelector('#customSystemInstruction').value.trim()||null,
+      temperature: Number(document.querySelector('#customTemperature').value||0.7),
+      max_output_tokens: Number(document.querySelector('#customMaxTokens').value||1000),
+    });
+  }
+  if(!provider_ids.length||(!prompt_ids.length&&!custom_prompts.length)){
+    alert('Select at least one provider and one prompt or enter a custom prompt.');
+    return;
+  }
+  document.querySelector('#run').disabled=true;document.querySelector('#status').textContent='Starting benchmark run…';
+  try{
+    const res=await fetch('/api/text-benchmark/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider_ids,prompt_ids,custom_prompts,repetitions,provider_options:options})});
+    if(!res.ok)throw new Error((await res.json()).detail||'Failed to start run.');
+    state.run=await res.json();state.galleryPage=0;
+    clearInterval(state.poll);
+    state.poll=setInterval(async()=>{
+      const statusRes=await fetch(`/api/text-benchmark/runs/${state.run.id}`);
+      if(statusRes.ok){state.run=await statusRes.json();renderRun(state.run);
+        document.querySelector('#status').textContent=`Run ${state.run.status}: ${state.run.items.length}/${state.run.total} responses generated`;
+        if(state.run.status==='completed'){clearInterval(state.poll);document.querySelector('#run').disabled=false}}
+    },1000)
+  }catch(err){alert(err.message);document.querySelector('#run').disabled=false;document.querySelector('#status').textContent='Run failed to start.'}
 };
 
 (async()=>{
- const res=await fetch('/api/text-benchmark/catalog');
- state.catalog=await res.json();
- renderCatalog(state.catalog);
+  const res=await fetch('/api/text-benchmark/catalog');
+  state.catalog=await res.json();
+  renderCatalog(state.catalog);
 })();
 </script>
 </body>
