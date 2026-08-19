@@ -1,7 +1,7 @@
 import json
 import logging
 
-from providers.hybrid_image_provider import HybridImageProvider
+from providers.hybrid_image_provider import CLASSIFIER_INSTRUCTIONS, HybridImageProvider, ImageClassifierResponse
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult, ImageProvider, ImageReference
 from providers.text_response_provider import TextResponseProvider, TextResponseResult
 
@@ -23,16 +23,24 @@ class FakeTextProvider(TextResponseProvider):
     display_name = "Fake Text Classifier"
     model = "gemini-2.5-flash-lite"
 
-    def __init__(self, response_text: str = ""):
+    def __init__(self, response_text: str = "", parsed=None):
         self.response_text = response_text
+        self.parsed = parsed
         self.requests = []
 
     def generate(self, request):
         self.requests.append(request)
+        parsed = self.parsed
+        if parsed is None and request.response_schema is not None and self.response_text:
+            try:
+                parsed = self.validate_structured_response(request.response_schema, self.response_text)
+            except Exception:
+                parsed = None
         return TextResponseResult(
             text=self.response_text,
             provider=self.id,
             model=self.model,
+            parsed=parsed,
         )
 
 
@@ -156,6 +164,46 @@ def test_hybrid_handles_markdown_fenced_json_from_text_provider():
     assert not primary.calls and len(fallback.calls) == 1
     assert result.usage["routing"]["selected_provider"] == "gemini"
     assert "text_rendering" in result.usage["routing"]["reasons"]
+
+
+def test_hybrid_passes_structured_response_schema_in_request():
+    primary, fallback = FakeProvider("flux"), FakeProvider("gemini")
+    text_provider = FakeTextProvider(
+        json.dumps({"route_to_fallback": False, "scene_type": "single_character", "reasons": [], "ambiguous_terms": []})
+    )
+    provider = HybridImageProvider(primary, fallback, text_provider=text_provider)
+
+    result = provider.generate(ImageGenerationRequest(prompt="A lonely wanderer standing on a sand dune"))
+
+    assert len(primary.calls) == 1 and not fallback.calls
+    assert len(text_provider.requests) == 1
+    assert text_provider.requests[0].response_schema is ImageClassifierResponse
+    assert result.usage["routing"]["scene_type"] == "single_character"
+
+
+def test_hybrid_handles_parsed_pydantic_instance_from_text_provider():
+    primary, fallback = FakeProvider("flux"), FakeProvider("gemini")
+    parsed_model = ImageClassifierResponse(
+        route_to_fallback=False,
+        scene_type="pure_environment",
+        reasons=[],
+        ambiguous_terms=[],
+    )
+    text_provider = FakeTextProvider(response_text="", parsed=parsed_model)
+    provider = HybridImageProvider(primary, fallback, text_provider=text_provider)
+
+    result = provider.generate(ImageGenerationRequest(prompt="Emerald waterfall in a jungle valley"))
+
+    assert len(primary.calls) == 1 and not fallback.calls
+    assert result.usage["routing"]["selected_provider"] == "flux"
+    assert result.usage["routing"]["scene_type"] == "pure_environment"
+
+
+def test_classifier_instructions_do_not_contain_json_blob():
+    assert "{" not in CLASSIFIER_INSTRUCTIONS
+    assert "}" not in CLASSIFIER_INSTRUCTIONS
+    assert "Return JSON only with:" not in CLASSIFIER_INSTRUCTIONS
+
 
 
 

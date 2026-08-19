@@ -9,7 +9,7 @@ from providers.image_provider import (
 )
 from providers.openai_image_provider import OpenAIImageProvider
 from providers.fal_flux_klein_provider import FalFluxKleinProvider
-from providers.hybrid_image_provider import HybridImageProvider
+from providers.hybrid_image_provider import HybridImageProvider, ImageClassifierResponse
 from providers.music_provider import (
     MusicAdaptationRequest,
     MusicAudioArtifact,
@@ -65,6 +65,7 @@ __all__ = [
     "OpenAIImageProvider",
     "FalFluxKleinProvider",
     "HybridImageProvider",
+    "ImageClassifierResponse",
     "MusicGenerationRequest",
     "MusicAdaptationRequest",
     "MusicAudioArtifact",

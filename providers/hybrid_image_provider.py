@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Callable
+from typing import Any, Callable, Literal
+
+from pydantic import BaseModel, Field
 
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult, ImageProvider
 from providers.text_response_provider import TextResponseProvider, TextResponseRequest
@@ -14,24 +16,45 @@ logger = logging.getLogger(__name__)
 LOG_PREFIX = "[HybridImageProvider]"
 
 
-CLASSIFIER_INSTRUCTIONS = """Classify this image-generation prompt. Return JSON only with:
-{
-  "route_to_fallback": boolean,
-  "scene_type": "pure_environment" | "single_character" | "complex",
-  "reasons": ["text_rendering" | "creature_object_interaction" | "creature_creature_interaction" | "contextual_disambiguation" | "multiple_subjects" | "complex_composition"],
-  "ambiguous_terms": [string]
-}
+class ImageClassifierResponse(BaseModel):
+    """Structured response schema for image routing classifier."""
+
+    route_to_fallback: bool = Field(
+        default=True,
+        description="Whether to route the prompt to the fallback provider (Gemini).",
+    )
+    scene_type: Literal["pure_environment", "single_character", "complex"] = Field(
+        default="complex",
+        description="Scene classification: 'pure_environment', 'single_character', or 'complex'.",
+    )
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Reasons for routing to fallback (e.g., text_rendering, creature_object_interaction, creature_creature_interaction, contextual_disambiguation, multiple_subjects, complex_composition).",
+    )
+    ambiguous_terms: list[str] = Field(
+        default_factory=list,
+        description="Ambiguous terms requiring contextual disambiguation.",
+    )
+
+
+CLASSIFIER_INSTRUCTIONS = """Classify this image-generation prompt for routing.
 
 FLUX is the exception, not the default. Set route_to_fallback=false only for a
-pure environment with no characters or a simple scene with exactly one
-character. For every other scene set route_to_fallback=true and
-scene_type="complex". Always route to the fallback for readable inserted text,
-multiple characters or subjects, meaningful character/object contact,
-character-to-character interaction, complex composition, or context-sensitive
-word meanings. Examples: "floating city in the sky" must not become floating
-on water, and a navigational compass on a map must not become a geometric
-drawing compass. Add "contextual_disambiguation" and the ambiguous word(s) in
+pure environment with no characters or a scene with exactly one
+character that avoids the following:
+
+1. readable text in scene
+2. multiple creatures in the scene.
+3. creatures manipulating objects through touch.
+4. context sensitive word meanings
+  - floating city in the sky could mean floating in water or air
+  - navigational compass on a map must not become a geometric
+drawing compass
+  - Add "contextual_disambiguation" and the ambiguous word(s) in
 that case.
+
+If any of these apply, set route_to_fallback=true and
+scene_type="complex". You MUST set a reason if rerouting.
 """
 
 
@@ -179,8 +202,14 @@ class HybridImageProvider(ImageProvider):
             prompt=f"Prompt:\n{prompt}",
             system_instruction=CLASSIFIER_INSTRUCTIONS,
             temperature=0.0,
+            response_schema=ImageClassifierResponse,
         )
         response = self.text_provider.generate(request)
+        if getattr(response, "parsed", None) is not None:
+            if isinstance(response.parsed, BaseModel):
+                return response.parsed.model_dump()
+            if isinstance(response.parsed, dict):
+                return response.parsed
         text = getattr(response, "text", None)
         if not text:
             logger.error("%s Classifier text provider returned no text in response", LOG_PREFIX)
@@ -194,7 +223,10 @@ class HybridImageProvider(ImageProvider):
             if lines and lines[-1].startswith("```"):
                 lines = lines[:-1]
             clean_text = "\n".join(lines).strip()
-        return json.loads(clean_text)
+        data = json.loads(clean_text)
+        if isinstance(data, dict):
+            return data
+        raise ValueError(f"Expected dict from classifier, got {type(data)}")
 
 
 
