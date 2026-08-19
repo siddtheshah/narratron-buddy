@@ -3807,6 +3807,11 @@
                                 window.location.search = params.toString() ? `?${params.toString()}` : '';
                             }
                         }
+                        const isAdventure = Boolean(
+                            data.metadata.is_adventure_mode ||
+                            (data.metadata.config && data.metadata.config.story_planning && data.metadata.config.story_planning.adventure_mode)
+                        );
+                        initAdventureGuide(isAdventure, activetheaterId);
                     }
                 })
                 .catch(err => console.error("Error checking theater ownership:", err));
@@ -3899,7 +3904,7 @@
                                 connectAgent().catch(err => console.warn("Auto-connect agent on baton pass failed:", err));
                             }
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
                 } else if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
                     statusIndicator.classList.add('disconnected');
                 }
@@ -5412,11 +5417,69 @@
                     closeOratorHowtoModal();
                 } else if (viewerCollabGuideModal && viewerCollabGuideModal.classList.contains('active')) {
                     closeViewerCollabGuide();
+                } else if (adventureGuideModal && adventureGuideModal.classList.contains('active')) {
+                    closeAdventureGuideModal();
                 } else if (theaterConfigModal && theaterConfigModal.classList.contains('active')) {
                     closeTheaterConfigModal();
                 }
             }
         });
+
+        // ========================================
+        // Adventure Mode Guide Modal Logic
+        // ========================================
+        const adventureGuideModal = document.getElementById('adventure-guide-modal');
+        const menuItemAdventureGuide = document.getElementById('menu-item-adventure-guide');
+        const adventureGuideCloseBtn = document.getElementById('adventure-guide-close-btn');
+        const adventureGuideAckBtn = document.getElementById('adventure-guide-ack-btn');
+
+        function openAdventureGuideModal() {
+            if (!adventureGuideModal) return;
+            closePulloutMenu();
+            adventureGuideModal.classList.add('active');
+            adventureGuideModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeAdventureGuideModal() {
+            if (!adventureGuideModal) return;
+            adventureGuideModal.classList.remove('active');
+            adventureGuideModal.setAttribute('aria-hidden', 'true');
+            const tid = theaterId || 'default';
+            localStorage.setItem('narratron_adventure_guide_seen', 'true');
+            localStorage.setItem(`narratron_adventure_guide_seen:${tid}`, 'true');
+        }
+
+        function initAdventureGuide(isAdventureMode, currentTheaterId) {
+            if (menuItemAdventureGuide) {
+                menuItemAdventureGuide.style.display = isAdventureMode ? 'flex' : 'none';
+            }
+
+            if (!isAdventureMode) return;
+
+            const tid = currentTheaterId || theaterId || 'default';
+            const globalSeenKey = 'narratron_adventure_guide_seen';
+            const theaterSeenKey = `narratron_adventure_guide_seen:${tid}`;
+
+            const hasSeen = localStorage.getItem(globalSeenKey) === 'true' || localStorage.getItem(theaterSeenKey) === 'true';
+
+            if (!hasSeen) {
+                // First time in adventure mode: show modal
+                setTimeout(openAdventureGuideModal, 450);
+            }
+        }
+
+        if (menuItemAdventureGuide) menuItemAdventureGuide.addEventListener('click', openAdventureGuideModal);
+        if (adventureGuideCloseBtn) adventureGuideCloseBtn.addEventListener('click', closeAdventureGuideModal);
+        if (adventureGuideAckBtn) adventureGuideAckBtn.addEventListener('click', closeAdventureGuideModal);
+        if (adventureGuideModal) {
+            adventureGuideModal.addEventListener('click', (e) => {
+                if (e.target === adventureGuideModal) closeAdventureGuideModal();
+            });
+        }
+
+        window.openAdventureGuideModal = openAdventureGuideModal;
+        window.closeAdventureGuideModal = closeAdventureGuideModal;
+        window.initAdventureGuide = initAdventureGuide;
 
         // ========================================
         // Theater Config Modal Logic
@@ -5616,6 +5679,11 @@
                             <span class="pullout-item-icon">🎙️</span>
                             <span>Orator How-To Guide</span>
                         </button>
+                        <button id="menu-item-adventure-guide" class="pullout-menu-item"
+                            title="How Adventure Mode works" style="display: none;">
+                            <span class="pullout-item-icon">🗺️</span>
+                            <span>Adventure Mode Guide</span>
+                        </button>
                     </div>
                 </div>
 
@@ -5781,6 +5849,89 @@
 
             <div class="howto-footer">
                 <button id="viewer-collab-guide-ack-btn" class="howto-ack-btn">Let's collaborate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Adventure Mode Guide Modal -->
+    <div id="adventure-guide-modal" class="modal-overlay" role="dialog" aria-labelledby="adventure-guide-title"
+        aria-hidden="true">
+        <div class="modal-card">
+            <button id="adventure-guide-close-btn" class="modal-close-btn"
+                aria-label="Close adventure guide">✕</button>
+
+            <div class="howto-header">
+                <div class="howto-icon-badge" style="background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(236, 72, 153, 0.3)); border-color: rgba(168, 85, 247, 0.5);">🗺️</div>
+                <div>
+                    <h3 id="adventure-guide-title" class="howto-title-text">Adventure Mode Guide</h3>
+                    <div class="howto-subtitle">How to immerse yourself in Narratron's crafted narratives</div>
+                </div>
+            </div>
+
+            <div class="howto-steps">
+                <div class="howto-step-card">
+                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">1</div>
+                    <div class="step-content">
+                        <div class="step-title">
+                            Immerse in a Crafted Narrative
+                            <span class="step-badge" style="background: linear-gradient(135deg, #a855f7, #ec4899); color: #fff;">Story Mode</span>
+                        </div>
+                        <div class="step-desc">
+                            Adventure mode is built around a pre-existing sandbox and structure. Make meaningful choices in a story that is never told the same way twice.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="howto-step-card">
+                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">2</div>
+                    <div class="step-content">
+                        <div class="step-title">
+                            Play In-Character, Don't Force Control
+                        </div>
+                        <div class="step-desc">
+                            Speak your character's dialogue and describe your actions. If you have your own story to show or tell, it is better to disable adventure mode and take full control.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="howto-step-card">
+                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">3</div>
+                    <div class="step-content">
+                        <div class="step-title">
+                            Dynamic Dialogue & Reactions
+                        </div>
+                        <div class="step-desc">
+                            NPC interactions appear in live canvas dialogue, while illustrative scenes and soundtrack dynamically respond to your choices.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="howto-step-card">
+                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">4</div>
+                    <div class="step-content">
+                        <div class="step-title">
+                            Audience Collaboration
+                        </div>
+                        <div class="step-desc">
+                            Viewers in chat can brainstorm tactical ideas and plot moves to help guide your character through challenges.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="howto-step-card">
+                    <div class="step-num">💡</div>
+                    <div class="step-content">
+                        <div class="step-title">Tips for Adventure Mode</div>
+                        <div class="step-desc">
+                            • Treat the world as real! React to situations, investigate clues, and let the narrator reveal consequences.<br>
+                            • Re-open this guide anytime from the left pullout menu.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="howto-footer">
+                <button id="adventure-guide-ack-btn" class="howto-ack-btn" style="background: linear-gradient(135deg, #a855f7, #ec4899);">⚔️ Got it, let's explore!</button>
             </div>
         </div>
     </div>

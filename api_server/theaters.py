@@ -269,6 +269,9 @@ async def get_theater(theater_id: str, request: Request):
     meta_dict["is_owner"] = is_owner
     meta_dict["is_active_orator"] = is_active_orator
     meta_dict["is_allowed_orator"] = is_allowed_orator
+    meta_dict["is_adventure_mode"] = bool(
+        meta_dict.get("config", {}).get("story_planning", {}).get("adventure_mode", False)
+    )
     if deployment.get("join_key"):
         meta_dict["join_key"] = deployment["join_key"]
     elif not is_owner:
