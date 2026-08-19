@@ -450,6 +450,7 @@
       <span>🎨</span> Narratron Buddy
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
+      <a href="/adventures" class="deploy-nav-btn">🗺️ Adventures</a>
       <a href="/about" class="deploy-nav-btn">About</a>
       <a href="/ideas" class="deploy-nav-btn">Ideas</a>
       <a href="/stats" class="deploy-nav-btn">Stats Dashboard</a>
@@ -468,12 +469,14 @@
     <p class="subtitle">Experience a story like never before — with real-time dynamic visuals, music orchestration, and
       your fellow viewers right there alongside you.</p>
     <p class="demo-link">Watch the <a href="https://youtu.be/fh1ikmYgHZI" target="_blank"
-        rel="noopener noreferrer">demo</a>!</p>
+        rel="noopener noreferrer">2-minute Narratron walkthrough video</a>.</p>
     <div class="join-card">
       <h2>Enter Theater Join Key</h2>
       <p>Ask the theater host for their 8-character join key</p>
       <div class="input-group">
-        <input type="text" id="joinKeyInput" class="join-input" placeholder="KEY-XXXXXX" maxlength="12">
+        <input type="text" id="joinKeyInput" class="join-input" placeholder="KEY-XXXXXX" maxlength="12"
+          autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
+          onkeydown="if(event.key==='Enter') submitJoinKey()">
         <button class="join-btn" onclick="submitJoinKey()">Join</button>
       </div>
       <div id="errorMessage" class="error-msg"></div>
@@ -482,9 +485,12 @@
     <aside class="host-theater-card" aria-label="Host a theater">
       <div>
         <h3>Adventure Mode is here</h3>
-        <p>Build a choice-driven story where players help shape the adventure.</p>
+        <p>Build a choice-driven story or play our curated premade adventures.</p>
       </div>
-      <a href="/deploy?creation_path=adventure" class="host-theater-link">Try Adventure Mode</a>
+      <div style="display: flex; gap: 8px;">
+        <a href="/adventures" class="host-theater-link" style="background: linear-gradient(135deg, #8b5cf6, #ec4899); border: none; color: #fff;">Explore Adventures</a>
+        <a href="/deploy?creation_path=adventure" class="host-theater-link">Deploy Custom</a>
+      </div>
     </aside>
 
     <section class="features-carousel splide" id="featuresCarousel" aria-labelledby="featuresCarouselTitle">

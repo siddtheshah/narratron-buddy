@@ -25,6 +25,12 @@ def test_ideas_page_reads_the_ideas_template():
     assert "Available image effects" in response
 
 
+def test_adventures_page_reads_template():
+    response = pages.read_adventures()
+    assert "Explore Premade Adventures" in response
+    assert "Shared Adventure Library" in response
+
+
 def test_canvas_with_verified_join_key_redirects_and_grants_cookie():
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
     request = SimpleNamespace(url=SimpleNamespace(remove_query_params=lambda _: "/canvas?theater_id=stage"))

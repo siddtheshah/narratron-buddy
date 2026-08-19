@@ -14,3 +14,4 @@ absl-py
 stripe>=7.0.0
 pytest
 pytest-asyncio
+google-cloud-storage>=3.0.0

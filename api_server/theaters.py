@@ -33,6 +33,7 @@ from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
+from services.adventure_service import adventure_service
 
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,33 @@ def list_theaters(request: Request):
     # Sort: owned theaters first, then by last_used_at desc, then created_at desc
     result.sort(key=lambda x: (x["is_owner"], x.get("last_used_at", "") or x.get("created_at", "")), reverse=True)
     return result
+
+@app.get("/api/adventures")
+def list_adventures_endpoint(refresh: bool = False):
+    """List premade adventures stored in GCS/shared storage sorted newest first."""
+    return adventure_service.list_adventures(force_refresh=refresh)
+
+
+@app.get("/api/adventures/{adventure_id}")
+def get_adventure_endpoint(adventure_id: str):
+    """Get metadata for a specific premade adventure."""
+    _safe_path_param(adventure_id, "adventure_id")
+    adv = adventure_service.get_adventure(adventure_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail="Adventure not found")
+    return adv
+
+
+@app.get("/api/adventures/{adventure_id}/cover")
+def get_adventure_cover_endpoint(adventure_id: str):
+    """Stream or return the cover image of a premade adventure."""
+    _safe_path_param(adventure_id, "adventure_id")
+    res = adventure_service.get_adventure_cover(adventure_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Cover image not found")
+    content, ctype = res
+    return Response(content=content, media_type=ctype)
+
 
 @app.get("/api/theaters/default-config")
 async def get_default_theater_config():
@@ -341,13 +369,25 @@ async def create_and_deploy_theater(request: Request):
     if len(story_planning_style) > 500:
         raise HTTPException(status_code=400, detail="Story planning style must be 500 characters or fewer.")
 
+    preset_adventure_id = str(form.get("preset_adventure_id", "")).strip()
     reference_files = []
     playlists_data = {}
     lore_files = []
 
+    # If an adventure preset is chosen, load its assets first
+    adv_config: Dict = {}
+    if preset_adventure_id:
+        adv_refs, adv_playlists, adv_lore, adv_config = adventure_service.load_adventure_assets(preset_adventure_id)
+        reference_files.extend(adv_refs)
+        lore_files.extend(adv_lore)
+        for pl_name, tracks in adv_playlists.items():
+            if pl_name not in playlists_data:
+                playlists_data[pl_name] = []
+            playlists_data[pl_name].extend(tracks)
+
     # Important to provide music for first time experience. Blank theater will not have any music tracks by default
     # otherwise.
-    if creation_mode in ("blank", "adventure"):
+    if creation_mode in ("blank", "adventure") and not playlists_data:
         quick_deploy_track = PROJECT_ROOT / "playlists" / "default" / "new story.mp3"
         if quick_deploy_track.is_file():
             playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]
@@ -430,6 +470,13 @@ async def create_and_deploy_theater(request: Request):
             raise HTTPException(status_code=400, detail=f"Invalid theater configuration: {error}")
 
     theater_config = theater_config or {}
+    if adv_config:
+        for k, v in adv_config.items():
+            if k not in theater_config:
+                theater_config[k] = deepcopy(v)
+            elif isinstance(v, dict) and isinstance(theater_config[k], dict):
+                for sub_k, sub_v in v.items():
+                    theater_config[k].setdefault(sub_k, deepcopy(sub_v))
     if creation_mode != "folder" and not advanced_config_canonical:
         agent_config = theater_config.setdefault("agent", {})
         if not isinstance(agent_config, dict):

@@ -138,6 +138,12 @@ def read_about():
         "<!-- ABOUT_CONTENT -->", about_content
     )
 
+@app.get("/adventures", response_class=HTMLResponse)
+def read_adventures():
+    """Serve the Premade Adventures showcase & instant deploy page."""
+    template_path = PROJECT_ROOT / "templates" / "adventures.html"
+    return template_path.read_text(encoding="utf-8")
+
 @app.get("/ideas", response_class=HTMLResponse)
 def read_ideas():
     """Serve inspiration for making a Narratron theater your own."""

@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premade Adventures — Narratron Buddy</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/auth-flow.css">
+  <script src="/static/js/auth-flow.js"></script>
+
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #090d16 0%, #111827 50%, #1e112a 100%);
+      --glass-bg: rgba(255, 255, 255, 0.04);
+      --glass-bg-hover: rgba(255, 255, 255, 0.08);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --glass-border-hover: rgba(168, 85, 247, 0.4);
+      --primary: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --accent: #ec4899;
+      --cyan-accent: #06b6d4;
+      --emerald-accent: #10b981;
+      --text-main: #f8fafc;
+      --text-secondary: #94a3b8;
+      --radius: 16px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background glows */
+    .ambient-glow {
+      position: fixed;
+      top: -10vw;
+      left: -10vw;
+      width: 50vw;
+      height: 50vw;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .ambient-glow-2 {
+      position: fixed;
+      bottom: -10vw;
+      right: -10vw;
+      width: 50vw;
+      height: 50vw;
+      background: radial-gradient(circle, rgba(236, 72, 153, 0.12) 0%, rgba(0, 0, 0, 0) 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Header & Navigation */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      background: rgba(9, 13, 22, 0.75);
+      border-bottom: 1px solid var(--glass-border);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-mark {
+      font-size: 1.3rem;
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+    }
+
+    .nav-link {
+      padding: 0.45rem 0.9rem;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .nav-link:hover {
+      color: #fff;
+      background: var(--glass-bg-hover);
+    }
+
+    .nav-link.active {
+      color: #fff;
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.55rem 1.1rem;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #8b5cf6, #d946ef);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
+      filter: brightness(1.08);
+    }
+
+    .btn-secondary {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: var(--glass-bg-hover);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .btn-sm {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.82rem;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      position: relative;
+      z-index: 1;
+      max-width: 1320px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      padding: 0.35rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .hero h1 {
+      font-size: 2.6rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(135deg, #ffffff 30%, #c4b5fd 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+      max-width: 680px;
+      margin: 0 auto 1.5rem;
+      line-height: 1.55;
+    }
+
+    /* Search & Filter Toolbar */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      padding: 0.9rem 1.2rem;
+      backdrop-filter: blur(12px);
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 240px;
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-sm);
+      padding: 0.55rem 1rem 0.55rem 2.2rem;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.88rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .search-box input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      pointer-events: none;
+    }
+
+    .filter-tags {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .tag-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      color: var(--text-secondary);
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s ease;
+    }
+
+    .tag-btn:hover,
+    .tag-btn.active {
+      color: #fff;
+      background: rgba(139, 92, 246, 0.25);
+      border-color: rgba(139, 92, 246, 0.5);
+    }
+
+    /* Adventure Cards Grid */
+    .adventures-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 1.75rem;
+    }
+
+    .card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      backdrop-filter: blur(12px);
+      position: relative;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--glass-border-hover);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), 0 0 20px rgba(139, 92, 246, 0.15);
+    }
+
+    .card-cover-container {
+      position: relative;
+      width: 100%;
+      height: 200px;
+      background: #090d16;
+      overflow: hidden;
+    }
+
+    .card-cover {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.5s ease;
+    }
+
+    .card:hover .card-cover {
+      transform: scale(1.04);
+    }
+
+    .card-cover-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      background: linear-gradient(135deg, #1e1b4b, #311042);
+    }
+
+    .card-cover-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, rgba(9, 13, 22, 0.1) 0%, rgba(9, 13, 22, 0.85) 100%);
+    }
+
+    .card-badges {
+      position: absolute;
+      top: 0.75rem;
+      left: 0.75rem;
+      right: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge-date {
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e2e8f0;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    .badge-genre {
+      background: rgba(139, 92, 246, 0.85);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .card-body {
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.45rem;
+      color: #fff;
+    }
+
+    .card-desc {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+      line-height: 1.5;
+      margin-bottom: 1rem;
+      flex: 1;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-meta-pills {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.2rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .meta-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.75rem;
+      color: #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 0.6rem;
+      margin-top: auto;
+    }
+
+    .card-actions .btn {
+      flex: 1;
+    }
+
+    /* Skeleton Loading State */
+    .skeleton-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      height: 420px;
+      animation: pulse 1.5s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Deployment Modal Overlay */
+    .deploy-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .deploy-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .deploy-modal {
+      background: #111827;
+      border: 1px solid var(--glass-border-hover);
+      border-radius: var(--radius);
+      padding: 2.2rem;
+      text-align: center;
+      max-width: 440px;
+      width: 90%;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(139, 92, 246, 0.2);
+      border-top-color: #8b5cf6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1.2rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 768px) {
+      header {
+        padding: 0.75rem 1rem;
+      }
+      .hero h1 {
+        font-size: 2rem;
+      }
+      .adventures-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="ambient-glow"></div>
+  <div class="ambient-glow-2"></div>
+
+  <header>
+    <a href="/join" class="brand">
+      <span class="brand-mark">🎨</span> Narratron Buddy
+    </a>
+    <nav class="nav-links" aria-label="Main Navigation">
+      <a href="/join" class="nav-link">Join</a>
+      <a href="/adventures" class="nav-link active">Adventures</a>
+      <a href="/deploy" class="nav-link">Deploy</a>
+      <a href="/ideas" class="nav-link">Ideas</a>
+      <a href="/about" class="nav-link">About</a>
+      <a href="/stats" class="nav-link">Stats</a>
+      <div id="userAccountBar" class="user-account-bar">
+        <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Log In</button>
+        <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Sign Up</button>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div class="hero-badge">🗺️ Shared Adventure Library</div>
+      <h1>Explore Premade Adventures</h1>
+      <p>
+        Step straight into rich, choice-driven stories complete with curated lore archives,
+        thematic soundscapes, character visual references, and responsive story planners.
+      </p>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search by title, tag, or story keywords..." oninput="filterAdventures()">
+      </div>
+      <div class="filter-tags" id="filterTags">
+        <button class="tag-btn active" onclick="selectTag('all')">All Adventures</button>
+        <button class="tag-btn" onclick="selectTag('Sci-Fi')">Sci-Fi</button>
+        <button class="tag-btn" onclick="selectTag('Dark Fantasy')">Dark Fantasy</button>
+        <button class="tag-btn" onclick="selectTag('Norse Fantasy')">Norse</button>
+        <button class="tag-btn" onclick="selectTag('Showcase')">Showcase</button>
+      </div>
+    </div>
+
+    <!-- Cards Container -->
+    <div class="adventures-grid" id="adventuresGrid">
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
+  </main>
+
+  <!-- Deploying State Modal -->
+  <div class="deploy-overlay" id="deployOverlay">
+    <div class="deploy-modal">
+      <div class="spinner"></div>
+      <h3 id="deployModalTitle" style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; color: #fff;">Launching Adventure...</h3>
+      <p id="deployModalSubtitle" style="color: var(--text-secondary); font-size: 0.88rem;">Mounting soundscapes, lore documents, and narrative planners.</p>
+    </div>
+  </div>
+
+  <script>
+    let allAdventures = [];
+    let activeTag = 'all';
+    let pendingDeployAdventureId = null;
+
+    // Format ISO dates into human readable strings
+    function formatDate(isoStr) {
+      if (!isoStr) return 'Recently Added';
+      try {
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return 'Recently Added';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      } catch (e) {
+        return 'Recently Added';
+      }
+    }
+
+    async function loadAdventures() {
+      const grid = document.getElementById('adventuresGrid');
+      try {
+        const res = await fetch('/api/adventures');
+        if (!res.ok) throw new Error('Failed to load adventures');
+        allAdventures = await res.json();
+        renderAdventures();
+      } catch (err) {
+        grid.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 3rem; background: var(--glass-bg); border-radius: var(--radius);">
+            <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">⚠️</div>
+            <h3 style="margin-bottom: 0.5rem; color: #fff;">Could not load adventures</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1rem;">${err.message || 'Please check your connection and try again.'}</p>
+            <button class="btn btn-secondary" onclick="loadAdventures()">↻ Retry</button>
+          </div>
+        `;
+      }
+    }
+
+    function selectTag(tag) {
+      activeTag = tag;
+      document.querySelectorAll('.tag-btn').forEach(b => {
+        if (tag === 'all' && b.innerText.includes('All')) b.classList.add('active');
+        else if (b.innerText.toLowerCase().includes(tag.toLowerCase())) b.classList.add('active');
+        else b.classList.remove('active');
+      });
+      filterAdventures();
+    }
+
+    function filterAdventures() {
+      const query = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+      const filtered = allAdventures.filter(adv => {
+        const title = (adv.title || '').toLowerCase();
+        const desc = (adv.description || '').toLowerCase();
+        const genre = (adv.genre || '').toLowerCase();
+        const tags = (adv.tags || []).map(t => t.toLowerCase());
+
+        const matchesQuery = !query || title.includes(query) || desc.includes(query) || tags.some(t => t.includes(query)) || genre.includes(query);
+        const matchesTag = activeTag === 'all' || genre.includes(activeTag.toLowerCase()) || tags.some(t => t.includes(activeTag.toLowerCase()));
+
+        return matchesQuery && matchesTag;
+      });
+
+      renderFiltered(filtered);
+    }
+
+    function renderAdventures() {
+      filterAdventures();
+    }
+
+    function renderFiltered(adventures) {
+      const grid = document.getElementById('adventuresGrid');
+      if (!adventures || adventures.length === 0) {
+        grid.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; background: var(--glass-bg); border-radius: var(--radius); border: 1px dashed var(--glass-border);">
+            <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🔍</div>
+            <h3 style="margin-bottom: 0.5rem; color: #fff;">No adventures matched your search</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1.2rem;">Try searching for a different keyword or genre.</p>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('searchInput').value=''; selectTag('all');">Clear Filters</button>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = adventures.map(adv => {
+        const coverUrl = `/api/adventures/${encodeURIComponent(adv.id)}/cover`;
+        const formattedDate = formatDate(adv.created_at);
+        const genre = adv.genre || 'Adventure';
+        const loreCount = adv.lore_count || 0;
+        const trackCount = adv.track_count || 0;
+        const refCount = adv.reference_count || 0;
+
+        return `
+          <div class="card" id="card-${adv.id}">
+            <div class="card-cover-container">
+              <img class="card-cover" src="${coverUrl}" alt="${adv.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+              <div class="card-cover-placeholder" style="display: none;">🗺️</div>
+              <div class="card-cover-overlay"></div>
+              <div class="card-badges">
+                <span class="badge-date">📅 ${formattedDate}</span>
+                <span class="badge-genre">${genre}</span>
+              </div>
+            </div>
+
+            <div class="card-body">
+              <h2 class="card-title">${adv.title || adv.id}</h2>
+              <p class="card-desc">${adv.description || 'Step into this premade Narratron adventure experience.'}</p>
+
+              <div class="card-meta-pills">
+                ${loreCount > 0 ? `<span class="meta-pill" title="${loreCount} Lore Documents">📜 ${loreCount} Lore Docs</span>` : ''}
+                ${trackCount > 0 ? `<span class="meta-pill" title="${trackCount} Audio Tracks">🎵 ${trackCount} Soundtracks</span>` : ''}
+                ${refCount > 0 ? `<span class="meta-pill" title="${refCount} Reference Images">🖼️ ${refCount} Reference Visuals</span>` : ''}
+                ${adv.difficulty ? `<span class="meta-pill" title="Difficulty">⚡ ${adv.difficulty}</span>` : ''}
+              </div>
+
+              <div class="card-actions">
+                <button class="btn btn-primary" onclick="deployAndPlay('${adv.id}', '${(adv.title || '').replace(/'/g, "\\'")}')">
+                  <span>🚀 Play Adventure</span>
+                </button>
+                <a href="/deploy?creation_path=adventure&preset=${encodeURIComponent(adv.id)}" class="btn btn-secondary btn-sm" title="Configure settings before deploying">
+                  <span>⚙️ Deployer</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function deployAndPlay(adventureId, title) {
+      currentUser = window.currentUser || currentUser;
+      if (!currentUser) {
+        pendingDeployAdventureId = adventureId;
+        openAuthModal('login');
+        return;
+      }
+
+      const overlay = document.getElementById('deployOverlay');
+      const titleEl = document.getElementById('deployModalTitle');
+      titleEl.innerText = `Launching "${title || 'Adventure'}"...`;
+      overlay.classList.add('show');
+
+      try {
+        const formData = new FormData();
+        formData.append('name', title || 'Narratron Adventure');
+        formData.append('creation_mode', 'adventure');
+        formData.append('preset_adventure_id', adventureId);
+        formData.append('enable_adventure_mode', 'true');
+
+        const res = await fetch('/api/theaters/create-and-deploy', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Failed to deploy adventure theater.');
+        }
+
+        const theaterId = data.theater_id || (data.theater && data.theater.theater_id);
+        if (theaterId) {
+          window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}`;
+        } else {
+          window.location.href = '/deploy';
+        }
+      } catch (err) {
+        overlay.classList.remove('show');
+        alert('Could not launch adventure: ' + (err.message || err));
+      }
+    }
+
+    // Auto-resume deploy after auth login if triggered
+    window.addEventListener('load', () => {
+      loadAdventures();
+    });
+  </script>
+</body>
+
+</html>

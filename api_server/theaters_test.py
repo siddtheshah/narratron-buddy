@@ -826,6 +826,88 @@ async def test_get_theater_suggestions_endpoint():
         assert res["elements_fingerprint"] == "mock_fp"
 
 
+def test_list_adventures_endpoint():
+    mock_adventures = [
+        {"id": "adv-1", "title": "Adventure 1", "created_at": "2026-08-18T10:00:00Z"},
+        {"id": "adv-2", "title": "Adventure 2", "created_at": "2026-08-17T10:00:00Z"},
+    ]
+    with patch.object(theaters.adventure_service, "list_adventures", return_value=mock_adventures):
+        res = theaters.list_adventures_endpoint()
+        assert len(res) == 2
+        assert res[0]["id"] == "adv-1"
+
+
+def test_get_adventure_endpoint_success_and_404():
+    mock_adv = {"id": "adv-1", "title": "Adventure 1"}
+    with patch.object(theaters.adventure_service, "get_adventure", side_effect=lambda adv_id: mock_adv if adv_id == "adv-1" else None):
+        res = theaters.get_adventure_endpoint("adv-1")
+        assert res["title"] == "Adventure 1"
+
+        with pytest.raises(HTTPException) as exc:
+            theaters.get_adventure_endpoint("nonexistent")
+        assert exc.value.status_code == 404
+
+
+def test_get_adventure_cover_endpoint_success_and_404():
+    with patch.object(theaters.adventure_service, "get_adventure_cover", side_effect=lambda adv_id: (b"imagedata", "image/png") if adv_id == "adv-1" else None):
+        res = theaters.get_adventure_cover_endpoint("adv-1")
+        assert res.body == b"imagedata"
+        assert res.media_type == "image/png"
+
+        with pytest.raises(HTTPException) as exc:
+            theaters.get_adventure_cover_endpoint("nonexistent")
+        assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_and_deploy_theater_with_preset_adventure():
+    mock_user = {"id": 42, "email": "test@narratron.com"}
+    mock_deployed = MagicMock()
+    mock_deployed.theater_id = "theater_preset123"
+    mock_deployed.join_key = "KEY-TEST1"
+    mock_deployed.name = "Lesovik Station"
+    mock_deployed.model_dump.return_value = {"theater_id": "theater_preset123", "name": "Lesovik Station"}
+
+    mock_manager = MagicMock()
+    mock_manager.create_theater.return_value = mock_deployed
+    mock_manager.deploy_theater.return_value = mock_deployed
+
+    mock_db = MagicMock()
+    mock_db.persist_canvas_theater_async = AsyncMock()
+
+    mock_adv_refs = [("references/cover.jpg", b"fakejpg")]
+    mock_adv_playlists = {"arctic": [("wind.mp3", b"fakemp3")]}
+    mock_adv_lore = [("lore/station.txt", b"Arctic station lore")]
+    mock_adv_config = {"agent": {"style": "eerie"}}
+
+    from starlette.datastructures import FormData
+
+    request = MagicMock()
+    request.form = AsyncMock(return_value=FormData([
+        ("name", "Lesovik Station"),
+        ("creation_mode", "adventure"),
+        ("preset_adventure_id", "lesovik-station"),
+        ("enable_adventure_mode", "true"),
+    ]))
+
+    with patch.object(theaters, "get_current_user_async", AsyncMock(return_value=mock_user)), \
+         patch.object(theaters, "theater_manager", mock_manager), \
+         patch.object(theaters, "db", mock_db), \
+         patch.object(theaters.adventure_service, "load_adventure_assets", return_value=(mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)):
+
+        res = await theaters.create_and_deploy_theater(request)
+
+        assert res["status"] == "ok"
+        assert res["theater_id"] == "theater_preset123"
+        mock_manager.create_theater.assert_called_once()
+        create_args = mock_manager.create_theater.call_args[1]
+        assert create_args["reference_files"] == mock_adv_refs
+        assert create_args["lore_files"] == mock_adv_lore
+        assert "arctic" in create_args["playlists_data"]
+        assert create_args["theater_config"]["agent"]["style"] == "eerie"
+        assert create_args["theater_config"]["story_planning"]["adventure_mode"] is True
+
+
 
 
 
