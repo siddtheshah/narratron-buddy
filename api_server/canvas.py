@@ -171,6 +171,22 @@ def get_suggestions(request: Request, theater_id: Optional[str] = None):
     return canvas_states.get_suggestions(theater_id)
 
 
+@app.get("/api/sticky-notes")
+def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
+    if theater_id:
+        _require_canvas_access(request, theater_id)
+    session = agent_manager.get_session(theater_id) if theater_id else None
+    session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
+    if session_tools and hasattr(session_tools, "get_present_sticky_notes"):
+        notes = session_tools.get_present_sticky_notes()
+        return {"sticky_notes": notes, "count": len(notes)}
+    elif session_tools and hasattr(session_tools, "get_present_elements"):
+        notes = session_tools.get_present_elements()
+        return {"sticky_notes": notes, "count": len(notes)}
+    notes = canvas_states.get_sticky_notes(theater_id)
+    return {"sticky_notes": notes, "count": len(notes)}
+
+
 @app.post("/api/suggestions/upvote")
 def upvote_suggestion(vote: SuggestionVote, request: Request, theater_id: Optional[str] = None):
     if theater_id:

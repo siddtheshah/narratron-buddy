@@ -57,6 +57,28 @@ def test_upvote_reports_missing_suggestion():
     assert error.value.status_code == 404
 
 
+def test_get_sticky_notes_uses_session_or_canvas_state():
+    mock_agent_mgr = MagicMock()
+    mock_session = MagicMock()
+    mock_tools = MagicMock()
+    mock_tools.get_present_sticky_notes.return_value = [{"topic": "Clue", "info": "Old map"}]
+    mock_session.story_planning_tools = mock_tools
+    mock_agent_mgr.get_session.return_value = mock_session
+
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "agent_manager", mock_agent_mgr):
+        result = canvas.get_sticky_notes(request(), "stage")
+    assert result == {"sticky_notes": [{"topic": "Clue", "info": "Old map"}], "count": 1}
+
+    # Test fallback to canvas_states
+    mock_agent_mgr.get_session.return_value = None
+    mock_canvas_states = MagicMock()
+    mock_canvas_states.get_sticky_notes.return_value = [{"topic": "Fallback", "info": "Cached note"}]
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "agent_manager", mock_agent_mgr), patch.object(object_registry, "canvas_states", mock_canvas_states):
+        result = canvas.get_sticky_notes(request(), "stage")
+    assert result == {"sticky_notes": [{"topic": "Fallback", "info": "Cached note"}], "count": 1}
+
+
+
 @pytest.mark.asyncio
 async def test_toggle_microphone_requires_owner_then_calls_registry_service():
     registry_db = MagicMock()

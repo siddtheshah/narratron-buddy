@@ -164,6 +164,7 @@ class CanvasStateManager:
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
+        self._notify_state_changed("latest")
 
     def get_named_elements(self) -> List[Dict[str, str]]:
         return self.get_sticky_notes()
@@ -183,6 +184,7 @@ class CanvasStateManager:
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
+        self._notify_state_changed("latest")
 
     def set_scene_dialogue(self, dialogue: List[Dict[str, str]]):
         """Set the planner-authored speech/thought bubbles shown on the canvas."""
@@ -776,6 +778,7 @@ class CanvasStateManager:
             "scene_dialogue": list(self.scene_dialogue),
             "narration": self.narration,
             "character_voice_assignments": dict(self.character_voice_assignments),
+            "sticky_notes": self.get_sticky_notes(),
         }
         if self.shown_animation_frames:
             res["animation"] = {

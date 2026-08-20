@@ -850,3 +850,35 @@ async def get_theater_suggestions(theater_id: str, request: Request):
     }
 
 
+@app.get("/theaters/{theater_id}/sticky-notes")
+@app.get("/api/theaters/{theater_id}/sticky-notes")
+async def get_theater_sticky_notes(theater_id: str, request: Request):
+    """Retrieve active sticky notes held by the story planning tool or canvas state."""
+    await _require_canvas_access_async(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+
+    session = agent_manager.get_session(theater_id)
+    sticky_notes = []
+    session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
+    if session_tools and hasattr(session_tools, "get_present_sticky_notes"):
+        sticky_notes = session_tools.get_present_sticky_notes()
+    elif session_tools and hasattr(session_tools, "get_present_elements"):
+        sticky_notes = session_tools.get_present_elements()
+
+    if not sticky_notes and canvas_states:
+        try:
+            mgr = canvas_states.get(theater_id)
+            if hasattr(mgr, "get_sticky_notes"):
+                sticky_notes = mgr.get_sticky_notes()
+            elif hasattr(mgr, "get_named_elements"):
+                sticky_notes = mgr.get_named_elements()
+        except Exception:
+            pass
+
+    return {
+        "sticky_notes": sticky_notes,
+        "count": len(sticky_notes),
+    }
+
+
+

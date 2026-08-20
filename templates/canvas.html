@@ -821,6 +821,7 @@
 
         #suggestions-toggle-btn:hover,
         #suggestions-toggle-btn.expanded {
+            z-index: 30;
             width: 320px;
             height: auto;
             max-height: 380px;
@@ -924,6 +925,152 @@
             gap: 8px;
             font-size: 0.78rem;
             color: #a5b4fc;
+            padding: 8px 0;
+        }
+
+        /* Sticky Notes Floating Button (Lower Left, Next to Suggestions, Expands Upwards, Orator Only) */
+        #sticky-notes-toggle-btn {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 4.8rem;
+            z-index: 24;
+            min-height: 44px;
+            height: 44px;
+            width: 44px;
+            border-radius: 22px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(234, 179, 8, 0.4);
+            display: none;
+            /* Controlled by JS: hidden for viewers, shown for Orators */
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+            padding: 10px 11px;
+            box-sizing: border-box;
+            cursor: pointer;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+        }
+
+        #sticky-notes-toggle-btn:hover,
+        #sticky-notes-toggle-btn.expanded {
+            z-index: 30;
+            width: 320px;
+            height: auto;
+            max-height: 380px;
+            border-radius: 16px;
+            padding: 14px;
+            background: rgba(15, 17, 21, 0.95);
+            border-color: rgba(234, 179, 8, 0.6);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+            overflow-y: auto;
+        }
+
+        .sticky-notes-header-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            flex-shrink: 0;
+        }
+
+        .sticky-notes-header-bar svg {
+            flex-shrink: 0;
+            color: #facc15;
+        }
+
+        .sticky-notes-header-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #fef08a;
+            white-space: nowrap;
+            opacity: 0;
+            max-width: 0;
+            overflow: hidden;
+            transition: opacity 0.2s ease, max-width 0.3s ease;
+        }
+
+        #sticky-notes-toggle-btn:hover .sticky-notes-header-title,
+        #sticky-notes-toggle-btn.expanded .sticky-notes-header-title {
+            opacity: 1;
+            max-width: 200px;
+        }
+
+        .sticky-notes-count-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: rgba(234, 179, 8, 0.25);
+            color: #fde047;
+            border: 1px solid rgba(234, 179, 8, 0.4);
+            margin-left: auto;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        #sticky-notes-toggle-btn:hover .sticky-notes-count-badge,
+        #sticky-notes-toggle-btn.expanded .sticky-notes-count-badge {
+            opacity: 1;
+        }
+
+        .sticky-notes-body {
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #sticky-notes-toggle-btn:hover .sticky-notes-body,
+        #sticky-notes-toggle-btn.expanded .sticky-notes-body {
+            display: flex;
+        }
+
+        .sticky-note-card {
+            background: rgba(254, 240, 138, 0.07);
+            border: 1px solid rgba(250, 204, 21, 0.2);
+            border-left: 3px solid #facc15;
+            border-radius: 8px;
+            padding: 8px 10px;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .sticky-note-card:hover {
+            background: rgba(254, 240, 138, 0.12);
+            border-color: rgba(250, 204, 21, 0.4);
+        }
+
+        .sticky-note-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .sticky-note-card-topic {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #fde047;
+        }
+
+        .sticky-note-card-info {
+            font-size: 0.78rem;
+            color: #e2e8f0;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .sticky-notes-spinner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.78rem;
+            color: #fde047;
             padding: 8px 0;
         }
 
@@ -1788,6 +1935,30 @@
                 </div>
             </div>
 
+            <!-- Story Planning Sticky Notes Floating Button -->
+            <div id="sticky-notes-toggle-btn" title="Story Sticky Notes (Hover to expand)">
+                <div class="sticky-notes-header-bar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z" />
+                        <path d="M15 3v5h5" />
+                        <path d="M9 13h6" />
+                        <path d="M9 17h4" />
+                    </svg>
+                    <span class="sticky-notes-header-title">Sticky Notes</span>
+                    <span id="sticky-notes-count-badge" class="sticky-notes-count-badge" style="display: none;">0</span>
+                </div>
+                <div class="sticky-notes-body">
+                    <div id="sticky-notes-loading" class="sticky-notes-spinner" style="display: none;">
+                        <span>📝 Loading sticky notes...</span>
+                    </div>
+                    <div id="sticky-notes-list" style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="font-size: 0.78rem; color: #94a3b8;">No sticky notes active for this scene.</div>
+                    </div>
+                </div>
+            </div>
+
+
 
             <!-- Image History Paging Controls -->
             <div id="history-paging-controls"
@@ -2094,15 +2265,111 @@
                 }
             }
 
+            btn.addEventListener('mouseleave', () => {
+                btn.classList.remove('expanded');
+            });
+        })();
+
+        // Story Planning Sticky Notes Hover Handler
+        (function initStickyNotesHandler() {
+            const btn = document.getElementById('sticky-notes-toggle-btn');
+            const list = document.getElementById('sticky-notes-list');
+            const loading = document.getElementById('sticky-notes-loading');
+            const badge = document.getElementById('sticky-notes-count-badge');
+            if (!btn || !list || !loading) return;
+
+            let cachedNotes = null;
+            let isFetching = false;
+
+            function escapeHtml(str) {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function renderStickyNotes(items) {
+                if (badge) {
+                    if (items && items.length > 0) {
+                        badge.textContent = String(items.length);
+                        badge.style.display = 'inline-block';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+                if (!items || items.length === 0) {
+                    list.innerHTML = '<div style="font-size: 0.78rem; color: #94a3b8;">No sticky notes active for this scene.</div>';
+                    return;
+                }
+                list.innerHTML = items.map(item => `
+                    <div class="sticky-note-card">
+                        <div class="sticky-note-card-header">
+                            <span class="sticky-note-card-topic">${escapeHtml(item.topic || item.name || '')}</span>
+                        </div>
+                        <div class="sticky-note-card-info">${escapeHtml(item.info || item.content || '')}</div>
+                    </div>
+                `).join('');
+            }
+
+            async function triggerStickyNotesFetch() {
+                if (isFetching) return;
+                isFetching = true;
+
+                if (!cachedNotes) {
+                    loading.style.display = 'flex';
+                    list.style.display = 'none';
+                }
+
+                try {
+                    let currentTheaterId = new URLSearchParams(window.location.search).get('theater_id');
+                    if (!currentTheaterId && typeof theaterId !== 'undefined' && theaterId) {
+                        currentTheaterId = theaterId;
+                    }
+                    if (!currentTheaterId) {
+                        const pathParts = window.location.pathname.split('/').filter(Boolean);
+                        if (pathParts.length >= 2 && pathParts[0] === 'theaters') {
+                            currentTheaterId = pathParts[1];
+                        }
+                    }
+
+                    const url = currentTheaterId
+                        ? `/theaters/${encodeURIComponent(currentTheaterId)}/sticky-notes`
+                        : `/api/sticky-notes`;
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    cachedNotes = data.sticky_notes || [];
+                    renderStickyNotes(cachedNotes);
+                } catch (err) {
+                    console.error('Failed to load sticky notes:', err);
+                    if (!cachedNotes) {
+                        list.innerHTML = '<div style="font-size: 0.78rem; color: #ef4444;">Unable to load sticky notes at this time.</div>';
+                    }
+                } finally {
+                    isFetching = false;
+                    loading.style.display = 'none';
+                    list.style.display = 'flex';
+                }
+            }
+
+            window.updateCanvasStickyNotes = function(notes) {
+                if (Array.isArray(notes)) {
+                    cachedNotes = notes;
+                    renderStickyNotes(cachedNotes);
+                }
+            };
+
             btn.addEventListener('mouseenter', () => {
                 btn.classList.add('expanded');
-                triggerSuggestionsFetch();
+                triggerStickyNotesFetch();
             });
 
             btn.addEventListener('mouseleave', () => {
                 btn.classList.remove('expanded');
             });
         })();
+
 
 
         let startAudioRecorderWorklet;
@@ -2983,6 +3250,9 @@
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
                 updateSceneDialogue(data.scene_dialogue, data.narration);
+                if (data.sticky_notes !== undefined && typeof window.updateCanvasStickyNotes === 'function') {
+                    window.updateCanvasStickyNotes(data.sticky_notes);
+                }
                 if (data.viewer_collab_enabled !== undefined && data.viewer_collab_enabled !== viewerCollabEnabled) {
                     viewerCollabEnabled = Boolean(data.viewer_collab_enabled);
                     if (viewerCollabToggleBtn) {
@@ -3748,6 +4018,7 @@
         // Initialize UI based on role
         const backBtn = document.getElementById('back-btn');
         const suggestionsToggleBtn = document.getElementById('suggestions-toggle-btn');
+        const stickyNotesToggleBtn = document.getElementById('sticky-notes-toggle-btn');
         if (isCurrentOrator()) {
             if (backBtn) backBtn.href = '/deploy?from=canvas';
             roleBadge.textContent = 'Orator';
@@ -3757,6 +4028,7 @@
             oratorControls.style.display = 'flex';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
             if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
+            if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'flex';
             if (collabSection) collabSection.style.display = 'flex';
             if (hideSuggestionsBtn) {
                 hideSuggestionsBtn.style.display = 'inline-flex';
@@ -3775,6 +4047,7 @@
             oratorControls.style.display = 'none';
             if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
             if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
+            if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'none';
             if (collabSection) collabSection.style.display = 'none';
             if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
             if (viewerCollabGuideBtn) {

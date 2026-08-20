@@ -826,6 +826,30 @@ async def test_get_theater_suggestions_endpoint():
         assert res["elements_fingerprint"] == "mock_fp"
 
 
+@pytest.mark.asyncio
+async def test_get_theater_sticky_notes_endpoint():
+    mock_agent_mgr = MagicMock()
+    mock_session = MagicMock()
+    mock_story_planning_tools = MagicMock()
+    mock_story_planning_tools.get_present_sticky_notes.return_value = [
+        {"topic": "Ancient Key", "info": "Rust-covered bronze key found under floorboards."}
+    ]
+    mock_session.story_planning_tools = mock_story_planning_tools
+    mock_agent_mgr.get_session.return_value = mock_session
+
+    with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
+         patch.object(theaters, "_safe_path_param"), \
+         patch.object(object_registry, "agent_manager", mock_agent_mgr):
+
+        request = MagicMock()
+        res = await theaters.get_theater_sticky_notes("stage", request)
+
+        assert "sticky_notes" in res
+        assert len(res["sticky_notes"]) == 1
+        assert res["sticky_notes"][0]["topic"] == "Ancient Key"
+        assert res["count"] == 1
+
+
 def test_list_adventures_endpoint():
     mock_adventures = [
         {"id": "adv-1", "title": "Adventure 1", "created_at": "2026-08-18T10:00:00Z"},
