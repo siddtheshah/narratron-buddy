@@ -156,13 +156,14 @@ def create_story_planner_session(body: dict[str, Any]):
 @app.post("/api/story-planner/sessions/{run_id}/actions")
 def submit_story_planner_action(run_id: str, body: dict[str, Any]):
     action = str(body.get("action") or "").strip()
+    nudge = str(body.get("nudge") or "").strip()
     if not action:
         raise HTTPException(status_code=400, detail="An action is required.")
     with _runs_lock:
         run = _story_planner_runs.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Story planner session not found.")
-    acknowledgement = run["tools"].process_user_action(action)
+    acknowledgement = run["tools"].process_user_action(action, nudge=nudge)
     return {"acknowledgement": acknowledgement, "session": _story_planner_payload(run)}
 
 

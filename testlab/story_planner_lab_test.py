@@ -53,10 +53,10 @@ def test_story_planner_lab_submits_action_and_records_event():
         ],
     }
 
-    with patch("tools.story_planning_tool.StoryPlanningTools._run_planner_agent", return_value=mock_reaction):
+    with patch("tools.story_planning_tool.StoryPlanningTools._run_planner_agent", return_value=mock_reaction) as mock_run:
         submitted = client.post(
             f"/api/story-planner/sessions/{session_id}/actions",
-            json={"action": "I step into the hallway."},
+            json={"action": "I step into the hallway.", "nudge": "An ominous chill fills the air"},
         )
         assert submitted.status_code == 200
         assert submitted.json()["acknowledgement"]["status"] == "processing"
@@ -74,4 +74,5 @@ def test_story_planner_lab_submits_action_and_records_event():
         assert len(data["events"]) == 1
         assert data["events"][0]["result"]["narration"] == mock_reaction["narration"]
         assert len(data["state"]["plot_beats"]) == 2
+        mock_run.assert_called_once_with("I step into the hallway.", nudge="An ominous chill fills the air")
 

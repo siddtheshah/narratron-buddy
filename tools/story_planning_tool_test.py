@@ -319,6 +319,17 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("browse_lore at most 3 times", prompt)
         self.assertIn("proceed immediately to return the scene reaction", prompt)
 
+    def test_scene_reaction_prompt_handles_no_lore_context(self):
+        prompt = build_scene_reaction_prompt(
+            context="Scene context here",
+            style="action-packed",
+            nodes_ahead=3,
+            lore_context="",
+        )
+        self.assertIn("No lore documents are available for this theater", prompt)
+        self.assertIn("Invent the lore", prompt)
+        self.assertNotIn("Available theater lore (top-level documents and directories):", prompt)
+
     def test_browse_lore_logs_activity(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)

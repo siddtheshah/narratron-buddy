@@ -161,10 +161,13 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 {% if lore_context -%}
 ## Available theater lore (top-level documents and directories):
 {{ lore_context }}
+{% else -%}
+## Theater Lore
+No lore documents are available for this theater. Invent the lore, world details, setting, factions, and backstory as needed to support the story.
 {% endif -%}
 
 # Tool Usage Guidelines
-- **Lore Browsing (`browse_lore`)**: When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore. You may call browse_lore at most 3 times in a single turn to consult lore documents or directories. After at most 3 lore lookups (or once you have sufficient context), proceed immediately to return the scene reaction.
+- **Lore Browsing (`browse_lore`)**: When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore. You may call browse_lore at most 3 times in a single turn to consult lore documents or directories. After at most 3 lore lookups (or once you have sufficient context), proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling browse_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
 - **Character Generation (`generate_character_profile`)**: You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 - Those tools only provide information: the scene delta is the sole source of changes.
@@ -174,6 +177,10 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character.
 - **Plot Beats**: Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions.
 - **Character Updates**: Character updates are for NPCs only. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, define voice_tags as a list containing 'male' or 'female' to guide speech synthesis.
+
+# Character Generation
+Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
+If a character is diguised, make sure you give them an alias that hides their nature, rather than using their real name.
 
 # Scene Labeling
 Ensure the scene has a label. The location name is generally a good choice. Keep using that label until a major shift occurs.

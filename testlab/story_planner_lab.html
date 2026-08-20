@@ -8,14 +8,18 @@
     :root { color-scheme: dark; --panel: #151b2e; --border: #303c60; --accent: #9b87f5; --muted: #aab4cc; }
     * { box-sizing: border-box; } body { margin: 0; font: 16px/1.45 Inter, system-ui, sans-serif; background: #0b1020; color: #f4f5fb; }
     main { max-width: 1200px; margin: auto; padding: 2rem; } h1 { margin: 0; } .lede, label { color: var(--muted); }
-    .controls, .action { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; margin: 1.5rem 0; }
+    .controls { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; margin: 1.5rem 0; }
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0 .75rem; }
+    .action-grid label { width: 100%; display: grid; gap: .35rem; font-size: .85rem; }
+    .action-grid textarea { width: 100%; min-height: 85px; }
+    .action-bar { display: flex; justify-content: flex-end; margin-bottom: 1.5rem; }
     label { display: grid; gap: .35rem; font-size: .85rem; } input, textarea, button { font: inherit; border-radius: .5rem; border: 1px solid var(--border); }
-    input, textarea { background: #090d1a; color: inherit; padding: .65rem; } textarea { flex: 1; min-width: 300px; min-height: 85px; }
+    input, textarea { background: #090d1a; color: inherit; padding: .65rem; }
     button { background: var(--accent); color: #160f38; font-weight: 750; padding: .65rem 1rem; cursor: pointer; } button:disabled { opacity: .5; cursor: wait; }
-    #ack { min-height: 1.5rem; color: #d6ceff; } .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    #ack { min-height: 1.5rem; color: #d6ceff; margin-bottom: 1rem; } .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
     section { background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; min-width: 0; }
     section.wide { grid-column: 1 / -1; } h2 { margin: 0 0 .7rem; font-size: 1rem; } pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; color: #dce5ff; }
-    .empty { color: var(--muted); font-style: italic; } @media (max-width: 700px) { main { padding: 1rem; } .grid { grid-template-columns: 1fr; } }
+    .empty { color: var(--muted); font-style: italic; } @media (max-width: 700px) { main { padding: 1rem; } .grid, .action-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -27,8 +31,15 @@
       <label>Plot beats ahead<input id="nodes" type="number" min="1" max="8" value="3"></label>
       <button id="new-session">New isolated session</button>
     </div>
-    <div class="action">
-      <textarea id="action" placeholder="The player/orator's action or speech…" disabled></textarea>
+    <div class="action-grid">
+      <label>User action (required)
+        <textarea id="action" placeholder="The player/orator's action or speech…" disabled></textarea>
+      </label>
+      <label>Live agent nudge (optional)
+        <textarea id="nudge" placeholder="Creative suggestion or event for the planner to accommodate…" disabled></textarea>
+      </label>
+    </div>
+    <div class="action-bar">
       <button id="submit" disabled>Submit action</button>
     </div>
     <div id="ack" aria-live="polite">Create a session to begin.</div>
@@ -61,19 +72,34 @@
       try {
         const response = await fetch('/api/story-planner/sessions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({planner_model: $('model').value, nodes_ahead: Number($('nodes').value)}) });
         const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not create session.');
-        sessionId = payload.id; lastEventCount = 0; render(payload); $('action').disabled = $('submit').disabled = false;
+        sessionId = payload.id; lastEventCount = 0; render(payload);
+        $('action').disabled = $('nudge').disabled = $('submit').disabled = false;
         $('ack').textContent = `Session ${sessionId.slice(0, 8)} is ready.`;
         clearInterval(poller); poller = setInterval(refresh, 500);
       } catch (error) { $('ack').textContent = error.message; } finally { $('new-session').disabled = false; }
     };
     $('submit').onclick = async () => {
-      const action = $('action').value.trim(); if (!action || !sessionId) return;
+      const action = $('action').value.trim();
+      const nudge = $('nudge').value.trim();
+      if (!action || !sessionId) return;
       $('submit').disabled = true;
       try {
-        const response = await fetch(`/api/story-planner/sessions/${sessionId}/actions`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action}) });
-        const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not submit action.');
-        $('ack').textContent = payload.acknowledgement.message || payload.acknowledgement.status; $('action').value = ''; render(payload.session);
-      } catch (error) { $('ack').textContent = error.message; } finally { $('submit').disabled = false; }
+        const response = await fetch(`/api/story-planner/sessions/${sessionId}/actions`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({action, nudge}),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || 'Could not submit action.');
+        $('ack').textContent = payload.acknowledgement.message || payload.acknowledgement.status;
+        $('action').value = '';
+        $('nudge').value = '';
+        render(payload.session);
+      } catch (error) {
+        $('ack').textContent = error.message;
+      } finally {
+        $('submit').disabled = false;
+      }
     };
   </script>
 </body>
