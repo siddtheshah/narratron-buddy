@@ -37,7 +37,7 @@ from google.genai import types
 
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
-from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
+from tools.base_tool import BaseTools, logged_tool_call, with_cooldown, single_flight
 from services.quirk_service import get_quirk_generator_service
 from providers import (
     TextResponseProvider,
@@ -51,6 +51,7 @@ DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
 DEFAULT_MAX_NAMED_ELEMENTS = 5
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 DEFAULT_THINKING_BUDGET = 1024
+USER_ACTION_TIMEOUT_SECONDS = 20.0
 MAX_STORY_PLANNING_STYLE_CHARS = 500
 MAX_PLAYER_ACTION_CHARS = 2_000
 MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
@@ -336,6 +337,7 @@ class StoryPlanningTools(BaseTools):
             self.action_cooldown_base_seconds,
             float(self.config.get("action_cooldown_max_seconds", 30.0)),
         )
+        self.user_action_timeout_seconds: float = USER_ACTION_TIMEOUT_SECONDS
         self._last_action_response_word_count: int = 0
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
@@ -1114,6 +1116,22 @@ class StoryPlanningTools(BaseTools):
             generate_content_config=generate_content_config,
         )
 
+    def restart_planner_agent(self) -> None:
+        """Reset and recreate the ADK planner agent, app, and runner."""
+        logger.info(
+            "[StoryPlanningTools] Resetting and restarting story planner agent for theater=%s",
+            self.theater_id,
+        )
+        self._planner_runner = None
+        self._planner_agent = None
+        self._planner_app = None
+        self._get_or_create_planner_runner()
+
+    @property
+    def is_action_in_flight(self) -> bool:
+        """Return True if a user action resolution is currently in flight."""
+        return self.is_in_flight("process_user_action")
+
     def _get_or_create_planner_runner(self) -> Runner:
         """Return or lazily instantiate the reusable ADK runner for the planner session."""
         if self._planner_runner is None:
@@ -1189,8 +1207,24 @@ class StoryPlanningTools(BaseTools):
                 raise ValueError("Story planner must return the complete plot-beat buffer in its scene delta.")
             return scene_delta.model_dump()
 
-        import asyncio
-        return asyncio.run(run_turn())
+        try:
+            return asyncio.run(
+                asyncio.wait_for(run_turn(), timeout=self.user_action_timeout_seconds)
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            logger.error(
+                "[StoryPlanningTools] Story planner timed out after %.1f seconds for user action: %r",
+                self.user_action_timeout_seconds,
+                user_action,
+            )
+            self.restart_planner_agent()
+            return {
+                "error": (
+                    f"Story planner timed out after {self.user_action_timeout_seconds} seconds. "
+                    "The story planner agent was killed and restarted. "
+                    "Please re-try the action or guide the story."
+                )
+            }
 
     @with_cooldown(
         "resolving another player action",
@@ -1201,6 +1235,7 @@ class StoryPlanningTools(BaseTools):
 
         The final reaction is delivered through ``on_scene_reaction``. Callers
         receive immediately so a slow planner cannot stall the Live session.
+        Only one user action resolution call may be in flight at a time.
         """
         action = str(user_action or "").strip()
         if not action:
@@ -1208,14 +1243,26 @@ class StoryPlanningTools(BaseTools):
         if len(action) > MAX_PLAYER_ACTION_CHARS:
             return {"error": f"Player actions must be {MAX_PLAYER_ACTION_CHARS} characters or fewer."}
 
+        if not self.acquire_in_flight("process_user_action"):
+            return {
+                "error": (
+                    "A user action is already being processed. Please wait for the "
+                    "'[Story Planner Result]' notification before submitting another action."
+                )
+            }
+
         def resolve_and_notify() -> None:
+            result = None
             try:
                 result = self._resolve_user_action(action)
             except Exception as exc:
                 logger.exception("[StoryPlanningTools] Scene reaction failed")
                 result = {"error": f"Story planner failed: {exc}"}
+            finally:
+                self.release_in_flight("process_user_action")
+
             callback = self.on_scene_reaction
-            if callback:
+            if callback and result is not None:
                 try:
                     callback(result)
                 except Exception:
@@ -1241,6 +1288,8 @@ class StoryPlanningTools(BaseTools):
         parsed = self._run_planner_agent(action)
         if not isinstance(parsed, dict):
             raise ValueError("Story planner must return a JSON object.")
+        if "error" in parsed:
+            return parsed
 
         manifested_characters = self._apply_planner_character_updates(parsed.get("character_updates"))
         narration = str(

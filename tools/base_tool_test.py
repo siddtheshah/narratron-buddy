@@ -1,9 +1,10 @@
+import asyncio
 import time
 import unittest
 from unittest.mock import MagicMock
 
 from testing.base import BaseTestCase
-from tools.base_tool import BaseTools, with_cooldown
+from tools.base_tool import BaseTools, with_cooldown, single_flight
 
 
 class SampleTools(BaseTools):
@@ -14,6 +15,23 @@ class SampleTools(BaseTools):
     @with_cooldown("doing quick action", duration=0.1)
     def quick_tool(self) -> str:
         return "Success"
+
+    @single_flight(timeout=0.1, on_timeout="handle_timeout")
+    def slow_tool(self) -> str:
+        time.sleep(0.3)
+        return "Done"
+
+    @single_flight(timeout=0.5)
+    def fast_single_flight(self) -> dict:
+        return {"status": "ok"}
+
+    @single_flight(timeout=0.1, on_timeout="handle_timeout")
+    async def async_slow_tool(self) -> str:
+        await asyncio.sleep(0.3)
+        return "Async Done"
+
+    def handle_timeout(self):
+        self.timeout_called = True
 
 
 class TestBaseTools(BaseTestCase):
@@ -59,6 +77,37 @@ class TestBaseTools(BaseTestCase):
         time.sleep(0.2)
         self.assertEqual(sample.quick_tool(), "Success")
 
+    def test_in_flight_tracking(self):
+        self.assertFalse(self.base_tools.is_in_flight("my_tool"))
+        self.assertTrue(self.base_tools.acquire_in_flight("my_tool"))
+        self.assertTrue(self.base_tools.is_in_flight("my_tool"))
+        self.assertFalse(self.base_tools.acquire_in_flight("my_tool"))
+
+        self.base_tools.release_in_flight("my_tool")
+        self.assertFalse(self.base_tools.is_in_flight("my_tool"))
+        self.assertTrue(self.base_tools.acquire_in_flight("my_tool"))
+
+    def test_single_flight_decorator_success(self):
+        sample = SampleTools({}, theater_id="test_theater")
+        res = sample.fast_single_flight()
+        self.assertEqual(res, {"status": "ok"})
+        self.assertFalse(sample.is_in_flight("fast_single_flight"))
+
+    def test_single_flight_decorator_timeout_and_callback(self):
+        sample = SampleTools({}, theater_id="test_theater")
+        sample.timeout_called = False
+        with self.assertRaises(TimeoutError):
+            sample.slow_tool()
+        self.assertTrue(sample.timeout_called)
+        self.assertFalse(sample.is_in_flight("slow_tool"))
+
+    def test_async_single_flight_decorator_timeout(self):
+        sample = SampleTools({}, theater_id="test_theater")
+        sample.timeout_called = False
+        with self.assertRaises(TimeoutError):
+            asyncio.run(sample.async_slow_tool())
+        self.assertTrue(sample.timeout_called)
+        self.assertFalse(sample.is_in_flight("async_slow_tool"))
 
 
 if __name__ == "__main__":

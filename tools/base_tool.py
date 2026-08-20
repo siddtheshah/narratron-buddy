@@ -1,8 +1,10 @@
+import asyncio
+import concurrent.futures
 import functools
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +17,107 @@ def logged_tool_call(func: Callable):
         return func(self, *args, **kwargs)
 
     return wrapper
+
+
+def single_flight(
+    func=None,
+    *,
+    timeout: Optional[float] = None,
+    on_timeout: Optional[Any] = None,
+    error_message: Optional[str] = None,
+    return_dict_on_error: bool = True,
+):
+    """Decorator ensuring only one invocation of a tool runs at a time, with optional timeout.
+
+    Can be used as:
+        @single_flight
+        def my_tool(self, ...): ...
+
+    or:
+        @single_flight(timeout=20.0, on_timeout="restart_planner_agent")
+        def my_tool(self, ...): ...
+    """
+    def decorator(fn: Callable):
+        if asyncio.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def async_wrapper(self, *args, **kwargs):
+                tool_name = fn.__name__
+                if hasattr(self, "acquire_in_flight"):
+                    if not self.acquire_in_flight(tool_name):
+                        msg = error_message or f"{tool_name} is already in progress. Please wait for it to complete."
+                        return {"error": msg} if return_dict_on_error else f"Error: {msg}"
+
+                resolved_timeout = timeout
+                if resolved_timeout is None and hasattr(self, "user_action_timeout_seconds"):
+                    resolved_timeout = getattr(self, "user_action_timeout_seconds")
+
+                def trigger_timeout():
+                    if on_timeout:
+                        if callable(on_timeout):
+                            on_timeout(self)
+                        elif isinstance(on_timeout, str) and hasattr(self, on_timeout):
+                            cb = getattr(self, on_timeout)
+                            if callable(cb):
+                                cb()
+
+                try:
+                    if resolved_timeout is not None and resolved_timeout > 0:
+                        try:
+                            return await asyncio.wait_for(fn(self, *args, **kwargs), timeout=resolved_timeout)
+                        except (asyncio.TimeoutError, TimeoutError) as exc:
+                            logger.error(f"[{self.__class__.__name__}] {tool_name} timed out after {resolved_timeout}s")
+                            trigger_timeout()
+                            raise TimeoutError(f"{tool_name} timed out after {resolved_timeout} seconds.") from exc
+                    else:
+                        return await fn(self, *args, **kwargs)
+                finally:
+                    if hasattr(self, "release_in_flight"):
+                        self.release_in_flight(tool_name)
+
+            return async_wrapper
+        else:
+            @functools.wraps(fn)
+            def wrapper(self, *args, **kwargs):
+                tool_name = fn.__name__
+                if hasattr(self, "acquire_in_flight"):
+                    if not self.acquire_in_flight(tool_name):
+                        msg = error_message or f"{tool_name} is already in progress. Please wait for it to complete."
+                        return {"error": msg} if return_dict_on_error else f"Error: {msg}"
+
+                resolved_timeout = timeout
+                if resolved_timeout is None and hasattr(self, "user_action_timeout_seconds"):
+                    resolved_timeout = getattr(self, "user_action_timeout_seconds")
+
+                def trigger_timeout():
+                    if on_timeout:
+                        if callable(on_timeout):
+                            on_timeout(self)
+                        elif isinstance(on_timeout, str) and hasattr(self, on_timeout):
+                            cb = getattr(self, on_timeout)
+                            if callable(cb):
+                                cb()
+
+                try:
+                    if resolved_timeout is not None and resolved_timeout > 0:
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                            future = executor.submit(fn, self, *args, **kwargs)
+                            try:
+                                return future.result(timeout=resolved_timeout)
+                            except concurrent.futures.TimeoutError as exc:
+                                logger.error(f"[{self.__class__.__name__}] {tool_name} timed out after {resolved_timeout}s")
+                                trigger_timeout()
+                                raise TimeoutError(f"{tool_name} timed out after {resolved_timeout} seconds.") from exc
+                    else:
+                        return fn(self, *args, **kwargs)
+                finally:
+                    if hasattr(self, "release_in_flight"):
+                        self.release_in_flight(tool_name)
+
+            return wrapper
+
+    if callable(func):
+        return decorator(func)
+    return decorator
 
 
 def with_cooldown(
@@ -76,10 +179,10 @@ def with_cooldown(
                 if not (isinstance(result, str) and result.startswith("Error:")):
                     self.record_tool_call(tool_name, duration)
                 return result
-
             return wrapper
 
         return decorator
+
 
 class BaseTools:
     """Base class for all agent tool suites providing unified theater management and cooldown tracking."""
@@ -102,6 +205,8 @@ class BaseTools:
         # Internal tracking per tool name
         self._last_call_times: Dict[str, float] = {}
         self._cooldown_timers: Dict[str, threading.Timer] = {}
+        self._in_flight_tools: Set[str] = set()
+        self._in_flight_lock = threading.Lock()
 
         # Determine cooldown duration directly from tool subconfig
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", default_cooldown))
@@ -121,6 +226,24 @@ class BaseTools:
     @active_theater_id.setter
     def active_theater_id(self, value: str) -> None:
         self._active_theater_id = value
+
+    def is_in_flight(self, tool_name: str) -> bool:
+        """Return True if the specified tool is currently executing."""
+        with self._in_flight_lock:
+            return tool_name in self._in_flight_tools
+
+    def acquire_in_flight(self, tool_name: str) -> bool:
+        """Attempt to mark a tool as in-flight. Returns True if acquired, False if already in-flight."""
+        with self._in_flight_lock:
+            if tool_name in self._in_flight_tools:
+                return False
+            self._in_flight_tools.add(tool_name)
+            return True
+
+    def release_in_flight(self, tool_name: str) -> None:
+        """Release the in-flight status for a tool."""
+        with self._in_flight_lock:
+            self._in_flight_tools.discard(tool_name)
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("last_") and name.endswith("_time"):

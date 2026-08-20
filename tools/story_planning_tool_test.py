@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import threading
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -628,6 +629,107 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIs(tools._get_or_create_planner_runner(), runner_ref)
         self.assertIs(tools._planner_agent, agent_ref)
         self.assertIs(tools._planner_app, app_ref)
+
+    def test_process_user_action_rejects_concurrent_in_flight_calls(self):
+        unblock_event = threading.Event()
+        started_event = threading.Event()
+
+        def slow_resolve(action):
+            started_event.set()
+            unblock_event.wait(timeout=5)
+            return {
+                "narration": "Resolved",
+                "dialogue": [],
+                "manifested_characters": [],
+                "plot_beats": [{"plot_beat": "Beat 1"}],
+            }
+
+        tools = self._make_tools(
+            config={"adventure_mode": True, "nodes_ahead": 1, "action_cooldown_base_seconds": 0.0},
+            theater_id="concurrent_test",
+        )
+
+        with patch.object(tools, "_resolve_user_action", side_effect=slow_resolve):
+            res1 = tools.process_user_action("First action")
+            self.assertEqual(res1["status"], "processing")
+            self.assertTrue(started_event.wait(timeout=2))
+            self.assertTrue(tools.is_action_in_flight)
+
+            # Second concurrent call while first is in flight
+            res2 = tools.process_user_action("Second action")
+            self.assertIn("error", res2)
+            self.assertIn("already being processed", res2["error"])
+
+            # Unblock first
+            unblock_event.set()
+            # Wait for in-flight to clear
+            for _ in range(50):
+                if not tools.is_action_in_flight:
+                    break
+                time.sleep(0.02)
+            self.assertFalse(tools.is_action_in_flight)
+
+    def test_run_planner_agent_timeout_restarts_agent(self):
+        tools = self._make_tools(
+            config={
+                "nodes_ahead": 1,
+                "adventure_mode": True,
+            },
+            theater_id="timeout_test",
+        )
+        self.assertEqual(tools.user_action_timeout_seconds, 20.0)
+        tools.user_action_timeout_seconds = 0.05
+        old_runner = tools._planner_runner
+        old_agent = tools._planner_agent
+
+        async def hanging_run(*args, **kwargs):
+            await asyncio.sleep(1.0)
+            if False:
+                yield None
+
+        with patch.object(tools._planner_runner, "run_async", side_effect=hanging_run):
+            result = tools._run_planner_agent("Action that hangs")
+            self.assertIsInstance(result, dict)
+            self.assertIn("error", result)
+            self.assertIn("timed out after", result["error"])
+            self.assertIn("killed and restarted", result["error"])
+
+            # Agent and runner should have been restarted (new instances)
+            self.assertIsNot(tools._planner_runner, old_runner)
+            self.assertIsNot(tools._planner_agent, old_agent)
+
+    def test_process_user_action_timeout_delivers_error_and_clears_in_flight(self):
+        results = []
+        completed = threading.Event()
+
+        def on_reaction(res):
+            results.append(res)
+            completed.set()
+
+        tools = self._make_tools(
+            config={
+                "adventure_mode": True,
+                "nodes_ahead": 1,
+                "on_scene_reaction": on_reaction,
+            },
+            theater_id="action_timeout_test",
+        )
+        tools.user_action_timeout_seconds = 0.05
+
+        async def hanging_run(*args, **kwargs):
+            await asyncio.sleep(1.0)
+            if False:
+                yield None
+
+        with patch.object(tools._planner_runner, "run_async", side_effect=hanging_run):
+            res = tools.process_user_action("Action")
+            self.assertEqual(res["status"], "processing")
+            self.assertTrue(completed.wait(timeout=2))
+            self.assertEqual(len(results), 1)
+            self.assertIn("error", results[0])
+            self.assertIn("timed out after", results[0]["error"])
+            self.assertIn("killed and restarted", results[0]["error"])
+            self.assertFalse(tools.is_action_in_flight)
 
 
 if __name__ == "__main__":
