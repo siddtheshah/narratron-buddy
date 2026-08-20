@@ -253,11 +253,68 @@ class TestStoryPlanningTools(unittest.TestCase):
             tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
 
             self.assertIn("characters.txt", tools.browse_lore())
+            tools.reset_lore_browse_count()
             self.assertIn("factions/guild.txt", tools.browse_lore())
+            tools.reset_lore_browse_count()
             self.assertIn("royal cartographer", tools.browse_lore("characters.txt"))
+            tools.reset_lore_browse_count()
             self.assertIn("The Iron Guild", tools.browse_lore("factions/guild.txt"))
+            tools.reset_lore_browse_count()
             self.assertIn("factions/guild.txt", tools.browse_lore("factions"))
+            tools.reset_lore_browse_count()
             self.assertTrue(tools.browse_lore("characters.md").startswith("Error:"))
+
+    def test_browse_lore_enforces_hard_limit_and_pushes_to_answer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Lore Theater",
+                theater_id="lore-theater",
+                lore_files=[
+                    ("lore/characters.txt", b"Mara is the royal cartographer."),
+                    ("lore/world.txt", b"The world floats in the clouds."),
+                    ("lore/factions/guild.txt", b"The Iron Guild controls the gates."),
+                ],
+            )
+            tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
+
+            # Call 1: Lists documents, limit note NOT present
+            res1 = tools.browse_lore()
+            self.assertIn("characters.txt", res1)
+            self.assertNotIn("maximum limit of 3", res1)
+
+            # Call 2: Reads a document, limit note NOT present
+            res2 = tools.browse_lore("characters.txt")
+            self.assertIn("Mara is the royal cartographer", res2)
+            self.assertNotIn("maximum limit of 3", res2)
+
+            # Call 3: Reads another document, limit note IS appended pushing to answer
+            res3 = tools.browse_lore("world.txt")
+            self.assertIn("The world floats in the clouds", res3)
+            self.assertIn("maximum limit of 3 browse_lore calls", res3)
+            self.assertIn("Proceed immediately to finalize and return the scene reaction JSON", res3)
+
+            # Call 4: Blocked by hard limit
+            res4 = tools.browse_lore("factions/guild.txt")
+            self.assertTrue(res4.startswith("Error: Maximum browse_lore call limit (3) reached"))
+            self.assertIn("Finalize and return the scene reaction now", res4)
+            self.assertNotIn("The Iron Guild", res4)
+
+            # Resetting for a new turn allows browsing again
+            tools.reset_lore_browse_count()
+            res5 = tools.browse_lore("factions/guild.txt")
+            self.assertIn("The Iron Guild", res5)
+            self.assertNotIn("Maximum browse_lore call limit", res5)
+
+    def test_scene_reaction_prompt_contains_browse_lore_limit(self):
+        prompt = build_scene_reaction_prompt(
+            context="Scene context here",
+            style="action-packed",
+            nodes_ahead=3,
+            lore_context="- characters.txt",
+        )
+        self.assertIn("browse_lore at most 3 times", prompt)
+        self.assertIn("proceed immediately to return the scene reaction", prompt)
 
     def test_browse_lore_logs_activity(self):
         with tempfile.TemporaryDirectory() as directory:

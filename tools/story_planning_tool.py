@@ -62,6 +62,7 @@ MAX_NODES_AHEAD = 10
 MAX_NAMED_ELEMENTS = 10
 MAX_ACTIVE_CHARACTERS = 5
 MAX_LORE_DOCUMENTS_LISTED = 100
+MAX_BROWSE_LORE_CALLS_PER_TURN = 3
 SUPPORTED_VOICE_TAGS = {"male", "female"}
 
 
@@ -133,44 +134,47 @@ Node {{ node.node_index }}: Plot beat: {{ node.plot_beat }}
 )
 
 _SCENE_REACTION_PROMPT_TEMPLATE = Template(
-"""You are the authoritative narrative script engine for an interactive story.
+"""# Role & Mission
+You are the authoritative narrative script engine for an interactive story.
 Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats.
-Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation.
-Do not stonewall with a flat refusal or erase the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead.
-The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, narrate as, or attribute to them.
-Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf.
-Write narration only about the world and the consequences of the submitted action.
-Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character.
-Character updates are for NPCs only.
-The live agent is only a relay; do not give it choices, tool instructions, or control of the plot.
-Respond ONLY with valid JSON.
+Respond ONLY with valid JSON conforming to the scene reaction schema.
 
+# Story-Planning Style (User Specified)
+{{ style }}
+- Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction.
+- Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes.
+- Follow the 'yes, and' posture from your system instruction.
+
+# Core Improv & Player Agency Principles
+- Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation.
+- Do not stonewall with a flat refusal or erase the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead.
+- The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, narrate as, or attribute to them.
+- Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf.
+- The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player.
+- The live agent is only a relay; do not give it choices, tool instructions, or control of the plot.
+
+# Current Story Context
 {{ context }}
-{% if lore_context -%}
 
-Available theater lore (top-level documents and directories):
+{% if lore_context -%}
+## Available theater lore (top-level documents and directories):
 {{ lore_context }}
 {% endif -%}
 
-Story-planning style: {{ style }}
+# Tool Usage Guidelines
+- **Lore Browsing (`browse_lore`)**: When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore. You may call browse_lore at most 3 times in a single turn to consult lore documents or directories. After at most 3 lore lookups (or once you have sufficient context), proceed immediately to return the scene reaction.
+- **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
+- **Character Generation (`generate_character_profile`)**: You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
+- Those tools only provide information: the scene delta is the sole source of changes.
 
-Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction.
-Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes.
-The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player.
-Follow the 'yes, and' posture from your system instruction.
-When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
-Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone; dialogue should have at most three short lines.
-Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
-Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions.
-When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore.
-Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, define voice_tags as a list containing 'male' or 'female' to guide speech synthesis.
-You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
-Those tools only provide information: the scene delta is the sole source of changes.
-`dialogue` is optional and must contain NPC speech only.
-Then return the scene reaction.
+# Scene Reaction Output Requirements
+- **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
+- **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character.
+- **Plot Beats**: Include exactly {{ nodes_ahead }} general plot beats in plot_beats; they must not predict, request, or prescribe player actions.
+- **Character Updates**: Character updates are for NPCs only. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, define voice_tags as a list containing 'male' or 'female' to guide speech synthesis.
 
 # Scene Labeling
-Ensure the scene has a label. THe location name is generally a good choice. Keep using that label until a major shift occurs.
+Ensure the scene has a label. The location name is generally a good choice. Keep using that label until a major shift occurs.
 
 # Reference Usage
 If the lore documents mention reference images for characters and images, communicate them via the reference_images field.
@@ -339,6 +343,8 @@ class StoryPlanningTools(BaseTools):
         )
         self.user_action_timeout_seconds: float = USER_ACTION_TIMEOUT_SECONDS
         self._last_action_response_word_count: int = 0
+        self._browse_lore_calls_this_turn: int = 0
+        self._browse_lore_lock: Lock = Lock()
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
         self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = (
@@ -586,6 +592,11 @@ class StoryPlanningTools(BaseTools):
         return [self.update_or_insert_named_element, self.clear_scene]
 
 
+    def reset_lore_browse_count(self) -> None:
+        """Reset the per-turn browse_lore invocation counter."""
+        with self._browse_lore_lock:
+            self._browse_lore_calls_this_turn = 0
+
     @logged_tool_call
     def browse_lore(self, document: str = "") -> str:
         """List or read the theater's text-only lore documents.
@@ -593,10 +604,34 @@ class StoryPlanningTools(BaseTools):
         Call without ``document`` to list available ``.txt`` paths. Call again
         with one listed relative path to read it before planning characters or
         scenes. This tool is read-only and cannot access files outside ``lore/``.
+        At most 3 browse_lore calls are allowed per story planning turn.
+        Once the limit is reached, you must proceed to return your final scene reaction.
         """
+        with self._browse_lore_lock:
+            if self._browse_lore_calls_this_turn >= MAX_BROWSE_LORE_CALLS_PER_TURN:
+                logger.warning(
+                    "[StoryPlanningTools] browse_lore call limit reached (%d/%d) for theater=%s",
+                    self._browse_lore_calls_this_turn,
+                    MAX_BROWSE_LORE_CALLS_PER_TURN,
+                    self.theater_id,
+                )
+                return (
+                    f"Error: Maximum browse_lore call limit ({MAX_BROWSE_LORE_CALLS_PER_TURN}) reached for this turn. "
+                    "You cannot browse additional lore. Finalize and return the scene reaction now."
+                )
+            self._browse_lore_calls_this_turn += 1
+            call_count = self._browse_lore_calls_this_turn
+
+        limit_note = (
+            f"\n\n[Note: You have reached the maximum limit of {MAX_BROWSE_LORE_CALLS_PER_TURN} browse_lore calls for this turn. "
+            "Do not call browse_lore again. Proceed immediately to finalize and return the scene reaction JSON.]"
+            if call_count >= MAX_BROWSE_LORE_CALLS_PER_TURN
+            else ""
+        )
+
         if not self.theater_id:
             logger.warning("[StoryPlanningTools] Browse lore called without active theater.")
-            return "No theater is active, so no lore documents are available."
+            return "No theater is active, so no lore documents are available." + limit_note
         if not document:
             documents = self.theater_manager.get_lore_documents(self.theater_id)
             listed_documents = documents[:MAX_LORE_DOCUMENTS_LISTED]
@@ -612,9 +647,10 @@ class StoryPlanningTools(BaseTools):
                 len(listed_documents),
             )
             return (
-                "Available lore documents:\n" + "\n".join(f"- {path}" for path in listed_documents) + omission
+                ("Available lore documents:\n" + "\n".join(f"- {path}" for path in listed_documents) + omission
                 if documents
-                else "No lore documents are available for this theater."
+                else "No lore documents are available for this theater.")
+                + limit_note
             )
         clean_doc = str(document or "").strip().replace("\\", "/")
         if not clean_doc.lower().endswith(".txt"):
@@ -640,6 +676,7 @@ class StoryPlanningTools(BaseTools):
                     f"Lore documents in '{clean_doc}':\n"
                     + "\n".join(f"- {path}" for path in listed_matching)
                     + omission
+                    + limit_note
                 )
         try:
             content = self.theater_manager.read_lore_document(self.theater_id, clean_doc)
@@ -650,7 +687,7 @@ class StoryPlanningTools(BaseTools):
                 self.theater_id,
                 error,
             )
-            return f"Error: {error}"
+            return f"Error: {error}" + limit_note
         logger.debug(
             "[StoryPlanningTools] Read lore document '%s' for theater=%s (chars=%d)",
             clean_doc,
@@ -659,7 +696,7 @@ class StoryPlanningTools(BaseTools):
         )
         excerpt = content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
         suffix = "\n[Excerpt truncated for planner context.]" if len(content) > len(excerpt) else ""
-        return f"Lore document: {clean_doc}\n\n{excerpt}{suffix}"
+        return f"Lore document: {clean_doc}\n\n{excerpt}{suffix}{limit_note}"
 
     @logged_tool_call
     def roll_dice(
@@ -1150,6 +1187,7 @@ class StoryPlanningTools(BaseTools):
 
     def _run_planner_agent(self, user_action: str) -> Dict[str, Any]:
         """Run one ADK planner turn resumed from the session."""
+        self.reset_lore_browse_count()
         runner = self._get_or_create_planner_runner()
         session_id = self.session_id
         theater = self.theater_id or "default"
