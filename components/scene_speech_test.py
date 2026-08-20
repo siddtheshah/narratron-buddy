@@ -93,3 +93,83 @@ def test_dispatch_synthesizes_and_publishes_audio(tmp_path: Path):
     assert published[0]["voice"] == "voice_alpha"
     assert published[0]["audio_url"].startswith("/theaters/stage-1/output/speech/")
 
+
+def test_dispatch_newer_scene_aborts_previous_scene_synthesis(tmp_path: Path):
+    import threading
+
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    published = []
+    dispatcher = SceneSpeechDispatcher(
+        theater_id="stage-1",
+        output_dir=tmp_path,
+        assignments={},
+        persist_assignments=lambda: None,
+        publish_audio=published.append,
+        provider=mock_provider,
+    )
+
+    scene1_started = threading.Event()
+    scene2_dispatched = threading.Event()
+
+    def slow_synthesize(req):
+        if req.text == "Scene 1 line 1":
+            scene1_started.set()
+            scene2_dispatched.wait(timeout=2.0)
+        return SpeechSynthesisResult(
+            audio_bytes=b"audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = slow_synthesize
+
+    dispatcher.dispatch([
+        {"speaker": "Alice", "text": "Scene 1 line 1", "kind": "speech"},
+        {"speaker": "Alice", "text": "Scene 1 line 2", "kind": "speech"},
+    ])
+    assert scene1_started.wait(timeout=2.0)
+    dispatcher.dispatch([{"speaker": "Bob", "text": "Scene 2 line 1", "kind": "speech"}])
+    scene2_dispatched.set()
+
+    dispatcher._executor.shutdown(wait=True)
+
+    # Scene 1 line 1 was discarded after synthesis, line 2 was aborted before synthesis.
+    # Only Scene 2 line 1 was published.
+    assert len(published) == 1
+    assert published[0]["speaker"] == "Bob"
+
+
+def test_cancel_aborts_in_flight_synthesis(tmp_path: Path):
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    published = []
+    dispatcher = SceneSpeechDispatcher(
+        theater_id="stage-1",
+        output_dir=tmp_path,
+        assignments={},
+        persist_assignments=lambda: None,
+        publish_audio=published.append,
+        provider=mock_provider,
+    )
+
+    def cancelling_synthesize(req):
+        dispatcher.cancel()
+        return SpeechSynthesisResult(
+            audio_bytes=b"audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = cancelling_synthesize
+
+    dispatcher.dispatch([{"speaker": "Alice", "text": "Scene 1", "kind": "speech"}])
+    dispatcher._executor.shutdown(wait=True)
+
+    assert len(published) == 0
+
+

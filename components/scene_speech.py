@@ -7,6 +7,7 @@ import logging
 import mimetypes
 from pathlib import Path
 import re
+import threading
 import time
 import uuid
 from typing import Any, Callable
@@ -45,15 +46,26 @@ class SceneSpeechDispatcher:
         self._provider = provider
         self._character_lookup = character_lookup
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"scene-speech-{theater_id}")
+        self._lock = threading.Lock()
+        self._generation = 0
+
+    def cancel(self) -> None:
+        """Invalidates any pending or in-flight scene synthesis."""
+        with self._lock:
+            self._generation += 1
 
     def dispatch(self, dialogue: list[dict[str, str]]) -> None:
+        with self._lock:
+            self._generation += 1
+            generation = self._generation
+
         spoken = [
             {**line, "voice": self._voice_for(str(line.get("speaker") or "Narrator"))}
             for line in dialogue
             if line.get("kind") != "thought" and str(line.get("text") or "").strip()
         ]
         if spoken:
-            self._executor.submit(self._synthesize_scene, spoken)
+            self._executor.submit(self._synthesize_scene, spoken, generation)
 
     def _voice_for(self, speaker: str) -> str:
         key = speaker_key(speaker)
@@ -70,12 +82,30 @@ class SceneSpeechDispatcher:
         logger.info("[SceneSpeech] Assigned %s to %s in theater %s", voice, speaker, self.theater_id)
         return voice
 
-    def _synthesize_scene(self, dialogue: list[dict[str, str]]) -> None:
+    def _synthesize_scene(self, dialogue: list[dict[str, str]], generation: int) -> None:
         for line in dialogue:
+            with self._lock:
+                if generation != self._generation:
+                    logger.debug(
+                        "[SceneSpeech] Aborting stale synthesis for theater %s (gen %d != current %d)",
+                        self.theater_id,
+                        generation,
+                        self._generation,
+                    )
+                    return
             speaker = str(line.get("speaker") or "Narrator").strip()[:80] or "Narrator"
             try:
                 voice = str(line["voice"])
                 result = self._provider.synthesize(SpeechSynthesisRequest(text=str(line["text"]), voice=voice))
+                with self._lock:
+                    if generation != self._generation:
+                        logger.debug(
+                            "[SceneSpeech] Discarding stale audio for theater %s (gen %d != current %d)",
+                            self.theater_id,
+                            generation,
+                            self._generation,
+                        )
+                        return
                 extension = mimetypes.guess_extension(result.mime_type) or ".mp3"
                 speech_dir = self.output_dir / "speech"
                 speech_dir.mkdir(parents=True, exist_ok=True)
@@ -87,6 +117,7 @@ class SceneSpeechDispatcher:
                     "voice": voice,
                     "audio_url": f"/theaters/{self.theater_id}/output/speech/{filename}",
                     "mime_type": result.mime_type,
+                    "generation": generation,
                 })
             except (SpeechProviderError, OSError, ValueError) as exc:
                 logger.warning("[SceneSpeech] Failed to synthesize dialogue for %s: %s", speaker, exc)

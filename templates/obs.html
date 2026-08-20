@@ -125,6 +125,22 @@
         const dialogueSpeakerPalette = ['#fbbf24', '#67e8f9', '#f9a8d4', '#a7f3d0', '#c4b5fd', '#fdba74', '#93c5fd', '#f0abfc'];
         const sceneSpeechQueue = [];
         let sceneSpeechPlaying = false;
+        let currentSceneAudio = null;
+
+        function stopSceneSpeech() {
+            sceneSpeechQueue.length = 0;
+            sceneSpeechPlaying = false;
+            if (currentSceneAudio) {
+                const audio = currentSceneAudio;
+                currentSceneAudio = null;
+                audio.onended = null;
+                audio.onerror = null;
+                try {
+                    audio.pause();
+                    audio.src = '';
+                } catch (_) {}
+            }
+        }
 
         function enqueueSceneSpeech(audioUrl) {
             if (!audioEnabled || !audioUrl) return;
@@ -132,11 +148,26 @@
             if (sceneSpeechPlaying) return;
             const playNext = () => {
                 const next = sceneSpeechQueue.shift();
-                if (!next) { sceneSpeechPlaying = false; return; }
+                if (!next) {
+                    sceneSpeechPlaying = false;
+                    currentSceneAudio = null;
+                    return;
+                }
                 sceneSpeechPlaying = true;
                 const audio = new Audio(next);
-                audio.onended = audio.onerror = playNext;
-                audio.play().catch(playNext);
+                currentSceneAudio = audio;
+                audio.onended = audio.onerror = () => {
+                    if (currentSceneAudio === audio) {
+                        currentSceneAudio = null;
+                    }
+                    playNext();
+                };
+                audio.play().catch(() => {
+                    if (currentSceneAudio === audio) {
+                        currentSceneAudio = null;
+                    }
+                    playNext();
+                });
             };
             playNext();
         }
@@ -281,6 +312,7 @@
             const signature = JSON.stringify(lines);
             if (signature === sceneDialogueSignature) return;
             sceneDialogueSignature = signature;
+            stopSceneSpeech();
             const renderId = ++sceneDialogueRenderId;
             sceneDialogueOverlay.replaceChildren();
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
