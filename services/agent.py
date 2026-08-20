@@ -122,7 +122,7 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 * update_or_insert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
 * clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
 {% if adventure_mode %}
-* process_user_action <user_action>: Submit the orator's action/speech to the authoritative script engine. It returns immediately; wait for the `[Story Planner Result]` system notification, then relay its narration and use peripheral tools to stage it AFTER the action is processed. Dialogue is displayed automatically on the canvas.
+* process_user_action <user_action> <nudge>: Submit the orator's action/speech to the authoritative script engine. You may optionally supply a nudge to introduce story elements or directions for the planner to accommodate. Do not use this unless the user requests it out of character, or a chat suggestion arrives. It returns immediately; wait for the `[Story Planner Result]` system notification, then relay its narration and use peripheral tools to stage it AFTER the action is processed. Dialogue is displayed automatically on the canvas.
 DO NOT call this again until you are confident the user has given their full response.
 {% endif %}
 

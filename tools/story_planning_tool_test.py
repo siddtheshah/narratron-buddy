@@ -17,6 +17,7 @@ from tools.story_planning_tool import (
     DEFAULT_STORY_PLANNING_STYLE,
     DEFAULT_THINKING_BUDGET,
     MAX_LORE_DOCUMENTS_LISTED,
+    MAX_NUDGE_CHARS,
     MAX_PLAYER_ACTION_CHARS,
     MAX_STORY_PLANNING_STYLE_CHARS,
     SceneReaction,
@@ -80,7 +81,8 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Never invent the player's actions, speech, thoughts, feelings, decisions", prompt)
         self.assertIn("Dialogue may be spoken only by NPCs", prompt)
         self.assertIn("'yes, and' improv posture", prompt)
-        self.assertIn("Story-planning style: balanced", prompt)
+        self.assertIn("Story-Planning Style (User Specified)", prompt)
+        self.assertIn("balanced", prompt)
         self.assertIn("Include exactly 5 general plot beats", prompt)
         self.assertIn("Available theater lore (top-level documents and directories):", prompt)
         self.assertIn("- world.txt", prompt)
@@ -164,11 +166,12 @@ class TestStoryPlanningTools(unittest.TestCase):
         })
         with patch.object(tools, "_run_planner_agent", return_value={"narration": "The bridge groans.", "plot_beats": ["The storm worsens."]}) as mock_run:
             tools._resolve_user_action("I cross the bridge.")
-            mock_run.assert_called_once_with("I cross the bridge.")
+            mock_run.assert_called_once_with("I cross the bridge.", nudge="")
 
         self.assertEqual(tools.style, "harsh and unforgiving, but never arbitrary")
         prompt = tools._build_planner_instruction()
-        self.assertIn("Story-planning style: harsh and unforgiving, but never arbitrary", prompt)
+        self.assertIn("Story-Planning Style (User Specified)", prompt)
+        self.assertIn("harsh and unforgiving, but never arbitrary", prompt)
 
     def test_story_planning_style_is_bounded_when_loaded_from_advanced_config(self):
         tools = self._make_tools(config={"style": "x" * (MAX_STORY_PLANNING_STYLE_CHARS + 1)})
@@ -407,6 +410,55 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertIn("characters or fewer", result["error"])
             mock_resolve.assert_not_called()
 
+    def test_overlong_nudge_is_rejected_before_a_planner_turn(self):
+        tools = self._make_tools(config={
+            "adventure_mode": True,
+        })
+
+        with patch.object(tools, "_resolve_user_action") as mock_resolve:
+            result = tools.process_user_action("I search the room", nudge="x" * (MAX_NUDGE_CHARS + 1))
+            self.assertIn("Nudge must be", result["error"])
+            mock_resolve.assert_not_called()
+
+    def test_process_user_action_forwards_nudge_to_planner(self):
+        tools = self._make_tools(config={
+            "adventure_mode": True,
+            "nodes_ahead": 1,
+            "action_cooldown_base_seconds": 0.0,
+        })
+
+        with patch.object(tools, "_resolve_user_action") as mock_resolve:
+            result = tools.process_user_action("I examine the mural", nudge="Reveal a hidden compartment")
+            self.assertEqual(result["status"], "processing")
+            time.sleep(0.05)
+            mock_resolve.assert_called_once_with("I examine the mural", nudge="Reveal a hidden compartment")
+
+    def test_run_planner_agent_includes_nudge_in_user_message(self):
+        tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
+
+        passed_messages = []
+
+        async def fake_run_async(user_id, session_id, new_message, run_config=None):
+            passed_messages.append(new_message.parts[0].text)
+            reaction = SceneReaction(
+                narration="You find a key.",
+                plot_beats=["Beat 1"],
+            )
+            event = MagicMock()
+            event.is_final_response.return_value = True
+            event.content = types.Content(role="model", parts=[types.Part(text=reaction.model_dump_json())])
+            yield event
+
+        with patch.object(tools._planner_runner, "run_async", side_effect=fake_run_async):
+            # Without nudge
+            tools._run_planner_agent("I search the wall")
+            self.assertEqual(passed_messages[-1], "I search the wall")
+
+            # With nudge
+            tools._run_planner_agent("I search the wall", nudge="A shadow looms behind them")
+            self.assertIn("I search the wall", passed_messages[-1])
+            self.assertIn("[Live Agent Nudge to Accommodate]: A shadow looms behind them", passed_messages[-1])
+
     def test_character_profile_uses_explicit_text_response_provider(self):
         mock_provider = MagicMock(spec=TextResponseProvider)
         mock_provider.generate.return_value = TextResponseResult(
@@ -520,7 +572,7 @@ class TestStoryPlanningTools(unittest.TestCase):
 
             self.assertEqual(acknowledgement["status"], "processing")
             self.assertTrue(completed.wait(timeout=1))
-            mock_run.assert_called_once_with("I light my torch.")
+            mock_run.assert_called_once_with("I light my torch.", nudge="")
             self.assertEqual(results[0]["narration"], "The hidden doorway opens.")
             self.assertEqual(len(tools.get_plot_beats()), 2)
             self.assertEqual(billed_plans, [1])
@@ -691,7 +743,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         unblock_event = threading.Event()
         started_event = threading.Event()
 
-        def slow_resolve(action):
+        def slow_resolve(action, **kwargs):
             started_event.set()
             unblock_event.wait(timeout=5)
             return {

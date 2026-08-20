@@ -54,6 +54,7 @@ DEFAULT_THINKING_BUDGET = 1024
 USER_ACTION_TIMEOUT_SECONDS = 20.0
 MAX_STORY_PLANNING_STYLE_CHARS = 500
 MAX_PLAYER_ACTION_CHARS = 2_000
+MAX_NUDGE_CHARS = 1_000
 MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
 MAX_CONTEXT_FIELD_CHARS = 500
 MAX_PLOT_BEAT_CHARS = 500
@@ -148,6 +149,7 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 # Core Improv & Player Agency Principles
 - Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation.
 - Do not stonewall with a flat refusal or erase the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead.
+- If a live agent nudge is provided, accommodate and incorporate that suggested direction, event, or element into the story resolution, NPC responses, or plot beats where appropriate, while still respecting player agency and established fiction.
 - The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, narrate as, or attribute to them.
 - Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf.
 - The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player.
@@ -1185,16 +1187,17 @@ class StoryPlanningTools(BaseTools):
             )
         return self._planner_runner
 
-    def _run_planner_agent(self, user_action: str) -> Dict[str, Any]:
+    def _run_planner_agent(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         """Run one ADK planner turn resumed from the session."""
         self.reset_lore_browse_count()
         runner = self._get_or_create_planner_runner()
         session_id = self.session_id
         theater = self.theater_id or "default"
         logger.debug(
-            "[StoryPlanningTools] Running planner agent (theater=%s): user_action=%r",
+            "[StoryPlanningTools] Running planner agent (theater=%s): user_action=%r, nudge=%r",
             theater,
             user_action,
+            nudge,
         )
 
         async def run_turn() -> Dict[str, Any]:
@@ -1204,10 +1207,13 @@ class StoryPlanningTools(BaseTools):
                 if self._run_compression_config
                 else None
             )
+            prompt_input = user_action
+            if nudge:
+                prompt_input = f"{user_action}\n\n[Live Agent Nudge to Accommodate]: {nudge}"
             async for event in runner.run_async(
                 user_id="story_planner",
                 session_id=session_id,
-                new_message=types.Content(role="user", parts=[types.Part(text=user_action)]),
+                new_message=types.Content(role="user", parts=[types.Part(text=prompt_input)]),
                 run_config=run_config,
             ):
                 if event.is_final_response() and event.content and event.content.parts:
@@ -1268,18 +1274,26 @@ class StoryPlanningTools(BaseTools):
         "resolving another player action",
         duration=lambda tools: tools.get_user_action_cooldown_seconds(),
     )
-    def process_user_action(self, user_action: str) -> Dict[str, Any]:
+    def process_user_action(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         """Queue a non-blocking authoritative resolution of an orator action.
+
+        Args:
+            user_action: The player's submitted action or speech in the interactive story.
+            nudge: An optional suggestion, event, or direction that the live agent wishes to
+                introduce to the story, which the story planner is meant to accommodate.
 
         The final reaction is delivered through ``on_scene_reaction``. Callers
         receive immediately so a slow planner cannot stall the Live session.
         Only one user action resolution call may be in flight at a time.
         """
         action = str(user_action or "").strip()
+        clean_nudge = str(nudge or "").strip()
         if not action:
             return {"error": "User action cannot be empty."}
         if len(action) > MAX_PLAYER_ACTION_CHARS:
             return {"error": f"Player actions must be {MAX_PLAYER_ACTION_CHARS} characters or fewer."}
+        if len(clean_nudge) > MAX_NUDGE_CHARS:
+            return {"error": f"Nudge must be {MAX_NUDGE_CHARS} characters or fewer."}
 
         if not self.acquire_in_flight("process_user_action"):
             return {
@@ -1292,7 +1306,7 @@ class StoryPlanningTools(BaseTools):
         def resolve_and_notify() -> None:
             result = None
             try:
-                result = self._resolve_user_action(action)
+                result = self._resolve_user_action(action, nudge=clean_nudge)
             except Exception as exc:
                 logger.exception("[StoryPlanningTools] Scene reaction failed")
                 result = {"error": f"Story planner failed: {exc}"}
@@ -1317,13 +1331,13 @@ class StoryPlanningTools(BaseTools):
         )
         return min(self.action_cooldown_max_seconds, self.action_cooldown_base_seconds + extra_seconds)
 
-    def _resolve_user_action(self, action: str) -> Dict[str, Any]:
+    def _resolve_user_action(self, action: str, nudge: str = "") -> Dict[str, Any]:
         """Run and commit one planner turn in a background worker."""
         if not self.adventure_mode:
             return {"error": "Adventure Mode is not enabled for this theater."}
         if self.nodes_ahead <= 0:
             raise ValueError("nodes_ahead must be positive.")
-        parsed = self._run_planner_agent(action)
+        parsed = self._run_planner_agent(action, nudge=nudge)
         if not isinstance(parsed, dict):
             raise ValueError("Story planner must return a JSON object.")
         if "error" in parsed:
