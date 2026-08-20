@@ -48,6 +48,15 @@ class TestUploadAdventuresToGCS(unittest.TestCase):
         self.assertEqual(meta["id"], "lesovik-station")
         self.assertEqual(meta["title"], "Lesovik Station: The Arctic Mystery")
 
+    def test_create_or_load_metadata_generates_default(self):
+        new_adv = Path(self.temp_dir.name) / "My Custom Quest"
+        new_adv.mkdir(parents=True)
+        meta = create_or_load_metadata(new_adv)
+        self.assertEqual(meta["id"], "my-custom-quest")
+        self.assertEqual(meta["title"], "My Custom Quest")
+        self.assertEqual(meta["genre"], "Adventure")
+        self.assertTrue((new_adv / "metadata.json").exists())
+
     def test_collect_adventure_files(self):
         files = collect_adventure_files(self.adv_dir)
         filenames = [f.name for f in files]

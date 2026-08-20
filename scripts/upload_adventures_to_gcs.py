@@ -40,82 +40,6 @@ DEFAULT_BUCKET = "narratron-buddy-app-storage"
 DEFAULT_PREFIX = "adventures"
 DEFAULT_SOURCE_DIR = r"C:\Narratron Assets"
 
-DEFAULT_ADVENTURE_METADATA: Dict[str, Dict[str, Any]] = {
-    "Lesovik Station": {
-        "id": "lesovik-station",
-        "title": "Lesovik Station: The Arctic Mystery",
-        "description": "An isolated arctic research station plunged into a deadly blizzard after the mysterious death of Dr. Kathlyn Stark. Unravel motives, investigate researchers, and survive the cold.",
-        "author": "Narratron Team",
-        "genre": "Sci-Fi Mystery",
-        "tags": ["Sci-Fi", "Mystery", "Survival", "Arctic", "Thriller"],
-        "created_at": "2026-08-18T18:00:00Z",
-        "cover_image": "references/lesovik_station_cover.jpg",
-        "difficulty": "Intermediate",
-        "recommended_players": "1-4",
-    },
-    "The Witches": {
-        "id": "the-witches",
-        "title": "The Witches of Muthren",
-        "description": "Journey into the secluded province of Muthren to seek dark favors from a capricious coven of three witches—each demanding twisted bargains before granting your wish.",
-        "author": "Narratron Team",
-        "genre": "Dark Fantasy",
-        "tags": ["Dark Fantasy", "Magic", "Folklore", "Coven", "Roleplay"],
-        "created_at": "2026-08-17T14:30:00Z",
-        "cover_image": "references/the_witches_cover.jpg",
-        "difficulty": "Hard",
-        "recommended_players": "1-5",
-    },
-    "Umbral Dungeon": {
-        "id": "umbral-dungeon",
-        "title": "Umbral Dungeon: Depths of the Fallen",
-        "description": "Step into the long-sealed Umbral Dungeon as an outside inspector uncovering decades of corruption, eerie relics, and shadowy dangers in a low-magic dark fantasy realm.",
-        "author": "Narratron Team",
-        "genre": "Dungeon Crawler",
-        "tags": ["Dark Fantasy", "Dungeon Crawl", "Horror", "Exploration"],
-        "created_at": "2026-08-16T12:00:00Z",
-        "cover_image": "references/umbral_dungeon_cover.jpg",
-        "difficulty": "Hard",
-        "recommended_players": "1-4",
-    },
-    "Varlkasseg": {
-        "id": "varlkasseg",
-        "title": "Varlkasseg: The Viking Chronicle",
-        "description": "Join Bjorn the Bard and a hardy band of Norse heroes traversing harsh craters and tribal lands in this gritty, heroic fantasy adventure.",
-        "author": "Narratron Team",
-        "genre": "Norse Fantasy",
-        "tags": ["Norse Fantasy", "Viking", "Heroic", "Party", "Combat"],
-        "created_at": "2026-08-15T09:00:00Z",
-        "cover_image": "references/locations/daawes crater.png",
-        "difficulty": "Medium",
-        "recommended_players": "1-6",
-    },
-    "Demo": {
-        "id": "demo",
-        "title": "Narratron Adventure Showcase",
-        "description": "A versatile adventure sampler featuring diverse environments from the Sunken Library and Ink Monastery to Wild West showdowns, complete with character portraits and rich soundtracks.",
-        "author": "Narratron Team",
-        "genre": "Multi-Genre Showcase",
-        "tags": ["Showcase", "Multi-Genre", "Cinematic", "Introductory"],
-        "created_at": "2026-08-14T10:00:00Z",
-        "cover_image": "reference_library/the fate written.png",
-        "difficulty": "Beginner",
-        "recommended_players": "1-4",
-    },
-    "Pantheon of Hearts": {
-        "id": "pantheon-of-hearts",
-        "title": "Pantheon of Hearts: Dating the Divine",
-        "description": "Summoned to Mount Olympus after accidentally swiping right on Cupid's divine matchmaker app, you must survive hilarious speed-dates with neurotic deities, brooding psychopomps, and chaotic tricksters. Balance affection scores, avoid divine smiting, and find true love with the immortals!",
-        "author": "Narratron Team",
-        "genre": "Romantic Comedy / Dating Sim",
-        "tags": ["Dating Sim", "Comedy", "Mythology", "Romance", "Interactive Fiction", "Roleplay"],
-        "created_at": "2026-08-19T12:00:00Z",
-        "cover_image": "references/pantheon_cover.jpg",
-        "difficulty": "Casual / Intermediate",
-        "recommended_players": "1-2",
-    },
-}
-
-
 def slugify(text: str) -> str:
     """Convert text into a safe URL slug."""
     clean = "".join(c if c.isalnum() or c in ("-", "_") else "-" for c in text.lower())
@@ -123,7 +47,7 @@ def slugify(text: str) -> str:
 
 
 def create_or_load_metadata(adventure_dir: Path) -> Dict[str, Any]:
-    """Load existing metadata.json or generate from defaults."""
+    """Load existing metadata.json or generate from adventure folder."""
     meta_path = adventure_dir / "metadata.json"
     existing_meta: Dict[str, Any] = {}
     if meta_path.exists():
@@ -133,27 +57,24 @@ def create_or_load_metadata(adventure_dir: Path) -> Dict[str, Any]:
             existing_meta = {}
 
     folder_name = adventure_dir.name
-    defaults = DEFAULT_ADVENTURE_METADATA.get(
-        folder_name,
-        {
-            "id": slugify(folder_name),
-            "title": folder_name,
-            "description": f"Premade adventure package for {folder_name}.",
-            "author": "Narratron Creator",
-            "genre": "Adventure",
-            "tags": ["Adventure", "Story"],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "cover_image": "",
-            "difficulty": "Medium",
-            "recommended_players": "1-4",
-        },
-    )
+    defaults = {
+        "id": slugify(folder_name),
+        "title": folder_name,
+        "description": f"Premade adventure package for {folder_name}.",
+        "author": "Narratron Creator",
+        "genre": "Adventure",
+        "tags": ["Adventure", "Story"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "cover_image": "",
+        "difficulty": "Medium",
+        "recommended_players": "1-4",
+    }
 
     merged = {**defaults, **existing_meta}
     if not merged.get("id"):
         merged["id"] = slugify(folder_name)
     if not merged.get("created_at"):
-        merged["created_at"] = defaults.get("created_at") or datetime.now(timezone.utc).isoformat()
+        merged["created_at"] = datetime.now(timezone.utc).isoformat()
 
     # Find fallback cover image if none configured or invalid
     if not merged.get("cover_image"):
@@ -386,11 +307,19 @@ def main():
         print(f"❌ Error: Source directory does not exist: {source_path}", file=sys.stderr)
         sys.exit(1)
 
-    # Check if source_path is itself a single adventure folder
+    # Gather adventure folders from source_path and local adventures/ directory
+    adventure_folders: List[Path] = []
     if (source_path / "theater.yaml").exists() or (source_path / "metadata.json").exists():
         adventure_folders = [source_path]
     else:
         adventure_folders = [p for p in source_path.iterdir() if p.is_dir() and not p.name.startswith(".")]
+
+    local_adv_dir = Path("adventures")
+    if local_adv_dir.exists() and local_adv_dir.resolve() != source_path.resolve():
+        for p in local_adv_dir.iterdir():
+            if p.is_dir() and not p.name.startswith(".") and p not in adventure_folders:
+                if (p / "theater.yaml").exists() or (p / "metadata.json").exists():
+                    adventure_folders.append(p)
 
     if args.adventure:
         target = args.adventure.lower().strip()
@@ -400,7 +329,7 @@ def main():
         ]
 
     if not adventure_folders:
-        print(f"⚠️ No matching adventure folders found in {source_path}")
+        print(f"⚠️ No matching adventure folders found in {source_path} or local adventures/")
         sys.exit(0)
 
     print(f"🚀 Found {len(adventure_folders)} adventure folder(s) to process")
