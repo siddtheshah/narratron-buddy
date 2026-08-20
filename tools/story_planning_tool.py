@@ -351,6 +351,9 @@ class StoryPlanningTools(BaseTools):
             float(self.config.get("action_cooldown_max_seconds", 30.0)),
         )
         self.user_action_timeout_seconds: float = USER_ACTION_TIMEOUT_SECONDS
+        self.require_voice_input: bool = bool(self.config.get("require_voice_input", False))
+        self._voice_input_detected: bool = not self.require_voice_input
+        self._voice_input_lock: Lock = Lock()
         self._last_action_response_word_count: int = 0
         self._browse_lore_calls_this_turn: int = 0
         self._browse_lore_lock: Lock = Lock()
@@ -600,6 +603,18 @@ class StoryPlanningTools(BaseTools):
             return [self.process_user_action]
         return [self.update_or_insert_named_element, self.clear_scene]
 
+
+    @property
+    def is_voice_input_detected(self) -> bool:
+        """Return True if voice input has been detected since the last processed action."""
+        with self._voice_input_lock:
+            return self._voice_input_detected
+
+    def record_voice_input(self) -> None:
+        """Mark that user voice input was detected, re-enabling process_user_action."""
+        with self._voice_input_lock:
+            self._voice_input_detected = True
+        logger.debug("[StoryPlanningTools] Voice input detected; process_user_action is re-enabled.")
 
     def reset_lore_browse_count(self) -> None:
         """Reset the per-turn browse_lore invocation counter."""
@@ -1293,6 +1308,15 @@ class StoryPlanningTools(BaseTools):
         receive immediately so a slow planner cannot stall the Live session.
         Only one user action resolution call may be in flight at a time.
         """
+        with self._voice_input_lock:
+            if self.require_voice_input and not self._voice_input_detected:
+                return {
+                    "error": (
+                        "Cannot process user action: No voice input from the orator was detected. "
+                        "Please wait for the orator to speak before submitting an action."
+                    )
+                }
+
         action = str(user_action or "").strip()
         clean_nudge = str(nudge or "").strip()
         if not action:
@@ -1309,6 +1333,10 @@ class StoryPlanningTools(BaseTools):
                     "'[Story Planner Result]' notification before submitting another action."
                 )
             }
+
+        with self._voice_input_lock:
+            if self.require_voice_input:
+                self._voice_input_detected = False
 
         def resolve_and_notify() -> None:
             result = None

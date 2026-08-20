@@ -267,6 +267,8 @@ class AgentSession:
         """Send activity_start to live_request_queue if user is connected."""
         if not self.websocket_connected:
             return False
+        if self.story_planning_tools and hasattr(self.story_planning_tools, "record_voice_input"):
+            self.story_planning_tools.record_voice_input()
         if hasattr(self.live_request_queue, "send_activity_start"):
             self.live_request_queue.send_activity_start()
         return True
@@ -279,8 +281,15 @@ class AgentSession:
             self.live_request_queue.send_activity_end()
         return True
 
+    def record_voice_activity(self, source: str = ""):
+        """Record voice activity detection event and re-enable story planning user action."""
+        if self.story_planning_tools and hasattr(self.story_planning_tools, "record_voice_input"):
+            self.story_planning_tools.record_voice_input()
+
     def _setup_tool_callbacks(self):
         def handle_cooldown_expired(tool_name: str):
+            if tool_name in ("process_user_action", "image_cycle"):
+                return
             msg = f"[System Notification] The cooldown for '{tool_name}' has expired. You may now call {tool_name} again."
             logger.info(f"[AgentSession] Cooldown expired notification: {msg}")
             try:
@@ -750,11 +759,12 @@ class AgentSession:
             self.story_plans_count,
         )
         self.flush_usage_to_db()
-
     def record_audio_input(self, byte_count: int):
         """Record incoming PCM audio input stream bytes as time counter proxy and flush usage periodically."""
         if byte_count <= 0:
             return
+        if self.story_planning_tools and hasattr(self.story_planning_tools, "record_voice_input"):
+            self.story_planning_tools.record_voice_input()
         self.audio_bytes_received += byte_count
         self.unbilled_audio_bytes += byte_count
         # Flush unbilled usage whenever unbilled audio reaches >= 96,000 bytes (~3 seconds of audio)

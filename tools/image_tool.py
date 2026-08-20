@@ -427,13 +427,6 @@ class ImageTools(BaseTools):
             else:
                 logger.debug("[ImageTools] Cycle rollover: no next image staged, retaining current image.")
 
-            cb_expired = getattr(self, "on_cooldown_expired", None)
-            if cb_expired:
-                try:
-                    cb_expired("image_cycle")
-                except Exception as e:
-                    logger.error(f"[ImageTools] Exception in on_cooldown_expired callback: {e}")
-
             return self.current_cycle_image
 
     def _schedule_next_cycle_tick(self):

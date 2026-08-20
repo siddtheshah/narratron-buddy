@@ -851,6 +851,46 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertIn("killed and restarted", results[0]["error"])
             self.assertFalse(tools.is_action_in_flight)
 
+    def test_process_user_action_requires_voice_input_when_configured(self):
+        tools = self._make_tools(
+            config={
+                "adventure_mode": True,
+                "require_voice_input": True,
+                "action_cooldown_base_seconds": 0.0,
+            },
+            theater_id="voice_req_test",
+        )
+        self.assertTrue(tools.require_voice_input)
+        self.assertFalse(tools.is_voice_input_detected)
+
+        with patch.object(tools, "_resolve_user_action") as mock_resolve:
+            # First attempt without voice input is rejected
+            res = tools.process_user_action("I inspect the doorway.")
+            self.assertIn("error", res)
+            self.assertIn("No voice input", res["error"])
+            mock_resolve.assert_not_called()
+
+            # Record voice input detection
+            tools.record_voice_input()
+            self.assertTrue(tools.is_voice_input_detected)
+
+            # Processing is now allowed
+            res = tools.process_user_action("I inspect the doorway.")
+            self.assertEqual(res["status"], "processing")
+            # Flag is consumed upon submission
+            self.assertFalse(tools.is_voice_input_detected)
+
+            # Subsequent call without new voice input is rejected
+            res2 = tools.process_user_action("I walk through.")
+            self.assertIn("error", res2)
+            self.assertIn("No voice input", res2["error"])
+
+            # New voice input re-enables it
+            tools.record_voice_input()
+            self.assertTrue(tools.is_voice_input_detected)
+            res3 = tools.process_user_action("I walk through.")
+            self.assertEqual(res3["status"], "processing")
+
 
 if __name__ == "__main__":
     unittest.main()

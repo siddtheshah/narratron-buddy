@@ -224,6 +224,66 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertIn("[Story Planner Result]", args[0].parts[0].text)
         self.assertIn("A door opens.", args[0].parts[0].text)
 
+    def test_voice_input_forwarded_to_story_planning_tools(self):
+        mock_story_planning = MagicMock()
+        mock_agent = MagicMock()
+        mock_agent.tools = [SimpleNamespace(name="process_user_action", func=mock_story_planning.process_user_action)]
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(theater_id="voice_fwd", runner=mock_runner, tool_bundle=MagicMock())
+        session.story_planning_tools = mock_story_planning
+        session.websockets.add(MagicMock())
+
+        session.record_audio_input(1000)
+        mock_story_planning.record_voice_input.assert_called_once()
+
+        mock_story_planning.reset_mock()
+        session.send_activity_start()
+        mock_story_planning.record_voice_input.assert_called_once()
+
+        mock_story_planning.reset_mock()
+        session.record_voice_activity("mic_detect")
+        mock_story_planning.record_voice_input.assert_called_once()
+
+    def test_cooldown_expired_skips_process_user_action(self):
+        class MockPlannerTools:
+            def __init__(self):
+                self.on_cooldown_expired = None
+
+            def process_user_action(self, user_action):
+                return {}
+
+        class MockImageTools:
+            def __init__(self):
+                self.on_cooldown_expired = None
+
+            def create_image(self, prompt):
+                return {}
+
+        planner_tools = MockPlannerTools()
+        image_tools = MockImageTools()
+        mock_agent = MagicMock()
+        mock_agent.tools = [
+            SimpleNamespace(name="process_user_action", func=planner_tools.process_user_action),
+            SimpleNamespace(name="create_image", func=image_tools.create_image),
+        ]
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(theater_id="cooldown_filter", runner=mock_runner, tool_bundle=MagicMock())
+        session.send_content = MagicMock()
+
+        # Trigger cooldown expired for process_user_action -> Should NOT send content
+        planner_tools.on_cooldown_expired("process_user_action")
+        session.send_content.assert_not_called()
+
+        # Trigger cooldown expired for create_image -> Should send content
+        image_tools.on_cooldown_expired("create_image")
+        session.send_content.assert_called_once()
+        args, _ = session.send_content.call_args
+        self.assertIn("create_image", args[0].parts[0].text)
+
     def test_reenable_state_on_reconnect(self):
         import asyncio
         mock_agent = MagicMock()

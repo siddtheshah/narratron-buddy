@@ -38,6 +38,7 @@ story_planning:
     # example: "harsh and unforgiving, but never arbitrary").
     style: "balanced, consequence-driven, and player-agency-first"
     cooldown_duration: 10
+    require_voice_input: true
     # Each completed planner response adds one second per 15 returned words,
     # up to this limit, before accepting the next player action.
     action_cooldown_words_per_second: 15
