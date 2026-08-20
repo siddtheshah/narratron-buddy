@@ -222,3 +222,98 @@ class TestImageTools(BaseTestCase):
         result = tools._apply_default_style(prompt)
         self.assertEqual(result, prompt)
         tools.stop_cycle()
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_adventure_mode_throttles_create_image_until_story_plan_completed(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        config = {
+            **self.config,
+            "adventure_mode": True,
+        }
+        tools = ImageTools(config, theater_id="adv_create_test", theater_manager=self.manager)
+        tools.stop_cycle()
+        self.assertTrue(tools.adventure_mode)
+        self.assertFalse(tools.is_story_plan_completed)
+
+        # 1. Attempt without completed story plan is rejected
+        res = tools.create_image("a scenic mountain", display=False)
+        self.assertIn("Error: Cannot create image: Waiting for the story planner to complete its response", res)
+        mock_get_provider.assert_not_called()
+
+        # 2. Record story plan completion -> enables create_image
+        tools.record_story_plan_completed()
+        self.assertTrue(tools.is_story_plan_completed)
+
+        res2 = tools.create_image("a scenic mountain", display=False)
+        self.assertIn("Image generation started in background", res2)
+        tools.join_generation()
+        # Consumes the story plan completion
+        self.assertFalse(tools.is_story_plan_completed)
+
+        # 3. Subsequent call without completed plan is rejected
+        res3 = tools.create_image("another mountain", display=False)
+        self.assertIn("Error: Cannot create image: Waiting for the story planner to complete its response", res3)
+
+        # 4. New story plan completion allows it again
+        tools.record_story_plan_completed()
+        self.assertTrue(tools.is_story_plan_completed)
+        res4 = tools.create_image("another mountain", display=False)
+        self.assertIn("Image generation started in background", res4)
+        tools.join_generation()
+        self.assertFalse(tools.is_story_plan_completed)
+        tools.stop_cycle()
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_adventure_mode_throttles_show_image_until_story_plan_completed(self, mock_get_provider):
+        config = {
+            **self.config,
+            "story_planning": {"adventure_mode": True},
+        }
+        tools = ImageTools(config, theater_id="adv_show_test", theater_manager=self.manager)
+        tools.stop_cycle()
+        self.assertTrue(tools.adventure_mode)
+        self.assertFalse(tools.is_story_plan_completed)
+
+        img_path = os.path.join(tools.reference_dir, "test_card.jpg")
+        Image.new("RGB", (10, 10), color="purple").save(img_path)
+
+        # 1. Attempt without completed story plan is rejected
+        res = tools.show_image("test_card.jpg")
+        self.assertIn("Error: Cannot show image: Waiting for the story planner to complete its response", res)
+
+        # 2. Record story plan completion -> enables show_image
+        tools.record_story_plan_completed()
+        self.assertTrue(tools.is_story_plan_completed)
+
+        res2 = tools.show_image("test_card.jpg")
+        self.assertIn("Successfully displayed", res2)
+        # Consumes the story plan completion
+        self.assertFalse(tools.is_story_plan_completed)
+
+        # 3. Subsequent call without completed story plan is rejected
+        res3 = tools.show_image("test_card.jpg")
+        self.assertIn("Error: Cannot show image: Waiting for the story planner to complete its response", res3)
+
+        # 4. New story plan completion allows it again
+        tools.record_story_plan_completed()
+        self.assertTrue(tools.is_story_plan_completed)
+        res4 = tools.show_image("test_card.jpg")
+        self.assertIn("queued for the next image cycle", res4)
+        self.assertFalse(tools.is_story_plan_completed)
+        tools.stop_cycle()
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_non_adventure_mode_does_not_throttle(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = ImageTools(self.config, theater_id="non_adv_test", theater_manager=self.manager)
+        tools.stop_cycle()
+        self.assertFalse(tools.adventure_mode)
+        self.assertTrue(tools.is_story_plan_completed)
+
+        res = tools.create_image("a scenic valley", display=False)
+        self.assertIn("Image generation started in background", res)
+        tools.join_generation()
+        self.assertTrue(tools.is_story_plan_completed)
+        tools.stop_cycle()

@@ -84,6 +84,14 @@ class ImageTools(BaseTools):
 
         self.PRIORITY_SHOW = 1
         self.PRIORITY_CREATE = 2
+
+        self.adventure_mode: bool = bool(
+            raw_config.get("adventure_mode", False)
+            or (isinstance(raw_config.get("story_planning"), dict) and raw_config.get("story_planning", {}).get("adventure_mode", False))
+            or subconfig.get("adventure_mode", False)
+        )
+        self._story_plan_completed: bool = not self.adventure_mode
+        self._story_plan_lock: threading.Lock = threading.Lock()
         
         # Reuse cached references manifest if directory hasn't changed
         if ImageTools._reference_dir_cached == self.reference_dir and ImageTools._references_cache:
@@ -93,6 +101,18 @@ class ImageTools(BaseTools):
             self._load_references()
             ImageTools._references_cache = self.references_manifest
             ImageTools._reference_dir_cached = self.reference_dir
+
+    @property
+    def is_story_plan_completed(self) -> bool:
+        """Return True if the story planner has completed a response since the last image action."""
+        with self._story_plan_lock:
+            return self._story_plan_completed
+
+    def record_story_plan_completed(self) -> None:
+        """Mark that the story planner completed a response to process_user_action, re-enabling image tools in adventure mode."""
+        with self._story_plan_lock:
+            self._story_plan_completed = True
+        logger.debug("[ImageTools] Story plan completion recorded; image tools are re-enabled.")
 
     def _apply_default_style(self, image_prompt: str) -> str:
         """Append the theater style unless the prompt supplies a style itself."""
@@ -261,6 +281,15 @@ class ImageTools(BaseTools):
         """
         effective_prompt = self._apply_default_style(image_prompt)
         logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, reference_images={reference_images}, display={display}")
+
+        with self._story_plan_lock:
+            if self.adventure_mode and not self._story_plan_completed:
+                res = (
+                    "Error: Cannot create image: Waiting for the story planner to complete its response to process_user_action. "
+                    "Please wait for the '[Story Planner Result]' before creating an image."
+                )
+                self._trigger_after_tool_call("create_image")
+                return res
         
         resolved_refs = []
         if reference_images:
@@ -294,6 +323,10 @@ class ImageTools(BaseTools):
                     return res
             
             logger.debug(f"[ImageTools] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
+
+        with self._story_plan_lock:
+            if self.adventure_mode:
+                self._story_plan_completed = False
 
         self.record_tool_call("create_image")
 
@@ -486,12 +519,25 @@ class ImageTools(BaseTools):
         if effect not in supported_effects:
             return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
 
+        with self._story_plan_lock:
+            if self.adventure_mode and not self._story_plan_completed:
+                res = (
+                    "Error: Cannot show image: Waiting for the story planner to complete its response to process_user_action. "
+                    "Please wait for the '[Story Planner Result]' before showing an image."
+                )
+                self._trigger_after_tool_call("show_image")
+                return res
+
         resolved_path = self._find_image_path(file_path)
         if not resolved_path:
             logger.warning(f"[ImageTools] Image path or alias '{file_path}' could not be resolved.")
             res = f"Error: Image '{file_path}' not found."
             self._trigger_after_tool_call("show_image")
             return res
+
+        with self._story_plan_lock:
+            if self.adventure_mode:
+                self._story_plan_completed = False
 
         with self._cycle_lock:
             # If no image is currently displayed (cold start), display immediately and start cycle

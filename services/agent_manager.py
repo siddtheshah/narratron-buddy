@@ -304,6 +304,8 @@ class AgentSession:
 
         def handle_scene_reaction(result: Dict[str, Any]) -> None:
             """Place asynchronous planner output onto the live queue safely."""
+            if self.image_tools and hasattr(self.image_tools, "record_story_plan_completed"):
+                self.image_tools.record_story_plan_completed()
             message = "[Story Planner Result] " + json.dumps(result, ensure_ascii=False)
             content = types.Content(parts=[types.Part(text=message)])
 
@@ -749,6 +751,8 @@ class AgentSession:
 
     def record_story_plan_completed(self):
         """Record a successfully resolved story-planning turn and flush it for billing."""
+        if self.image_tools and hasattr(self.image_tools, "record_story_plan_completed"):
+            self.image_tools.record_story_plan_completed()
         self.story_plans_count += 1
         self.unbilled_story_plans += 1
         if self.character_voicing_enabled:
