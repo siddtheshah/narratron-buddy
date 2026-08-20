@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_COMPACTION_TRIGGER_TOKENS = 12_000
 DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
+DEFAULT_MAX_STICKY_NOTES = 5
 DEFAULT_MAX_NAMED_ELEMENTS = 5
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 DEFAULT_THINKING_BUDGET = 1024
@@ -57,9 +58,12 @@ MAX_PLAYER_ACTION_CHARS = 2_000
 MAX_NUDGE_CHARS = 1_000
 MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
 MAX_CONTEXT_FIELD_CHARS = 500
+MAX_STICKY_NOTE_TOPIC_CHARS = 100
+MAX_STICKY_NOTE_INFO_CHARS = 500
 MAX_PLOT_BEAT_CHARS = 500
 MAX_NARRATION_CHARS = 2_000
 MAX_NODES_AHEAD = 10
+MAX_STICKY_NOTES = 10
 MAX_NAMED_ELEMENTS = 10
 MAX_ACTIVE_CHARACTERS = 5
 MAX_LORE_DOCUMENTS_LISTED = 100
@@ -90,13 +94,13 @@ _CHARACTER_GEN_PROMPT_TEMPLATE = Template(
 {% if description -%}
 Character concept/description: {{ description }}
 {% endif -%}
-Current scene elements:
+Current scene sticky notes:
 {% if elements -%}
 {% for elem in elements -%}
-- {{ elem.name }}: {{ elem.content }}
+- {{ elem.topic or elem.name }}: {{ elem.info or elem.content }}
 {% endfor -%}
 {% else -%}
-(No active scene elements)
+(No active sticky notes)
 {% endif -%}
 
 Generate a compelling personality description, core motivation, and voice tags for this character in an adventure story experience.
@@ -105,12 +109,12 @@ Return ONLY a JSON object with keys 'personality' (string), 'motivation' (string
 )
 
 _STORY_CONTEXT_PROMPT_TEMPLATE = Template(
-    """Current scene elements:
+    """Current scene sticky notes:
 {% if not elements -%}
-(No active named elements)
+(No active sticky notes)
 {% else -%}
 {% for elem in elements -%}
-- {{ elem.name }}: {{ elem.content }}
+- {{ elem.topic or elem.name }}: {{ elem.info or elem.content }}
 {% endfor -%}
 {% endif -%}
 
@@ -167,6 +171,7 @@ No lore documents are available for this theater. Invent the lore, world details
 {% endif -%}
 
 # Tool Usage Guidelines
+- **Sticky Notes (`sticky_note`)**: Use sticky notes to track major plot developments, story milestones, key discoveries, active goals, and persistent scene state (characters, locations, objects). Call `sticky_note` with a concise `topic` and informative `info` whenever a major plot event or status shift occurs to maintain narrative continuity across turns. The scene holds at most {{ max_sticky_notes or 5 }} sticky notes; when full, adding a new topic will drop the oldest sticky note.
 - **Lore Browsing (`browse_lore`)**: When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore. You may call browse_lore at most 3 times in a single turn to consult lore documents or directories. After at most 3 lore lookups (or once you have sufficient context), proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling browse_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
 - **Character Generation (`generate_character_profile`)**: You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
@@ -275,6 +280,7 @@ def build_scene_reaction_prompt(
     style: str,
     nodes_ahead: int,
     lore_context: str = "",
+    max_sticky_notes: int = DEFAULT_MAX_STICKY_NOTES,
 ) -> str:
     """Render the authoritative scene reaction instruction for the planner agent."""
     return _SCENE_REACTION_PROMPT_TEMPLATE.render(
@@ -282,6 +288,7 @@ def build_scene_reaction_prompt(
         style=style,
         nodes_ahead=nodes_ahead,
         lore_context=lore_context,
+        max_sticky_notes=max_sticky_notes,
     ).strip()
 
 
@@ -315,8 +322,10 @@ class StoryPlanningTools(BaseTools):
             theater_id=theater_id,
             canvas_state_service=canvas_state_service,
         )
-        self._elements: OrderedDict[str, str] = OrderedDict()
-        self._elements_lock = Lock()
+        self._sticky_notes: OrderedDict[str, str] = OrderedDict()
+        self._elements = self._sticky_notes
+        self._sticky_notes_lock = Lock()
+        self._elements_lock = self._sticky_notes_lock
         self._characters: OrderedDict[str, Dict[str, str]] = OrderedDict()
         self._characters_lock = Lock()
         self._plot_beats: List[Dict[str, str]] = []
@@ -332,13 +341,14 @@ class StoryPlanningTools(BaseTools):
             str(configured_style).strip()[:MAX_STORY_PLANNING_STYLE_CHARS]
             or DEFAULT_STORY_PLANNING_STYLE
         )
-        self.max_named_elements: int = max(
+        self.max_sticky_notes: int = max(
             1,
             min(
-                int(self.config.get("max_named_elements", DEFAULT_MAX_NAMED_ELEMENTS)),
-                MAX_NAMED_ELEMENTS,
+                int(self.config.get("max_sticky_notes", self.config.get("max_named_elements", DEFAULT_MAX_STICKY_NOTES))),
+                MAX_STICKY_NOTES,
             ),
         )
+        self.max_named_elements: int = self.max_sticky_notes
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
         self.action_cooldown_base_seconds: float = max(
             0.0, float(self.config.get("action_cooldown_base_seconds", self.cooldown_duration or 10.0))
@@ -405,18 +415,21 @@ class StoryPlanningTools(BaseTools):
             auto_create_session=True,
         )
 
-        initial_elements = self.config.get("initial_elements", {})
-        if isinstance(initial_elements, dict):
-            for k, v in initial_elements.items():
-                if len(self._elements) >= self.max_named_elements:
+        initial_notes = self.config.get("initial_sticky_notes", self.config.get("initial_elements", {}))
+        if isinstance(initial_notes, dict):
+            for k, v in initial_notes.items():
+                if len(self._sticky_notes) >= self.max_sticky_notes:
                     break
-                self._elements[str(k)] = str(v)
-        elif isinstance(initial_elements, list):
-            for elem in initial_elements:
-                if len(self._elements) >= self.max_named_elements:
+                self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
+        elif isinstance(initial_notes, list):
+            for elem in initial_notes:
+                if len(self._sticky_notes) >= self.max_sticky_notes:
                     break
-                if isinstance(elem, dict) and "name" in elem and "content" in elem:
-                    self._elements[str(elem["name"])] = str(elem["content"])
+                if isinstance(elem, dict):
+                    topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                    info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
+                    if topic and info:
+                        self._sticky_notes[topic] = info
 
         initial_characters = self.config.get("initial_characters", {})
         if isinstance(initial_characters, dict):
@@ -446,10 +459,10 @@ class StoryPlanningTools(BaseTools):
 
     def export_story_planning_state(self) -> Dict[str, Any]:
         """Export durable story state."""
-        with self._elements_lock:
-            elements_list = [
-                {"name": name, "content": content}
-                for name, content in self._elements.items()
+        with self._sticky_notes_lock:
+            notes_list = [
+                {"topic": topic, "info": info, "name": topic, "content": info}
+                for topic, info in self._sticky_notes.items()
             ]
         with self._characters_lock:
             chars_list = [dict(c) for c in self._characters.values()]
@@ -457,7 +470,8 @@ class StoryPlanningTools(BaseTools):
             plot_beats = list(self._plot_beats)
 
         return {
-            "named_elements": elements_list,
+            "sticky_notes": [{"topic": n["topic"], "info": n["info"]} for n in notes_list],
+            "named_elements": [{"name": n["name"], "content": n["content"]} for n in notes_list],
             "characters": chars_list,
             "plot_beats": plot_beats,
             "last_scene_reaction": dict(self._last_scene_reaction),
@@ -468,16 +482,19 @@ class StoryPlanningTools(BaseTools):
         if not isinstance(state, dict):
             return
 
-        with self._elements_lock:
-            self._elements.clear()
-            elements = state.get("named_elements", [])
-            if isinstance(elements, list):
-                for elem in elements:
-                    if isinstance(elem, dict) and "name" in elem and "content" in elem:
-                        self._elements[str(elem["name"])] = str(elem["content"])
-            elif isinstance(elements, dict):
-                for k, v in elements.items():
-                    self._elements[str(k)] = str(v)
+        with self._sticky_notes_lock:
+            self._sticky_notes.clear()
+            notes = state.get("sticky_notes", state.get("named_elements", []))
+            if isinstance(notes, list):
+                for elem in notes:
+                    if isinstance(elem, dict):
+                        topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                        info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
+                        if topic and info:
+                            self._sticky_notes[topic] = info
+            elif isinstance(notes, dict):
+                for k, v in notes.items():
+                    self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
 
         with self._characters_lock:
             self._characters.clear()
@@ -511,7 +528,11 @@ class StoryPlanningTools(BaseTools):
             state_mgr = None
             if hasattr(self.canvas_state_service, "get"):
                 state_mgr = self.canvas_state_service.get(self.theater_id)
-            elif hasattr(self.canvas_state_service, "get_story_planning_state") or hasattr(self.canvas_state_service, "get_named_elements"):
+            elif (
+                hasattr(self.canvas_state_service, "get_story_planning_state")
+                or hasattr(self.canvas_state_service, "get_sticky_notes")
+                or hasattr(self.canvas_state_service, "get_named_elements")
+            ):
                 state_mgr = self.canvas_state_service
 
             if state_mgr and hasattr(state_mgr, "get_story_planning_state"):
@@ -520,18 +541,38 @@ class StoryPlanningTools(BaseTools):
                     self.import_story_planning_state(sp_state)
                     return
 
+            if state_mgr and hasattr(state_mgr, "get_sticky_notes"):
+                saved_notes = state_mgr.get_sticky_notes()
+                if saved_notes:
+                    with self._sticky_notes_lock:
+                        self._sticky_notes.clear()
+                        if isinstance(saved_notes, list):
+                            for elem in saved_notes:
+                                if isinstance(elem, dict):
+                                    topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                                    info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
+                                    if topic and info:
+                                        self._sticky_notes[topic] = info
+                        elif isinstance(saved_notes, dict):
+                            for k, v in saved_notes.items():
+                                self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
+                    return
+
             if state_mgr and hasattr(state_mgr, "get_named_elements"):
                 saved_elements = state_mgr.get_named_elements()
                 if saved_elements:
-                    with self._elements_lock:
-                        self._elements.clear()
+                    with self._sticky_notes_lock:
+                        self._sticky_notes.clear()
                         if isinstance(saved_elements, list):
                             for elem in saved_elements:
-                                if isinstance(elem, dict) and "name" in elem and "content" in elem:
-                                    self._elements[str(elem["name"])] = str(elem["content"])
+                                if isinstance(elem, dict):
+                                    topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                                    info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
+                                    if topic and info:
+                                        self._sticky_notes[topic] = info
                         elif isinstance(saved_elements, dict):
                             for k, v in saved_elements.items():
-                                self._elements[str(k)] = str(v)
+                                self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
         except Exception as e:
             logger.warning(
                 "[StoryPlanningTools] Failed to reload story planning state from session state: %s",
@@ -548,12 +589,15 @@ class StoryPlanningTools(BaseTools):
                 state_mgr = self.canvas_state_service.get(self.theater_id)
             elif (
                 hasattr(self.canvas_state_service, "set_story_planning_state")
+                or hasattr(self.canvas_state_service, "set_sticky_notes")
                 or hasattr(self.canvas_state_service, "set_named_elements")
             ):
                 state_mgr = self.canvas_state_service
 
             if state_mgr and hasattr(state_mgr, "set_story_planning_state"):
                 state_mgr.set_story_planning_state(self.export_story_planning_state())
+            elif state_mgr and hasattr(state_mgr, "set_sticky_notes"):
+                state_mgr.set_sticky_notes(self.get_present_sticky_notes())
             elif state_mgr and hasattr(state_mgr, "set_named_elements"):
                 state_mgr.set_named_elements(self.get_present_elements())
         except Exception as e:
@@ -601,7 +645,7 @@ class StoryPlanningTools(BaseTools):
             # In Adventure Mode the planner owns story context and progression;
             # the live agent only relays player input to this authority.
             return [self.process_user_action]
-        return [self.update_or_insert_named_element, self.clear_scene]
+        return [self.sticky_note, self.clear_scene]
 
 
     @property
@@ -924,48 +968,64 @@ class StoryPlanningTools(BaseTools):
             f"Motivation: {char_data['motivation']}. Quirk: {char_data['quirk']}{tags_str}."
         )
 
-    @with_cooldown("updating scene elements")
-    def update_or_insert_named_element(self, name: str, content: str) -> str:
-        """Insert or replace one named element in the current scene.
+    @logged_tool_call
+    def sticky_note(self, topic: str, info: str) -> str:
+        """Insert or replace one sticky note in the current scene.
 
-        Can be used to take objects, characters, locations, and relationships within a scene.
+        Can be used to note objects, characters, locations, lore, relationships, or state within a scene.
         """
-        clean_name = str(name or "").strip()
-        clean_content = str(content or "").strip()
-        if not clean_name:
-            return "Error: Named element name cannot be empty."
-        if not clean_content:
-            return "Error: Named element content cannot be empty."
+        clean_topic = str(topic or "").strip()
+        clean_info = str(info or "").strip()
+        if not clean_topic:
+            return "Error: Sticky note topic cannot be empty."
+        if not clean_info:
+            return "Error: Sticky note info cannot be empty."
+        if len(clean_topic) > MAX_STICKY_NOTE_TOPIC_CHARS:
+            return f"Error: Sticky note topic must be {MAX_STICKY_NOTE_TOPIC_CHARS} characters or fewer."
+        if len(clean_info) > MAX_STICKY_NOTE_INFO_CHARS:
+            return f"Error: Sticky note info must be {MAX_STICKY_NOTE_INFO_CHARS} characters or fewer."
 
-        with self._elements_lock:
-            is_update = clean_name in self._elements
+        dropped_topic = None
+        with self._sticky_notes_lock:
+            is_update = clean_topic in self._sticky_notes
             if is_update:
-                self._elements[clean_name] = clean_content
-                self._elements.move_to_end(clean_name)
+                self._sticky_notes[clean_topic] = clean_info
+                self._sticky_notes.move_to_end(clean_topic)
             else:
-                if len(self._elements) >= self.max_named_elements:
-                    self._elements.popitem(last=False)
-                self._elements[clean_name] = clean_content
+                if len(self._sticky_notes) >= self.max_sticky_notes:
+                    dropped_topic, _ = self._sticky_notes.popitem(last=False)
+                self._sticky_notes[clean_topic] = clean_info
+            current_count = len(self._sticky_notes)
 
         self.save_to_session_state()
 
         action = "Updated" if is_update else "Added"
         logger.debug(
-            "[StoryPlanningTools] %s named element '%s' (theater=%s). Active elements count: %d",
+            "[StoryPlanningTools] %s sticky note '%s' (theater=%s). Active sticky notes count: %d",
             action,
-            clean_name,
+            clean_topic,
             self.theater_id or "default",
-            len(self._elements),
+            current_count,
         )
 
-        return f"{action} named element '{clean_name}'."
+        warning = ""
+        if dropped_topic:
+            warning = f" Warning: Maximum limit of {self.max_sticky_notes} sticky notes reached. Oldest sticky note '{dropped_topic}' was dropped to make room."
+        elif current_count >= self.max_sticky_notes and not is_update:
+            warning = f" Note: Sticky note limit of {self.max_sticky_notes} reached. Adding another new note will drop the oldest one."
+
+        return f"{action} sticky note '{clean_topic}'.{warning}"
+
+    def update_or_insert_named_element(self, name: str, content: str) -> str:
+        """Backward-compatible alias for sticky_note."""
+        return self.sticky_note(topic=name, info=content)
 
     @logged_tool_call
     def clear_scene(self) -> str:
-        """Clear every named element and character from the current scene before starting a new one."""
-        with self._elements_lock:
-            elem_count = len(self._elements)
-            self._elements.clear()
+        """Clear every sticky note and character from the current scene before starting a new one."""
+        with self._sticky_notes_lock:
+            note_count = len(self._sticky_notes)
+            self._sticky_notes.clear()
 
         with self._characters_lock:
             char_count = len(self._characters)
@@ -980,23 +1040,32 @@ class StoryPlanningTools(BaseTools):
         self.save_to_session_state()
 
         logger.debug(
-            "[StoryPlanningTools] Cleared %d scene element(s), %d character(s), and plot beats (theater=%s).",
-            elem_count,
+            "[StoryPlanningTools] Cleared %d sticky note(s), %d character(s), and plot beats (theater=%s).",
+            note_count,
             char_count,
             self.theater_id or "default",
         )
 
         if char_count > 0:
-            return f"Cleared {elem_count} named element(s) and {char_count} character(s) from the scene."
-        return f"Cleared {elem_count} named element(s) from the scene."
+            return f"Cleared {note_count} sticky note(s) and {char_count} character(s) from the scene."
+        return f"Cleared {note_count} sticky note(s) from the scene."
+
+    def get_present_sticky_notes(self) -> list[dict[str, str]]:
+        """Return a stable snapshot of active sticky notes."""
+        with self._sticky_notes_lock:
+            return [
+                {
+                    "topic": topic[:MAX_STICKY_NOTE_TOPIC_CHARS],
+                    "info": info[:MAX_STICKY_NOTE_INFO_CHARS],
+                    "name": topic[:MAX_STICKY_NOTE_TOPIC_CHARS],
+                    "content": info[:MAX_STICKY_NOTE_INFO_CHARS],
+                }
+                for topic, info in list(self._sticky_notes.items())[-self.max_sticky_notes:]
+            ]
 
     def get_present_elements(self) -> list[dict[str, str]]:
         """Return a stable snapshot for live-agent observability."""
-        with self._elements_lock:
-            return [
-                {"name": name[:MAX_CONTEXT_FIELD_CHARS], "content": content[:MAX_CONTEXT_FIELD_CHARS]}
-                for name, content in list(self._elements.items())[-self.max_named_elements:]
-            ]
+        return self.get_present_sticky_notes()
 
     def get_present_characters(self) -> list[dict[str, Any]]:
         """Return a stable snapshot of active characters with personalities and motivations."""
@@ -1149,6 +1218,7 @@ class StoryPlanningTools(BaseTools):
             style=self.style,
             nodes_ahead=self.nodes_ahead,
             lore_context=lore_context,
+            max_sticky_notes=self.max_sticky_notes,
         )
 
     def _create_planner_agent(self) -> Agent:
@@ -1169,7 +1239,12 @@ class StoryPlanningTools(BaseTools):
                 location=self.vertex_location,
             ),
             instruction=self._build_planner_instruction,
-            tools=[self.browse_lore, self.generate_character_profile, self.roll_dice],
+            tools=[
+                self.browse_lore,
+                self.generate_character_profile,
+                self.roll_dice,
+                self.sticky_note,
+            ],
             output_schema=SceneReaction,
             output_key="scene_reaction",
             disallow_transfer_to_parent=True,

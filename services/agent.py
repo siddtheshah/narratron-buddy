@@ -119,8 +119,10 @@ Besides greeting the orator initially, use this in tandem with show_image to sho
 ## Context Management
 In order to maintain coherency, you must use these tools to keep track of the scene state. 
 
-* update_or_insert_named_element <name> <content>: Add a named element to the current scene or update the existing element with that name. The scene holds at most five elements.
-* clear_scene: Remove every named element when beginning a new scene. Use when the orator indicates a scene transition.
+{% if not adventure_mode %}
+* sticky_note <topic> <info>: Add a sticky note to the current scene or update the existing note with that topic. The scene holds at most five notes.
+* clear_scene: Remove every sticky note when beginning a new scene. Use when the orator indicates a scene transition.
+{% endif %}
 {% if adventure_mode %}
 * process_user_action <user_action> <nudge>: Submit the orator's action/speech to the authoritative script engine. You may optionally supply a nudge to introduce story elements or directions for the planner to accommodate. Do not use this unless the user has spoken, requests it out of character, a chat suggestion pushes for it, or you observe/receive a doodle that suggests an interesting idea. This tool returns immediately; wait for the `[Story Planner Result]` system notification, then relay its narration and use peripheral tools to stage it AFTER the action is processed. Dialogue is displayed automatically on the canvas.
 DO NOT call this tool when the user is silent, and DO NOT call this again until you are confident the user has given their full response.
@@ -271,7 +273,7 @@ def create_tool_bundle_for_session(
         tools.append(story_planning_tools.process_user_action)
     else:
         tools.extend([
-            story_planning_tools.update_or_insert_named_element,
+            story_planning_tools.sticky_note,
             story_planning_tools.clear_scene,
         ])
     if music_tools.use_generated_music:

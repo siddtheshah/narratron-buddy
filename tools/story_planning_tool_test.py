@@ -13,12 +13,15 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
 from tools.story_planning_tool import (
+    DEFAULT_MAX_STICKY_NOTES,
     DEFAULT_MAX_NAMED_ELEMENTS,
     DEFAULT_STORY_PLANNING_STYLE,
     DEFAULT_THINKING_BUDGET,
     MAX_LORE_DOCUMENTS_LISTED,
     MAX_NUDGE_CHARS,
     MAX_PLAYER_ACTION_CHARS,
+    MAX_STICKY_NOTE_TOPIC_CHARS,
+    MAX_STICKY_NOTE_INFO_CHARS,
     MAX_STORY_PLANNING_STYLE_CHARS,
     SceneReaction,
     StoryPlanningTools,
@@ -543,6 +546,84 @@ class TestStoryPlanningTools(unittest.TestCase):
             tools.update_or_insert_named_element(f"key_{index}", f"value_{index}")
         self.assertEqual(len(tools.get_present_elements()), DEFAULT_MAX_NAMED_ELEMENTS)
         self.assertEqual(tools.get_present_elements()[0]["name"], "key_1")
+
+    def test_sticky_note_insert_update_and_bounding(self):
+        tools = self._make_tools(theater_id="sticky_theater")
+        # Insert
+        res = tools.sticky_note("setting", "Dark forest at midnight")
+        self.assertIn("Added sticky note 'setting'", res)
+        self.assertEqual(len(tools.get_present_sticky_notes()), 1)
+        self.assertEqual(tools.get_present_sticky_notes()[0]["topic"], "setting")
+        self.assertEqual(tools.get_present_sticky_notes()[0]["info"], "Dark forest at midnight")
+
+        # Update
+        res_upd = tools.sticky_note("setting", "Sunny glade at noon")
+        self.assertIn("Updated sticky note 'setting'", res_upd)
+        self.assertEqual(len(tools.get_present_sticky_notes()), 1)
+        self.assertEqual(tools.get_present_sticky_notes()[0]["info"], "Sunny glade at noon")
+
+        # Bounding
+        last_res = ""
+        for i in range(DEFAULT_MAX_STICKY_NOTES):
+            last_res = tools.sticky_note(f"topic_{i}", f"info_{i}")
+        self.assertEqual(len(tools.get_present_sticky_notes()), DEFAULT_MAX_STICKY_NOTES)
+        # 'setting' should have been evicted and warning emitted
+        self.assertIn("Warning: Maximum limit of", last_res)
+        self.assertIn("Oldest sticky note 'setting' was dropped", last_res)
+        topics = [n["topic"] for n in tools.get_present_sticky_notes()]
+        self.assertNotIn("setting", topics)
+        self.assertIn("topic_0", topics)
+
+    def test_sticky_note_size_limits_and_validation(self):
+        tools = self._make_tools(theater_id="sticky_limits")
+        # Empty topic
+        res = tools.sticky_note("", "valid info")
+        self.assertIn("Error: Sticky note topic cannot be empty", res)
+
+        # Empty info
+        res = tools.sticky_note("valid_topic", "")
+        self.assertIn("Error: Sticky note info cannot be empty", res)
+
+        # Topic too long
+        long_topic = "t" * (MAX_STICKY_NOTE_TOPIC_CHARS + 1)
+        res = tools.sticky_note(long_topic, "valid info")
+        self.assertIn("Error: Sticky note topic must be", res)
+
+        # Info too long
+        long_info = "i" * (MAX_STICKY_NOTE_INFO_CHARS + 1)
+        res = tools.sticky_note("valid_topic", long_info)
+        self.assertIn("Error: Sticky note info must be", res)
+
+    def test_story_planning_agent_has_sticky_note_tool(self):
+        tools = self._make_tools(theater_id="planner_tools_check")
+        agent = tools._planner_agent
+        tool_callables = [t for t in agent.tools]
+        self.assertIn(tools.sticky_note, tool_callables)
+
+    def test_sticky_notes_automatically_added_to_story_context(self):
+        tools = self._make_tools(theater_id="context_check")
+        tools.sticky_note("quest_item", "Golden Amulet of Ra")
+        tools.sticky_note("weather", "Thunderstorm")
+
+        instruction = tools._build_planner_instruction()
+        self.assertIn("Current scene sticky notes:", instruction)
+        self.assertIn("- quest_item: Golden Amulet of Ra", instruction)
+        self.assertIn("- weather: Thunderstorm", instruction)
+
+    def test_live_agent_tools_gated_by_adventure_mode(self):
+        # Non-adventure mode: live agent gets sticky_note and clear_scene
+        tools_normal = self._make_tools(config={"adventure_mode": False})
+        normal_exposed = tools_normal.get_tools()
+        self.assertIn(tools_normal.sticky_note, normal_exposed)
+        self.assertIn(tools_normal.clear_scene, normal_exposed)
+        self.assertNotIn(tools_normal.process_user_action, normal_exposed)
+
+        # Adventure mode: live agent only gets process_user_action
+        tools_adv = self._make_tools(config={"adventure_mode": True})
+        adv_exposed = tools_adv.get_tools()
+        self.assertIn(tools_adv.process_user_action, adv_exposed)
+        self.assertNotIn(tools_adv.sticky_note, adv_exposed)
+        self.assertNotIn(tools_adv.clear_scene, adv_exposed)
 
     def test_planner_action_is_nonblocking_and_commits_plot_beats(self):
         completed = threading.Event()

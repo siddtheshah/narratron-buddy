@@ -136,6 +136,12 @@ class CanvasStateService:
     def set_viewer_collab_enabled(self, enabled: bool, theater_id: Optional[str] = None) -> None:
         self.get(theater_id).set_viewer_collab_enabled(enabled)
 
+    def get_sticky_notes(self, theater_id: Optional[str] = None) -> list[dict[str, str]]:
+        return self.get(theater_id).get_sticky_notes()
+
+    def set_sticky_notes(self, notes: list[dict[str, str]], theater_id: Optional[str] = None) -> None:
+        self.get(theater_id).set_sticky_notes(notes)
+
     def get_named_elements(self, theater_id: Optional[str] = None) -> list[dict[str, str]]:
         return self.get(theater_id).get_named_elements()
 

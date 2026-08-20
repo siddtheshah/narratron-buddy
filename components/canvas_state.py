@@ -141,25 +141,44 @@ class CanvasStateManager:
             except Exception as e:
                 logger.warning(f"Failed to load canvas state for {self.theater_id}: {e}")
 
-    def get_named_elements(self) -> List[Dict[str, str]]:
+    def get_sticky_notes(self) -> List[Dict[str, str]]:
+        if "sticky_notes" in self.story_planning_state:
+            return list(self.story_planning_state.get("sticky_notes", []))
         if "named_elements" in self.story_planning_state:
-            return list(self.story_planning_state.get("named_elements", []))
+            return [
+                {
+                    "topic": elem.get("topic", elem.get("name", "")),
+                    "info": elem.get("info", elem.get("content", "")),
+                    "name": elem.get("topic", elem.get("name", "")),
+                    "content": elem.get("info", elem.get("content", "")),
+                }
+                for elem in self.story_planning_state.get("named_elements", [])
+            ]
         return list(self.named_elements)
 
-    def set_named_elements(self, elements: List[Dict[str, str]]):
-        self.named_elements = list(elements or [])
+    def set_sticky_notes(self, notes: List[Dict[str, str]]):
+        self.named_elements = list(notes or [])
         if isinstance(self.story_planning_state, dict):
-            self.story_planning_state["named_elements"] = list(elements or [])
+            self.story_planning_state["sticky_notes"] = list(notes or [])
+            self.story_planning_state["named_elements"] = list(notes or [])
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.export_theater_data(theater_dir=sess_dir)
+
+    def get_named_elements(self) -> List[Dict[str, str]]:
+        return self.get_sticky_notes()
+
+    def set_named_elements(self, elements: List[Dict[str, str]]):
+        self.set_sticky_notes(elements)
 
     def get_story_planning_state(self) -> Dict[str, Any]:
         return dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
 
     def set_story_planning_state(self, state: Dict[str, Any]):
         self.story_planning_state = dict(state) if isinstance(state, dict) else {}
-        if "named_elements" in self.story_planning_state:
+        if "sticky_notes" in self.story_planning_state:
+            self.named_elements = list(self.story_planning_state["sticky_notes"])
+        elif "named_elements" in self.story_planning_state:
             self.named_elements = list(self.story_planning_state["named_elements"])
         sess_dir = self.theater.directory()
         if sess_dir.exists():
@@ -199,7 +218,7 @@ class CanvasStateManager:
         return []
 
     def get_character_description(self, speaker: str) -> str:
-        """Find character metadata in story planning state or named elements."""
+        """Find character metadata in story planning state or named elements / sticky notes."""
         normalized = speaker.strip().lower()
         characters = self.story_planning_state.get("characters", [])
         if isinstance(characters, list):
@@ -213,10 +232,12 @@ class CanvasStateManager:
                         char.get("quirk", ""),
                     ]
                     return " ".join(str(p) for p in desc_parts if p).strip()
-        for elem in self.get_named_elements():
-            if isinstance(elem, dict) and str(elem.get("name", "")).strip().lower() == normalized:
-                content = elem.get("content") or elem.get("description") or ""
-                return f"{elem.get('name', '')} {content}".strip()
+        for elem in self.get_sticky_notes():
+            if isinstance(elem, dict):
+                key = str(elem.get("topic") or elem.get("name") or "").strip().lower()
+                if key == normalized:
+                    content = elem.get("info") or elem.get("content") or elem.get("description") or ""
+                    return f"{elem.get('topic') or elem.get('name', '')} {content}".strip()
         return speaker
 
     def enable_scene_speech(self, provider: SpeechProvider | None = None) -> None:

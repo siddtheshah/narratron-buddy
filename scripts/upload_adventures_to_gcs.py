@@ -101,17 +101,17 @@ DEFAULT_ADVENTURE_METADATA: Dict[str, Dict[str, Any]] = {
         "difficulty": "Beginner",
         "recommended_players": "1-4",
     },
-    "Animation Test": {
-        "id": "animation-test",
-        "title": "Animation & Scene Dynamic Test",
-        "description": "High-octane scene testing suite designed for real-time visual animation triggers, dynamic music cues, and character entrance transitions.",
+    "Pantheon of Hearts": {
+        "id": "pantheon-of-hearts",
+        "title": "Pantheon of Hearts: Dating the Divine",
+        "description": "Summoned to Mount Olympus after accidentally swiping right on Cupid's divine matchmaker app, you must survive hilarious speed-dates with neurotic deities, brooding psychopomps, and chaotic tricksters. Balance affection scores, avoid divine smiting, and find true love with the immortals!",
         "author": "Narratron Team",
-        "genre": "Test Lab",
-        "tags": ["Animation", "Visuals", "Testing", "Action"],
-        "created_at": "2026-08-13T08:00:00Z",
-        "cover_image": "reference_library/quancho.png",
-        "difficulty": "Beginner",
-        "recommended_players": "1",
+        "genre": "Romantic Comedy / Dating Sim",
+        "tags": ["Dating Sim", "Comedy", "Mythology", "Romance", "Interactive Fiction", "Roleplay"],
+        "created_at": "2026-08-19T12:00:00Z",
+        "cover_image": "references/pantheon_cover.jpg",
+        "difficulty": "Casual / Intermediate",
+        "recommended_players": "1-2",
     },
 }
 
@@ -180,21 +180,136 @@ def collect_adventure_files(adventure_dir: Path) -> List[Path]:
     return files
 
 
+def clear_exact_matching_adventure(
+    bucket: Any,
+    gcs_prefix: str,
+    adventure_slug: str,
+    adventure_title: Optional[str] = None,
+    dry_run: bool = False,
+) -> int:
+    """Safely clear existing files for an adventure in GCS ONLY if there is an exact name/slug match.
+
+    Safety Guards:
+    1. Validates that adventure_slug and gcs_prefix are non-empty, safe strings.
+    2. Strictly targets only the exact path: '{gcs_prefix}/{adventure_slug}/'.
+    3. If metadata.json exists at that exact prefix in GCS, verifies the existing 'id' or 'title'
+       matches this adventure exactly before deleting.
+    4. Validates that every blob targeted for deletion strictly starts with the exact prefix.
+    """
+    clean_prefix = gcs_prefix.strip("/")
+    clean_slug = adventure_slug.strip("/")
+
+    # Strict safety assertions
+    if not clean_prefix or clean_prefix in ("/", ".", "*"):
+        print(f"  ⚠️ Deletion aborted: invalid GCS prefix '{gcs_prefix}'.", file=sys.stderr)
+        return 0
+
+    if not clean_slug or clean_slug in ("/", ".", "*") or len(clean_slug) < 2:
+        print(f"  ⚠️ Deletion aborted: invalid or unsafe adventure slug '{adventure_slug}'.", file=sys.stderr)
+        return 0
+
+    exact_target_prefix = f"{clean_prefix}/{clean_slug}/"
+
+    try:
+        existing_blobs = list(bucket.list_blobs(prefix=exact_target_prefix))
+    except Exception as e:
+        print(f"  ⚠️ Could not check existing blobs under '{exact_target_prefix}': {e}", file=sys.stderr)
+        return 0
+
+    if not existing_blobs:
+        # Nothing exists at this exact prefix, nothing to clear
+        return 0
+
+    # Verify existing metadata.json if present to ensure exact match confirmation
+    meta_blob = next((b for b in existing_blobs if b.name == f"{exact_target_prefix}metadata.json"), None)
+    if meta_blob:
+        try:
+            raw_meta = meta_blob.download_as_bytes()
+            existing_meta = json.loads(raw_meta.decode("utf-8"))
+            existing_id = (existing_meta.get("id") or "").strip()
+            existing_title = (existing_meta.get("title") or "").strip()
+
+            # Exact match check
+            matches_id = existing_id and existing_id == clean_slug
+            matches_title = (
+                bool(existing_title)
+                and bool(adventure_title)
+                and (existing_title.strip().lower() == adventure_title.strip().lower())
+            )
+
+            if not (matches_id or matches_title):
+                print(
+                    f"  ⚠️ Deletion skipped: Existing metadata at '{exact_target_prefix}' "
+                    f"(id='{existing_id}', title='{existing_title}') does not match "
+                    f"(id='{clean_slug}', title='{adventure_title}').",
+                    file=sys.stderr,
+                )
+                return 0
+        except Exception as e:
+            print(f"  ⚠️ Warning: Could not parse existing metadata.json: {e}.", file=sys.stderr)
+
+    # Validate that every single blob to be deleted strictly starts with the exact target prefix
+    for blob in existing_blobs:
+        if not blob.name.startswith(exact_target_prefix):
+            print(
+                f"  ❌ Deletion aborted: Blob '{blob.name}' does not strictly match exact prefix '{exact_target_prefix}'.",
+                file=sys.stderr,
+            )
+            return 0
+
+    total_deleted = 0
+    if dry_run:
+        print(f"  [DRY-RUN] Exact match confirmed: Found {len(existing_blobs)} existing blob(s) in gs://{getattr(bucket, 'name', 'bucket')}/{exact_target_prefix} - would clear before upload.")
+        total_deleted = len(existing_blobs)
+    else:
+        print(f"  🗑️  Exact match confirmed: Clearing {len(existing_blobs)} existing blob(s) from gs://{getattr(bucket, 'name', 'bucket')}/{exact_target_prefix}...")
+        try:
+            if hasattr(bucket, "delete_blobs"):
+                bucket.delete_blobs(existing_blobs)
+                total_deleted = len(existing_blobs)
+            else:
+                for b in existing_blobs:
+                    b.delete()
+                    total_deleted += 1
+        except Exception:
+            for b in existing_blobs:
+                try:
+                    b.delete()
+                    total_deleted += 1
+                except Exception as e:
+                    print(f"    ⚠️ Failed to delete {getattr(b, 'name', b)}: {e}", file=sys.stderr)
+        print(f"  ✓ Cleared {total_deleted} existing file(s) from gs://{getattr(bucket, 'name', 'bucket')}/{exact_target_prefix}")
+
+    return total_deleted
+
+
 def upload_adventure_to_gcs(
     adventure_dir: Path,
     bucket: Any,
     gcs_prefix: str,
+    clear_existing: bool = True,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """Upload an adventure directory to GCS."""
+    """Upload an adventure directory to GCS, clearing existing exact matching version first."""
     metadata = create_or_load_metadata(adventure_dir)
     adventure_slug = metadata.get("id") or slugify(adventure_dir.name)
+    adventure_title = metadata.get("title", adventure_dir.name)
     files = collect_adventure_files(adventure_dir)
+
+    print(f"\n📂 Processing Adventure: '{adventure_title}' ({adventure_dir.name}) -> {gcs_prefix}/{adventure_slug}/")
+
+    cleared_count = 0
+    if clear_existing and bucket is not None:
+        cleared_count = clear_exact_matching_adventure(
+            bucket=bucket,
+            gcs_prefix=gcs_prefix,
+            adventure_slug=adventure_slug,
+            adventure_title=adventure_title,
+            dry_run=dry_run,
+        )
 
     total_bytes = 0
     uploaded_files: List[str] = []
-
-    print(f"\n📂 Processing Adventure: '{metadata.get('title')}' ({adventure_dir.name}) -> {gcs_prefix}/{adventure_slug}/")
 
     for file_path in files:
         rel_path = file_path.relative_to(adventure_dir).as_posix()
@@ -207,7 +322,7 @@ def upload_adventure_to_gcs(
             content_type = "application/octet-stream"
 
         if dry_run:
-            print(f"  [DRY-RUN] Would upload: {rel_path} ({size} bytes, {content_type}) -> gs://{bucket.name}/{blob_name}")
+            print(f"  [DRY-RUN] Would upload: {rel_path} ({size} bytes, {content_type}) -> gs://{getattr(bucket, 'name', 'bucket')}/{blob_name}")
         else:
             blob = bucket.blob(blob_name)
             blob.upload_from_filename(str(file_path), content_type=content_type)
@@ -217,20 +332,26 @@ def upload_adventure_to_gcs(
 
     return {
         "id": adventure_slug,
-        "title": metadata.get("title"),
+        "title": adventure_title,
         "created_at": metadata.get("created_at"),
         "files_count": len(uploaded_files),
+        "cleared_count": cleared_count,
         "total_bytes": total_bytes,
     }
 
 
 def main():
     load_dotenv()
+    default_src = (
+        DEFAULT_SOURCE_DIR
+        if Path(DEFAULT_SOURCE_DIR).exists()
+        else ("adventures" if Path("adventures").exists() else DEFAULT_SOURCE_DIR)
+    )
     parser = argparse.ArgumentParser(description="Upload premade adventures to GCS")
     parser.add_argument(
         "--source-dir",
-        default=os.getenv("NARRATRON_ASSETS_DIR", DEFAULT_SOURCE_DIR),
-        help=f"Source folder containing premade adventures (default: {DEFAULT_SOURCE_DIR})",
+        default=os.getenv("NARRATRON_ASSETS_DIR", default_src),
+        help=f"Source folder containing premade adventures (default: {default_src})",
     )
     parser.add_argument(
         "--bucket",
@@ -248,9 +369,15 @@ def main():
         help=f"GCS destination prefix/folder (default: {DEFAULT_PREFIX})",
     )
     parser.add_argument(
+        "--clear-existing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Clear existing adventure files from GCS before uploading new version (default: True)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Simulate upload without transferring files",
+        help="Simulate upload and clearing without transferring or deleting files",
     )
     args = parser.parse_args()
 
@@ -278,6 +405,8 @@ def main():
 
     print(f"🚀 Found {len(adventure_folders)} adventure folder(s) to process")
     print(f"☁️ Target GCS Bucket: gs://{args.bucket}/{args.prefix}")
+    if args.clear_existing:
+        print("🧹 Clear existing matching adventures: Enabled")
 
     client = None
     bucket = None
@@ -294,10 +423,20 @@ def main():
             print(f"❌ GCS Client Initialization Error: {e}", file=sys.stderr)
             sys.exit(1)
     else:
-        # Mock bucket object for dry-run
-        class MockBucket:
-            name = args.bucket
-        bucket = MockBucket()
+        # Mock bucket or real bucket inspection for dry-run
+        try:
+            from google.cloud import storage
+            project = os.getenv("GOOGLE_CLOUD_PROJECT", "narratron")
+            client = storage.Client(project=project)
+            bucket = client.bucket(args.bucket)
+        except Exception:
+            class MockBucket:
+                name = args.bucket
+                def list_blobs(self, prefix=""):
+                    return []
+                def blob(self, name):
+                    return None
+            bucket = MockBucket()
 
     results = []
     for adv_dir in adventure_folders:
@@ -305,6 +444,7 @@ def main():
             adventure_dir=adv_dir,
             bucket=bucket,
             gcs_prefix=args.prefix.strip("/"),
+            clear_existing=args.clear_existing,
             dry_run=args.dry_run,
         )
         results.append(res)
@@ -314,7 +454,8 @@ def main():
     print("========================================================")
     for r in results:
         mb = r["total_bytes"] / (1024 * 1024)
-        print(f" • {r['title']} [{r['id']}] - {r['files_count']} files ({mb:.2f} MB) - Date: {r['created_at']}")
+        cleared_str = f" [cleared {r['cleared_count']} old file(s)]" if r.get("cleared_count") else ""
+        print(f" • {r['title']} [{r['id']}] - {r['files_count']} files uploaded ({mb:.2f} MB){cleared_str} - Date: {r['created_at']}")
     print("========================================================\n")
 
 
