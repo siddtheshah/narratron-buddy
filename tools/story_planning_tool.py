@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_COMPACTION_TRIGGER_TOKENS = 12_000
 DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
 DEFAULT_MAX_STICKY_NOTES = 5
-DEFAULT_MAX_NAMED_ELEMENTS = 5
+DEFAULT_MAX_ACTIVE_CHARACTERS = 3
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 DEFAULT_THINKING_BUDGET = 1024
 USER_ACTION_TIMEOUT_SECONDS = 20.0
@@ -65,7 +65,7 @@ MAX_NARRATION_CHARS = 2_000
 MAX_NODES_AHEAD = 10
 MAX_STICKY_NOTES = 10
 MAX_NAMED_ELEMENTS = 10
-MAX_ACTIVE_CHARACTERS = 5
+MAX_ACTIVE_CHARACTERS = 10
 MAX_LORE_DOCUMENTS_LISTED = 100
 MAX_READ_LORE_CALLS_PER_TURN = 3
 MAX_SEARCH_LORE_CALLS_PER_TURN = 3
@@ -126,6 +126,9 @@ Active characters, personalities, motivations & distinct quirks:
 {% for char in characters -%}
 - {{ char.name }}: Personality: {{ char.personality }} | Motivation: {{ char.motivation }} | Distinct Quirk: {{ char.quirk }}{% if char.voice_tags %} | Voice Tags: {{ char.voice_tags | join(', ') }}{% endif %}{% if char.description %} (Description: {{ char.description }}){% endif %}
 {% endfor -%}
+{% if total_characters and total_characters > characters | length -%}
+(Showing {{ characters | length }} most recent of {{ total_characters }} total session characters. Use 'lookup_character' tool to look up others.)
+{% endif -%}
 {% endif -%}
 
 {% if reused_nodes -%}
@@ -175,6 +178,7 @@ No lore documents are available for this theater. Invent the lore, world details
 - **Sticky Notes (`sticky_note`)**: Use sticky notes to track major plot developments, story milestones, key discoveries, active goals, and persistent scene state (characters, locations, objects). Call `sticky_note` with a concise `topic` and informative `info` whenever a major plot event or status shift occurs to maintain narrative continuity across turns. The scene holds at most {{ max_sticky_notes or 5 }} sticky notes; when full, adding a new topic will drop the oldest sticky note.
 - **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
+- **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
 - **Character Generation (`generate_character_profile`)**: You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 - Those tools only provide information: the scene delta is the sole source of changes.
 
@@ -267,12 +271,14 @@ def build_story_context_prompt(
     elements: List[Dict[str, str]],
     characters: List[Dict[str, Any]],
     reused_nodes: List[Dict[str, Any]],
+    total_characters: int = 0,
 ) -> str:
     """Render shared scene, character, and plot context for every planner task."""
     return _STORY_CONTEXT_PROMPT_TEMPLATE.render(
         elements=elements or [],
         characters=characters or [],
         reused_nodes=reused_nodes or [],
+        total_characters=total_characters,
     ).strip()
 
 
@@ -350,6 +356,13 @@ class StoryPlanningTools(BaseTools):
             ),
         )
         self.max_named_elements: int = self.max_sticky_notes
+        self.max_active_characters: int = max(
+            1,
+            min(
+                int(self.config.get("max_active_characters", DEFAULT_MAX_ACTIVE_CHARACTERS)),
+                MAX_ACTIVE_CHARACTERS,
+            ),
+        )
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
         self.action_cooldown_base_seconds: float = max(
             0.0, float(self.config.get("action_cooldown_base_seconds", self.cooldown_duration or 10.0))
@@ -1028,6 +1041,62 @@ class StoryPlanningTools(BaseTools):
         return "\n".join(items[:MAX_LORE_DOCUMENTS_LISTED])
 
     @logged_tool_call
+    def lookup_character(self, query: str = "") -> str:
+        """List all session characters or search for a character by name or trait.
+
+        Call without ``query`` (or with an empty query) to list all known character names and roles in this session.
+        Call with a character name or search term to look up detailed profiles (personality, motivation, quirk, voice tags).
+        """
+        clean_query = str(query or "").strip()
+        with self._characters_lock:
+            if not self._characters:
+                return "No characters have been created in this session yet."
+
+            if not clean_query:
+                lines = [f"Known characters in this session ({len(self._characters)} total):"]
+                for name, char in self._characters.items():
+                    desc = f" - {char.get('description')}" if char.get("description") else ""
+                    pers = f" | Personality: {char.get('personality')}" if char.get("personality") else ""
+                    lines.append(f"- {name}{desc}{pers}")
+                return "\n".join(lines)
+
+            query_lower = clean_query.lower()
+            matches = []
+
+            for name, char in self._characters.items():
+                if name.lower() == query_lower:
+                    matches.insert(0, char)
+                elif query_lower in name.lower():
+                    matches.append(char)
+                else:
+                    combined = f"{char.get('description', '')} {char.get('personality', '')} {char.get('motivation', '')} {char.get('quirk', '')}".lower()
+                    if query_lower in combined:
+                        matches.append(char)
+
+            if not matches:
+                names_list = ", ".join(self._characters.keys())
+                return f"No character matching '{clean_query}' found. Known characters: {names_list}"
+
+            seen_names = set()
+            unique_matches = []
+            for m in matches:
+                if m["name"] not in seen_names:
+                    seen_names.add(m["name"])
+                    unique_matches.append(m)
+
+            lines = [f"Found {len(unique_matches)} character(s) matching '{clean_query}':"]
+            for char in unique_matches:
+                desc_str = f" ({char['description']})" if char.get("description") else ""
+                voice_part = f" | Voice Tags: {', '.join(char['voice_tags'])}" if char.get("voice_tags") else ""
+                lines.append(
+                    f"- {char['name']}{desc_str}:\n"
+                    f"  Personality: {char.get('personality', 'N/A')}\n"
+                    f"  Motivation: {char.get('motivation', 'N/A')}\n"
+                    f"  Quirk: {char.get('quirk', 'N/A')}{voice_part}"
+                )
+            return "\n".join(lines)
+
+    @logged_tool_call
     def generate_character_profile(
         self,
         name: str,
@@ -1245,7 +1314,7 @@ class StoryPlanningTools(BaseTools):
         with self._characters_lock:
             return [
                 dict(char)
-                for char in list(self._characters.values())[-MAX_ACTIVE_CHARACTERS:]
+                for char in list(self._characters.values())[-self.max_active_characters:]
             ]
 
     def get_plot_beats(self) -> List[Dict[str, str]]:
@@ -1370,9 +1439,12 @@ class StoryPlanningTools(BaseTools):
 
     def _build_planner_instruction(self, ctx: Any = None) -> str:
         """Render the dynamic scene reaction instruction for the planner agent."""
+        with self._characters_lock:
+            total_chars = len(self._characters)
         snapshot = {
             "elements": self.get_present_elements(),
             "characters": self.get_present_characters(),
+            "total_characters": total_chars,
             "plot_beats": [node.get("plot_beat", "") for node in self.get_plot_beats()],
             "nodes_ahead": self.nodes_ahead,
             "style": self.style,
@@ -1385,6 +1457,7 @@ class StoryPlanningTools(BaseTools):
                 {"node_index": index, "plot_beat": beat}
                 for index, beat in enumerate(snapshot["plot_beats"])
             ],
+            total_characters=snapshot["total_characters"],
         )
         return build_scene_reaction_prompt(
             context=planner_context,
@@ -1415,6 +1488,7 @@ class StoryPlanningTools(BaseTools):
             tools=[
                 self.search_lore,
                 self.read_lore,
+                self.lookup_character,
                 self.generate_character_profile,
                 self.roll_dice,
                 self.sticky_note,

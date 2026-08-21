@@ -24,7 +24,6 @@ music:
     style: "no lyrics, instrumental focus, steady volume, 90 second duration, loopable ambiance"
 
 story_planning:
-    # Non adventure mode
     max_named_elements: 5
     initial_elements: {}
 

@@ -1064,6 +1064,71 @@ class TestStoryPlanningTools(unittest.TestCase):
             res_hazards = tools.search_lore("hazards vulnerability cargo")
             self.assertIn("03_hazards_and_cargo_vulnerability.txt", res_hazards)
 
+    def test_lookup_character_empty_when_no_characters_exist(self):
+        tools = self._make_tools()
+        res = tools.lookup_character()
+        self.assertEqual(res, "No characters have been created in this session yet.")
+
+    def test_lookup_character_lists_all_when_query_empty(self):
+        tools = self._make_tools()
+        tools.generate_character(name="Captain Vance", description="Grizzled sea captain", personality="Stern", motivation="Protect crew")
+        tools.generate_character(name="Elena", description="Mysterious scholar", personality="Curious", motivation="Uncover ancient truths")
+
+        res = tools.lookup_character()
+        self.assertIn("Known characters in this session (2 total):", res)
+        self.assertIn("Captain Vance", res)
+        self.assertIn("Elena", res)
+        self.assertIn("Grizzled sea captain", res)
+
+    def test_lookup_character_queries_by_name_or_traits(self):
+        tools = self._make_tools()
+        tools.generate_character(name="Marcus", description="Roman merchant", personality="Greedy", motivation="Gold", quirk="Counts coins")
+        tools.generate_character(name="Aurelia", description="Patrician noble", personality="Proud", motivation="Influence", quirk="Adjusts ring")
+
+        # Match by name
+        res_marcus = tools.lookup_character("Marcus")
+        self.assertIn("Found 1 character(s) matching 'Marcus':", res_marcus)
+        self.assertIn("Personality: Greedy", res_marcus)
+        self.assertIn("Counts coins", res_marcus)
+
+        # Match by trait (case-insensitive)
+        res_trait = tools.lookup_character("patrician")
+        self.assertIn("Found 1 character(s) matching 'patrician':", res_trait)
+        self.assertIn("Aurelia", res_trait)
+
+    def test_lookup_character_returns_not_found_message(self):
+        tools = self._make_tools()
+        tools.generate_character(name="Marcus", description="Roman merchant")
+
+        res = tools.lookup_character("NonexistentPerson")
+        self.assertIn("No character matching 'NonexistentPerson' found. Known characters: Marcus", res)
+
+    def test_lookup_character_registered_in_planner_agent(self):
+        tools = self._make_tools(config={"adventure_mode": True})
+        agent = tools._planner_agent
+        tool_names = [getattr(t, "__name__", str(t)) for t in agent.tools]
+        self.assertIn("lookup_character", tool_names)
+
+    def test_max_active_characters_limits_automatically_shown_context(self):
+        tools = self._make_tools(config={"max_active_characters": 2})
+        tools.generate_character(name="Char1", description="First")
+        tools.generate_character(name="Char2", description="Second")
+        tools.generate_character(name="Char3", description="Third")
+
+        # get_present_characters should only return the 2 most recent
+        present = tools.get_present_characters()
+        self.assertEqual(len(present), 2)
+        self.assertEqual([c["name"] for c in present], ["Char2", "Char3"])
+
+        # Prompt context should mention total characters and indicate truncation
+        prompt = tools._build_planner_instruction()
+        self.assertIn("Showing 2 most recent of 3 total session characters", prompt)
+        self.assertIn("Char2", prompt)
+        self.assertIn("Char3", prompt)
+        self.assertNotIn("Char1", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
