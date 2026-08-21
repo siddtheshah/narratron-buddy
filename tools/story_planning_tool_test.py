@@ -245,7 +245,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("sides", tools.roll_dice(sides=1)["error"])
         self.assertIn("count", tools.roll_dice(count=11)["error"])
 
-    def test_browse_lore_lists_and_reads_valid_documents(self):
+    def test_read_lore_lists_and_reads_valid_documents(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
             theater_manager.create_theater(
@@ -258,19 +258,19 @@ class TestStoryPlanningTools(unittest.TestCase):
             )
             tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
 
-            self.assertIn("characters.txt", tools.browse_lore())
-            tools.reset_lore_browse_count()
-            self.assertIn("factions/guild.txt", tools.browse_lore())
-            tools.reset_lore_browse_count()
-            self.assertIn("royal cartographer", tools.browse_lore("characters.txt"))
-            tools.reset_lore_browse_count()
-            self.assertIn("The Iron Guild", tools.browse_lore("factions/guild.txt"))
-            tools.reset_lore_browse_count()
-            self.assertIn("factions/guild.txt", tools.browse_lore("factions"))
-            tools.reset_lore_browse_count()
-            self.assertTrue(tools.browse_lore("characters.md").startswith("Error:"))
+            self.assertIn("characters.txt", tools.read_lore())
+            tools.reset_lore_call_counts()
+            self.assertIn("factions/guild.txt", tools.read_lore())
+            tools.reset_lore_call_counts()
+            self.assertIn("royal cartographer", tools.read_lore("characters.txt"))
+            tools.reset_lore_call_counts()
+            self.assertIn("The Iron Guild", tools.read_lore("factions/guild.txt"))
+            tools.reset_lore_call_counts()
+            self.assertIn("factions/guild.txt", tools.read_lore("factions"))
+            tools.reset_lore_call_counts()
+            self.assertTrue(tools.read_lore("characters.md").startswith("Error:"))
 
-    def test_browse_lore_enforces_hard_limit_and_pushes_to_answer(self):
+    def test_read_lore_enforces_hard_limit_and_pushes_to_answer(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
             theater_manager.create_theater(
@@ -285,41 +285,104 @@ class TestStoryPlanningTools(unittest.TestCase):
             tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
 
             # Call 1: Lists documents, limit note NOT present
-            res1 = tools.browse_lore()
+            res1 = tools.read_lore()
             self.assertIn("characters.txt", res1)
             self.assertNotIn("maximum limit of 3", res1)
 
             # Call 2: Reads a document, limit note NOT present
-            res2 = tools.browse_lore("characters.txt")
+            res2 = tools.read_lore("characters.txt")
             self.assertIn("Mara is the royal cartographer", res2)
             self.assertNotIn("maximum limit of 3", res2)
 
             # Call 3: Reads another document, limit note IS appended pushing to answer
-            res3 = tools.browse_lore("world.txt")
+            res3 = tools.read_lore("world.txt")
             self.assertIn("The world floats in the clouds", res3)
-            self.assertIn("maximum limit of 3 browse_lore calls", res3)
+            self.assertIn("maximum limit of 3 read_lore calls", res3)
             self.assertIn("Proceed immediately to finalize and return the scene reaction JSON", res3)
 
             # Call 4: Blocked by hard limit
-            res4 = tools.browse_lore("factions/guild.txt")
-            self.assertTrue(res4.startswith("Error: Maximum browse_lore call limit (3) reached"))
+            res4 = tools.read_lore("factions/guild.txt")
+            self.assertTrue(res4.startswith("Error: Maximum read_lore call limit (3) reached"))
             self.assertIn("Finalize and return the scene reaction now", res4)
             self.assertNotIn("The Iron Guild", res4)
 
-            # Resetting for a new turn allows browsing again
-            tools.reset_lore_browse_count()
-            res5 = tools.browse_lore("factions/guild.txt")
+            # Resetting for a new turn allows reading again
+            tools.reset_lore_call_counts()
+            res5 = tools.read_lore("factions/guild.txt")
             self.assertIn("The Iron Guild", res5)
-            self.assertNotIn("Maximum browse_lore call limit", res5)
+            self.assertNotIn("Maximum read_lore call limit", res5)
 
-    def test_scene_reaction_prompt_contains_browse_lore_limit(self):
+    def test_search_lore_keyword_scoring_and_ranking(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Search Lore Theater",
+                theater_id="search-lore-theater",
+                lore_files=[
+                    ("lore/01_pricing.txt", b"Tradeable objects and pricing in Silk Road towns. Silk costs 50 gold."),
+                    ("lore/02_mechanics.txt", b"Haggling mechanics and trade routes across Asia."),
+                    ("lore/03_hazards.txt", b"Hazards, bandits, and cargo vulnerability on desert tracks."),
+                ],
+            )
+            tools = self._make_tools(theater_id="search-lore-theater", theater_manager=theater_manager)
+
+            # Keyword search for pricing
+            res = tools.search_lore("pricing silk gold")
+            self.assertIn("01_pricing.txt", res)
+            self.assertIn("score:", res)
+            self.assertIn("Snippet:", res)
+
+            # Check ranking: 01_pricing.txt should rank before 02_mechanics.txt for "pricing silk"
+            lines = res.split("\n")
+            pricing_idx = next(i for i, line in enumerate(lines) if "01_pricing.txt" in line)
+            self.assertEqual(pricing_idx, 1)
+
+            # Search for hazards
+            tools.reset_lore_call_counts()
+            res_hazards = tools.search_lore("hazards bandits")
+            self.assertIn("03_hazards.txt", res_hazards)
+
+            # Test caching
+            tools.reset_lore_call_counts()
+            first_search = tools.search_lore("pricing silk gold")
+            second_search = tools.search_lore("pricing silk gold")
+            self.assertEqual(first_search, second_search)
+
+    def test_read_lore_and_search_lore_capped_separately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Lore Theater",
+                theater_id="lore-theater",
+                lore_files=[
+                    ("lore/characters.txt", b"Mara is the royal cartographer."),
+                    ("lore/world.txt", b"The world floats in the clouds."),
+                    ("lore/factions/guild.txt", b"The Iron Guild controls the gates."),
+                ],
+            )
+            tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
+
+            # Exhaust read_lore limit (3 calls)
+            tools.read_lore("characters.txt")
+            tools.read_lore("world.txt")
+            tools.read_lore("factions/guild.txt")
+            blocked_read = tools.read_lore("characters.txt")
+            self.assertTrue(blocked_read.startswith("Error: Maximum read_lore call limit (3) reached"))
+
+            # search_lore should still be available (capped separately)
+            search_res = tools.search_lore("cartographer")
+            self.assertIn("characters.txt", search_res)
+            self.assertNotIn("Maximum search_lore call limit", search_res)
+
+    def test_scene_reaction_prompt_contains_read_and_search_lore_limits(self):
         prompt = build_scene_reaction_prompt(
             context="Scene context here",
             style="action-packed",
             nodes_ahead=3,
             lore_context="- characters.txt",
         )
-        self.assertIn("browse_lore at most 3 times", prompt)
+        self.assertIn("search_lore", prompt)
+        self.assertIn("read_lore", prompt)
         self.assertIn("proceed immediately to return the scene reaction", prompt)
 
     def test_scene_reaction_prompt_handles_no_lore_context(self):
@@ -333,7 +396,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Invent the lore", prompt)
         self.assertNotIn("Available theater lore (top-level documents and directories):", prompt)
 
-    def test_browse_lore_logs_activity(self):
+    def test_read_lore_logs_activity(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
             theater_manager.create_theater(
@@ -346,9 +409,9 @@ class TestStoryPlanningTools(unittest.TestCase):
             tools = self._make_tools(theater_id="lore-theater", theater_manager=theater_manager)
 
             with self.assertLogs("tools.story_planning_tool", level="DEBUG") as cm:
-                tools.browse_lore()
-                tools.browse_lore("characters.txt")
-                tools.browse_lore("invalid.md")
+                tools.read_lore()
+                tools.read_lore("characters.txt")
+                tools.read_lore("invalid.md")
 
             logs = "\n".join(cm.output)
             self.assertIn("Listing lore documents for theater=lore-theater", logs)
@@ -971,6 +1034,35 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertTrue(tools.is_voice_input_detected)
             res3 = tools.process_user_action("I walk through.")
             self.assertEqual(res3["status"], "processing")
+
+    def test_search_lore_with_trader_adventure_lore(self):
+        trader_lore_dir = Path(__file__).parent.parent / "adventures" / "the-trader" / "lore"
+        if not trader_lore_dir.is_dir():
+            return
+
+        lore_files = []
+        for file in trader_lore_dir.rglob("*.txt"):
+            rel = file.relative_to(trader_lore_dir).as_posix()
+            lore_files.append((f"lore/{rel}", file.read_bytes()))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tm = TheaterManager(base_theaters_dir=temp_dir)
+            tm.create_theater(
+                name="Trader Theater",
+                theater_id="trader-theater",
+                lore_files=lore_files,
+            )
+            tools = self._make_tools(theater_id="trader-theater", theater_manager=tm)
+
+            # Search for tradeable pricing
+            res = tools.search_lore("pricing tradeable objects")
+            self.assertIn("01_tradeable_objects_and_pricing.txt", res)
+            self.assertIn("score:", res)
+
+            # Search for hazards
+            tools.reset_lore_call_counts()
+            res_hazards = tools.search_lore("hazards vulnerability cargo")
+            self.assertIn("03_hazards_and_cargo_vulnerability.txt", res_hazards)
 
 
 if __name__ == "__main__":

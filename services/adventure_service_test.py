@@ -167,6 +167,33 @@ class TestAdventureService(unittest.TestCase):
         self.assertEqual(len(lore), 1)
         self.assertEqual(config["agent"]["style"], "cosmic")
 
+    def test_the_trader_adventure_package_structure(self):
+        trader_dir = Path("adventures/the-trader")
+        self.assertTrue(trader_dir.exists())
+
+        service = AdventureService(
+            bucket_name="test-bucket",
+            local_fallback_dir=Path("adventures"),
+        )
+        with patch.object(service, "_fetch_adventures_from_gcs", return_value=[]):
+            adv = service.get_adventure("the-trader")
+            self.assertIsNotNone(adv)
+            self.assertEqual(adv["id"], "the-trader")
+            self.assertEqual(adv["title"], "The Trader: Caravan of the Silk Road")
+            self.assertEqual(adv["lore_count"], 13)
+
+            refs, playlists, lore, config = service.load_adventure_assets("the-trader")
+            self.assertGreaterEqual(len(refs), 1)
+            self.assertEqual(len(lore), 13)
+            self.assertIn("agent", config)
+            self.assertIn("Silk Road", config["agent"]["special_instructions"])
+
+            # Verify nested location files were loaded
+            lore_paths = [path.replace("\\", "/") for path, _ in lore]
+            self.assertTrue(any("locations/01_rome" in p for p in lore_paths))
+            self.assertTrue(any("locations/08_changan" in p for p in lore_paths))
+
 
 if __name__ == "__main__":
     unittest.main()
+

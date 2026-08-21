@@ -23,7 +23,7 @@ import math
 from threading import Lock
 import time
 import asyncio
-from typing import Any, Callable, List, Dict, Optional
+from typing import Any, Callable, List, Dict, Optional, Tuple
 
 from jinja2 import Template
 from pydantic import BaseModel, Field, PrivateAttr
@@ -67,7 +67,8 @@ MAX_STICKY_NOTES = 10
 MAX_NAMED_ELEMENTS = 10
 MAX_ACTIVE_CHARACTERS = 5
 MAX_LORE_DOCUMENTS_LISTED = 100
-MAX_BROWSE_LORE_CALLS_PER_TURN = 3
+MAX_READ_LORE_CALLS_PER_TURN = 3
+MAX_SEARCH_LORE_CALLS_PER_TURN = 3
 SUPPORTED_VOICE_TAGS = {"male", "female"}
 
 
@@ -172,7 +173,7 @@ No lore documents are available for this theater. Invent the lore, world details
 
 # Tool Usage Guidelines
 - **Sticky Notes (`sticky_note`)**: Use sticky notes to track major plot developments, story milestones, key discoveries, active goals, and persistent scene state (characters, locations, objects). Call `sticky_note` with a concise `topic` and informative `info` whenever a major plot event or status shift occurs to maintain narrative continuity across turns. The scene holds at most {{ max_sticky_notes or 5 }} sticky notes; when full, adding a new topic will drop the oldest sticky note.
-- **Lore Browsing (`browse_lore`)**: When available theater lore documents or directories are listed above, ground the narrative, characters, factions, and setting in that established theater lore. You may call browse_lore at most 3 times in a single turn to consult lore documents or directories. After at most 3 lore lookups (or once you have sufficient context), proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling browse_lore.
+- **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
 - **Character Generation (`generate_character_profile`)**: You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 - Those tools only provide information: the scene delta is the sole source of changes.
@@ -365,8 +366,13 @@ class StoryPlanningTools(BaseTools):
         self._voice_input_detected: bool = not self.require_voice_input
         self._voice_input_lock: Lock = Lock()
         self._last_action_response_word_count: int = 0
-        self._browse_lore_calls_this_turn: int = 0
-        self._browse_lore_lock: Lock = Lock()
+        self._read_lore_calls_this_turn: int = 0
+        self._read_lore_lock: Lock = Lock()
+        self._search_lore_calls_this_turn: int = 0
+        self._search_lore_lock: Lock = Lock()
+        self._lore_index_cache: Optional[Dict[str, Dict[str, Any]]] = None
+        self._lore_cache_lock: Lock = Lock()
+        self._search_query_cache: Dict[str, str] = {}
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
         self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = (
@@ -660,45 +666,47 @@ class StoryPlanningTools(BaseTools):
             self._voice_input_detected = True
         logger.debug("[StoryPlanningTools] Voice input detected; process_user_action is re-enabled.")
 
-    def reset_lore_browse_count(self) -> None:
-        """Reset the per-turn browse_lore invocation counter."""
-        with self._browse_lore_lock:
-            self._browse_lore_calls_this_turn = 0
+    def reset_lore_call_counts(self) -> None:
+        """Reset per-turn read_lore and search_lore invocation counters."""
+        with self._read_lore_lock:
+            self._read_lore_calls_this_turn = 0
+        with self._search_lore_lock:
+            self._search_lore_calls_this_turn = 0
 
     @logged_tool_call
-    def browse_lore(self, document: str = "") -> str:
+    def read_lore(self, document: str = "") -> str:
         """List or read the theater's text-only lore documents.
 
         Call without ``document`` to list available ``.txt`` paths. Call again
         with one listed relative path to read it before planning characters or
         scenes. This tool is read-only and cannot access files outside ``lore/``.
-        At most 3 browse_lore calls are allowed per story planning turn.
+        At most 3 read_lore calls are allowed per story planning turn.
         Once the limit is reached, you must proceed to return your final scene reaction.
         """
-        with self._browse_lore_lock:
-            if self._browse_lore_calls_this_turn >= MAX_BROWSE_LORE_CALLS_PER_TURN:
+        with self._read_lore_lock:
+            if self._read_lore_calls_this_turn >= MAX_READ_LORE_CALLS_PER_TURN:
                 logger.warning(
-                    "[StoryPlanningTools] browse_lore call limit reached (%d/%d) for theater=%s",
-                    self._browse_lore_calls_this_turn,
-                    MAX_BROWSE_LORE_CALLS_PER_TURN,
+                    "[StoryPlanningTools] read_lore call limit reached (%d/%d) for theater=%s",
+                    self._read_lore_calls_this_turn,
+                    MAX_READ_LORE_CALLS_PER_TURN,
                     self.theater_id,
                 )
                 return (
-                    f"Error: Maximum browse_lore call limit ({MAX_BROWSE_LORE_CALLS_PER_TURN}) reached for this turn. "
-                    "You cannot browse additional lore. Finalize and return the scene reaction now."
+                    f"Error: Maximum read_lore call limit ({MAX_READ_LORE_CALLS_PER_TURN}) reached for this turn. "
+                    "You cannot read additional lore. Finalize and return the scene reaction now."
                 )
-            self._browse_lore_calls_this_turn += 1
-            call_count = self._browse_lore_calls_this_turn
+            self._read_lore_calls_this_turn += 1
+            call_count = self._read_lore_calls_this_turn
 
         limit_note = (
-            f"\n\n[Note: You have reached the maximum limit of {MAX_BROWSE_LORE_CALLS_PER_TURN} browse_lore calls for this turn. "
-            "Do not call browse_lore again. Proceed immediately to finalize and return the scene reaction JSON.]"
-            if call_count >= MAX_BROWSE_LORE_CALLS_PER_TURN
+            f"\n\n[Note: You have reached the maximum limit of {MAX_READ_LORE_CALLS_PER_TURN} read_lore calls for this turn. "
+            "Do not call read_lore again. Proceed immediately to finalize and return the scene reaction JSON.]"
+            if call_count >= MAX_READ_LORE_CALLS_PER_TURN
             else ""
         )
 
         if not self.theater_id:
-            logger.warning("[StoryPlanningTools] Browse lore called without active theater.")
+            logger.warning("[StoryPlanningTools] Read lore called without active theater.")
             return "No theater is active, so no lore documents are available." + limit_note
         if not document:
             documents = self.theater_manager.get_lore_documents(self.theater_id)
@@ -735,7 +743,7 @@ class StoryPlanningTools(BaseTools):
                     else ""
                 )
                 logger.debug(
-                    "[StoryPlanningTools] Browsing lore directory '%s' for theater=%s (matching=%d)",
+                    "[StoryPlanningTools] Reading lore directory '%s' for theater=%s (matching=%d)",
                     clean_doc,
                     self.theater_id,
                     len(matching),
@@ -765,6 +773,171 @@ class StoryPlanningTools(BaseTools):
         excerpt = content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
         suffix = "\n[Excerpt truncated for planner context.]" if len(content) > len(excerpt) else ""
         return f"Lore document: {clean_doc}\n\n{excerpt}{suffix}{limit_note}"
+
+
+    @staticmethod
+    def _extract_snippet(content: str, terms: List[str], max_len: int = 150) -> str:
+        """Extract a short representative snippet around the first occurrence of any query term."""
+        content_lower = content.lower()
+        earliest_idx = -1
+        for t in terms:
+            idx = content_lower.find(t)
+            if idx != -1:
+                if earliest_idx == -1 or idx < earliest_idx:
+                    earliest_idx = idx
+
+        if earliest_idx == -1:
+            snippet = content[:max_len].replace("\n", " ").strip()
+            return f'"{snippet}..."' if len(content) > max_len else f'"{snippet}"'
+
+        start = max(0, earliest_idx - 30)
+        end = min(len(content), earliest_idx + max_len - 30)
+        snippet = content[start:end].replace("\n", " ").strip()
+        prefix = "..." if start > 0 else ""
+        suffix = "..." if end < len(content) else ""
+        return f'"{prefix}{snippet}{suffix}"'
+
+    def _get_lore_corpus_index(self) -> Dict[str, Dict[str, Any]]:
+        """Return cached pre-tokenized lore corpus index for the active theater."""
+        with self._lore_cache_lock:
+            if self._lore_index_cache is not None:
+                return self._lore_index_cache
+
+            if not self.theater_id:
+                return {}
+
+            documents = self.theater_manager.get_lore_documents(self.theater_id)
+            corpus_index: Dict[str, Dict[str, Any]] = {}
+            for doc_path in documents:
+                try:
+                    content = self.theater_manager.read_lore_document(self.theater_id, doc_path)
+                except Exception:
+                    continue
+                tokens = re.findall(r"\w+", content.lower())
+                counts: Dict[str, int] = {}
+                for t in tokens:
+                    counts[t] = counts.get(t, 0) + 1
+                corpus_index[doc_path] = {
+                    "content": content,
+                    "tokens": tokens,
+                    "counts": counts,
+                    "length": len(tokens),
+                }
+            self._lore_index_cache = corpus_index
+            return self._lore_index_cache
+
+    def clear_lore_cache(self) -> None:
+        """Clear cached lore search index and cached query results."""
+        with self._lore_cache_lock:
+            self._lore_index_cache = None
+            self._search_query_cache.clear()
+
+    @logged_tool_call
+    def search_lore(self, query: str) -> str:
+        """Perform a keyword search (TF-IDF based) across all text lore documents in the theater.
+
+        Returns lore filenames ranked by relevance score along with matching excerpts.
+        Use this tool to find relevant documents before reading them with read_lore.
+        At most 3 search_lore calls are allowed per story planning turn.
+        Once the limit is reached, you must proceed to return your final scene reaction.
+        """
+        with self._search_lore_lock:
+            if self._search_lore_calls_this_turn >= MAX_SEARCH_LORE_CALLS_PER_TURN:
+                logger.warning(
+                    "[StoryPlanningTools] search_lore call limit reached (%d/%d) for theater=%s",
+                    self._search_lore_calls_this_turn,
+                    MAX_SEARCH_LORE_CALLS_PER_TURN,
+                    self.theater_id,
+                )
+                return (
+                    f"Error: Maximum search_lore call limit ({MAX_SEARCH_LORE_CALLS_PER_TURN}) reached for this turn. "
+                    "You cannot search additional lore. Finalize and return the scene reaction now."
+                )
+            self._search_lore_calls_this_turn += 1
+            call_count = self._search_lore_calls_this_turn
+
+        limit_note = (
+            f"\n\n[Note: You have reached the maximum limit of {MAX_SEARCH_LORE_CALLS_PER_TURN} search_lore calls for this turn. "
+            "Do not call search_lore again. Proceed immediately to finalize and return the scene reaction JSON.]"
+            if call_count >= MAX_SEARCH_LORE_CALLS_PER_TURN
+            else ""
+        )
+
+        if not self.theater_id:
+            logger.warning("[StoryPlanningTools] Search lore called without active theater.")
+            return "No theater is active, so no lore documents are available." + limit_note
+
+        clean_query = str(query or "").strip()
+        if not clean_query:
+            return "Error: Search query cannot be empty." + limit_note
+
+        query_terms = re.findall(r"\w+", clean_query.lower())
+        if not query_terms:
+            return "Error: Search query must contain alphanumeric keywords." + limit_note
+
+        query_key = " ".join(query_terms)
+        with self._lore_cache_lock:
+            cached_result = self._search_query_cache.get(query_key)
+        if cached_result is not None:
+            logger.debug(
+                "[StoryPlanningTools] Using cached search_lore result for query='%s' in theater=%s",
+                clean_query,
+                self.theater_id,
+            )
+            return cached_result + limit_note
+
+        corpus_index = self._get_lore_corpus_index()
+        if not corpus_index:
+            return "No lore documents are available for this theater." + limit_note
+
+        total_docs = len(corpus_index)
+        unique_query_terms = list(dict.fromkeys(query_terms))
+        df: Dict[str, int] = {}
+        for t in unique_query_terms:
+            df[t] = sum(1 for doc in corpus_index.values() if doc["counts"].get(t, 0) > 0)
+
+        idf: Dict[str, float] = {}
+        for t in unique_query_terms:
+            idf[t] = math.log((total_docs + 1) / (df[t] + 1)) + 1.0
+
+        scores: List[Tuple[str, float, str]] = []
+        for doc_path, doc_info in corpus_index.items():
+            length = doc_info["length"]
+            if length == 0:
+                continue
+            counts = doc_info["counts"]
+            score = 0.0
+            for t in query_terms:
+                tf = counts.get(t, 0) / length
+                score += tf * idf[t]
+
+            if score > 0:
+                snippet = self._extract_snippet(doc_info["content"], unique_query_terms)
+                scores.append((doc_path, score, snippet))
+
+        scores.sort(key=lambda item: item[1], reverse=True)
+
+        if not scores:
+            res_str = f"No matching lore documents found for query: '{clean_query}'"
+        else:
+            results_lines = [f"Lore search results for query '{clean_query}':"]
+            for doc_path, score, snippet in scores[:10]:
+                results_lines.append(f"- {doc_path} (score: {score:.4f})")
+                if snippet:
+                    results_lines.append(f"  Snippet: {snippet}")
+            res_str = "\n".join(results_lines)
+
+        with self._lore_cache_lock:
+            self._search_query_cache[query_key] = res_str
+
+        logger.debug(
+            "[StoryPlanningTools] Searched lore for query='%s' in theater=%s (matches=%d)",
+            clean_query,
+            self.theater_id,
+            len(scores),
+        )
+
+        return res_str + limit_note
 
     @logged_tool_call
     def roll_dice(
@@ -1240,7 +1413,8 @@ class StoryPlanningTools(BaseTools):
             ),
             instruction=self._build_planner_instruction,
             tools=[
-                self.browse_lore,
+                self.search_lore,
+                self.read_lore,
                 self.generate_character_profile,
                 self.roll_dice,
                 self.sticky_note,
@@ -1286,7 +1460,7 @@ class StoryPlanningTools(BaseTools):
 
     def _run_planner_agent(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         """Run one ADK planner turn resumed from the session."""
-        self.reset_lore_browse_count()
+        self.reset_lore_call_counts()
         runner = self._get_or_create_planner_runner()
         session_id = self.session_id
         theater = self.theater_id or "default"
