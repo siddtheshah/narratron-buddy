@@ -632,7 +632,6 @@ object interactions, clues, and flavor cards must use persistent=false."""
         Args:
             request: The UI content or state change to represent on the current canvas.
         """
-        request = " ".join(str(request or "").split())[:1000]
         if not request:
             return {"error": "Describe the UI or update to apply."}
         logger.debug(

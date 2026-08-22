@@ -12,7 +12,7 @@ story_planning:
     planner_model: "gemini-3.5-flash-lite"
 
 interactive_canvas:
-    model: "gemini-3.7-flash"
+    model: "gemini-3.5-flash-lite"
 
 music:
     provider: "lyria"
