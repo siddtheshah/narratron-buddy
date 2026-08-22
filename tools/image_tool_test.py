@@ -229,9 +229,8 @@ class TestImageTools(BaseTestCase):
         provider.generate.return_value = self._provider_result()
         config = {
             **self.config,
-            "adventure_mode": True,
         }
-        tools = ImageTools(config, theater_id="adv_create_test", theater_manager=self.manager)
+        tools = ImageTools(config, theater_id="adv_create_test", theater_manager=self.manager, adventure_mode=True)
         tools.stop_cycle()
         self.assertTrue(tools.adventure_mode)
         self.assertFalse(tools.is_story_plan_completed)
@@ -268,9 +267,8 @@ class TestImageTools(BaseTestCase):
     def test_adventure_mode_throttles_show_image_until_story_plan_completed(self, mock_get_provider):
         config = {
             **self.config,
-            "story_planning": {"adventure_mode": True},
         }
-        tools = ImageTools(config, theater_id="adv_show_test", theater_manager=self.manager)
+        tools = ImageTools(config, theater_id="adv_show_test", theater_manager=self.manager, adventure_mode=True)
         tools.stop_cycle()
         self.assertTrue(tools.adventure_mode)
         self.assertFalse(tools.is_story_plan_completed)

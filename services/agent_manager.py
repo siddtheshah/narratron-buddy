@@ -310,6 +310,8 @@ class AgentSession:
             """Place asynchronous planner output onto the live queue safely."""
             if self.image_tools and hasattr(self.image_tools, "record_story_plan_completed"):
                 self.image_tools.record_story_plan_completed()
+            if self.interactive_canvas_tools and hasattr(self.interactive_canvas_tools, "record_story_plan_completed"):
+                self.interactive_canvas_tools.record_story_plan_completed()
             message = "[Story Planner Result] " + json.dumps(result, ensure_ascii=False)
             content = types.Content(parts=[types.Part(text=message)])
 
@@ -758,6 +760,8 @@ class AgentSession:
         """Record a successfully resolved story-planning turn and flush it for billing."""
         if self.image_tools and hasattr(self.image_tools, "record_story_plan_completed"):
             self.image_tools.record_story_plan_completed()
+        if self.interactive_canvas_tools and hasattr(self.interactive_canvas_tools, "record_story_plan_completed"):
+            self.interactive_canvas_tools.record_story_plan_completed()
         self.story_plans_count += 1
         self.unbilled_story_plans += 1
         if self.character_voicing_enabled:

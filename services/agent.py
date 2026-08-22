@@ -224,7 +224,15 @@ def create_tool_bundle_for_session(
     """Build tools bound to one theater's canvas state."""
     theater_manager = theater_manager or TheaterManager()
     canvas_state_service = canvas_state_service or CanvasStateService(theater_manager)
-    image_tools = ImageTools(config, theater_id=theater_id, theater_manager=theater_manager, canvas_state_service=canvas_state_service)
+    story_planning_config = config.get("story_planning", {})
+    adventure_mode = bool(story_planning_config.get("adventure_mode", False))
+    image_tools = ImageTools(
+        config,
+        theater_id=theater_id,
+        theater_manager=theater_manager,
+        canvas_state_service=canvas_state_service,
+        adventure_mode=adventure_mode,
+    )
     animation_enabled = bool(config.get("animation", {}).get("enabled", False))
     animation_tools = (
         AnimationTools(
@@ -236,7 +244,6 @@ def create_tool_bundle_for_session(
         else None
     )
     chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
-    story_planning_config = config.get("story_planning", {})
     story_planning_text_provider = get_text_response_provider(
         str(story_planning_config.get("text_provider", "gemini-3")),
         {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
@@ -258,6 +265,7 @@ def create_tool_bundle_for_session(
             canvas_state_service=canvas_state_service,
             text_response_provider=story_planning_text_provider,
             model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
+            adventure_mode=adventure_mode,
         )
     music_config = config.get("music", {})
     reranker_provider = get_text_response_provider(

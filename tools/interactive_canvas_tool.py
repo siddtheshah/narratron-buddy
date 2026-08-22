@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -289,6 +290,7 @@ class InteractiveCanvasTools(BaseTools):
         canvas_state_service: Any = None,
         text_response_provider: Optional[TextResponseProvider] = None,
         model: Optional[str] = None,
+        adventure_mode: bool = False,
     ) -> None:
         super().__init__(
             config=config,
@@ -303,6 +305,11 @@ class InteractiveCanvasTools(BaseTools):
         self.catalog = CANVAS_CATALOG
         self.response_schema = CANVAS_DRAFT_SCHEMA
         self.max_surfaces = max(1, min(MAX_SURFACES, int((config or {}).get("max_surfaces", 5))))
+        self.adventure_mode = bool(adventure_mode)
+        # Adventure Mode authorizes one canvas mutation for each completed
+        # planner turn, matching ImageTools' story-plan completion gate.
+        self._story_plan_completed = not self.adventure_mode
+        self._story_plan_lock = threading.Lock()
         logger.debug(
             "%s Initialized theater=%s model=%s catalog=%s components=%s cooldown=%.2fs max_surfaces=%d provider=%s",
             LOG_PREFIX,
@@ -314,6 +321,33 @@ class InteractiveCanvasTools(BaseTools):
             self.max_surfaces,
             type(text_response_provider).__name__ if text_response_provider else "unconfigured",
         )
+
+    @property
+    def is_story_plan_completed(self) -> bool:
+        """Return whether Adventure Mode currently permits a canvas mutation."""
+        with self._story_plan_lock:
+            return self._story_plan_completed
+
+    def record_story_plan_completed(self) -> None:
+        """Unlock one interactive canvas mutation after a planner response."""
+        with self._story_plan_lock:
+            self._story_plan_completed = True
+        logger.debug("%s Story plan completion recorded; interactive canvas tools are re-enabled.", LOG_PREFIX)
+
+    def _consume_story_plan_completion(self, action: str) -> Optional[dict[str, str]]:
+        """Consume the Adventure Mode mutation permit or return a tool error."""
+        with self._story_plan_lock:
+            if self.adventure_mode and not self._story_plan_completed:
+                return {
+                    "error": (
+                        f"Cannot {action}: Waiting for the story planner to complete its response to "
+                        "process_user_action. Please wait for the '[Story Planner Result]' before "
+                        "modifying the interactive canvas."
+                    )
+                }
+            if self.adventure_mode:
+                self._story_plan_completed = False
+        return None
 
     def _canvas(self) -> Any:
         if self.canvas_state_service is None:
@@ -634,6 +668,9 @@ object interactions, clues, and flavor cards must use persistent=false."""
         """
         if not request:
             return {"error": "Describe the UI or update to apply."}
+        blocked = self._consume_story_plan_completion("update the interactive canvas")
+        if blocked:
+            return blocked
         logger.debug(
             "%s Update requested theater=%s request=%r",
             LOG_PREFIX,
@@ -749,6 +786,9 @@ object interactions, clues, and flavor cards must use persistent=false."""
     @logged_tool_call
     def clear_interactive_canvas(self) -> dict[str, Any]:
         """Remove all generated A2UI surfaces from the current canvas."""
+        blocked = self._consume_story_plan_completion("clear the interactive canvas")
+        if blocked:
+            return blocked
         removed = self._canvas().delete_interactive_surface("all")
         logger.info(
             "%s Cleared surfaces theater=%s removed=%s",

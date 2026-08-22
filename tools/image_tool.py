@@ -35,6 +35,7 @@ class ImageTools(BaseTools):
         theater_id: str,
         theater_manager: TheaterManager,
         canvas_state_service: Any = None,
+        adventure_mode: bool = False,
     ):
         raw_config = config or {}
         subconfig = raw_config.get("image_generation", raw_config) if "image_generation" in raw_config else raw_config
@@ -85,11 +86,7 @@ class ImageTools(BaseTools):
         self.PRIORITY_SHOW = 1
         self.PRIORITY_CREATE = 2
 
-        self.adventure_mode: bool = bool(
-            raw_config.get("adventure_mode", False)
-            or (isinstance(raw_config.get("story_planning"), dict) and raw_config.get("story_planning", {}).get("adventure_mode", False))
-            or subconfig.get("adventure_mode", False)
-        )
+        self.adventure_mode = bool(adventure_mode)
         self._story_plan_completed: bool = not self.adventure_mode
         self._story_plan_lock: threading.Lock = threading.Lock()
         

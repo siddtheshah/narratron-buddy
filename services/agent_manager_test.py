@@ -218,6 +218,7 @@ class TestAgentSessionManager(unittest.TestCase):
         session = AgentSession(theater_id="planner_queue", runner=mock_runner, tool_bundle=MagicMock())
         session.live_request_queue = MagicMock()
         session.image_tools = mock_image_tools
+        session.interactive_canvas_tools = MagicMock()
         session.websockets.add(MagicMock())
 
         planner_tools.on_scene_reaction({"narration": "A door opens."})
@@ -226,6 +227,7 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertIn("[Story Planner Result]", args[0].parts[0].text)
         self.assertIn("A door opens.", args[0].parts[0].text)
         mock_image_tools.record_story_plan_completed.assert_called_once()
+        session.interactive_canvas_tools.record_story_plan_completed.assert_called_once()
 
     def test_voice_input_forwarded_to_story_planning_tools(self):
         mock_story_planning = MagicMock()

@@ -38,7 +38,7 @@ def valid_draft(persistent=False, target_surface_id=""):
     )
 
 
-def make_tools(response_factory):
+def make_tools(response_factory, config=None, adventure_mode=False):
     canvas = MagicMock()
     canvas.get_latest_state.return_value = {
         "prompt": "A sword in a moonlit stone",
@@ -61,10 +61,11 @@ def make_tools(response_factory):
         parsed=response_factory(request.prompt),
     )
     return InteractiveCanvasTools(
-        {"max_surfaces": 3},
+        config or {"max_surfaces": 3},
         theater_id="stage",
         canvas_state_service=service,
         text_response_provider=provider,
+        adventure_mode=adventure_mode,
     ), canvas
 
 
@@ -352,6 +353,39 @@ def test_update_interactive_canvas_has_configurable_cooldown():
     assert isinstance(second, str)
     assert second.startswith("Error: update_interactive_canvas is on cooldown")
     assert canvas.upsert_interactive_surface.call_count == 1
+
+
+def test_adventure_mode_locks_interactive_canvas_until_story_plan_completes():
+    tools, canvas = make_tools(
+        lambda *_: valid_draft(),
+        {"max_surfaces": 3},
+        adventure_mode=True,
+    )
+    tools.cooldown_duration = 0
+
+    assert tools.adventure_mode
+    assert not tools.is_story_plan_completed
+
+    blocked = tools.update_interactive_canvas("Create an action card")
+
+    assert "Waiting for the story planner" in blocked["error"]
+    canvas.upsert_interactive_surface.assert_not_called()
+
+    tools.record_story_plan_completed()
+    displayed = tools.update_interactive_canvas("Create an action card")
+
+    assert displayed["status"] == "displayed"
+    assert not tools.is_story_plan_completed
+    blocked_again = tools.clear_interactive_canvas()
+    assert "Waiting for the story planner" in blocked_again["error"]
+
+
+def test_non_adventure_mode_does_not_lock_interactive_canvas_mutations():
+    tools, canvas = make_tools(lambda *_: valid_draft())
+
+    assert tools.update_interactive_canvas("Create a status card")["status"] == "displayed"
+    assert tools.clear_interactive_canvas()["status"] == "cleared"
+    canvas.delete_interactive_surface.assert_called_once_with("all")
 
 
 def test_interactive_canvas_ignores_theater_model_setting():
