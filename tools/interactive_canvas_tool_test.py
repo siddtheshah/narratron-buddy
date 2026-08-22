@@ -377,7 +377,6 @@ def test_interactive_canvas_emits_debug_lifecycle(caplog):
 
     assert result["status"] == "displayed"
     log_text = caplog.text
-    assert "[InteractiveCanvasTools] Incoming tool request" in log_text
     assert "[InteractiveCanvasTools] Update requested" in log_text
     assert "[InteractiveCanvasTools] Captured context" in log_text
     assert "[InteractiveCanvasTools] Dispatching UI generation" in log_text

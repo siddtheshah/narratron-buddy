@@ -382,6 +382,7 @@ async def create_and_deploy_theater(request: Request):
     folder_config_yaml = form.get("folder_theater_config_yaml")
     use_generated_music = str(form.get("use_generated_music", "false")).lower() == "true"
     enable_scene_animations = str(form.get("enable_scene_animations", "false")).lower() == "true"
+    enable_interactive_canvas = str(form.get("enable_interactive_canvas", "false")).lower() == "true"
     enable_adventure_mode = (
         creation_mode == "adventure"
         or str(form.get("enable_adventure_mode", "false")).lower() == "true"
@@ -525,6 +526,10 @@ async def create_and_deploy_theater(request: Request):
         if not isinstance(animation_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: animation must be a mapping.")
         animation_config["enabled"] = enable_scene_animations
+        interactive_canvas_config = theater_config.setdefault("interactive_canvas", {})
+        if not isinstance(interactive_canvas_config, dict):
+            raise HTTPException(status_code=400, detail="Invalid theater configuration: interactive_canvas must be a mapping.")
+        interactive_canvas_config["enabled"] = enable_interactive_canvas
         story_planning_config = theater_config.setdefault("story_planning", {})
         if not isinstance(story_planning_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: story_planning must be a mapping.")

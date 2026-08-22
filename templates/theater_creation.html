@@ -1130,6 +1130,14 @@
                                             guide a persistent, choice-driven story</div>
                                     </div>
                                 </label>
+                                <label class="checkbox-card">
+                                    <input type="checkbox" id="cfgInteractiveCanvas">
+                                    <div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                            🧩 Interactive Canvas Tools</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets the agent add interactive controls and displays to the canvas</div>
+                                    </div>
+                                </label>
                             </div>
                         </div>
                     </details>
@@ -2475,6 +2483,8 @@
                 formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
                 formData.append('enable_adventure_mode',
                     currentCreationPath === 'adventure' || document.getElementById('cfgAdventureMode')?.checked ? 'true' : 'false');
+                formData.append('enable_interactive_canvas',
+                    document.getElementById('cfgInteractiveCanvas')?.checked ? 'true' : 'false');
                 formData.append('story_planning_style', document.getElementById('storyPlanningStyle')?.value.trim() || '');
 
                 const presetAdventureId = document.getElementById('adventurePresetSelect')?.value || '';

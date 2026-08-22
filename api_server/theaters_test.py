@@ -378,6 +378,7 @@ class TestTheaterAPI(BaseTestCase):
                 "name": "Feature Flags Theater",
                 "use_generated_music": "true",
                 "enable_scene_animations": "true",
+                "enable_interactive_canvas": "true",
                 "enable_adventure_mode": "true",
             },
         )
@@ -388,6 +389,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertTrue(config["music"]["use_generated_music"])
         self.assertTrue(config["animation"]["enabled"])
+        self.assertTrue(config["interactive_canvas"]["enabled"])
         self.assertTrue(config["story_planning"]["adventure_mode"])
 
     def test_feature_flags_default_to_false_when_omitted(self):
@@ -407,6 +409,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertFalse(config["music"]["use_generated_music"])
         self.assertFalse(config["animation"]["enabled"])
+        self.assertFalse(config["interactive_canvas"]["enabled"])
         self.assertFalse(config["story_planning"]["adventure_mode"])
 
     def test_story_planning_style_is_saved_for_adventure_mode(self):
