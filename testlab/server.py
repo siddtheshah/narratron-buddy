@@ -40,6 +40,11 @@ from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, BenchmarkPrompt, get
 from testlab.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, music_prompt_catalog
 from testlab.text_response_benchmark import BenchmarkTextPrompt, get_text_prompt, text_prompt_catalog
 from testlab.speech_benchmark import BenchmarkSpeechPrompt, get_speech_prompt, speech_prompt_catalog
+from testlab.a2ui_canvas_lab import (
+    A2UICanvasTestConfig,
+    default_canvas_config,
+    run_canvas_test,
+)
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from tools.story_planning_tool import StoryPlanningTools
@@ -69,9 +74,12 @@ _music_runs: dict[str, dict[str, Any]] = {}
 _text_runs: dict[str, dict[str, Any]] = {}
 _speech_runs: dict[str, dict[str, Any]] = {}
 _story_planner_runs: dict[str, dict[str, Any]] = {}
+_a2ui_canvas_runs: dict[str, dict[str, Any]] = {}
 _runs_lock = threading.Lock()
 
 MAX_IN_FLIGHT_PER_PROVIDER = 5
+CANVAS_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif"})
+CANVAS_IMAGE_ROOTS = (ROOT / "images", PROJECT_ROOT / "theaters")
 
 
 @app.get("/", include_in_schema=False)
@@ -112,6 +120,72 @@ def speech_benchmark_lab():
 @app.get("/story-planner", include_in_schema=False)
 def story_planner_lab():
     return FileResponse(ROOT / "story_planner_lab.html", media_type="text/html")
+
+
+@app.get("/a2ui-canvas", include_in_schema=False)
+def a2ui_canvas_lab():
+    return FileResponse(ROOT / "a2ui_canvas_lab.html", media_type="text/html")
+
+
+@app.get("/api/a2ui-canvas/default-config")
+def a2ui_canvas_default_config():
+    return default_canvas_config().as_dict()
+
+
+@app.get("/api/a2ui-canvas/images")
+def a2ui_canvas_images():
+    """List curated local canvas images without exposing arbitrary files."""
+    images: list[dict[str, str]] = []
+    for image_root in CANVAS_IMAGE_ROOTS:
+        if not image_root.is_dir():
+            continue
+        for image_path in image_root.rglob("*"):
+            if not image_path.is_file() or image_path.suffix.lower() not in CANVAS_IMAGE_EXTENSIONS:
+                continue
+            relative_path = image_path.resolve().relative_to(PROJECT_ROOT.resolve())
+            images.append({"path": relative_path.as_posix(), "label": relative_path.as_posix()})
+    return {"images": sorted(images, key=lambda image: image["label"].lower())}
+
+
+@app.get("/api/a2ui-canvas/image")
+def a2ui_canvas_image(path: str):
+    """Serve an image selected from the canvas preview catalog."""
+    try:
+        image_path = (PROJECT_ROOT / path).resolve()
+        allowed = any(image_path.is_relative_to(root.resolve()) for root in CANVAS_IMAGE_ROOTS)
+    except (OSError, ValueError):
+        allowed = False
+    if not allowed or not image_path.is_file() or image_path.suffix.lower() not in CANVAS_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=404, detail="Canvas image not found.")
+    return FileResponse(image_path, media_type=mimetypes.guess_type(image_path.name)[0] or "image/png")
+
+
+@app.post("/api/a2ui-canvas/runs")
+def create_a2ui_canvas_run(body: dict[str, Any]):
+    try:
+        config = _a2ui_canvas_config_from_body(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    run_id = uuid.uuid4().hex
+    run = {
+        "id": run_id,
+        "status": "running",
+        "created_at": time.time(),
+        "config": config.as_dict(),
+    }
+    with _runs_lock:
+        _a2ui_canvas_runs[run_id] = run
+    threading.Thread(target=_run_a2ui_canvas_test, args=(run_id, config), daemon=True).start()
+    return run
+
+
+@app.get("/api/a2ui-canvas/runs/{run_id}")
+def get_a2ui_canvas_run(run_id: str):
+    with _runs_lock:
+        run = _a2ui_canvas_runs.get(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="A2UI Canvas test run not found.")
+        return run
 
 
 @app.post("/api/story-planner/sessions")
@@ -188,6 +262,64 @@ def _story_planner_payload(run: dict[str, Any]) -> dict[str, Any]:
             "last_scene_reaction": dict(getattr(tools, "_last_scene_reaction", {})),
         },
     }
+
+
+def _a2ui_canvas_config_from_body(body: dict[str, Any]) -> A2UICanvasTestConfig:
+    defaults = default_canvas_config()
+    request = str(body.get("request") or defaults.request).strip()
+    model = str(body.get("model") or defaults.model).strip()
+    if not request or len(request) > 4_000:
+        raise ValueError("request must contain 1-4000 characters.")
+    if not model or len(model) > 100:
+        raise ValueError("model must contain 1-100 characters.")
+
+    image_path = None
+    raw_image_path = body.get("image_path")
+    if raw_image_path:
+        candidate = Path(str(raw_image_path))
+        candidate = candidate.resolve() if candidate.is_absolute() else (PROJECT_ROOT / candidate).resolve()
+        try:
+            candidate.relative_to(PROJECT_ROOT.resolve())
+        except ValueError as exc:
+            raise ValueError("image_path must stay within the workspace.") from exc
+        if not candidate.is_file():
+            raise ValueError(f"image_path does not exist: {candidate}")
+        image_path = candidate
+
+    expected_surface_count = body.get("expected_surface_count", defaults.expected_surface_count)
+    if not isinstance(expected_surface_count, int) or not 1 <= expected_surface_count <= 8:
+        raise ValueError("expected_surface_count must be an integer from 1-8.")
+
+    persistent = body.get("expected_persistent", defaults.expected_persistent)
+    if persistent is not None and not isinstance(persistent, bool):
+        raise ValueError("expected_persistent must be true, false, or null.")
+    return A2UICanvasTestConfig(
+        name=str(body.get("name") or defaults.name)[:100],
+        request=request,
+        model=model,
+        image_path=image_path,
+        expected_surface_count=expected_surface_count,
+        expected_persistent=persistent,
+    )
+
+
+def _run_a2ui_canvas_test(run_id: str, config: A2UICanvasTestConfig) -> None:
+    try:
+        provider = get_text_response_provider("gemini-3", options={"model": config.model})
+        result = run_canvas_test(provider, config=config)
+        with _runs_lock:
+            _a2ui_canvas_runs[run_id].update({
+                "status": "completed" if not result["errors"] else "failed",
+                "completed_at": time.time(),
+                "result": result,
+            })
+    except Exception as exc:
+        with _runs_lock:
+            _a2ui_canvas_runs[run_id].update({
+                "status": "failed",
+                "completed_at": time.time(),
+                "error": str(exc),
+            })
 
 
 @app.get("/api/image-benchmark/catalog")

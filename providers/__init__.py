@@ -27,6 +27,7 @@ from providers.adapted_music_provider import AdaptedMusicProvider
 from providers.text_response_provider import (
     TextResponseProvider,
     TextResponseProviderError,
+    TextResponseAttachment,
     TextResponseRequest,
     TextResponseResult,
     parse_and_validate_structured_response,
@@ -77,6 +78,7 @@ __all__ = [
     "FalStableAudioAdapter",
     "AdaptedMusicProvider",
     "TextResponseRequest",
+    "TextResponseAttachment",
     "TextResponseResult",
     "TextResponseProvider",
     "TextResponseProviderError",

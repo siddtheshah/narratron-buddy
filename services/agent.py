@@ -251,11 +251,13 @@ def create_tool_bundle_for_session(
     interactive_canvas_tools = None
     interactive_canvas_config = config.get("interactive_canvas", {})
     if interactive_canvas_config.get("enabled", False):
+        app_interactive_canvas_config = get_app_config().get("interactive_canvas", {})
         interactive_canvas_tools = InteractiveCanvasTools(
             interactive_canvas_config,
             theater_id=theater_id,
             canvas_state_service=canvas_state_service,
             text_response_provider=story_planning_text_provider,
+            model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
         )
     music_config = config.get("music", {})
     reranker_provider = get_text_response_provider(

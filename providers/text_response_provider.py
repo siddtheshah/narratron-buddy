@@ -14,6 +14,14 @@ class TextResponseProviderError(RuntimeError):
     """A provider-normalized text response failure safe to show in diagnostics."""
 
 
+@dataclass(frozen=True)
+class TextResponseAttachment:
+    """Binary input supplied alongside a text-generation prompt."""
+
+    data: bytes
+    mime_type: str
+
+
 def parse_and_validate_structured_response(schema: Any, text: str) -> Any:
     """Parse JSON text and validate against the supplied structured schema."""
     if schema is None:
@@ -77,11 +85,14 @@ def parse_and_validate_structured_response(schema: Any, text: str) -> Any:
 @dataclass(frozen=True)
 class TextResponseRequest:
     prompt: str
+    model: str | None = None
     system_instruction: str | None = None
     temperature: float | None = None
     max_output_tokens: int | None = None
     stop_sequences: Sequence[str] = ()
     response_schema: type[BaseModel] | Any | None = None
+    response_json_schema: Mapping[str, Any] | None = None
+    attachments: Sequence[TextResponseAttachment] = ()
 
     def __post_init__(self) -> None:
         if not self.prompt or not self.prompt.strip():
@@ -90,6 +101,13 @@ class TextResponseRequest:
             raise ValueError("Temperature must be between 0.0 and 2.0.")
         if self.max_output_tokens is not None and self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be positive.")
+        if self.response_schema is not None and self.response_json_schema is not None:
+            raise ValueError("Specify either response_schema or response_json_schema, not both.")
+        for attachment in self.attachments:
+            if not isinstance(attachment, TextResponseAttachment):
+                raise ValueError("Text response attachments must be TextResponseAttachment instances.")
+            if not attachment.data or not attachment.mime_type.strip():
+                raise ValueError("Text response attachments require data and mime_type.")
 
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from typing import Any
 
 from google import genai
@@ -79,17 +80,30 @@ class GeminiTextResponseProvider(TextResponseProvider):
         if request.stop_sequences:
             config_kwargs["stop_sequences"] = list(request.stop_sequences)
 
-        if request.response_schema is not None:
+        schema = request.response_json_schema or request.response_schema
+        if schema is not None:
             config_kwargs["response_mime_type"] = "application/json"
-            config_kwargs["response_schema"] = request.response_schema
+            if request.response_json_schema is not None:
+                config_kwargs["response_json_schema"] = deepcopy(request.response_json_schema)
+            else:
+                # google-genai normalizes a dict schema in place before sending it.
+                # Keep the request's original JSON Schema for local validation.
+                config_kwargs["response_schema"] = deepcopy(request.response_schema)
 
 
         config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+        contents: Any = request.prompt
+        if request.attachments:
+            contents = [request.prompt]
+            contents.extend(
+                types.Part.from_bytes(data=attachment.data, mime_type=attachment.mime_type)
+                for attachment in request.attachments
+            )
 
         try:
             kwargs: dict[str, Any] = {
-                "model": self.model,
-                "contents": request.prompt,
+                "model": request.model or self.model,
+                "contents": contents,
             }
             if config:
                 kwargs["config"] = config
@@ -103,8 +117,8 @@ class GeminiTextResponseProvider(TextResponseProvider):
             raise TextResponseProviderError(self._failure_message(response))
 
         parsed = None
-        if request.response_schema is not None:
-            parsed = self.validate_structured_response(request.response_schema, text)
+        if schema is not None:
+            parsed = self.validate_structured_response(schema, text)
 
 
         finish_reason = self._extract_finish_reason(response)
@@ -114,7 +128,7 @@ class GeminiTextResponseProvider(TextResponseProvider):
         return TextResponseResult(
             text=text,
             provider=self.id,
-            model=self.model,
+            model=request.model or self.model,
             request_id=request_id,
             finish_reason=finish_reason,
             usage=usage,

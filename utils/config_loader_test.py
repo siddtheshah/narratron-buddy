@@ -21,6 +21,8 @@ class TestConfigLoader(BaseTestCase):
         config = get_theater_default_config()
         self.assertIsInstance(config, dict)
         self.assertIn("image_generation", config)
+        self.assertNotIn("model", config.get("interactive_canvas", {}))
+        self.assertIn("model", get_app_config().get("interactive_canvas", {}))
 
     def test_get_theater_config_creates_yaml(self):
         temp_dir = Path(tempfile.mkdtemp())
@@ -86,6 +88,11 @@ class TestConfigLoader(BaseTestCase):
                 "image_generation": {
                     "provider": "user-image-provider",
                 },
+                "interactive_canvas": {
+                    "enabled": True,
+                    "model": "user-ui-model",
+                    "cooldown_duration": 42,
+                },
             }
             save_theater_config(theater_id, custom_data, base_dir=temp_dir)
             loaded = get_theater_config(theater_id, base_dir=temp_dir)
@@ -95,9 +102,12 @@ class TestConfigLoader(BaseTestCase):
             self.assertEqual(loaded["story_planning"]["planner_model"], app_cfg["story_planning"]["planner_model"])
             self.assertEqual(loaded["music"]["provider"], app_cfg["music"]["provider"])
             self.assertEqual(loaded["image_generation"]["provider"], app_cfg["image_generation"]["provider"])
+            self.assertEqual(loaded["interactive_canvas"]["model"], app_cfg["interactive_canvas"]["model"])
 
             # Theater specific options are preserved
             self.assertEqual(loaded["story_planning"]["nodes_ahead"], 10)
+            self.assertTrue(loaded["interactive_canvas"]["enabled"])
+            self.assertEqual(loaded["interactive_canvas"]["cooldown_duration"], 42)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

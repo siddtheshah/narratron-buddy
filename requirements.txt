@@ -9,6 +9,7 @@ Pillow
 python-multipart
 python-dotenv>=1.0.1
 jinja2
+jsonschema>=4.0
 cloud-sql-python-connector[pg8000]
 absl-py
 stripe>=7.0.0

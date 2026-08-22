@@ -11,6 +11,9 @@ image_generation:
 story_planning:
     planner_model: "gemini-3.5-flash-lite"
 
+interactive_canvas:
+    model: "gemini-3.7-flash"
+
 music:
     provider: "lyria"
     catalog_match_threshold: 0.86

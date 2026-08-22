@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://narratron.com/a2ui/catalogs/canvas/v1",
+  "protocolVersion": "1.0",
+  "title": "Narratron Canvas Catalog",
+  "description": "A compact A2UI catalog for safe overlays on Narratron's image canvas.",
+  "catalogId": "https://narratron.com/a2ui/catalogs/canvas/v1",
+  "instructions": "Design one compact overlay. Use a flat component list with an id of root. Use only static child ID arrays; do not use child templates. Keep copy brief and avoid covering the scene center or bottom dialogue. Use at most three Buttons. Every Button action must include event.context.userAction as a literal description of what the user chose. Use persistent surfaces only for cross-scene HUDs and trackers.",
+  "components": {
+    "Card": {
+      "type": "object",
+      "description": "A framed container with exactly one child.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Card"
+            },
+            "child": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentId",
+              "description": "ID of the single child component. Wrap multiple children in a layout component."
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "child"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Column": {
+      "type": "object",
+      "description": "Arranges referenced children vertically.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Column"
+            },
+            "children": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ChildList",
+              "description": "Static array of child component IDs."
+            },
+            "justify": {
+              "type": "string",
+              "enum": ["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"]
+            },
+            "align": {
+              "type": "string",
+              "enum": ["start", "center", "end", "stretch"]
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "children"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Row": {
+      "type": "object",
+      "description": "Arranges referenced children horizontally.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Row"
+            },
+            "children": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ChildList",
+              "description": "Static array of child component IDs."
+            },
+            "justify": {
+              "type": "string",
+              "enum": ["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"]
+            },
+            "align": {
+              "type": "string",
+              "enum": ["start", "center", "end", "stretch"]
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "children"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Grid": {
+      "type": "object",
+      "description": "Narratron extension that arranges referenced children in a compact grid.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Grid"
+            },
+            "children": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ChildList",
+              "description": "Static array of child component IDs."
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            },
+            "gap": {
+              "type": "string",
+              "enum": ["small", "medium", "large"]
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "children", "columns"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Text": {
+      "type": "object",
+      "description": "Displays short plain text or a data-bound string.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Text"
+            },
+            "text": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString"
+            },
+            "variant": {
+              "type": "string",
+              "enum": ["body", "heading", "caption"]
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "text"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Progress": {
+      "type": "object",
+      "description": "Narratron extension that displays a bounded numeric value.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Progress"
+            },
+            "value": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicNumber"
+            },
+            "max": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicNumber"
+            },
+            "label": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/DynamicString"
+            },
+            "variant": {
+              "type": "string",
+              "enum": ["default", "health", "mana", "warning"]
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "value"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Button": {
+      "type": "object",
+      "description": "A trusted action trigger with one child label or icon.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Button"
+            },
+            "child": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentId"
+            },
+            "variant": {
+              "type": "string",
+              "enum": ["default", "primary", "borderless"]
+            },
+            "action": {
+              "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/Action"
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "child", "action"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Divider": {
+      "type": "object",
+      "description": "A visual separator.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Divider"
+            },
+            "axis": {
+              "type": "string",
+              "enum": ["horizontal", "vertical"]
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Icon": {
+      "type": "object",
+      "description": "Displays one icon from Narratron's trusted canvas icon set.",
+      "allOf": [
+        {
+          "$ref": "https://a2ui.org/specification/v1_0/common_types.json#/$defs/ComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Icon"
+            },
+            "name": {
+              "type": "string",
+              "enum": ["sword", "key", "shield", "warning", "star", "heart", "bag", "coin", "potion"]
+            },
+            "weight": {
+              "type": "number"
+            }
+          },
+          "required": ["component", "name"]
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  },
+  "$defs": {
+    "anyComponent": {
+      "oneOf": [
+        { "$ref": "#/components/Card" },
+        { "$ref": "#/components/Column" },
+        { "$ref": "#/components/Row" },
+        { "$ref": "#/components/Grid" },
+        { "$ref": "#/components/Text" },
+        { "$ref": "#/components/Progress" },
+        { "$ref": "#/components/Button" },
+        { "$ref": "#/components/Divider" },
+        { "$ref": "#/components/Icon" }
+      ],
+      "discriminator": {
+        "propertyName": "component"
+      }
+    }
+  }
+}

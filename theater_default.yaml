@@ -18,7 +18,6 @@ animation:
 
 interactive_canvas:
     enabled: false
-    model: "gemini-3.7-flash"
     max_surfaces: 5
     cooldown_duration: 10
 

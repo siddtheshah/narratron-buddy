@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from providers.gemini_text_response_provider import GeminiTextResponseProvider
 from providers.text_response_provider import (
+    TextResponseAttachment,
     TextResponseProviderError,
     TextResponseRequest,
 )
@@ -178,6 +179,39 @@ def test_gemini_text_provider_structured_schema_success():
     assert result.parsed.tags == ["dragon", "fire"]
 
 
+def test_gemini_text_provider_supports_catalog_json_schema_attachments_and_model_override():
+    client = DummyClient()
+    client.models.generate_content = lambda **kwargs: (
+        setattr(client.models, "last_kwargs", kwargs)
+        or DummyTextResponse(text='{"answer": "look at the image"}')
+    )
+    provider = GeminiTextResponseProvider(client=client)
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    }
+
+    result = provider.generate(TextResponseRequest(
+        prompt="Describe this image",
+        model="gemini-3.7-flash",
+        response_json_schema=schema,
+        attachments=(TextResponseAttachment(data=b"image-bytes", mime_type="image/png"),),
+    ))
+
+    kwargs = client.models.last_kwargs
+    assert kwargs["model"] == "gemini-3.7-flash"
+    assert kwargs["contents"][0] == "Describe this image"
+    assert kwargs["contents"][1].inline_data.mime_type == "image/png"
+    assert kwargs["contents"][1].inline_data.data == b"image-bytes"
+    config = kwargs["config"]
+    assert config.response_json_schema == schema
+    assert config.response_schema is None
+    assert result.model == "gemini-3.7-flash"
+    assert result.parsed == {"answer": "look at the image"}
+
+
 
 def test_gemini_text_provider_structured_schema_validation_error():
     client = DummyClient()
@@ -207,7 +241,6 @@ def test_gemini_text_provider_structured_schema_invalid_json():
     )
     with pytest.raises(TextResponseProviderError, match="Response is not valid JSON for structured schema"):
         provider.generate(req)
-
 
 
 

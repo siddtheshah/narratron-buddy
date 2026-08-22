@@ -18,3 +18,16 @@ To bypass the browser and exercise one real Vertex-backed planner turn, run:
 python testlab/story_planner_smoke.py
 ```
 
+To exercise one real A2UI Canvas generation turn in an isolated temporary theater,
+using a two-knight health-bar scenario, run:
+
+```powershell
+python testlab/a2ui_canvas_smoke.py
+```
+
+Add `--image testlab/images/trace-knight-sword.png` to include a canvas image in the request.
+
+The same configurable test is available in the Test Lab server at `/a2ui-canvas`. It accepts a model,
+canvas request, optional workspace-local image, expected surface count, and an optional persistence
+expectation. The browser default is a general canvas prompt; the health-bar scenario is reserved for the CLI smoke test.
+
