@@ -687,6 +687,149 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertNotIn(tools_adv.sticky_note, adv_exposed)
         self.assertNotIn(tools_adv.clear_scene, adv_exposed)
 
+    def test_required_stickies_loaded_from_list_of_keys(self):
+        config = {
+            "adventure_mode": True,
+            "required_stickies": [
+                "HUD",
+                "Radar",
+                "Reputation",
+            ],
+            "initial_elements": {
+                "HUD": "Funk synthesizer display",
+                "Radar": "Turntable scanner",
+            },
+        }
+        tools = self._make_tools(config=config, theater_id="req_test_1")
+        self.assertEqual(tools.get_required_sticky_notes(), ["HUD", "Radar", "Reputation"])
+        present = tools.get_present_sticky_notes()
+        present_topics = [n["topic"] for n in present]
+        self.assertIn("HUD", present_topics)
+        self.assertIn("Radar", present_topics)
+        self.assertIn("Reputation", present_topics)
+        self.assertEqual(len(present), 3)
+        hud_info = next(n["info"] for n in present if n["topic"] == "HUD")
+        self.assertEqual(hud_info, "Funk synthesizer display")
+
+    def test_required_stickies_never_dropped_on_bounding(self):
+        config = {
+            "adventure_mode": True,
+            "max_sticky_notes": 4,
+            "required_stickies": ["Required_A", "Required_B"],
+            "initial_elements": {
+                "Required_A": "Vital Tracker A",
+                "Required_B": "Vital Tracker B",
+            },
+        }
+        tools = self._make_tools(config=config, theater_id="req_test_eviction")
+        # Add 2 dynamic notes (total: 4 notes = max capacity)
+        tools.sticky_note("Dynamic_1", "Temp clue 1")
+        tools.sticky_note("Dynamic_2", "Temp clue 2")
+        self.assertEqual(len(tools.get_present_sticky_notes()), 4)
+
+        # Adding Dynamic_3 should drop the oldest NON-REQUIRED note (Dynamic_1), NOT Required_A or Required_B
+        res3 = tools.sticky_note("Dynamic_3", "Temp clue 3")
+        self.assertIn("Oldest sticky note 'Dynamic_1' was dropped", res3)
+        topics = [n["topic"] for n in tools.get_present_sticky_notes()]
+        self.assertIn("Required_A", topics)
+        self.assertIn("Required_B", topics)
+        self.assertNotIn("Dynamic_1", topics)
+        self.assertIn("Dynamic_2", topics)
+        self.assertIn("Dynamic_3", topics)
+
+        # Adding Dynamic_4 should drop Dynamic_2, still preserving Required_A and Required_B
+        res4 = tools.sticky_note("Dynamic_4", "Temp clue 4")
+        self.assertIn("Oldest sticky note 'Dynamic_2' was dropped", res4)
+        topics = [n["topic"] for n in tools.get_present_sticky_notes()]
+        self.assertIn("Required_A", topics)
+        self.assertIn("Required_B", topics)
+        self.assertNotIn("Dynamic_2", topics)
+        self.assertIn("Dynamic_3", topics)
+        self.assertIn("Dynamic_4", topics)
+
+    def test_required_stickies_preserved_on_clear_scene(self):
+        config = {
+            "adventure_mode": True,
+            "required_stickies": ["HUD", "Scanner"],
+            "initial_elements": {
+                "HUD": "Active status",
+                "Scanner": "Radar ping",
+            },
+        }
+        tools = self._make_tools(config=config, theater_id="req_clear_test")
+        tools.sticky_note("Room_Clue", "A secret lever on the wall")
+        tools.generate_character(name="Guard", personality="alert", motivation="stop intruders")
+
+        self.assertEqual(len(tools.get_present_sticky_notes()), 3)
+        self.assertEqual(len(tools.get_present_characters()), 1)
+
+        # Clear scene: dynamic notes and characters cleared, required stickies preserved
+        res = tools.clear_scene()
+        self.assertIn("Cleared 1 sticky note(s) and 1 character(s)", res)
+        present = tools.get_present_sticky_notes()
+        present_topics = [n["topic"] for n in present]
+        self.assertEqual(sorted(present_topics), ["HUD", "Scanner"])
+        self.assertNotIn("Room_Clue", present_topics)
+        self.assertEqual(len(tools.get_present_characters()), 0)
+
+    def test_required_stickies_preserved_on_import_and_reload(self):
+        config = {
+            "adventure_mode": True,
+            "required_stickies": ["Core_HUD"],
+            "initial_elements": {"Core_HUD": "Default HUD text"},
+        }
+        tools = self._make_tools(config=config, theater_id="req_import_test")
+
+        # Import a state that does not contain Core_HUD
+        external_state = {
+            "sticky_notes": [{"topic": "Other_Item", "info": "Something else"}],
+            "characters": [],
+            "plot_beats": [],
+        }
+        tools.import_story_planning_state(external_state)
+        present_topics = [n["topic"] for n in tools.get_present_sticky_notes()]
+        self.assertIn("Other_Item", present_topics)
+        self.assertIn("Core_HUD", present_topics)
+
+    def test_required_stickies_updated_in_place_without_losing_protection(self):
+        config = {
+            "adventure_mode": True,
+            "max_sticky_notes": 3,
+            "required_stickies": ["HUD"],
+            "initial_elements": {"HUD": "Old HUD state"},
+        }
+        tools = self._make_tools(config=config, theater_id="req_update_test")
+        tools.sticky_note("Clue1", "Info 1")
+        tools.sticky_note("Clue2", "Info 2")
+        self.assertEqual(len(tools.get_present_sticky_notes()), 3)
+
+        # Update HUD
+        tools.sticky_note("HUD", "New HUD state with ATK +5")
+        hud_info = next(n["info"] for n in tools.get_present_sticky_notes() if n["topic"] == "HUD")
+        self.assertEqual(hud_info, "New HUD state with ATK +5")
+
+        # Now add Clue3; HUD was updated and moved to end, but Clue1 (oldest non-required) should be dropped
+        res = tools.sticky_note("Clue3", "Info 3")
+        self.assertIn("Oldest sticky note 'Clue1' was dropped", res)
+        topics = [n["topic"] for n in tools.get_present_sticky_notes()]
+        self.assertIn("HUD", topics)
+        self.assertNotIn("Clue1", topics)
+        self.assertIn("Clue2", topics)
+        self.assertIn("Clue3", topics)
+
+    def test_required_stickies_all_required_capacity(self):
+        config = {
+            "adventure_mode": True,
+            "max_sticky_notes": 2,
+            "required_stickies": ["R1", "R2", "R3"],
+            "initial_elements": {"R1": "1", "R2": "2", "R3": "3"},
+        }
+        tools = self._make_tools(config=config, theater_id="req_cap_test")
+        # max_sticky_notes automatically adjusted to at least len(required_stickies)
+        self.assertGreaterEqual(tools.max_sticky_notes, 3)
+        topics = [n["topic"] for n in tools.get_present_sticky_notes()]
+        self.assertEqual(sorted(topics), ["R1", "R2", "R3"])
+
     def test_planner_action_is_nonblocking_and_commits_plot_beats(self):
         completed = threading.Event()
         results = []
@@ -1034,24 +1177,21 @@ class TestStoryPlanningTools(unittest.TestCase):
             res3 = tools.process_user_action("I walk through.")
             self.assertEqual(res3["status"], "processing")
 
-    def test_search_lore_with_trader_adventure_lore(self):
-        trader_lore_dir = Path(__file__).parent.parent / "adventures" / "the-trader" / "lore"
-        if not trader_lore_dir.is_dir():
-            return
-
-        lore_files = []
-        for file in trader_lore_dir.rglob("*.txt"):
-            rel = file.relative_to(trader_lore_dir).as_posix()
-            lore_files.append((f"lore/{rel}", file.read_bytes()))
+    def test_search_lore_ranking_and_snippets(self):
+        lore_files = [
+            ("lore/01_tradeable_objects_and_pricing.txt", b"Pricing details for tradeable objects and merchants in the bazaar."),
+            ("lore/02_history_and_origins.txt", b"Ancient history of the desert kingdoms and pyramids."),
+            ("lore/03_hazards_and_cargo_vulnerability.txt", b"Hazards and cargo vulnerability when crossing the stormy mountains."),
+        ]
 
         with tempfile.TemporaryDirectory() as temp_dir:
             tm = TheaterManager(base_theaters_dir=temp_dir)
             tm.create_theater(
-                name="Trader Theater",
-                theater_id="trader-theater",
+                name="Test Lore Theater",
+                theater_id="test-lore-theater",
                 lore_files=lore_files,
             )
-            tools = self._make_tools(theater_id="trader-theater", theater_manager=tm)
+            tools = self._make_tools(theater_id="test-lore-theater", theater_manager=tm)
 
             # Search for tradeable pricing
             res = tools.search_lore("pricing tradeable objects")

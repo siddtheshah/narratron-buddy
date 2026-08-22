@@ -175,7 +175,7 @@ No lore documents are available for this theater. Invent the lore, world details
 {% endif -%}
 
 # Tool Usage Guidelines
-- **Sticky Notes (`sticky_note`)**: Use sticky notes to track major plot developments, story milestones, key discoveries, active goals, and persistent scene state (characters, locations, objects). Call `sticky_note` with a concise `topic` and informative `info` whenever a major plot event or status shift occurs to maintain narrative continuity across turns. The scene holds at most {{ max_sticky_notes or 5 }} sticky notes; when full, adding a new topic will drop the oldest sticky note.
+- **Sticky Notes (`sticky_note`)**: Use sticky notes to track major plot developments, story milestones, key discoveries, active goals, and persistent scene state (characters, locations, objects). Call `sticky_note` with a concise `topic` and informative `info` whenever a major plot event or status shift occurs to maintain narrative continuity across turns. The scene holds at most {{ max_sticky_notes or 5 }} sticky notes; when full, adding a new topic will drop the oldest non-required sticky note. Required sticky notes are persistent and will never be dropped.
 - **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
@@ -330,6 +330,7 @@ class StoryPlanningTools(BaseTools):
             canvas_state_service=canvas_state_service,
         )
         self._sticky_notes: OrderedDict[str, str] = OrderedDict()
+        self._required_stickies: OrderedDict[str, str] = OrderedDict()
         self._elements = self._sticky_notes
         self._sticky_notes_lock = Lock()
         self._elements_lock = self._sticky_notes_lock
@@ -341,6 +342,29 @@ class StoryPlanningTools(BaseTools):
         self.theater_manager = theater_manager
         self.text_response_provider = text_response_provider
 
+        req_keys = self.config.get("required_stickies", self.config.get("required_sticky_notes", self.config.get("required_elements", [])))
+        if isinstance(req_keys, (list, tuple, set)):
+            for k in req_keys:
+                if isinstance(k, dict):
+                    topic = str(k.get("topic", k.get("name", ""))).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                    info = str(k.get("info", k.get("content", ""))).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+                else:
+                    topic = str(k).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                    info = ""
+                if topic:
+                    self._required_stickies[topic] = info
+        elif isinstance(req_keys, dict):
+            for k, v in req_keys.items():
+                topic = str(k).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                info = str(v).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+                if topic:
+                    self._required_stickies[topic] = info
+        elif isinstance(req_keys, str):
+            for k in req_keys.split(","):
+                topic = str(k).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                if topic:
+                    self._required_stickies[topic] = ""
+
         self.nodes_ahead: int = max(1, min(int(self.config.get("nodes_ahead", 3)), MAX_NODES_AHEAD))
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
@@ -349,10 +373,13 @@ class StoryPlanningTools(BaseTools):
             or DEFAULT_STORY_PLANNING_STYLE
         )
         self.max_sticky_notes: int = max(
-            1,
-            min(
-                int(self.config.get("max_sticky_notes", self.config.get("max_named_elements", DEFAULT_MAX_STICKY_NOTES))),
-                MAX_STICKY_NOTES,
+            len(self._required_stickies),
+            max(
+                1,
+                min(
+                    int(self.config.get("max_sticky_notes", self.config.get("max_named_elements", DEFAULT_MAX_STICKY_NOTES))),
+                    MAX_STICKY_NOTES,
+                ),
             ),
         )
         self.max_named_elements: int = self.max_sticky_notes
@@ -437,18 +464,34 @@ class StoryPlanningTools(BaseTools):
         initial_notes = self.config.get("initial_sticky_notes", self.config.get("initial_elements", {}))
         if isinstance(initial_notes, dict):
             for k, v in initial_notes.items():
-                if len(self._sticky_notes) >= self.max_sticky_notes:
-                    break
-                self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
+                topic = str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                info = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
+                if topic:
+                    self._sticky_notes[topic] = info
+                    if topic in self._required_stickies and not self._required_stickies[topic]:
+                        self._required_stickies[topic] = info
         elif isinstance(initial_notes, list):
             for elem in initial_notes:
-                if len(self._sticky_notes) >= self.max_sticky_notes:
-                    break
                 if isinstance(elem, dict):
                     topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
                     info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
-                    if topic and info:
+                    if topic:
                         self._sticky_notes[topic] = info
+                        if topic in self._required_stickies and not self._required_stickies[topic]:
+                            self._required_stickies[topic] = info
+
+        # Ensure all required stickies are present in _sticky_notes
+        for req_topic, req_info in self._required_stickies.items():
+            if req_topic not in self._sticky_notes:
+                self._sticky_notes[req_topic] = req_info
+
+        # Respect capacity by dropping excess non-required notes if initial elements exceeded limit
+        while len(self._sticky_notes) > self.max_sticky_notes:
+            evict_key = next((k for k in self._sticky_notes if k not in self._required_stickies), None)
+            if evict_key is not None:
+                del self._sticky_notes[evict_key]
+            else:
+                break
 
         initial_characters = self.config.get("initial_characters", {})
         if isinstance(initial_characters, dict):
@@ -515,6 +558,11 @@ class StoryPlanningTools(BaseTools):
                 for k, v in notes.items():
                     self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
 
+            # Ensure all required stickies are present
+            for req_topic, req_info in self._required_stickies.items():
+                if req_topic not in self._sticky_notes:
+                    self._sticky_notes[req_topic] = req_info
+
         with self._characters_lock:
             self._characters.clear()
             chars = state.get("characters", [])
@@ -575,6 +623,9 @@ class StoryPlanningTools(BaseTools):
                         elif isinstance(saved_notes, dict):
                             for k, v in saved_notes.items():
                                 self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
+                        for req_topic, req_info in self._required_stickies.items():
+                            if req_topic not in self._sticky_notes:
+                                self._sticky_notes[req_topic] = req_info
                     return
 
             if state_mgr and hasattr(state_mgr, "get_named_elements"):
@@ -592,6 +643,10 @@ class StoryPlanningTools(BaseTools):
                         elif isinstance(saved_elements, dict):
                             for k, v in saved_elements.items():
                                 self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
+                        for req_topic, req_info in self._required_stickies.items():
+                            if req_topic not in self._sticky_notes:
+                                self._sticky_notes[req_topic] = req_info
+                    return
         except Exception as e:
             logger.warning(
                 "[StoryPlanningTools] Failed to reload story planning state from session state: %s",
@@ -1235,7 +1290,10 @@ class StoryPlanningTools(BaseTools):
                 self._sticky_notes.move_to_end(clean_topic)
             else:
                 if len(self._sticky_notes) >= self.max_sticky_notes:
-                    dropped_topic, _ = self._sticky_notes.popitem(last=False)
+                    evict_key = next((k for k in self._sticky_notes if k not in self._required_stickies), None)
+                    if evict_key is not None:
+                        del self._sticky_notes[evict_key]
+                        dropped_topic = evict_key
                 self._sticky_notes[clean_topic] = clean_info
             current_count = len(self._sticky_notes)
 
@@ -1254,7 +1312,7 @@ class StoryPlanningTools(BaseTools):
         if dropped_topic:
             warning = f" Warning: Maximum limit of {self.max_sticky_notes} sticky notes reached. Oldest sticky note '{dropped_topic}' was dropped to make room."
         elif current_count >= self.max_sticky_notes and not is_update:
-            warning = f" Note: Sticky note limit of {self.max_sticky_notes} reached. Adding another new note will drop the oldest one."
+            warning = f" Note: Sticky note limit of {self.max_sticky_notes} reached. Adding another new note will drop the oldest non-required one."
 
         return f"{action} sticky note '{clean_topic}'.{warning}"
 
@@ -1264,10 +1322,16 @@ class StoryPlanningTools(BaseTools):
 
     @logged_tool_call
     def clear_scene(self) -> str:
-        """Clear every sticky note and character from the current scene before starting a new one."""
+        """Clear dynamic sticky notes and characters from the current scene before starting a new one. Required sticky notes are preserved."""
         with self._sticky_notes_lock:
-            note_count = len(self._sticky_notes)
-            self._sticky_notes.clear()
+            non_required_keys = [k for k in self._sticky_notes if k not in self._required_stickies]
+            for k in non_required_keys:
+                del self._sticky_notes[k]
+            # Ensure all required stickies remain present
+            for req_topic, req_info in self._required_stickies.items():
+                if req_topic not in self._sticky_notes:
+                    self._sticky_notes[req_topic] = req_info
+            cleared_notes_count = len(non_required_keys)
 
         with self._characters_lock:
             char_count = len(self._characters)
@@ -1282,15 +1346,16 @@ class StoryPlanningTools(BaseTools):
         self.save_to_session_state()
 
         logger.debug(
-            "[StoryPlanningTools] Cleared %d sticky note(s), %d character(s), and plot beats (theater=%s).",
-            note_count,
+            "[StoryPlanningTools] Cleared %d sticky note(s) (preserved %d required), %d character(s), and plot beats (theater=%s).",
+            cleared_notes_count,
+            len(self._required_stickies),
             char_count,
             self.theater_id or "default",
         )
 
         if char_count > 0:
-            return f"Cleared {note_count} sticky note(s) and {char_count} character(s) from the scene."
-        return f"Cleared {note_count} sticky note(s) from the scene."
+            return f"Cleared {cleared_notes_count} sticky note(s) and {char_count} character(s) from the scene."
+        return f"Cleared {cleared_notes_count} sticky note(s) from the scene."
 
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
         """Return a stable snapshot of active sticky notes."""
@@ -1308,6 +1373,10 @@ class StoryPlanningTools(BaseTools):
     def get_present_elements(self) -> list[dict[str, str]]:
         """Return a stable snapshot for live-agent observability."""
         return self.get_present_sticky_notes()
+
+    def get_required_sticky_notes(self) -> list[str]:
+        """Return the list of required sticky note keys that cannot be dropped."""
+        return list(self._required_stickies.keys())
 
     def get_present_characters(self) -> list[dict[str, Any]]:
         """Return a stable snapshot of active characters with personalities and motivations."""

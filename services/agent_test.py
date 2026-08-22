@@ -111,7 +111,7 @@ class TestCreateAgent(unittest.TestCase):
         }
         expected_manager = mock_image_cls.call_args.kwargs["theater_manager"]
         managed_tool_kwargs = {**expected_kwargs, "theater_manager": expected_manager}
-        mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs)
+        mock_image_cls.assert_called_once_with(config, **managed_tool_kwargs, adventure_mode=False)
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(config.get("chat", {}), **expected_kwargs)
         mock_story_planning_cls.assert_called_once_with(

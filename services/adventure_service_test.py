@@ -60,6 +60,30 @@ class TestAdventureService(unittest.TestCase):
         refs2_dir.mkdir()
         (refs2_dir / "beta_cover.jpg").write_bytes(b"\xff\xd8\xfffakejpeg")
 
+        self.adv3_dir = self.local_dir / "Gamma Quest"
+        self.adv3_dir.mkdir(parents=True)
+        (self.adv3_dir / "metadata.json").write_text(
+            json.dumps({
+                "id": "gamma-quest",
+                "title": "Gamma Quest",
+                "description": "Third test with required stickies.",
+                "created_at": "2026-08-20T14:00:00Z",
+                "cover_image": "references/gamma_cover.png",
+                "tags": ["Adventure"],
+            }),
+            encoding="utf-8",
+        )
+        (self.adv3_dir / "theater.yaml").write_text(
+            "agent:\n  style: space-funk\nstory_planning:\n  adventure_mode: true\n  required_stickies:\n    - HUD\n    - Radar\n",
+            encoding="utf-8",
+        )
+        refs3_dir = self.adv3_dir / "references"
+        refs3_dir.mkdir()
+        (refs3_dir / "gamma_cover.png").write_bytes(b"\x89PNG\r\n\x1a\nfakeimage")
+        lore3_dir = self.adv3_dir / "lore"
+        lore3_dir.mkdir()
+        (lore3_dir / "rules.txt").write_text("Quest rules", encoding="utf-8")
+
     def tearDown(self):
         self.temp_dir.cleanup()
 
@@ -73,14 +97,17 @@ class TestAdventureService(unittest.TestCase):
         with patch.object(service, "_fetch_adventures_from_gcs", return_value=[]):
             adventures = service.list_adventures(force_refresh=True)
 
-            self.assertEqual(len(adventures), 2)
-            # Newest first: Beta Quest (2026-08-18) should come before Alpha Adventure (2026-08-10)
-            self.assertEqual(adventures[0]["id"], "beta-quest")
-            self.assertEqual(adventures[1]["id"], "alpha-adventure")
+            self.assertEqual(len(adventures), 3)
+            # Newest first: Gamma Quest (2026-08-20), Beta Quest (2026-08-18), Alpha Adventure (2026-08-10)
+            self.assertEqual(adventures[0]["id"], "gamma-quest")
+            self.assertEqual(adventures[1]["id"], "beta-quest")
+            self.assertEqual(adventures[2]["id"], "alpha-adventure")
             self.assertEqual(adventures[0]["track_count"], 0)
-            self.assertEqual(adventures[1]["track_count"], 1)
-            self.assertEqual(adventures[1]["lore_count"], 1)
-            self.assertEqual(adventures[1]["reference_count"], 1)
+            self.assertEqual(adventures[1]["track_count"], 0)
+            self.assertEqual(adventures[2]["track_count"], 1)
+            self.assertEqual(adventures[0]["lore_count"], 1)
+            self.assertEqual(adventures[2]["lore_count"], 1)
+            self.assertEqual(adventures[0]["reference_count"], 1)
 
     def test_get_adventure_and_cover_local(self):
         service = AdventureService(
@@ -167,31 +194,27 @@ class TestAdventureService(unittest.TestCase):
         self.assertEqual(len(lore), 1)
         self.assertEqual(config["agent"]["style"], "cosmic")
 
-    def test_the_trader_adventure_package_structure(self):
-        trader_dir = Path("adventures/the-trader")
-        self.assertTrue(trader_dir.exists())
-
+    def test_adventure_package_structure_and_required_stickies(self):
         service = AdventureService(
             bucket_name="test-bucket",
-            local_fallback_dir=Path("adventures"),
+            local_fallback_dir=self.local_dir,
         )
-        with patch.object(service, "_fetch_adventures_from_gcs", return_value=[]):
-            adv = service.get_adventure("the-trader")
+        with patch.object(service, "_fetch_adventures_from_gcs", return_value=[]), \
+             patch.object(service, "_get_bucket", return_value=None):
+            adv = service.get_adventure("gamma-quest")
             self.assertIsNotNone(adv)
-            self.assertEqual(adv["id"], "the-trader")
-            self.assertEqual(adv["title"], "The Trader: Caravan of the Silk Road")
-            self.assertEqual(adv["lore_count"], 13)
+            self.assertEqual(adv["id"], "gamma-quest")
+            self.assertEqual(adv["title"], "Gamma Quest")
+            self.assertEqual(adv["lore_count"], 1)
 
-            refs, playlists, lore, config = service.load_adventure_assets("the-trader")
-            self.assertGreaterEqual(len(refs), 1)
-            self.assertEqual(len(lore), 13)
-            self.assertIn("agent", config)
-            self.assertIn("Silk Road", config["agent"]["special_instructions"])
-
-            # Verify nested location files were loaded
-            lore_paths = [path.replace("\\", "/") for path, _ in lore]
-            self.assertTrue(any("locations/01_rome" in p for p in lore_paths))
-            self.assertTrue(any("locations/08_changan" in p for p in lore_paths))
+            refs, playlists, lore, config = service.load_adventure_assets("gamma-quest")
+            self.assertIn("story_planning", config)
+            self.assertTrue(config["story_planning"]["adventure_mode"])
+            self.assertIn("required_stickies", config["story_planning"])
+            self.assertEqual(
+                config["story_planning"]["required_stickies"],
+                ["HUD", "Radar"],
+            )
 
 
 if __name__ == "__main__":

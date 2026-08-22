@@ -31,6 +31,8 @@ music:
 story_planning:
     max_named_elements: 5
     initial_elements: {}
+    # List of sticky note keys/topics that the story planner must always retain and never drop
+    required_stickies: []
 
     adventure_mode: false
     # When Adventure Mode NPC dialogue is enabled, synthesize each spoken line
