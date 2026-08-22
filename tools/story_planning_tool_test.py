@@ -14,7 +14,6 @@ from google.genai import types
 
 from tools.story_planning_tool import (
     DEFAULT_MAX_STICKY_NOTES,
-    DEFAULT_MAX_NAMED_ELEMENTS,
     DEFAULT_STORY_PLANNING_STYLE,
     DEFAULT_THINKING_BUDGET,
     MAX_LORE_DOCUMENTS_LISTED,
@@ -605,9 +604,9 @@ class TestStoryPlanningTools(unittest.TestCase):
 
     def test_named_elements_are_bounded(self):
         tools = self._make_tools(theater_id="elements")
-        for index in range(DEFAULT_MAX_NAMED_ELEMENTS + 1):
+        for index in range(DEFAULT_MAX_STICKY_NOTES + 1):
             tools.update_or_insert_named_element(f"key_{index}", f"value_{index}")
-        self.assertEqual(len(tools.get_present_elements()), DEFAULT_MAX_NAMED_ELEMENTS)
+        self.assertEqual(len(tools.get_present_elements()), DEFAULT_MAX_STICKY_NOTES)
         self.assertEqual(tools.get_present_elements()[0]["name"], "key_1")
 
     def test_sticky_note_insert_update_and_bounding(self):
