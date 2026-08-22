@@ -77,6 +77,8 @@ class CanvasStateManager:
         # top of the current scene image.
         self.scene_dialogue: List[Dict[str, str]] = []
         self.narration: str = ""
+        # A2UI protocol messages plus host-owned normalized canvas placement.
+        self.interactive_surfaces: Dict[str, Dict[str, Any]] = {}
         # Normalized speaker name -> assigned Seed voice.  This is persisted
         # alongside the canvas so returning theaters keep their cast voices.
         self.character_voice_assignments: Dict[str, str] = {}
@@ -129,6 +131,12 @@ class CanvasStateManager:
                     self.story_planning_state = c_state.get("story_planning_state", {})
                     self.scene_dialogue = c_state.get("scene_dialogue", [])
                     self.narration = str(c_state.get("narration") or "")
+                    surfaces = c_state.get("interactive_surfaces", [])
+                    self.interactive_surfaces = {
+                        str(item.get("surface_id")): dict(item)
+                        for item in surfaces
+                        if isinstance(item, dict) and item.get("surface_id")
+                    } if isinstance(surfaces, list) else {}
                     assignments = c_state.get("character_voice_assignments", {})
                     self.character_voice_assignments = {
                         str(key): str(value) for key, value in assignments.items()
@@ -282,6 +290,66 @@ class CanvasStateManager:
             self.export_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
 
+    def upsert_interactive_surface(self, surface: Dict[str, Any], max_surfaces: int = 5) -> None:
+        """Store one generated A2UI surface and notify connected renderers."""
+        surface_id = str(surface.get("surface_id") or "")
+        if not surface_id:
+            raise ValueError("Interactive surface requires a surface_id.")
+        self.interactive_surfaces[surface_id] = dict(surface)
+        while len(self.interactive_surfaces) > max(1, max_surfaces):
+            self.interactive_surfaces.pop(next(iter(self.interactive_surfaces)))
+        sess_dir = self.theater.directory()
+        if sess_dir.exists():
+            self.export_theater_data(theater_dir=sess_dir)
+        self._notify_state_changed("latest")
+
+    def delete_interactive_surface(self, surface_id: str = "all") -> int:
+        """Remove a single A2UI surface or every current surface."""
+        if surface_id == "all":
+            removed = len(self.interactive_surfaces)
+            self.interactive_surfaces.clear()
+        else:
+            removed = int(self.interactive_surfaces.pop(str(surface_id), None) is not None)
+        if removed:
+            sess_dir = self.theater.directory()
+            if sess_dir.exists():
+                self.export_theater_data(theater_dir=sess_dir)
+            self._notify_state_changed("latest")
+        return removed
+
+    def move_interactive_surface(
+        self, surface_id: str, left_pct: float, top_pct: float
+    ) -> Optional[Dict[str, float]]:
+        """Persist a user-selected canvas position for an A2UI surface."""
+        surface = self.interactive_surfaces.get(str(surface_id))
+        if not surface:
+            return None
+        placement = surface.setdefault("placement", {})
+        placement["left_pct"] = round(max(2.0, min(98.0, float(left_pct))), 2)
+        placement["top_pct"] = round(max(2.0, min(98.0, float(top_pct))), 2)
+        sess_dir = self.theater.directory()
+        if sess_dir.exists():
+            self.export_theater_data(theater_dir=sess_dir)
+        self._notify_state_changed("latest")
+        return {"left_pct": placement["left_pct"], "top_pct": placement["top_pct"]}
+
+    def get_interactive_action(self, surface_id: str, component_id: str, action_name: str) -> Optional[Dict[str, Any]]:
+        """Resolve an action against the authoritative generated component tree."""
+        surface = self.interactive_surfaces.get(str(surface_id))
+        components: Dict[str, Dict[str, Any]] = {}
+        for message in (surface or {}).get("messages", []):
+            if not isinstance(message, dict):
+                continue
+            payload = message.get("createSurface") or message.get("updateComponents") or {}
+            for component in payload.get("components", []):
+                if isinstance(component, dict) and component.get("id"):
+                    components[str(component["id"])] = component
+        component = components.get(str(component_id), {})
+        event = (component.get("action") or {}).get("event", {})
+        if event.get("name") == action_name:
+            return dict(event)
+        return None
+
 
     def _notify_state_changed(self, *domains: str):
         """Schedule a compact state invalidation for connected viewers."""
@@ -359,6 +427,13 @@ class CanvasStateManager:
         )
         if image_changed:
             self.doodles_state.clear()
+            # Interactables are composed against a specific visual scene.
+            # Keep explicit HUD/tracker surfaces but discard scene-bound UI.
+            self.interactive_surfaces = {
+                surface_id: surface
+                for surface_id, surface in self.interactive_surfaces.items()
+                if bool(surface.get("persistent", False))
+            }
         if presentation_changed:
             self.shown_image_time = time.time()
         elif not getattr(self, "shown_image_time", None):
@@ -779,6 +854,7 @@ class CanvasStateManager:
             "narration": self.narration,
             "character_voice_assignments": dict(self.character_voice_assignments),
             "sticky_notes": self.get_sticky_notes(),
+            "interactive_surfaces": list(self.interactive_surfaces.values()),
         }
         if self.shown_animation_frames:
             res["animation"] = {
@@ -820,6 +896,7 @@ class CanvasStateManager:
             "story_planning_state": dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {},
             "scene_dialogue": list(self.scene_dialogue),
             "narration": self.narration,
+            "interactive_surfaces": list(self.interactive_surfaces.values()),
             "character_voice_assignments": dict(self.character_voice_assignments),
             "suggestions": self.chat_manager.export_suggestions(),
             "chat_messages": self.chat_manager.get_messages(),
@@ -888,4 +965,3 @@ class CanvasStateManager:
                             pass
 
         return state_data, image_files
-

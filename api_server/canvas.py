@@ -3,7 +3,8 @@
 from typing import Optional
 
 from fastapi import Request, WebSocket, WebSocketDisconnect, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from google.genai import types
 
 from api_server.shared import (
     app,
@@ -15,6 +16,7 @@ from api_server.shared import (
     get_current_user_async,
     _require_canvas_access,
     _require_canvas_access_async,
+    can_control_agent_websocket,
 )
 from api_server.dependencies import agent_manager
 
@@ -35,6 +37,25 @@ class SuggestionWithdrawal(BaseModel):
 
 class ViewerCollabRequest(BaseModel):
     enabled: bool
+
+
+class A2UIActionBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    surfaceId: str = Field(min_length=1, max_length=100)
+    sourceComponentId: str = Field(min_length=1, max_length=100)
+    timestamp: str = Field(min_length=1, max_length=100)
+    context: dict = Field(default_factory=dict)
+    wantResponse: bool = False
+
+
+class A2UIActionEnvelope(BaseModel):
+    version: str
+    action: A2UIActionBody
+
+
+class A2UISurfacePlacement(BaseModel):
+    left_pct: float = Field(ge=2, le=98)
+    top_pct: float = Field(ge=2, le=98)
 
 
 # ========================================
@@ -129,6 +150,75 @@ def get_chat(request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
     return canvas_states.chat_messages(theater_id)
+
+
+@app.post("/api/a2ui/action")
+def post_a2ui_action(payload: A2UIActionEnvelope, request: Request, theater_id: str):
+    """Validate a renderer action, then relay it to the active live agent."""
+    _require_canvas_access(request, theater_id)
+    if payload.version != "v1.0":
+        raise HTTPException(status_code=400, detail="Unsupported A2UI protocol version.")
+    deployment = db.get_deployment(theater_id)
+    current_user = get_current_user(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can use interactive canvas controls.")
+    state = canvas_states.get(theater_id)
+    action = state.get_interactive_action(
+        payload.action.surfaceId,
+        payload.action.sourceComponentId,
+        payload.action.name,
+    )
+    if not action:
+        raise HTTPException(status_code=404, detail="This interactable is no longer active.")
+    authoritative_context = action.get("context") or {}
+    user_action = " ".join(str(
+        authoritative_context.get("userAction") or authoritative_context.get("playerAction") or ""
+    ).split())[:2000]
+    if not user_action:
+        raise HTTPException(status_code=400, detail="Interactive control has no user action.")
+    session = agent_manager.get_session(theater_id)
+    if not session or not session.websocket_connected:
+        raise HTTPException(status_code=409, detail="The live agent is not connected.")
+    notification = (
+        "[A2UI Canvas Action] The active user selected this immutable user input: "
+        f"{user_action!r}. In Adventure Mode, submit in-world actions through process_user_action "
+        "without rewriting them. Otherwise handle this selection directly as explicit user input."
+    )
+    if not session.send_content(types.Content(parts=[types.Part(text=notification)])):
+        raise HTTPException(status_code=409, detail="The live agent could not receive the action.")
+    state.delete_interactive_surface(payload.action.surfaceId)
+    return {"status": "accepted", "surface_id": payload.action.surfaceId}
+
+
+@app.patch("/api/a2ui/surfaces/{surface_id}")
+def move_a2ui_surface(
+    surface_id: str, payload: A2UISurfacePlacement, request: Request, theater_id: str
+):
+    """Move a generated surface for all connected canvas viewers."""
+    _require_canvas_access(request, theater_id)
+    deployment = db.get_deployment(theater_id)
+    current_user = get_current_user(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can move interactables.")
+    placement = canvas_states.move_interactive_surface(
+        surface_id, payload.left_pct, payload.top_pct, theater_id
+    )
+    if placement is None:
+        raise HTTPException(status_code=404, detail="This interactable is no longer active.")
+    return {"status": "moved", "surface_id": surface_id, "placement": placement}
+
+
+@app.delete("/api/a2ui/surfaces/{surface_id}")
+def delete_a2ui_surface(surface_id: str, request: Request, theater_id: str):
+    """Let the active orator remove an unwanted generated surface."""
+    _require_canvas_access(request, theater_id)
+    deployment = db.get_deployment(theater_id)
+    current_user = get_current_user(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can delete interactables.")
+    if not canvas_states.delete_interactive_surface(surface_id, theater_id):
+        raise HTTPException(status_code=404, detail="This interactable is no longer active.")
+    return {"status": "deleted", "surface_id": surface_id}
 
 @app.post("/api/chat")
 def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = None):

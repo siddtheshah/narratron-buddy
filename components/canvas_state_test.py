@@ -65,6 +65,78 @@ class TestCanvasStateManager(BaseTestCase):
 
         asyncio.run(exercise())
 
+    def test_interactive_surfaces_are_exposed_and_actions_are_authoritative(self):
+        manager = CanvasStateManager(theater_id="a2ui_state", theater_manager=self.theater_manager)
+        surface = {
+            "surface_id": "surface_one",
+            "placement": {"left_pct": 70, "top_pct": 40, "width_pct": 25},
+            "messages": [{
+                "version": "v1.0",
+                "createSurface": {
+                    "surfaceId": "surface_one",
+                    "components": [{
+                        "id": "take",
+                        "component": "Button",
+                        "child": "label",
+                        "action": {"event": {"name": "takeSword", "context": {"playerAction": "I take it."}}},
+                    }],
+                },
+            }],
+        }
+        manager.upsert_interactive_surface(surface)
+
+        self.assertEqual(manager.get_latest_state()["interactive_surfaces"][0]["surface_id"], "surface_one")
+        action = manager.get_interactive_action("surface_one", "take", "takeSword")
+        self.assertEqual(action["context"]["playerAction"], "I take it.")
+        self.assertEqual(manager.delete_interactive_surface("surface_one"), 1)
+        self.assertEqual(manager.get_latest_state()["interactive_surfaces"], [])
+
+    def test_interactive_action_uses_latest_a2ui_component_update(self):
+        manager = CanvasStateManager(theater_id="a2ui_updated_action", theater_manager=self.theater_manager)
+        manager.interactive_surfaces["choice"] = {
+            "surface_id": "choice",
+            "messages": [
+                {"createSurface": {"surfaceId": "choice", "components": [{
+                    "id": "choose", "component": "Button", "child": "old_label",
+                    "action": {"event": {"name": "oldAction", "context": {"playerAction": "Old"}}},
+                }]}},
+                {"updateComponents": {"surfaceId": "choice", "components": [{
+                    "id": "choose", "component": "Button", "child": "new_label",
+                    "action": {"event": {"name": "newAction", "context": {"playerAction": "New"}}},
+                }]}},
+            ],
+        }
+        self.assertIsNone(manager.get_interactive_action("choice", "choose", "oldAction"))
+        action = manager.get_interactive_action("choice", "choose", "newAction")
+        self.assertEqual(action["context"]["playerAction"], "New")
+
+    def test_newly_shown_image_clears_interactive_surfaces(self):
+        manager = CanvasStateManager(theater_id="a2ui_image_clear", theater_manager=self.theater_manager)
+        manager.interactive_surfaces["sword_card"] = {"surface_id": "sword_card", "messages": []}
+        manager.interactive_surfaces["health"] = {
+            "surface_id": "health", "persistent": True, "messages": []
+        }
+
+        manager.update_shown_image("first-scene.png")
+        self.assertEqual(list(manager.interactive_surfaces), ["health"])
+
+        manager.interactive_surfaces["same_scene_card"] = {"surface_id": "same_scene_card", "messages": []}
+        manager.update_shown_image("first-scene.png", effect="haze")
+        self.assertIn("same_scene_card", manager.interactive_surfaces)
+
+        manager.update_shown_image("second-scene.png")
+        self.assertEqual(list(manager.interactive_surfaces), ["health"])
+
+    def test_interactive_surface_position_can_be_moved_and_is_clamped(self):
+        manager = CanvasStateManager(theater_id="a2ui_move", theater_manager=self.theater_manager)
+        manager.interactive_surfaces["health"] = {
+            "surface_id": "health", "placement": {"left_pct": 20, "top_pct": 20}
+        }
+        placement = manager.move_interactive_surface("health", 120, -10)
+        self.assertEqual(placement, {"left_pct": 98.0, "top_pct": 2.0})
+        self.assertEqual(manager.interactive_surfaces["health"]["placement"], placement)
+        self.assertIsNone(manager.move_interactive_surface("missing", 50, 50))
+
     def test_character_voice_assignments_persist_with_canvas_state(self):
         theater_id = "voice_state"
         manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)

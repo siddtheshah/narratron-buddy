@@ -1436,6 +1436,136 @@
             pointer-events: none;
         }
 
+        #a2ui-canvas-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 19;
+            pointer-events: none;
+        }
+
+        .a2ui-surface {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            min-width: 150px;
+            max-width: 420px;
+            pointer-events: auto;
+            animation: a2ui-arrive 260ms ease-out both;
+            transition: opacity 180ms ease, transform 180ms ease;
+        }
+
+        .a2ui-surface-used {
+            opacity: 0;
+            transform: translate(-50%, -44%) scale(0.96);
+            pointer-events: none;
+        }
+
+        .a2ui-surface-controls {
+            position: absolute;
+            top: -14px;
+            right: 8px;
+            z-index: 2;
+            display: flex;
+            gap: 4px;
+            opacity: 0.45;
+            transition: opacity 150ms ease;
+        }
+
+        .a2ui-surface:hover .a2ui-surface-controls,
+        .a2ui-surface:focus-within .a2ui-surface-controls { opacity: 1; }
+
+        .a2ui-surface-control {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.26);
+            border-radius: 999px;
+            color: #fff;
+            background: rgba(15, 23, 42, 0.92);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+            font: 700 1rem/1 sans-serif;
+            cursor: pointer;
+        }
+
+        .a2ui-move { cursor: grab; }
+        .a2ui-move.dragging { cursor: grabbing; background: rgba(88, 28, 135, 0.96); }
+        .a2ui-delete:hover { background: rgba(185, 28, 28, 0.95); }
+        .a2ui-surface.persistent .a2ui-card { border-color: rgba(251, 191, 36, 0.52); }
+
+        .a2ui-card {
+            padding: clamp(0.7rem, 1.4vw, 1rem);
+            color: #f8fafc;
+            background: linear-gradient(145deg, rgba(15, 23, 42, 0.91), rgba(49, 24, 72, 0.88));
+            border: 1px solid rgba(216, 180, 254, 0.42);
+            border-radius: 16px;
+            box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .a2ui-column { display: flex; flex-direction: column; gap: 0.55rem; }
+        .a2ui-row { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+        .a2ui-grid {
+            display: grid;
+            grid-template-columns: repeat(var(--a2ui-grid-columns, 2), minmax(0, 1fr));
+            gap: 0.55rem;
+            align-items: stretch;
+        }
+        .a2ui-grid.gap-small { gap: 0.3rem; }
+        .a2ui-grid.gap-large { gap: 0.85rem; }
+        .a2ui-text { margin: 0; color: inherit; font-size: clamp(0.82rem, 1.2vw, 1rem); line-height: 1.35; }
+        .a2ui-text.heading { font-size: clamp(1rem, 1.5vw, 1.2rem); font-weight: 700; }
+        .a2ui-icon { color: #fbbf24; font-size: 1.25rem; }
+        .a2ui-divider { width: 100%; margin: 0.15rem 0; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.16); }
+        .a2ui-button {
+            appearance: none;
+            border: 1px solid rgba(196, 181, 253, 0.52);
+            border-radius: 999px;
+            padding: 0.52rem 0.85rem;
+            color: #fff;
+            background: linear-gradient(135deg, rgba(126, 34, 206, 0.9), rgba(79, 70, 229, 0.9));
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 5px 16px rgba(49, 46, 129, 0.34);
+            transition: transform 150ms ease, filter 150ms ease;
+        }
+        .a2ui-button:hover { transform: translateY(-1px); filter: brightness(1.14); }
+        .a2ui-button:focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
+        .a2ui-button:disabled { opacity: 0.55; cursor: wait; }
+        .a2ui-button .a2ui-text { font-size: inherit; }
+
+        .a2ui-progress { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem 0.55rem; align-items: center; }
+        .a2ui-progress-label { grid-column: 1 / -1; color: #f8fafc; font-size: 0.82rem; font-weight: 700; }
+        .a2ui-progress-track {
+            height: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.75);
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.35);
+        }
+        .a2ui-progress-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #22c55e, #84cc16);
+            transition: width 300ms ease;
+        }
+        .a2ui-progress.health .a2ui-progress-fill { background: linear-gradient(90deg, #dc2626, #fb7185); }
+        .a2ui-progress.mana .a2ui-progress-fill { background: linear-gradient(90deg, #2563eb, #67e8f9); }
+        .a2ui-progress.warning .a2ui-progress-fill { background: linear-gradient(90deg, #d97706, #fbbf24); }
+        .a2ui-progress-reading { color: #cbd5e1; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+
+        @keyframes a2ui-arrive {
+            from { opacity: 0; transform: translate(-50%, -45%) scale(0.94); }
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+
+        @media (max-width: 700px) {
+            .a2ui-surface { width: min(76%, 330px) !important; }
+        }
+
         .scene-dialogue-bubble {
             max-width: min(88vw, 900px);
             color: #fff;
@@ -1866,6 +1996,7 @@
             <img id="ghost-image" src="" alt="" aria-hidden="true"
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
+            <div id="a2ui-canvas-layer" aria-live="polite"></div>
             <div id="scene-dialogue-overlay" aria-live="polite"></div>
             <div id="agent-activity-tray" aria-label="Agent activity" aria-live="polite">
                 <div id="pcm-broadcast-indicator" class="agent-activity-icon live" role="status"
@@ -2392,6 +2523,7 @@
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=triframe-20260812-1";
+        import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20260821-3";
 
         let lastTime = -1;
         let lastImageRawUrl = null;
@@ -2405,6 +2537,13 @@
         const chatInput = document.getElementById('chat-input');
         const agentThoughtText = document.getElementById('agent-thought-text');
         const sceneDialogueOverlay = document.getElementById('scene-dialogue-overlay');
+        const a2uiCanvasLayer = document.getElementById('a2ui-canvas-layer');
+        const a2uiCanvasRenderer = createA2UICanvasRenderer({
+            container: a2uiCanvasLayer,
+            actionUrl: () => `/api/a2ui/action?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
+            surfaceUrl: surfaceId => `/api/a2ui/surfaces/${encodeURIComponent(surfaceId)}?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
+            canEdit: () => isCurrentOrator(),
+        });
         let sceneDialogueSignature = '';
         let sceneDialogueRenderId = 0;
         const dialogueSpeakerColors = new Map();
@@ -3281,6 +3420,7 @@
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
                 updateSceneDialogue(data.scene_dialogue, data.narration);
+                a2uiCanvasRenderer.render(data.interactive_surfaces);
                 if (data.sticky_notes !== undefined && typeof window.updateCanvasStickyNotes === 'function') {
                     window.updateCanvasStickyNotes(data.sticky_notes);
                 }

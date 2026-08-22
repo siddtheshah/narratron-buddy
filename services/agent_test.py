@@ -247,6 +247,37 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("request_canvas_observability", disabled_names)
         self.assertIn("request_canvas_observability", enabled_names)
 
+    @patch("services.agent.get_text_response_provider")
+    def test_create_tool_bundle_only_includes_interactive_canvas_when_explicitly_enabled(
+        self, mock_get_text_provider
+    ):
+        from services.agent import create_tool_bundle_for_session
+
+        base_config = {
+            "story_planning": {"adventure_mode": False},
+            "image_generation": {"provider": "hybrid-flux-gemini"},
+            "music": {"provider": "lyria"},
+        }
+        absent = create_tool_bundle_for_session("a2ui_absent", config=base_config)
+        disabled = create_tool_bundle_for_session(
+            "a2ui_disabled",
+            config={**base_config, "interactive_canvas": {"enabled": False}},
+        )
+        enabled = create_tool_bundle_for_session(
+            "a2ui_enabled",
+            config={**base_config, "interactive_canvas": {"enabled": True}},
+        )
+
+        for bundle in (absent, disabled):
+            names = [tool.name for tool in bundle.tools]
+            self.assertNotIn("create_interactive_canvas", names)
+            self.assertNotIn("update_interactive_canvas", names)
+            self.assertNotIn("clear_interactive_canvas", names)
+        enabled_names = [tool.name for tool in enabled.tools]
+        self.assertNotIn("create_interactive_canvas", enabled_names)
+        self.assertIn("update_interactive_canvas", enabled_names)
+        self.assertIn("clear_interactive_canvas", enabled_names)
+
     def test_get_references_context_with_references(self):
         from services.agent import get_references_context
         mock_tool = MagicMock()

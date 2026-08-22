@@ -114,3 +114,80 @@ def test_collaboration_mode_requests_agent_observability_update():
     assert result == {"theater_id": "stage", "viewer_collab_enabled": True}
     service.set_viewer_collab_enabled.assert_called_once_with(True, "stage")
     session.send_collaboration_toggle_observability.assert_called_once_with()
+
+
+def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
+    state = MagicMock()
+    state.get_interactive_action.return_value = {
+        "name": "grabSword",
+        "context": {"playerAction": "I grab the sword."},
+    }
+    service = MagicMock()
+    service.get.return_value = state
+    session = MagicMock(websocket_connected=True)
+    session.send_content.return_value = True
+    manager = MagicMock()
+    manager.get_session.return_value = session
+    payload = canvas.A2UIActionEnvelope(
+        version="v1.0",
+        action=canvas.A2UIActionBody(
+            name="grabSword",
+            surfaceId="sword_card",
+            sourceComponentId="grab",
+            timestamp="2026-08-21T12:00:00Z",
+            context={"playerAction": "forged client text"},
+        ),
+    )
+
+    with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), \
+            patch.object(canvas, "agent_manager", manager), patch.object(canvas, "_require_canvas_access"), \
+            patch.object(canvas, "get_current_user", return_value={"id": 3}):
+        result = canvas.post_a2ui_action(payload, request(), "stage")
+
+    assert result == {"status": "accepted", "surface_id": "sword_card"}
+    sent_text = session.send_content.call_args.args[0].parts[0].text
+    assert "I grab the sword." in sent_text
+    assert "forged client text" not in sent_text
+    state.delete_interactive_surface.assert_called_once_with("sword_card")
+
+
+def test_a2ui_action_rejects_non_orator():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
+    payload = canvas.A2UIActionEnvelope(
+        version="v1.0",
+        action=canvas.A2UIActionBody(
+            name="grabSword", surfaceId="sword_card", sourceComponentId="grab",
+            timestamp="2026-08-21T12:00:00Z",
+        ),
+    )
+    with patch.object(canvas, "db", registry_db), patch.object(canvas, "_require_canvas_access"), \
+            patch.object(canvas, "get_current_user", return_value={"id": 9}), pytest.raises(HTTPException) as error:
+        canvas.post_a2ui_action(payload, request(), "stage")
+    assert error.value.status_code == 403
+
+
+def test_active_orator_can_move_and_delete_a2ui_surface():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
+    service = MagicMock()
+    service.move_interactive_surface.return_value = {"left_pct": 76.5, "top_pct": 20.0}
+    service.delete_interactive_surface.return_value = 1
+
+    with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), \
+            patch.object(canvas, "_require_canvas_access"), \
+            patch.object(canvas, "get_current_user", return_value={"id": 3}):
+        moved = canvas.move_a2ui_surface(
+            "health",
+            canvas.A2UISurfacePlacement(left_pct=76.5, top_pct=20),
+            request(),
+            "stage",
+        )
+        deleted = canvas.delete_a2ui_surface("health", request(), "stage")
+
+    assert moved["placement"] == {"left_pct": 76.5, "top_pct": 20.0}
+    assert deleted == {"status": "deleted", "surface_id": "health"}
+    service.move_interactive_surface.assert_called_once_with("health", 76.5, 20.0, "stage")
+    service.delete_interactive_surface.assert_called_once_with("health", "stage")

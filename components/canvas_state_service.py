@@ -148,6 +148,19 @@ class CanvasStateService:
     def set_named_elements(self, elements: list[dict[str, str]], theater_id: Optional[str] = None) -> None:
         self.get(theater_id).set_named_elements(elements)
 
+    def upsert_interactive_surface(
+        self, surface: dict[str, Any], theater_id: Optional[str] = None, max_surfaces: int = 5
+    ) -> None:
+        self.get(theater_id).upsert_interactive_surface(surface, max_surfaces=max_surfaces)
+
+    def delete_interactive_surface(self, surface_id: str = "all", theater_id: Optional[str] = None) -> int:
+        return self.get(theater_id).delete_interactive_surface(surface_id)
+
+    def move_interactive_surface(
+        self, surface_id: str, left_pct: float, top_pct: float, theater_id: Optional[str] = None
+    ) -> Optional[dict[str, float]]:
+        return self.get(theater_id).move_interactive_surface(surface_id, left_pct, top_pct)
+
     async def connect_doodle_websocket(
         self, websocket: WebSocket, theater_id: Optional[str] = None, user: Optional[dict] = None
     ) -> CanvasStateManager:

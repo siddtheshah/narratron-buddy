@@ -17,6 +17,7 @@ from tools.music_tool import MusicTools
 from tools.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
 from tools.story_planning_tool import StoryPlanningTools
+from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from providers import TextResponseProviderError, get_text_response_provider
 from utils.config_loader import get_app_config, get_theater_config
@@ -126,6 +127,12 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 {% if adventure_mode %}
 * process_user_action <user_action> <nudge>: Submit the orator's action/speech to the authoritative script engine. You may optionally supply a nudge to introduce story elements or directions for the planner to accommodate. Do not use this unless the user has spoken, requests it out of character, a chat suggestion pushes for it, or you observe/receive a doodle that suggests an interesting idea. This tool returns immediately; wait for the `[Story Planner Result]` system notification, then relay its narration and use peripheral tools to stage it AFTER the action is processed. Dialogue is displayed automatically on the canvas.
 DO NOT call this tool when the user is silent, and DO NOT call this again until you are confident the user has given their full response.
+{% endif %}
+
+{% if interactive_canvas_enabled %}
+## Interactive Canvas (A2UI)
+* update_interactive_canvas <request>: Ask the canvas-aware A2UI designer to add or update UI for the current state—for example an interactable, presentation control, status panel, poll, dashboard, health display, inventory, currency, objectives, or available actions. Do not select a surface yourself: the UI designer sees every current surface and decides whether to update one or add another. It may mark cross-scene or persistent displays accordingly; ordinary scene-specific UI automatically clears with the next image. Updates preserve user-adjusted placement.
+* clear_interactive_canvas: Remove all surfaces—including persistent displays—when the UI should be reset completely. A clicked control returns as immutable user input. In Adventure Mode submit in-world actions through `process_user_action`; otherwise handle the selection directly like explicit user input.
 {% endif %}
 
 ## Music Management
@@ -241,6 +248,15 @@ def create_tool_bundle_for_session(
         theater_manager=theater_manager,
         text_response_provider=story_planning_text_provider,
     )
+    interactive_canvas_tools = None
+    interactive_canvas_config = config.get("interactive_canvas", {})
+    if interactive_canvas_config.get("enabled", False):
+        interactive_canvas_tools = InteractiveCanvasTools(
+            interactive_canvas_config,
+            theater_id=theater_id,
+            canvas_state_service=canvas_state_service,
+            text_response_provider=story_planning_text_provider,
+        )
     music_config = config.get("music", {})
     reranker_provider = get_text_response_provider(
         str(music_config.get("catalog_reranker_provider", "gemini-2-5")),
@@ -275,6 +291,11 @@ def create_tool_bundle_for_session(
         tools.extend([
             story_planning_tools.sticky_note,
             story_planning_tools.clear_scene,
+        ])
+    if interactive_canvas_tools:
+        tools.extend([
+            interactive_canvas_tools.update_interactive_canvas,
+            interactive_canvas_tools.clear_interactive_canvas,
         ])
     if music_tools.use_generated_music:
         tools.append(music_tools.create_music)
@@ -351,6 +372,7 @@ def create_agent(
         animation_enabled=bool(config.get("animation", {}).get("enabled", False)),
         use_generated_music=bool(config.get("music", {}).get("use_generated_music", False)),
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
+        interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
         theater_id=theater_id,
         theater_name=theater.name if theater else theater_id,
         config=config,

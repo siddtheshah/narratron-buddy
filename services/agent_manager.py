@@ -208,6 +208,10 @@ class AgentSession:
             self.agent,
             "request_canvas_observability",
         )
+        self.interactive_canvas_tools = get_bound_tool_instance(
+            self.agent,
+            "update_interactive_canvas",
+        )
 
         self.run_config = build_run_config(
             agent=self.agent,
@@ -324,6 +328,7 @@ class AgentSession:
             self.story_planning_tools,
             self.music_tools,
             self.observability_tools,
+            self.interactive_canvas_tools,
         ):
             if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
                 tool_suite.on_cooldown_expired = handle_cooldown_expired
