@@ -410,6 +410,8 @@ class StoryPlanningTools(BaseTools):
         self._read_lore_lock: Lock = Lock()
         self._search_lore_calls_this_turn: int = 0
         self._search_lore_lock: Lock = Lock()
+        self._lore_activity_this_turn: List[Dict[str, Any]] = []
+        self._lore_activity_lock: Lock = Lock()
         self._lore_index_cache: Optional[Dict[str, Dict[str, Any]]] = None
         self._lore_cache_lock: Lock = Lock()
         self._search_query_cache: Dict[str, str] = {}
@@ -735,11 +737,50 @@ class StoryPlanningTools(BaseTools):
         logger.debug("[StoryPlanningTools] Voice input detected; process_user_action is re-enabled.")
 
     def reset_lore_call_counts(self) -> None:
-        """Reset per-turn read_lore and search_lore invocation counters."""
+        """Reset per-turn read_lore and search_lore invocation counters and lore activity."""
         with self._read_lore_lock:
             self._read_lore_calls_this_turn = 0
         with self._search_lore_lock:
             self._search_lore_calls_this_turn = 0
+        with self._lore_activity_lock:
+            self._lore_activity_this_turn = []
+
+    def _record_lore_activity(self, activity_type: str, target: str, summary: str = "", **kwargs: Any) -> None:
+        """Record a lore document read, search, or preload event for the active turn."""
+        with self._lore_activity_lock:
+            entry = {
+                "type": activity_type,
+                "document": target,
+                "summary": summary or target,
+                **kwargs,
+            }
+            if not any(e.get("type") == activity_type and e.get("document") == target for e in self._lore_activity_this_turn):
+                self._lore_activity_this_turn.append(entry)
+
+    def get_lore_docs_browsed_this_turn(self) -> List[str]:
+        """Return unique list of lore document paths browsed, searched, or preloaded during this turn."""
+        with self._lore_activity_lock:
+            docs: List[str] = []
+            seen = set()
+            for item in self._lore_activity_this_turn:
+                doc = item.get("document")
+                if doc and doc not in seen and not doc.startswith("("):
+                    seen.add(doc)
+                    docs.append(doc)
+                for m in item.get("matching_documents", []):
+                    if m not in seen:
+                        seen.add(m)
+                        docs.append(m)
+                for m in item.get("matched_documents", []):
+                    if m not in seen:
+                        seen.add(m)
+                        docs.append(m)
+            return docs
+
+    def get_lore_activity_this_turn(self) -> List[Dict[str, Any]]:
+        """Return list of lore activities recorded during this turn."""
+        with self._lore_activity_lock:
+            return list(self._lore_activity_this_turn)
 
     @logged_tool_call
     def read_lore(self, document: str = "") -> str:
@@ -784,6 +825,7 @@ class StoryPlanningTools(BaseTools):
                 if len(documents) > len(listed_documents)
                 else ""
             )
+            self._record_lore_activity("list", "(all lore documents)", summary=f"Listed {len(documents)} lore files")
             logger.debug(
                 "[StoryPlanningTools] Listing lore documents for theater=%s (total=%d, listed=%d)",
                 self.theater_id,
@@ -810,6 +852,12 @@ class StoryPlanningTools(BaseTools):
                     if len(matching) > len(listed_matching)
                     else ""
                 )
+                self._record_lore_activity(
+                    "read_dir",
+                    clean_doc,
+                    summary=f"Browsed lore directory '{clean_doc}' ({len(matching)} matching docs)",
+                    matching_documents=matching[:10],
+                )
                 logger.debug(
                     "[StoryPlanningTools] Reading lore directory '%s' for theater=%s (matching=%d)",
                     clean_doc,
@@ -832,6 +880,12 @@ class StoryPlanningTools(BaseTools):
                 error,
             )
             return f"Error: {error}" + limit_note
+        self._record_lore_activity(
+            "read_file",
+            clean_doc,
+            summary=f"Read lore document '{clean_doc}'",
+            excerpt=content[:300] if content else "",
+        )
         logger.debug(
             "[StoryPlanningTools] Read lore document '%s' for theater=%s (chars=%d)",
             clean_doc,
@@ -987,13 +1041,21 @@ class StoryPlanningTools(BaseTools):
 
         if not scores:
             res_str = f"No matching lore documents found for query: '{clean_query}'"
+            self._record_lore_activity("search", clean_query, summary=f"Searched lore for '{clean_query}' (0 matches)", matched_documents=[])
         else:
             results_lines = [f"Lore search results for query '{clean_query}':"]
+            matched_docs = [doc_path for doc_path, score, snippet in scores[:10]]
             for doc_path, score, snippet in scores[:10]:
                 results_lines.append(f"- {doc_path} (score: {score:.4f})")
                 if snippet:
                     results_lines.append(f"  Snippet: {snippet}")
             res_str = "\n".join(results_lines)
+            self._record_lore_activity(
+                "search",
+                clean_query,
+                summary=f"Searched lore for '{clean_query}' ({len(scores)} matches)",
+                matched_documents=matched_docs[:5],
+            )
 
         with self._lore_cache_lock:
             self._search_query_cache[query_key] = res_str
@@ -1073,6 +1135,11 @@ class StoryPlanningTools(BaseTools):
             filename = parts[-1]
             if filename.lower().startswith("read") or doc.lower().startswith("read"):
                 content = self.theater_manager.read_lore_document(self.theater_id, doc)
+                self._record_lore_activity(
+                    "preloaded",
+                    doc,
+                    summary=f"Preloaded premise lore document '{doc}'",
+                )
                 if len(content) > MAX_LORE_DOCUMENT_CONTEXT_CHARS:
                     content = (
                         content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
@@ -1785,6 +1852,8 @@ class StoryPlanningTools(BaseTools):
             "dialogue": dialogue,
             "manifested_characters": manifested_characters,
             "plot_beats": list(plot_beats),
+            "lore_activity": self.get_lore_activity_this_turn(),
+            "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),
         }
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)

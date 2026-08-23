@@ -362,6 +362,40 @@ def api_reset_adventure_session(session_id: str):
     }
 
 
+@app.get("/api/adventure-runner/sessions/{session_id}/lore")
+def api_list_session_lore(session_id: str):
+    """List all lore documents for the active adventure session."""
+    with _runs_lock:
+        session = _adventure_runner_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Adventure session not found.")
+    documents = session.theater_manager.get_lore_documents(session.session_id)
+    return {
+        "session_id": session_id,
+        "adventure_id": session.adventure_id,
+        "documents": documents,
+    }
+
+
+@app.get("/api/adventure-runner/sessions/{session_id}/lore/{doc_path:path}")
+def api_get_session_lore_document(session_id: str, doc_path: str):
+    """Retrieve full text content of a lore document for the active adventure session."""
+    with _runs_lock:
+        session = _adventure_runner_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Adventure session not found.")
+    try:
+        content = session.theater_manager.read_lore_document(session.session_id, doc_path)
+        return {
+            "document": doc_path,
+            "session_id": session_id,
+            "adventure_id": session.adventure_id,
+            "content": content,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Lore document '{doc_path}' not found: {exc}")
+
+
 def _a2ui_canvas_config_from_body(body: dict[str, Any]) -> A2UICanvasTestConfig:
     defaults = default_canvas_config()
     request = str(body.get("request") or defaults.request).strip()

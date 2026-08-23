@@ -129,8 +129,8 @@ _TEXT_RESPONSE_SPECS = (
     {
         "id": "gemini-3",
         "name": "Gemini 3 Flash Text",
-        "model": "gemini-3.6-flash",
-        "model_options": ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite"],
+        "model": "gemini-3.7-flash",
+        "model_options": ["gemini-3.7-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite"],
         "status": "unconfigured",
         "notes": "Next-generation high-capability text generation model for comparison.",
     },

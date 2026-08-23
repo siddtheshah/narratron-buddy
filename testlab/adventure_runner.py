@@ -351,17 +351,12 @@ class AdventureSession:
         nodes_ahead: Optional[int] = None,
         session_id: Optional[str] = None,
     ) -> None:
-        self.config, self.adventure_path, self.adventure_id = load_adventure_config(adventure_id_or_path)
-        self.session_id = session_id or f"adv_runner_{self.adventure_id}_{uuid.uuid4().hex[:8]}"
+        self.adventure_id_or_path = adventure_id_or_path
+        self.agent_model_override = agent_model
+        self.planner_model_override = planner_model
+        self.nodes_ahead_override = nodes_ahead
+        self.session_id = session_id or f"adv_runner_{Path(adventure_id_or_path).name}_{uuid.uuid4().hex[:8]}"
         self.created_at = time.time()
-
-        if agent_model:
-            self.config.setdefault("agent_internal", {})["model"] = agent_model
-            self.config.setdefault("agent", {})["model_id"] = agent_model
-        if planner_model:
-            self.config.setdefault("story_planning", {})["planner_model"] = planner_model
-        if nodes_ahead is not None:
-            self.config.setdefault("story_planning", {})["nodes_ahead"] = nodes_ahead
 
         self.mock_canvas = MockCanvasState()
         self.history: List[Dict[str, Any]] = []
@@ -369,6 +364,21 @@ class AdventureSession:
         # Setup TheaterManager workspace populated from adventure lore and references
         self.theaters_root = THEATERS_DIR / f"_temp_runner_{self.session_id}"
         self.theater_manager = TheaterManager(base_theaters_dir=self.theaters_root)
+
+        self._init_components()
+
+    def _init_components(self) -> None:
+        """Load configs from disk, populate workspace, and build tools and agents."""
+        self.config, self.adventure_path, self.adventure_id = load_adventure_config(self.adventure_id_or_path)
+
+        if self.agent_model_override:
+            self.config.setdefault("agent_internal", {})["model"] = self.agent_model_override
+            self.config.setdefault("agent", {})["model_id"] = self.agent_model_override
+        if self.planner_model_override:
+            self.config.setdefault("story_planning", {})["planner_model"] = self.planner_model_override
+        if self.nodes_ahead_override is not None:
+            self.config.setdefault("story_planning", {})["nodes_ahead"] = self.nodes_ahead_override
+
         self._populate_theater_workspace()
 
         self.canvas_state_service = CanvasStateService(self.theater_manager)
@@ -412,6 +422,15 @@ class AdventureSession:
         lore_target = theater.lore_dir()
         ref_target = theater.references_dir()
         playlists_target = theater.playlists_dir()
+
+        # Clean existing targets to ensure no stale or deleted files remain
+        if lore_target.exists():
+            shutil.rmtree(lore_target)
+        if ref_target.exists():
+            shutil.rmtree(ref_target)
+        if playlists_target.exists():
+            shutil.rmtree(playlists_target)
+
         lore_target.mkdir(parents=True, exist_ok=True)
         ref_target.mkdir(parents=True, exist_ok=True)
         playlists_target.mkdir(parents=True, exist_ok=True)
@@ -423,6 +442,10 @@ class AdventureSession:
         adv_ref = self.adventure_path / "references"
         if adv_ref.is_dir():
             shutil.copytree(adv_ref, ref_target, dirs_exist_ok=True)
+
+        adv_ref_lib = self.adventure_path / "reference_library"
+        if adv_ref_lib.is_dir():
+            shutil.copytree(adv_ref_lib, ref_target, dirs_exist_ok=True)
 
         adv_playlists = self.adventure_path / "playlists"
         if adv_playlists.is_dir():
@@ -602,12 +625,23 @@ class AdventureSession:
 
         new_tool_calls = self.mock_canvas.tool_logs[start_tool_log_count:]
 
+        lore_activity: List[Dict[str, Any]] = []
+        lore_docs_browsed: List[str] = []
+        for call in new_tool_calls:
+            if call.get("tool") == "process_user_action" and isinstance(call.get("result"), dict):
+                lore_activity.extend(call["result"].get("lore_activity", []))
+                lore_docs_browsed.extend(call["result"].get("lore_docs_browsed", []))
+
+        lore_docs_browsed = list(dict.fromkeys(lore_docs_browsed))
+
         history_item = {
             "turn_index": len(self.history) + 1,
             "timestamp": turn_start_time,
             "user_message": clean_input,
             "agent_response": turn_result["text"],
             "tool_calls": new_tool_calls,
+            "lore_activity": lore_activity,
+            "lore_docs_browsed": lore_docs_browsed,
         }
         self.history.append(history_item)
 
@@ -627,17 +661,16 @@ class AdventureSession:
             "characters": self.story_planning_tools.get_present_characters(),
             "plot_beats": self.story_planning_tools.get_plot_beats(),
             "last_scene_reaction": dict(getattr(self.story_planning_tools, "_last_scene_reaction", {})),
+            "lore_documents": self.theater_manager.get_lore_documents(self.session_id),
             "mock_canvas": self.mock_canvas.as_dict(),
             "turns_count": len(self.history),
         }
 
     def reset(self) -> None:
-        """Reset session state and re-initialize story planner."""
-        self.story_planning_tools.clear_scene()
+        """Reset session state, re-read configs/lore/references from disk, and re-initialize story planner and agent."""
+        self._init_components()
         self.mock_canvas = MockCanvasState()
         self.history.clear()
-        self.session_service = InMemorySessionService()
-        self.runner = Runner(app=self.app, session_service=self.session_service, auto_create_session=True)
 
     def cleanup(self) -> None:
         """Remove temporary session theater files."""

@@ -170,6 +170,9 @@ def test_adventure_runner_lab_api_routes():
     page = client.get("/adventure-runner")
     assert page.status_code == 200
     assert "Adventure Runner Lab" in page.text
+    assert "toggleToolArgs" in page.text
+    assert "tool-details-container" in page.text
+    assert "formatJsonHtml" in page.text
 
     # 2. GET index has adventure-runner card
     index = client.get("/")
@@ -227,8 +230,22 @@ def test_adventure_runner_lab_api_routes():
             assert msg_res.status_code == 200
             turn_data = msg_res.json()
             assert "glittering dust" in turn_data["turn"]["agent_response"]
+            assert "lore_activity" in turn_data["turn"]
+            assert "lore_docs_browsed" in turn_data["turn"]
 
-    # 7. POST /api/adventure-runner/sessions/{id}/reset
+    # 7. GET /api/adventure-runner/sessions/{id}/lore
+    lore_list_res = client.get(f"/api/adventure-runner/sessions/{session_id}/lore")
+    assert lore_list_res.status_code == 200
+    lore_docs = lore_list_res.json()["documents"]
+    assert len(lore_docs) > 0
+    first_doc = lore_docs[0]
+
+    # 8. GET /api/adventure-runner/sessions/{id}/lore/{doc_path}
+    lore_doc_res = client.get(f"/api/adventure-runner/sessions/{session_id}/lore/{first_doc}")
+    assert lore_doc_res.status_code == 200
+    assert len(lore_doc_res.json()["content"]) > 0
+
+    # 9. POST /api/adventure-runner/sessions/{id}/reset
     reset_res = client.post(f"/api/adventure-runner/sessions/{session_id}/reset")
     assert reset_res.status_code == 200
     assert len(reset_res.json()["history"]) == 0
@@ -268,4 +285,22 @@ def test_send_message_inside_running_event_loop():
                 assert res["turn"]["agent_response"] == "Response from agent."
     finally:
         session.cleanup()
+
+
+def test_lore_browsing_tracked_in_turn():
+    session = AdventureSession(adventure_id_or_path="space-funk-odyssey")
+    try:
+        # Simulate StoryPlanningTools reading lore during a turn
+        session.story_planning_tools.reset_lore_call_counts()
+        session.story_planning_tools.read_lore("companions/jax_thumper_vance.txt")
+        session.story_planning_tools.search_lore("groove rig")
+
+        browsed = session.story_planning_tools.get_lore_docs_browsed_this_turn()
+        assert "companions/jax_thumper_vance.txt" in browsed
+        activity = session.story_planning_tools.get_lore_activity_this_turn()
+        assert any(a["type"] == "read_file" for a in activity)
+        assert any(a["type"] == "search" for a in activity)
+    finally:
+        session.cleanup()
+
 
