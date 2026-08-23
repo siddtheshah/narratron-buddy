@@ -2,12 +2,12 @@
 
 import json
 import mimetypes
+from pathlib import Path
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 from PIL import Image
@@ -45,9 +45,14 @@ from testlab.a2ui_canvas_lab import (
     default_canvas_config,
     run_canvas_test,
 )
+from testlab.adventure_runner import (
+    AdventureSession,
+    list_available_adventures,
+)
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from tools.story_planning_tool import StoryPlanningTools
+
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 load_dotenv(PROJECT_ROOT / ".env")
@@ -75,6 +80,7 @@ _text_runs: dict[str, dict[str, Any]] = {}
 _speech_runs: dict[str, dict[str, Any]] = {}
 _story_planner_runs: dict[str, dict[str, Any]] = {}
 _a2ui_canvas_runs: dict[str, dict[str, Any]] = {}
+_adventure_runner_sessions: dict[str, AdventureSession] = {}
 _runs_lock = threading.Lock()
 
 MAX_IN_FLIGHT_PER_PROVIDER = 5
@@ -125,6 +131,11 @@ def story_planner_lab():
 @app.get("/a2ui-canvas", include_in_schema=False)
 def a2ui_canvas_lab():
     return FileResponse(ROOT / "a2ui_canvas_lab.html", media_type="text/html")
+
+
+@app.get("/adventure-runner", include_in_schema=False)
+def adventure_runner_lab():
+    return FileResponse(ROOT / "adventure_runner.html", media_type="text/html")
 
 
 @app.get("/api/a2ui-canvas/default-config")
@@ -261,6 +272,93 @@ def _story_planner_payload(run: dict[str, Any]) -> dict[str, Any]:
             "plot_beats": tools.get_plot_beats(),
             "last_scene_reaction": dict(getattr(tools, "_last_scene_reaction", {})),
         },
+    }
+
+
+@app.get("/api/adventure-runner/adventures")
+def api_list_adventures():
+    """List all available adventure packages found in adventures/ directory."""
+    return {"adventures": list_available_adventures()}
+
+
+@app.post("/api/adventure-runner/sessions")
+def api_create_adventure_session(body: dict[str, Any]):
+    """Create a new local adventure runner session."""
+    adv_id = str(body.get("adventure_id") or "space-funk-odyssey").strip()
+    agent_model = body.get("agent_model")
+    planner_model = body.get("planner_model")
+    nodes_ahead = body.get("nodes_ahead")
+    try:
+        session = AdventureSession(
+            adventure_id_or_path=adv_id,
+            agent_model=agent_model,
+            planner_model=planner_model,
+            nodes_ahead=nodes_ahead,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    with _runs_lock:
+        _adventure_runner_sessions[session.session_id] = session
+
+    return {
+        "id": session.session_id,
+        "adventure_id": session.adventure_id,
+        "state": session.get_state(),
+        "mock_canvas": session.mock_canvas.as_dict(),
+        "tool_logs": list(session.mock_canvas.tool_logs),
+        "history": list(session.history),
+    }
+
+
+@app.get("/api/adventure-runner/sessions/{session_id}")
+def api_get_adventure_session(session_id: str):
+    """Retrieve state, history, and tool activity logs for an active session."""
+    with _runs_lock:
+        session = _adventure_runner_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Adventure session not found.")
+    return {
+        "id": session.session_id,
+        "adventure_id": session.adventure_id,
+        "state": session.get_state(),
+        "mock_canvas": session.mock_canvas.as_dict(),
+        "tool_logs": list(session.mock_canvas.tool_logs),
+        "history": list(session.history),
+    }
+
+
+@app.post("/api/adventure-runner/sessions/{session_id}/messages")
+def api_send_adventure_message(session_id: str, body: dict[str, Any]):
+    """Submit a player action or message to advance the story in the session."""
+    message = str(body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    with _runs_lock:
+        session = _adventure_runner_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Adventure session not found.")
+    res = session.send_message(message)
+    if "error" in res:
+        raise HTTPException(status_code=500, detail=res["error"])
+    return res
+
+
+@app.post("/api/adventure-runner/sessions/{session_id}/reset")
+def api_reset_adventure_session(session_id: str):
+    """Reset the adventure session to its initial state."""
+    with _runs_lock:
+        session = _adventure_runner_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Adventure session not found.")
+    session.reset()
+    return {
+        "id": session.session_id,
+        "adventure_id": session.adventure_id,
+        "state": session.get_state(),
+        "mock_canvas": session.mock_canvas.as_dict(),
+        "tool_logs": list(session.mock_canvas.tool_logs),
+        "history": list(session.history),
     }
 
 
@@ -1077,5 +1175,20 @@ def _benchmark_one_text(provider_id: str, prompt: Any, repetition: int, provider
         item["completed_at"] = time.time()
         item["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
     return item
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Narratron Test Lab Server")
+    parser.add_argument("--host", default="127.0.0.1", help="Host address")
+    parser.add_argument("--port", type=int, default=8000, help="Port number")
+    parser.add_argument("--reload", action="store_true", help="Enable hot reload")
+    args = parser.parse_args()
+
+    print(f"Starting Narratron Test Lab on http://{args.host}:{args.port}")
+    uvicorn.run("testlab.server:app", host=args.host, port=args.port, reload=args.reload)
+
 
 
