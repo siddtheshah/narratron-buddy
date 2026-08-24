@@ -195,11 +195,9 @@ def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) 
     if provider_id == "flux-klein":
         return FalFluxKleinProvider()
     if provider_id == "hybrid-flux-gemini":
-        classifier_model = str(options.get("classifier_model") or options.get("model") or "gemini-2.5-flash-lite")
         return HybridImageProvider(
             primary=FalFluxKleinProvider(),
             fallback=GeminiImageProvider(),
-            text_provider=GeminiTextResponseProvider(model=classifier_model),
         )
 
     spec = next((item for item in _IMAGE_SPECS if item["id"] == provider_id), None)

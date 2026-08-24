@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult, ImageProvider
-from providers.text_response_provider import TextResponseProvider, TextResponseRequest
+from providers.local_image_prompt_classifier import HybridImageClassifier
 
 logger = logging.getLogger(__name__)
 LOG_PREFIX = "[HybridImageProvider]"
@@ -68,23 +66,21 @@ class HybridImageProvider(ImageProvider):
         self,
         primary: ImageProvider,
         fallback: ImageProvider,
-        text_provider: TextResponseProvider | None = None,
+        text_provider: Any | None = None,
     ):
         self.primary = primary
         self.fallback = fallback
         self.model = f"{primary.model} → {fallback.model}"
-        if text_provider is None:
-            from providers.gemini_text_response_provider import GeminiTextResponseProvider
-
-            text_provider = GeminiTextResponseProvider()
-        self.text_provider = text_provider
+        # Kept as an ignored compatibility argument for callers that still pass
+        # a text provider. Routing must never make a remote classifier call.
+        self.classifier = HybridImageClassifier()
 
         logger.debug(
             "%s Initialized (primary=%s, fallback=%s, text_provider=%s)",
             LOG_PREFIX,
             primary.id,
             fallback.id,
-            getattr(self.text_provider, "id", None),
+            self.classifier.model,
         )
 
     def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
@@ -120,7 +116,7 @@ class HybridImageProvider(ImageProvider):
         )
         usage = dict(result.usage)
         usage["routing"] = {
-            "classifier_model": getattr(self.text_provider, "model", getattr(self.text_provider, "id", "unknown")),
+            "classifier_model": self.classifier.model,
             "selected_provider": selected.id,
             "route_to_fallback": decision["route_to_fallback"],
             "reasons": decision["reasons"],
@@ -140,47 +136,9 @@ class HybridImageProvider(ImageProvider):
     def _classify(self, prompt: str) -> dict[str, Any]:
         prompt_preview = prompt[:100].replace("\n", " ")
         logger.debug("%s Classifying prompt for routing: '%s'", LOG_PREFIX, prompt_preview)
-        try:
-            raw = self._classify_with_text_provider(prompt)
-            logger.debug("%s Raw classifier response: %s", LOG_PREFIX, raw)
-            reasons = raw.get("reasons", []) if isinstance(raw, dict) else []
-            ambiguous_terms = raw.get("ambiguous_terms", []) if isinstance(raw, dict) else []
-            allowed = {
-                "text_rendering",
-                "creature_object_interaction",
-                "creature_creature_interaction",
-                "contextual_disambiguation",
-                "multiple_subjects",
-                "complex_composition",
-            }
-            reasons = [reason for reason in reasons if reason in allowed]
-            scene_type = raw.get("scene_type") if isinstance(raw, dict) else None
-            primary_eligible = scene_type in {"pure_environment", "single_character"}
-            decision = {
-                # A malformed or uncertain classifier response must preserve
-                # quality by choosing Gemini, not the FLUX fast path.
-                "route_to_fallback": bool(raw.get("route_to_fallback")) or not primary_eligible,
-                "reasons": reasons,
-                "ambiguous_terms": [term for term in ambiguous_terms if isinstance(term, str)][:5],
-                "classifier_failed": False,
-                "scene_type": scene_type if primary_eligible else "complex",
-            }
-            logger.debug("%s Processed classification decision: %s", LOG_PREFIX, decision)
-            return decision
-        except Exception as e:
-            logger.warning(
-                "%s Classifier error (%s: %s). Failing closed to fallback.",
-                LOG_PREFIX,
-                type(e).__name__,
-                e,
-            )
-            return {
-                "route_to_fallback": True,
-                "reasons": ["complex_composition"],
-                "ambiguous_terms": [],
-                "classifier_failed": True,
-                "scene_type": "complex",
-            }
+        decision = self.classifier.classify(prompt)
+        logger.debug("%s Local classifier decision: %s", LOG_PREFIX, decision)
+        return decision
 
     @staticmethod
     def _reference_decision() -> dict[str, Any]:
@@ -193,40 +151,4 @@ class HybridImageProvider(ImageProvider):
             "classifier_failed": False,
             "scene_type": "complex",
         }
-
-    def _classify_with_text_provider(self, prompt: str) -> dict[str, Any]:
-        provider_id = getattr(self.text_provider, "id", "unknown")
-        provider_model = getattr(self.text_provider, "model", "unknown")
-        logger.debug("%s Querying classifier text provider '%s' (model='%s')...", LOG_PREFIX, provider_id, provider_model)
-        request = TextResponseRequest(
-            prompt=f"Prompt:\n{prompt}",
-            system_instruction=CLASSIFIER_INSTRUCTIONS,
-            temperature=0.0,
-            response_schema=ImageClassifierResponse,
-        )
-        response = self.text_provider.generate(request)
-        if getattr(response, "parsed", None) is not None:
-            if isinstance(response.parsed, BaseModel):
-                return response.parsed.model_dump()
-            if isinstance(response.parsed, dict):
-                return response.parsed
-        text = getattr(response, "text", None)
-        if not text:
-            logger.error("%s Classifier text provider returned no text in response", LOG_PREFIX)
-            raise ValueError("Classifier returned no text.")
-        logger.debug("%s Classifier text provider raw response text: %s", LOG_PREFIX, text)
-        clean_text = text.strip()
-        if clean_text.startswith("```"):
-            lines = clean_text.splitlines()
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            clean_text = "\n".join(lines).strip()
-        data = json.loads(clean_text)
-        if isinstance(data, dict):
-            return data
-        raise ValueError(f"Expected dict from classifier, got {type(data)}")
-
-
 

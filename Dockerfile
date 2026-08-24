@@ -38,6 +38,7 @@ COPY templates/ templates/
 COPY static/ static/
 COPY pricing/ pricing/
 COPY providers/ providers/
+COPY models/ models/
 
 # Copy default playlist and reference library assets that are checked in
 COPY playlists/ playlists/

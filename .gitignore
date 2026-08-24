@@ -3,6 +3,7 @@ ngrok_policy.yaml
 *.wav
 __pycache__/
 .venv/
+.corpus-venv/
 .agent/
 .agents/
 output/
@@ -13,9 +14,11 @@ evaluation_results/
 testlab/benchmark_output/
 testlab/benchmark_music_output/
 testlab/benchmark_speech_output/
+training_data/
 .env
 *.db
 deployer.db*
+training_data/raw/
 
 
 reference_library/*
