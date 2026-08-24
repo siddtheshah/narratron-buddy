@@ -98,6 +98,43 @@ def render_about_markdown(markdown_source: str) -> str:
 # Application Root Pages & Navigation
 # ========================================
 
+def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> str:
+    """Render the shared navigation topbar HTML."""
+    template_path = PROJECT_ROOT / "templates" / "shared_topbar.html"
+    raw = template_path.read_text(encoding="utf-8")
+    try:
+        import jinja2
+        template = jinja2.Template(raw)
+        return template.render(active_page=active_page, show_pricing=show_pricing)
+    except Exception:
+        out = raw
+        for p in ["join", "adventures", "about", "ideas", "stats", "deploy"]:
+            pattern = f"{{% if active_page == '{p}' %}}active{{% endif %}}"
+            out = out.replace(pattern, "active" if active_page == p else "")
+        if show_pricing:
+            out = re.sub(r"\{%\s*if show_pricing\s*%\}(.*?)\{%\s*endif\s*%\}", r"\1", out, flags=re.DOTALL)
+        else:
+            out = re.sub(r"\{%\s*if show_pricing\s*%\}(.*?)\{%\s*endif\s*%\}", "", out, flags=re.DOTALL)
+        return out
+
+
+def render_page_template(
+    template_name: str,
+    active_page: str = "",
+    show_pricing: bool = False,
+    extra_replacements: Optional[dict] = None,
+) -> str:
+    """Read a page template and inject the shared topbar component."""
+    template_path = PROJECT_ROOT / "templates" / template_name
+    html_content = template_path.read_text(encoding="utf-8")
+    topbar_html = render_shared_topbar(active_page=active_page, show_pricing=show_pricing)
+    html_content = html_content.replace("<!-- SHARED_TOPBAR -->", topbar_html)
+    if extra_replacements:
+        for placeholder, replacement in extra_replacements.items():
+            html_content = html_content.replace(placeholder, replacement)
+    return html_content
+
+
 @app.get("/favicon.png", include_in_schema=False)
 def read_favicon():
     """Serve the shared browser-tab icon."""
@@ -106,26 +143,29 @@ def read_favicon():
         media_type="image/png",
     )
 
+@app.get("/narratron-avatar.png", include_in_schema=False)
+def read_narratron_avatar():
+    """Serve the small brand avatar icon."""
+    return FileResponse(
+        PROJECT_ROOT / "static" / "narratron-avatar.png",
+        media_type="image/png",
+    )
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/join", response_class=HTMLResponse)
 def read_join_splash():
     """Serve the public Join Splash Page."""
-    template_path = os.path.join(str(PROJECT_ROOT), "templates", "join_splash.html")
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
+    return render_page_template("join_splash.html", active_page="join")
 
 @app.get("/deploy", response_class=HTMLResponse)
 def read_deployer():
     """Serve the Theater Creation & App Deployer Dashboard."""
-    template_path = os.path.join(str(PROJECT_ROOT), "templates", "theater_creation.html")
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
+    return render_page_template("theater_creation.html", active_page="deploy", show_pricing=True)
 
 @app.get("/users/{username}", response_class=HTMLResponse)
 def read_user_profile(username: str):
     """Serve the client-rendered public user profile page."""
-    template_path = PROJECT_ROOT / "templates" / "profile.html"
-    return template_path.read_text(encoding="utf-8")
+    return render_page_template("profile.html", active_page="")
 
 @app.get("/about", response_class=HTMLResponse)
 def read_about():
@@ -133,28 +173,26 @@ def read_about():
     about_content = render_about_markdown(
         (PROJECT_ROOT / "ABOUT.md").read_text(encoding="utf-8")
     )
-    template_path = PROJECT_ROOT / "templates" / "about.html"
-    return template_path.read_text(encoding="utf-8").replace(
-        "<!-- ABOUT_CONTENT -->", about_content
+    return render_page_template(
+        "about.html",
+        active_page="about",
+        extra_replacements={"<!-- ABOUT_CONTENT -->": about_content},
     )
 
 @app.get("/adventures", response_class=HTMLResponse)
 def read_adventures():
     """Serve the Premade Adventures showcase & instant deploy page."""
-    template_path = PROJECT_ROOT / "templates" / "adventures.html"
-    return template_path.read_text(encoding="utf-8")
+    return render_page_template("adventures.html", active_page="adventures")
 
 @app.get("/ideas", response_class=HTMLResponse)
 def read_ideas():
     """Serve inspiration for making a Narratron theater your own."""
-    return (PROJECT_ROOT / "templates" / "ideas.html").read_text(encoding="utf-8")
+    return render_page_template("ideas.html", active_page="ideas")
 
 @app.get("/stats", response_class=HTMLResponse)
 def read_stats():
     """Serve the System Stats Dashboard Page."""
-    template_path = os.path.join(str(PROJECT_ROOT), "templates", "stats.html")
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
+    return render_page_template("stats.html", active_page="stats")
 
 @app.get("/popout", response_class=HTMLResponse)
 def read_popout(request: Request, theater_id: Optional[str] = None, join_key: Optional[str] = None):

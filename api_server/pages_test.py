@@ -53,3 +53,41 @@ def test_canvas_reconstructs_missing_theater_using_registry_database(tmp_path):
     with patch.object(pages, "theater_manager", manager), patch.object(pages, "db", registry_db), patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
         __import__("asyncio").run(pages.read_canvas(request, "stage"))
     registry_db.reconstruct_theater_from_db.assert_called_once_with("stage", theater.directory.return_value)
+
+
+def test_narratron_avatar_endpoint():
+    response = pages.read_narratron_avatar()
+    assert response.status_code == 200
+    assert response.media_type == "image/png"
+
+
+def test_non_canvas_pages_have_normalized_topbar_and_avatar():
+    pages_to_test = [
+        ("join_splash", pages.read_join_splash()),
+        ("deployer", pages.read_deployer()),
+        ("about", pages.read_about()),
+        ("adventures", pages.read_adventures()),
+        ("ideas", pages.read_ideas()),
+        ("stats", pages.read_stats()),
+        ("profile", pages.read_user_profile("demo")),
+    ]
+    for page_name, html in pages_to_test:
+        assert "/static/narratron-avatar.png" in html, f"{page_name} missing avatar icon in topbar"
+        assert "Narratron" in html, f"{page_name} missing Narratron branding"
+        assert 'id="userAccountBar"' in html, f"{page_name} missing userAccountBar"
+        assert "auth-flow.js" in html, f"{page_name} missing auth-flow.js"
+        assert "auth-flow.css" in html, f"{page_name} missing auth-flow.css"
+        assert "topbar.css" in html, f"{page_name} missing topbar.css"
+
+
+def test_render_shared_topbar_active_highlighting():
+    join_topbar = pages.render_shared_topbar(active_page="join")
+    assert 'href="/join" class="deploy-nav-btn active"' in join_topbar
+
+    adventures_topbar = pages.render_shared_topbar(active_page="adventures")
+    assert 'href="/adventures" class="deploy-nav-btn active"' in adventures_topbar
+
+    pricing_topbar = pages.render_shared_topbar(active_page="deploy", show_pricing=True)
+    assert 'onclick="openPricingModal()"' in pricing_topbar
+
+

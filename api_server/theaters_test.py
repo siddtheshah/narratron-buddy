@@ -50,7 +50,7 @@ class TestTheaterAPI(BaseTestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Join a Live Story Theater", response.text)
-        self.assertIn("Narratron Buddy", response.text)
+        self.assertIn("Narratron", response.text)
         self.assertIn("Adventure Mode is here", response.text)
 
         join_response = self.client.get("/join")

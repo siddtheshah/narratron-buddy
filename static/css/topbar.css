@@ -1,0 +1,88 @@
+﻿/* Shared Narratron Topbar Navigation CSS */
+header.narratron-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 40px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(15, 23, 42, 0.65);
+  border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.narratron-topbar .logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 1.45rem;
+  background: linear-gradient(90deg, #fb923c, #f43f5e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-decoration: none;
+  letter-spacing: -0.02em;
+}
+
+.narratron-topbar .brand-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(251, 146, 60, 0.6);
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.35);
+  flex-shrink: 0;
+}
+
+.narratron-topbar .nav-links {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.narratron-topbar .deploy-nav-btn {
+  background: var(--glass-bg, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text-main, #f8fafc);
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.narratron-topbar .deploy-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(251, 146, 60, 0.5);
+  transform: translateY(-1px);
+}
+
+.narratron-topbar .deploy-nav-btn.active {
+  background: rgba(249, 115, 22, 0.22);
+  border-color: rgba(251, 146, 60, 0.7);
+  color: #ffffff;
+}
+
+.narratron-topbar .deploy-nav-btn-primary {
+  background: linear-gradient(135deg, var(--primary, #8b5cf6) 0%, var(--accent, #ec4899) 100%);
+  border: none;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+}
+
+.narratron-topbar .deploy-nav-btn-primary:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.5);
+}

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Narratron Buddy - Live Canvas Experience</title>
+  <title>Narratron - Live Canvas Experience</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="preload" as="image" href="/carousel/candle%20map.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -109,42 +109,7 @@
       z-index: 2;
     }
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 24px 48px;
-      backdrop-filter: blur(10px);
-      background: rgba(15, 23, 42, 0.6);
-      border-bottom: 1px solid var(--glass-border);
-    }
 
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-weight: 700;
-      font-size: 1.5rem;
-      background: linear-gradient(90deg, #a78bfa, #f472b6);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .deploy-nav-btn {
-      background: var(--glass-bg);
-      border: 1px solid var(--glass-border);
-      color: var(--text-main);
-      padding: 10px 20px;
-      border-radius: 999px;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.2s ease;
-    }
-
-    .deploy-nav-btn:hover {
-      background: rgba(255, 255, 255, 0.15);
-      transform: translateY(-1px);
-    }
 
     main {
       flex: 1;
@@ -445,22 +410,7 @@
     <div class="carousel-slide" data-src="/carousel/spacetime%20vortex.png"></div>
   </div>
 
-  <header>
-    <div class="logo">
-      <span>🎨</span> Narratron Buddy
-    </div>
-    <div style="display: flex; gap: 12px; align-items: center;">
-      <a href="/adventures" class="deploy-nav-btn">🗺️ Adventures</a>
-      <a href="/about" class="deploy-nav-btn">About</a>
-      <a href="/ideas" class="deploy-nav-btn">Ideas</a>
-      <a href="/stats" class="deploy-nav-btn">Stats Dashboard</a>
-      <a href="/deploy" class="deploy-nav-btn">Host / Deploy Theater →</a>
-      <div id="userAccountBar" class="user-account-bar">
-        <button class="auth-nav-btn" onclick="openAuthModal('login')">Log In</button>
-        <button class="auth-nav-btn auth-nav-btn-primary" onclick="openAuthModal('register')">Sign Up</button>
-      </div>
-    </div>
-  </header>
+  <!-- SHARED_TOPBAR -->
 
   <main>
     <div class="hero-badge">✨ Interactive AI Narration Theater</div>
@@ -576,7 +526,7 @@
   </main>
 
   <footer>
-    Narratron Buddy &copy; 2026.
+    Narratron &copy; 2026.
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>

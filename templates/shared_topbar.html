@@ -1,0 +1,22 @@
+<link rel="stylesheet" href="/static/css/topbar.css">
+<header class="narratron-topbar">
+  <a href="/join" class="logo">
+    <img src="/static/narratron-avatar.png" alt="Narratron" class="brand-avatar">
+    <span>Narratron</span>
+  </a>
+  <nav class="nav-links" aria-label="Main Navigation">
+    <a href="/join" class="deploy-nav-btn {% if active_page == 'join' %}active{% endif %}">Join</a>
+    <a href="/adventures" class="deploy-nav-btn {% if active_page == 'adventures' %}active{% endif %}">🗺️ Adventures</a>
+    <a href="/about" class="deploy-nav-btn {% if active_page == 'about' %}active{% endif %}">About</a>
+    <a href="/ideas" class="deploy-nav-btn {% if active_page == 'ideas' %}active{% endif %}">Ideas</a>
+    <a href="/stats" class="deploy-nav-btn {% if active_page == 'stats' %}active{% endif %}">Stats</a>
+    {% if show_pricing %}
+    <button type="button" class="deploy-nav-btn" onclick="openPricingModal()">🏷️ Pricing</button>
+    {% endif %}
+    <a href="/deploy" class="deploy-nav-btn deploy-nav-btn-primary {% if active_page == 'deploy' %}active{% endif %}">Host / Deploy Theater →</a>
+    <div id="userAccountBar" class="user-account-bar">
+      <button class="auth-nav-btn" onclick="openAuthModal('login')">Log In</button>
+      <button class="auth-nav-btn auth-nav-btn-primary" onclick="openAuthModal('register')">Sign Up</button>
+    </div>
+  </nav>
+</header>
