@@ -16,6 +16,7 @@ from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
+from services.audio_codecs import LiveAudioDecoder
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ async def handle_live_websocket_connection(
     total_audio_bytes = 0
     last_audio_log_time = time.monotonic()
 
+    audio_decoder = LiveAudioDecoder(sample_rate=16000, channels=1)
     TARGET_AUDIO_CHUNK_BYTES = 960  # 30ms at 16kHz 16-bit mono PCM (16000 * 2 * 0.03)
     TARGET_AUDIO_FLUSH_INTERVAL = 0.030
     audio_buffer = bytearray()
@@ -170,9 +172,12 @@ async def handle_live_websocket_connection(
                 audio_data = message.get("bytes")
                 if not agent_session.can_accept_controller_input(user_id):
                     continue
-                if not audio_data or len(audio_data) < 64:
+                if not audio_data:
                     continue
-                audio_buffer.extend(audio_data)
+                decoded_pcm = audio_decoder.decode(audio_data)
+                if not decoded_pcm:
+                    continue
+                audio_buffer.extend(decoded_pcm)
                 now = time.monotonic()
                 if now - last_audio_flush_time >= TARGET_AUDIO_FLUSH_INTERVAL and len(audio_buffer) > 0:
                     flush_audio_buffer(force_all=True)

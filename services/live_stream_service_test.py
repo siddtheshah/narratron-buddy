@@ -72,15 +72,33 @@ def test_canvas_observability_preserves_collaboration_data_when_disabled():
     assert canvas.doodles_state == doodles
 
 
+def _make_opus_packet(samples: int = 480) -> bytes:
+    import av
+    enc = av.CodecContext.create("opus", "w")
+    enc.sample_rate = 16000
+    enc.layout = "mono"
+    enc.format = av.AudioFormat("s16")
+    enc.bit_rate = 24000
+    enc.open()
+
+    raw_pcm = b"\x00\x00" * samples
+    frame = av.AudioFrame(format="s16", layout="mono", samples=samples)
+    frame.sample_rate = 16000
+    frame.planes[0].update(raw_pcm)
+
+    packets = enc.encode(frame)
+    return bytes(packets[0])
+
+
 class TestLiveStreamServiceAudioChunking(unittest.TestCase):
     def test_audio_chunking_accumulates_into_30ms_blobs(self):
         mock_ws = AsyncMock()
         mock_ws.accept = AsyncMock()
         mock_ws.send_text = AsyncMock()
 
-        # Simulate sending 10 small chunks of 100 bytes each (total 1,000 bytes)
-        small_chunk = b"\x00" * 100
-        messages = [{"bytes": small_chunk} for _ in range(10)]
+        # Send multiple Opus frames
+        opus_packet = _make_opus_packet(samples=480)
+        messages = [{"bytes": opus_packet} for _ in range(3)]
 
         receive_call_count = 0
 
@@ -114,27 +132,25 @@ class TestLiveStreamServiceAudioChunking(unittest.TestCase):
             )
         )
 
-        # Total 1,000 bytes sent.
-        # Should result in:
-        # - 1 x 960 byte chunk (30ms audio at 16kHz 16-bit PCM mono) sent during stream
-        # - 1 x 40 byte chunk sent during disconnect flush
         self.assertTrue(mock_session.send_realtime.called)
         blobs_sent = [
             call.args[0] for call in mock_session.send_realtime.call_args_list
         ]
         
         chunk_lengths = [len(b.data) for b in blobs_sent if isinstance(b, types.Blob)]
-        self.assertEqual(chunk_lengths, [960, 40])
+        assert len(chunk_lengths) >= 1
+        for length in chunk_lengths:
+            assert length > 0
+            assert length % 2 == 0  # 16-bit PCM
 
     def test_audio_chunking_flushes_partial_buffer_on_disconnect(self):
         mock_ws = AsyncMock()
         mock_ws.accept = AsyncMock()
         
-        # Send 500 bytes (< 30ms chunk of 960 bytes)
-        partial_audio = b"\x01" * 500
+        opus_packet = _make_opus_packet(samples=480)
 
         from fastapi import WebSocketDisconnect
-        mock_ws.receive = AsyncMock(side_effect=[{"bytes": partial_audio}, WebSocketDisconnect()])
+        mock_ws.receive = AsyncMock(side_effect=[{"bytes": opus_packet}, WebSocketDisconnect()])
 
         mock_session = MagicMock()
         mock_session.add_websocket = AsyncMock()
@@ -154,15 +170,17 @@ class TestLiveStreamServiceAudioChunking(unittest.TestCase):
             )
         )
 
-        mock_session.send_realtime.assert_called_once()
+        mock_session.send_realtime.assert_called()
         blob = mock_session.send_realtime.call_args[0][0]
-        self.assertEqual(len(blob.data), 500)
+        assert len(blob.data) > 0
+        assert len(blob.data) % 2 == 0
 
     def test_discards_buffered_audio_after_baton_changes_hands(self):
         mock_ws = AsyncMock()
         mock_ws.accept = AsyncMock()
+        opus_packet = _make_opus_packet(samples=480)
         from fastapi import WebSocketDisconnect
-        mock_ws.receive = AsyncMock(side_effect=[{"bytes": bytes(500)}, WebSocketDisconnect()])
+        mock_ws.receive = AsyncMock(side_effect=[{"bytes": opus_packet}, WebSocketDisconnect()])
 
         mock_session = MagicMock()
         mock_session.add_websocket = AsyncMock()

@@ -1,17 +1,12 @@
 /**
- * Microphone capture for the live agent.
+ * Microphone capture for the live agent with Opus compression.
  *
- * `record-pcm` owns the complete capture/VAD pipeline.  Keeping capture in one
- * place prevents duplicate microphone streams and duplicate PCM uploads.
+ * Captures microphone audio, gates with RMS VAD, compresses into Opus packets
+ * via WebCodecs AudioEncoder, and delivers compressed packets to the WebSocket handler.
  */
 import { listenForSpeech } from "/static/js/device-aware-pcm.js";
 
 const SAMPLE_RATE = 16000;
-const PCM_BYTES_PER_SAMPLE = 2;
-// Match the Live API's 30 ms PCM frames.  Audio must reach the model while
-// the speaker is still talking; turn boundaries remain VAD-driven below.
-const AUDIO_CHUNK_DURATION_SECONDS = 0.03;
-const AUDIO_CHUNK_BYTES = SAMPLE_RATE * PCM_BYTES_PER_SAMPLE * AUDIO_CHUNK_DURATION_SECONDS;
 const DEFAULT_VAD_THRESHOLD = 0.01;
 const DEFAULT_SILENCE_MS = 1200;
 const DEFAULT_MIN_SPEECH_MS = 250;
@@ -19,8 +14,8 @@ const DEFAULT_MIN_SPEECH_MS = 250;
 let stopListening = null;
 let speechActive = false;
 let audioRecorderHandler = null;
-let pendingPcmBuffers = [];
-let pendingPcmBytes = 0;
+let audioEncoder = null;
+let audioTimestampUs = 0;
 
 function vadThreshold() {
   const threshold = Number(window.MIC_DETECT_THRESHOLD);
@@ -51,58 +46,55 @@ function emitSpeechActivity(phase) {
   window.dispatchEvent(new CustomEvent(`narratron:speech-${phase}`));
 }
 
-function flushAudioChunk() {
-  if (pendingPcmBytes === 0) return;
-
-  const chunk = new Uint8Array(pendingPcmBytes);
-  let offset = 0;
-  for (const buffer of pendingPcmBuffers) {
-    chunk.set(buffer, offset);
-    offset += buffer.byteLength;
+function initAudioEncoder(handler) {
+  audioTimestampUs = 0;
+  if (typeof window.AudioEncoder !== "function") {
+    console.error("[AudioRecorder] AudioEncoder is not supported in this browser.");
+    return null;
   }
-
-  pendingPcmBuffers = [];
-  pendingPcmBytes = 0;
-  if (typeof audioRecorderHandler === "function") audioRecorderHandler(chunk.buffer);
-}
-
-function appendPcm(pcm) {
-  const source = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-  let offset = 0;
-
-  while (offset < source.byteLength) {
-    const bytesToCopy = Math.min(AUDIO_CHUNK_BYTES - pendingPcmBytes, source.byteLength - offset);
-    pendingPcmBuffers.push(source.slice(offset, offset + bytesToCopy));
-    pendingPcmBytes += bytesToCopy;
-    offset += bytesToCopy;
-
-    // Flushing a transport frame is not the end of a user turn.  Sending an
-    // activity_end here followed by a new activity_start for continuous
-    // speech violates the Live API's manual-VAD sequencing precondition.
-    if (pendingPcmBytes === AUDIO_CHUNK_BYTES) flushAudioChunk();
+  try {
+    const encoder = new AudioEncoder({
+      output: (chunk) => {
+        const buffer = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(buffer);
+        if (typeof handler === "function") {
+          handler(buffer.buffer);
+        }
+      },
+      error: (err) => {
+        console.error("[AudioRecorder] WebCodecs Opus encoding error:", err);
+      },
+    });
+    encoder.configure({
+      codec: "opus",
+      sampleRate: SAMPLE_RATE,
+      numberOfChannels: 1,
+      bitrate: 24000,
+    });
+    return encoder;
+  } catch (err) {
+    console.error("[AudioRecorder] Failed to initialize AudioEncoder:", err);
+    return null;
   }
 }
 
 function finishSpeech() {
   if (!speechActive) return;
-  flushAudioChunk();
   emitVadEvent("stop", "speech_end");
   speechActive = false;
   emitSpeechActivity("end");
 }
 
 /**
- * Starts one PCM stream, gated by record-pcm's RMS VAD.
- *
- * The return shape intentionally matches the previous canvas integration.
+ * Starts microphone capture gated by RMS VAD and encoded to Opus packets.
  */
 export async function startAudioRecorderWorklet(handler) {
   stopMicrophone();
 
   speechActive = false;
-  pendingPcmBuffers = [];
-  pendingPcmBytes = 0;
   audioRecorderHandler = handler;
+  audioEncoder = initAudioEncoder(handler);
+
   stopListening = await listenForSpeech({
     deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
     sampleRate: SAMPLE_RATE,
@@ -110,10 +102,21 @@ export async function startAudioRecorderWorklet(handler) {
     vadSilenceDuration: DEFAULT_SILENCE_MS,
     vadMinRecordingTime: DEFAULT_MIN_SPEECH_MS,
     continuous: true,
-    onData: ({ pcm }) => {
+    onData: ({ float32 }) => {
       if (!speechActive) return;
-      // record-pcm supplies little-endian, signed 16-bit mono PCM bytes.
-      appendPcm(pcm);
+      if (audioEncoder && audioEncoder.state === "configured" && float32) {
+        const audioData = new AudioData({
+          format: "f32-planar",
+          sampleRate: SAMPLE_RATE,
+          numberOfFrames: float32.length,
+          numberOfChannels: 1,
+          timestamp: audioTimestampUs,
+          data: float32,
+        });
+        audioTimestampUs += Math.round((float32.length / SAMPLE_RATE) * 1_000_000);
+        audioEncoder.encode(audioData);
+        audioData.close();
+      }
     },
     onSpeechStart: () => {
       if (speechActive) return;
@@ -125,22 +128,28 @@ export async function startAudioRecorderWorklet(handler) {
       finishSpeech();
     },
     onError: (error) => {
-      console.error("[AudioRecorder] record-pcm microphone capture failed:", error);
+      console.error("[AudioRecorder] microphone capture failed:", error);
       finishSpeech();
     },
   });
 
-  // record-pcm opens the stream asynchronously.  There are no public worklet,
-  // context, or MediaStream handles to expose; the canvas only stores these for
-  // cleanup and calls stopMicrophone below.
   return [null, null, null];
 }
 
-/** Stops capture and emits the final VAD boundary when speech was active. */
+/** Stops capture and closes the Opus encoder. */
 export function stopMicrophone() {
   const stop = stopListening;
   stopListening = null;
   if (typeof stop === "function") stop();
   finishSpeech();
+  if (audioEncoder) {
+    try {
+      if (audioEncoder.state === "configured") {
+        audioEncoder.flush().catch(() => {});
+        audioEncoder.close();
+      }
+    } catch (e) {}
+    audioEncoder = null;
+  }
   audioRecorderHandler = null;
 }

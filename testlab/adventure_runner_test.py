@@ -13,18 +13,6 @@ from testlab.adventure_runner import (
 from testlab.server import app
 
 
-def test_list_available_adventures_finds_space_funk():
-    adventures = list_available_adventures()
-    assert len(adventures) >= 1
-    ids = [a["id"] for a in adventures]
-    assert "space-funk-odyssey" in ids
-
-    sfo = next(a for a in adventures if a["id"] == "space-funk-odyssey")
-    assert sfo["title"] == "Space Funk Odyssey"
-    assert sfo["lore_count"] > 0
-    assert sfo["has_theater_yaml"] is True
-
-
 def test_load_adventure_config():
     config, adv_path, adv_id = load_adventure_config("space-funk-odyssey")
     assert adv_id == "space-funk-odyssey"

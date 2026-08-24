@@ -4711,49 +4711,28 @@
             }
         });
 
-        // Audio Recorder Callback with 30-Millisecond Chunking (960 bytes @ 16kHz 16-bit PCM mono)
-        const AUDIO_TARGET_CHUNK_BYTES = 960;
-        const AUDIO_FLUSH_MAX_INTERVAL_MS = 30;
+        // Audio Recorder Callback with Opus compression (~20-60 bytes per chunk)
         let clientAudioChunkCount = 0;
         let clientAudioBuffers = [];
         let clientAudioTotalBytes = 0;
         let clientAudioLastFlushTime = Date.now();
 
         function flushClientAudioBuffer() {
-            if (clientAudioTotalBytes === 0) return;
-            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                clientAudioBuffers = [];
-                clientAudioTotalBytes = 0;
-                return;
-            }
-            const combined = new Uint8Array(clientAudioTotalBytes);
-            let offset = 0;
-            for (let i = 0; i < clientAudioBuffers.length; i++) {
-                const chunk = new Uint8Array(clientAudioBuffers[i]);
-                combined.set(chunk, offset);
-                offset += chunk.byteLength;
-            }
-            clientAudioChunkCount++;
-            console.log(`[AudioRecorder] Forwarding 30ms PCM audio chunk #${clientAudioChunkCount} (${combined.byteLength} bytes) to Agent WebSocket.`);
-            agentWs.send(combined.buffer);
-
             clientAudioBuffers = [];
             clientAudioTotalBytes = 0;
             clientAudioLastFlushTime = Date.now();
         }
 
-        function audioRecorderHandler(pcmData) {
+        function audioRecorderHandler(opusBuffer) {
             if (!isRecording) return;
             if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
                 return;
             }
-            clientAudioBuffers.push(pcmData);
-            clientAudioTotalBytes += (pcmData.byteLength || pcmData.size || 0);
-
-            const now = Date.now();
-            if (clientAudioTotalBytes >= AUDIO_TARGET_CHUNK_BYTES || (now - clientAudioLastFlushTime >= AUDIO_FLUSH_MAX_INTERVAL_MS)) {
-                flushClientAudioBuffer();
+            clientAudioChunkCount++;
+            if (clientAudioChunkCount % 100 === 1) {
+                console.log(`[AudioRecorder] Streaming Opus audio chunk #${clientAudioChunkCount} (${opusBuffer.byteLength} bytes) to Agent WebSocket.`);
             }
+            agentWs.send(opusBuffer);
         }
 
         // ========================================
