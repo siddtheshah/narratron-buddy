@@ -551,16 +551,26 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(kwargs["images_created"], 0)
         self.assertEqual(kwargs["music_created"], 0)
         self.assertEqual(kwargs["story_plans"], 0)
+        self.assertEqual(kwargs["interactive_canvas_used"], 0)
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
-        # 4. Check get_usage dictionary
+        # 4. Record interactive canvas used -> triggers immediate flush
+        session.record_interactive_canvas_used()
+        self.assertEqual(session.interactive_canvas_used_count, 1)
+        kwargs = mock_db.record_user_usage.call_args.kwargs
+        self.assertEqual(kwargs["user_id"], 123)
+        self.assertEqual(kwargs["interactive_canvas_used"], 1)
+        mock_db.record_user_usage.reset_mock()
+
+        # 5. Check get_usage dictionary
         usage = session.get_usage()
         self.assertEqual(usage["theater_id"], "test_usage")
         self.assertEqual(usage["owner_user_id"], 123)
         self.assertEqual(usage["images_created"], 1)
         self.assertEqual(usage["music_created"], 1)
         self.assertEqual(usage["story_plans"], 0)
+        self.assertEqual(usage["interactive_canvas_used"], 1)
 
         session.record_story_plan_completed()
         self.assertEqual(session.story_plans_count, 1)

@@ -417,3 +417,14 @@ def test_interactive_canvas_emits_debug_lifecycle(caplog):
     assert "[InteractiveCanvasTools] Generated draft" in log_text
     assert "[InteractiveCanvasTools] Draft validated" in log_text
     assert "[InteractiveCanvasTools] Created surface" in log_text
+
+
+def test_interactive_canvas_triggers_usage_callback():
+    tools, _ = make_tools(lambda *_: valid_draft())
+    callback_mock = MagicMock()
+    tools.on_interactive_canvas_used = callback_mock
+
+    result = tools.update_interactive_canvas("Create a status card")
+    assert result["status"] == "displayed"
+    callback_mock.assert_called_once_with("stage")
+

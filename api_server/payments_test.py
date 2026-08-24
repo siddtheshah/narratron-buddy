@@ -171,6 +171,13 @@ class TestPaymentsFlow(BaseTestCase):
         # 4 planner turns * 0.5 credits + 3 voiced turns * 0.25 credits.
         self.assertAlmostEqual(res.json()["calculation"]["usage_credits"], 2.75)
 
+    def test_pricing_endpoint_includes_interactive_canvas(self):
+        res = self.client.get("/api/pricing?interactive_canvas_used=4")
+        self.assertEqual(res.status_code, 200)
+        # 4 interactive canvas uses * 0.25 credits = 1.0 credit.
+        self.assertAlmostEqual(res.json()["calculation"]["usage_credits"], 1.0)
+        self.assertEqual(res.json()["interactive_canvas_credit_rate"], 0.25)
+
 
 
 if __name__ == "__main__":

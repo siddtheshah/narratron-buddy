@@ -307,6 +307,7 @@ def get_pricing_rates(
     music_created: Optional[int] = None,
     story_plans: Optional[int] = None,
     character_voiced_turns: Optional[int] = None,
+    interactive_canvas_used: Optional[int] = None,
     adventure_actions: Optional[int] = None,
     adventure_minutes: Optional[float] = None,
     gb_amount: Optional[float] = None,
@@ -324,6 +325,8 @@ def get_pricing_rates(
         raise HTTPException(status_code=400, detail="story_plans must be non-negative.")
     if character_voiced_turns is not None and character_voiced_turns < 0:
         raise HTTPException(status_code=400, detail="character_voiced_turns must be non-negative.")
+    if interactive_canvas_used is not None and interactive_canvas_used < 0:
+        raise HTTPException(status_code=400, detail="interactive_canvas_used must be non-negative.")
     if adventure_actions is not None and adventure_actions < 0:
         raise HTTPException(status_code=400, detail="adventure_actions must be non-negative.")
     if adventure_minutes is not None and adventure_minutes < 0:
@@ -345,6 +348,7 @@ def get_pricing_rates(
         or music_created is not None
         or story_plans is not None
         or character_voiced_turns is not None
+        or interactive_canvas_used is not None
         or adventure_actions is not None
     ):
         vm = voice_minutes if voice_minutes is not None else 0.0
@@ -352,10 +356,11 @@ def get_pricing_rates(
         mc = music_created if music_created is not None else 0
         sp = story_plans if story_plans is not None else 0
         cvt = character_voiced_turns if character_voiced_turns is not None else 0
+        icu = interactive_canvas_used if interactive_canvas_used is not None else 0
         aa = adventure_actions if adventure_actions is not None else 0
         calculation["usage_credits"] = pricing.calculate_usage_cost(
             voice_minutes=vm, images_created=ic, music_created=mc, story_plans=sp,
-            adventure_actions=aa, character_voiced_turns=cvt,
+            adventure_actions=aa, character_voiced_turns=cvt, interactive_canvas_used=icu,
         )
 
     if adventure_actions is not None or adventure_minutes is not None:

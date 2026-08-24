@@ -182,7 +182,9 @@ class AgentSession:
         )
         self.character_voiced_turns_count: int = 0
         self.unbilled_character_voiced_turns: int = 0
-        self._pending_usage_batches: list[tuple[str, int, int, int, int, int]] = []
+        self.interactive_canvas_used_count: int = 0
+        self.unbilled_interactive_canvas: int = 0
+        self._pending_usage_batches: list[tuple[str, int, int, int, int, int, int]] = []
         self.created_at = time.time()
         self.last_active_at = time.time()
         self.status = "ready"  # "ready", "active", "stopped"
@@ -349,6 +351,11 @@ class AgentSession:
         if self.observability_tools:
             self.observability_tools.on_observability_requested = (
                 self.send_agent_requested_observability
+            )
+
+        if self.interactive_canvas_tools:
+            self.interactive_canvas_tools.on_interactive_canvas_used = (
+                self.record_interactive_canvas_used
             )
 
         def handle_session_chat_message(text: str):
@@ -756,6 +763,13 @@ class AgentSession:
         logger.info(f"[AgentSession] Music created recorded for theater {self.theater_id} (total={self.music_created_count})")
         self.flush_usage_to_db()
 
+    def record_interactive_canvas_used(self, detail: str = ""):
+        """Record interactive canvas tool usage for active theater session and flush usage."""
+        self.interactive_canvas_used_count += 1
+        self.unbilled_interactive_canvas += 1
+        logger.info(f"[AgentSession] Interactive canvas usage recorded for theater {self.theater_id} (total={self.interactive_canvas_used_count})")
+        self.flush_usage_to_db()
+
     def record_story_plan_completed(self):
         """Record a successfully resolved story-planning turn and flush it for billing."""
         if self.image_tools and hasattr(self.image_tools, "record_story_plan_completed"):
@@ -793,6 +807,7 @@ class AgentSession:
             or self.unbilled_music > 0
             or self.unbilled_story_plans > 0
             or self.unbilled_character_voiced_turns > 0
+            or self.unbilled_interactive_canvas > 0
         ):
             self._pending_usage_batches.append((
                 f"live-usage:{self.theater_id}:{uuid.uuid4()}",
@@ -801,12 +816,14 @@ class AgentSession:
                 self.unbilled_music,
                 self.unbilled_story_plans,
                 self.unbilled_character_voiced_turns,
+                self.unbilled_interactive_canvas,
             ))
             self.unbilled_audio_bytes = 0
             self.unbilled_images = 0
             self.unbilled_music = 0
             self.unbilled_story_plans = 0
             self.unbilled_character_voiced_turns = 0
+            self.unbilled_interactive_canvas = 0
 
         if not self._pending_usage_batches:
             return
@@ -816,7 +833,7 @@ class AgentSession:
 
         if db_inst and owner_id:
             while self._pending_usage_batches:
-                event_key, unbilled_audio_bytes, unbilled_img, unbilled_mus, unbilled_story_plans, unbilled_character_voiced_turns = self._pending_usage_batches[0]
+                event_key, unbilled_audio_bytes, unbilled_img, unbilled_mus, unbilled_story_plans, unbilled_character_voiced_turns, unbilled_canvas = self._pending_usage_batches[0]
                 unbilled_vm = unbilled_audio_bytes / 1920000.0
                 try:
                     updated_user = db_inst.record_user_usage(
@@ -826,12 +843,13 @@ class AgentSession:
                         music_created=unbilled_mus,
                         story_plans=unbilled_story_plans,
                         character_voiced_turns=unbilled_character_voiced_turns,
+                        interactive_canvas_used=unbilled_canvas,
                         idempotency_key=event_key,
                     )
                     self._pending_usage_batches.pop(0)
                     auth_session_cache.invalidate_user(owner_id)
                     logger.info(
-                        f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}, character_voiced_turns={unbilled_character_voiced_turns}"
+                        f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}, character_voiced_turns={unbilled_character_voiced_turns}, interactive_canvas={unbilled_canvas}"
                     )
                     credits_remaining = updated_user.get("credits", 0.0) if updated_user else 1.0
                     if credits_remaining <= 0.0:
@@ -864,6 +882,7 @@ class AgentSession:
             "music_created": self.music_created_count,
             "story_plans": self.story_plans_count,
             "character_voiced_turns": self.character_voiced_turns_count,
+            "interactive_canvas_used": self.interactive_canvas_used_count,
             "total_audio_bytes": self.audio_bytes_received,
         }
 

@@ -36,6 +36,8 @@ class TestPricingController(BaseTestCase):
         self.assertEqual(rates["adventure_mode_credit_rate_per_action"], 0.5)
         self.assertEqual(rates["adventure_mode_credit_rate_per_minute"], 2.5)
         self.assertEqual(rates["character_voicing_turn_credit_rate"], 0.25)
+        self.assertEqual(rates["interactive_canvas_credit_rate"], 0.25)
+        self.assertEqual(rates["interactive_canvas_tool_credit_rate"], 0.25)
 
     def test_from_env_overrides(self):
         env_vars = {
@@ -49,6 +51,7 @@ class TestPricingController(BaseTestCase):
             "ADVENTURE_MODE_TOKENS_PER_CALL": "5000",
             "ADVENTURE_MODE_CALLS_PER_MINUTE": "6.0",
             "CHARACTER_VOICING_TURN_CREDIT_RATE": "0.4",
+            "INTERACTIVE_CANVAS_CREDIT_RATE": "0.75",
         }
         with patch.dict(os.environ, env_vars):
             controller = PricingController.from_env()
@@ -64,6 +67,8 @@ class TestPricingController(BaseTestCase):
             self.assertEqual(rates["adventure_mode_tokens_per_call"], 5000.0)
             self.assertEqual(rates["adventure_mode_calls_per_minute"], 6.0)
             self.assertEqual(rates["character_voicing_turn_credit_rate"], 0.4)
+            self.assertEqual(rates["interactive_canvas_credit_rate"], 0.75)
+            self.assertEqual(rates["interactive_canvas_tool_credit_rate"], 0.75)
 
     def test_usd_per_credit_property(self):
         controller = PricingController(credits_per_usd=25.0)
@@ -75,7 +80,7 @@ class TestPricingController(BaseTestCase):
             _ = invalid_controller.usd_per_credit
 
     def test_calculate_usage_cost(self):
-        controller = PricingController(voice_credit_rate=2.0, image_credit_rate=1.5, music_credit_rate=1.0, story_planning_credit_rate=0.5)
+        controller = PricingController(voice_credit_rate=2.0, image_credit_rate=1.5, music_credit_rate=1.0, story_planning_credit_rate=0.5, interactive_canvas_credit_rate=0.25)
         # 10 mins * 2.0 + 4 images * 1.5 + 3 music * 1.0 + 2 plans * 0.5 = 30.0
         self.assertEqual(controller.calculate_usage_cost(10.0, 4, 3, 2), 30.0)
         # With adventure_actions: 2 plans + 10 actions = 12 total * 0.5 = 6.0
@@ -83,6 +88,10 @@ class TestPricingController(BaseTestCase):
         self.assertEqual(
             controller.calculate_usage_cost(0.0, 0, 0, 1, character_voiced_turns=1),
             0.75,
+        )
+        self.assertEqual(
+            controller.calculate_usage_cost(0.0, 0, 0, 0, interactive_canvas_used=4),
+            1.0,
         )
 
         with self.assertRaises(ValueError):
@@ -99,6 +108,12 @@ class TestPricingController(BaseTestCase):
 
         with self.assertRaises(ValueError):
             controller.calculate_usage_cost(10.0, 4, 1, 1, -1)
+
+        with self.assertRaises(ValueError):
+            controller.calculate_usage_cost(10.0, 4, 1, 1, 0, -1)
+
+        with self.assertRaises(ValueError):
+            controller.calculate_usage_cost(10.0, 4, 1, 1, 0, 0, -1)
 
     def test_calculate_adventure_mode_cost_and_tokens(self):
         controller = PricingController(

@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL = 4000
 DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE = 5.0
 DEFAULT_CHARACTER_VOICING_TURN_CREDIT_RATE = 0.25
+DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE = 0.25
 
 
 class PricingController:
@@ -23,6 +24,7 @@ class PricingController:
         adventure_mode_tokens_per_call: Optional[int] = None,
         adventure_mode_calls_per_minute: Optional[float] = None,
         character_voicing_turn_credit_rate: Optional[float] = None,
+        interactive_canvas_credit_rate: Optional[float] = None,
     ):
         self.voice_credit_rate = voice_credit_rate if voice_credit_rate is not None else 1.0
         self.image_credit_rate = image_credit_rate if image_credit_rate is not None else 1.0
@@ -45,6 +47,11 @@ class PricingController:
             character_voicing_turn_credit_rate
             if character_voicing_turn_credit_rate is not None
             else DEFAULT_CHARACTER_VOICING_TURN_CREDIT_RATE
+        )
+        self.interactive_canvas_credit_rate = (
+            interactive_canvas_credit_rate
+            if interactive_canvas_credit_rate is not None
+            else DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE
         )
 
     @property
@@ -97,6 +104,15 @@ class PricingController:
                 ["CHARACTER_VOICING_TURN_CREDIT_RATE", "PRICING_CHARACTER_VOICING_TURN_CREDIT_RATE"],
                 DEFAULT_CHARACTER_VOICING_TURN_CREDIT_RATE,
             ),
+            interactive_canvas_credit_rate=_get_float_env(
+                [
+                    "INTERACTIVE_CANVAS_CREDIT_RATE",
+                    "PRICING_INTERACTIVE_CANVAS_CREDIT_RATE",
+                    "INTERACTIVE_CANVAS_TOOL_CREDIT_RATE",
+                    "PRICING_INTERACTIVE_CANVAS_TOOL_CREDIT_RATE",
+                ],
+                DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE,
+            ),
         )
 
     def get_rates(self) -> Dict[str, float]:
@@ -115,6 +131,8 @@ class PricingController:
             "adventure_mode_credit_rate_per_action": self.story_planning_credit_rate,
             "adventure_mode_credit_rate_per_minute": self.story_planning_credit_rate * self.adventure_mode_calls_per_minute,
             "character_voicing_turn_credit_rate": self.character_voicing_turn_credit_rate,
+            "interactive_canvas_credit_rate": self.interactive_canvas_credit_rate,
+            "interactive_canvas_tool_credit_rate": self.interactive_canvas_credit_rate,
         }
 
     def calculate_usage_cost(
@@ -125,11 +143,20 @@ class PricingController:
         story_plans: int = 0,
         adventure_actions: int = 0,
         character_voiced_turns: int = 0,
+        interactive_canvas_used: int = 0,
     ) -> float:
-        """Calculate total credit cost for voice, image, music, and story-planning/adventure-mode usage."""
-        if voice_minutes < 0 or images_created < 0 or music_created < 0 or story_plans < 0 or adventure_actions < 0 or character_voiced_turns < 0:
+        """Calculate total credit cost for voice, image, music, story-planning/adventure-mode, and interactive canvas usage."""
+        if (
+            voice_minutes < 0
+            or images_created < 0
+            or music_created < 0
+            or story_plans < 0
+            or adventure_actions < 0
+            or character_voiced_turns < 0
+            or interactive_canvas_used < 0
+        ):
             raise ValueError(
-                "Usage parameters (voice_minutes, images_created, music_created, story_plans, adventure_actions, character_voiced_turns) must be non-negative."
+                "Usage parameters (voice_minutes, images_created, music_created, story_plans, adventure_actions, character_voiced_turns, interactive_canvas_used) must be non-negative."
             )
         total_story_plans = story_plans + adventure_actions
         return (
@@ -138,6 +165,7 @@ class PricingController:
             + (music_created * self.music_credit_rate)
             + (total_story_plans * self.story_planning_credit_rate)
             + (character_voiced_turns * self.character_voicing_turn_credit_rate)
+            + (interactive_canvas_used * self.interactive_canvas_credit_rate)
         )
 
     def calculate_adventure_mode_cost(

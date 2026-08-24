@@ -658,6 +658,14 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         self.assertEqual(result["total_character_voiced_turns"], 1)
         self.assertEqual(result["credits"], -0.75)
 
+    def test_record_user_usage_interactive_canvas_are_totaled_and_billed(self):
+        self.db.pricing_controller.interactive_canvas_credit_rate = 0.25
+        result = self.db.record_user_usage(
+            self.user["id"], interactive_canvas_used=2,
+        )
+        self.assertEqual(result["total_interactive_canvas_used"], 2)
+        self.assertEqual(result["credits"], -0.50)
+
     def test_record_user_usage_negative_credits_allowed(self):
         # User has 0.0 credits; deduct 150.0 credits -> credits should become -150.0
         res = self.db.record_user_usage(self.user["id"], voice_minutes=100.0, images_created=50, credit_cost=150.0)

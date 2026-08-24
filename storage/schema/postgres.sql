@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     total_music_created INTEGER NOT NULL DEFAULT 0,
     total_story_plans INTEGER NOT NULL DEFAULT 0,
     total_character_voiced_turns INTEGER NOT NULL DEFAULT 0,
+    total_interactive_canvas_used INTEGER NOT NULL DEFAULT 0,
     mic_sensitivity DOUBLE PRECISION NOT NULL DEFAULT 0.5,
     bio TEXT NOT NULL DEFAULT '',
     stats_visible BOOLEAN NOT NULL DEFAULT FALSE,
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique ON users (LOWER(username));
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique ON users (LOWER(email));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_character_voiced_turns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS total_interactive_canvas_used INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS auth_sessions (
     token TEXT PRIMARY KEY,
@@ -100,11 +102,13 @@ CREATE TABLE IF NOT EXISTS usage_events (
     music_created INTEGER NOT NULL DEFAULT 0,
     story_plans INTEGER NOT NULL DEFAULT 0,
     character_voiced_turns INTEGER NOT NULL DEFAULT 0,
+    interactive_canvas_used INTEGER NOT NULL DEFAULT 0,
     credit_cost DOUBLE PRECISION NOT NULL,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS usage_events_user_id_idx ON usage_events(user_id);
 ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS character_voiced_turns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS interactive_canvas_used INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     token TEXT PRIMARY KEY,

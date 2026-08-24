@@ -310,6 +310,7 @@ class InteractiveCanvasTools(BaseTools):
         # planner turn, matching ImageTools' story-plan completion gate.
         self._story_plan_completed = not self.adventure_mode
         self._story_plan_lock = threading.Lock()
+        self.on_interactive_canvas_used: Optional[Callable] = None
         logger.debug(
             "%s Initialized theater=%s model=%s catalog=%s components=%s cooldown=%.2fs max_surfaces=%d provider=%s",
             LOG_PREFIX,
@@ -772,6 +773,16 @@ object interactions, clues, and flavor cards must use persistent=false."""
                 if is_new else len(surface["messages"][1]["updateComponents"]["components"]),
                 surface.get("placement"),
             )
+        if getattr(self, "on_interactive_canvas_used", None):
+            try:
+                self.on_interactive_canvas_used(self.active_theater_id or "default")
+            except TypeError:
+                try:
+                    self.on_interactive_canvas_used()
+                except Exception as cb_err:
+                    logger.error(f"{LOG_PREFIX} Exception in on_interactive_canvas_used callback: {cb_err}")
+            except Exception as cb_err:
+                logger.error(f"{LOG_PREFIX} Exception in on_interactive_canvas_used callback: {cb_err}")
         status = "displayed" if created and not updated else "updated" if updated and not created else "applied"
         return {
             "status": status,

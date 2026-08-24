@@ -335,7 +335,7 @@ def get_references_context(tool_bundle: Any) -> str:
                 references = function() if callable(function) else None
                 if references:
                     lines = [
-                        f"- {item['name']} (alias: {item['alias']}): {item['description']} [path: {item['path']}]"
+                        f"- {item.get('name', '')} (alias: {item.get('alias', '')}): {item.get('description', '')} [path: {item.get('path', '')}]"
                         for item in references
                     ]
                     return "\n".join(lines)
