@@ -315,3 +315,59 @@ class TestImageTools(BaseTestCase):
         tools.join_generation()
         self.assertTrue(tools.is_story_plan_completed)
         tools.stop_cycle()
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_saves_full_quality_and_compressed_webp_and_displays_webp(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        mock_canvas_service = MagicMock()
+        tools = ImageTools(
+            self.config,
+            theater_id="webp_test",
+            theater_manager=self.manager,
+            canvas_state_service=mock_canvas_service,
+        )
+        tools.stop_cycle()
+
+        tools.create_image("a glowing forest", image_name="forest_01", display=True)
+        tools.join_generation()
+
+        # Full quality JPEG exists on disk
+        full_quality_path = tools.image_aliases["forest_01"]
+        self.assertTrue(os.path.exists(full_quality_path))
+        self.assertTrue(full_quality_path.endswith(".jpg"))
+
+        # Compressed WebP exists on disk
+        webp_path = os.path.splitext(full_quality_path)[0] + ".webp"
+        self.assertTrue(os.path.exists(webp_path))
+
+        # Canvas state service received the WebP path for display
+        mock_canvas_service.show_image.assert_called_once()
+        args, kwargs = mock_canvas_service.show_image.call_args
+        displayed_path = args[0]
+        self.assertTrue(displayed_path.endswith(".webp"))
+        self.assertEqual(displayed_path, webp_path)
+        tools.stop_cycle()
+
+    def test_show_image_sends_compressed_webp_to_canvas_state_service(self):
+        mock_canvas_service = MagicMock()
+        tools = ImageTools(
+            self.config,
+            theater_id="show_webp_test",
+            theater_manager=self.manager,
+            canvas_state_service=mock_canvas_service,
+        )
+        tools.stop_cycle()
+
+        img_ref = os.path.join(tools.reference_dir, "ref_card.jpg")
+        Image.new("RGB", (20, 20), color="purple").save(img_ref)
+
+        tools.show_image("ref_card.jpg")
+
+        mock_canvas_service.show_image.assert_called_once()
+        args, kwargs = mock_canvas_service.show_image.call_args
+        displayed_path = args[0]
+        self.assertTrue(displayed_path.endswith(".webp"))
+        self.assertTrue(os.path.exists(displayed_path))
+        tools.stop_cycle()
+

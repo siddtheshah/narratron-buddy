@@ -17,6 +17,7 @@ from providers import (
 )
 from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from utils.image_utils import (
+    compress_image_to_webp,
     embed_image_metadata,
     extract_image_metadata_description,
     extract_image_prompt,
@@ -241,12 +242,34 @@ class ImageTools(BaseTools):
                 os.path.join(directory, base_name),
                 os.path.join(directory, f"{path_str}.jpg"),
                 os.path.join(directory, f"{path_str}.png"),
+                os.path.join(directory, f"{path_str}.webp"),
             ]
             for candidate in candidates:
                 if os.path.exists(candidate):
                     return candidate
 
         return None
+
+    def _ensure_webp_for_display(self, file_path: str) -> str:
+        """Ensures a compressed WebP version of the image exists in output_dir for frontend display."""
+        if not file_path:
+            return file_path
+        if file_path.lower().endswith(".webp"):
+            return file_path
+
+        stem = Path(file_path).stem
+        webp_filename = f"{stem}.webp"
+        webp_path = os.path.join(self.output_dir, webp_filename)
+
+        try:
+            if os.path.exists(webp_path) and os.path.exists(file_path):
+                if os.path.getmtime(webp_path) >= os.path.getmtime(file_path):
+                    return webp_path
+        except Exception:
+            pass
+
+        compressed = compress_image_to_webp(file_path, output_path=webp_path, quality=80)
+        return compressed if compressed and os.path.exists(compressed) else file_path
 
     def join_generation(self, timeout: float = 10.0) -> None:
         """Helper for unit tests or teardown to wait for background image generation thread."""
@@ -356,16 +379,27 @@ class ImageTools(BaseTools):
                     if image_name:
                         clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name)
                         filename = f"{clean_name}_{timestamp}.jpg"
+                        webp_filename = f"{clean_name}_{timestamp}.webp"
                     else:
                         filename = f"image_{timestamp}_0.jpg"
+                        webp_filename = f"image_{timestamp}_0.webp"
                     
                     out_folder = self.output_dir
                     filepath = os.path.join(out_folder, filename)
+                    webp_filepath = os.path.join(out_folder, webp_filename)
                      
                     exif = image.getexif()
                     embed_image_metadata(exif, effective_prompt)
                      
+                    # Save full quality image
                     image.save(filepath, "JPEG", exif=exif, quality=95)
+
+                    # Save compressed webp image for frontend display
+                    try:
+                        image.save(webp_filepath, "WEBP", exif=exif, quality=80)
+                    except Exception as e:
+                        logger.warning(f"[ImageTools] Failed to save webp compressed image: {e}")
+
                     saved_paths.append(filepath)
                     
                     # Register alias
@@ -376,7 +410,7 @@ class ImageTools(BaseTools):
                         self.image_aliases[image_name.lower()] = filepath
                         self.image_aliases[clean_name.lower()] = filepath
                     
-                    logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} (Name alias: {image_name})")
+                    logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} and WebP to {webp_filepath} (Name alias: {image_name})")
                     if self.on_image_created:
                         try:
                             self.on_image_created(filepath)
@@ -586,10 +620,11 @@ class ImageTools(BaseTools):
             resolved_path = self._find_image_path(file_path)
             logger.debug(f"[ImageTools] Resolved image '{file_path}' to '{resolved_path}' (transition='{transition}')")
             if resolved_path:
+                display_path = self._ensure_webp_for_display(resolved_path)
                 canvas_state_service = getattr(self, "canvas_state_service", None)
                 if canvas_state_service:
                     canvas_state_service.show_image(
-                        resolved_path,
+                        display_path,
                         theater_id=self.active_theater_id,
                         transition=transition,
                         effect=effect,
