@@ -103,6 +103,24 @@
             padding: 0.75rem 1rem;
         }
 
+        .pricing-content-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+            gap: 1.25rem;
+            align-items: start;
+        }
+
+        .pricing-rates-column > :last-child,
+        .pricing-calculator {
+            margin-bottom: 0 !important;
+        }
+
+        @media (max-width: 900px) {
+            .pricing-content-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         @media (max-width: 600px) {
             .pricing-rate-row {
                 grid-template-columns: 1fr;
@@ -1545,7 +1563,7 @@
 
     <!-- Pricing Information Modal -->
     <div class="modal-overlay" id="pricingModal">
-        <div class="modal-card" style="max-width: 680px; width: 92%;">
+        <div class="modal-card" style="max-width: 1180px; width: 96%;">
             <div
                 style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.75rem;">
                 <div>
@@ -1577,12 +1595,24 @@
                 </button>
             </div>
 
-            <!-- Pricing rates: one compact row per billable capability. -->
-            <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; margin-bottom: 1.25rem;">
-                <div class="pricing-rate-row" style="background: rgba(30, 41, 59, 0.5); border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #818cf8;">💵 Credit exchange</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;">$1.00 = <span id="rateCreditsPerUsd">20.0</span> Cr</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">1 credit = <span id="rateUsdPerCredit">$0.05</span> USD</div>
+            <div class="pricing-content-grid">
+                <div class="pricing-rates-column">
+                    <!-- Credit exchange is account-level information, separate from usage rates. -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(129, 140, 248, 0.25); border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 1.25rem;">
+                        <div style="font-size: 0.85rem; font-weight: 700; color: #818cf8;">💵 Credit exchange</div>
+                        <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;">$1.00 = <span id="rateCreditsPerUsd">20.0</span> Cr</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">1 credit = <span id="rateUsdPerCredit">$0.05</span> USD</div>
+                    </div>
+
+                    <!-- Pricing rates: one compact row per billable capability. -->
+                    <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; margin-bottom: 1.25rem;">
+                <div style="padding: 0.5rem 1rem; background: rgba(14, 116, 144, 0.12); border-bottom: 1px solid rgba(34, 211, 238, 0.25); color: #67e8f9; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+                    🖥️ UI Updates
+                </div>
+                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #67e8f9;">🧩 Interactive canvas tools</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateInteractiveCanvas">0.25</span> Cr / use</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Agent-created interactive canvas controls (~<span id="rateInteractiveCanvasUsd">$0.01</span> / use)</div>
                 </div>
                 <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
                     <div style="font-size: 0.85rem; font-weight: 700; color: #c084fc;">🎙️ Live voice</div>
@@ -1598,6 +1628,9 @@
                     <div style="font-size: 0.85rem; font-weight: 700; color: #fb7185;">🎵 Music generation</div>
                     <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateMusic">2.0</span> Cr / track</div>
                     <div style="font-size: 0.8rem; color: var(--text-secondary);">Lyria background tracks (~<span id="rateMusicUsd">$0.10</span> / track)</div>
+                </div>
+                <div style="padding: 0.5rem 1rem; background: rgba(5, 150, 105, 0.12); border-bottom: 1px solid rgba(52, 211, 153, 0.25); color: #6ee7b7; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+                    💾 Storage
                 </div>
                 <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
                     <div style="font-size: 0.85rem; font-weight: 700; color: #34d399;">💾 Persistent storage</div>
@@ -1617,10 +1650,11 @@
                     <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateCharacterVoicing">0.25</span> Cr / turn</div>
                     <div style="font-size: 0.8rem; color: var(--text-secondary);">Seed Speech NPC dialogue (~<span id="rateCharacterVoicingUsd">$0.01</span> / turn)</div>
                 </div>
-            </div>
+                    </div>
+                </div>
 
-            <!-- Interactive Session Cost Estimator -->
-            <div
+                <!-- Interactive Session Cost Estimator -->
+                <div class="pricing-calculator"
                 style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 1.1rem; margin-bottom: 1.25rem;">
                 <div
                     style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem;">
@@ -1646,6 +1680,14 @@
                                 style="accent-color: #fbbf24; width: 16px; height: 16px; cursor: pointer;">
                             Character voicing
                         </label>
+                    </div>
+                    <div>
+                        <label
+                            style="font-size: 0.75rem; font-weight: 600; color: #67e8f9; display: block; margin-bottom: 4px;">Canvas
+                            Tool Uses</label>
+                        <input type="number" id="calcInteractiveCanvasInput" min="0" max="1000" step="1" value="0"
+                            oninput="calculateLivePricingEstimate()"
+                            style="width: 100%; background: #0f172a; border: 1px solid rgba(34,211,238,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                     </div>
                     <div>
                         <label
@@ -1696,6 +1738,7 @@
                         <div style="font-size: 0.82rem; color: var(--text-secondary);" id="calcTotalUsd">~$2.05 USD
                         </div>
                     </div>
+                </div>
                 </div>
             </div>
 
@@ -2752,6 +2795,13 @@
                 if (document.getElementById('rateCharacterVoicingUsd')) {
                     document.getElementById('rateCharacterVoicingUsd').innerText = `$${(characterVoicingRate * data.usd_per_credit).toFixed(2)}`;
                 }
+                const interactiveCanvasRate = data.interactive_canvas_tool_credit_rate ?? data.interactive_canvas_credit_rate ?? 0.25;
+                if (document.getElementById('rateInteractiveCanvas')) {
+                    document.getElementById('rateInteractiveCanvas').innerText = interactiveCanvasRate.toFixed(2);
+                }
+                if (document.getElementById('rateInteractiveCanvasUsd')) {
+                    document.getElementById('rateInteractiveCanvasUsd').innerText = `$${(interactiveCanvasRate * data.usd_per_credit).toFixed(2)}`;
+                }
                 if (document.getElementById('rateImage')) {
                     document.getElementById('rateImage').innerText = data.image_credit_rate.toFixed(1);
                 }
@@ -2790,6 +2840,7 @@
             const musicInput = document.getElementById('calcMusicInput');
             const storyTurnsInput = document.getElementById('calcStoryTurnsInput');
             const characterVoicingInput = document.getElementById('calcCharacterVoicingInput');
+            const interactiveCanvasInput = document.getElementById('calcInteractiveCanvasInput');
             const storageInput = document.getElementById('calcStorageInput');
 
             if (!voiceInput || !imagesInput || !storageInput) return;
@@ -2799,6 +2850,7 @@
             const music = musicInput ? (parseInt(musicInput.value) || 0) : 0;
             const storyTurns = storyTurnsInput ? (parseInt(storyTurnsInput.value) || 0) : 0;
             const voicedTurns = characterVoicingInput?.checked ? storyTurns : 0;
+            const interactiveCanvasUses = interactiveCanvasInput ? (parseInt(interactiveCanvasInput.value) || 0) : 0;
             const storageGb = parseFloat(storageInput.value) || 0;
 
             try {
@@ -2808,6 +2860,7 @@
                     music_created: music,
                     story_plans: storyTurns,
                     character_voiced_turns: voicedTurns,
+                    interactive_canvas_used: interactiveCanvasUses,
                     gb_amount: storageGb,
                     days: 30
                 });
@@ -2828,7 +2881,7 @@
                     }
                     if (document.getElementById('calcBreakdownText')) {
                         const voicingDetail = voicedTurns ? ` + character voicing` : '';
-                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${music} music tracks + ${storyTurns} story turns${voicingDetail} + ${storageGb} GB/mo`;
+                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${music} music tracks + ${storyTurns} story turns${voicingDetail} + ${interactiveCanvasUses} canvas tool uses + ${storageGb} GB/mo`;
                     }
                 }
             } catch (e) {
