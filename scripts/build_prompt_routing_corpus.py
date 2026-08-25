@@ -11,17 +11,19 @@ import csv
 import hashlib
 import importlib.util
 import random
+import sys
 import urllib.request
 from pathlib import Path
 
 import pyarrow.parquet as pq
 
-_RULES_PATH = Path(__file__).resolve().parents[1] / "providers" / "prompt_routing_rules.py"
-_rules_spec = importlib.util.spec_from_file_location("prompt_routing_rules", _RULES_PATH)
-assert _rules_spec and _rules_spec.loader
-_rules = importlib.util.module_from_spec(_rules_spec)
-_rules_spec.loader.exec_module(_rules)
-label_prompt = _rules.label_prompt
+_CLASSIFIER_PATH = Path(__file__).resolve().parents[1] / "providers" / "local_image_prompt_classifier.py"
+_classifier_spec = importlib.util.spec_from_file_location("local_image_prompt_classifier", _CLASSIFIER_PATH)
+assert _classifier_spec and _classifier_spec.loader
+_classifier_module = importlib.util.module_from_spec(_classifier_spec)
+sys.modules[_classifier_spec.name] = _classifier_module
+_classifier_spec.loader.exec_module(_classifier_module)
+label_prompt = _classifier_module.HybridImageClassifier.label_prompt
 
 
 DIFFUSIONDB_METADATA_URL = "https://huggingface.co/datasets/poloclub/diffusiondb/resolve/main/metadata.parquet"
@@ -73,7 +75,7 @@ def main() -> None:
         )
         writer.writeheader()
         for prompt in prompts:
-            row = {"id": hashlib.sha256(prompt.encode()).hexdigest()[:16], "prompt": prompt, **label_prompt(prompt), "label_source": "weak_rules_v1"}
+            row = {"id": hashlib.sha256(prompt.encode()).hexdigest()[:16], "prompt": prompt, **label_prompt(prompt), "label_source": "weak_rules_v2"}
             writer.writerow(row)
     print(f"Wrote {len(prompts)} prompts to {args.output}")
 

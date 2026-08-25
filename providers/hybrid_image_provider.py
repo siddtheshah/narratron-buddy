@@ -27,11 +27,11 @@ class ImageClassifierResponse(BaseModel):
     )
     reasons: list[str] = Field(
         default_factory=list,
-        description="Reasons for routing to fallback (e.g., text_rendering, creature_object_interaction, creature_creature_interaction, contextual_disambiguation, multiple_subjects, complex_composition).",
+        description="Reasons for routing to fallback: text_rendering, creature_object_interaction, or multiple_subjects.",
     )
     ambiguous_terms: list[str] = Field(
         default_factory=list,
-        description="Ambiguous terms requiring contextual disambiguation.",
+        description="Always empty; retained for compatibility with existing routing metadata.",
     )
 
 
@@ -44,12 +44,6 @@ character that avoids the following:
 1. readable text in scene
 2. multiple creatures in the scene.
 3. creatures manipulating objects through touch.
-4. context sensitive word meanings
-  - floating city in the sky could mean floating in water or air
-  - navigational compass on a map must not become a geometric
-drawing compass
-  - Add "contextual_disambiguation" and the ambiguous word(s) in
-that case.
 
 If any of these apply, set route_to_fallback=true and
 scene_type="complex". You MUST set a reason if rerouting.

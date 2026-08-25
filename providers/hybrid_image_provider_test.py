@@ -34,7 +34,7 @@ def test_hybrid_routes_interaction_to_fallback_and_records_decision():
 
     assert not primary.calls and len(fallback.calls) == 1
     assert result.usage["routing"]["reasons"] == ["creature_object_interaction"]
-    assert result.usage["routing"]["classifier_model"] == "tfidf-char-logreg-v1"
+    assert result.usage["routing"]["classifier_model"] == "tfidf-char-word-ovr-logreg-v3"
 
 
 def test_hybrid_uses_flux_only_for_an_eligible_simple_scene():
@@ -61,14 +61,14 @@ def test_hybrid_routes_reference_guided_images_to_gemini_without_classifying():
     assert result.usage["routing"]["reasons"] == ["reference_images"]
 
 
-def test_hybrid_routes_context_sensitive_words_to_fallback():
+def test_hybrid_allows_context_sensitive_words_without_a_primary_signal():
     primary, fallback = FakeProvider("flux"), FakeProvider("gemini")
     provider = HybridImageProvider(primary, fallback)
 
     result = provider.generate(ImageGenerationRequest(prompt="A floating city in the sky beside a navigational compass on a map."))
 
-    assert not primary.calls and len(fallback.calls) == 1
-    assert result.usage["routing"]["ambiguous_terms"] == ["floating", "compass"]
+    assert len(primary.calls) == 1 and not fallback.calls
+    assert result.usage["routing"]["ambiguous_terms"] == []
 
 
 def test_hybrid_never_calls_legacy_remote_classifier_argument():

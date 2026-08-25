@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from providers.hybrid_image_provider import HybridImageProvider
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult, ImageProvider
 from providers.local_image_prompt_classifier import HybridImageClassifier
@@ -17,11 +19,29 @@ class FakeProvider(ImageProvider):
         return ImageGenerationResult(b"image", "image/png", self.id, self.model)
 
 
+class StubVectorizer:
+    def transform(self, prompts):
+        return prompts
+
+
+class StubClassifier:
+    def __init__(self, probability: float):
+        self.probability = probability
+
+    def predict_proba(self, features):
+        return [[1.0 - self.probability, self.probability]]
+
+
 def test_integrated_classifier_loads_exported_model():
     classifier = HybridImageClassifier()
 
     assert classifier.load_error is None
-    assert classifier.model == "tfidf-char-logreg-v1"
+    assert classifier.model == "tfidf-char-word-ovr-logreg-v3"
+    assert set(classifier._artifact["classifiers"]) == {
+        "multiple_creatures",
+        "creature_object_interaction",
+        "text_displayed",
+    }
 
 
 def test_integrated_classifier_hard_rules_override_learned_model():
@@ -31,6 +51,44 @@ def test_integrated_classifier_hard_rules_override_learned_model():
 
     assert result["route_to_fallback"] is True
     assert result["reasons"] == ["creature_object_interaction"]
+
+
+def test_integrated_classifier_routes_quoted_phrase_as_displayed_text():
+    classifier = HybridImageClassifier()
+
+    result = classifier.classify('A book cover titled "The Last Voyage"')
+
+    assert result["route_to_fallback"] is True
+    assert result["reasons"] == ["text_rendering"]
+
+
+@pytest.mark.parametrize(
+    ("classifier_name", "expected_reason"),
+    [
+        ("multiple_creatures", "multiple_subjects"),
+        ("creature_object_interaction", "creature_object_interaction"),
+        ("text_displayed", "text_rendering"),
+    ],
+)
+def test_any_independent_classifier_routes_to_gemini(classifier_name, expected_reason):
+    classifier = HybridImageClassifier()
+    classifier._artifact = {
+        "vectorizer": StubVectorizer(),
+        "classifiers": {
+            name: StubClassifier(0.21 if name == classifier_name else 0.0)
+            for name in ("multiple_creatures", "creature_object_interaction", "text_displayed")
+        },
+        "thresholds": {
+            "multiple_creatures": 0.20,
+            "creature_object_interaction": 0.20,
+            "text_displayed": 0.20,
+        },
+    }
+
+    result = classifier.classify("a quiet mountain valley")
+
+    assert result["route_to_fallback"] is True
+    assert result["reasons"] == [expected_reason]
 
 
 def test_integrated_classifier_approves_named_single_character():
