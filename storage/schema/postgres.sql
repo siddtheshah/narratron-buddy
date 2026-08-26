@@ -120,6 +120,19 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 CREATE INDEX IF NOT EXISTS password_reset_tokens_user_id_idx ON password_reset_tokens(user_id);
 CREATE INDEX IF NOT EXISTS password_reset_tokens_expires_at_idx ON password_reset_tokens(expires_at);
 
+CREATE TABLE IF NOT EXISTS credit_referrals (
+    token TEXT PRIMARY KEY,
+    sender_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credits DOUBLE PRECISION NOT NULL CHECK (credits > 0),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    claimed_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    claimed_at TEXT,
+    status TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS credit_referrals_sender_created_idx
+    ON credit_referrals(sender_user_id, created_at DESC);
+
 -- Private music-catalog search index. Audio stays in private artifact storage;
 -- this schema stores only descriptions and the corpus statistics needed for BM25.
 CREATE TABLE IF NOT EXISTS music_catalog_tracks (

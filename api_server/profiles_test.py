@@ -1,5 +1,6 @@
 """Coverage for public profiles and owner-only profile settings."""
 
+import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -10,8 +11,8 @@ from fastapi import HTTPException
 from api_server import profiles
 
 
-def request():
-    return SimpleNamespace(cookies={})
+def request(*, base_url="http://testserver/"):
+    return SimpleNamespace(cookies={}, base_url=base_url)
 
 
 def test_get_profile_uses_authenticated_viewer_identity():
@@ -67,3 +68,41 @@ def test_delete_my_account_deletes_user_and_clears_cookie():
     registry_db.delete_user.assert_called_once_with(8)
     resp.delete_cookie.assert_called_once_with("auth_token")
 
+
+def test_create_and_claim_credit_gift_require_auth_and_invalidate_balances():
+    registry_db = MagicMock()
+    registry_db.create_credit_gift.return_value = {
+        "token": "gift-token", "credits": 12.5, "expires_at": "2026-01-01T00:00:00+00:00"
+    }
+    with patch.object(profiles, "get_current_user", return_value=None), pytest.raises(HTTPException) as error:
+        profiles.create_credit_gift(profiles.CreditGiftRequest(credits=12.5), request())
+    assert error.value.status_code == 401
+
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://narratron.example"}):
+        result = profiles.create_credit_gift(
+            profiles.CreditGiftRequest(credits=12.5), request(base_url="http://testserver/")
+        )
+    assert result["link"] == "https://narratron.example/gift/gift-token"
+    registry_db.create_credit_gift.assert_called_once_with(8, 12.5)
+
+    registry_db.claim_credit_gift.return_value = {"credits": 12.5, "sender_user_id": 3}
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         patch.object(profiles.auth_session_cache, "invalidate_user") as invalidate:
+        claimed = profiles.claim_credit_gift("gift-token", request())
+    assert claimed == {"status": "claimed", "credits": 12.5}
+    invalidate.assert_any_call(8)
+    invalidate.assert_any_call(3)
+
+
+def test_credit_gift_rejects_missing_or_invalid_public_origin():
+    registry_db = MagicMock()
+    registry_db.create_credit_gift.return_value = {"token": "gift-token", "credits": 1, "expires_at": "now"}
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://attacker.example/path"}):
+        with pytest.raises(HTTPException) as error:
+            profiles.create_credit_gift(profiles.CreditGiftRequest(credits=1), request())
+    assert error.value.status_code == 500

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron - Credit Gift</title><link rel="icon" href="/favicon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/auth-flow.css"><script src="/static/js/auth-flow.js"></script>
+  <style>:root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}main{max-width:600px;margin:5rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin-top:0}.muted{color:var(--muted);line-height:1.55}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer}.error{color:#fca5a5}.success{color:#86efac}</style>
+</head>
+<body>
+  <!-- SHARED_TOPBAR -->
+  <main><div class="card"><h1>You've received a credit gift</h1><p id="message" class="muted">Checking your gift link…</p><button id="claim" type="button" style="display:none">Claim credits</button></div></main>
+  <script>
+    const token = decodeURIComponent(location.pathname.split('/').pop());
+    const message = document.getElementById('message'); const claim = document.getElementById('claim'); let gift = null;
+    function show(text, kind='muted') { message.textContent = text; message.className = kind; }
+    async function claimGift() {
+      if (claim.disabled) return;
+      claim.disabled = true; show('Claiming your credits…');
+      const res = await fetch(`/api/credit-gifts/${encodeURIComponent(token)}/claim`, {method:'POST'}); const data = await res.json().catch(() => ({}));
+      if (!res.ok) { show(data.detail || 'This gift could not be claimed.', 'error'); claim.style.display = 'none'; return; }
+      show(`Success! ${Number(data.credits).toFixed(1)} credits were added to your account.`, 'success'); claim.style.display = 'none'; invalidateAuthState(); checkAuthStatus({refresh:true});
+    }
+    async function loadGift() {
+      const res = await fetch(`/api/credit-gifts/${encodeURIComponent(token)}`); const data = await res.json().catch(() => ({}));
+      if (!res.ok) { show(data.detail || 'Gift link not found.', 'error'); return; } gift = data;
+      if (gift.status !== 'pending' || gift.claimed) { show(gift.status === 'expired' ? 'This gift link has expired.' : 'This gift has already been claimed.', 'error'); return; }
+      const auth = await checkAuthStatus({refresh:true});
+      if (auth?.authenticated) { claimGift(); }
+      else { show(`This link gives you ${Number(gift.credits).toFixed(1)} credits. Sign in or create an account to claim it.`, 'muted'); claim.style.display = 'inline-block'; claim.textContent = 'Sign in to claim'; }
+    }
+    claim.onclick = () => window.currentUser ? claimGift() : openAuthModal('login');
+    window.addEventListener('narratron:auth-changed', event => { if (gift?.status === 'pending' && event.detail?.authenticated && !claim.disabled) claimGift(); });
+    loadGift();
+  </script>
+</body>
+</html>

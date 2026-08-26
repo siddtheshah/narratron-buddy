@@ -167,6 +167,11 @@ def read_user_profile(username: str):
     """Serve the client-rendered public user profile page."""
     return render_page_template("profile.html", active_page="")
 
+@app.get("/gift/{token}", response_class=HTMLResponse)
+def read_credit_gift(token: str):
+    """Serve the landing page for a single-use credit gift link."""
+    return render_page_template("gift.html", active_page="")
+
 @app.get("/about", response_class=HTMLResponse)
 def read_about():
     """Serve the About page from the repository's ABOUT.md source."""

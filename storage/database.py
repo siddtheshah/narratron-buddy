@@ -767,6 +767,28 @@ class _DatabaseManagerBase:
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             """)
+
+            # A gift is deliberately not escrowed: the sender is charged only
+            # when a recipient claims the link.  The conditional debit in
+            # claim_credit_gift keeps a later-spent balance from going negative.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS credit_referrals (
+                    token TEXT PRIMARY KEY,
+                    sender_user_id INTEGER NOT NULL,
+                    credits REAL NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    claimed_by_user_id INTEGER,
+                    claimed_at TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (claimed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_credit_referrals_sender "
+                "ON credit_referrals(sender_user_id, created_at DESC)"
+            )
             conn.commit()
 
     @staticmethod
@@ -942,6 +964,98 @@ class _DatabaseManagerBase:
                 (bio.strip(), int(stats_visible), profile_color.lower(), user_id),
             )
             return cursor.rowcount > 0
+
+    def create_credit_gift(self, sender_user_id: int, credits: float) -> Dict[str, Any]:
+        """Create a single-use, seven-day credit gift without reserving funds."""
+        try:
+            credits = float(credits)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Gift amount must be a positive number.") from exc
+        if credits <= 0 or not credits < float("inf"):
+            raise ValueError("Gift amount must be a positive number.")
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expires_at = now + datetime.timedelta(days=7)
+        token = secrets.token_urlsafe(32)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM users WHERE id = ?", (sender_user_id,))
+            if not cursor.fetchone():
+                raise ValueError("User not found.")
+            cursor.execute(
+                "INSERT INTO credit_referrals "
+                "(token, sender_user_id, credits, created_at, expires_at, status) "
+                "VALUES (?, ?, ?, ?, ?, 'pending')",
+                (token, sender_user_id, credits, now.isoformat(), expires_at.isoformat()),
+            )
+            return {"token": token, "credits": credits, "expires_at": expires_at.isoformat()}
+
+    def get_credit_gift(self, token: str) -> Optional[Dict[str, Any]]:
+        """Return safe status data for a gift link without exposing either user."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT token, credits, expires_at, claimed_by_user_id, status "
+                "FROM credit_referrals WHERE token = ?",
+                (token,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            gift = dict(row)
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            if gift["status"] == "pending" and gift["expires_at"] <= now:
+                cursor.execute("UPDATE credit_referrals SET status = 'expired' WHERE token = ?", (token,))
+                gift["status"] = "expired"
+            gift["claimed"] = bool(gift.pop("claimed_by_user_id"))
+            gift.pop("token", None)
+            return gift
+
+    def claim_credit_gift(self, token: str, recipient_user_id: int) -> Dict[str, Any]:
+        """Transfer a valid gift once, while ensuring its sender remains non-negative."""
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT sender_user_id, credits, expires_at, status, claimed_by_user_id "
+                "FROM credit_referrals WHERE token = ?",
+                (token,),
+            )
+            gift = cursor.fetchone()
+            if not gift:
+                raise ValueError("Gift link not found.")
+            gift = dict(gift)
+            if gift["status"] != "pending" or gift["claimed_by_user_id"] is not None:
+                raise ValueError("This gift has already been claimed.")
+            if gift["expires_at"] <= now:
+                cursor.execute("UPDATE credit_referrals SET status = 'expired' WHERE token = ?", (token,))
+                raise ValueError("This gift link has expired.")
+            if gift["sender_user_id"] == recipient_user_id:
+                raise ValueError("You cannot claim your own gift.")
+
+            # Claim the row first.  In the same transaction this serializes
+            # competing claim attempts; any later failure rolls it back.
+            cursor.execute(
+                "UPDATE credit_referrals SET claimed_by_user_id = ?, claimed_at = ?, status = 'claimed' "
+                "WHERE token = ? AND status = 'pending' AND claimed_by_user_id IS NULL AND expires_at > ?",
+                (recipient_user_id, now, token, now),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("This gift is no longer available.")
+            cursor.execute(
+                "UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?",
+                (gift["credits"], gift["sender_user_id"], gift["credits"]),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("The sender no longer has enough credits for this gift.")
+            cursor.execute("UPDATE users SET credits = credits + ? WHERE id = ?", (gift["credits"], recipient_user_id))
+            if cursor.rowcount != 1:
+                raise ValueError("Recipient account not found.")
+            return {
+                "credits": gift["credits"],
+                "expires_at": gift["expires_at"],
+                "sender_user_id": gift["sender_user_id"],
+            }
 
     def create_auth_session(self, user_id: int, days_valid: int = 7) -> str:
         """Create a new session token for a user."""
