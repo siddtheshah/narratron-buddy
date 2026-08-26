@@ -191,6 +191,23 @@ class ImageTools(BaseTools):
         except Exception as e:
             logger.warning(f"[ImageTools] Failed to load references: {e}")
 
+    def _refresh_references_manifest(self) -> None:
+        """Rebuild the reference manifest after assets are mounted or restored."""
+        self.references_manifest = {}
+        self._load_references()
+        ImageTools._references_cache = self.references_manifest
+        ImageTools._reference_dir_cached = self.reference_dir
+
+    def _find_manifest_image_path(self, path_str: str, clean_input: str) -> Optional[str]:
+        """Resolve an existing reference from its name or normalized alias."""
+        for key in (path_str, path_str.lower(), clean_input, clean_input.lower()):
+            entry = self.references_manifest.get(key)
+            if entry:
+                manifest_path = entry.get("path")
+                if manifest_path and os.path.exists(manifest_path):
+                    return manifest_path
+        return None
+
     def list_references(self) -> list[dict]:
         """List all available pre-loaded reference images in the references directory.
 
@@ -223,23 +240,18 @@ class ImageTools(BaseTools):
         if clean_input in self.image_aliases:
             return self.image_aliases[clean_input]
 
-        # Check references manifest
-        if path_str in self.references_manifest:
-            manifest_path = self.references_manifest[path_str]["path"]
-            if os.path.exists(manifest_path):
-                return manifest_path
-        if path_str.lower() in self.references_manifest:
-            manifest_path = self.references_manifest[path_str.lower()]["path"]
-            if os.path.exists(manifest_path):
-                return manifest_path
-        if clean_input in self.references_manifest:
-            manifest_path = self.references_manifest[clean_input]["path"]
-            if os.path.exists(manifest_path):
-                return manifest_path
-        if clean_input.lower() in self.references_manifest:
-            manifest_path = self.references_manifest[clean_input.lower()]["path"]
-            if os.path.exists(manifest_path):
-                return manifest_path
+        manifest_path = self._find_manifest_image_path(path_str, clean_input)
+        if manifest_path:
+            return manifest_path
+
+        # Theater assets can be mounted or reconstructed after the live agent
+        # session (and its initial manifest) has already been created. Refresh
+        # once so normalized aliases such as ``the_monk`` resolve to a newly
+        # available ``the monk.png`` reference.
+        self._refresh_references_manifest()
+        manifest_path = self._find_manifest_image_path(path_str, clean_input)
+        if manifest_path:
+            return manifest_path
 
 
         base_name = os.path.basename(path_str)
@@ -712,9 +724,11 @@ class ImageTools(BaseTools):
                                 seen.add(full_p)
                                 images.append(full_p)
             self._trigger_after_tool_call("browse_images")
+            logger.debug(f"[ImageTools] Found {len(images)} images: {images}")
             return images
         except Exception as e:
             self._trigger_after_tool_call("browse_images")
+            logger.debug(f"[ImageTools] Error browsing images: {e}")
             return [f"Error browsing images: {e}"]
 
     @logged_tool_call

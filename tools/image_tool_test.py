@@ -427,3 +427,13 @@ class TestImageTools(BaseTestCase):
         )
         tools.stop_cycle()
 
+    def test_show_image_refreshes_references_added_after_session_start(self):
+        tools = ImageTools(self.config, theater_id="late_reference", theater_manager=self.manager)
+        tools.stop_cycle()
+        reference_path = os.path.join(tools.reference_dir, "the monk.png")
+        Image.new("RGB", (20, 20), color="gold").save(reference_path)
+
+        self.assertIn("Successfully displayed", tools.show_image("the_monk"))
+        self.assertEqual(tools.currently_displayed_image_path, reference_path)
+        tools.stop_cycle()
+
