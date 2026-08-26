@@ -108,7 +108,7 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return template.render(active_page=active_page, show_pricing=show_pricing)
     except Exception:
         out = raw
-        for p in ["join", "adventures", "about", "ideas", "stats", "deploy"]:
+        for p in ["join", "demos", "adventures", "about", "ideas", "stats", "deploy"]:
             pattern = f"{{% if active_page == '{p}' %}}active{{% endif %}}"
             out = out.replace(pattern, "active" if active_page == p else "")
         if show_pricing:
@@ -156,6 +156,12 @@ def read_narratron_avatar():
 def read_join_splash():
     """Serve the public Join Splash Page."""
     return render_page_template("join_splash.html", active_page="join")
+
+
+@app.get("/demos", response_class=HTMLResponse)
+def read_demos():
+    """Serve the public Narratron demos catalog."""
+    return render_page_template("demos.html", active_page="demos")
 
 @app.get("/deploy", response_class=HTMLResponse)
 def read_deployer():

@@ -8,6 +8,10 @@ from tools.base_tool import BaseTools, with_cooldown, single_flight
 
 
 class SampleTools(BaseTools):
+    @with_cooldown("showing a sample image", duration=0)
+    def show_sample_image(self, file_path: str, transition: str = "crossfade") -> str:
+        return "Success"
+
     @with_cooldown("doing action")
     def decorated_tool(self) -> str:
         return "Success"
@@ -72,6 +76,14 @@ class TestBaseTools(BaseTestCase):
     def test_with_cooldown_decorator_uses_override_duration(self):
         sample = SampleTools({"cooldown_duration": 10.0}, theater_id="test_theater")
         self.assertEqual(sample.quick_tool(), "Success")
+
+    def test_with_cooldown_logs_named_arguments(self):
+        sample = SampleTools({}, theater_id="test_theater")
+
+        with self.assertLogs("tools.base_tool", level="INFO") as logs:
+            self.assertEqual(sample.show_sample_image("scene.png", transition="fade"), "Success")
+
+        self.assertIn("show_sample_image called (theater=test_theater, args={'file_path': 'scene.png', 'transition': 'fade'})", logs.output[0])
         self.assertIn("quick_tool is on cooldown", sample.quick_tool())
 
         time.sleep(0.2)

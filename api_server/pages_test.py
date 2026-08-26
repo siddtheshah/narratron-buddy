@@ -31,6 +31,12 @@ def test_adventures_page_reads_template():
     assert "Shared Adventure Library" in response
 
 
+def test_demos_page_reads_template():
+    response = pages.read_demos()
+    assert "Narratron demos" in response
+    assert "Watch the first demo" in response
+
+
 def test_canvas_with_verified_join_key_redirects_and_grants_cookie():
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
     request = SimpleNamespace(url=SimpleNamespace(remove_query_params=lambda _: "/canvas?theater_id=stage"))
@@ -67,6 +73,7 @@ def test_non_canvas_pages_have_normalized_topbar_and_avatar():
         ("deployer", pages.read_deployer()),
         ("about", pages.read_about()),
         ("adventures", pages.read_adventures()),
+        ("demos", pages.read_demos()),
         ("ideas", pages.read_ideas()),
         ("stats", pages.read_stats()),
         ("profile", pages.read_user_profile("demo")),
@@ -86,6 +93,9 @@ def test_render_shared_topbar_active_highlighting():
 
     adventures_topbar = pages.render_shared_topbar(active_page="adventures")
     assert 'href="/adventures" class="deploy-nav-btn active"' in adventures_topbar
+
+    demos_topbar = pages.render_shared_topbar(active_page="demos")
+    assert 'href="/demos" class="deploy-nav-btn active"' in demos_topbar
 
     pricing_topbar = pages.render_shared_topbar(active_page="deploy", show_pricing=True)
     assert 'onclick="openPricingModal()"' in pricing_topbar

@@ -1,6 +1,7 @@
 import asyncio
 import concurrent.futures
 import functools
+import inspect
 import logging
 import threading
 import time
@@ -9,11 +10,23 @@ from typing import Any, Callable, Dict, Optional, Set
 logger = logging.getLogger(__name__)
 
 
+def _tool_call_arguments(func: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
+    """Return public tool arguments as named values for invocation logging."""
+    try:
+        bound = inspect.signature(func).bind_partial(None, *args, **kwargs)
+        bound.apply_defaults()
+        return {name: value for name, value in bound.arguments.items() if name != "self"}
+    except (TypeError, ValueError):
+        # Logging must never interfere with a tool call if its signature cannot
+        # be introspected (for example, a dynamically supplied callable).
+        return {"args": args, "kwargs": kwargs}
+
+
 def logged_tool_call(func: Callable):
     """Log a public tool invocation without changing its cooldown behavior."""
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        self.log_tool_call(func.__name__)
+        self.log_tool_call(func.__name__, _tool_call_arguments(func, args, kwargs))
         return func(self, *args, **kwargs)
 
     return wrapper
@@ -146,7 +159,7 @@ def with_cooldown(
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
             tool_name = func.__name__
-            self.log_tool_call(tool_name)
+            self.log_tool_call(tool_name, _tool_call_arguments(func, args, kwargs))
             cooldown_err = self.check_cooldown(tool_name, desc, duration)
             if cooldown_err:
                 trigger_cb = getattr(self, "_trigger_after_tool_call", None)
@@ -167,7 +180,7 @@ def with_cooldown(
             @functools.wraps(func)
             def wrapper(self, *args, **kwargs):
                 tool_name = func.__name__
-                self.log_tool_call(tool_name)
+                self.log_tool_call(tool_name, _tool_call_arguments(func, args, kwargs))
                 cooldown_err = self.check_cooldown(tool_name, desc, duration)
                 if cooldown_err:
                     trigger_cb = getattr(self, "_trigger_after_tool_call", None)
@@ -309,9 +322,15 @@ class BaseTools:
             )
         return None
 
-    def log_tool_call(self, tool_name: str) -> None:
+    def log_tool_call(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> None:
         """Emit the single INFO-level record that marks a public tool call."""
-        logger.info("[%s] %s called (theater=%s).", self.__class__.__name__, tool_name, self.active_theater_id or "default")
+        logger.info(
+            "[%s] %s called (theater=%s, args=%s).",
+            self.__class__.__name__,
+            tool_name,
+            self.active_theater_id or "default",
+            arguments or {},
+        )
 
     def record_tool_call(self, tool_name: str, duration: Optional[float] = None) -> None:
         """Records the timestamp of a successful tool call and schedules the expiration timer."""

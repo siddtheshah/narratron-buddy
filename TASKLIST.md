@@ -27,3 +27,11 @@
 ## Policy Pages
 - [ ] Page for terms of use.
 - [ ] Page for privacy policy.
+
+## Adventure Editor
+- [ ] Bring lightweight adventure runner to narratron main site from testlab.
+
+## New Demos
+- [ ] Drawing demo
+- [ ] Adventure demo
+- [ ] Voice Demo
