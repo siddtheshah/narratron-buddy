@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from PIL import Image
+
 from api_server.shared import PROJECT_ROOT
 from components.theater_manager import TheaterManager
 from testing.ui.base import UITestCase
@@ -33,7 +35,7 @@ class TestCrossfade(UITestCase):
         )
 
         image = Path(tool.output_dir) / "test_image.jpg"
-        image.write_bytes(b"image")
+        Image.new("RGB", (10, 10), color="blue").save(image)
         tool.image_aliases["test_image"] = str(image)
         tool.on_show_image = MagicMock()
         tool._schedule_cooldown_timer = MagicMock()
@@ -45,7 +47,7 @@ class TestCrossfade(UITestCase):
             result = tool.show_image("test_image", transition=transition, effect=effect)
             self.assertIn("Successfully", result)
             tool.on_show_image.assert_called_once_with(
-                str(image), transition=transition, effect=effect
+                str(image.with_suffix(".webp")), transition=transition, effect=effect
             )
             tool.on_show_image.reset_mock()
 

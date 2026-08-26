@@ -293,16 +293,16 @@ class ImageTools(BaseTools):
     def create_image(
         self,
         image_prompt: str,
-        image_name: Optional[str] = None,
+        image_name: str,
         reference_images: Union[list[str], str, None] = None,
         display: bool = True,
         effect: str = "gleam3",
     ) -> str:
-        """Generates an image from a prompt, supporting custom image naming and reference image adaptation.
+        """Generates an image from a prompt with a required stable alias.
 
         Args:
             image_prompt: The prompt describing the image to generate.
-            image_name: Optional friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
+            image_name: Required friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
             display: Whether to automatically display the image on the canvas upon creation (default True).
             effect: Optional canvas animation effect; defaults to gleam3. Supported values: none, creeping,
@@ -311,6 +311,17 @@ class ImageTools(BaseTools):
         Returns:
             A string indicating that background image generation has started, or an error message.
         """
+        if not isinstance(image_name, str) or not image_name.strip():
+            res = "Error: image_name is required when creating an image."
+            self._trigger_after_tool_call("create_image")
+            return res
+        image_name = image_name.strip()
+        clean_image_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name).strip("_")
+        if not clean_image_name:
+            res = "Error: image_name must contain at least one letter or number."
+            self._trigger_after_tool_call("create_image")
+            return res
+
         effective_prompt = self._apply_default_style(image_prompt)
         logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, reference_images={reference_images}, display={display}")
 
@@ -388,13 +399,8 @@ class ImageTools(BaseTools):
                         image = image.convert("RGB")
                     
                     timestamp = int(time.time())
-                    if image_name:
-                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name)
-                        filename = f"{clean_name}_{timestamp}.jpg"
-                        webp_filename = f"{clean_name}_{timestamp}.webp"
-                    else:
-                        filename = f"image_{timestamp}_0.jpg"
-                        webp_filename = f"image_{timestamp}_0.webp"
+                    filename = f"{clean_image_name}_{timestamp}.jpg"
+                    webp_filename = f"{clean_image_name}_{timestamp}.webp"
                     
                     out_folder = self.output_dir
                     filepath = os.path.join(out_folder, filename)
@@ -415,12 +421,10 @@ class ImageTools(BaseTools):
                     saved_paths.append(filepath)
                     
                     # Register alias
-                    if image_name:
-                        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', image_name)
-                        self.image_aliases[image_name] = filepath
-                        self.image_aliases[clean_name] = filepath
-                        self.image_aliases[image_name.lower()] = filepath
-                        self.image_aliases[clean_name.lower()] = filepath
+                    self.image_aliases[image_name] = filepath
+                    self.image_aliases[clean_image_name] = filepath
+                    self.image_aliases[image_name.lower()] = filepath
+                    self.image_aliases[clean_image_name.lower()] = filepath
                     
                     logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} and WebP to {webp_filepath} (Name alias: {image_name})")
                     if self.on_image_created:
@@ -473,8 +477,7 @@ class ImageTools(BaseTools):
         self._last_generation_thread = t
         t.start()
 
-        name_msg = f" with alias '{image_name}'" if image_name else ""
-        return f"Image generation started in background{name_msg} for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
+        return f"Image generation started in background with alias '{image_name}' for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
 
     def _get_image_provider(self):
         """Build the configured provider once per session-scoped tool instance."""
@@ -633,6 +636,11 @@ class ImageTools(BaseTools):
             logger.debug(f"[ImageTools] Resolved image '{file_path}' to '{resolved_path}' (transition='{transition}')")
             if resolved_path:
                 display_path = self._ensure_webp_for_display(resolved_path)
+                if not display_path.lower().endswith(".webp") or not os.path.exists(display_path):
+                    res = f"Error: Unable to prepare a WebP display image for '{file_path}'."
+                    logger.error("[ImageTools] %s", res)
+                    self._trigger_after_tool_call("show_image")
+                    return res
                 canvas_state_service = getattr(self, "canvas_state_service", None)
                 if canvas_state_service:
                     canvas_state_service.show_image(
@@ -641,11 +649,16 @@ class ImageTools(BaseTools):
                         transition=transition,
                         effect=effect,
                     )
+                    logger.info(
+                        "[ImageTools] Published WebP image to canvas (theater=%s, path=%s).",
+                        self.active_theater_id,
+                        display_path,
+                    )
                 if self.on_show_image:
-                    logger.debug(f"[ImageTools] Invoking on_show_image callback with '{resolved_path}', transition='{transition}', effect='{effect}'")
+                    logger.debug(f"[ImageTools] Invoking on_show_image callback with '{display_path}', transition='{transition}', effect='{effect}'")
                     try:
                         self.on_show_image(
-                            resolved_path,
+                            display_path,
                             transition=transition,
                             effect=effect,
                         )

@@ -126,7 +126,7 @@ def test_adventure_session_turn_execution_mocked():
                 # Call tool during turn simulation
                 session._process_user_action_wrapper("I power on the transducer console.")
                 session.mock_tools.play_music("groove_alpha")
-                session.mock_tools.create_image("A gleaming neon synthesizer cockpit")
+                session.mock_tools.create_image("A gleaming neon synthesizer cockpit", image_name="synth_cockpit")
                 for e in mock_events:
                     yield e
 

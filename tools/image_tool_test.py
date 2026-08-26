@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image, PngImagePlugin
 
+from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from providers import ImageGenerationResult
 from testing.base import BaseTestCase
@@ -53,7 +54,7 @@ class TestImageTools(BaseTestCase):
         tools = ImageTools(self.config, theater_id="configured_provider", theater_manager=self.manager)
         tools.stop_cycle()
 
-        tools.create_image("a dog carrying a bag", display=False)
+        tools.create_image("a dog carrying a bag", image_name="bag_dog", display=False)
         tools.join_generation()
 
         mock_get_provider.assert_called_once_with(
@@ -74,7 +75,7 @@ class TestImageTools(BaseTestCase):
         Image.new("RGB", (10, 10), color="red").save(reference_path)
         tools._load_references()
 
-        tools.create_image("hero at dawn", reference_images="hero", display=False)
+        tools.create_image("hero at dawn", image_name="hero_at_dawn", reference_images="hero", display=False)
         tools.join_generation()
 
         references = provider.generate.call_args.args[0].references
@@ -102,6 +103,18 @@ class TestImageTools(BaseTestCase):
     def test_create_image_requires_a_provider(self):
         with self.assertRaisesRegex(ValueError, "image_generation.provider"):
             ImageTools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_rejects_an_empty_required_image_name(self, mock_get_provider):
+        tools = ImageTools(self.config, theater_id="required_name", theater_manager=self.manager)
+        tools.stop_cycle()
+
+        self.assertEqual(
+            tools.create_image("a castle", image_name="", display=False),
+            "Error: image_name is required when creating an image.",
+        )
+        mock_get_provider.assert_not_called()
+        tools.stop_cycle()
 
     def test_search_image_by_metadata_matches_standard_description_and_title(self):
         tools = ImageTools(self.config, theater_id="metadata_search", theater_manager=self.manager)
@@ -173,7 +186,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(tools.next_cycle_image["priority"], tools.PRIORITY_SHOW)
 
         # Now create_image completes in background -> should override staged show_image
-        tools.create_image("a shining diamond", display=True)
+        tools.create_image("a shining diamond", image_name="shining_diamond", display=True)
         tools.join_generation()
 
         self.assertIsNotNone(tools.next_cycle_image)
@@ -195,7 +208,7 @@ class TestImageTools(BaseTestCase):
         tools = ImageTools(self.config, theater_id="missing_reference", theater_manager=self.manager)
         tools.stop_cycle()
 
-        result = tools.create_image("a castle", reference_images="not-here")
+        result = tools.create_image("a castle", image_name="castle", reference_images="not-here")
 
         self.assertIn("Reference image 'not-here' not found", result)
         mock_get_provider.assert_not_called()
@@ -251,7 +264,7 @@ class TestImageTools(BaseTestCase):
         self.assertFalse(tools.is_story_plan_completed)
 
         # 1. Attempt without completed story plan is rejected
-        res = tools.create_image("a scenic mountain", display=False)
+        res = tools.create_image("a scenic mountain", image_name="scenic_mountain", display=False)
         self.assertIn("Error: Cannot create image: Waiting for the story planner to complete its response", res)
         mock_get_provider.assert_not_called()
 
@@ -259,20 +272,20 @@ class TestImageTools(BaseTestCase):
         tools.record_story_plan_completed()
         self.assertTrue(tools.is_story_plan_completed)
 
-        res2 = tools.create_image("a scenic mountain", display=False)
+        res2 = tools.create_image("a scenic mountain", image_name="scenic_mountain", display=False)
         self.assertIn("Image generation started in background", res2)
         tools.join_generation()
         # Consumes the story plan completion
         self.assertFalse(tools.is_story_plan_completed)
 
         # 3. Subsequent call without completed plan is rejected
-        res3 = tools.create_image("another mountain", display=False)
+        res3 = tools.create_image("another mountain", image_name="another_mountain", display=False)
         self.assertIn("Error: Cannot create image: Waiting for the story planner to complete its response", res3)
 
         # 4. New story plan completion allows it again
         tools.record_story_plan_completed()
         self.assertTrue(tools.is_story_plan_completed)
-        res4 = tools.create_image("another mountain", display=False)
+        res4 = tools.create_image("another mountain", image_name="another_mountain", display=False)
         self.assertIn("Image generation started in background", res4)
         tools.join_generation()
         self.assertFalse(tools.is_story_plan_completed)
@@ -325,7 +338,7 @@ class TestImageTools(BaseTestCase):
         self.assertFalse(tools.adventure_mode)
         self.assertTrue(tools.is_story_plan_completed)
 
-        res = tools.create_image("a scenic valley", display=False)
+        res = tools.create_image("a scenic valley", image_name="scenic_valley", display=False)
         self.assertIn("Image generation started in background", res)
         tools.join_generation()
         self.assertTrue(tools.is_story_plan_completed)
@@ -384,5 +397,33 @@ class TestImageTools(BaseTestCase):
         displayed_path = args[0]
         self.assertTrue(displayed_path.endswith(".webp"))
         self.assertTrue(os.path.exists(displayed_path))
+        tools.stop_cycle()
+
+    def test_show_image_resolves_underscore_alias_and_publishes_webp_to_canvas(self):
+        canvas_state_service = CanvasStateService(self.manager)
+        tools = ImageTools(
+            self.config,
+            theater_id="monk_alias_test",
+            theater_manager=self.manager,
+            canvas_state_service=canvas_state_service,
+        )
+        tools.stop_cycle()
+        reference_path = os.path.join(tools.reference_dir, "the monk.png")
+        Image.new("RGB", (20, 20), color="gold").save(reference_path)
+        tools._load_references()
+
+        self.assertIn("Successfully displayed", tools.show_image("the_monk"))
+
+        state = canvas_state_service.latest_state("monk_alias_test")
+        expected_webp = os.path.join(tools.output_dir, "the monk.webp")
+        self.assertEqual(
+            canvas_state_service.get("monk_alias_test").shown_image_path,
+            expected_webp,
+        )
+        self.assertTrue(os.path.exists(expected_webp))
+        self.assertEqual(
+            state["latest"],
+            "/theaters/monk_alias_test/output/artifacts/images/the monk.webp",
+        )
         tools.stop_cycle()
 

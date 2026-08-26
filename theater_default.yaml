@@ -8,8 +8,8 @@ observability_tool:
     cooldown_duration: 30
 
 image_generation:
-    cycle_length: 10
-    cooldown_duration: 11
+    cycle_length: 7
+    cooldown_duration: 8
     style: "wistful and bygone glories"
 
 animation:

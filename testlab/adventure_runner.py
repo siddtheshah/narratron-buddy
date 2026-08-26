@@ -123,19 +123,18 @@ class MockToolBundle:
     def create_image(
         self,
         image_prompt: str,
-        image_name: str = "",
+        image_name: str,
         reference_images: List[str] | str | None = None,
         display: bool = True,
         effect: str = "gleam3",
     ) -> str:
         """Creates an image based on a prompt and adapts visual style using reference images."""
-        name = image_name or f"img_{len(self._created_images) + 1}"
-        self._created_images.append(name)
+        self._created_images.append(image_name)
         if display:
-            self.canvas_state.current_image = name
+            self.canvas_state.current_image = image_name
             self.canvas_state.current_image_prompt = image_prompt
             self.canvas_state.current_image_effect = effect
-        result = f"Created and staged image '{name}' with effect '{effect}'."
+        result = f"Created and staged image '{image_name}' with effect '{effect}'."
         return self._record(
             "create_image",
             {
