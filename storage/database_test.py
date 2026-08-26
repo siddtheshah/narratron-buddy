@@ -994,6 +994,50 @@ class TestDatabaseDaemonLogic(BaseTestCase):
         mock_deployer.destroy_theater.assert_called_once_with("daemon_temp_theater")
 
 
+class TestCreditGiftExpiry(BaseTestCase):
+    """Credit gift expiry and balance-transfer coverage."""
+
+    def setUp(self):
+        super().setUp()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_file = Path(self.temp_dir.name) / "test_credit_gifts.db"
+        self.db = LocalDatabaseManager(str(self.db_file))
+        self.sender = self.db.register_user("gift_sender", "gift-sender@test.com", "Pass12345")
+        self.recipient = self.db.register_user("gift_recipient", "gift-recipient@test.com", "Pass12345")
+        self.db.add_user_credits(self.sender["id"], 20.0, 1.0)
+
+    def tearDown(self):
+        self.db.close()
+        self.temp_dir.cleanup()
+        super().tearDown()
+
+    def test_credit_gift_expires_after_one_week_without_transferring_credits(self):
+        gift = self.db.create_credit_gift(self.sender["id"], 5.0)
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT created_at, expires_at FROM credit_referrals WHERE token = ?", (gift["token"],)
+            )
+            stored = cursor.fetchone()
+
+        created_at = datetime.datetime.fromisoformat(stored["created_at"])
+        expires_at = datetime.datetime.fromisoformat(stored["expires_at"])
+        self.assertEqual(expires_at - created_at, datetime.timedelta(days=7))
+
+        # At the exact seven-day boundary, the gift must no longer be redeemable.
+        with self.db._get_connection() as conn:
+            conn.cursor().execute(
+                "UPDATE credit_referrals SET expires_at = ? WHERE token = ?",
+                (created_at.isoformat(), gift["token"]),
+            )
+
+        with self.assertRaisesRegex(ValueError, "expired"):
+            self.db.claim_credit_gift(gift["token"], self.recipient["id"])
+
+        self.assertEqual(self.db.get_user_by_id(self.sender["id"])["credits"], 20.0)
+        self.assertEqual(self.db.get_user_by_id(self.recipient["id"])["credits"], 0.0)
+
+
 class TestAsyncDatabaseMethods(BaseTestCase):
     """Test all async wrapper methods on DatabaseManager."""
 
