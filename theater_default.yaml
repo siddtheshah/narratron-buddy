@@ -3,6 +3,10 @@ agent:
     affective_dialog: false
     special_instructions: "be calm, serene, and encouraging to the orator"
 
+# Optional reference image filename or alias to show when a new canvas initializes.
+# The image must be present in the theater's references directory.
+starting_image: "narratron_avatar.jpg"
+
 observability_tool:
     enabled: false
     cooldown_duration: 30

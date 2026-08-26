@@ -164,6 +164,24 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(tools.current_cycle_image["path"], img2)
         tools.stop_cycle()
 
+    def test_starting_image_is_displayed_when_the_canvas_initializes(self):
+        theater = self.manager.theater("starting_image")
+        reference_dir = theater.references_dir()
+        reference_dir.mkdir(parents=True, exist_ok=True)
+        image_path = reference_dir / "opening scene.jpg"
+        Image.new("RGB", (20, 20), color="orange").save(image_path)
+        (theater.directory() / "theater.yaml").write_text(
+            "starting_image: opening_scene\n", encoding="utf-8"
+        )
+        canvas_state_service = CanvasStateService(self.manager)
+        canvas_state = canvas_state_service.get("starting_image")
+
+        self.assertEqual(
+            canvas_state.shown_image_path,
+            str(image_path),
+        )
+        self.assertEqual(canvas_state.get_latest_state()["latest"], "/theaters/starting_image/references/opening scene.jpg")
+
     @patch("tools.image_tool.get_image_provider")
     def test_create_image_has_priority_over_show_image_in_next_cycle(self, mock_get_provider):
         provider = mock_get_provider.return_value

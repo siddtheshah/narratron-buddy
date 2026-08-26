@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -99,6 +100,51 @@ class CanvasStateManager:
         self.current_agent_thought_time: float = 0.0
 
         self.load_state_from_disk()
+        self._initialize_starting_image()
+
+    def _initialize_starting_image(self) -> None:
+        """Seed an otherwise blank canvas from its theater configuration."""
+        if self.shown_image_path or self._has_generated_image():
+            return
+
+        # Import lazily to avoid a module cycle with TheaterManager.
+        from utils.config_loader import get_theater_config
+
+        config = get_theater_config(self.theater_id, base_dir=self.theater_manager.base_dir)
+        starting_image = config.get("starting_image", "")
+        if not isinstance(starting_image, str) or not starting_image.strip():
+            return
+
+        image_path = self._find_starting_reference(starting_image.strip())
+        if not image_path:
+            logger.warning(
+                "Configured starting image '%s' was not found for theater '%s'.",
+                starting_image,
+                self.theater_id,
+            )
+            return
+
+        self.update_shown_image(str(image_path), transition="crossfade", effect="gleam3")
+
+    def _has_generated_image(self) -> bool:
+        image_dir = self.theater.image_artifacts_dir()
+        if not image_dir.exists():
+            return False
+        return any(path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} for path in image_dir.rglob("*"))
+
+    def _find_starting_reference(self, image_name: str) -> Optional[Path]:
+        reference_dir = self.theater.references_dir()
+        if not reference_dir.exists():
+            return None
+
+        normalized_name = re.sub(r"[^a-zA-Z0-9_-]", "_", image_name).lower()
+        for image_path in reference_dir.rglob("*"):
+            if not image_path.is_file() or image_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+                continue
+            normalized_stem = re.sub(r"[^a-zA-Z0-9_-]", "_", image_path.stem).lower()
+            if image_name.lower() in {image_path.name.lower(), image_path.stem.lower()} or normalized_name == normalized_stem:
+                return image_path
+        return None
 
     def load_state_from_disk(self):
         """Restore canvas state from local theater.json if available."""
