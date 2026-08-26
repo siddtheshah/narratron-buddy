@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from PIL import Image
+from PIL import Image, PngImagePlugin
 
 from components.theater_manager import TheaterManager
 from providers import ImageGenerationResult
@@ -102,6 +102,21 @@ class TestImageTools(BaseTestCase):
     def test_create_image_requires_a_provider(self):
         with self.assertRaisesRegex(ValueError, "image_generation.provider"):
             ImageTools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
+
+    def test_search_image_by_metadata_matches_standard_description_and_title(self):
+        tools = ImageTools(self.config, theater_id="metadata_search", theater_manager=self.manager)
+        tools.stop_cycle()
+        reference_path = os.path.join(tools.reference_dir, "scene.png")
+        png_info = PngImagePlugin.PngInfo()
+        png_info.add_text("Title", "The Candlelit Scribe")
+        png_info.add_text("Description", "A chrysolic monk writing by candlelight")
+        Image.new("RGB", (10, 10), color="gold").save(reference_path, pnginfo=png_info)
+        tools._load_references()
+
+        self.assertEqual(tools.search_image_by_metadata("scribe"), [reference_path])
+        self.assertEqual(tools.search_image_by_metadata("chrysolic"), [reference_path])
+        self.assertEqual(tools.list_references()[0]["title"], "The Candlelit Scribe")
+        tools.stop_cycle()
 
     @patch("tools.image_tool.get_image_provider")
     def test_show_image_cycle_and_staging(self, mock_get_provider):

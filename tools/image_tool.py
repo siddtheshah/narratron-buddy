@@ -20,6 +20,7 @@ from utils.image_utils import (
     compress_image_to_webp,
     embed_image_metadata,
     extract_image_metadata_description,
+    extract_image_metadata_title,
     extract_image_prompt,
 )
 from components.theater_manager import TheaterManager
@@ -172,11 +173,13 @@ class ImageTools(BaseTools):
                             clean_stem = re.sub(r'[^a-zA-Z0-9_-]', '_', stem)
                             
                             metadata_desc = extract_image_metadata_description(filepath)
+                            metadata_title = extract_image_metadata_title(filepath)
 
                             entry = {
                                 "name": stem,
                                 "alias": clean_stem,
                                 "path": filepath,
+                                "title": metadata_title,
                                 "description": metadata_desc or f"Reference image {filename}"
                             }
                             self.references_manifest[stem] = entry
@@ -203,6 +206,7 @@ class ImageTools(BaseTools):
                     "name": item["name"],
                     "alias": item["alias"],
                     "path": item["path"],
+                    "title": item.get("title", ""),
                     "description": item["description"]
                 })
         self._trigger_after_tool_call("list_references")
@@ -221,13 +225,21 @@ class ImageTools(BaseTools):
 
         # Check references manifest
         if path_str in self.references_manifest:
-            return self.references_manifest[path_str]["path"]
+            manifest_path = self.references_manifest[path_str]["path"]
+            if os.path.exists(manifest_path):
+                return manifest_path
         if path_str.lower() in self.references_manifest:
-            return self.references_manifest[path_str.lower()]["path"]
+            manifest_path = self.references_manifest[path_str.lower()]["path"]
+            if os.path.exists(manifest_path):
+                return manifest_path
         if clean_input in self.references_manifest:
-            return self.references_manifest[clean_input]["path"]
+            manifest_path = self.references_manifest[clean_input]["path"]
+            if os.path.exists(manifest_path):
+                return manifest_path
         if clean_input.lower() in self.references_manifest:
-            return self.references_manifest[clean_input.lower()]["path"]
+            manifest_path = self.references_manifest[clean_input.lower()]["path"]
+            if os.path.exists(manifest_path):
+                return manifest_path
 
 
         base_name = os.path.basename(path_str)
@@ -697,7 +709,7 @@ class ImageTools(BaseTools):
         """Search for images that match a given metadata description across generated images and references.
 
         Args:
-            metadata_query: A string to search for in image metadata descriptions, names, or EXIF data.
+            metadata_query: A string to search for in image metadata titles, descriptions, names, or EXIF data.
 
         Returns:
             A list of file paths to images matching the query.
@@ -712,9 +724,15 @@ class ImageTools(BaseTools):
                 full_p = item["path"]
                 if full_p not in seen and os.path.exists(full_p):
                     desc = item.get("description", "")
+                    title = item.get("title", "")
                     name = item.get("name", "")
                     alias = item.get("alias", "")
-                    if query_lower in desc.lower() or query_lower in name.lower() or query_lower in alias.lower():
+                    if (
+                        query_lower in desc.lower()
+                        or query_lower in title.lower()
+                        or query_lower in name.lower()
+                        or query_lower in alias.lower()
+                    ):
                         seen.add(full_p)
                         matches.append(full_p)
 
@@ -734,8 +752,13 @@ class ImageTools(BaseTools):
                         
                         try:
                             metadata_desc = extract_image_metadata_description(filepath)
+                            metadata_title = extract_image_metadata_title(filepath)
                             filename_without_ext = Path(filename).stem
-                            if (metadata_desc and query_lower in metadata_desc.lower()) or (query_lower in filename_without_ext.lower()):
+                            if (
+                                (metadata_desc and query_lower in metadata_desc.lower())
+                                or (metadata_title and query_lower in metadata_title.lower())
+                                or (query_lower in filename_without_ext.lower())
+                            ):
                                 seen.add(filepath)
                                 matches.append(filepath)
                         except Exception:

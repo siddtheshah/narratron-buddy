@@ -76,6 +76,10 @@ class TestBaseTools(BaseTestCase):
     def test_with_cooldown_decorator_uses_override_duration(self):
         sample = SampleTools({"cooldown_duration": 10.0}, theater_id="test_theater")
         self.assertEqual(sample.quick_tool(), "Success")
+        self.assertIn("quick_tool is on cooldown", sample.quick_tool())
+
+        time.sleep(0.2)
+        self.assertEqual(sample.quick_tool(), "Success")
 
     def test_with_cooldown_logs_named_arguments(self):
         sample = SampleTools({}, theater_id="test_theater")
@@ -84,10 +88,6 @@ class TestBaseTools(BaseTestCase):
             self.assertEqual(sample.show_sample_image("scene.png", transition="fade"), "Success")
 
         self.assertIn("show_sample_image called (theater=test_theater, args={'file_path': 'scene.png', 'transition': 'fade'})", logs.output[0])
-        self.assertIn("quick_tool is on cooldown", sample.quick_tool())
-
-        time.sleep(0.2)
-        self.assertEqual(sample.quick_tool(), "Success")
 
     def test_in_flight_tracking(self):
         self.assertFalse(self.base_tools.is_in_flight("my_tool"))

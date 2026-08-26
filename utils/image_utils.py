@@ -3,6 +3,16 @@ from pathlib import Path
 from typing import List, Optional
 from PIL import Image
 
+
+def _metadata_text(value) -> str:
+    """Normalize common image metadata values to readable text."""
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-16le").rstrip("\x00")
+        except UnicodeDecodeError:
+            return value.decode(errors="replace")
+    return str(value) if value is not None else ""
+
 def extract_image_prompt(file_path: str) -> str:
     """Extracts prompt/description text from PNG tEXt chunks or EXIF tags."""
     prompt_text = ""
@@ -33,30 +43,49 @@ def extract_image_prompt(file_path: str) -> str:
     return prompt_text
 
 def extract_image_metadata_description(file_path: str) -> str:
-    """Extracts metadata description text from PNG tEXt chunks or EXIF tags (0x9286 / 0x9c9c)."""
+    """Extract metadata description text from PNG tEXt chunks or EXIF tags."""
     metadata_desc = ""
     try:
         if os.path.exists(file_path):
             with Image.open(file_path) as img:
                 if hasattr(img, "text") and img.text:
-                    metadata_desc = img.text.get("MetadataDescription", "")
+                    metadata_desc = (
+                        img.text.get("MetadataDescription")
+                        or img.text.get("Description")
+                        or img.text.get("description")
+                        or ""
+                    )
                 if not metadata_desc:
                     exif = img.getexif()
                     if exif:
                         if 0x9286 in exif:
-                            metadata_desc = exif[0x9286]
+                            metadata_desc = _metadata_text(exif[0x9286])
                         elif 0x9c9c in exif:
                             val = exif[0x9c9c]
-                            if isinstance(val, bytes):
-                                try:
-                                    metadata_desc = val.decode("utf-16le").rstrip("\x00")
-                                except Exception:
-                                    metadata_desc = str(val)
-                            else:
-                                metadata_desc = str(val)
+                            metadata_desc = _metadata_text(val)
     except Exception:
         pass
     return metadata_desc
+
+
+def extract_image_metadata_title(file_path: str) -> str:
+    """Extract a title from standard PNG text metadata or EXIF title fields."""
+    try:
+        if os.path.exists(file_path):
+            with Image.open(file_path) as img:
+                text = getattr(img, "text", None) or getattr(img, "info", {}) or {}
+                title = text.get("Title") or text.get("title") or text.get("ImageTitle") or ""
+                if title:
+                    return _metadata_text(title)
+
+                exif = img.getexif()
+                if exif:
+                    # XPTitle and ImageDescription are the most broadly supported
+                    # title-like EXIF fields across image formats.
+                    return _metadata_text(exif.get(0x9C9B) or exif.get(0x010E))
+    except Exception:
+        pass
+    return ""
 
 def embed_image_metadata(exif_obj, image_prompt: str):
     """Embeds image prompt and metadata description into PIL EXIF tags."""
