@@ -284,7 +284,9 @@ def api_list_adventures():
 @app.post("/api/adventure-runner/sessions")
 def api_create_adventure_session(body: dict[str, Any]):
     """Create a new local adventure runner session."""
-    adv_id = str(body.get("adventure_id") or "space-funk-odyssey").strip()
+    adv_id = str(body.get("adventure_id") or "").strip()
+    if not adv_id:
+        raise HTTPException(status_code=400, detail="Missing required field 'adventure_id'")
     agent_model = body.get("agent_model")
     planner_model = body.get("planner_model")
     nodes_ahead = body.get("nodes_ahead")

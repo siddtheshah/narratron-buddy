@@ -2,10 +2,10 @@
 
 Usage:
     # Interactive CLI mode:
-    python testlab/adventure_runner.py --adventure space-funk-odyssey
+    python testlab/adventure_runner.py --adventure groove-space-odyssey
 
     # Non-interactive smoke test:
-    python testlab/adventure_runner.py --adventure space-funk-odyssey --smoke
+    python testlab/adventure_runner.py --adventure groove-space-odyssey --smoke
 """
 
 from __future__ import annotations
@@ -412,7 +412,8 @@ class AdventureSession:
         # Build ADK Agent & Runner
         self.agent = self._create_agent()
         self.session_service = InMemorySessionService()
-        self.app = App(name=f"adv_runner_{self.session_id}", root_agent=self.agent)
+        app_name = re.sub(r"[^a-zA-Z0-9_]", "_", f"adv_runner_{self.session_id}")
+        self.app = App(name=app_name, root_agent=self.agent)
         self.runner = Runner(app=self.app, session_service=self.session_service, auto_create_session=True)
 
     def _populate_theater_workspace(self) -> None:
@@ -686,7 +687,7 @@ class AdventureSession:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Local Adventure Runner for narrative consistency testing.")
-    parser.add_argument("--adventure", default="space-funk-odyssey", help="Adventure folder name or path.")
+    parser.add_argument("--adventure", default="groove-space-odyssey", help="Adventure folder name or path.")
     parser.add_argument("--agent-model", default="gemini-3.7-flash", help="Model ID for text agent.")
     parser.add_argument("--planner-model", default="gemini-3.7-flash", help="Model ID for story planner.")
     parser.add_argument("--nodes", type=int, default=3, help="Nodes ahead buffer.")

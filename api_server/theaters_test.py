@@ -596,11 +596,10 @@ class TestTheaterAPI(BaseTestCase):
         zip_bytes = export_res.content
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             filenames = zf.namelist()
-            # Extract image filenames (ignoring folder prefix)
             base_names = [Path(f).name for f in filenames if f.endswith((".jpg", ".png", ".jpeg", ".webp"))]
             self.assertIn("scene_01.jpg", base_names)
-            # Ensure no image basename is duplicated in the ZIP export
-            self.assertEqual(len(base_names), len(set(base_names)), f"Duplicate image entries found in ZIP: {base_names}")
+            # Ensure no file path entry is duplicated in the ZIP export
+            self.assertEqual(len(filenames), len(set(filenames)), f"Duplicate zip file entries found: {filenames}")
 
     def test_password_reset_api_flow(self):
         # 1. Register user

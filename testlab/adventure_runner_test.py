@@ -1,7 +1,9 @@
 """Unit and integration tests for Local Adventure Runner in Test Lab."""
 
+import json
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
+import pytest
 
 from testlab.adventure_runner import (
     AdventureSession,
@@ -13,12 +15,51 @@ from testlab.adventure_runner import (
 from testlab.server import app
 
 
-def test_load_adventure_config():
-    config, adv_path, adv_id = load_adventure_config("space-funk-odyssey")
-    assert adv_id == "space-funk-odyssey"
+@pytest.fixture
+def sample_adventure(tmp_path, monkeypatch):
+    """Create an isolated, synthetic adventure directory for unit testing without depending on disk assets."""
+    adventures_dir = tmp_path / "adventures"
+    adventures_dir.mkdir(parents=True, exist_ok=True)
+    adv_dir = adventures_dir / "synthetic-test-adventure"
+    adv_dir.mkdir(parents=True, exist_ok=True)
+
+    meta = {
+        "id": "synthetic-test-adventure",
+        "title": "Synthetic Test Adventure",
+        "description": "A synthetic adventure package for unit tests.",
+        "genre": "Test Genre",
+        "tags": ["test"],
+    }
+    (adv_dir / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+
+    theater_yaml = """
+agent:
+  special_instructions: "Maintain a synthetic test persona for unit testing."
+interactive_canvas:
+  enabled: true
+story_planning:
+  adventure_mode: true
+  initial_elements:
+    "Synthetic Widget": "A synthetic widget for testing."
+    "Synthetic Radar": "A synthetic radar."
+"""
+    (adv_dir / "theater.yaml").write_text(theater_yaml.strip(), encoding="utf-8")
+
+    lore_dir = adv_dir / "lore"
+    lore_dir.mkdir(parents=True, exist_ok=True)
+    (lore_dir / "01_synthetic_lore.txt").write_text("Synthetic lore content about testing rig.", encoding="utf-8")
+
+    monkeypatch.setattr("testlab.adventure_runner.ADVENTURES_DIR", adventures_dir)
+
+    return adv_dir
+
+
+def test_load_adventure_config(sample_adventure):
+    config, adv_path, adv_id = load_adventure_config("synthetic-test-adventure")
+    assert adv_id == "synthetic-test-adventure"
     assert adv_path.is_dir()
     assert config["story_planning"]["adventure_mode"] is True
-    assert "Player Character & Groove" in config["story_planning"]["required_stickies"]
+    assert "Synthetic Widget" in config["story_planning"]["initial_elements"]
     assert config["interactive_canvas"]["enabled"] is True
 
 
@@ -67,16 +108,16 @@ def test_mock_tool_bundle_behavior_and_logging():
     assert "update_interactive_canvas" in logged_tools
 
 
-def test_adventure_session_assembly_and_prompt():
-    session = AdventureSession(adventure_id_or_path="space-funk-odyssey")
+def test_adventure_session_assembly_and_prompt(sample_adventure):
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
     try:
-        assert session.adventure_id == "space-funk-odyssey"
+        assert session.adventure_id == "synthetic-test-adventure"
         assert session.agent is not None
         assert session.story_planning_tools is not None
 
         # Verify prompt includes adventure's special instructions
         instruction = session.agent.instruction
-        assert "Space Funk Odyssey" in instruction
+        assert "synthetic test persona" in instruction.lower()
         assert "Interactive Canvas" in instruction
 
         # Verify tool catalog matches services/agent.py expectations
@@ -89,16 +130,16 @@ def test_adventure_session_assembly_and_prompt():
 
         # Initial state verification
         state = session.get_state()
-        assert len(state["sticky_notes"]) >= 4
+        assert len(state["sticky_notes"]) >= 2
         sticky_topics = [s["topic"] for s in state["sticky_notes"]]
-        assert "Player Character & Groove" in sticky_topics
-        assert "Combat Stats & Synergy" in sticky_topics
+        assert "Synthetic Widget" in sticky_topics
+        assert "Synthetic Radar" in sticky_topics
     finally:
         session.cleanup()
 
 
-def test_adventure_session_turn_execution_mocked():
-    session = AdventureSession(adventure_id_or_path="space-funk-odyssey")
+def test_adventure_session_turn_execution_mocked(sample_adventure):
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
     try:
         mock_reaction = {
             "narration": "The bass synthesizer reverberates across the bridge.",
@@ -151,7 +192,7 @@ def test_adventure_session_turn_execution_mocked():
         session.cleanup()
 
 
-def test_adventure_runner_lab_api_routes():
+def test_adventure_runner_lab_api_routes(sample_adventure):
     client = TestClient(app)
 
     # 1. GET /adventure-runner page
@@ -171,18 +212,18 @@ def test_adventure_runner_lab_api_routes():
     advs_res = client.get("/api/adventure-runner/adventures")
     assert advs_res.status_code == 200
     adventures = advs_res.json()["adventures"]
-    assert any(a["id"] == "space-funk-odyssey" for a in adventures)
+    assert any(a["id"] == "synthetic-test-adventure" for a in adventures)
 
     # 4. POST /api/adventure-runner/sessions
     create_res = client.post(
         "/api/adventure-runner/sessions",
-        json={"adventure_id": "space-funk-odyssey", "nodes_ahead": 3},
+        json={"adventure_id": "synthetic-test-adventure", "nodes_ahead": 3},
     )
     assert create_res.status_code == 200
     session_data = create_res.json()
     session_id = session_data["id"]
-    assert session_data["adventure_id"] == "space-funk-odyssey"
-    assert len(session_data["state"]["sticky_notes"]) >= 4
+    assert session_data["adventure_id"] == "synthetic-test-adventure"
+    assert len(session_data["state"]["sticky_notes"]) >= 2
 
     # 5. GET /api/adventure-runner/sessions/{id}
     get_res = client.get(f"/api/adventure-runner/sessions/{session_id}")
@@ -242,10 +283,10 @@ def test_adventure_runner_lab_api_routes():
     active_session.cleanup()
 
 
-def test_send_message_inside_running_event_loop():
+def test_send_message_inside_running_event_loop(sample_adventure):
     import asyncio
 
-    session = AdventureSession(adventure_id_or_path="space-funk-odyssey")
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
     try:
         mock_reaction = {
             "narration": "The synth console springs to life.",
@@ -275,20 +316,18 @@ def test_send_message_inside_running_event_loop():
         session.cleanup()
 
 
-def test_lore_browsing_tracked_in_turn():
-    session = AdventureSession(adventure_id_or_path="space-funk-odyssey")
+def test_lore_browsing_tracked_in_turn(sample_adventure):
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
     try:
         # Simulate StoryPlanningTools reading lore during a turn
         session.story_planning_tools.reset_lore_call_counts()
-        session.story_planning_tools.read_lore("companions/jax_thumper_vance.txt")
-        session.story_planning_tools.search_lore("groove rig")
+        session.story_planning_tools.read_lore("01_synthetic_lore.txt")
+        session.story_planning_tools.search_lore("testing rig")
 
         browsed = session.story_planning_tools.get_lore_docs_browsed_this_turn()
-        assert "companions/jax_thumper_vance.txt" in browsed
+        assert "01_synthetic_lore.txt" in browsed
         activity = session.story_planning_tools.get_lore_activity_this_turn()
         assert any(a["type"] == "read_file" for a in activity)
         assert any(a["type"] == "search" for a in activity)
     finally:
         session.cleanup()
-
-

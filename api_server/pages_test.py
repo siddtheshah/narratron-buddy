@@ -34,7 +34,8 @@ def test_adventures_page_reads_template():
 def test_demos_page_reads_template():
     response = pages.read_demos()
     assert "Narratron demos" in response
-    assert "Watch the first demo" in response
+    assert "The original Narratron theater" in response
+
 
 
 def test_canvas_with_verified_join_key_redirects_and_grants_cookie():
