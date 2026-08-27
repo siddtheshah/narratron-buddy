@@ -734,7 +734,7 @@ class StoryPlanningTools(BaseTools):
         """Mark that user voice input was detected, re-enabling process_user_action."""
         with self._voice_input_lock:
             self._voice_input_detected = True
-        logger.debug("[StoryPlanningTools] Voice input detected; process_user_action is re-enabled.")
+            logger.debug("[StoryPlanningTools] Voice input detected; process_user_action is re-enabled.")
 
     def reset_lore_call_counts(self) -> None:
         """Reset per-turn read_lore and search_lore invocation counters and lore activity."""
