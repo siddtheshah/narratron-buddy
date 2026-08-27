@@ -22,10 +22,10 @@
     h2 { margin:16px 0 10px; font-size:2rem; letter-spacing:-.025em; } .featured p,.card p { color:var(--muted); line-height:1.55; }
     .watch { display:inline-flex; margin-top:15px; padding:12px 18px; color:#fff; font-weight:700; text-decoration:none; background:linear-gradient(135deg,var(--violet),var(--pink)); border-radius:10px; }
     .watch:hover { transform:translateY(-2px); filter:brightness(1.08); }
-    .featured-art { display:grid; place-items:center; min-height:220px; font-size:5rem; background:linear-gradient(145deg,rgba(236,72,153,.25),rgba(67,56,202,.14)); }
+    .featured-art { min-height:220px; overflow:hidden; background:linear-gradient(145deg,rgba(236,72,153,.25),rgba(67,56,202,.14)); } .featured-art img { width:100%; height:100%; min-height:220px; display:block; object-fit:cover; }
     .section-heading { margin:64px 0 21px; font-size:1.4rem; } .section-heading span { display:block; margin-top:6px; color:var(--muted); font-size:.98rem; font-weight:400; }
     .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; } .card { position:relative; min-height:235px; padding:25px; overflow:hidden; background:rgba(18,25,51,.72); border:1px solid var(--line); border-radius:18px; } .card::after { content:''; position:absolute; right:-44px; bottom:-56px; width:155px; height:155px; border-radius:50%; background:var(--glow,rgba(139,92,246,.2)); filter:blur(3px); }
-    .icon { position:relative; z-index:1; font-size:1.8rem; } .card h3 { position:relative; z-index:1; margin:16px 0 8px; font-size:1.15rem; } .card p { position:relative; z-index:1; margin:0; font-size:.94rem; } .status { position:relative; z-index:1; display:inline-block; margin-top:17px; color:#c4b5fd; font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+    .icon { position:relative; z-index:1; font-size:1.8rem; } .demo-thumbnail { position:relative; z-index:1; display:block; width:100%; aspect-ratio:16 / 9; object-fit:cover; border:1px solid rgba(255,255,255,.16); border-radius:10px; } .card h3 { position:relative; z-index:1; margin:16px 0 8px; font-size:1.15rem; } .card p { position:relative; z-index:1; margin:0; font-size:.94rem; } .status { position:relative; z-index:1; display:inline-block; margin-top:17px; color:#c4b5fd; font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
     .recording-note { margin-top:48px; padding:22px 25px; color:#dbe4f3; line-height:1.55; border-left:3px solid #f472b6; background:rgba(244,114,182,.08); border-radius:0 12px 12px 0; } .recording-note strong { color:#fff; }
     @media (max-width:780px) { main { padding:48px 18px 64px; } .featured { grid-template-columns:1fr; } .featured-copy { padding:29px; } .featured-art { min-height:130px; } .grid { grid-template-columns:1fr; } }
   </style>
@@ -38,14 +38,13 @@
     <p class="intro">Short, focused demos of Narratron’s live storytelling tools. Start with the original theater experience, then use this page to find each new workflow as it lands.</p>
     <section class="featured" aria-labelledby="featured-title">
       <div class="featured-copy"><span class="label">Available now</span><h2 id="featured-title">The original Narratron theater</h2><p>A first look at a story brought to life with an AI narrator, dynamic visuals, and a live audience canvas.</p><a class="watch" href="https://youtu.be/fh1ikmYgHZI" target="_blank" rel="noopener noreferrer">Watch the first demo ↗</a></div>
-      <div class="featured-art" aria-hidden="true">🎭</div>
+      <a class="featured-art" href="https://youtu.be/fh1ikmYgHZI" target="_blank" rel="noopener noreferrer"><img src="https://i.ytimg.com/vi/fh1ikmYgHZI/maxresdefault.jpg" alt="The original Narratron theater demo thumbnail"></a>
     </section>
-    <h2 class="section-heading">Coming next <span>Two focused demos that show how people can shape a story—and how Narratron carries it forward.</span></h2>
-    <section class="grid" aria-label="Planned Narratron demos">
+    <h2 class="section-heading">More to explore <span>See how people can shape a story—and how Narratron carries it forward.</span></h2>
+    <section class="grid" aria-label="More Narratron demos">
       <article class="card" style="--glow:rgba(74,222,128,.2)"><div class="icon">🧩</div><h3>Make the story together</h3><p>See the interactive canvas in action: the audience draws, shares ideas, and collaborates live while the story responds.</p><div class="status">Interactive canvas · drawing · collaboration</div></article>
-      <article class="card" style="--glow:rgba(250,204,21,.18)"><div class="icon">🎵 🗺️</div><h3>Set the mood, choose the path</h3><p>Watch generated music keep a scene’s atmosphere moving as player choices steer an evolving Adventure Mode story.</p><div class="status">Music generation · adventure mode</div></article>
+      <article class="card" style="--glow:rgba(250,204,21,.18)"><a href="https://youtu.be/6kj2DD8QgE4" target="_blank" rel="noopener noreferrer"><img class="demo-thumbnail" src="https://i.ytimg.com/vi/6kj2DD8QgE4/maxresdefault.jpg" alt="Narratron Adventure Mode demo thumbnail"></a><h3>Set the mood, choose the path</h3><p>Watch generated music keep a scene’s atmosphere moving as player choices steer an evolving Adventure Mode story.</p><a class="watch" href="https://youtu.be/6kj2DD8QgE4" target="_blank" rel="noopener noreferrer">Watch the Adventure Mode demo ↗</a><div class="status">Available now · music generation · adventure mode</div></article>
     </section>
-    <aside class="recording-note"><strong>Demo structure:</strong> lead each video with its visible payoff, then show one complete moment from prompt or audience action through Narratron’s response. Finished videos will appear here with a short “what you’ll see” description.</aside>
   </main>
 </body>
 </html>
