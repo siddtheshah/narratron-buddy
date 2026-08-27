@@ -242,12 +242,13 @@
       width: 100%;
       max-width: 480px;
       margin: -24px 0 48px;
-      padding: 18px 20px;
+      padding: 20px 24px;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      text-align: left;
+      justify-content: center;
+      gap: 14px;
+      text-align: center;
       background: rgba(139, 92, 246, 0.16);
       border: 1px solid rgba(196, 181, 253, 0.4);
       border-radius: var(--radius);
@@ -255,14 +256,10 @@
     }
 
     .host-theater-card h3 {
-      font-size: 1rem;
-      margin-bottom: 4px;
-    }
-
-    .host-theater-card p {
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      line-height: 1.4;
+      font-size: 1.1rem;
+      margin: 0;
+      text-align: center;
+      width: 100%;
     }
 
     .host-theater-link {
@@ -363,7 +360,7 @@
 
     @media (max-width: 640px) {
       .host-theater-card {
-        align-items: flex-start;
+        align-items: center;
         flex-direction: column;
       }
 
@@ -432,11 +429,10 @@
     </div>
 
     <aside class="host-theater-card" aria-label="Host a theater">
-      <div>
-        <h3>Adventure Mode is here</h3>
-        <p>Build a choice-driven story or play our curated premade adventures.</p>
+      <div style="text-align: center; width: 100%;">
+        <h3>Adventure Mode is here!</h3>
       </div>
-      <div style="display: flex; gap: 8px;">
+      <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
         <a href="/adventures" class="host-theater-link"
           style="background: linear-gradient(135deg, #8b5cf6, #ec4899); border: none; color: #fff;">Explore
           Adventures</a>
