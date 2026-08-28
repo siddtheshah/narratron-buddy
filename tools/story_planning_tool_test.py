@@ -606,17 +606,17 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(len(tools.get_present_elements()), DEFAULT_MAX_STICKY_NOTES)
         self.assertEqual(tools.get_present_elements()[0]["name"], "key_1")
 
-    def test_sticky_note_insert_update_and_bounding(self):
+    def test_update_sticky_note_insert_update_and_bounding(self):
         tools = self._make_tools(theater_id="sticky_theater")
         # Insert
-        res = tools.sticky_note("setting", "Dark forest at midnight")
+        res = tools.update_sticky_note("setting", "Dark forest at midnight")
         self.assertIn("Added sticky note 'setting'", res)
         self.assertEqual(len(tools.get_present_sticky_notes()), 1)
         self.assertEqual(tools.get_present_sticky_notes()[0]["topic"], "setting")
         self.assertEqual(tools.get_present_sticky_notes()[0]["info"], "Dark forest at midnight")
 
         # Update
-        res_upd = tools.sticky_note("setting", "Sunny glade at noon")
+        res_upd = tools.update_sticky_note("setting", "Sunny glade at noon")
         self.assertIn("Updated sticky note 'setting'", res_upd)
         self.assertEqual(len(tools.get_present_sticky_notes()), 1)
         self.assertEqual(tools.get_present_sticky_notes()[0]["info"], "Sunny glade at noon")
@@ -624,7 +624,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         # Bounding
         last_res = ""
         for i in range(DEFAULT_MAX_STICKY_NOTES):
-            last_res = tools.sticky_note(f"topic_{i}", f"info_{i}")
+            last_res = tools.update_sticky_note(f"topic_{i}", f"info_{i}")
         self.assertEqual(len(tools.get_present_sticky_notes()), DEFAULT_MAX_STICKY_NOTES)
         # 'setting' should have been evicted and warning emitted
         self.assertIn("Warning: Maximum limit of", last_res)
@@ -633,47 +633,47 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertNotIn("setting", topics)
         self.assertIn("topic_0", topics)
 
-    def test_sticky_note_size_limits_and_validation(self):
+    def test_update_sticky_note_size_limits_and_validation(self):
         tools = self._make_tools(theater_id="sticky_limits")
         # Empty topic
-        res = tools.sticky_note("", "valid info")
+        res = tools.update_sticky_note("", "valid info")
         self.assertIn("Error: Sticky note topic cannot be empty", res)
 
         # Empty info
-        res = tools.sticky_note("valid_topic", "")
+        res = tools.update_sticky_note("valid_topic", "")
         self.assertIn("Error: Sticky note info cannot be empty", res)
 
         # Topic too long
         long_topic = "t" * (MAX_STICKY_NOTE_TOPIC_CHARS + 1)
-        res = tools.sticky_note(long_topic, "valid info")
+        res = tools.update_sticky_note(long_topic, "valid info")
         self.assertIn("Error: Sticky note topic must be", res)
 
         # Info too long
         long_info = "i" * (MAX_STICKY_NOTE_INFO_CHARS + 1)
-        res = tools.sticky_note("valid_topic", long_info)
+        res = tools.update_sticky_note("valid_topic", long_info)
         self.assertIn("Error: Sticky note info must be", res)
 
-    def test_story_planning_agent_has_sticky_note_tool(self):
+    def test_story_planning_agent_has_update_sticky_note_tool(self):
         tools = self._make_tools(theater_id="planner_tools_check")
         agent = tools._planner_agent
         tool_callables = [t for t in agent.tools]
-        self.assertIn(tools.sticky_note, tool_callables)
+        self.assertIn(tools.update_sticky_note, tool_callables)
 
     def test_sticky_notes_automatically_added_to_story_context(self):
         tools = self._make_tools(theater_id="context_check")
-        tools.sticky_note("quest_item", "Golden Amulet of Ra")
-        tools.sticky_note("weather", "Thunderstorm")
+        tools.update_sticky_note("quest_item", "Golden Amulet of Ra")
+        tools.update_sticky_note("weather", "Thunderstorm")
 
         instruction = tools._build_planner_instruction()
-        self.assertIn("Current scene sticky notes:", instruction)
+        self.assertIn("Your sticky notes:", instruction)
         self.assertIn("- quest_item: Golden Amulet of Ra", instruction)
         self.assertIn("- weather: Thunderstorm", instruction)
 
     def test_live_agent_tools_gated_by_adventure_mode(self):
-        # Non-adventure mode: live agent gets sticky_note and clear_scene
+        # Non-adventure mode: live agent gets update_sticky_note and clear_scene
         tools_normal = self._make_tools(config={"adventure_mode": False})
         normal_exposed = tools_normal.get_tools()
-        self.assertIn(tools_normal.sticky_note, normal_exposed)
+        self.assertIn(tools_normal.update_sticky_note, normal_exposed)
         self.assertIn(tools_normal.clear_scene, normal_exposed)
         self.assertNotIn(tools_normal.process_user_action, normal_exposed)
 
@@ -681,7 +681,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         tools_adv = self._make_tools(config={"adventure_mode": True})
         adv_exposed = tools_adv.get_tools()
         self.assertIn(tools_adv.process_user_action, adv_exposed)
-        self.assertNotIn(tools_adv.sticky_note, adv_exposed)
+        self.assertNotIn(tools_adv.update_sticky_note, adv_exposed)
         self.assertNotIn(tools_adv.clear_scene, adv_exposed)
 
     def test_required_stickies_loaded_from_list_of_keys(self):
@@ -720,12 +720,12 @@ class TestStoryPlanningTools(unittest.TestCase):
         }
         tools = self._make_tools(config=config, theater_id="req_test_eviction")
         # Add 2 dynamic notes (total: 4 notes = max capacity)
-        tools.sticky_note("Dynamic_1", "Temp clue 1")
-        tools.sticky_note("Dynamic_2", "Temp clue 2")
+        tools.update_sticky_note("Dynamic_1", "Temp clue 1")
+        tools.update_sticky_note("Dynamic_2", "Temp clue 2")
         self.assertEqual(len(tools.get_present_sticky_notes()), 4)
 
         # Adding Dynamic_3 should drop the oldest NON-REQUIRED note (Dynamic_1), NOT Required_A or Required_B
-        res3 = tools.sticky_note("Dynamic_3", "Temp clue 3")
+        res3 = tools.update_sticky_note("Dynamic_3", "Temp clue 3")
         self.assertIn("Oldest sticky note 'Dynamic_1' was dropped", res3)
         topics = [n["topic"] for n in tools.get_present_sticky_notes()]
         self.assertIn("Required_A", topics)
@@ -735,7 +735,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Dynamic_3", topics)
 
         # Adding Dynamic_4 should drop Dynamic_2, still preserving Required_A and Required_B
-        res4 = tools.sticky_note("Dynamic_4", "Temp clue 4")
+        res4 = tools.update_sticky_note("Dynamic_4", "Temp clue 4")
         self.assertIn("Oldest sticky note 'Dynamic_2' was dropped", res4)
         topics = [n["topic"] for n in tools.get_present_sticky_notes()]
         self.assertIn("Required_A", topics)
@@ -754,7 +754,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             },
         }
         tools = self._make_tools(config=config, theater_id="req_clear_test")
-        tools.sticky_note("Room_Clue", "A secret lever on the wall")
+        tools.update_sticky_note("Room_Clue", "A secret lever on the wall")
         tools.generate_character(name="Guard", personality="alert", motivation="stop intruders")
 
         self.assertEqual(len(tools.get_present_sticky_notes()), 3)
@@ -796,17 +796,17 @@ class TestStoryPlanningTools(unittest.TestCase):
             "initial_elements": {"HUD": "Old HUD state"},
         }
         tools = self._make_tools(config=config, theater_id="req_update_test")
-        tools.sticky_note("Clue1", "Info 1")
-        tools.sticky_note("Clue2", "Info 2")
+        tools.update_sticky_note("Clue1", "Info 1")
+        tools.update_sticky_note("Clue2", "Info 2")
         self.assertEqual(len(tools.get_present_sticky_notes()), 3)
 
         # Update HUD
-        tools.sticky_note("HUD", "New HUD state with ATK +5")
+        tools.update_sticky_note("HUD", "New HUD state with ATK +5")
         hud_info = next(n["info"] for n in tools.get_present_sticky_notes() if n["topic"] == "HUD")
         self.assertEqual(hud_info, "New HUD state with ATK +5")
 
         # Now add Clue3; HUD was updated and moved to end, but Clue1 (oldest non-required) should be dropped
-        res = tools.sticky_note("Clue3", "Info 3")
+        res = tools.update_sticky_note("Clue3", "Info 3")
         self.assertIn("Oldest sticky note 'Clue1' was dropped", res)
         topics = [n["topic"] for n in tools.get_present_sticky_notes()]
         self.assertIn("HUD", topics)

@@ -119,7 +119,7 @@ class AgentSession:
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
         self.story_planning_tools = (
             get_bound_tool_instance(self.agent, "process_user_action")
-            or get_bound_tool_instance(self.agent, "sticky_note")
+            or get_bound_tool_instance(self.agent, "update_sticky_note")
             or get_bound_tool_instance(self.agent, "update_or_insert_named_element")
         )
         self.music_tools = get_bound_tool_instance(self.agent, "play_music")

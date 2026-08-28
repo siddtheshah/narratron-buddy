@@ -129,7 +129,7 @@ Besides greeting the orator initially, use this in tandem with show_image to sho
 ## Context Management
 In order to maintain coherency, you must use these tools to keep track of the scene state. 
 
-* sticky_note <topic> <info>: Add a sticky note to the current scene or update the existing note with that topic. The scene holds at most five notes.
+* update_sticky_note <topic> <info>: Add a sticky note to the current scene or update the existing note with that topic. The scene holds at most five notes.
 * clear_scene: Remove every sticky note when beginning a new scene. Use when the orator indicates a scene transition.
 {% endif %}
 {% if adventure_mode %}
@@ -389,7 +389,7 @@ def create_tool_bundle_for_session(
         tools.append(story_planning_tools.process_user_action)
     else:
         tools.extend([
-            story_planning_tools.sticky_note,
+            story_planning_tools.update_sticky_note,
             story_planning_tools.clear_scene,
         ])
     if interactive_canvas_tools:

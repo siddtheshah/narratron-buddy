@@ -496,7 +496,7 @@ class AdventureSession:
             tools.append(self._process_user_action_wrapper)
         else:
             tools.extend([
-                self.story_planning_tools.sticky_note,
+                self.story_planning_tools.update_sticky_note,
                 self.story_planning_tools.clear_scene,
             ])
 
