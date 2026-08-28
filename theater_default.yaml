@@ -55,4 +55,4 @@ story_planning:
     action_cooldown_max_seconds: 25
 
 chat:
-    cooldown_duration: 9
+    cooldown_duration: 20
