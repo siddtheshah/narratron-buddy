@@ -12,12 +12,11 @@ from typing import Dict, Optional, Any, Set
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.adk.agents.live_request_queue import LiveRequestQueue
-from google.adk.agents.run_config import RunConfig, StreamingMode, ToolThreadPoolConfig
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 
+from services.agent import build_run_config
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import (
     format_canvas_state,
@@ -37,84 +36,6 @@ DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
 
 
-
-
-def build_run_config(
-    agent: Any = None,
-    config: Optional[dict] = None,
-    proactivity: Optional[bool] = None,
-    affective_dialog: Optional[bool] = None,
-    model_name: Optional[str] = None,
-) -> RunConfig:
-    """Construct RunConfig for ADK streaming execution using parameters from config.yaml."""
-    config = config or {}
-    agent_config = config.get("agent", {})
-    app_internal = get_app_config().get("agent_internal", {})
-
-    if proactivity is None:
-        proactivity = agent_config.get("proactivity", False)
-    if affective_dialog is None:
-        affective_dialog = agent_config.get("affective_dialog", False)
-
-    if model_name is None and agent is not None:
-        model_name = getattr(agent, "model", "")
-    model_name = (
-        model_name
-        or app_internal.get("model_id")
-        or app_internal.get("model", "gemini-3.1-flash-live-preview")
-    )
-
-    is_native_audio = any(
-        token in model_name.lower()
-        for token in ["native-audio", "1.5-flash", "2.0-flash-exp", "3.1-flash", "live"]
-    )
-
-    compaction = app_internal.get("compaction", {})
-    compaction_config = None
-    if compaction:
-        trigger = compaction.get("trigger_tokens")
-        target = compaction.get("target_tokens")
-        compaction_config = types.ContextWindowCompressionConfig(
-            trigger_tokens=int(trigger) if trigger is not None else None,
-            sliding_window=types.SlidingWindow(target_tokens=int(target)) if target is not None else None,
-        )
-
-    if is_native_audio:
-        response_modalities = ["AUDIO"]
-        return RunConfig(
-            streaming_mode=StreamingMode.BIDI,
-            response_modalities=response_modalities,
-            input_audio_transcription=types.AudioTranscriptionConfig(),
-            output_audio_transcription=None,
-            context_window_compression=compaction_config,
-            proactivity=(
-                types.ProactivityConfig(proactive_audio=True) if proactivity else None
-            ),
-            enable_affective_dialog=affective_dialog if affective_dialog else None,
-            realtime_input_config=types.RealtimeInputConfig(
-                automatic_activity_detection=types.AutomaticActivityDetection(
-                    disabled=True
-                ),
-                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
-            ),
-            tool_thread_pool_config=ToolThreadPoolConfig(
-                max_workers=agent_config.get("max_tool_workers", 3)
-            ),
-            get_session_config=GetSessionConfig(num_recent_events=0),
-            session_resumption=types.SessionResumptionConfig()
-        )
-    else:
-        response_modalities = ["TEXT"]
-        return RunConfig(
-            streaming_mode=StreamingMode.BIDI,
-            response_modalities=response_modalities,
-            input_audio_transcription=None,
-            output_audio_transcription=None,
-            context_window_compression=compaction_config,
-            get_session_config=GetSessionConfig(num_recent_events=0),
-        )
-
-
 class AgentSession:
     def __init__(
         self,
@@ -125,7 +46,6 @@ class AgentSession:
         config: Optional[dict] = None,
         canvas_state_manager: Optional[Any] = None,
     ):
-        import uuid
         self.theater_id = theater_id
         self.adk_session_id = f"adk_{theater_id}_{uuid.uuid4().hex[:8]}"
         self.adk_user_id = f"orator_{theater_id}"

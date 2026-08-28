@@ -11,8 +11,6 @@ from typing import Optional, Any
 import websockets.exceptions
 from fastapi import WebSocket, WebSocketDisconnect
 from google.adk.agents.live_request_queue import LiveRequestQueue
-from google.adk.agents.run_config import RunConfig, StreamingMode, ToolThreadPoolConfig
-from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
@@ -86,8 +84,8 @@ def get_bound_tool_instance(agent: object, tool_name: str) -> object:
 
 
 def build_run_config(*args, **kwargs):
-    """Lazy proxy for build_run_config defined in services.agent_manager."""
-    from services.agent_manager import build_run_config as _build_run_config
+    """Lazy proxy for build_run_config defined in services.agent."""
+    from services.agent import build_run_config as _build_run_config
     return _build_run_config(*args, **kwargs)
 
 

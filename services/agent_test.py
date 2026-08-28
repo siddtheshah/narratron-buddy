@@ -358,3 +358,40 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
         self.assertIn("AFTER the user action is processed", instruction)
         self.assertIn("In Adventure Mode, you can only (and should) use `create_image` or `show_image` AFTER the user action is processed", instruction)
+
+
+class TestBuildRunConfig(unittest.TestCase):
+    @patch("services.agent.get_app_config")
+    def test_build_run_config_native_audio_defaults(self, mock_get_app_config):
+        mock_get_app_config.return_value = {
+            "agent_internal": {"model": "gemini-3.1-flash-live-preview"}
+        }
+        from services.agent import build_run_config
+        config = {
+            "agent": {
+                "proactivity": True,
+                "affective_dialog": True,
+                "max_tool_workers": 5,
+            }
+        }
+        run_cfg = build_run_config(config=config)
+        self.assertEqual(run_cfg.response_modalities, ["AUDIO"])
+        self.assertIsNotNone(run_cfg.proactivity)
+        self.assertTrue(run_cfg.enable_affective_dialog)
+        self.assertEqual(run_cfg.tool_thread_pool_config.max_workers, 5)
+
+    @patch("services.agent.get_app_config")
+    def test_build_run_config_text_modality(self, mock_get_app_config):
+        mock_get_app_config.return_value = {
+            "agent_internal": {"model": "gemini-2.0-flash"}
+        }
+        from services.agent import build_run_config
+        run_cfg = build_run_config(model_name="gemini-text-only")
+        self.assertEqual(run_cfg.response_modalities, ["TEXT"])
+        self.assertIsNone(run_cfg.input_audio_transcription)
+
+    def test_reexported_from_agent_manager(self):
+        from services.agent import build_run_config as agent_build_cfg
+        from services.agent_manager import build_run_config as manager_build_cfg
+        self.assertIs(agent_build_cfg, manager_build_cfg)
+
