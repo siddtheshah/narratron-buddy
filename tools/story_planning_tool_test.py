@@ -458,6 +458,23 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertIn("- factions/read_guild.txt:\nThe guild controls all trade routes.", context)
             self.assertIn("- factions/ (directory)", context)
 
+    def test_lore_context_fetches_readfirst_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            theater_manager = TheaterManager(base_theaters_dir=directory)
+            theater_manager.create_theater(
+                name="Lesovik Station",
+                theater_id="lesovik-station",
+                lore_files=[
+                    ("lore/readfirst.txt", b"This is a story about a researcher arriving at Lesovik Station."),
+                    ("lore/researchers/casper.txt", b"Casper Ramahura info."),
+                ],
+            )
+            tools = self._make_tools(theater_id="lesovik-station", theater_manager=theater_manager)
+            context = tools._get_lore_context()
+            self.assertIn("- readfirst.txt:\nThis is a story about a researcher arriving at Lesovik Station.", context)
+            activity = tools.get_lore_activity_this_turn()
+            self.assertTrue(any(a.get("type") == "preloaded" and a.get("document") == "readfirst.txt" for a in activity))
+
     def test_lore_context_is_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
             theater_manager = TheaterManager(base_theaters_dir=directory)
@@ -652,6 +669,23 @@ class TestStoryPlanningTools(unittest.TestCase):
         long_info = "i" * (MAX_STICKY_NOTE_INFO_CHARS + 1)
         res = tools.update_sticky_note("valid_topic", long_info)
         self.assertIn("Error: Sticky note info must be", res)
+
+        # Divider '|' count mismatch validation
+        tools.update_sticky_note("HUD", "HP: 100 | ATK: 20 | DEF: 10")
+        mismatch_res = tools.update_sticky_note("HUD", "HP: 100 | ATK: 25")
+        self.assertIn("Error: Sticky note divider count mismatch for 'HUD'", mismatch_res)
+        self.assertIn("Expected valid update for 'HP: 100 | ATK: 20 | DEF: 10'", mismatch_res)
+        self.assertEqual(
+            next(n["info"] for n in tools.get_present_sticky_notes() if n["topic"] == "HUD"),
+            "HP: 100 | ATK: 20 | DEF: 10",
+        )
+
+        matching_res = tools.update_sticky_note("HUD", "HP: 90 | ATK: 25 | DEF: 10")
+        self.assertIn("Updated sticky note 'HUD'", matching_res)
+        self.assertEqual(
+            next(n["info"] for n in tools.get_present_sticky_notes() if n["topic"] == "HUD"),
+            "HP: 90 | ATK: 25 | DEF: 10",
+        )
 
     def test_story_planning_agent_has_update_sticky_note_tool(self):
         tools = self._make_tools(theater_id="planner_tools_check")

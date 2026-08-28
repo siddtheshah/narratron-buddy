@@ -176,6 +176,7 @@ No lore documents are available for this theater. Invent the lore, world details
 
 # Tool Usage Guidelines
 - **Sticky Notes (`update_sticky_note`)**: Use sticky notes to track major plot developments, story milestones, key discoveries, active goals, and persistent scene state (characters, locations, objects). Call `update_sticky_note` with a concise `topic` and informative `info` whenever a major plot event or status shift occurs to maintain narrative continuity across turns. The scene holds at most {{ max_sticky_notes or 5 }} sticky notes; when full, adding a new topic will drop the oldest non-required sticky note. Required sticky notes are persistent and will never be dropped.
+   - Sticky note style MUST be preserved over time if it's a structured sticky (using '|'). 
 - **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
@@ -1353,6 +1354,12 @@ class StoryPlanningTools(BaseTools):
         with self._sticky_notes_lock:
             is_update = clean_topic in self._sticky_notes
             if is_update:
+                existing_info = self._sticky_notes[clean_topic]
+                if clean_info.count("|") != existing_info.count("|"):
+                    return (
+                        f"Error: Sticky note divider count mismatch for '{clean_topic}'. "
+                        f"Expected valid update for '{existing_info}'."
+                    )
                 self._sticky_notes[clean_topic] = clean_info
                 self._sticky_notes.move_to_end(clean_topic)
             else:
