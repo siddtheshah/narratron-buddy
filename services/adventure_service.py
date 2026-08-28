@@ -52,7 +52,7 @@ class AdventureService:
         ).strip("/")
         self._storage_client = storage_client
         self._bucket = None
-        self._local_fallback_dir = local_fallback_dir or Path(r"C:\Narratron Assets")
+        self._local_fallback_dir = local_fallback_dir or Path("adventures")
 
         self._adventures_cache: Optional[List[Dict[str, Any]]] = None
         self._cache_timestamp: float = 0.0

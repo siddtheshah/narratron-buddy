@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Upload premade adventures from local directory to Google Cloud Storage.
 
-This script scans a directory of premade adventure folders (e.g. C:\\Narratron Assets),
+This script scans a directory of premade adventure folders (e.g. adventures),
 generates or updates adventure metadata.json if missing, and uploads all assets
 (theater.yaml, metadata.json, lore, references, playlists) to a shared GCS prefix.
 """
@@ -38,7 +38,7 @@ mimetypes.add_type("image/webp", ".webp")
 
 DEFAULT_BUCKET = "narratron-buddy-app-storage"
 DEFAULT_PREFIX = "adventures"
-DEFAULT_SOURCE_DIR = r"C:\Narratron Assets"
+DEFAULT_SOURCE_DIR = "adventures"
 
 def slugify(text: str) -> str:
     """Convert text into a safe URL slug."""
@@ -263,11 +263,7 @@ def upload_adventure_to_gcs(
 
 def main():
     load_dotenv()
-    default_src = (
-        DEFAULT_SOURCE_DIR
-        if Path(DEFAULT_SOURCE_DIR).exists()
-        else ("adventures" if Path("adventures").exists() else DEFAULT_SOURCE_DIR)
-    )
+    default_src = DEFAULT_SOURCE_DIR
     parser = argparse.ArgumentParser(description="Upload premade adventures to GCS")
     parser.add_argument(
         "--source-dir",
@@ -307,19 +303,16 @@ def main():
         print(f"❌ Error: Source directory does not exist: {source_path}", file=sys.stderr)
         sys.exit(1)
 
-    # Gather adventure folders from source_path and local adventures/ directory
+    # Gather adventure folders from source_path
     adventure_folders: List[Path] = []
     if (source_path / "theater.yaml").exists() or (source_path / "metadata.json").exists():
         adventure_folders = [source_path]
     else:
-        adventure_folders = [p for p in source_path.iterdir() if p.is_dir() and not p.name.startswith(".")]
-
-    local_adv_dir = Path("adventures")
-    if local_adv_dir.exists() and local_adv_dir.resolve() != source_path.resolve():
-        for p in local_adv_dir.iterdir():
-            if p.is_dir() and not p.name.startswith(".") and p not in adventure_folders:
-                if (p / "theater.yaml").exists() or (p / "metadata.json").exists():
-                    adventure_folders.append(p)
+        adventure_folders = [
+            p for p in source_path.iterdir()
+            if p.is_dir() and not p.name.startswith(".")
+            and ((p / "theater.yaml").exists() or (p / "metadata.json").exists())
+        ]
 
     if args.adventure:
         target = args.adventure.lower().strip()
@@ -329,7 +322,7 @@ def main():
         ]
 
     if not adventure_folders:
-        print(f"⚠️ No matching adventure folders found in {source_path} or local adventures/")
+        print(f"⚠️ No matching adventure folders found in {source_path}")
         sys.exit(0)
 
     print(f"🚀 Found {len(adventure_folders)} adventure folder(s) to process")
