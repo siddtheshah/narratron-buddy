@@ -670,11 +670,11 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("- weather: Thunderstorm", instruction)
 
     def test_live_agent_tools_gated_by_adventure_mode(self):
-        # Non-adventure mode: live agent gets update_sticky_note and clear_scene
+        # Non-adventure mode: live agent can manage sticky notes only.
         tools_normal = self._make_tools(config={"adventure_mode": False})
         normal_exposed = tools_normal.get_tools()
         self.assertIn(tools_normal.update_sticky_note, normal_exposed)
-        self.assertIn(tools_normal.clear_scene, normal_exposed)
+        self.assertNotIn(tools_normal.clear_scene, normal_exposed)
         self.assertNotIn(tools_normal.process_user_action, normal_exposed)
 
         # Adventure mode: live agent only gets process_user_action
@@ -744,7 +744,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Dynamic_3", topics)
         self.assertIn("Dynamic_4", topics)
 
-    def test_required_stickies_preserved_on_clear_scene(self):
+    def test_clear_scene_preserves_all_stickies_and_removes_characters(self):
         config = {
             "adventure_mode": True,
             "required_stickies": ["HUD", "Scanner"],
@@ -760,13 +760,12 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(len(tools.get_present_sticky_notes()), 3)
         self.assertEqual(len(tools.get_present_characters()), 1)
 
-        # Clear scene: dynamic notes and characters cleared, required stickies preserved
+        # Clear scene: all stickies persist across scenes, while characters clear.
         res = tools.clear_scene()
-        self.assertIn("Cleared 1 sticky note(s) and 1 character(s)", res)
+        self.assertIn("Cleared 1 character(s)", res)
         present = tools.get_present_sticky_notes()
         present_topics = [n["topic"] for n in present]
-        self.assertEqual(sorted(present_topics), ["HUD", "Scanner"])
-        self.assertNotIn("Room_Clue", present_topics)
+        self.assertEqual(sorted(present_topics), ["HUD", "Room_Clue", "Scanner"])
         self.assertEqual(len(tools.get_present_characters()), 0)
 
     def test_required_stickies_preserved_on_import_and_reload(self):
@@ -876,13 +875,13 @@ class TestStoryPlanningTools(unittest.TestCase):
             state.get.return_value.set_narration.assert_called_once_with(results[0]["narration"])
             self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
-    def test_clear_scene_removes_plot_beats_and_characters(self):
+    def test_clear_scene_preserves_plot_beats_and_removes_characters(self):
         tools = self._make_tools(config={"adventure_mode": True}, theater_id="clear")
         tools._characters["Mara"] = {"name": "Mara", "description": "", "personality": "Bold", "motivation": "Explore", "quirk": "Hums"}
         tools._plot_beats = [{"plot_beat": "The tide rises."}]
         tools.clear_scene()
         self.assertEqual(tools.get_present_characters(), [])
-        self.assertEqual(tools.get_plot_beats(), [])
+        self.assertEqual(tools.get_plot_beats(), [{"plot_beat": "The tide rises."}])
 
     def test_import_uses_plot_beats_contract(self):
         tools = self._make_tools(theater_id="import")

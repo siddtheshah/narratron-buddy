@@ -47,7 +47,7 @@ story_planning:
     # override this with a voice, tone, or consequence philosophy (for
     # example: "harsh and unforgiving, but never arbitrary").
     style: "balanced, consequence-driven, and player-agency-first"
-    cooldown_duration: 10
+    cooldown_duration: 7
     require_voice_input: true
     # Each completed planner response adds one second per 15 returned words,
     # up to this limit, before accepting the next player action.

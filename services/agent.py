@@ -84,8 +84,6 @@ the scene, then you should mark them '(absent) <description>', keeping them on h
 You should use these named elements to improve image creation by ensuring that references to them use the appropriate descriptions
 and reference images.
 
-When the story moves to a new scene and the old context no longer applies, call `clear_scene` before adding the new elements.
-
 The present elements are included in your regular observability updates.
 The log of named elements are not themselves a transcript or image history. 
 
@@ -129,8 +127,7 @@ Besides greeting the orator initially, use this in tandem with show_image to sho
 ## Context Management
 In order to maintain coherency, you must use these tools to keep track of the scene state. 
 
-* update_sticky_note <topic> <info>: Add a sticky note to the current scene or update the existing note with that topic. The scene holds at most five notes.
-* clear_scene: Remove every sticky note when beginning a new scene. Use when the orator indicates a scene transition.
+* update_sticky_note <topic> <info>: Add a sticky note to current context or update the existing note with that topic.
 {% endif %}
 {% if adventure_mode %}
 ## Running the Adventure
@@ -388,10 +385,7 @@ def create_tool_bundle_for_session(
     if story_planning_tools.adventure_mode:
         tools.append(story_planning_tools.process_user_action)
     else:
-        tools.extend([
-            story_planning_tools.update_sticky_note,
-            story_planning_tools.clear_scene,
-        ])
+        tools.append(story_planning_tools.update_sticky_note)
     if interactive_canvas_tools:
         tools.extend([
             interactive_canvas_tools.update_interactive_canvas,

@@ -495,10 +495,7 @@ class AdventureSession:
         if bool(self.config.get("story_planning", {}).get("adventure_mode", False)):
             tools.append(self._process_user_action_wrapper)
         else:
-            tools.extend([
-                self.story_planning_tools.update_sticky_note,
-                self.story_planning_tools.clear_scene,
-            ])
+            tools.append(self.story_planning_tools.update_sticky_note)
 
         # Interactive Canvas
         if bool(self.config.get("interactive_canvas", {}).get("enabled", False)):

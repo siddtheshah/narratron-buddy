@@ -721,7 +721,7 @@ class StoryPlanningTools(BaseTools):
             # In Adventure Mode the planner owns story context and progression;
             # the live agent only relays player input to this authority.
             return [self.process_user_action]
-        return [self.update_sticky_note, self.clear_scene]
+        return [self.update_sticky_note]
 
 
     @property
@@ -1389,40 +1389,20 @@ class StoryPlanningTools(BaseTools):
 
     @logged_tool_call
     def clear_scene(self) -> str:
-        """Clear dynamic sticky notes and characters from the current scene before starting a new one. Required sticky notes are preserved."""
-        with self._sticky_notes_lock:
-            non_required_keys = [k for k in self._sticky_notes if k not in self._required_stickies]
-            for k in non_required_keys:
-                del self._sticky_notes[k]
-            # Ensure all required stickies remain present
-            for req_topic, req_info in self._required_stickies.items():
-                if req_topic not in self._sticky_notes:
-                    self._sticky_notes[req_topic] = req_info
-            cleared_notes_count = len(non_required_keys)
-
+        """Remove characters from the current scene while preserving durable story context."""
         with self._characters_lock:
             char_count = len(self._characters)
             self._characters.clear()
 
-        with self._plot_beats_lock:
-            self._plot_beats.clear()
-        self._last_scene_reaction = {}
-        self._publish_scene_dialogue([])
-        self._publish_narration("")
-
         self.save_to_session_state()
 
         logger.debug(
-            "[StoryPlanningTools] Cleared %d sticky note(s) (preserved %d required), %d character(s), and plot beats (theater=%s).",
-            cleared_notes_count,
-            len(self._required_stickies),
+            "[StoryPlanningTools] Cleared %d character(s); preserved sticky notes and story context (theater=%s).",
             char_count,
             self.theater_id or "default",
         )
 
-        if char_count > 0:
-            return f"Cleared {cleared_notes_count} sticky note(s) and {char_count} character(s) from the scene."
-        return f"Cleared {cleared_notes_count} sticky note(s) from the scene."
+        return f"Cleared {char_count} character(s) from the scene; sticky notes and story context were preserved."
 
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
         """Return a stable snapshot of active sticky notes."""
