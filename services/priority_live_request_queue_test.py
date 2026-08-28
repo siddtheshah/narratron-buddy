@@ -7,6 +7,55 @@ from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 class TestPriorityLiveRequestQueue(unittest.TestCase):
+    def test_post_vad_window_forwards_notifications_until_model_tool_budget_is_used(self):
+        async def run_test():
+            queue = PriorityLiveRequestQueue(live_tool_budget=2)
+            first = types.Content(parts=[types.Part(text="First tool notification")])
+            second = types.Content(parts=[types.Part(text="Second tool notification")])
+            third = types.Content(parts=[types.Part(text="Third tool notification")])
+
+            queue.send_activity_start()
+            self.assertIsNotNone((await queue.get()).activity_start)
+            queue.send_activity_end()
+            self.assertIsNotNone((await queue.get()).activity_end)
+
+            queue.send_content(first)
+            queue.send_content(second)
+            self.assertEqual((await queue.get()).content.parts[0].text, "First tool notification")
+            self.assertEqual((await queue.get()).content.parts[0].text, "Second tool notification")
+            self.assertEqual(queue.remaining_live_tool_budget, 2)
+
+            queue.record_model_tool_calls()
+            self.assertEqual(queue.remaining_live_tool_budget, 1)
+            queue.record_model_tool_calls()
+            self.assertEqual(queue.remaining_live_tool_budget, 0)
+            queue.send_content(third)
+            self.assertTrue(queue._current_non_audio_queue.empty())
+            self.assertFalse(queue._future_non_audio_queue.empty())
+
+            queue.send_activity_start()
+            self.assertIsNotNone((await queue.get()).activity_start)
+            queue.send_activity_end()
+            self.assertIsNotNone((await queue.get()).activity_end)
+            self.assertEqual((await queue.get()).content.parts[0].text, "Third tool notification")
+
+        asyncio.run(run_test())
+
+    def test_zero_live_tool_budget_uses_normal_non_audio_delivery(self):
+        async def run_test():
+            queue = PriorityLiveRequestQueue(live_tool_budget=0)
+            content = types.Content(parts=[types.Part(text="Tool notification")])
+
+            queue.send_activity_start()
+            self.assertIsNotNone((await queue.get()).activity_start)
+            queue.send_activity_end()
+            self.assertIsNotNone((await queue.get()).activity_end)
+            queue.send_content(content)
+
+            self.assertEqual((await queue.get()).content.parts[0].text, "Tool notification")
+
+        asyncio.run(run_test())
+
     def test_non_audio_is_delivered_before_unframed_audio(self):
         async def run_test():
             queue = PriorityLiveRequestQueue()
@@ -60,7 +109,7 @@ class TestPriorityLiveRequestQueue(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_non_audio_is_flushed_before_activity_start(self):
+    def test_activity_start_immediately_prioritizes_audio_and_defers_non_audio(self):
         async def run_test():
             queue = PriorityLiveRequestQueue()
             first_content = types.Content(parts=[types.Part(text="First system notification")])
@@ -71,10 +120,15 @@ class TestPriorityLiveRequestQueue(unittest.TestCase):
             queue.send_activity_start()
             queue.send_realtime(types.Blob(mime_type="audio/pcm;rate=16000", data=b"speech"))
 
-            self.assertEqual((await queue.get()).content.parts[0].text, "First system notification")
-            self.assertEqual((await queue.get()).content.parts[0].text, "Second system notification")
             self.assertIsNotNone((await queue.get()).activity_start)
             self.assertEqual((await queue.get()).blob.data, b"speech")
+            self.assertTrue(queue._current_non_audio_queue.empty())
+            self.assertFalse(queue._future_non_audio_queue.empty())
+
+            queue.send_activity_end()
+            self.assertIsNotNone((await queue.get()).activity_end)
+            self.assertEqual((await queue.get()).content.parts[0].text, "First system notification")
+            self.assertEqual((await queue.get()).content.parts[0].text, "Second system notification")
 
         asyncio.run(run_test())
 

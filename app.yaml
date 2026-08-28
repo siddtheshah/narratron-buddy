@@ -26,6 +26,9 @@ smtp:
 
 agent_internal:
     model_id: "gemini-3.1-flash-live-preview"
+    # Model tool calls allowed after each VAD end before the queue returns to
+    # ordinary non-audio scheduling.
+    live_tool_budget: 3
     enable_tool_injection: false
     # Delay state-observability messages so the live agent can receive initial user input.
     observability_startup_delay: 30

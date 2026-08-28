@@ -31,6 +31,7 @@ TOOL_INJECTION_INTERVAL_SECONDS = 30.0
 DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
+DEFAULT_LIVE_TOOL_BUDGET = 3
 
 
 class AgentSession:
@@ -107,7 +108,11 @@ class AgentSession:
         self.status = "ready"  # "ready", "active", "stopped"
 
 
-        self.live_request_queue = PriorityLiveRequestQueue()
+        self.live_request_queue = PriorityLiveRequestQueue(
+            live_tool_budget=self._get_live_tool_budget(
+                agent_internal.get("live_tool_budget")
+            )
+        )
         self.websockets: Set[WebSocket] = set()
         self.websocket_user_ids: Dict[WebSocket, Optional[int]] = {}
         self.active_controller_user_id: Optional[int] = None
@@ -157,6 +162,21 @@ class AgentSession:
         except (TypeError, ValueError):
             logger.warning("Invalid %s value %r; using 0 seconds.", setting_name, value)
             return 0.0
+
+    @staticmethod
+    def _get_live_tool_budget(value: Any) -> int:
+        """Read the number of post-VAD model tool calls to allow."""
+        if value is None:
+            return DEFAULT_LIVE_TOOL_BUDGET
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid live_tool_budget %r; using %d.",
+                value,
+                DEFAULT_LIVE_TOOL_BUDGET,
+            )
+            return DEFAULT_LIVE_TOOL_BUDGET
 
     @property
     def is_alive(self) -> bool:
@@ -534,8 +554,10 @@ class AgentSession:
                 live_request_queue=self.live_request_queue,
                 run_config=self.run_config,
             ):
-                if hasattr(event, "get_function_calls") and event.get_function_calls():
-                    for call in event.get_function_calls():
+                function_calls = event.get_function_calls() if hasattr(event, "get_function_calls") else []
+                if function_calls:
+                    self.live_request_queue.record_model_tool_calls(len(function_calls))
+                    for call in function_calls:
                         logger.info(f"[Agent Tool Call] Function: {call.name}, Args: {call.args}")
 
                 event_dict = json.loads(event.model_dump_json(exclude_none=True, by_alias=True))
