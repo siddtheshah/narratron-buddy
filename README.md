@@ -20,6 +20,15 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+### Development checks
+
+Install development dependencies and run the linter:
+
+```powershell
+pip install -r requirements-dev.txt
+ruff check .
+```
+
 ### Gcloud Setup
 
 You will need a GCloud project to use the Gemini Live API.

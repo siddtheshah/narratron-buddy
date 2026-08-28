@@ -210,7 +210,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_retitle_theater(self):
         owner = db.register_user("retitle_owner", "retitle-owner@example.com", "Password123")
-        other = db.register_user("other_user", "other-user@example.com", "Password123")
+        _other = db.register_user("other_user", "other-user@example.com", "Password123")
         db.add_user_credits(owner["id"], 50.0, 2.5)
 
         # Login as owner

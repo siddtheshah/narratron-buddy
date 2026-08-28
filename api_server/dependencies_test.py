@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 import object_registry
 from api_server import app
-from api_server.app import get_current_user, get_theater_owner_credits
+from api_server.app import get_theater_owner_credits
 from api_server.dependencies import RegistryDependency
 
 

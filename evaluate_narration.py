@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from playwright.async_api import async_playwright
-import yaml
 
 load_dotenv()
 
@@ -249,21 +248,8 @@ def evaluate_video_expectations(video_path, expectations_path):
         print("[Evaluator] No expectations found to evaluate.")
         return
         
-    print(f"[Evaluator] Starting AI Video Evaluation using Veo (Gemini model)...")
+    print("[Evaluator] Starting AI Video Evaluation using Veo (Gemini model)...")
     
-    # Load config for gcloud project/location
-    config_data = {}
-    if os.path.exists("config.yaml"):
-        with open("config.yaml", "r") as f:
-            try:
-                config_data = yaml.safe_load(f) or {}
-            except Exception:
-                pass
-                
-    project_id = config_data.get("gcloud", {}).get("project_id", os.getenv("GOOGLE_CLOUD_PROJECT"))
-    location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-    
-    # Initialize genai client in Vertex AI mode
     # Initialize genai client in Developer API mode using local GEMINI_API_KEY
     client = genai.Client(vertexai=False)
     

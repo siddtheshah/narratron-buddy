@@ -2041,12 +2041,10 @@ class _DatabaseManagerBase:
             pl_dir.mkdir(parents=True, exist_ok=True)
 
             state_data = {}
-            user_id = None
             name = theater_id
 
             if theater_row:
                 theater_dict = dict(theater_row)
-                user_id = theater_dict.get("user_id")
                 name = theater_dict.get("name") or theater_id
                 state_json_str = theater_dict.get("state_json", "{}")
                 try:

@@ -3,18 +3,16 @@
 import asyncio
 import html
 import os
-from pathlib import Path
 import re
 from typing import List, Optional
 
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from api_server.shared import (
     app,
     db,
     theater_manager,
-    get_current_user,
     get_current_user_async,
     _require_canvas_access,
     _require_canvas_access_async,

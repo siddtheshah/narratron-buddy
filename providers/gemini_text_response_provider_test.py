@@ -1,4 +1,5 @@
 import pytest
+from pydantic import BaseModel, Field
 from unittest.mock import patch
 
 from providers.gemini_text_response_provider import GeminiTextResponseProvider
@@ -142,9 +143,6 @@ def test_text_response_provider_registry(monkeypatch):
         get_text_response_provider("invalid_id")
 
 
-from pydantic import BaseModel, Field
-
-
 class AdventureSummary(BaseModel):
     title: str
     danger_level: int = 1
@@ -241,7 +239,6 @@ def test_gemini_text_provider_structured_schema_invalid_json():
     )
     with pytest.raises(TextResponseProviderError, match="Response is not valid JSON for structured schema"):
         provider.generate(req)
-
 
 
 

@@ -5,7 +5,7 @@ import re
 import threading
 import time
 from io import BytesIO
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from PIL import Image
 

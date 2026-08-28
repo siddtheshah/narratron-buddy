@@ -9,7 +9,7 @@ import threading
 import uuid
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, Field

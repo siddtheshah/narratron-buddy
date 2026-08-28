@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, List, Optional, Sequence, Union
+from typing import Any, Callable, List, Sequence, Union
 
 from google.adk.tools import BaseTool, FunctionTool
 from google.genai import types

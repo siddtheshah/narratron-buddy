@@ -4,8 +4,6 @@ import asyncio
 from copy import deepcopy
 import json
 import logging
-import os
-from pathlib import Path
 from typing import Optional
 import uuid
 import yaml
@@ -21,14 +19,12 @@ from api_server.shared import (
     canvas_states,
     get_current_user,
     get_current_user_async,
-    _require_canvas_access,
     _require_canvas_access_async,
     _safe_path_param,
     _grant_canvas_access,
-    _valid_join_key,
     PROJECT_ROOT
 )
-from api_server.dependencies import agent_manager, suggestion_service, canvas_states
+from api_server.dependencies import agent_manager, suggestion_service
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
@@ -327,7 +323,6 @@ async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRe
         raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {err}")
 
     # Save to local theater directory
-    base_dir = theater_manager.base_dir
     theater_dir = theater_manager.theater(theater_id).directory()
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"
@@ -398,7 +393,7 @@ async def create_and_deploy_theater(request: Request):
     adventure_metadata = None
 
     # If an adventure preset is chosen, load its assets first
-    adv_config: Dict = {}
+    adv_config: dict = {}
     if preset_adventure_id:
         adv_refs, adv_playlists, adv_lore, adv_config = adventure_service.load_adventure_assets(preset_adventure_id)
         reference_files.extend(adv_refs)

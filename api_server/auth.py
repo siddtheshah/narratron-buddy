@@ -112,7 +112,7 @@ def forgot_password(req: ForgotPasswordRequest, request: Request):
     base_url = str(request.base_url).rstrip("/")
     reset_link = f"{base_url}/deploy?reset_token={token}"
 
-    res = send_password_reset_email(user["email"], user["username"], reset_link)
+    send_password_reset_email(user["email"], user["username"], reset_link)
 
     return {
         "status": "ok",

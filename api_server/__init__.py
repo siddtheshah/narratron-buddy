@@ -39,4 +39,4 @@ import api_server.app  # noqa: F401, E402
 
 # Importing the ``api_server.app`` submodule temporarily assigns that module to
 # this package's ``app`` attribute.  Re-export the ASGI application instead.
-from api_server.shared import app as app  # noqa: F401, E402
+from api_server.shared import app as app  # noqa: F401, E402, F811

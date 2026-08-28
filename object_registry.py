@@ -18,7 +18,6 @@ from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from services.agent_manager import AgentSessionManager
-from services.quirk_service import QuirkGeneratorService
 from services.suggestion_service import SuggestionService
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
 from utils.config_loader import get_app_config

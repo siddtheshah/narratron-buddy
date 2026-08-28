@@ -1,7 +1,6 @@
 """Service for managing premade adventures stored in Google Cloud Storage."""
 
 from datetime import datetime, timezone
-import io
 import json
 import logging
 import mimetypes

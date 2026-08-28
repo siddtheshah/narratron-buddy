@@ -1,0 +1,24 @@
+[tool.ruff]
+target-version = "py310"
+extend-exclude = [
+    ".venv",
+    "adventures",
+    "demos",
+    "evaluation_results",
+    "output",
+    "playlists",
+    "reference_library",
+    "scratch",
+    "theaters",
+]
+
+[tool.ruff.lint]
+# Start with correctness-focused checks; expand the rule set after the
+# existing codebase has a stable baseline.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# These executable modules adjust sys.path before importing project code.
+"scripts/import_sqlite_to_cloud_sql.py" = ["E402"]
+"scripts/migrate_cloud_sql_schema.py" = ["E402"]
+"storage/storage_daemon.py" = ["E402"]

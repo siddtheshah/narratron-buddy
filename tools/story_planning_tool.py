@@ -13,7 +13,6 @@ console logging using the existing ``--log_prefixes`` flag when running
 """
 
 from collections import OrderedDict
-from functools import cached_property
 import json
 import logging
 import os
@@ -37,7 +36,7 @@ from google.genai import types
 
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
-from tools.base_tool import BaseTools, logged_tool_call, with_cooldown, single_flight
+from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from services.quirk_service import get_quirk_generator_service
 from providers import (
     TextResponseProvider,

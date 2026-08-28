@@ -1,7 +1,7 @@
 import base64
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from providers.image_provider import ImageGenerationRequest, ImageReference
+from providers.image_provider import ImageGenerationRequest
 from providers.openai_image_provider import OpenAIImageProvider
 
 

@@ -316,7 +316,6 @@ class BaseTools:
                 f"[{self.__class__.__name__}] {tool_name} is on cooldown. Elapsed: {elapsed:.2f}s, "
                 f"Cooldown: {cooldown_duration}s, Remaining: {remaining}s"
             )
-            desc_text = action_desc or "executing this action again"
             return (
                 f"Error: {tool_name} is on cooldown. "
             )

@@ -1,7 +1,6 @@
 import logging
 import os
 import smtplib
-import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict
@@ -106,9 +105,9 @@ def send_password_reset_email(to_email: str, username: str, reset_link: str) -> 
 
     # Fallback/Development mode: Log the link
     logger.info(f"[DEV/MOCK EMAIL] Password reset link for {username} ({to_email}): {reset_link}")
-    print(f"\n==========================================")
+    print("\n==========================================")
     print(f"PASSWORD RESET LINK FOR {to_email}:")
     print(f"{reset_link}")
-    print(f"==========================================\n")
+    print("==========================================\n")
 
     return {"sent": True, "method": "simulated", "reset_link": reset_link}

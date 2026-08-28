@@ -16,8 +16,6 @@ from providers.music_provider import (
     MusicAdapter,
     MusicGenerationRequest,
     MusicGenerationResult,
-    MusicGenerationRequest,
-    MusicGenerationResult,
     MusicProvider,
     MusicProviderError,
 )

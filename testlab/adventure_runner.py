@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import logging
@@ -695,11 +694,11 @@ def main() -> int:
     parser.add_argument("--action", default="", help="Optional single action to execute.")
     args = parser.parse_args()
 
-    print(f"\n========================================================")
-    print(f"  NARRATRON LOCAL ADVENTURE RUNNER")
+    print("\n========================================================")
+    print("  NARRATRON LOCAL ADVENTURE RUNNER")
     print(f"  Adventure: {args.adventure}")
     print(f"  Agent Model: {args.agent_model} | Planner: {args.planner_model}")
-    print(f"========================================================\n")
+    print("========================================================\n")
 
     try:
         session = AdventureSession(
@@ -727,12 +726,12 @@ def main() -> int:
             session.cleanup()
             return 1
         turn = res["turn"]
-        print(f"--- Agent Response ---")
+        print("--- Agent Response ---")
         print(turn["agent_response"])
         print(f"\n--- Tool Calls ({len(turn['tool_calls'])}) ---")
         for tc in turn["tool_calls"]:
             print(f"  [{tc['tool']}] -> {tc['result']}")
-        print(f"\n--- Resulting Plot Beats ---")
+        print("\n--- Resulting Plot Beats ---")
         for beat in res["state"]["plot_beats"]:
             print(f"  [Beat] {beat.get('plot_beat')}")
         session.cleanup()

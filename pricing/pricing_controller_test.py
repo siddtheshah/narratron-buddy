@@ -6,14 +6,6 @@ from unittest.mock import patch
 
 from testing.base import BaseTestCase
 from pricing.pricing_controller import PricingController
-"""Unit tests for pricing/pricing_controller.py."""
-
-import os
-import unittest
-from unittest.mock import patch
-
-from testing.base import BaseTestCase
-from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
 
 

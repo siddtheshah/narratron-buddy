@@ -3,7 +3,6 @@
 import argparse
 import uvicorn
 
-from testlab.server import app
 
 
 def main() -> None:

@@ -1,7 +1,7 @@
 """PricingController module for managing credit consumption rates dynamically and from environment variables."""
 
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL = 4000
 DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE = 5.0

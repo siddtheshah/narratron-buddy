@@ -1,7 +1,7 @@
 import os
 import mimetypes
 from pathlib import Path
-from typing import Optional, Union, Any
+from typing import Optional, Union
 
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService, _ArtifactEntry
 from google.adk.artifacts.base_artifact_service import ArtifactVersion

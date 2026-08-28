@@ -93,7 +93,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
 
         mock_runner = MagicMock()
         mock_session_service = MagicMock()
-        mock_artifact_service = MagicMock()
+        _mock_artifact_service = MagicMock()
         mock_agent = MagicMock()
         mock_db = MagicMock()
         mock_runner.agent = mock_agent

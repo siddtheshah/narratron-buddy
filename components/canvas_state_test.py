@@ -1,9 +1,7 @@
 import os
-import shutil
 import tempfile
 import unittest
 import asyncio
-from pathlib import Path
 
 from PIL import Image
 
@@ -159,7 +157,7 @@ class TestCanvasStateManager(BaseTestCase):
 
 
     def test_update_shown_image_empty_folder(self):
-        with tempfile.TemporaryDirectory() as empty_dir:
+        with tempfile.TemporaryDirectory():
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
                 tmp_file.write(b"fake image data")
                 tmp_path = tmp_file.name

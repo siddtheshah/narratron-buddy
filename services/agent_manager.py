@@ -1,17 +1,14 @@
 import asyncio
-import base64
 import json
 import logging
 import mimetypes
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional, Any, Set
 
 from fastapi import WebSocket, WebSocketDisconnect
-from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -24,7 +21,7 @@ from services.live_stream_service import (
 )
 from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
 from services.priority_live_request_queue import PriorityLiveRequestQueue
-from utils.config_loader import get_app_config, get_theater_config
+from utils.config_loader import get_theater_config
 from components.theater_manager import TheaterManager
 from utils.auth_cache import auth_session_cache
 
@@ -876,7 +873,7 @@ class AgentSession:
         except Exception as e:
             logger.debug(f"[AgentSession] Error closing live_request_queue: {e}")
 
-from services.agent import create_agent, create_tool_bundle_for_session
+from services.agent import create_agent, create_tool_bundle_for_session  # noqa: E402
 
 
 class AgentSessionManager:

@@ -1,16 +1,11 @@
-import asyncio
 import base64
 import json
 import logging
-import os
-import threading
 import time
 from pathlib import Path
 from typing import Optional, Any
 
-import websockets.exceptions
 from fastapi import WebSocket, WebSocketDisconnect
-from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager

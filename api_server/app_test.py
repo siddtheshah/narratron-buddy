@@ -4,7 +4,7 @@ import importlib
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import object_registry
 from api_server.app import can_control_agent_websocket, can_access_agent_websocket

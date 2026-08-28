@@ -5,7 +5,6 @@ from typing import Any, Optional
 
 from google.adk.agents import Agent
 from google.adk.agents.run_config import RunConfig, StreamingMode, ToolThreadPoolConfig
-from google.adk.planners import BuiltInPlanner
 from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 from jinja2 import StrictUndefined, Template
@@ -21,7 +20,7 @@ from tools.observability_tool import ObservabilityTools
 from tools.story_planning_tool import StoryPlanningTools
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
-from providers import TextResponseProviderError, get_text_response_provider
+from providers import get_text_response_provider
 from utils.config_loader import get_app_config, get_theater_config
 
 logger = logging.getLogger(__name__)

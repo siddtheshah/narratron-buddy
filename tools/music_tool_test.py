@@ -1,7 +1,6 @@
 import os
 import shutil
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock

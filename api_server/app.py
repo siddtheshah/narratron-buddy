@@ -2,13 +2,12 @@
 
 from typing import Optional
 import logging
-import os
 from pathlib import Path
 import sys
 import warnings
 
 from dotenv import load_dotenv
-from fastapi import WebSocket, HTTPException
+from fastapi import WebSocket
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -19,13 +18,12 @@ from api_server import (
     FLAGS,
     canvas_states,
     db,
-    theater_manager,
-    get_current_user,
     get_current_user_async,
-    can_access_agent_websocket,
     can_control_agent_websocket,
 )
 from api_server.dependencies import agent_manager
+from api_server import can_access_agent_websocket as can_access_agent_websocket  # noqa: F401
+from api_server import theater_manager as theater_manager  # noqa: F401
 
 load_dotenv()
 

@@ -1,6 +1,5 @@
 """Unit tests for services/adventure_service.py."""
 
-import io
 import json
 from pathlib import Path
 import tempfile

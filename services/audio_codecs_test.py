@@ -1,5 +1,4 @@
 import av
-import pytest
 
 from services.audio_codecs import LiveAudioDecoder
 

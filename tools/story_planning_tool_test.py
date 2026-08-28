@@ -1,13 +1,11 @@
 import asyncio
 import json
-from pathlib import Path
 import threading
 import tempfile
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from google.adk.apps.app import EventsCompactionConfig
 from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
@@ -28,7 +26,6 @@ from tools.story_planning_tool import (
     build_scene_reaction_prompt,
     build_story_context_prompt,
 )
-from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from providers import TextResponseProvider, TextResponseRequest, TextResponseResult
 

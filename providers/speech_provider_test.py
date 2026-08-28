@@ -75,7 +75,7 @@ def test_google_chirp_speech_uses_chirp_voice_and_mp3():
 
 
 def test_fal_seed_speech_voice_selection_cues_and_exclusion():
-    from providers.fal_seed_speech_provider import FEMALE_SEED_VOICES, MALE_SEED_VOICES, SEED_CHARACTER_VOICES
+    from providers.fal_seed_speech_provider import FEMALE_SEED_VOICES, MALE_SEED_VOICES
 
     provider = FalSeedSpeechProvider(api_key="test")
     # Female voice tag

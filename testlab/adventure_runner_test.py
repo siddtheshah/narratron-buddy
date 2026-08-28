@@ -9,7 +9,6 @@ from testlab.adventure_runner import (
     AdventureSession,
     MockCanvasState,
     MockToolBundle,
-    list_available_adventures,
     load_adventure_config,
 )
 from testlab.server import app
@@ -87,11 +86,11 @@ def test_mock_tool_bundle_behavior_and_logging():
     assert canvas.current_music == "bassline_groove"
     assert canvas.music_status == "playing"
 
-    pause_res = bundle.pause_music()
+    bundle.pause_music()
     assert canvas.music_status == "paused"
 
     # 4. Chat
-    chat_res = bundle.send_chat_message("Synthesizing bass frequencies...")
+    bundle.send_chat_message("Synthesizing bass frequencies...")
     assert canvas.current_thought == "Synthesizing bass frequencies..."
 
     # 5. Interactive canvas
@@ -101,7 +100,7 @@ def test_mock_tool_bundle_behavior_and_logging():
 
     # 6. Verify tool logs
     assert len(canvas.tool_logs) >= 5
-    logged_tools = [l["tool"] for l in canvas.tool_logs]
+    logged_tools = [log_entry["tool"] for log_entry in canvas.tool_logs]
     assert "create_image" in logged_tools
     assert "play_music" in logged_tools
     assert "send_chat_message" in logged_tools
@@ -154,7 +153,7 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
         }
 
         # Mock story planner agent execution so _resolve_user_action processes and commits the reaction
-        with patch.object(session.story_planning_tools, "_run_planner_agent", return_value=mock_reaction) as mock_run:
+        with patch.object(session.story_planning_tools, "_run_planner_agent", return_value=mock_reaction):
             # Simulate ADK runner execution
             mock_events = [
                 MagicMock(
