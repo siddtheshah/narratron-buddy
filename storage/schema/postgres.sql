@@ -48,7 +48,6 @@ CREATE TABLE IF NOT EXISTS theaters (
     baton_request TEXT,
     is_persistent BOOLEAN NOT NULL DEFAULT FALSE,
     last_billed_at TEXT,
-    theater_config TEXT,
     exported_at TEXT
 );
 CREATE INDEX IF NOT EXISTS theaters_user_id_idx ON theaters(user_id);

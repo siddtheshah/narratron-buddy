@@ -341,13 +341,6 @@ async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRe
     with open(yaml_path, "w", encoding="utf-8") as f:
         f.write(req.config_yaml)
 
-    # Save to DB
-    if db is not None and hasattr(db, "save_theater_config"):
-        try:
-            db.save_theater_config(theater_id, config_data)
-        except Exception as e:
-            logger.warning(f"[theaters] Warning: Failed to save DB config for {theater_id}: {e}")
-
     return {
         "status": "ok",
         "message": "Saved directly to current theater. Restart to apply configs, and ensure you save the theater state to keep these settings.",
@@ -560,7 +553,7 @@ async def create_and_deploy_theater(request: Request):
     deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
 
     # Record deployment & deduct credits (0.0 cost)
-    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0, theater_config=theater_config)
+    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0)
     auth_session_cache.invalidate_user(user["id"])
     theater_access_cache.invalidate_theater(deployed_meta.theater_id)
 

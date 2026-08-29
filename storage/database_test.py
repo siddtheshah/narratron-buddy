@@ -1033,13 +1033,12 @@ class TestLegacyTableMigration(BaseTestCase):
                 active_orator_id INTEGER DEFAULT NULL,
                 baton_request TEXT DEFAULT NULL,
                 is_persistent INTEGER DEFAULT 1,
-                last_billed_at TEXT DEFAULT '2026-01-02T00:00:00',
-                theater_config TEXT DEFAULT '{"theme": "dark"}'
+                last_billed_at TEXT DEFAULT '2026-01-02T00:00:00'
             )
         """)
         raw_cursor.execute("""
-            INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at, theater_config)
-            VALUES ('leg_theater_1', 1, 'LEG-KEY-1', 5.0, '2026-01-01T00:00:00', 1, '2026-01-02T00:00:00', '{"theme": "dark"}')
+            INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at)
+            VALUES ('leg_theater_1', 1, 'LEG-KEY-1', 5.0, '2026-01-01T00:00:00', 1, '2026-01-02T00:00:00')
         """)
         raw_cursor.execute("""
             CREATE TABLE exported_theaters (
@@ -1070,7 +1069,6 @@ class TestLegacyTableMigration(BaseTestCase):
             self.assertEqual(dep1["name"], "Migrated Name")
             self.assertEqual(dep1["join_key"], "LEG-KEY-1")
             self.assertEqual(dep1["is_persistent"], 1)
-            self.assertEqual(dep1["theater_config"], {"theme": "dark"})
 
             # Verify leg_theater_2 was migrated
             dep2 = db.get_deployment("leg_theater_2")

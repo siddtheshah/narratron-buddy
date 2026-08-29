@@ -194,16 +194,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertTrue(yaml_disk_path.exists())
         self.assertEqual(yaml_disk_path.read_text(encoding="utf-8"), new_yaml)
 
-        # 5. Verify DB record update
-        dep = db.get_deployment("config_theater")
-        self.assertIsNotNone(dep)
-        tc = dep.get("theater_config", {})
-        if isinstance(tc, str):
-            self.assertIn("TestAgent", tc)
-        elif isinstance(tc, dict):
-            self.assertEqual(tc.get("agent", {}).get("name"), "TestAgent")
-
-        # 6. Test format-yaml endpoint
+        # 5. Test format-yaml endpoint
         fmt_valid = self.client.post("/api/theaters/format-yaml", json={"config_yaml": "agent:\n  name: FormatTest\n"})
         self.assertEqual(fmt_valid.status_code, 200)
         self.assertIn("formatted_yaml", fmt_valid.json())

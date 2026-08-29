@@ -629,7 +629,6 @@ class _DatabaseManagerBase:
                     baton_request TEXT DEFAULT NULL,
                     is_persistent INTEGER DEFAULT 0,
                     last_billed_at TEXT DEFAULT NULL,
-                    theater_config TEXT DEFAULT NULL,
                     exported_at TEXT DEFAULT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (active_orator_id) REFERENCES users(id) ON DELETE SET NULL
@@ -644,7 +643,7 @@ class _DatabaseManagerBase:
                         INSERT OR IGNORE INTO theaters (
                             theater_id, user_id, join_key, cost, created_at,
                             allowed_orators, active_orator_id, baton_request,
-                            is_persistent, last_billed_at, theater_config
+                            is_persistent, last_billed_at
                         )
                         SELECT
                             theater_id, user_id, join_key,
@@ -654,8 +653,7 @@ class _DatabaseManagerBase:
                             active_orator_id,
                             baton_request,
                             COALESCE(is_persistent, 0),
-                            last_billed_at,
-                            theater_config
+                            last_billed_at
                         FROM canvas_deployments
                     """)
                     cursor.execute("DROP TABLE canvas_deployments")
@@ -726,11 +724,6 @@ class _DatabaseManagerBase:
             if "last_billed_at" not in theater_cols:
                 try:
                     cursor.execute("ALTER TABLE theaters ADD COLUMN last_billed_at TEXT DEFAULT NULL")
-                except Exception:
-                    pass
-            if "theater_config" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN theater_config TEXT DEFAULT NULL")
                 except Exception:
                     pass
 
@@ -1363,10 +1356,9 @@ class _DatabaseManagerBase:
             conn.commit()
             return True
 
-    def record_deployment(self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0, is_persistent: bool = False, theater_config: Optional[Dict[str, Any]] = None) -> bool:
+    def record_deployment(self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0, is_persistent: bool = False) -> bool:
         """Record deployment in database and deduct cost from user credits."""
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        config_str = json.dumps(theater_config) if isinstance(theater_config, dict) else theater_config
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT credits FROM users WHERE id = ?", (user_id,))
@@ -1379,8 +1371,8 @@ class _DatabaseManagerBase:
             # Claim the durable theater ID before debiting.  A retry with the
             # same ID hits the primary-key constraint before it can deduct.
             cursor.execute(
-                "INSERT INTO theaters (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at, theater_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (theater_id, user_id, join_key, cost, now_iso, persistent_val, last_billed_val, config_str)
+                "INSERT INTO theaters (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (theater_id, user_id, join_key, cost, now_iso, persistent_val, last_billed_val)
             )
             cursor.execute(
                 "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
@@ -1591,13 +1583,7 @@ class _DatabaseManagerBase:
             row = cursor.fetchone()
             if not row:
                 return None
-            res = dict(row)
-            if res.get("theater_config") and isinstance(res["theater_config"], str):
-                try:
-                    res["theater_config"] = json.loads(res["theater_config"])
-                except Exception:
-                    pass
-            return res
+            return dict(row)
 
     def get_deployments(self, theater_ids: Iterable[str]) -> Dict[str, Dict]:
         """Return deployments for theater IDs with batched queries, keyed by ID."""
@@ -1617,11 +1603,6 @@ class _DatabaseManagerBase:
                 )
                 for row in cursor.fetchall():
                     deployment = dict(row)
-                    if deployment.get("theater_config") and isinstance(deployment["theater_config"], str):
-                        try:
-                            deployment["theater_config"] = json.loads(deployment["theater_config"])
-                        except Exception:
-                            pass
                     deployments[deployment["theater_id"]] = deployment
         return deployments
 
@@ -1675,17 +1656,6 @@ class _DatabaseManagerBase:
             records.append({"theater_id": theater_id, "metadata": metadata, "last_used_at": last_used_at})
         return records
 
-    def save_theater_config(self, theater_id: str, config_data: Dict[str, Any]) -> bool:
-        """Update theater_config column for an existing deployment."""
-        config_str = json.dumps(config_data) if isinstance(config_data, dict) else config_data
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE theaters SET theater_config = ? WHERE theater_id = ?",
-                (config_str, theater_id)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
 
     def update_theater_name(self, theater_id: str, new_name: str, user_id: Optional[int] = None) -> bool:
         """Update the display name of a theater in theaters table."""
