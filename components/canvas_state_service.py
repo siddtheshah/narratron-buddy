@@ -94,8 +94,9 @@ class CanvasStateService:
         active: bool = True,
         theater_id: Optional[str] = None,
         recent_seconds: float = 5.0,
+        result: Optional[dict[str, Any]] = None,
     ) -> None:
-        self.get(theater_id).set_tool_activity(tool, active, recent_seconds)
+        self.get(theater_id).set_tool_activity(tool, active, recent_seconds, result)
 
     def latest_state(self, theater_id: Optional[str] = None) -> dict[str, Any]:
         return self.get(theater_id).get_latest_state()

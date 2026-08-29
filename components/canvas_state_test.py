@@ -353,13 +353,18 @@ class TestCanvasStateManager(BaseTestCase):
         self.assertTrue(manager.get_latest_state()["tool_activity"]["image_generating"])
         self.assertTrue(manager.get_latest_state()["tool_activity"]["live_ready"])
         self.assertTrue(manager.get_latest_state()["tool_activity"]["dice_rolling"])
+        self.assertIsNone(manager.get_latest_state()["tool_activity"]["dice_result"])
 
         manager.set_tool_activity("image", False)
         manager.set_tool_activity("live", False)
-        manager.set_tool_activity("dice", False)
+        manager.set_tool_activity("dice", True, result={"total": 19, "tier": "high"})
         self.assertFalse(manager.get_latest_state()["tool_activity"]["image_generating"])
         self.assertFalse(manager.get_latest_state()["tool_activity"]["live_ready"])
+        self.assertTrue(manager.get_latest_state()["tool_activity"]["dice_rolling"])
+        self.assertEqual(manager.get_latest_state()["tool_activity"]["dice_result"]["total"], 19)
+        manager.set_tool_activity("dice", False)
         self.assertFalse(manager.get_latest_state()["tool_activity"]["dice_rolling"])
+        self.assertIsNone(manager.get_latest_state()["tool_activity"]["dice_result"])
 
     def test_get_character_voice_tags(self):
         manager = CanvasStateManager(theater_id="test_voice_tags", theater_manager=self.theater_manager)

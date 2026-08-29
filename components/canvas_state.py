@@ -92,6 +92,7 @@ class CanvasStateManager:
         self.live_connection_active: bool = False
         self.live_connection_until: float = 0.0
         self.dice_roll_until: float = 0.0
+        self.dice_roll_result: Optional[Dict[str, Any]] = None
 
         # The agent's latest chat-tool update is kept separately from the
         # public chat transcript. It is intentionally transient so a restarted
@@ -712,7 +713,10 @@ class CanvasStateManager:
             logger.warning("Failed to render viewer doodle snapshot: %s", exc)
             return None
 
-    def set_tool_activity(self, tool: str, active: bool = True, recent_seconds: float = 5.0):
+    def set_tool_activity(
+        self, tool: str, active: bool = True, recent_seconds: float = 5.0,
+        result: Optional[Dict[str, Any]] = None,
+    ):
         """Update transient canvas indicators for agent tool use."""
         if tool == "image":
             self.image_generation_active = bool(active)
@@ -728,14 +732,17 @@ class CanvasStateManager:
                 if active and recent_seconds > 0
                 else 0.0
             )
+            self.dice_roll_result = dict(result) if active and result else None
         self._notify_state_changed("latest")
 
     def get_tool_activity(self) -> Dict[str, bool]:
         now = time.time()
+        dice_rolling = now < self.dice_roll_until
         return {
             "image_generating": self.image_generation_active,
             "live_ready": self.live_connection_active or (now < self.live_connection_until),
-            "dice_rolling": now < self.dice_roll_until,
+            "dice_rolling": dice_rolling,
+            "dice_result": self.dice_roll_result if dice_rolling else None,
         }
 
     def _get_music_state(self) -> Dict[str, Any]:

@@ -1111,11 +1111,39 @@
         }
 
         .agent-activity-icon.dice {
-            color: #e9d5ff;
-            border-color: rgba(192, 132, 252, 0.8);
-            background: rgba(88, 28, 135, 0.76);
+            width: 58px;
+            height: 58px;
+            border-radius: 12px;
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.9);
+            background: #000;
+            flex-direction: column;
+            gap: 1px;
             animation: diceRoll 0.72s cubic-bezier(0.22, 0.75, 0.28, 1) infinite;
         }
+
+        .dice-roll-total {
+            font-size: 0.72rem;
+            font-weight: 800;
+            line-height: 1;
+            color: #fff;
+        }
+
+        .agent-activity-icon.dice.dice-result-low {
+            animation: diceRoll 0.72s cubic-bezier(0.22, 0.75, 0.28, 1) infinite, diceFlashRed 0.65s steps(2, end) infinite;
+        }
+
+        .agent-activity-icon.dice.dice-result-middle {
+            animation: diceRoll 0.72s cubic-bezier(0.22, 0.75, 0.28, 1) infinite, diceFlashYellow 0.65s steps(2, end) infinite;
+        }
+
+        .agent-activity-icon.dice.dice-result-high {
+            animation: diceRoll 0.72s cubic-bezier(0.22, 0.75, 0.28, 1) infinite, diceFlashGreen 0.65s steps(2, end) infinite;
+        }
+
+        @keyframes diceFlashRed { 50% { border-color: #ef4444; box-shadow: 0 0 25px #ef4444; } }
+        @keyframes diceFlashYellow { 50% { border-color: #facc15; box-shadow: 0 0 25px #facc15; } }
+        @keyframes diceFlashGreen { 50% { border-color: #22c55e; box-shadow: 0 0 25px #22c55e; } }
 
         .agent-activity-icon.live {
             color: #10b981;
@@ -2019,11 +2047,16 @@
                 </div>
                 <div id="agent-dice-indicator" class="agent-activity-icon dice" role="status"
                     title="The story is rolling the dice" aria-hidden="true">
-                    <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                    <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="m12 2 8.5 5v10L12 22l-8.5-5V7L12 2Z" />
-                        <path d="m3.5 7 8.5 5 8.5-5M12 12v10M8.5 4l7 4" />
+                        <rect x="3" y="3" width="18" height="18" rx="3" />
+                        <circle cx="8" cy="8" r="1" fill="currentColor" />
+                        <circle cx="16" cy="8" r="1" fill="currentColor" />
+                        <circle cx="12" cy="12" r="1" fill="currentColor" />
+                        <circle cx="8" cy="16" r="1" fill="currentColor" />
+                        <circle cx="16" cy="16" r="1" fill="currentColor" />
                     </svg>
+                    <span id="dice-roll-total" class="dice-roll-total"></span>
                 </div>
                 <div id="agent-disconnected-indicator" class="agent-activity-icon disconnected" role="status"
                     title="Narratron has wandered away (model disconnected). Click to resummon." aria-hidden="true">
@@ -3214,6 +3247,7 @@
         const pcmBroadcastIndicator = document.getElementById('pcm-broadcast-indicator');
         const drawingIndicator = document.getElementById('agent-drawing-indicator');
         const diceIndicator = document.getElementById('agent-dice-indicator');
+        const diceRollTotal = document.getElementById('dice-roll-total');
         const disconnectedIndicator = document.getElementById('agent-disconnected-indicator');
 
         if (disconnectedIndicator) {
@@ -3233,6 +3267,18 @@
             };
             setVisible(drawingIndicator, toolActivity.image_generating);
             setVisible(diceIndicator, toolActivity.dice_rolling);
+            const diceResult = toolActivity.dice_result || {};
+            const tier = ['low', 'middle', 'high'].includes(diceResult.tier) ? diceResult.tier : '';
+            if (diceIndicator) {
+                diceIndicator.classList.remove('dice-result-low', 'dice-result-middle', 'dice-result-high');
+                if (tier) diceIndicator.classList.add(`dice-result-${tier}`);
+                diceIndicator.title = diceResult.notation
+                    ? `Rolled ${diceResult.notation}: ${diceResult.total}`
+                    : 'The story is rolling the dice';
+            }
+            if (diceRollTotal) {
+                diceRollTotal.textContent = Number.isFinite(diceResult.total) ? String(diceResult.total) : '';
+            }
         }
 
         function setPcmBroadcasting(isBroadcasting) {

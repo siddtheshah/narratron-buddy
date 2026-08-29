@@ -1109,11 +1109,20 @@ class StoryPlanningTools(BaseTools):
             "modifier": clean_modifier,
             "total": total,
         }
+        possible_results = clean_count * (clean_sides - 1) + 1
+        roll_offset = sum(rolls) - clean_count
+        # Use the full inclusive result range: a d20 is low at 1-7,
+        # middle at 8-14, and high at 15-20.
+        result["tier"] = (
+            "low" if roll_offset * 3 < possible_results
+            else "middle" if roll_offset * 3 < possible_results * 2
+            else "high"
+        )
         if str(reason or "").strip():
             result["reason"] = str(reason).strip()[:300]
         if self.canvas_state_service:
             self.canvas_state_service.set_tool_activity(
-                "dice", active=True, theater_id=self.theater_id, recent_seconds=2.5,
+                "dice", active=True, theater_id=self.theater_id, recent_seconds=2.5, result=result,
             )
         logger.debug(
             "[StoryPlanningTools] Dice roll (theater=%s, reason=%s): %s",

@@ -231,9 +231,10 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(len(result["rolls"]), 2)
         self.assertTrue(all(1 <= roll <= 20 for roll in result["rolls"]))
         self.assertEqual(result["total"], sum(result["rolls"]) + 3)
+        self.assertIn(result["tier"], {"low", "middle", "high"})
         self.assertEqual(result["reason"], "Leap across the chasm")
         canvas_state_service.set_tool_activity.assert_called_once_with(
-            "dice", active=True, theater_id="dice", recent_seconds=2.5,
+            "dice", active=True, theater_id="dice", recent_seconds=2.5, result=result,
         )
 
     def test_dice_roll_rejects_unsafe_ranges(self):
