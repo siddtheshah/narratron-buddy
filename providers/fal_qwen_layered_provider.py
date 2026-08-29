@@ -21,6 +21,8 @@ class LayeredImageRequest:
     mime_type: str
     prompt: str
     num_layers: int
+    num_inference_steps: int = 14
+    negative_prompt: str = "unclear boundaries, incomplete extractions"
 
 
 @dataclass(frozen=True)
@@ -41,22 +43,38 @@ class FalQwenLayeredProvider:
         api_key: str | None = None,
         request_json: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
         download: Callable[[str], tuple[bytes, str]] | None = None,
+        num_inference_steps: int = 14,
+        negative_prompt: str = "unclear boundaries, incomplete extractions",
     ):
         self.api_key = api_key or os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")
         if not self.api_key:
             raise ImageProviderError("FAL_KEY or FAL_API_KEY is not configured for Qwen Image Layered.")
         self._request_json = request_json or self._post_json
         self._download = download or self._download_image
+        self.num_inference_steps = num_inference_steps
+        self.negative_prompt = negative_prompt
 
     def decompose(self, request: LayeredImageRequest) -> LayeredImageResult:
         if not request.image_bytes:
             raise ImageProviderError("Qwen Image Layered requires a non-empty source image.")
         if not 2 <= request.num_layers <= 8:
             raise ImageProviderError("Qwen Image Layered layer count must be between 2 and 8.")
+        num_inference_steps = (
+            request.num_inference_steps
+            if request.num_inference_steps is not None
+            else self.num_inference_steps
+        )
+        negative_prompt = (
+            request.negative_prompt
+            if request.negative_prompt is not None
+            else self.negative_prompt
+        )
         payload = {
             "image_url": self._data_uri(request.image_bytes, request.mime_type),
             "prompt": request.prompt,
             "num_layers": request.num_layers,
+            "num_inference_steps": num_inference_steps,
+            "negative_prompt": negative_prompt,
             "output_format": "png",
             "enable_safety_checker": True,
         }

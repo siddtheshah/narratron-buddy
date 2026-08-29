@@ -15,6 +15,8 @@ def test_qwen_layered_posts_grounding_prompt_and_data_uri_then_downloads_layers(
     assert calls[0][1]["image_url"].startswith("data:image/jpeg;base64,")
     assert calls[0][1]["prompt"] == "background; subject"
     assert calls[0][1]["num_layers"] == 3
+    assert calls[0][1]["num_inference_steps"] == 14
+    assert calls[0][1]["negative_prompt"] == "unclear boundaries, incomplete extractions"
     assert result.request_id == "qwen-request"
     assert len(result.images) == 3
     assert result.images[0][0] == b"https://background"

@@ -345,7 +345,7 @@ class TestAnimationTools(BaseTestCase):
             {"name": "foreground", "description": "swaying leaves"},
         ]
         prompt = AnimationTools._decomposition_prompt("A hero on a cliff.", plan)
-        self.assertEqual(prompt, "background: distant sky; subject: hero on cliff; foreground: swaying leaves")
+        self.assertEqual(prompt, "background: distant sky\nsubject: hero on cliff\nforeground: swaying leaves")
         self.assertNotIn("RGBA", prompt)
         self.assertNotIn("ordered", prompt)
         self.assertNotIn("back to front", prompt)

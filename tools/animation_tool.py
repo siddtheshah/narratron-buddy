@@ -477,7 +477,7 @@ class AnimationTools(BaseTools):
 
     @staticmethod
     def _decomposition_prompt(scene_prompt: str, plan: list[dict[str, str]]) -> str:
-        return "; ".join(f"{item['name']}: {item['description']}" for item in plan)
+        return "\n".join(f"{item['name']}: {item['description']}" for item in plan)
 
     @staticmethod
     def _save_named_image(image_bytes: bytes, path: Path, prompt: str) -> str:
