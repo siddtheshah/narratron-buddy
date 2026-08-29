@@ -281,7 +281,7 @@ def list_text_response_provider_specs() -> list[dict[str, Any]]:
 def get_text_response_provider(provider_id: str, options: dict[str, Any] | None = None) -> TextResponseProvider:
     options = options or {}
     if provider_id in ("gemini-2-5", "gemini-2.5", "gemini-text", "Gemini 2.5"):
-        provider = GeminiTextResponseProvider(model=str(options.get("model") or "gemini-2.5-flash-lite"))
+        provider = GeminiTextResponseProvider(model=str(options.get("model") or "gemini-3.5-flash-lite"))
         provider.id = "gemini-2-5"
         return provider
     if provider_id in ("gemini-3", "gemini-3-flash", "Gemini 3"):

@@ -43,27 +43,20 @@ class AnimationLayerPlanResponse(BaseModel):
     foreground: AnimationLayer | None = None
 
 
-ANIMATION_LAYER_PLAN_JSON_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "background": {"$ref": "#/$defs/layer"},
-        "subject": {"$ref": "#/$defs/layer"},
-        "foreground": {"anyOf": [{"$ref": "#/$defs/layer"}, {"type": "null"}]},
-    },
-    "$defs": {
-        "layer": {
-            "type": "object",
-            "properties": {
-                "description": {"type": "string", "minLength": 3, "maxLength": 180},
-                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "pulse", "twist", "bend", "gentle_rocking", "light_halo", "dark_halo", "ghostly", "reflective"]},
-            },
-            "required": ["description", "effect"],
-            "additionalProperties": False,
-        },
-    },
-    "required": ["background", "subject"],
-    "additionalProperties": False,
-}
+ANIMATION_EFFECTS_DOCUMENTATION = (
+    "AVAILABLE LAYER ANIMATION EFFECTS:\n"
+    "- none: Fixed static content (always use for background layers).\n"
+    "- sway: Bottom-anchored bending curvature. Foliage, trees, plants, and vegetation.\n"
+    "- gentle_rocking: Gentle rotational oscillation wave for airborne objects, floating boats, or swinging lanterns.\n"
+    "- vibrate: Rapid high-frequency jitter motion. Rumbling machinery or trembling earth, frightful creatures.\n"
+    "- pulse: Subtle expanding and contracting scale pulse for heartbeats, breathing, or power cores.\n"
+    "- twist: Cyclical motion. Strange and alien creatures.\n"
+    "- bend: Dynamic character movements. People or creatures doing things.\n"
+    "- light_halo: Pulsing light. Radiant power and powerful vibes\n"
+    "- dark_halo: Pulsing dark. Dark power and evil vibes.\n"
+    "- ghostly: Ethereal fading in and out. Spirits, phantoms, mist, vanishing memories.\n"
+    "- reflective: Sweeping light trace sheen. Metallic, glass, gemstone, or polished surfaces."
+)
 
 
 class TriframePlanResponse(BaseModel):
@@ -72,32 +65,9 @@ class TriframePlanResponse(BaseModel):
     third_frame_change: str = Field(min_length=3, max_length=300)
 
 
-TRIFRAME_PLAN_JSON_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "base_frame": {"type": "string", "minLength": 3, "maxLength": 500},
-        "second_frame_change": {"type": "string", "minLength": 3, "maxLength": 300},
-        "third_frame_change": {"type": "string", "minLength": 3, "maxLength": 300},
-    },
-    "required": ["base_frame", "second_frame_change", "third_frame_change"],
-    "additionalProperties": False,
-}
-
-
 class AnimationTechniquePlanResponse(BaseModel):
     technique: str = Field(pattern="^(triframe|layered)$")
     reasoning: str = Field(min_length=3, max_length=300)
-
-
-ANIMATION_TECHNIQUE_PLAN_JSON_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "technique": {"type": "string", "enum": ["triframe", "layered"]},
-        "reasoning": {"type": "string", "minLength": 3, "maxLength": 300},
-    },
-    "required": ["technique", "reasoning"],
-    "additionalProperties": False,
-}
 
 
 
@@ -364,7 +334,7 @@ class AnimationTools(BaseTools):
             ),
             temperature=0.1,
             max_output_tokens=256,
-            response_json_schema=ANIMATION_TECHNIQUE_PLAN_JSON_SCHEMA,
+            response_schema=AnimationTechniquePlanResponse,
         )
         try:
             response = text_response_provider.generate(request)
@@ -410,7 +380,7 @@ class AnimationTools(BaseTools):
             ),
             temperature=0.1,
             max_output_tokens=512,
-            response_json_schema=TRIFRAME_PLAN_JSON_SCHEMA,
+            response_schema=TriframePlanResponse,
         )
         try:
             response = text_response_provider.generate(request)
@@ -442,16 +412,18 @@ class AnimationTools(BaseTools):
         is a prerequisite to creating a layered animation.
         """
         request = TextResponseRequest(
-            prompt=("Plan a clean, semantic transparent-layer stack for a locally animated 2D scene. Return exactly one required background, one required subject, "
-                    "and an optional foreground (null when there is no near-camera occluder). Descriptions must be concise (14 words or fewer). "
-                    "BACKGROUND: combine the entire static environment behind the focal subject into one layer—never split it into sky, coast, sea, terrain, buildings, or lighting layers. Its effect must be none. "
-                    "SUBJECT: the single focal character, creature, vehicle, or landmark, including attached parts and immediately associated light. Do not make a second subject layer. "
-                    "FOREGROUND: only close-to-camera objects that visibly overlap or frame the subject, such as leaves, grass, smoke, rain, or nearby waves; otherwise use null. "
-                    "Use effect=none for fixed content; sway for foliage; gentle_rocking for airborne objects; vibrate for rumbling objects; pulse for important objects; bend if the subject layer features heroic dynamic action by a character; twist for rotating or swirling cyclical motion around centroid; light_halo or dark_halo for a pulsing energetic aura around an image piece (brightened or darkened respectively); ghostly for fading in and out transparent/ethereal layers; reflective for metallic, glass, or polished surfaces with a sweeping light trace sheen. "
-                    "Do not invent scene elements. Return JSON only.\n\n"
-                    f"Scene prompt:\n{scene_prompt}"),
+            prompt=(
+                "Plan a clean, semantic transparent-layer stack for a locally animated 2D scene. Return exactly one required background, one required subject, "
+                "and an optional foreground (null when there is no near-camera occluder). Descriptions must be concise (14 words or fewer).\n"
+                "BACKGROUND: combine the entire static environment behind the focal subject into one layer—never split it into sky, coast, sea, terrain, buildings, or lighting layers. Its effect must be none.\n"
+                "SUBJECT: the single focal character, creature, vehicle, or landmark, including attached parts and immediately associated light. Do not make a second subject layer.\n"
+                "FOREGROUND: only close-to-camera objects that visibly overlap or frame the subject, such as leaves, grass, smoke, rain, or nearby waves; otherwise use null.\n\n"
+                f"{ANIMATION_EFFECTS_DOCUMENTATION}\n\n"
+                "Do not invent scene elements. Return JSON only.\n\n"
+                f"Scene prompt:\n{scene_prompt}"
+            ),
             temperature=0.1, max_output_tokens=512,
-            response_json_schema=ANIMATION_LAYER_PLAN_JSON_SCHEMA,
+            response_schema=AnimationLayerPlanResponse,
         )
         # A truncated structured response is an upstream-model failure, not a
         # reason to manufacture a plan. Retry once with the same constrained
