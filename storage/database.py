@@ -1,12 +1,10 @@
-"""Database module for user management, authentication, and theater deployment tracking using SQLite."""
+"""Database module for user management, authentication, and theater deployment tracking using PostgreSQL."""
 
 import asyncio
 import datetime
 import hashlib
 import os
-import json
 from pathlib import Path
-import sqlite3
 import secrets
 import threading
 import time
@@ -109,6 +107,8 @@ class _DictCursor:
         return [self._row_to_dict(r) for r in self._run_with_deadline(self._cursor.fetchall)]
 
     def _row_to_dict(self, row):
+        if isinstance(row, dict):
+            return row
         if self._cursor.description is None:
             return row
         cols = [col[0] for col in self._cursor.description]
@@ -123,10 +123,10 @@ def _is_retryable_read_error(sql: str, exc: Exception) -> bool:
     statement = sql.lstrip().upper()
     if not statement.startswith(("SELECT", "PRAGMA", "EXPLAIN")):
         return False
-    if isinstance(exc, (TimeoutError, ConnectionError, OSError, sqlite3.InterfaceError)):
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)) or "interfaceerror" in exc.__class__.__name__.lower():
         return True
     message = str(exc).lower()
-    return any(marker in message for marker in ("timeout", "connection", "network", "transport"))
+    return any(marker in message for marker in ("timeout", "connection", "network", "transport", "interface", "bad parameter", "misuse"))
 
 
 class _ReusableConnection:
@@ -494,339 +494,25 @@ class _DatabaseManagerBase:
             self._initializing_tables = False
 
     def _init_db(self) -> None:
-        """Initialize database schema if tables do not exist."""
-        def _get_cols(cursor, table_name: str) -> List[str]:
-            cursor.execute(f"PRAGMA table_info({table_name})")
-            rows = cursor.fetchall()
-            cols = []
-            for r in rows:
-                if isinstance(r, dict):
-                    cols.append(r.get("name"))
-                elif hasattr(r, "keys"):
-                    cols.append(r["name"])
-                elif isinstance(r, (tuple, list)):
-                    cols.append(r[1])
-            return cols
+        """Initialize database schema from storage/schema/postgres.sql if tables do not exist."""
+        schema_path = Path(__file__).resolve().parent / "schema" / "postgres.sql"
+        if not schema_path.is_file():
+            schema_path = Path(r"C:\Users\sidds\Documents\narratron-buddy\storage\schema\postgres.sql")
 
+        schema_sql = schema_path.read_text(encoding="utf-8")
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            
-            # Check if users table exists and has id column
-            # Check if users table exists and has id column
-            cols = _get_cols(cursor, "users")
-            if cols and "id" not in cols:
-                cursor.execute("DROP TABLE IF EXISTS auth_sessions")
-                cursor.execute("DROP TABLE IF EXISTS theaters")
-                cursor.execute("DROP TABLE IF EXISTS canvas_deployments")
-                cursor.execute("DROP TABLE IF EXISTS exported_theaters")
-                cursor.execute("DROP TABLE IF EXISTS users")
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE NOT NULL,
-                    email TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    salt TEXT NOT NULL,
-                    credits REAL DEFAULT 0.0,
-                    total_voice_minutes REAL DEFAULT 0.0,
-                    total_images_created INTEGER DEFAULT 0,
-                    total_music_created INTEGER DEFAULT 0,
-                    total_story_plans INTEGER DEFAULT 0,
-                    total_character_voiced_turns INTEGER DEFAULT 0,
-                    total_interactive_canvas_used INTEGER DEFAULT 0,
-                    mic_sensitivity REAL DEFAULT 0.5,
-                    bio TEXT DEFAULT '',
-                    stats_visible INTEGER DEFAULT 0,
-                    lifetime_credits_used REAL DEFAULT 0.0,
-                    profile_color TEXT DEFAULT '#818cf8',
-                    created_at TEXT NOT NULL,
-                    last_active_at TEXT
-                )
-            """)
-
-            user_cols = _get_cols(cursor, "users")
-            if "last_active_at" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN last_active_at TEXT")
-                except Exception:
-                    pass
-
-            if "credits" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN credits REAL DEFAULT 0.0")
-                except Exception:
-                    pass
-
-            if "total_voice_minutes" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN total_voice_minutes REAL DEFAULT 0.0")
-                except Exception:
-                    pass
-
-            if "total_images_created" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN total_images_created INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-
-            if "total_music_created" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN total_music_created INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-
-            if "total_story_plans" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN total_story_plans INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-            if "total_character_voiced_turns" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN total_character_voiced_turns INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-            if "total_interactive_canvas_used" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN total_interactive_canvas_used INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-
-            if "mic_sensitivity" not in user_cols:
-                try:
-                    cursor.execute("ALTER TABLE users ADD COLUMN mic_sensitivity REAL DEFAULT 0.5")
-                except Exception:
-                    pass
-            if "bio" not in user_cols:
-                cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
-            if "stats_visible" not in user_cols:
-                cursor.execute("ALTER TABLE users ADD COLUMN stats_visible INTEGER DEFAULT 0")
-            if "lifetime_credits_used" not in user_cols:
-                cursor.execute("ALTER TABLE users ADD COLUMN lifetime_credits_used REAL DEFAULT 0.0")
-            if "profile_color" not in user_cols:
-                cursor.execute("ALTER TABLE users ADD COLUMN profile_color TEXT DEFAULT '#818cf8'")
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS auth_sessions (
-                    token TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS theaters (
-                    theater_id TEXT PRIMARY KEY,
-                    user_id INTEGER,
-                    name TEXT,
-                    join_key TEXT,
-                    cost REAL DEFAULT 5.0,
-                    created_at TEXT,
-                    allowed_orators TEXT DEFAULT '[]',
-                    active_orator_id INTEGER DEFAULT NULL,
-                    baton_request TEXT DEFAULT NULL,
-                    is_persistent INTEGER DEFAULT 0,
-                    last_billed_at TEXT DEFAULT NULL,
-                    exported_at TEXT DEFAULT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                    FOREIGN KEY (active_orator_id) REFERENCES users(id) ON DELETE SET NULL
-                )
-            """)
-
-            # Migrate legacy canvas_deployments and exported_theaters if present
-            legacy_cd_cols = _get_cols(cursor, "canvas_deployments")
-            if legacy_cd_cols:
-                try:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO theaters (
-                            theater_id, user_id, join_key, cost, created_at,
-                            allowed_orators, active_orator_id, baton_request,
-                            is_persistent, last_billed_at
-                        )
-                        SELECT
-                            theater_id, user_id, join_key,
-                            COALESCE(cost, 5.0),
-                            created_at,
-                            COALESCE(allowed_orators, '[]'),
-                            active_orator_id,
-                            baton_request,
-                            COALESCE(is_persistent, 0),
-                            last_billed_at
-                        FROM canvas_deployments
-                    """)
-                    cursor.execute("DROP TABLE canvas_deployments")
-                except Exception:
-                    pass
-
-            legacy_exp_cols = _get_cols(cursor, "exported_theaters")
-            if legacy_exp_cols:
-                try:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO theaters (theater_id, user_id, name, exported_at)
-                        SELECT theater_id, user_id, name, exported_at FROM exported_theaters
-                    """)
-                    cursor.execute("""
-                        UPDATE theaters
-                        SET
-                            name = (SELECT name FROM exported_theaters WHERE exported_theaters.theater_id = theaters.theater_id),
-                            exported_at = (SELECT exported_at FROM exported_theaters WHERE exported_theaters.theater_id = theaters.theater_id),
-                            user_id = COALESCE(theaters.user_id, (SELECT user_id FROM exported_theaters WHERE exported_theaters.theater_id = theaters.theater_id))
-                        WHERE theater_id IN (SELECT theater_id FROM exported_theaters)
-                    """)
-                    cursor.execute("DROP TABLE exported_theaters")
-                except Exception as e:
-                    logger.warning(f"Error migrating legacy exported_theaters: {e}")
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS theater_views (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    theater_id TEXT NOT NULL,
-                    user_id INTEGER,
-                    viewed_at TEXT NOT NULL,
-                    ip_address TEXT,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-                )
-            """)
-
-            theater_cols = _get_cols(cursor, "theaters")
-            if "name" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN name TEXT")
-                except Exception:
-                    pass
-            if "exported_at" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN exported_at TEXT")
-                except Exception:
-                    pass
-            if "allowed_orators" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN allowed_orators TEXT DEFAULT '[]'")
-                except Exception:
-                    pass
-            if "active_orator_id" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN active_orator_id INTEGER DEFAULT NULL")
-                except Exception:
-                    pass
-            if "baton_request" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN baton_request TEXT DEFAULT NULL")
-                except Exception:
-                    pass
-            if "is_persistent" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN is_persistent INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-            if "last_billed_at" not in theater_cols:
-                try:
-                    cursor.execute("ALTER TABLE theaters ADD COLUMN last_billed_at TEXT DEFAULT NULL")
-                except Exception:
-                    pass
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS payment_transactions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    amount_usd REAL NOT NULL,
-                    credits_added REAL NOT NULL,
-                    payment_method TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-            """)
-
-            
-            transaction_cols = set(_get_cols(cursor, "payment_transactions"))
-            if "stripe_session_id" not in transaction_cols:
-                cursor.execute("ALTER TABLE payment_transactions ADD COLUMN stripe_session_id TEXT")
-            cursor.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_transactions_stripe_session "
-                "ON payment_transactions(stripe_session_id) WHERE stripe_session_id IS NOT NULL"
-            )
-
-            # Each usage batch carries a caller-generated key.  Claiming this
-            # key in the same transaction as the balance update makes a retry
-            # safe after a client-side timeout with an unknown commit outcome.
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS usage_events (
-                    idempotency_key TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    voice_minutes REAL NOT NULL,
-                    images_created INTEGER NOT NULL,
-                    music_created INTEGER DEFAULT 0,
-                    story_plans INTEGER DEFAULT 0,
-                    character_voiced_turns INTEGER DEFAULT 0,
-                    interactive_canvas_used INTEGER DEFAULT 0,
-                    credit_cost REAL NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-            """)
-
-            usage_cols = set(_get_cols(cursor, "usage_events"))
-            if "music_created" not in usage_cols:
-                try:
-                    cursor.execute("ALTER TABLE usage_events ADD COLUMN music_created INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-            if "story_plans" not in usage_cols:
-                try:
-                    cursor.execute("ALTER TABLE usage_events ADD COLUMN story_plans INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-            if "character_voiced_turns" not in usage_cols:
-                try:
-                    cursor.execute("ALTER TABLE usage_events ADD COLUMN character_voiced_turns INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-            if "interactive_canvas_used" not in usage_cols:
-                try:
-                    cursor.execute("ALTER TABLE usage_events ADD COLUMN interactive_canvas_used INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS password_reset_tokens (
-                    token TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    used INTEGER DEFAULT 0,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-            """)
-
-            # A gift is deliberately not escrowed: the sender is charged only
-            # when a recipient claims the link.  The conditional debit in
-            # claim_credit_gift keeps a later-spent balance from going negative.
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS credit_referrals (
-                    token TEXT PRIMARY KEY,
-                    sender_user_id INTEGER NOT NULL,
-                    credits REAL NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    claimed_by_user_id INTEGER,
-                    claimed_at TEXT,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
-                    FOREIGN KEY (claimed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
-                )
-            """)
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_credit_referrals_sender "
-                "ON credit_referrals(sender_user_id, created_at DESC)"
-            )
+            for statement in schema_sql.split(";"):
+                statement = "\n".join(
+                    line for line in statement.splitlines() if not line.lstrip().startswith("--")
+                ).strip()
+                if statement:
+                    cursor.execute(statement)
             conn.commit()
 
     @staticmethod
     def _adapt_sql(sql: str) -> str:
-        """Translate the small SQLite SQL subset used by this module to PostgreSQL."""
+        """Translate generic parameter placeholders and syntax for PostgreSQL."""
         translated = sql.replace("?", "%s")
         translated = translated.replace("INSERT OR IGNORE INTO", "INSERT INTO")
         if "INSERT OR IGNORE INTO" in sql:
@@ -934,8 +620,7 @@ class _DatabaseManagerBase:
             return {}
 
         users: Dict[int, Dict] = {}
-        # SQLite limits a statement's bound variables, so keep the batch safely
-        # below its default 999-variable limit.
+        # Keep the batch safely bounded below driver variable limits.
         with self._get_connection() as conn:
             cursor = conn.cursor()
             for start in range(0, len(ids), 900):
@@ -2155,12 +1840,17 @@ class _DatabaseManagerBase:
 
 
 class LocalDatabaseManager(_DatabaseManagerBase):
-    """Narratron storage backed by a local SQLite file, used for development and tests."""
+    """Narratron storage backed by testing.postgresql, used for development and tests."""
 
-    def __init__(self, db_path: str, pricing_controller: Optional[PricingController] = None):
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        pricing_controller: Optional[PricingController] = None,
+    ):
         super().__init__(pricing_controller=pricing_controller)
         self.is_live = False
         self.db_path = db_path
+        self._pg = None
         self._conn = None
         self._cached_db_path = None
         self._connection_lock = threading.RLock()
@@ -2168,24 +1858,66 @@ class LocalDatabaseManager(_DatabaseManagerBase):
     def close(self) -> None:
         with self._connection_lock:
             if self._conn is not None:
-                self._conn.close()
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
                 self._conn = None
+            if self._pg is not None:
+                try:
+                    self._pg.stop()
+                except Exception:
+                    pass
+                self._pg = None
             self._cached_db_path = None
 
     def _get_connection(self):
         with self._connection_lock:
-            db_path = str(self.db_path)
+            db_path = str(self.db_path) if self.db_path is not None else None
             if self._conn is not None and self._cached_db_path != db_path:
                 self.close()
             if self._conn is None:
-                conn = sqlite3.connect(db_path, check_same_thread=False)
-                conn.row_factory = sqlite3.Row
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA foreign_keys = ON")
-                self._conn = _ReusableConnection(conn, lock=self._connection_lock)
-                self._ensure_tables_exist()
+                import testing.postgresql
+                self._pg = testing.postgresql.Postgresql(
+                    base_dir=db_path if db_path and os.path.isdir(db_path) else None,
+                    database=Path(db_path).stem if db_path and db_path != ":memory:" else "test",
+                )
+                raw_conn = self._pg.get_connection()
+                self._conn = _ReusableConnection(
+                    raw_conn,
+                    is_dict_cursor=True,
+                    lock=self._connection_lock,
+                    sql_adapter=self._adapt_sql,
+                )
                 self._cached_db_path = db_path
+                self._ensure_tables_exist()
+                self._ensure_test_user()
             return self._conn
+
+    def _ensure_test_user(self) -> None:
+        """Ensure test mode user 'localtest' exists with password 'narratron' and 2000 credits."""
+        if self._conn is None:
+            return
+        with self._conn as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, credits FROM users WHERE LOWER(username) = LOWER(?)", ("localtest",))
+            row = cursor.fetchone()
+            if not row:
+                salt = secrets.token_hex(16)
+                password_hash = hashlib.sha256(("narratron" + salt).encode("utf-8")).hexdigest()
+                created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cursor.execute(
+                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits) "
+                    "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+                    ("localtest", "localtest@narratron.test", password_hash, salt, created_at, 2000.0),
+                )
+                conn.commit()
+            else:
+                cursor.execute(
+                    "UPDATE users SET credits = ? WHERE LOWER(username) = LOWER(?)",
+                    (2000.0, "localtest"),
+                )
+                conn.commit()
 
 
 class CloudPostgresDatabaseManager(_DatabaseManagerBase):

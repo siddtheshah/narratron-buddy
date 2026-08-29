@@ -2,7 +2,6 @@
 
 import asyncio
 import datetime
-import sqlite3
 import tempfile
 import threading
 import unittest
@@ -66,7 +65,7 @@ class TestDictCursorAndReusableConnection(unittest.TestCase):
 
     def test_dict_cursor_retries_read_on_a_fresh_connection(self):
         failed_cursor = MagicMock()
-        failed_cursor.execute.side_effect = sqlite3.InterfaceError("bad parameter or other API misuse")
+        failed_cursor.execute.side_effect = TimeoutError("bad parameter or transport failure")
         replacement_cursor = MagicMock()
         replacement_cursor.description = None
         replacement_cursor.fetchone.return_value = (1,)
@@ -266,23 +265,17 @@ class TestDatabaseManagerConnectionAndMigration(BaseTestCase):
         conn3 = self.db._get_connection()
         self.assertIsNot(conn1, conn3)
 
-    def test_migration_recreates_users_table_if_missing_id(self):
-        # Create an old schema 'users' table without 'id'
-        with self.db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DROP TABLE IF EXISTS users")
-            cursor.execute("CREATE TABLE users (username TEXT PRIMARY KEY, email TEXT)")
-            conn.commit()
+    def test_localtest_user_setup(self):
+        user = self.db.authenticate_user("localtest", "narratron")
+        self.assertIsNotNone(user)
+        self.assertEqual(user["username"], "localtest")
+        self.assertEqual(user["credits"], 2000.0)
 
-        # Triggering _init_db should drop the malformed users table and recreate proper schema
-        self.db._init_db()
-        with self.db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(users)")
-            cols = [r["name"] for r in cursor.fetchall()]
-            self.assertIn("id", cols)
-            self.assertIn("credits", cols)
-            self.assertIn("last_active_at", cols)
+        # Update credits, then ensure _ensure_test_user ensures 2000 credits
+        self.db.add_user_credits(user["id"], 50.0, 5.0)
+        self.assertEqual(self.db.get_user_by_id(user["id"])["credits"], 2050.0)
+        self.db._ensure_test_user()
+        self.assertEqual(self.db.get_user_by_id(user["id"])["credits"], 2000.0)
 
 
 class TestUserManagementAndAuth(BaseTestCase):
@@ -683,7 +676,7 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         self.db.record_deployment("idempotent-deployment", self.user["id"], "KEY", cost=3.0)
         after_first = self.db.get_user_by_id(self.user["id"])["credits"]
 
-        with self.assertRaises(sqlite3.IntegrityError):
+        with self.assertRaises(Exception):
             self.db.record_deployment("idempotent-deployment", self.user["id"], "KEY", cost=3.0)
 
         self.assertEqual(self.db.get_user_by_id(self.user["id"])["credits"], after_first)
@@ -989,107 +982,35 @@ class TestAsyncDatabaseMethods(BaseTestCase):
         asyncio.run(_run())
 
 
-class TestLegacyTableMigration(BaseTestCase):
-    """Test automatic migration from legacy canvas_deployments and exported_theaters to theaters table."""
+class TestPostgresSchemaAndTables(BaseTestCase):
+    """Test table setup and structure from storage/schema/postgres.sql."""
 
     def setUp(self):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_file = Path(self.temp_dir.name) / "test_legacy_migration.db"
+        self.db_file = Path(self.temp_dir.name) / "test_postgres_schema.db"
+        self.db = LocalDatabaseManager(str(self.db_file))
 
     def tearDown(self):
+        self.db.close()
         try:
             self.temp_dir.cleanup()
         except Exception:
             pass
         super().tearDown()
 
-    def test_legacy_tables_auto_migrate_to_theaters(self):
-        # 1. Create legacy SQLite schema and insert legacy rows
-        raw_conn = sqlite3.connect(str(self.db_file))
-        raw_cursor = raw_conn.cursor()
-        raw_cursor.execute("""
-            CREATE TABLE users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                salt TEXT NOT NULL,
-                credits REAL DEFAULT 10.0,
-                created_at TEXT NOT NULL
-            )
-        """)
-        raw_cursor.execute(
-            "INSERT INTO users (id, username, email, password_hash, salt, created_at) VALUES (1, 'legacy_owner', 'legacy@test.com', 'hash', 'salt', '2026-01-01T00:00:00')"
-        )
-        raw_cursor.execute("""
-            CREATE TABLE canvas_deployments (
-                theater_id TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                join_key TEXT NOT NULL,
-                cost REAL DEFAULT 5.0,
-                created_at TEXT NOT NULL,
-                allowed_orators TEXT DEFAULT '[]',
-                active_orator_id INTEGER DEFAULT NULL,
-                baton_request TEXT DEFAULT NULL,
-                is_persistent INTEGER DEFAULT 1,
-                last_billed_at TEXT DEFAULT '2026-01-02T00:00:00'
-            )
-        """)
-        raw_cursor.execute("""
-            INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at)
-            VALUES ('leg_theater_1', 1, 'LEG-KEY-1', 5.0, '2026-01-01T00:00:00', 1, '2026-01-02T00:00:00')
-        """)
-        raw_cursor.execute("""
-            CREATE TABLE exported_theaters (
-                theater_id TEXT PRIMARY KEY,
-                user_id INTEGER,
-                name TEXT,
-                exported_at TEXT NOT NULL
-            )
-        """)
-        raw_cursor.execute("""
-            INSERT INTO exported_theaters (theater_id, user_id, name, exported_at)
-            VALUES ('leg_theater_1', 1, 'Migrated Name', '2026-01-03T00:00:00')
-        """)
-        raw_cursor.execute("""
-            INSERT INTO exported_theaters (theater_id, user_id, name, exported_at)
-            VALUES ('leg_theater_2', 1, 'Export Only', '2026-01-04T00:00:00')
-        """)
-        raw_conn.commit()
-        raw_conn.close()
+    def test_schema_tables_exist(self):
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS count FROM music_catalog_stats WHERE id = TRUE")
+            row = cursor.fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["count"], 1)
 
-        # 2. Open via LocalDatabaseManager (triggers _ensure_tables_exist and migration)
-        db = LocalDatabaseManager(str(self.db_file))
-        try:
-            # Verify leg_theater_1 has both deployment data and exported name merged
-            dep1 = db.get_deployment("leg_theater_1")
-            self.assertIsNotNone(dep1)
-            self.assertEqual(dep1["theater_id"], "leg_theater_1")
-            self.assertEqual(dep1["name"], "Migrated Name")
-            self.assertEqual(dep1["join_key"], "LEG-KEY-1")
-            self.assertEqual(dep1["is_persistent"], 1)
-
-            # Verify leg_theater_2 was migrated
-            dep2 = db.get_deployment("leg_theater_2")
-            self.assertIsNotNone(dep2)
-            self.assertEqual(dep2["name"], "Export Only")
-
-            # Verify user theater records query works with merged table
-            records = db.get_user_theater_records(1)
-            self.assertEqual(len(records), 2)
-            t1_rec = next(r for r in records if r["theater_id"] == "leg_theater_1")
-            self.assertEqual(t1_rec["metadata"]["name"], "Migrated Name")
-            self.assertEqual(t1_rec["metadata"]["join_key"], "LEG-KEY-1")
-
-            # Verify legacy tables are dropped
-            with db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('canvas_deployments', 'exported_theaters')")
-                remaining = cursor.fetchall()
-                self.assertEqual(len(remaining), 0)
-        finally:
-            db.close()
+    def test_localtest_seeded_on_init(self):
+        user = self.db.authenticate_user("localtest", "narratron")
+        self.assertIsNotNone(user)
+        self.assertEqual(user["credits"], 2000.0)
 
 
 if __name__ == "__main__":

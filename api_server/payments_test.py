@@ -98,14 +98,15 @@ class TestPaymentsFlow(BaseTestCase):
 
     def test_stripe_webhook_handler(self):
         """Verify stripe webhook endpoint receives checkout.session.completed event."""
-        starting_credits = db.get_user_by_id(1)["credits"]
+        user = self.client.get("/api/auth/me").json()["user"]
+        starting_credits = user["credits"]
         payload = {
             "type": "checkout.session.completed",
             "data": {
                 "object": {
                     "id": "cs_webhook_test_123",
                     "metadata": {
-                        "user_id": "1",
+                        "user_id": str(user["id"]),
                         "credits_to_add": "50.0",
                         "usd_amount": "2.50"
                     }
@@ -118,13 +119,13 @@ class TestPaymentsFlow(BaseTestCase):
 
         duplicate = self.client.post("/api/payments/webhook", json=payload)
         self.assertEqual(duplicate.status_code, 200)
-        self.assertEqual(db.get_user_by_id(1)["credits"], starting_credits + 50.0)
+        self.assertEqual(db.get_user_by_id(user["id"])["credits"], starting_credits + 50.0)
 
     def test_verify_session_credits_a_checkout_session_once(self):
         """A browser retry cannot credit an already-settled Checkout session."""
         FLAGS.allow_mock_payments = False
         FLAGS.testing_use_local_database = False
-        user = db.get_user_by_id(1)
+        user = self.client.get("/api/auth/me").json()["user"]
         starting_credits = user["credits"]
         checkout_session = MagicMock(
             payment_status="paid",
