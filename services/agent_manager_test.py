@@ -229,6 +229,45 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_image_tools.record_story_plan_completed.assert_called_once()
         session.interactive_canvas_tools.record_story_plan_completed.assert_called_once()
 
+    def test_asset_only_show_image_receives_adventure_completion_callback(self):
+        class PlannerTools:
+            def process_user_action(self, user_action):
+                return {"status": "processing"}
+
+        class AssetOnlyImageTools:
+            def __init__(self):
+                self.on_after_tool_call = None
+                self.on_image_created = None
+                self.record_story_plan_completed = MagicMock()
+
+            def show_image(self, file_path):
+                return f"Displayed {file_path}"
+
+        planner_tools = PlannerTools()
+        image_tools = AssetOnlyImageTools()
+        mock_agent = MagicMock()
+        mock_agent.tools = [
+            SimpleNamespace(name="process_user_action", func=planner_tools.process_user_action),
+            SimpleNamespace(name="show_image", func=image_tools.show_image),
+        ]
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+
+        session = AgentSession(
+            theater_id="asset_only_adventure",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+        )
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+
+        self.assertIs(session.image_tools, image_tools)
+        planner_tools.on_scene_reaction({"narration": "The path opens."})
+
+        image_tools.record_story_plan_completed.assert_called_once()
+        self.assertTrue(callable(image_tools.on_after_tool_call))
+
     def test_voice_input_forwarded_to_story_planning_tools(self):
         mock_story_planning = MagicMock()
         mock_agent = MagicMock()

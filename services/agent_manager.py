@@ -119,7 +119,13 @@ class AgentSession:
         self.ws_lock = asyncio.Lock()
 
         # Retrieve bound tool instances safely
-        self.image_tools = get_bound_tool_instance(self.agent, "create_image")
+        # Asset-only theaters still expose ``show_image`` while omitting
+        # ``create_image``.  Resolve either entry point so the shared image
+        # tool receives its Adventure Mode completion and canvas callbacks.
+        self.image_tools = (
+            get_bound_tool_instance(self.agent, "create_image")
+            or get_bound_tool_instance(self.agent, "show_image")
+        )
         self.animation_tools = get_bound_tool_instance(self.agent, "create_triframe")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
         self.story_planning_tools = (
