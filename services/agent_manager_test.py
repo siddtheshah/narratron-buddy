@@ -861,6 +861,38 @@ class TestAgentSessionManager(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_animation_ready_callback_sends_system_notification(self):
+        mock_agent = MagicMock()
+        mock_animation_tools = MagicMock()
+        mock_agent.tools = []
+
+        with patch("services.agent_manager.get_bound_tool_instance") as mock_get_tool:
+            def side_effect(agent, tool_name):
+                if tool_name == "create_animation":
+                    return mock_animation_tools
+                return None
+            mock_get_tool.side_effect = side_effect
+
+            session = AgentSession(
+                theater_id="test_anim_notif",
+                runner=MagicMock(agent=mock_agent, session_service=MagicMock()),
+                tool_bundle=MagicMock(),
+            )
+            session.send_content = MagicMock()
+
+            # Verify on_animation_ready callback was registered
+            self.assertIsNotNone(mock_animation_tools.on_animation_ready)
+
+            # Trigger callback
+            mock_animation_tools.on_animation_ready("anim_123", "layered")
+
+            # Check that notification was sent
+            session.send_content.assert_called_once()
+            content_arg = session.send_content.call_args.args[0]
+            self.assertIn("anim_123", content_arg.parts[0].text)
+            self.assertIn("layered", content_arg.parts[0].text)
+            self.assertIn("ready to play", content_arg.parts[0].text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -131,6 +131,7 @@ class AnimationTools(BaseTools):
         self._layered_animations: dict[str, dict] = {}
         self.layered_provider = layered_provider
         self.text_response_provider = text_response_provider
+        self.on_animation_ready: Optional[Any] = None
 
     def join_generation(self, timeout: float = 30.0) -> None:
         """Wait for the latest animation generation; useful in tests and teardown."""
@@ -280,6 +281,7 @@ class AnimationTools(BaseTools):
             manifest_path = Path(animation_dir) / "triframe.json"
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             logger.debug("[AnimationTools] Animation '%s' is ready to play.", animation_id)
+            self._notify_animation_ready(animation_id, "triframe")
         except (ImageProviderError, TextResponseProviderError) as exc:
             logger.error("[AnimationTools] Image or text provider failed: %s", exc)
         except Exception:
@@ -333,6 +335,7 @@ class AnimationTools(BaseTools):
             if self.canvas_state_service:
                 self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
             logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
+            self._notify_animation_ready(animation_id, "layered")
         except ImageProviderError as exc:
             logger.error("[AnimationTools] Layered image provider failed for %s: %s", animation_id, exc)
         except Exception:
@@ -749,3 +752,17 @@ class AnimationTools(BaseTools):
                     logger.exception("[AnimationTools] Image-created callback failed")
             except Exception:
                 logger.exception("[AnimationTools] Image-created callback failed")
+
+    def _notify_animation_ready(self, animation_id: str, technique: str) -> None:
+        callback = self.on_animation_ready
+        if callback:
+            try:
+                callback(animation_id, technique)
+            except TypeError:
+                try:
+                    callback(animation_id)
+                except Exception:
+                    logger.exception("[AnimationTools] Animation-ready callback failed")
+            except Exception:
+                logger.exception("[AnimationTools] Animation-ready callback failed")
+

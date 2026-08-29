@@ -268,6 +268,20 @@ class AgentSession:
             else:
                 enqueue()
 
+        def handle_animation_ready(animation_id: str, technique: str = "") -> None:
+            technique_str = f" ({technique})" if technique else ""
+            msg = f"[System Notification] Animation '{animation_id}'{technique_str} is ready to play. Call play_animation with animation_id='{animation_id}' to display it on canvas."
+            logger.info(f"[AgentSession] Animation ready notification: {msg}")
+            content = types.Content(parts=[types.Part(text=msg)])
+
+            def enqueue() -> None:
+                self.send_content(content)
+
+            if self._event_loop and self._event_loop.is_running():
+                self._event_loop.call_soon_threadsafe(enqueue)
+            else:
+                enqueue()
+
         for tool_suite in (
             self.image_tools,
             self.animation_tools,
@@ -279,6 +293,9 @@ class AgentSession:
         ):
             if tool_suite and hasattr(tool_suite, "on_cooldown_expired"):
                 tool_suite.on_cooldown_expired = handle_cooldown_expired
+
+        if self.animation_tools:
+            self.animation_tools.on_animation_ready = handle_animation_ready
 
         if self.story_planning_tools:
             self.story_planning_tools.on_scene_reaction = handle_scene_reaction

@@ -349,3 +349,71 @@ class TestAnimationTools(BaseTestCase):
         self.assertNotIn("RGBA", prompt)
         self.assertNotIn("ordered", prompt)
         self.assertNotIn("back to front", prompt)
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_on_animation_ready_notifies_callback_for_triframe(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="fake", model="fake-model"
+        )
+        text_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "triframe", "reasoning": "motion"}, provider="p", model="m", request_id="1", usage={})
+        triframe_resp = MagicMock(
+            parsed={
+                "base_frame": BASE_FRAME,
+                "second_frame_change": SECOND_FRAME_CHANGE,
+                "third_frame_change": THIRD_FRAME_CHANGE,
+            },
+            provider="p", model="m", request_id="2", usage={}
+        )
+        text_provider.generate.side_effect = [technique_resp, triframe_resp]
+
+        image_tools = ImageTools(self.config, "tri_callback", self.manager)
+        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+
+        ready_notifications = []
+        animation_tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
+
+        result = animation_tools.create_animation("A hero running across a bridge.", "hero_run")
+        animation_tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        self.assertEqual(len(ready_notifications), 1)
+        self.assertEqual(ready_notifications[0], (animation_id, "triframe"))
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_on_animation_ready_notifies_callback_for_layered(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="base", model="base-model"
+        )
+        layered_provider = MagicMock()
+        layered_provider.model = "fal-ai/qwen-image-layered"
+        layered_provider.decompose.return_value = LayeredImageResult(
+            images=[(fake_image_bytes(), "image/png")] * 3, request_id="qwen-1", usage={"seed": 8}
+        )
+        planning_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "layered", "reasoning": "scenic backdrop"}, provider="p", model="m", request_id="1", usage={})
+        layered_resp = MagicMock(
+            parsed={
+                "background": {"description": "distant sky and cliff", "effect": "none"},
+                "subject": {"description": "the hero on the cliff", "effect": "pulse"},
+                "foreground": {"description": "foreground leaves", "effect": "sway"},
+            },
+            provider="planner", model="planner-model", request_id="planner-1", usage={"tokens": 42}
+        )
+        planning_provider.generate.side_effect = [technique_resp, layered_resp]
+
+        image_tools = ImageTools(self.config, "layered_callback", self.manager)
+        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+
+        ready_notifications = []
+        tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
+
+        result = tools.create_animation("A hero on a scenic cliff.", "cliff")
+        tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        self.assertEqual(len(ready_notifications), 1)
+        self.assertEqual(ready_notifications[0], (animation_id, "layered"))
+
