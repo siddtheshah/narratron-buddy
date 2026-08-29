@@ -1159,6 +1159,7 @@ class _DatabaseManagerBase:
         story_plans: int = 0,
         character_voiced_turns: int = 0,
         interactive_canvas_used: int = 0,
+        layered_animations_created: int = 0,
         credit_cost: Optional[float] = None,
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -1166,6 +1167,7 @@ class _DatabaseManagerBase:
 
         Credits are allowed to go negative per user settings/preferences.
         """
+        layered_animations_created = 0 if layered_animations_created is None else layered_animations_created
         if (
             voice_minutes < 0
             or images_created < 0
@@ -1173,9 +1175,10 @@ class _DatabaseManagerBase:
             or story_plans < 0
             or character_voiced_turns < 0
             or interactive_canvas_used < 0
+            or layered_animations_created < 0
         ):
             raise ValueError(
-                "Usage parameters (voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used) must be non-negative."
+                "Usage parameters (voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created) must be non-negative."
             )
 
         if credit_cost is None:
@@ -1186,6 +1189,7 @@ class _DatabaseManagerBase:
                 story_plans=story_plans,
                 character_voiced_turns=character_voiced_turns,
                 interactive_canvas_used=interactive_canvas_used,
+                layered_animations_created=layered_animations_created,
             )
         elif credit_cost < 0:
             raise ValueError("credit_cost must be non-negative.")
@@ -1199,14 +1203,14 @@ class _DatabaseManagerBase:
                 raise ValueError("User not found.")
             cursor.execute(
                 "INSERT OR IGNORE INTO usage_events "
-                "(idempotency_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, credit_cost, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (event_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, credit_cost, now_iso),
+                "(idempotency_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, credit_cost, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, credit_cost, now_iso),
             )
             claimed = cursor.rowcount == 1
             if not claimed:
                 cursor.execute(
-                    "SELECT user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, credit_cost FROM usage_events WHERE idempotency_key = ?",
+                    "SELECT user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, credit_cost FROM usage_events WHERE idempotency_key = ?",
                     (event_key,),
                 )
                 existing = cursor.fetchone()
@@ -1214,6 +1218,7 @@ class _DatabaseManagerBase:
                 existing_story_plans = existing["story_plans"] if (existing and "story_plans" in existing) else 0
                 existing_character_voiced_turns = existing["character_voiced_turns"] if (existing and "character_voiced_turns" in existing) else 0
                 existing_interactive_canvas_used = existing["interactive_canvas_used"] if (existing and "interactive_canvas_used" in existing) else 0
+                existing_layered_animations = existing["layered_animations_created"] if (existing and "layered_animations_created" in existing) else 0
                 if not existing or (
                     existing["user_id"] != user_id
                     or existing["voice_minutes"] != voice_minutes
@@ -1222,6 +1227,7 @@ class _DatabaseManagerBase:
                     or existing_story_plans != story_plans
                     or existing_character_voiced_turns != character_voiced_turns
                     or existing_interactive_canvas_used != interactive_canvas_used
+                    or existing_layered_animations != layered_animations_created
                     or existing["credit_cost"] != credit_cost
                 ):
                     raise ValueError("Usage idempotency key was already used for different usage.")
@@ -1639,19 +1645,23 @@ class _DatabaseManagerBase:
         story_plans: int = 0,
         character_voiced_turns: int = 0,
         interactive_canvas_used: int = 0,
+        layered_animations_created: int = 0,
         credit_cost: Optional[float] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Record user usage asynchronously."""
         return await asyncio.to_thread(
             self.record_user_usage,
-            user_id,
-            voice_minutes,
-            images_created,
-            music_created,
-            story_plans,
-            character_voiced_turns,
-            interactive_canvas_used,
-            credit_cost,
+            user_id=user_id,
+            voice_minutes=voice_minutes,
+            images_created=images_created,
+            music_created=music_created,
+            story_plans=story_plans,
+            character_voiced_turns=character_voiced_turns,
+            interactive_canvas_used=interactive_canvas_used,
+            layered_animations_created=layered_animations_created,
+            credit_cost=credit_cost,
+            idempotency_key=idempotency_key,
         )
 
     async def reset_password_with_token_async(self, token: str, new_password: str) -> bool:

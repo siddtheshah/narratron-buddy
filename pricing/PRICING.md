@@ -6,6 +6,7 @@
 * **Voice Minutes:** 1.0 Credit / minute ($0.05 / min)
 * **Images Generated:** 1.0 Credit / image ($0.05 / image)
 * **Music Generated:** 2.0 Credits / track ($0.10 / track)
+* **Layered Animations:** 5.0 Credits / animation ($0.25 / animation)
 * **Adventure Mode / Story Planning:** 0.5 Credits / action ($0.025 / action, or ~2.5 Credits / min at 5 calls/min)
 * **Storage Used:** 1.0 Credit / GB / month ($0.05 / GB / month, or ~0.033 Credits / GB / day)
 
@@ -25,8 +26,9 @@
 | **1) Voice Minutes** | **Gemini Live Multimodal API** *(WebSockets bidirectional audio input/output)* | ~$0.010 – $0.018 / min | $0.05 / min | **1.0 Credit per minute** <br>*(or 0.5 Cr/min for standard voice)* |
 | **2) Images Generated** | **Gemini Image / Imagen 3 Fast** (`gemini-3.1-flash-lite-image`) | ~$0.020 – $0.030 / image | $0.05 / image | **1.0 Credit per image** <br>*(0.5 Cr for standard draft, 1.0 Cr for HD/ref)* |
 | **3) Music Generated** | **Lyria Music API** (`gemini-2.5-flash-lyria`) | ~$0.030 – $0.050 / track | $0.10 / track | **2.0 Credits per music track** |
-| **4) Adventure Mode / Story Planning** | **Gemini 3.7 Flash API** (`gemini-3.7-flash`) <br>*(4k tokens/call, ~5 calls/min = 20k tokens/min)* | ~$0.0006 – $0.0012 / action <br>*(~$0.003 – $0.006 / min)* | $0.025 / action <br>*(~$0.125 / min at 5 calls/min)* | **0.5 Credits per action / plan turn** <br>*(~2.5 Cr / min at 5 calls/min)* |
-| **5) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.023 / GB / month <br>*(~$0.00077 / GB / day)* | $0.05 / GB / month | **1.0 Credit per GB per month** <br>*(or ~0.033 Credits / GB / day)* |
+| **4) Layered Animations** | **FAL Qwen Image Layered API** (`fal-ai/qwen-image-layered`) | ~$0.150 / animation | $0.25 / animation | **5.0 Credits per layered animation** |
+| **5) Adventure Mode / Story Planning** | **Gemini 3.7 Flash API** (`gemini-3.7-flash`) <br>*(4k tokens/call, ~5 calls/min = 20k tokens/min)* | ~$0.0006 – $0.0012 / action <br>*(~$0.003 – $0.006 / min)* | $0.025 / action <br>*(~$0.125 / min at 5 calls/min)* | **0.5 Credits per action / plan turn** <br>*(~2.5 Cr / min at 5 calls/min)* |
+| **6) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.023 / GB / month <br>*(~$0.00077 / GB / day)* | $0.05 / GB / month | **1.0 Credit per GB per month** <br>*(or ~0.033 Credits / GB / day)* |
 
 ---
 

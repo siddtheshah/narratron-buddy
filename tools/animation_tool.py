@@ -132,6 +132,7 @@ class AnimationTools(BaseTools):
         self.layered_provider = layered_provider
         self.text_response_provider = text_response_provider
         self.on_animation_ready: Optional[Any] = None
+        self.on_layered_animation_created: Optional[Any] = None
 
     def join_generation(self, timeout: float = 30.0) -> None:
         """Wait for the latest animation generation; useful in tests and teardown."""
@@ -331,7 +332,7 @@ class AnimationTools(BaseTools):
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             self._layered_animations[animation_id] = manifest
             self._register_layered_aliases(animation_id, base_path, layer_paths)
-            self._notify_image_created(str(base_path))
+            self._notify_layered_animation_created(animation_id)
             if self.canvas_state_service:
                 self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
             logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
@@ -752,6 +753,19 @@ class AnimationTools(BaseTools):
                     logger.exception("[AnimationTools] Image-created callback failed")
             except Exception:
                 logger.exception("[AnimationTools] Image-created callback failed")
+
+    def _notify_layered_animation_created(self, animation_id: str) -> None:
+        callback = self.on_layered_animation_created
+        if callback:
+            try:
+                callback(animation_id)
+            except TypeError:
+                try:
+                    callback()
+                except Exception:
+                    logger.exception("[AnimationTools] Layered-animation-created callback failed")
+            except Exception:
+                logger.exception("[AnimationTools] Layered-animation-created callback failed")
 
     def _notify_animation_ready(self, animation_id: str, technique: str) -> None:
         callback = self.on_animation_ready

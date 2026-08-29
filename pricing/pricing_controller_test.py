@@ -30,6 +30,7 @@ class TestPricingController(BaseTestCase):
         self.assertEqual(rates["character_voicing_turn_credit_rate"], 0.25)
         self.assertEqual(rates["interactive_canvas_credit_rate"], 0.25)
         self.assertEqual(rates["interactive_canvas_tool_credit_rate"], 0.25)
+        self.assertEqual(rates["layered_animation_credit_rate"], 5.0)
 
     def test_from_env_overrides(self):
         env_vars = {

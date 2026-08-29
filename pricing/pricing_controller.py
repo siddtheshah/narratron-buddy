@@ -7,6 +7,7 @@ DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL = 4000
 DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE = 5.0
 DEFAULT_CHARACTER_VOICING_TURN_CREDIT_RATE = 0.25
 DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE = 0.25
+DEFAULT_LAYERED_ANIMATION_CREDIT_RATE = 5.0
 
 
 class PricingController:
@@ -25,6 +26,7 @@ class PricingController:
         adventure_mode_calls_per_minute: Optional[float] = None,
         character_voicing_turn_credit_rate: Optional[float] = None,
         interactive_canvas_credit_rate: Optional[float] = None,
+        layered_animation_credit_rate: Optional[float] = None,
     ):
         self.voice_credit_rate = voice_credit_rate if voice_credit_rate is not None else 1.0
         self.image_credit_rate = image_credit_rate if image_credit_rate is not None else 1.0
@@ -52,6 +54,11 @@ class PricingController:
             interactive_canvas_credit_rate
             if interactive_canvas_credit_rate is not None
             else DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE
+        )
+        self.layered_animation_credit_rate = (
+            layered_animation_credit_rate
+            if layered_animation_credit_rate is not None
+            else DEFAULT_LAYERED_ANIMATION_CREDIT_RATE
         )
 
     @property
@@ -113,6 +120,15 @@ class PricingController:
                 ],
                 DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE,
             ),
+            layered_animation_credit_rate=_get_float_env(
+                [
+                    "LAYERED_ANIMATION_CREDIT_RATE",
+                    "PRICING_LAYERED_ANIMATION_CREDIT_RATE",
+                    "LAYERED_ANIMATION_TOOL_CREDIT_RATE",
+                    "PRICING_LAYERED_ANIMATION_TOOL_CREDIT_RATE",
+                ],
+                DEFAULT_LAYERED_ANIMATION_CREDIT_RATE,
+            ),
         )
 
     def get_rates(self) -> Dict[str, float]:
@@ -133,6 +149,8 @@ class PricingController:
             "character_voicing_turn_credit_rate": self.character_voicing_turn_credit_rate,
             "interactive_canvas_credit_rate": self.interactive_canvas_credit_rate,
             "interactive_canvas_tool_credit_rate": self.interactive_canvas_credit_rate,
+            "layered_animation_credit_rate": self.layered_animation_credit_rate,
+            "layered_animation_tool_credit_rate": self.layered_animation_credit_rate,
         }
 
     def calculate_usage_cost(
@@ -144,8 +162,9 @@ class PricingController:
         adventure_actions: int = 0,
         character_voiced_turns: int = 0,
         interactive_canvas_used: int = 0,
+        layered_animations_created: int = 0,
     ) -> float:
-        """Calculate total credit cost for voice, image, music, story-planning/adventure-mode, and interactive canvas usage."""
+        """Calculate total credit cost for voice, image, music, story-planning/adventure-mode, interactive canvas, and layered animation usage."""
         if (
             voice_minutes < 0
             or images_created < 0
@@ -154,9 +173,10 @@ class PricingController:
             or adventure_actions < 0
             or character_voiced_turns < 0
             or interactive_canvas_used < 0
+            or layered_animations_created < 0
         ):
             raise ValueError(
-                "Usage parameters (voice_minutes, images_created, music_created, story_plans, adventure_actions, character_voiced_turns, interactive_canvas_used) must be non-negative."
+                "Usage parameters (voice_minutes, images_created, music_created, story_plans, adventure_actions, character_voiced_turns, interactive_canvas_used, layered_animations_created) must be non-negative."
             )
         total_story_plans = story_plans + adventure_actions
         return (
@@ -166,6 +186,7 @@ class PricingController:
             + (total_story_plans * self.story_planning_credit_rate)
             + (character_voiced_turns * self.character_voicing_turn_credit_rate)
             + (interactive_canvas_used * self.interactive_canvas_credit_rate)
+            + (layered_animations_created * self.layered_animation_credit_rate)
         )
 
     def calculate_adventure_mode_cost(

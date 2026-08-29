@@ -22,6 +22,8 @@ MIGRATIONS = (
     "ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS character_voiced_turns INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS total_interactive_canvas_used INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS interactive_canvas_used INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS total_layered_animations_created INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS layered_animations_created INTEGER NOT NULL DEFAULT 0",
 )
 
 

@@ -87,12 +87,14 @@ CREATE TABLE IF NOT EXISTS usage_events (
     story_plans INTEGER NOT NULL DEFAULT 0,
     character_voiced_turns INTEGER NOT NULL DEFAULT 0,
     interactive_canvas_used INTEGER NOT NULL DEFAULT 0,
+    layered_animations_created INTEGER NOT NULL DEFAULT 0,
     credit_cost DOUBLE PRECISION NOT NULL,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS usage_events_user_id_idx ON usage_events(user_id);
 ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS character_voiced_turns INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS interactive_canvas_used INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS layered_animations_created INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     token TEXT PRIMARY KEY,
