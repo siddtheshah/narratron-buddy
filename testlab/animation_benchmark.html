@@ -1,8 +1,681 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Layered Animation Bench</title><style>
-body{margin:0;background:#0b1020;color:#e9edff;font:15px/1.45 system-ui;padding:24px}main{max-width:1100px;margin:auto}.panel{background:#151b2e;border:1px solid #303c60;border-radius:10px;padding:16px;margin:14px 0}select,textarea,button{background:#0d1324;color:inherit;border:1px solid #4b5b85;border-radius:6px;padding:8px}textarea{width:100%;min-height:85px}button{cursor:pointer;background:#7657d6}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.prompt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.choice{display:block;border:1px solid #303c60;border-radius:8px;padding:10px;cursor:pointer}.choice:has(input:checked){outline:2px solid #8b6cff;border-color:transparent}.choice strong,.choice small{display:block}.choice small{color:#aab4cc;margin-top:4px}.custom{margin-top:12px;padding-top:12px;border-top:1px solid #303c60}.stage{position:relative;width:min(900px,100%);aspect-ratio:16/9;background:#050812;overflow:hidden;border-radius:8px}.stage img{position:absolute;width:100%;height:100%;object-fit:contain;inset:0;transform-origin:center}.debug{white-space:pre-wrap;overflow:auto;max-height:340px;color:#b9c6ed}small{color:#aab4cc}
-</style></head><body><main><h1>Layered Animation Bench</h1><p>Generate a default or custom scene, plan its layers with the text provider, then decompose it with <code>fal-ai/qwen-image-layered</code>. The debug trace retains every prompt, plan, and provider result.</p><section class="panel"><div class="row"><label>Base image provider <select id="provider"></select></label><button id="run">Run decomposition</button></div><h2>Default prompts</h2><div id="prompts" class="prompt-grid"></div><div class="custom"><label><input id="useCustomPrompt" type="radio" name="prompt-choice"> Write-in prompt</label><p><textarea id="customPromptText" placeholder="Enter a custom scene prompt to benchmark…"></textarea></p></div><small id="status">Loading catalog…</small></section><section class="panel"><div id="stage" class="stage"></div><p id="layers"></p></section><section class="panel"><h2>Debug trace</h2><pre id="debug" class="debug">No run yet.</pre></section></main><script type="module">
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Layered Animation Bench</title>
+<style>
+body {
+  margin: 0;
+  background: #0b1020;
+  color: #e9edff;
+  font: 15px/1.45 system-ui, -apple-system, sans-serif;
+  padding: 24px;
+}
+main {
+  max-width: 1160px;
+  margin: auto;
+}
+h1 { margin-top: 0; font-weight: 700; color: #ffffff; }
+p { color: #b0c2f2; }
+code { background: #1b243e; padding: 2px 6px; border-radius: 4px; color: #9bb2f5; }
+
+.panel {
+  background: #151b2e;
+  border: 1px solid #303c60;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 16px 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.panel-header h2 { margin: 0; font-size: 1.25rem; font-weight: 600; color: #e9edff; }
+.filter-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #232d48;
+  color: #a4b7ee;
+  border: 1px solid #3b4b75;
+}
+.filter-badge.active {
+  background: #2d2459;
+  color: #c7b3ff;
+  border-color: #7657d6;
+}
+
+select, textarea, button {
+  background: #0d1324;
+  color: inherit;
+  border: 1px solid #4b5b85;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: inherit;
+}
+textarea { width: 100%; min-height: 85px; box-sizing: border-box; }
+button { cursor: pointer; background: #7657d6; color: #fff; font-weight: 600; border: none; }
+button:hover { background: #8b6cff; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.prompt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.choice { display: block; border: 1px solid #303c60; border-radius: 8px; padding: 12px; cursor: pointer; background: #0f1527; transition: all 0.15s ease; }
+.choice:hover { border-color: #556799; }
+.choice:has(input:checked) { outline: 2px solid #8b6cff; border-color: transparent; background: #192039; }
+.choice strong, .choice small { display: block; }
+.choice small { color: #aab4cc; margin-top: 4px; }
+.custom { margin-top: 14px; padding-top: 14px; border-top: 1px solid #303c60; }
+
+/* Viewer & Side Selector Layout */
+.viewer-layout {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.stage-container {
+  flex: 1 1 560px;
+  min-width: 320px;
+}
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #050812;
+  background-image: 
+    linear-gradient(45deg, #0e1424 25%, transparent 25%), 
+    linear-gradient(-45deg, #0e1424 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #0e1424 75%), 
+    linear-gradient(-45deg, transparent 75%, #0e1424 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid #303c60;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stage-placeholder {
+  color: #798bb7;
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+}
+.stage img {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  inset: 0;
+  transform-origin: center;
+}
+
+/* Side Selector */
+.side-selector {
+  flex: 0 0 320px;
+  width: 320px;
+  background: #0d1324;
+  border: 1px solid #2f3b5c;
+  border-radius: 10px;
+  padding: 14px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.side-selector.hidden {
+  display: none !important;
+}
+.side-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.side-title h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8c9ec9;
+}
+.badge-count {
+  font-size: 11px;
+  background: #1d263f;
+  color: #9cb1e6;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid #36466f;
+}
+.preset-group {
+  display: flex;
+  gap: 8px;
+}
+.preset-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #151b2e;
+  color: #b0c2f2;
+  border: 1px solid #323f66;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.preset-btn:hover {
+  background: #1e2742;
+  border-color: #4d5f94;
+  color: #ffffff;
+}
+.preset-btn.active {
+  background: #7657d6;
+  color: #ffffff;
+  border-color: #9275eb;
+  box-shadow: 0 2px 8px rgba(118,87,214,0.35);
+}
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6879a5;
+  margin-top: 4px;
+}
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.layer-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #151b2e;
+  border: 1px solid #273352;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.layer-card:hover {
+  border-color: #4b5c8a;
+  background: #192138;
+}
+.layer-card.active {
+  border-color: #7657d6;
+  background: #1c223a;
+}
+.layer-card.soloed {
+  border-color: #ff9d42;
+  background: #252016;
+}
+.layer-checkbox {
+  accent-color: #7657d6;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.layer-thumb-box {
+  width: 44px;
+  height: 44px;
+  background: #050812;
+  border: 1px solid #2d3856;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.layer-thumb-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.layer-meta {
+  flex: 1;
+  min-width: 0;
+}
+.layer-meta-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.layer-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #e9edff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.effect-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  background: #242d47;
+  color: #a6b8ea;
+}
+.effect-sway { background: #1b3d2b; color: #72e0a2; }
+.effect-pulse { background: #3d311b; color: #f0c370; }
+.effect-twist { background: #3d1b39; color: #e572e0; }
+.effect-bend { background: #1b363d; color: #72d9e0; }
+
+.layer-desc-text {
+  font-size: 11px;
+  color: #8c9ec9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.solo-btn {
+  background: #1f2842;
+  color: #9cb0e2;
+  border: 1px solid #36466f;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.solo-btn:hover, .solo-btn.active {
+  background: #ff9d42;
+  color: #120c02;
+  border-color: #ffb46e;
+}
+.layers-summary {
+  margin-top: 14px;
+  font-size: 13px;
+  color: #8c9ec9;
+  line-height: 1.4;
+}
+
+.debug { white-space: pre-wrap; overflow: auto; max-height: 340px; color: #b9c6ed; }
+small { color: #aab4cc; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Layered Animation Bench</h1>
+  <p>Generate a default or custom scene, plan its layers with the text provider, then decompose it with <code>fal-ai/qwen-image-layered</code>. The debug trace retains every prompt, plan, and provider result.</p>
+  
+  <section class="panel">
+    <div class="row">
+      <label>Base image provider <select id="provider"></select></label>
+      <button id="run">Run decomposition</button>
+    </div>
+    <h2>Default prompts</h2>
+    <div id="prompts" class="prompt-grid"></div>
+    <div class="custom">
+      <label><input id="useCustomPrompt" type="radio" name="prompt-choice"> Write-in prompt</label>
+      <p><textarea id="customPromptText" placeholder="Enter a custom scene prompt to benchmark…"></textarea></p>
+    </div>
+    <small id="status">Loading catalog…</small>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>Animation Stage & Layer Filter</h2>
+      <span id="activeFilterBadge" class="filter-badge">No run loaded</span>
+    </div>
+    <div class="viewer-layout">
+      <div class="stage-container">
+        <div id="stage" class="stage">
+          <div class="stage-placeholder" id="stagePlaceholder">Run an animation decomposition to preview layers</div>
+        </div>
+      </div>
+
+      <aside id="sideSelector" class="side-selector hidden">
+        <div class="side-title">
+          <h3>Layer Filter</h3>
+          <span id="layerCountBadge" class="badge-count">0 layers</span>
+        </div>
+        
+        <div class="preset-group">
+          <button id="btnAllLayers" class="preset-btn active">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            All Layers
+          </button>
+          <button id="btnBaseImage" class="preset-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            Base Image
+          </button>
+        </div>
+
+        <div class="section-label">Individual Layer Control</div>
+        <div id="layerFilterList" class="layer-list"></div>
+      </aside>
+    </div>
+    <p id="layersSummary" class="layers-summary"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Debug trace</h2>
+    <pre id="debug" class="debug">No run yet.</pre>
+  </section>
+</main>
+
+<script type="module">
 import { layerCssTransform } from '/effects-static/js/animation-effects.js';
-let raf;const $=id=>document.getElementById(id);function render(manifest){cancelAnimationFrame(raf);const stage=$('stage');stage.textContent='';const items=manifest.layers||[];for(const layer of items){const image=new Image();image.src=layer.url;image.alt=layer.name;stage.append(image);layer.image=image}const started=performance.now();function tick(now){for(const layer of items){layer.image.style.transform=layerCssTransform(layer.effect,(now-started)/1000)}raf=requestAnimationFrame(tick)}raf=requestAnimationFrame(tick);$('layers').textContent=items.map(x=>`${x.order+1}. ${x.name} — ${x.effect}: ${x.description}`).join(' | ')}
-async function load(){const data=await (await fetch('/api/animation-benchmark/catalog')).json();data.providers.filter(p=>p.status==='available').forEach(p=>$('provider').add(new Option(p.name,p.id)));if(!$('provider').options.length)data.providers.forEach(p=>$('provider').add(new Option(p.name,p.id)));data.prompts.forEach((p,index)=>{const input=document.createElement('input');input.type='radio';input.name='prompt-choice';input.value=p.id;input.checked=index===0;const label=document.createElement('label');label.className='choice';label.append(input,Object.assign(document.createElement('strong'),{textContent:p.title}),Object.assign(document.createElement('small'),{textContent:p.prompt}));$('prompts').append(label)});$('status').textContent='Ready.'}$('customPromptText').oninput=()=>{$('useCustomPrompt').checked=true};$('run').onclick=async()=>{const custom=$('customPromptText').value.trim(),selected=document.querySelector('input[name="prompt-choice"]:checked');const body={provider_id:$('provider').value};if($('useCustomPrompt').checked){if(!custom){$('status').textContent='Enter a write-in prompt.';return}body.prompt=custom}else body.prompt_id=selected?.value;$('run').disabled=true;$('status').textContent='Running layer plan and base generation…';const response=await fetch('/api/animation-benchmark/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});let run=await response.json();if(!response.ok){$('debug').textContent=JSON.stringify(run,null,2);$('run').disabled=false;return}const poll=async()=>{run=await (await fetch('/api/animation-benchmark/runs/'+run.id)).json();const seconds=run.latency_ms==null?'':` in ${(run.latency_ms/1000).toFixed(2)} s`;$('status').textContent=run.status==='completed'?`Completed${seconds}.`:run.status==='failed'?`Failed${seconds}.`:run.status;$('debug').textContent=JSON.stringify(run,null,2);if(run.status==='running')setTimeout(poll,500);else{$('run').disabled=false;if(run.status==='completed')render(run.manifest)}};poll()};load().catch(e=>$('status').textContent=String(e));
-</script></body></html>
+
+let raf = null;
+let currentManifest = null;
+let mode = 'all'; // 'all', 'base', 'custom'
+let activeIndices = new Set();
+let soloIndex = null;
+
+const $ = id => document.getElementById(id);
+
+function render(manifest) {
+  currentManifest = manifest;
+  const layers = manifest.layers || [];
+  activeIndices = new Set(layers.map((_, i) => i));
+  soloIndex = null;
+  mode = 'all';
+
+  $('sideSelector').classList.remove('hidden');
+  $('layerCountBadge').textContent = `${layers.length} layers`;
+
+  buildLayerFilterUI(layers);
+  updateStageView();
+
+  $('layersSummary').textContent = layers.map(x => `${x.order + 1}. ${x.name} — ${x.effect}: ${x.description}`).join(' | ');
+}
+
+function buildLayerFilterUI(layers) {
+  const container = $('layerFilterList');
+  container.innerHTML = '';
+
+  layers.forEach((layer, index) => {
+    const card = document.createElement('div');
+    card.className = `layer-card ${activeIndices.has(index) ? 'active' : ''}`;
+    card.dataset.index = index;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'layer-checkbox';
+    checkbox.checked = activeIndices.has(index);
+    checkbox.onclick = (e) => {
+      e.stopPropagation();
+      toggleLayer(index, checkbox.checked);
+    };
+
+    const thumbBox = document.createElement('div');
+    thumbBox.className = 'layer-thumb-box';
+    const thumbImg = document.createElement('img');
+    thumbImg.src = layer.url;
+    thumbImg.alt = layer.name;
+    thumbBox.append(thumbImg);
+
+    const meta = document.createElement('div');
+    meta.className = 'layer-meta';
+    
+    const topRow = document.createElement('div');
+    topRow.className = 'layer-meta-top';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'layer-name';
+    nameSpan.textContent = `${index + 1}. ${layer.name}`;
+    
+    const effectSpan = document.createElement('span');
+    effectSpan.className = `effect-chip effect-${layer.effect || 'none'}`;
+    effectSpan.textContent = layer.effect || 'none';
+
+    topRow.append(nameSpan, effectSpan);
+
+    const descDiv = document.createElement('div');
+    descDiv.className = 'layer-desc-text';
+    descDiv.textContent = layer.description;
+
+    meta.append(topRow, descDiv);
+
+    const soloBtn = document.createElement('button');
+    soloBtn.className = 'solo-btn';
+    soloBtn.textContent = 'Solo';
+    soloBtn.onclick = (e) => {
+      e.stopPropagation();
+      soloLayer(index);
+    };
+
+    card.append(checkbox, thumbBox, meta, soloBtn);
+    card.onclick = () => {
+      toggleLayer(index, !activeIndices.has(index));
+    };
+
+    container.append(card);
+  });
+
+  $('btnAllLayers').onclick = () => {
+    mode = 'all';
+    soloIndex = null;
+    activeIndices = new Set(layers.map((_, i) => i));
+    syncFilterControls();
+    updateStageView();
+  };
+
+  $('btnBaseImage').onclick = () => {
+    mode = 'base';
+    soloIndex = null;
+    syncFilterControls();
+    updateStageView();
+  };
+}
+
+function toggleLayer(index, isChecked) {
+  if (soloIndex !== null) {
+    soloIndex = null;
+  }
+  if (isChecked) {
+    activeIndices.add(index);
+  } else {
+    activeIndices.delete(index);
+  }
+  const totalLayers = currentManifest?.layers?.length || 0;
+  if (activeIndices.size === totalLayers) {
+    mode = 'all';
+  } else {
+    mode = 'custom';
+  }
+  syncFilterControls();
+  updateStageView();
+}
+
+function soloLayer(index) {
+  if (soloIndex === index) {
+    soloIndex = null;
+    mode = 'all';
+    activeIndices = new Set(currentManifest.layers.map((_, i) => i));
+  } else {
+    soloIndex = index;
+    mode = 'custom';
+    activeIndices = new Set([index]);
+  }
+  syncFilterControls();
+  updateStageView();
+}
+
+function syncFilterControls() {
+  $('btnAllLayers').classList.toggle('active', mode === 'all');
+  $('btnBaseImage').classList.toggle('active', mode === 'base');
+
+  const cards = document.querySelectorAll('.layer-card');
+  cards.forEach((card, idx) => {
+    const isChecked = activeIndices.has(idx) && mode !== 'base';
+    const isSolo = soloIndex === idx;
+    card.classList.toggle('active', isChecked);
+    card.classList.toggle('soloed', isSolo);
+
+    const cb = card.querySelector('.layer-checkbox');
+    if (cb) cb.checked = isChecked;
+
+    const soloBtn = card.querySelector('.solo-btn');
+    if (soloBtn) {
+      soloBtn.classList.toggle('active', isSolo);
+      soloBtn.textContent = isSolo ? 'Soloed' : 'Solo';
+    }
+  });
+}
+
+function updateStageView() {
+  if (raf) cancelAnimationFrame(raf);
+  const stage = $('stage');
+  stage.innerHTML = '';
+
+  if (!currentManifest) {
+    stage.innerHTML = '<div class="stage-placeholder">Run an animation decomposition to preview layers</div>';
+    $('activeFilterBadge').textContent = 'No run loaded';
+    $('activeFilterBadge').classList.remove('active');
+    return;
+  }
+
+  $('activeFilterBadge').classList.add('active');
+
+  if (mode === 'base') {
+    const baseImg = new Image();
+    baseImg.src = currentManifest.base_url;
+    baseImg.alt = 'Base Image';
+    stage.append(baseImg);
+    $('activeFilterBadge').textContent = 'Base Image (Original)';
+    return;
+  }
+
+  const layers = currentManifest.layers || [];
+  const visibleLayers = layers.filter((_, idx) => activeIndices.has(idx));
+
+  if (visibleLayers.length === 0) {
+    stage.innerHTML = '<div class="stage-placeholder">No layers selected in filter</div>';
+    $('activeFilterBadge').textContent = 'Hidden (0 layers)';
+    return;
+  }
+
+  if (soloIndex !== null && layers[soloIndex]) {
+    $('activeFilterBadge').textContent = `Solo: Layer ${soloIndex + 1} (${layers[soloIndex].name})`;
+  } else if (mode === 'all') {
+    $('activeFilterBadge').textContent = `All Layers (${layers.length})`;
+  } else {
+    $('activeFilterBadge').textContent = `Filtered (${visibleLayers.length}/${layers.length} layers)`;
+  }
+
+  for (const layer of visibleLayers) {
+    const img = new Image();
+    img.src = layer.url;
+    img.alt = layer.name;
+    stage.append(img);
+    layer.image = img;
+  }
+
+  const started = performance.now();
+  function tick(now) {
+    for (const layer of visibleLayers) {
+      if (layer.image) {
+        layer.image.style.transform = layerCssTransform(layer.effect, (now - started) / 1000);
+      }
+    }
+    raf = requestAnimationFrame(tick);
+  }
+  raf = requestAnimationFrame(tick);
+}
+
+async function load() {
+  const data = await (await fetch('/api/animation-benchmark/catalog')).json();
+  data.providers.filter(p => p.status === 'available').forEach(p => $('provider').add(new Option(p.name, p.id)));
+  if (!$('provider').options.length) data.providers.forEach(p => $('provider').add(new Option(p.name, p.id)));
+  
+  data.prompts.forEach((p, index) => {
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'prompt-choice';
+    input.value = p.id;
+    input.checked = index === 0;
+    
+    const label = document.createElement('label');
+    label.className = 'choice';
+    label.append(
+      input,
+      Object.assign(document.createElement('strong'), { textContent: p.title }),
+      Object.assign(document.createElement('small'), { textContent: p.prompt })
+    );
+    $('prompts').append(label);
+  });
+  
+  $('status').textContent = 'Ready.';
+}
+
+$('customPromptText').oninput = () => {
+  $('useCustomPrompt').checked = true;
+};
+
+$('run').onclick = async () => {
+  const custom = $('customPromptText').value.trim();
+  const selected = document.querySelector('input[name="prompt-choice"]:checked');
+  const body = { provider_id: $('provider').value };
+  
+  if ($('useCustomPrompt').checked) {
+    if (!custom) {
+      $('status').textContent = 'Enter a write-in prompt.';
+      return;
+    }
+    body.prompt = custom;
+  } else {
+    body.prompt_id = selected?.value;
+  }
+  
+  $('run').disabled = true;
+  $('status').textContent = 'Running layer plan and base generation…';
+  
+  const response = await fetch('/api/animation-benchmark/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  
+  let run = await response.json();
+  if (!response.ok) {
+    $('debug').textContent = JSON.stringify(run, null, 2);
+    $('run').disabled = false;
+    return;
+  }
+  
+  const poll = async () => {
+    run = await (await fetch('/api/animation-benchmark/runs/' + run.id)).json();
+    const seconds = run.latency_ms == null ? '' : ` in ${(run.latency_ms / 1000).toFixed(2)} s`;
+    $('status').textContent = run.status === 'completed' ? `Completed${seconds}.` : run.status === 'failed' ? `Failed${seconds}.` : run.status;
+    $('debug').textContent = JSON.stringify(run, null, 2);
+    
+    if (run.status === 'running') {
+      setTimeout(poll, 500);
+    } else {
+      $('run').disabled = false;
+      if (run.status === 'completed') {
+        render(run.manifest);
+      }
+    }
+  };
+  poll();
+};
+
+load().catch(e => $('status').textContent = String(e));
+</script>
+</body>
+</html>
+
