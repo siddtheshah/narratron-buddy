@@ -250,6 +250,10 @@ class MockToolBundle:
         result = f"Playing animation '{animation_id}' on canvas."
         return self._record("play_animation", {"animation_id": animation_id}, result)
 
+    def browse_animations(self) -> List[Dict[str, Any]]:
+        """Browse saved animations."""
+        return self._record("browse_animations", {}, [])
+
     # --- Observability Tools ---
 
     def request_canvas_observability(self) -> str:
@@ -511,6 +515,7 @@ class AdventureSession:
             tools.extend([
                 self.mock_tools.create_animation,
                 self.mock_tools.play_animation,
+                self.mock_tools.browse_animations,
             ])
 
         # Observability

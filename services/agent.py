@@ -116,7 +116,7 @@ Do NOT use reference images that aren't being mentioned by the story planning to
 
 {% if animation_enabled %}
 ## Animation
-Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_animation` with a complete `scene_prompt` and a concise `animation_name` (and optional `reference_images`). It automatically decides between multi-frame transition animation vs. layered depth animation and begins generating in the background. If a multi-frame sequence is generated, call `play_animation` with the returned animation ID once ready (layered animations play automatically once ready, or can be replayed with `play_animation`).
+Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_animation` with a complete `scene_prompt` and a concise `animation_name` (and optional `reference_images`). It automatically decides between multi-frame transition animation vs. layered depth animation and begins generating in the background. If a multi-frame sequence is generated, call `play_animation` with the returned animation ID once ready (layered animations play automatically once ready, or can be replayed with `play_animation`). Call `browse_animations` to list saved animations.
 {% endif %}
 
 ## Chat
@@ -409,7 +409,7 @@ def create_tool_bundle_for_session(
         tools.append(music_tools.create_music)
     if animation_tools:
         tools.extend([
-            animation_tools.create_animation, animation_tools.play_animation,
+            animation_tools.create_animation, animation_tools.play_animation, animation_tools.browse_animations,
         ])
     observability_config = config.get("observability_tool", {})
     if isinstance(observability_config, dict) and observability_config.get("enabled", False):

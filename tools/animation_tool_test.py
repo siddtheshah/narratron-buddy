@@ -203,7 +203,7 @@ class TestAnimationTools(BaseTestCase):
         result = tools.create_animation("A hero on a scenic cliff with foreground leaves.", "cliff")
         tools.join_generation()
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
-        manifest_path = os.path.join(tools.animations_dir, animation_id, "animation.json")
+        manifest_path = os.path.join(tools.animations_dir, animation_id, "layered.json")
         with open(manifest_path, encoding="utf-8") as stream:
             manifest = __import__("json").load(stream)
         self.assertEqual(len(manifest["layers"]), 3)
@@ -215,6 +215,69 @@ class TestAnimationTools(BaseTestCase):
         animation = canvas_state_service.latest_state("layered_canvas")["animation"]
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][-1]["effect"], "sway")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_triframe_animation_outputs_triframe_json(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="fake", model="fake-model"
+        )
+        text_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "triframe", "reasoning": "complex motion"}, provider="p", model="m", request_id="1", usage={})
+        triframe_resp = MagicMock(
+            parsed={
+                "base_frame": BASE_FRAME,
+                "second_frame_change": SECOND_FRAME_CHANGE,
+                "third_frame_change": THIRD_FRAME_CHANGE,
+            },
+            provider="p", model="m", request_id="2", usage={}
+        )
+        text_provider.generate.side_effect = [technique_resp, triframe_resp]
+
+        image_tools = ImageTools(self.config, "tri_json_test", self.manager)
+        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+
+        result = animation_tools.create_animation("A hero running across a bridge.", "hero_run")
+        animation_tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        manifest_path = os.path.join(animation_tools.animations_dir, animation_id, "triframe.json")
+        self.assertTrue(os.path.exists(manifest_path))
+
+        with open(manifest_path, encoding="utf-8") as stream:
+            manifest = __import__("json").load(stream)
+        self.assertEqual(manifest["type"], "triframe")
+        self.assertEqual(len(manifest["frames"]), 3)
+        self.assertEqual(manifest["scene_prompt"], "A hero running across a bridge.")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_browse_animations_returns_saved_animations(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="fake", model="fake-model"
+        )
+        text_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "triframe", "reasoning": "complex motion"}, provider="p", model="m", request_id="1", usage={})
+        triframe_resp = MagicMock(
+            parsed={
+                "base_frame": BASE_FRAME,
+                "second_frame_change": SECOND_FRAME_CHANGE,
+                "third_frame_change": THIRD_FRAME_CHANGE,
+            },
+            provider="p", model="m", request_id="2", usage={}
+        )
+        text_provider.generate.side_effect = [technique_resp, triframe_resp]
+
+        image_tools = ImageTools(self.config, "browse_test", self.manager)
+        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+
+        result = animation_tools.create_animation("A hero running across a bridge.", "hero_run")
+        animation_tools.join_generation()
+
+        animations = animation_tools.browse_animations()
+        self.assertEqual(len(animations), 1)
+        self.assertEqual(animations[0]["type"], "triframe")
+        self.assertEqual(animations[0]["scene_prompt"], "A hero running across a bridge.")
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_is_single_flight_while_generating(self, mock_get_provider):

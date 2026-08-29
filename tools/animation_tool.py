@@ -10,7 +10,7 @@ import threading
 import time
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -25,7 +25,7 @@ from providers import (
     TextResponseRequest,
 )
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
-from tools.base_tool import BaseTools, single_flight, with_cooldown
+from tools.base_tool import BaseTools, logged_tool_call, single_flight, with_cooldown
 from utils.image_utils import embed_image_metadata
 
 
@@ -266,6 +266,19 @@ class AnimationTools(BaseTools):
                     filepath,
                 )
             self._animations[animation_id] = saved_paths
+            manifest = {
+                "version": 1,
+                "id": animation_id,
+                "type": "triframe",
+                "scene_prompt": scene_prompt.strip(),
+                "frames": [self._to_relative_path(p) for p in saved_paths],
+                "plan": plan,
+                "provider": {
+                    "planner": planner_debug,
+                },
+            }
+            manifest_path = Path(animation_dir) / "triframe.json"
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             logger.debug("[AnimationTools] Animation '%s' is ready to play.", animation_id)
         except (ImageProviderError, TextResponseProviderError) as exc:
             logger.error("[AnimationTools] Image or text provider failed: %s", exc)
@@ -292,26 +305,15 @@ class AnimationTools(BaseTools):
             layer_paths = [self._save_named_image(image_bytes, animation_dir / f"layer_{index + 1}.png", decomposition_prompt) for index, (image_bytes, _mime_type) in enumerate(layered.images[:len(plan)])]
             if len(layer_paths) < 2:
                 raise ImageProviderError("Layer decomposition did not produce enough playable layers.")
-            output_dir_path = Path(self.output_dir)
-            def _to_rel(p: str | Path) -> str:
-                try:
-                    return Path(p).relative_to(output_dir_path).as_posix()
-                except ValueError:
-                    parts = Path(p).parts
-                    if "animations" in parts:
-                        idx = parts.index("animations")
-                        return Path(*parts[idx:]).as_posix()
-                    return Path(p).name
-
             manifest = {
                 "version": 1,
                 "id": animation_id,
                 "scene_prompt": scene_prompt.strip(),
                 "flattened_prompt": flattened_prompt,
                 "decomposition_prompt": decomposition_prompt,
-                "base_image": _to_rel(base_path),
+                "base_image": self._to_relative_path(base_path),
                 "layers": [
-                    {**description, "path": _to_rel(path), "order": index}
+                    {**description, "path": self._to_relative_path(path), "order": index}
                     for index, (description, path) in enumerate(zip(plan[:len(layer_paths)], layer_paths))
                 ],
                 "provider": {
@@ -323,7 +325,7 @@ class AnimationTools(BaseTools):
                     "planner": planner_debug,
                 },
             }
-            manifest_path = animation_dir / "animation.json"
+            manifest_path = animation_dir / "layered.json"
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             self._layered_animations[animation_id] = manifest
             self._register_layered_aliases(animation_id, base_path, layer_paths)
@@ -489,11 +491,22 @@ class AnimationTools(BaseTools):
         for index, path in enumerate(layer_paths, start=1):
             self.image_tools.image_aliases[f"{animation_id}_layer_{index}"] = path
 
+    def _to_relative_path(self, path: str | Path) -> str:
+        output_dir_path = Path(self.output_dir)
+        try:
+            return Path(path).relative_to(output_dir_path).as_posix()
+        except ValueError:
+            parts = Path(path).parts
+            if "animations" in parts:
+                idx = parts.index("animations")
+                return Path(*parts[idx:]).as_posix()
+            return Path(path).name
+
     def _find_layered_animation(self, animation_id: str) -> Optional[dict]:
         if animation_id in self._layered_animations:
             return self._layered_animations[animation_id]
         clean_id = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_id)
-        manifest_path = Path(self.animations_dir) / clean_id / "animation.json"
+        manifest_path = Path(self.animations_dir) / clean_id / "layered.json"
         if not manifest_path.is_file():
             return None
         try:
@@ -566,7 +579,7 @@ class AnimationTools(BaseTools):
             self.image_tools._trigger_after_tool_call("play_animation")
             return f"Playing layered animation '{animation_id}'."
 
-        frame_paths = self._find_animation(animation_id)
+        frame_paths = self._find_triframe_animation(animation_id)
         if frame_paths:
             self.canvas_state_service.show_triframe(frame_paths, theater_id=self.active_theater_id)
             self.image_tools._trigger_after_tool_call("play_animation")
@@ -604,16 +617,125 @@ class AnimationTools(BaseTools):
         self.image_tools.image_aliases[alias] = filepath
         self.image_tools.image_aliases[alias.lower()] = filepath
 
-    def _find_animation(self, animation_id: str) -> list[str]:
+    def _find_triframe_animation(self, animation_id: str) -> list[str]:
         if animation_id in self._animations:
             return self._animations[animation_id]
         clean_id = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_id)
         animation_dir = Path(self.animations_dir) / clean_id
+        manifest_path = animation_dir / "triframe.json"
+        if manifest_path.is_file():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if isinstance(manifest.get("frames"), list) and manifest["frames"]:
+                    output_dir_path = Path(self.output_dir)
+                    abs_frames = []
+                    for f in manifest["frames"]:
+                        fp = Path(f)
+                        abs_fp = (output_dir_path / fp) if not fp.is_absolute() else fp
+                        if not abs_fp.is_file():
+                            local_fp = animation_dir / fp.name
+                            if local_fp.is_file():
+                                abs_fp = local_fp
+                        abs_frames.append(str(abs_fp))
+                    if all(Path(p).is_file() for p in abs_frames):
+                        self._animations[clean_id] = abs_frames
+                        return abs_frames
+            except (OSError, json.JSONDecodeError):
+                pass
         frame_paths = [str(animation_dir / f"frame_{number}.jpg") for number in range(1, 4)]
         if all(Path(path).is_file() for path in frame_paths):
             self._animations[clean_id] = frame_paths
             return frame_paths
         return []
+
+    @logged_tool_call
+    def browse_animations(self) -> list[dict[str, Any]]:
+        """Browse all available saved animations (both triframe and layered).
+
+        Returns:
+            A list of animation details (ID, type, scene_prompt, and frame/layer paths).
+        """
+        try:
+            results = []
+            seen_ids = set()
+            anim_base_dir = Path(self.animations_dir)
+            if anim_base_dir.exists():
+                for subfolder in sorted(anim_base_dir.iterdir()):
+                    if subfolder.is_dir():
+                        info = self._load_animation_info(subfolder)
+                        if info:
+                            seen_ids.add(info["id"])
+                            results.append(info)
+
+            for anim_id, manifest in self._layered_animations.items():
+                if anim_id not in seen_ids:
+                    seen_ids.add(anim_id)
+                    results.append({
+                        "id": anim_id,
+                        "type": "layered",
+                        "scene_prompt": manifest.get("scene_prompt", ""),
+                        "base_image": manifest.get("base_image", ""),
+                        "layers": manifest.get("layers", []),
+                    })
+            for anim_id, frames in self._animations.items():
+                if anim_id not in seen_ids:
+                    seen_ids.add(anim_id)
+                    results.append({
+                        "id": anim_id,
+                        "type": "triframe",
+                        "scene_prompt": "",
+                        "frames": [self._to_relative_path(p) for p in frames],
+                    })
+
+            self.image_tools._trigger_after_tool_call("browse_animations")
+            return results
+        except Exception as exc:
+            logger.exception("[AnimationTools] Failed to browse animations: %s", exc)
+            self.image_tools._trigger_after_tool_call("browse_animations")
+            return []
+
+    def _load_animation_info(self, subfolder: Path) -> Optional[dict[str, Any]]:
+        anim_id = subfolder.name
+        layered_manifest_path = subfolder / "layered.json"
+        if not layered_manifest_path.is_file():
+            layered_manifest_path = subfolder / "animation.json"
+        if layered_manifest_path.is_file():
+            try:
+                manifest = json.loads(layered_manifest_path.read_text(encoding="utf-8"))
+                if isinstance(manifest, dict) and "layers" in manifest:
+                    return {
+                        "id": manifest.get("id", anim_id),
+                        "type": "layered",
+                        "scene_prompt": manifest.get("scene_prompt", ""),
+                        "base_image": manifest.get("base_image", ""),
+                        "layers": manifest.get("layers", []),
+                    }
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        triframe_manifest_path = subfolder / "triframe.json"
+        if triframe_manifest_path.is_file():
+            try:
+                manifest = json.loads(triframe_manifest_path.read_text(encoding="utf-8"))
+                if isinstance(manifest, dict):
+                    return {
+                        "id": manifest.get("id", anim_id),
+                        "type": "triframe",
+                        "scene_prompt": manifest.get("scene_prompt", ""),
+                        "frames": manifest.get("frames", []),
+                    }
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        frame_paths = [str(subfolder / f"frame_{number}.jpg") for number in range(1, 4)]
+        if all(Path(p).is_file() for p in frame_paths):
+            return {
+                "id": anim_id,
+                "type": "triframe",
+                "scene_prompt": "",
+                "frames": [self._to_relative_path(p) for p in frame_paths],
+            }
+        return None
 
     def _notify_image_created(self, filepath: str) -> None:
         callback = self.image_tools.on_image_created
