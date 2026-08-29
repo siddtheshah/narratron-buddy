@@ -20,3 +20,10 @@ def test_animation_benchmark_routes():
 def test_animation_benchmark_validates_required_input():
     response = TestClient(app).post("/api/animation-benchmark/runs", json={})
     assert response.status_code == 400
+
+
+def test_generic_websocket_fallback_accepts_connection():
+    client = TestClient(app)
+    with client.websocket_connect("/ws?clientId=fb83c52d027d457ab5c535e0067c2540") as websocket:
+        assert websocket is not None
+

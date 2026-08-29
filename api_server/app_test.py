@@ -110,6 +110,14 @@ def test_server_shutdown_closes_database_connection():
     mock_db.close.assert_called_once()
 
 
+def test_generic_websocket_fallback_accepts_connection():
+    from fastapi.testclient import TestClient
+    client = TestClient(app_module.app)
+    with client.websocket_connect("/ws?clientId=fb83c52d027d457ab5c535e0067c2540") as websocket:
+        assert websocket is not None
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

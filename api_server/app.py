@@ -7,7 +7,7 @@ import sys
 import warnings
 
 from dotenv import load_dotenv
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -175,6 +175,17 @@ async def get_agent_status_endpoint(theater_id: str):
 # ========================================
 # Live Agent WebSocket Endpoint
 # ========================================
+
+@app.websocket("/ws")
+async def generic_websocket_fallback(websocket: WebSocket) -> None:
+    """Fallback handler for generic dev-tool WebSocket connections (e.g., Live Server / HMR extensions)."""
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+
 
 @app.websocket("/ws/{theater_id}/agent")
 @app.websocket("/ws/{user_id}/{theater_id}")

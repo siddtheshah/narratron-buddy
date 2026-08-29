@@ -11,7 +11,7 @@ from io import BytesIO
 from typing import Any
 
 from PIL import Image
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -99,6 +99,17 @@ CANVAS_IMAGE_ROOTS = (ROOT / "images", PROJECT_ROOT / "theaters")
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(ROOT / "index.html", media_type="text/html")
+
+
+@app.websocket("/ws")
+async def generic_websocket_fallback(websocket: WebSocket) -> None:
+    """Fallback handler for generic dev-tool WebSocket connections (e.g., Live Server / HMR extensions)."""
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
 
 
 @app.get("/vad", include_in_schema=False)

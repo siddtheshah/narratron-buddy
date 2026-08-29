@@ -56,7 +56,7 @@ class TestTheaterAPI(BaseTestCase):
         join_response = self.client.get("/join")
         self.assertEqual(join_response.status_code, 200)
         self.assertIn("Join a Live Story Theater", join_response.text)
-        self.assertIn('href="/docs/about"', join_response.text)
+        self.assertIn('href="/docs"', join_response.text)
         self.assertIn('id="userAccountBar"', join_response.text)
         self.assertIn("openAuthModal('login')", join_response.text)
         self.assertIn("auth-flow.js", join_response.text)
@@ -73,7 +73,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn('id="theaterName"', response.text)
         self.assertIn("if (theaterNameConfig) theaterNameConfig.style.display = 'block';", response.text)
         self.assertNotIn("<th>Status</th>", response.text)
-        self.assertIn('href="/docs/about"', response.text)
+        self.assertIn('href="/docs"', response.text)
         self.assertIn("pricingModal", response.text)
         self.assertIn("openPricingModal", response.text)
 
@@ -871,7 +871,7 @@ def test_list_adventures_endpoint():
         {"id": "adv-1", "title": "Adventure 1", "created_at": "2026-08-18T10:00:00Z"},
         {"id": "adv-2", "title": "Adventure 2", "created_at": "2026-08-17T10:00:00Z"},
     ]
-    with patch.object(theaters.adventure_service, "list_adventures", return_value=mock_adventures):
+    with patch.object(object_registry.adventure_service, "list_adventures", return_value=mock_adventures):
         res = theaters.list_adventures_endpoint()
         assert len(res) == 2
         assert res[0]["id"] == "adv-1"
@@ -879,7 +879,7 @@ def test_list_adventures_endpoint():
 
 def test_get_adventure_endpoint_success_and_404():
     mock_adv = {"id": "adv-1", "title": "Adventure 1"}
-    with patch.object(theaters.adventure_service, "get_adventure", side_effect=lambda adv_id: mock_adv if adv_id == "adv-1" else None):
+    with patch.object(object_registry.adventure_service, "get_adventure", side_effect=lambda adv_id: mock_adv if adv_id == "adv-1" else None):
         res = theaters.get_adventure_endpoint("adv-1")
         assert res["title"] == "Adventure 1"
 
@@ -889,7 +889,7 @@ def test_get_adventure_endpoint_success_and_404():
 
 
 def test_get_adventure_cover_endpoint_success_and_404():
-    with patch.object(theaters.adventure_service, "get_adventure_cover", side_effect=lambda adv_id: (b"imagedata", "image/png") if adv_id == "adv-1" else None):
+    with patch.object(object_registry.adventure_service, "get_adventure_cover", side_effect=lambda adv_id: (b"imagedata", "image/png") if adv_id == "adv-1" else None):
         res = theaters.get_adventure_cover_endpoint("adv-1")
         assert res.body == b"imagedata"
         assert res.media_type == "image/png"
@@ -935,8 +935,8 @@ async def test_create_and_deploy_theater_with_preset_adventure():
     with patch.object(theaters, "get_current_user_async", AsyncMock(return_value=mock_user)), \
          patch.object(theaters, "theater_manager", mock_manager), \
          patch.object(theaters, "db", mock_db), \
-         patch.object(theaters.adventure_service, "get_adventure", return_value=mock_adv_meta), \
-         patch.object(theaters.adventure_service, "load_adventure_assets", return_value=(mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)):
+         patch.object(object_registry.adventure_service, "get_adventure", return_value=mock_adv_meta), \
+         patch.object(object_registry.adventure_service, "load_adventure_assets", return_value=(mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)):
 
         res = await theaters.create_and_deploy_theater(request)
 
