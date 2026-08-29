@@ -545,6 +545,7 @@ class AdventureSession:
             playlist_context=playlist_context,
             special_instructions=special_instructions,
             animation_enabled=bool(self.config.get("animation", {}).get("enabled", False)),
+            image_generation_enabled=bool(self.config.get("image_generation", {}).get("enabled", True)),
             use_generated_music=bool(self.config.get("music", {}).get("use_generated_music", False)),
             adventure_mode=bool(self.config.get("story_planning", {}).get("adventure_mode", False)),
             interactive_canvas_enabled=bool(self.config.get("interactive_canvas", {}).get("enabled", False)),
