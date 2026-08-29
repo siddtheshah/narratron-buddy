@@ -24,7 +24,7 @@ def test_get_layered_animation_catalog_returns_effects_and_presets():
     assert "image_effects" in catalog
     assert "presets" in catalog
     effect_ids = {e["id"] for e in catalog["effects"]}
-    assert {"none", "sway", "gentle_rocking", "vibrate", "pulse", "twist", "bend", "light_halo", "dark_halo", "ghostly", "reflective"}.issubset(effect_ids)
+    assert {"none", "sway", "gentle_rocking", "vibrate", "pulse", "twist", "bend", "light_halo", "dark_halo", "ghostly", "reflective", "mirage", "energy_blast"}.issubset(effect_ids)
     sway_entry = next(e for e in catalog["effects"] if e["id"] == "sway")
     assert sway_entry["name"] == "Sway (Foliage Bending)"
     assert "Bottom-anchored" in sway_entry["description"]
@@ -38,6 +38,11 @@ def test_get_layered_animation_catalog_returns_effects_and_presets():
     assert ghostly_entry["name"] == "Ghostly"
     reflective_entry = next(e for e in catalog["effects"] if e["id"] == "reflective")
     assert reflective_entry["name"] == "Reflective (Light Sheen)"
+    mirage_entry = next(e for e in catalog["effects"] if e["id"] == "mirage")
+    assert mirage_entry["name"] == "Mirage (Heat & Smoke Distortion)"
+    eb_entry = next(e for e in catalog["effects"] if e["id"] == "energy_blast")
+    assert eb_entry["name"] == "Energy Blast"
+    assert "Jagged traveling wave fronts" in eb_entry["description"]
 
 
 def test_layered_animation_lab_routes():

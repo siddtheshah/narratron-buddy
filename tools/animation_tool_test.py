@@ -324,6 +324,41 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animation["layers"][1]["effect"], "reflective")
 
     @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_uses_energy_blast_effect(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="base", model="base-model"
+        )
+        layered_provider = MagicMock()
+        layered_provider.model = "fal-ai/qwen-image-layered"
+        layered_provider.decompose.return_value = LayeredImageResult(
+            images=[(fake_image_bytes(), "image/png")] * 3, request_id="qwen-5", usage={"seed": 25}
+        )
+        planning_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "layered", "reasoning": "laser beam energy blast"}, provider="p", model="m", request_id="1", usage={})
+        layered_resp = MagicMock(
+            parsed={
+                "background": {"description": "deep space", "effect": "none"},
+                "subject": {"description": "blazing laser blast beam", "effect": "energy_blast"},
+            },
+            provider="planner", model="planner-model", request_id="planner-5", usage={"tokens": 20}
+        )
+        planning_provider.generate.side_effect = [technique_resp, layered_resp]
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "energy_blast_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+
+        result = tools.create_animation("A glowing laser beam firing across deep space.", "laser_beam")
+        tools.join_generation()
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        self.assertIn("Playing layered animation", tools.play_animation(animation_id))
+        animation = canvas_state_service.latest_state("energy_blast_canvas")["animation"]
+        self.assertEqual(animation["type"], "layered")
+        self.assertEqual(animation["layers"][1]["effect"], "energy_blast")
+
+    @patch("tools.image_tool.get_image_provider")
     def test_create_triframe_animation_outputs_triframe_json(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -422,6 +457,10 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(layer_twist.effect, "twist")
         layer_bend = AnimationLayer(description="a flexing reed", effect="bend")
         self.assertEqual(layer_bend.effect, "bend")
+        layer_mirage = AnimationLayer(description="a fiery campfire flame and smoky atmosphere", effect="mirage")
+        self.assertEqual(layer_mirage.effect, "mirage")
+        layer_eb = AnimationLayer(description="laser blast beam", effect="energy_blast")
+        self.assertEqual(layer_eb.effect, "energy_blast")
 
     def test_plan_animation_technique_with_provider_guidance(self):
         text_provider = MagicMock()

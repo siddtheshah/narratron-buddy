@@ -401,6 +401,8 @@
       layerHaloParams,
       layerPieceFilter,
       layerReflectiveDraw,
+      layerFlameRippleDraw,
+      layerEnergyBlastDraw,
       isMeshDistortionEffect,
       calculateMeshGrid,
     } from '/effects-static/js/animation-effects.js';
@@ -551,7 +553,7 @@
 
         const availableEffects = (catalog.effects && catalog.effects.length > 0)
           ? catalog.effects.map(e => e.id)
-          : ['none', 'sway', 'gentle_rocking', 'vibrate', 'pulse', 'twist', 'bend', 'light_halo', 'dark_halo', 'ghostly', 'reflective'];
+          : ['none', 'sway', 'gentle_rocking', 'vibrate', 'pulse', 'twist', 'bend', 'light_halo', 'dark_halo', 'ghostly', 'reflective', 'mirage', 'energy_blast'];
 
         const effectOptions = availableEffects.map(ef =>
           `<option value="${ef}" ${ef === layer.effect ? 'selected' : ''}>${ef.toUpperCase()}</option>`
@@ -815,7 +817,7 @@
         if (isMeshDistortionEffect(layer.effect)) {
           const centroid = computeImageCentroid(source);
           drawMeshDistortion(ctx, source, drawWidth, drawHeight, effectiveTime, layer.amplitude, centroid, layer.effect);
-        } else if (!layerReflectiveDraw(layer.effect, effectiveTime, ctx, source, drawWidth, drawHeight)) {
+        } else if (!layerEnergyBlastDraw(layer.effect, effectiveTime, ctx, source, drawWidth, drawHeight) && !layerFlameRippleDraw(layer.effect, effectiveTime, ctx, source, drawWidth, drawHeight) && !layerReflectiveDraw(layer.effect, effectiveTime, ctx, source, drawWidth, drawHeight)) {
           ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
         }
         ctx.restore();

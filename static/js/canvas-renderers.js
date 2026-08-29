@@ -9,6 +9,9 @@ import {
     layerHaloParams,
     layerPieceFilter,
     layerReflectiveDraw,
+    layerMirageDraw,
+    layerFlameRippleDraw,
+    layerEnergyBlastDraw,
     isMeshDistortionEffect,
     calculateMeshGrid,
 } from "/static/js/animation-effects.js";
@@ -402,7 +405,7 @@ export function createImageRenderer({
             if (isMeshDistortionEffect(layer.effect)) {
                 const centroid = computeImageCentroid(source);
                 drawMeshDistortion(context, source, drawWidth, drawHeight, phase, amp, centroid, layer.effect);
-            } else if (!layerReflectiveDraw(layer.effect, phase, context, source, drawWidth, drawHeight)) {
+            } else if (!layerEnergyBlastDraw(layer.effect, phase, context, source, drawWidth, drawHeight) && !layerMirageDraw(layer.effect, phase, context, source, drawWidth, drawHeight) && !layerReflectiveDraw(layer.effect, phase, context, source, drawWidth, drawHeight)) {
                 context.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
             }
             context.restore();

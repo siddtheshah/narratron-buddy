@@ -56,6 +56,8 @@ def get_layered_animation_catalog() -> dict[str, Any]:
         {"id": "dark_halo", "name": "Dark Halo", "description": "Pulsing dark translucent aura around image piece"},
         {"id": "ghostly", "name": "Ghostly", "description": "Ethereal fading in and out transparency cycle"},
         {"id": "reflective", "name": "Reflective (Light Sheen)", "description": "Sweeping reflective sheen trace over image piece"},
+        {"id": "mirage", "name": "Mirage (Heat & Smoke Distortion)", "description": "Multi-layer twist distortion field for fires, smoky environments, and dizziness"},
+        {"id": "energy_blast", "name": "Energy Blast", "description": "Jagged traveling wave fronts and centroid ripples along bright laser blasts, plasma beams, energy bursts, or comet tails"},
     ]
 
     image_effects = [
@@ -111,6 +113,37 @@ def get_layered_animation_catalog() -> dict[str, Any]:
                     "amplitude": 1.2,
                     "opacity": 0.9,
                     "order": 2,
+                },
+            ]
+        })
+
+    if "subject_laser_truck_explosion.png" in piece_map:
+        presets.append({
+            "id": "laser-truck-explosion",
+            "name": "Laser Truck Explosion (Particle Flow)",
+            "description": "Laser beam firing into a truck with particle flow wave fronts converging onto the explosion centroid.",
+            "layers": [
+                {
+                    "name": "Highway Night Sky",
+                    "piece_id": "bg_desert_highway",
+                    "filename": "bg_desert_highway.png",
+                    "url": piece_map.get("bg_desert_highway.png", {}).get("url", ""),
+                    "effect": "none",
+                    "speed": 1.0,
+                    "amplitude": 1.0,
+                    "opacity": 1.0,
+                    "order": 0,
+                },
+                {
+                    "name": "Laser Blast Truck Explosion",
+                    "piece_id": "subject_laser_truck_explosion",
+                    "filename": "subject_laser_truck_explosion.png",
+                    "url": piece_map["subject_laser_truck_explosion.png"]["url"],
+                    "effect": "energy_blast",
+                    "speed": 1.0,
+                    "amplitude": 1.0,
+                    "opacity": 1.0,
+                    "order": 1,
                 },
             ]
         })

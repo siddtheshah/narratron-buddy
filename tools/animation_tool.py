@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class AnimationLayer(BaseModel):
     description: str = Field(min_length=3, max_length=300)
-    effect: str = Field(pattern="^(none|sway|vibrate|pulse|twist|bend|gentle_rocking|light_halo|dark_halo|ghostly|reflective)$")
+    effect: str = Field(pattern="^(none|sway|vibrate|pulse|twist|bend|gentle_rocking|light_halo|dark_halo|ghostly|reflective|mirage|energy_blast)$")
 
 
 class AnimationLayerPlanResponse(BaseModel):
@@ -55,7 +55,9 @@ ANIMATION_EFFECTS_DOCUMENTATION = (
     "- light_halo: Pulsing light. Radiant power and powerful vibes\n"
     "- dark_halo: Pulsing dark. Dark power and evil vibes.\n"
     "- ghostly: Ethereal fading in and out. Spirits, phantoms, mist, vanishing memories.\n"
-    "- reflective: Sweeping light trace sheen. Metallic, glass, gemstone, or polished surfaces."
+    "- reflective: Sweeping light trace sheen. Metallic, glass, gemstone, or polished surfaces.\n"
+    "- mirage: Multi-layer twist distortion field for fires, flames, smoky environments, dizziness, and chaotic heat waves.\n"
+    "- energy_blast: Jagged traveling wave fronts and centroid ripples along bright laser blasts, plasma beams, energy bursts, or comet tails."
 )
 
 
