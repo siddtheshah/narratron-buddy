@@ -9,6 +9,7 @@ __pycache__/
 output/
 scratch/
 theaters/
+ephemeral/
 adventures/
 demos/
 evaluation_results/

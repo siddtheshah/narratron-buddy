@@ -1755,6 +1755,7 @@ class _DatabaseManagerBase:
 
     def storage_daemon(
         self,
+        theater_repository: Any = None,
         theater_manager: Any = None,
         ttl_seconds: float = 604800.0,
         hourly_cost: float = 0.004167,
@@ -1762,6 +1763,7 @@ class _DatabaseManagerBase:
     ) -> Dict[str, Any]:
         """Alias for run_database_daemon: process non-persistent storage cleanup and persistent session billing."""
         return self.run_database_daemon(
+            theater_repository=theater_repository,
             theater_manager=theater_manager,
             ttl_seconds=ttl_seconds,
             hourly_cost=hourly_cost,
@@ -1770,6 +1772,7 @@ class _DatabaseManagerBase:
 
     def run_database_daemon(
         self,
+        theater_repository: Any = None,
         theater_manager: Any = None,
         ttl_seconds: float = 604800.0,
         hourly_cost: float = 0.004167,
@@ -1808,6 +1811,14 @@ class _DatabaseManagerBase:
                     if age_seconds > ttl_seconds:
                         logger.info(f"[DatabaseDaemon] Auto-cleaning expired non-persistent theater_id={theater_id}")
                         cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
+                        if theater_repository:
+                            try:
+                                if hasattr(theater_repository, "delete_theater"):
+                                    theater_repository.delete_theater(theater_id)
+                                elif hasattr(theater_repository, "destroy_theater"):
+                                    theater_repository.destroy_theater(theater_id)
+                            except Exception as e:
+                                logger.warning(f"[DatabaseDaemon] Error deleting theater repository files for {theater_id}: {e}")
                         if theater_manager:
                             try:
                                 theater_manager.destroy_theater(theater_id)
@@ -1861,6 +1872,14 @@ class _DatabaseManagerBase:
                         else:
                             logger.warning(f"[DatabaseDaemon] User user_id={user_id} has insufficient credits ({user_credits}) for persistent theater_id={theater_id}. Expiring session.")
                             cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
+                            if theater_repository:
+                                try:
+                                    if hasattr(theater_repository, "delete_theater"):
+                                        theater_repository.delete_theater(theater_id)
+                                    elif hasattr(theater_repository, "destroy_theater"):
+                                        theater_repository.destroy_theater(theater_id)
+                                except Exception as e:
+                                    logger.warning(f"[DatabaseDaemon] Error deleting theater repository files for {theater_id}: {e}")
                             if theater_manager:
                                 try:
                                     theater_manager.destroy_theater(theater_id)

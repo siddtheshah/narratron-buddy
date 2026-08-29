@@ -2,7 +2,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
-from components.theater_manager import ensure_theaters_root
+from components.theater_manager import ensure_ephemeral_root
 
 _APP_CONFIG_CACHE: Dict[str, Any] | None = None
 _THEATER_DEFAULT_CACHE: Dict[str, Any] | None = None
@@ -70,7 +70,7 @@ def get_theater_config(
     3. If not on disk, checks DB deployment record for custom theater_config
     4. Dumps final config to theaters/<theater_id>/theater.yaml
     """
-    base_dir = base_dir or ensure_theaters_root()
+    base_dir = base_dir or ensure_ephemeral_root()
     theater_dir = base_dir / theater_id
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"
@@ -134,7 +134,7 @@ def save_theater_config(
     db: Optional[Any] = None,
 ) -> Path:
     """Save theater configuration as YAML to theaters/<theater_id>/theater.yaml and optionally sync DB."""
-    base_dir = base_dir or ensure_theaters_root()
+    base_dir = base_dir or ensure_ephemeral_root()
     theater_dir = base_dir / theater_id
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"

@@ -23,6 +23,22 @@ MAX_LORE_DOCUMENT_BYTES = 256 * 1024
 
 from storage.theater_repository import ensure_theaters_root, get_theaters_root
 
+FLAGS = flags.FLAGS
+
+
+def get_ephemeral_root() -> Path:
+    """Return the ephemeral theater workspace root for the active runtime."""
+    if "use_cloud_theater_storage" in FLAGS and FLAGS["use_cloud_theater_storage"].value:
+        return Path("/tmp/ephemeral")
+    return Path(__file__).parent.parent / "ephemeral"
+
+
+def ensure_ephemeral_root() -> Path:
+    """Return and create the ephemeral theater workspace root."""
+    root = get_ephemeral_root().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
 
 class TheaterMetadata(BaseModel):
     """Persisted metadata for one filesystem-backed theater."""
@@ -150,7 +166,7 @@ class TheaterManager:
     """Own theater workspace creation, lifecycle metadata, and asset lookup."""
 
     def __init__(self, base_theaters_dir: Optional[str | Path] = None):
-        self.base_dir = Path(base_theaters_dir).resolve() if base_theaters_dir else ensure_theaters_root()
+        self.base_dir = Path(base_theaters_dir).resolve() if base_theaters_dir else ensure_ephemeral_root()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_theater_dir(self, theater_id: str) -> Path:

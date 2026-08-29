@@ -5,7 +5,7 @@ from typing import Any, Optional, Union
 from google.genai import types
 from google.adk.artifacts.base_artifact_service import BaseArtifactService, ArtifactVersion, ensure_part
 from google.adk.errors.input_validation_error import InputValidationError
-from components.theater_manager import ensure_theaters_root
+from components.theater_manager import ensure_ephemeral_root
 
 class DiskArtifactService(BaseArtifactService):
     """A disk-file based implementation of ADK's artifact service.
@@ -26,7 +26,7 @@ class DiskArtifactService(BaseArtifactService):
         
         base_dir = self.directory
         if session_id:
-            base_dir = ensure_theaters_root() / session_id / "output" / "artifacts"
+            base_dir = ensure_ephemeral_root() / session_id / "output" / "artifacts"
             base_dir.mkdir(parents=True, exist_ok=True)
             
         # Guard against traversal
@@ -94,7 +94,7 @@ class DiskArtifactService(BaseArtifactService):
         filenames = []
         target_dir = self.directory
         if session_id:
-            target_dir = ensure_theaters_root() / session_id / "output" / "artifacts"
+            target_dir = ensure_ephemeral_root() / session_id / "output" / "artifacts"
 
         if not target_dir.exists():
             return filenames

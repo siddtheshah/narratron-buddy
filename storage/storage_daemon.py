@@ -22,6 +22,7 @@ if str(project_root) not in sys.path:
 
 from dotenv import load_dotenv
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
+from storage.theater_repository import TheaterRepository
 from components.theater_manager import TheaterManager
 
 load_dotenv()
@@ -39,6 +40,7 @@ class StorageDaemon:
     def __init__(
         self,
         db: Optional[Any] = None,
+        theater_repository: Optional[TheaterRepository] = None,
         theater_manager: Optional[TheaterManager] = None,
         interval_seconds: float = 60.0,
         ttl_seconds: float = 604800.0,
@@ -60,11 +62,17 @@ class StorageDaemon:
                 logger.info(f"Initializing DatabaseManager in LOCAL mode with db_path={db_path}.")
                 self.db = LocalDatabaseManager(db_path)
 
+        if theater_repository is not None:
+            self.theater_repository = theater_repository
+        else:
+            theaters_dir = os.getenv("THEATERS_DIR")
+            self.theater_repository = TheaterRepository(base_dir=theaters_dir)
+
         if theater_manager is not None:
             self.theater_manager = theater_manager
         else:
-            theaters_dir = os.getenv("THEATERS_DIR")
-            self.theater_manager = TheaterManager(base_theaters_dir=theaters_dir)
+            ephemeral_dir = os.getenv("EPHEMERAL_DIR")
+            self.theater_manager = TheaterManager(base_theaters_dir=ephemeral_dir)
 
         self._running = False
 
@@ -72,6 +80,7 @@ class StorageDaemon:
         """Perform a single iteration of the storage cleanup and billing cycle."""
         logger.info("Starting storage cleanup and billing cycle...")
         result = self.db.storage_daemon(
+            theater_repository=self.theater_repository,
             theater_manager=self.theater_manager,
             ttl_seconds=self.ttl_seconds,
             hourly_cost=self.hourly_cost,
@@ -113,7 +122,6 @@ class StorageDaemon:
 
         logger.info("storage_daemon stopped successfully.")
         self.db.close()
-
 
 
 def main():

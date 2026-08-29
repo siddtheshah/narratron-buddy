@@ -8,19 +8,29 @@ import zipfile
 
 from absl.testing import flagsaver
 
-from components.theater_manager import TheaterManager, extract_asset_package, get_theaters_root
+from components.theater_manager import (
+    TheaterManager,
+    extract_asset_package,
+    get_ephemeral_root,
+    ensure_ephemeral_root,
+    get_theaters_root,
+)
 
 
 class TestTheaterRootSelection(unittest.TestCase):
-    def test_local_root_defaults_to_workspace_theaters_directory(self):
+    def test_local_ephemeral_root_defaults_to_workspace_ephemeral_directory(self):
         self.assertEqual(
-            get_theaters_root().resolve(),
-            (Path(__file__).parent.parent / "theaters").resolve(),
+            get_ephemeral_root().resolve(),
+            (Path(__file__).parent.parent / "ephemeral").resolve(),
         )
 
     @flagsaver.flagsaver(use_cloud_theater_storage=True)
-    def test_cloud_root_uses_tmp_theaters(self):
-        self.assertEqual(get_theaters_root(), Path("/mnt/storage/theaters"))
+    def test_cloud_ephemeral_root_uses_tmp(self):
+        self.assertEqual(get_ephemeral_root(), Path("/tmp/ephemeral"))
+
+    def test_theater_manager_defaults_to_ephemeral_root(self):
+        tm = TheaterManager()
+        self.assertEqual(tm.base_dir, get_ephemeral_root().resolve())
 
 
 class TestTheaterManager(unittest.TestCase):
@@ -104,7 +114,7 @@ class TestTheaterManager(unittest.TestCase):
         self.manager.create_theater(
             name="Lore Theater",
             theater_id="lore",
-            lore_files=[("lore/world/setting.txt", b"Floating cities." )],
+            lore_files=[("lore/world/setting.txt", b"Floating cities.")],
         )
 
         self.assertEqual(self.manager.get_lore_documents("lore"), ["world/setting.txt"])

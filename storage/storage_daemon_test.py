@@ -8,6 +8,7 @@ from pathlib import Path
 
 from storage.database import LocalDatabaseManager
 from storage.storage_daemon import StorageDaemon
+from storage.theater_repository import TheaterRepository
 from components.theater_manager import TheaterManager
 
 
@@ -17,13 +18,17 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.db_path = Path(self.test_dir) / "test_storage.db"
         self.theaters_dir = Path(self.test_dir) / "theaters"
+        self.ephemeral_dir = Path(self.test_dir) / "ephemeral"
         self.theaters_dir.mkdir(parents=True, exist_ok=True)
+        self.ephemeral_dir.mkdir(parents=True, exist_ok=True)
 
         self.db = LocalDatabaseManager(str(self.db_path))
-        self.theater_manager = TheaterManager(base_theaters_dir=self.theaters_dir)
+        self.theater_repository = TheaterRepository(base_dir=self.theaters_dir)
+        self.theater_manager = TheaterManager(base_theaters_dir=self.ephemeral_dir)
 
         self.daemon = StorageDaemon(
             db=self.db,
+            theater_repository=self.theater_repository,
             theater_manager=self.theater_manager,
             interval_seconds=1.0,
             ttl_seconds=3600.0,
@@ -150,8 +155,9 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         user = self.db.register_user("daemon_user", "daemon@example.com", "Password123")
         user_id = user["id"]
 
-        # Create a theater folder
+        # Create a theater folder and export to repository
         theater_meta = self.theater_manager.create_theater("Temp Theater", "theater_daemon_1")
+        self.theater_repository.export_theater("theater_daemon_1", self.theater_manager.theater("theater_daemon_1").directory())
         self.db.record_deployment("theater_daemon_1", user_id, theater_meta.join_key, cost=0.0, is_persistent=False)
 
         # Set created_at to 2 hours ago (exceeding 1 hour TTL)
@@ -168,6 +174,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         self.assertIn("theater_daemon_1", res["cleaned_up_sessions"])
         self.assertIsNone(self.db.get_deployment("theater_daemon_1"))
         self.assertFalse((self.theaters_dir / "theater_daemon_1").exists())
+        self.assertFalse((self.ephemeral_dir / "theater_daemon_1").exists())
 
     def test_run_once_accrues_persistent_charges(self):
         user = self.db.register_user("persistent_user", "per@example.com", "Password123")
@@ -200,6 +207,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         # Verify default daemon accrual rate aligns with PRICING.md (0.1 Credits/day flat rate = 0.004167 Credits/hr)
         default_daemon = StorageDaemon(
             db=self.db,
+            theater_repository=self.theater_repository,
             theater_manager=self.theater_manager,
         )
         user = self.db.register_user("pricing_user", "pricing@example.com", "Password123")

@@ -22,10 +22,11 @@ class BaseTestCase(unittest.TestCase):
         except Exception:
             pass
 
-        # 2. Automatically clean up all subdirectories inside theaters/
+        # 2. Automatically clean up all subdirectories inside theaters/ and ephemeral/
         project_root = Path(__file__).parent.parent.resolve()
-        theaters_dir = project_root / "theaters"
-        if theaters_dir.exists():
-            for item in theaters_dir.iterdir():
-                if item.is_dir():
-                    shutil.rmtree(item, ignore_errors=True)
+        for folder_name in ("theaters", "ephemeral"):
+            dir_path = project_root / folder_name
+            if dir_path.exists():
+                for item in dir_path.iterdir():
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)

@@ -34,5 +34,7 @@
 
 ## New Demos
 - [ ] Drawing demo
-- [ ] Adventure demo
-- [ ] Voice Demo
+- [x] Adventure demo
+
+## Billing
+- [ ] Storage Daemon is not checking file sizes of owned theaters. Need to fix.
