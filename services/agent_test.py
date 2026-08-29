@@ -160,7 +160,7 @@ class TestCreateAgent(unittest.TestCase):
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Animation", instruction)
-        self.assertIn("create_triframe", instruction)
+        self.assertIn("create_animation", instruction)
 
     @patch("services.agent.create_tool_bundle_for_session")
     @patch("services.agent.Agent")
@@ -242,7 +242,7 @@ class TestCreateAgent(unittest.TestCase):
         tool_names = [tool.name for tool in bundle.tools]
         self.assertNotIn("create_image", tool_names)
         self.assertIn("show_image", tool_names)
-        self.assertIn("create_triframe", tool_names)
+        self.assertIn("create_animation", tool_names)
 
     @patch("services.agent.get_text_response_provider")
     def test_create_tool_bundle_only_includes_observability_tool_when_enabled(self, mock_get_text_provider):

@@ -84,6 +84,23 @@ TRIFRAME_PLAN_JSON_SCHEMA = {
 }
 
 
+class AnimationTechniquePlanResponse(BaseModel):
+    technique: str = Field(pattern="^(triframe|layered)$")
+    reasoning: str = Field(min_length=3, max_length=300)
+
+
+ANIMATION_TECHNIQUE_PLAN_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "technique": {"type": "string", "enum": ["triframe", "layered"]},
+        "reasoning": {"type": "string", "minLength": 3, "maxLength": 300},
+    },
+    "required": ["technique", "reasoning"],
+    "additionalProperties": False,
+}
+
+
+
 
 class AnimationTools(BaseTools):
     """Create image sequences using the same provider as regular canvas images."""
@@ -121,139 +138,142 @@ class AnimationTools(BaseTools):
         if thread and thread.is_alive():
             thread.join(timeout=timeout)
 
+    @single_flight(
+        error_message="An animation is already being generated. Please wait for it to complete.",
+        hold_until_released=True,
+        timeout=80.0,
+    )
     @with_cooldown("generating another animation")
-    def create_triframe(
+    def create_animation(
         self,
         scene_prompt: str,
-        animation_name: Optional[str] = None,
+        animation_name: str,
         reference_images: Union[list[str], str, None] = None,
     ) -> str:
-        """Generate three matching images that form a short, loopable animation.
+        """Generate an animation sequence by automatically deciding between triframe and layered techniques.
 
-        The caller supplies a scene prompt. Frame generation prompts and action changes are
-        planned internally using the text provider. The first and last images deliberately use
-        nearly matching poses so a canvas player can cycle the files without a jarring visual jump.
+        The caller supplies a scene prompt and animation name. An internal LLM decision prompt determines whether to use:
+        - 'triframe' for complex motions and transitions
+        - 'layered' for scenic backdrops or high-energy single-moment climaxes
 
         Args:
             scene_prompt: Detailed prompt describing the scene to animate.
-            animation_name: Optional friendly name used for the saved frame files.
-            reference_images: Optional image aliases or paths to preserve in every frame.
+            animation_name: Friendly name used for saved animation files.
+            reference_images: Optional image aliases or paths to preserve.
 
         Returns:
-            A status message immediately; image generation continues in the background.
+            A status message immediately; animation generation continues in background.
         """
         if not isinstance(scene_prompt, str) or not scene_prompt.strip():
             return "Error: scene_prompt is required."
+        if not isinstance(animation_name, str) or not animation_name.strip():
+            return "Error: animation_name is required."
 
         provider_references, reference_error = self._resolve_provider_references(reference_images)
         if reference_error:
             return reference_error
 
-        self.record_tool_call("create_triframe")
+        self.record_tool_call("create_animation")
         timestamp = int(time.time())
-        clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_name or "triframe")
+        clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_name.strip())
         animation_id = f"{clean_name}_{timestamp}"
 
         def _worker() -> None:
-            self.image_tools._set_canvas_activity(True)
             try:
-                plan, planner_debug = self.plan_triframe_with_provider(
+                technique, decision_debug = self.plan_animation_technique_with_provider(
                     self.text_response_provider, scene_prompt.strip()
                 )
-                logger.debug("[AnimationTools] Triframe animation %s LLM plan=%s", animation_id, plan)
-                effective_base_frame = self.image_tools._apply_default_style(plan["base_frame"].strip())
-
-                animation_dir = os.path.join(self.animations_dir, animation_id)
-                os.makedirs(animation_dir, exist_ok=False)
-                previous_frame: Optional[ImageReference] = None
-                saved_paths = []
-                frame_prompts = [
-                    effective_base_frame,
-                    f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {plan['second_frame_change'].strip()}",
-                    f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {plan['third_frame_change'].strip()}",
-                ]
-                for frame_number, frame_prompt in enumerate(frame_prompts, start=1):
-                    frame_prompt = (
-                        f"{frame_prompt}\n\n"
-                        "Return exactly one full-bleed scene image for this request. "
-                        "Do not create a collage, triptych, storyboard, contact sheet, split panels, "
-                        "borders, or multiple views in one image. Render one cinematic still image only."
-                    )
-                    # Each subsequent frame is image-to-image from the prior frame.
-                    # This makes motion continuous instead of asking the provider to
-                    # independently reproduce a scene three times.
-                    result = self.image_provider.generate(
-                        ImageGenerationRequest(
-                            prompt=frame_prompt,
-                            references=([previous_frame] if previous_frame else []) + provider_references,
-                            aspect_ratio="16:9",
-                        )
-                    )
-                    filepath = self._save_frame(
-                        result.image_bytes,
-                        frame_prompt,
-                        animation_dir,
-                        frame_number,
-                    )
-                    saved_paths.append(filepath)
-                    previous_frame = ImageReference(
-                        name=Path(filepath).name,
-                        data=result.image_bytes,
-                        mime_type=result.mime_type or "image/jpeg",
-                    )
-                    self._register_frame_aliases(animation_id, frame_number, filepath)
-                    self._notify_image_created(filepath)
-                    logger.debug(
-                        "[AnimationTools] Saved frame %s using provider '%s' model '%s' to %s",
-                        frame_number,
-                        result.provider,
-                        result.model,
-                        filepath,
-                    )
-                self._animations[animation_id] = saved_paths
-                logger.debug("[AnimationTools] Animation '%s' is ready to play.", animation_id)
-            except (ImageProviderError, TextResponseProviderError) as exc:
-                logger.error("[AnimationTools] Image or text provider failed: %s", exc)
+                logger.debug(
+                    "[AnimationTools] Animation %s decided technique '%s', debug=%s",
+                    animation_id,
+                    technique,
+                    decision_debug,
+                )
+                if technique == "triframe":
+                    self._run_triframe_animation(scene_prompt.strip(), animation_id, provider_references)
+                else:
+                    self._run_layered_animation(scene_prompt.strip(), animation_id)
             except Exception:
-                logger.exception("[AnimationTools] Failed to generate tri-frame animation")
+                logger.exception("[AnimationTools] Failed to create animation for %s", animation_id)
             finally:
-                self.image_tools._set_canvas_activity(False)
-                self.image_tools._trigger_after_tool_call("create_triframe")
+                self.release_in_flight("create_animation")
 
         thread = threading.Thread(target=_worker, daemon=True)
         self._last_generation_thread = thread
         thread.start()
-        name_message = f" with name '{animation_name}'" if animation_name else ""
-        return f"Tri-frame animation generation started in background{name_message}. Animation ID: '{animation_id}'. Call play_animation with that ID once it is ready."
+        return (
+            f"Animation generation started in background with name '{animation_name.strip()}'. "
+            f"Animation ID: '{animation_id}'. Call play_animation with that ID once it is ready."
+        )
 
-    @single_flight(
-        error_message="A layered animation is already being generated. Please wait for it to complete.",
-        hold_until_released=True,
-    )
-    @with_cooldown("generating another animation")
-    def create_layered_animation(self, scene_prompt: str, animation_name: Optional[str] = None) -> str:
-        """Generate one scene, split it into RGBA layers, and assign gentle motion.
+    def _run_triframe_animation(
+        self,
+        scene_prompt: str,
+        animation_id: str,
+        provider_references: list[ImageReference],
+    ) -> None:
+        """Run the triframe generation pipeline."""
+        self.image_tools._set_canvas_activity(True)
+        try:
+            plan, planner_debug = self.plan_triframe_with_provider(
+                self.text_response_provider, scene_prompt
+            )
+            logger.debug("[AnimationTools] Triframe animation %s LLM plan=%s", animation_id, plan)
+            effective_base_frame = self.image_tools._apply_default_style(plan["base_frame"].strip())
 
-        The caller supplies only a scene prompt.  Layer planning, Qwen grounding,
-        persistence, and canvas playback data are deliberately internal so a live
-        model never has to coordinate those dependent operations.
-        """
-        if not isinstance(scene_prompt, str) or not scene_prompt.strip():
-            return "Error: scene_prompt is required."
-        timestamp = int(time.time())
-        clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_name or "layered")
-        animation_id = f"{clean_name}_{timestamp}"
-        def _worker() -> None:
-            try:
-                self._run_layered_animation(scene_prompt.strip(), animation_id)
-            finally:
-                # ``single_flight(..., hold_until_released=True)`` deliberately
-                # keeps this lease through all remote calls in this worker.
-                self.release_in_flight("create_layered_animation")
-
-        self._last_generation_thread = threading.Thread(target=_worker, daemon=True)
-        self._last_generation_thread.start()
-        return f"Layered animation generation started in background. Animation ID: '{animation_id}'. It will play automatically when ready."
+            animation_dir = os.path.join(self.animations_dir, animation_id)
+            os.makedirs(animation_dir, exist_ok=False)
+            previous_frame: Optional[ImageReference] = None
+            saved_paths = []
+            frame_prompts = [
+                effective_base_frame,
+                f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {plan['second_frame_change'].strip()}",
+                f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {plan['third_frame_change'].strip()}",
+            ]
+            for frame_number, frame_prompt in enumerate(frame_prompts, start=1):
+                frame_prompt = (
+                    f"{frame_prompt}\n\n"
+                    "Return exactly one full-bleed scene image for this request. "
+                    "Do not create a collage, triptych, storyboard, contact sheet, split panels, "
+                    "borders, or multiple views in one image. Render one cinematic still image only."
+                )
+                result = self.image_provider.generate(
+                    ImageGenerationRequest(
+                        prompt=frame_prompt,
+                        references=([previous_frame] if previous_frame else []) + provider_references,
+                        aspect_ratio="16:9",
+                    )
+                )
+                filepath = self._save_frame(
+                    result.image_bytes,
+                    frame_prompt,
+                    animation_dir,
+                    frame_number,
+                )
+                saved_paths.append(filepath)
+                previous_frame = ImageReference(
+                    name=Path(filepath).name,
+                    data=result.image_bytes,
+                    mime_type=result.mime_type or "image/jpeg",
+                )
+                self._register_frame_aliases(animation_id, frame_number, filepath)
+                self._notify_image_created(filepath)
+                logger.debug(
+                    "[AnimationTools] Saved frame %s using provider '%s' model '%s' to %s",
+                    frame_number,
+                    result.provider,
+                    result.model,
+                    filepath,
+                )
+            self._animations[animation_id] = saved_paths
+            logger.debug("[AnimationTools] Animation '%s' is ready to play.", animation_id)
+        except (ImageProviderError, TextResponseProviderError) as exc:
+            logger.error("[AnimationTools] Image or text provider failed: %s", exc)
+        except Exception:
+            logger.exception("[AnimationTools] Failed to generate tri-frame animation")
+        finally:
+            self.image_tools._set_canvas_activity(False)
+            self.image_tools._trigger_after_tool_call("create_animation")
 
     def _run_layered_animation(self, scene_prompt: str, animation_id: str) -> None:
         """Run the long-lived pipeline after its public single-flight lease is acquired."""
@@ -283,23 +303,56 @@ class AnimationTools(BaseTools):
             logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
         except ImageProviderError as exc:
             logger.error("[AnimationTools] Layered image provider failed for %s: %s", animation_id, exc)
-        except Exception as exc:
+        except Exception:
             logger.exception("[AnimationTools] Layered animation failed for %s", animation_id)
         finally:
             self.image_tools._set_canvas_activity(False)
-            self.image_tools._trigger_after_tool_call("create_layered_animation")
+            self.image_tools._trigger_after_tool_call("create_animation")
 
-    @with_cooldown("playing another animation")
-    def play_layered_animation(self, animation_id: str) -> str:
-        """Display a saved Qwen-decomposed layer animation on the canvas."""
-        manifest = self._find_layered_animation(animation_id)
-        if not manifest:
-            return f"Error: Layered animation '{animation_id}' was not found."
-        if not self.canvas_state_service:
-            return "Error: Canvas state service is unavailable."
-        self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
-        self.image_tools._trigger_after_tool_call("play_layered_animation")
-        return f"Playing layered animation '{animation_id}'."
+    @staticmethod
+    def plan_animation_technique_with_provider(
+        text_response_provider: TextResponseProvider,
+        scene_prompt: str,
+    ) -> tuple[str, dict[str, object]]:
+        """Use the text provider to decide whether to generate a triframe or layered animation."""
+        request = TextResponseRequest(
+            prompt=(
+                "Decide whether to use 'triframe' or 'layered' animation technique for a given 2D scene.\n"
+                "Return JSON with two keys:\n"
+                "1. technique: Must be either 'triframe' or 'layered'.\n"
+                "2. reasoning: Short explanation of why this technique was chosen.\n\n"
+                "GUIDANCE ON TECHNIQUE CHOICE:\n"
+                "- For a scene that involves complex motions and transitions, use 'triframe'.\n"
+                "- Avoid using 'triframe' (use 'layered' instead) for scenes that are scenic backdrops, or during high energy single moment climaxes.\n\n"
+                f"Scene prompt:\n{scene_prompt}"
+            ),
+            temperature=0.1,
+            max_output_tokens=256,
+            response_json_schema=ANIMATION_TECHNIQUE_PLAN_JSON_SCHEMA,
+        )
+        try:
+            response = text_response_provider.generate(request)
+        except TextResponseProviderError as exc:
+            logger.warning("[AnimationTools] Technique planner returned invalid output; retrying once: %s", exc)
+            response = text_response_provider.generate(request)
+        try:
+            parsed = response.parsed
+            draft = (
+                parsed
+                if isinstance(parsed, AnimationTechniquePlanResponse)
+                else AnimationTechniquePlanResponse.model_validate(parsed)
+            )
+            return draft.technique, {
+                "provider": response.provider,
+                "model": response.model,
+                "request_id": response.request_id,
+                "usage": dict(response.usage),
+                "reasoning": draft.reasoning,
+            }
+        except Exception as exc:
+            logger.warning("[AnimationTools] Technique planner parsing failed, defaulting to layered: %s", exc)
+            return "layered", {"error": str(exc)}
+
 
     @staticmethod
     def plan_triframe_with_provider(
@@ -452,19 +505,28 @@ class AnimationTools(BaseTools):
 
     @with_cooldown("playing another animation")
     def play_animation(self, animation_id: str) -> str:
-        """Display a saved three-frame animation on the canvas.
+        """Display a saved animation (triframe or layered) on the canvas.
 
         Args:
-            animation_id: The ID returned by create_triframe.
+            animation_id: The ID returned by create_animation.
         """
-        frame_paths = self._find_animation(animation_id)
-        if not frame_paths:
-            return f"Error: Animation '{animation_id}' was not found."
         if not self.canvas_state_service:
             return "Error: Canvas state service is unavailable."
-        self.canvas_state_service.show_triframe(frame_paths, theater_id=self.active_theater_id)
-        self.image_tools._trigger_after_tool_call("play_animation")
-        return f"Playing animation '{animation_id}'."
+
+        manifest = self._find_layered_animation(animation_id)
+        if manifest:
+            self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
+            self.image_tools._trigger_after_tool_call("play_animation")
+            return f"Playing layered animation '{animation_id}'."
+
+        frame_paths = self._find_animation(animation_id)
+        if frame_paths:
+            self.canvas_state_service.show_triframe(frame_paths, theater_id=self.active_theater_id)
+            self.image_tools._trigger_after_tool_call("play_animation")
+            return f"Playing animation '{animation_id}'."
+
+        return f"Error: Animation '{animation_id}' was not found."
+
 
     def _save_frame(
         self,

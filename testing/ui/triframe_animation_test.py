@@ -40,5 +40,5 @@ class TestTriFrameAnimationUI(UITestCase):
         self.assertIn("crossfadeDuration", renderer)
         self.assertIn('image.style.opacity = "0"', renderer)
         self.assertIn('backgroundLayer.style.backgroundImage = "none"', renderer)
-        self.assertIn("playTriFrameAnimation(data.animation)", canvas)
+        self.assertIn("playTriFrameAnimation(animation)", canvas)
         self.assertIn("playImageSequence(data.animation.frames", obs)

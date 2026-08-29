@@ -126,7 +126,7 @@ class AgentSession:
             get_bound_tool_instance(self.agent, "create_image")
             or get_bound_tool_instance(self.agent, "show_image")
         )
-        self.animation_tools = get_bound_tool_instance(self.agent, "create_triframe")
+        self.animation_tools = get_bound_tool_instance(self.agent, "create_animation")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
         self.story_planning_tools = (
             get_bound_tool_instance(self.agent, "process_user_action")

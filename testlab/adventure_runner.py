@@ -225,17 +225,17 @@ class MockToolBundle:
 
     # --- Animation Tools ---
 
-    def create_triframe(
+    def create_animation(
         self,
         scene_prompt: str,
-        animation_name: Optional[str] = None,
+        animation_name: str,
         reference_images: List[str] | str | None = None,
     ) -> Dict[str, Any]:
-        """Creates a looping triframe animation."""
+        """Creates an animation."""
         anim_id = f"anim_{uuid.uuid4().hex[:6]}"
         result = {"animation_id": anim_id, "status": "ready"}
         return self._record(
-            "create_triframe",
+            "create_animation",
             {
                 "scene_prompt": scene_prompt,
                 "animation_name": animation_name,
@@ -509,7 +509,7 @@ class AdventureSession:
         # Animation
         if bool(self.config.get("animation", {}).get("enabled", False)):
             tools.extend([
-                self.mock_tools.create_triframe,
+                self.mock_tools.create_animation,
                 self.mock_tools.play_animation,
             ])
 

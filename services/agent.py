@@ -116,7 +116,7 @@ Do NOT use reference images that aren't being mentioned by the story planning to
 
 {% if animation_enabled %}
 ## Animation
-Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_triframe` with a complete `scene_prompt` (and optional `animation_name` or `reference_images`); it internally plans the 3-frame sequence, generates the images, and returns an animation ID; then call `play_animation` with that ID after the frames are ready. For subtle layered motion, call `create_layered_animation` with just one complete `scene_prompt`; it internally generates the base image, plans background/subject/foreground layers, asks Qwen Image Layered to decompose it, assigns local motion, and plays automatically once ready. Use `play_layered_animation` only to replay a saved layered animation. Creating a tri-frame animation does not change the canvas until you explicitly play it.
+Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_animation` with a complete `scene_prompt` and a concise `animation_name` (and optional `reference_images`). It automatically decides between multi-frame transition animation vs. layered depth animation and begins generating in the background. If a multi-frame sequence is generated, call `play_animation` with the returned animation ID once ready (layered animations play automatically once ready, or can be replayed with `play_animation`).
 {% endif %}
 
 ## Chat
@@ -409,8 +409,7 @@ def create_tool_bundle_for_session(
         tools.append(music_tools.create_music)
     if animation_tools:
         tools.extend([
-            animation_tools.create_triframe, animation_tools.play_animation,
-            animation_tools.create_layered_animation, animation_tools.play_layered_animation,
+            animation_tools.create_animation, animation_tools.play_animation,
         ])
     observability_config = config.get("observability_tool", {})
     if isinstance(observability_config, dict) and observability_config.get("enabled", False):
