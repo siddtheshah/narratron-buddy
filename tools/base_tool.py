@@ -36,9 +36,9 @@ def single_flight(
     func=None,
     *,
     timeout: Optional[float] = None,
-    on_timeout: Optional[Any] = None,
+    on_timeout: Optional[Callable[[Any], None]] = None,
     error_message: Optional[str] = None,
-    return_dict_on_error: bool = True,
+    hold_until_released: bool = False,
 ):
     """Decorator ensuring only one invocation of a tool runs at a time, with optional timeout.
 
@@ -47,9 +47,16 @@ def single_flight(
         def my_tool(self, ...): ...
 
     or:
-        @single_flight(timeout=20.0, on_timeout="restart_planner_agent")
+        @single_flight(timeout=20.0, on_timeout=lambda tool: tool.restart_planner_agent())
         def my_tool(self, ...): ...
+
+    Set ``hold_until_released=True`` for a tool that starts background work.
+    That worker must later call ``release_in_flight(<tool name>)`` in a finally
+    block, so the flight covers the real operation rather than only dispatch.
     """
+    if on_timeout is not None and not callable(on_timeout):
+        raise TypeError("single_flight on_timeout must be a callable accepting the tool instance.")
+
     def decorator(fn: Callable):
         if asyncio.iscoroutinefunction(fn):
             @functools.wraps(fn)
@@ -58,20 +65,15 @@ def single_flight(
                 if hasattr(self, "acquire_in_flight"):
                     if not self.acquire_in_flight(tool_name):
                         msg = error_message or f"{tool_name} is already in progress. Please wait for it to complete."
-                        return {"error": msg} if return_dict_on_error else f"Error: {msg}"
+                        return msg
 
                 resolved_timeout = timeout
                 if resolved_timeout is None and hasattr(self, "user_action_timeout_seconds"):
                     resolved_timeout = getattr(self, "user_action_timeout_seconds")
 
                 def trigger_timeout():
-                    if on_timeout:
-                        if callable(on_timeout):
-                            on_timeout(self)
-                        elif isinstance(on_timeout, str) and hasattr(self, on_timeout):
-                            cb = getattr(self, on_timeout)
-                            if callable(cb):
-                                cb()
+                    if on_timeout is not None:
+                        on_timeout(self)
 
                 try:
                     if resolved_timeout is not None and resolved_timeout > 0:
@@ -84,7 +86,7 @@ def single_flight(
                     else:
                         return await fn(self, *args, **kwargs)
                 finally:
-                    if hasattr(self, "release_in_flight"):
+                    if not hold_until_released and hasattr(self, "release_in_flight"):
                         self.release_in_flight(tool_name)
 
             return async_wrapper
@@ -95,20 +97,15 @@ def single_flight(
                 if hasattr(self, "acquire_in_flight"):
                     if not self.acquire_in_flight(tool_name):
                         msg = error_message or f"{tool_name} is already in progress. Please wait for it to complete."
-                        return {"error": msg} if return_dict_on_error else f"Error: {msg}"
+                        return msg
 
                 resolved_timeout = timeout
                 if resolved_timeout is None and hasattr(self, "user_action_timeout_seconds"):
                     resolved_timeout = getattr(self, "user_action_timeout_seconds")
 
                 def trigger_timeout():
-                    if on_timeout:
-                        if callable(on_timeout):
-                            on_timeout(self)
-                        elif isinstance(on_timeout, str) and hasattr(self, on_timeout):
-                            cb = getattr(self, on_timeout)
-                            if callable(cb):
-                                cb()
+                    if on_timeout is not None:
+                        on_timeout(self)
 
                 try:
                     if resolved_timeout is not None and resolved_timeout > 0:
@@ -123,7 +120,7 @@ def single_flight(
                     else:
                         return fn(self, *args, **kwargs)
                 finally:
-                    if hasattr(self, "release_in_flight"):
+                    if not hold_until_released and hasattr(self, "release_in_flight"):
                         self.release_in_flight(tool_name)
 
             return wrapper

@@ -3,6 +3,7 @@ import {
     IMAGE_EFFECTS,
     IMAGE_EFFECT_DEFAULT_INTENSITIES,
 } from "/static/js/image-effects.js?v=effects-20260811-2";
+import { layerTransform } from "/static/js/animation-effects.js";
 
 /**
  * Draws generated images to a canvas, including transitions and image effects.
@@ -286,7 +287,42 @@ export function createImageRenderer({
         sequenceTimer = setTimeout(advance, Math.max(0, frameDuration - crossfadeDuration));
     }
 
-    return { resize, applyTransition, playSequence };
+    async function playLayeredAnimation(layers) {
+        if (!canvas || !context || !Array.isArray(layers) || layers.length < 2) return;
+        stopSequence();
+        const generation = sequenceGeneration;
+        const prepared = await Promise.all(layers.map(async (layer) => {
+            const source = new Image();
+            source.crossOrigin = "anonymous";
+            source.src = layer.url;
+            try { await source.decode(); } catch { await new Promise(resolve => { source.onload = resolve; source.onerror = resolve; }); }
+            return { ...layer, source };
+        }));
+        if (generation !== sequenceGeneration || prepared.some(layer => !layer.source.naturalWidth)) return;
+        if (imageEffectController) { imageEffectController.setEffect("none"); imageEffectController.element.style.display = "none"; }
+        if (image) { image.classList.remove(...loadedClassNames); image.style.opacity = "0"; image.src = prepared[0].url; }
+        if (backgroundLayer) backgroundLayer.style.backgroundImage = "none";
+        const start = performance.now();
+        const drawLayer = (layer, now, width, height) => {
+            const source = layer.source;
+            const scale = fitMode === "cover" ? Math.max(width / source.naturalWidth, height / source.naturalHeight) : Math.min(width / source.naturalWidth, height / source.naturalHeight);
+            const drawWidth = source.naturalWidth * scale, drawHeight = source.naturalHeight * scale;
+            const cx = width / 2, cy = height / 2, phase = (now - start) / 1000;
+            const transform = layerTransform(layer.effect, phase);
+            context.save(); context.translate(cx + transform.x, cy + transform.y); context.rotate(transform.rotation); context.scale(transform.scale, transform.scale);
+            context.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight); context.restore();
+        };
+        const frame = (now) => {
+            if (generation !== sequenceGeneration) return;
+            const rect = canvas.getBoundingClientRect();
+            context.clearRect(0, 0, rect.width, rect.height);
+            prepared.slice().sort((a, b) => (a.order || 0) - (b.order || 0)).forEach(layer => drawLayer(layer, now, rect.width, rect.height));
+            activeAnimation = requestAnimationFrame(frame);
+        };
+        activeAnimation = requestAnimationFrame(frame);
+    }
+
+    return { resize, applyTransition, playSequence, playLayeredAnimation };
 }
 
 /** Draws normalized doodle segments and replays them after canvas resizes. */

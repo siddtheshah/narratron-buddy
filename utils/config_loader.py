@@ -104,6 +104,9 @@ def get_theater_config(
     if "interactive_canvas" in app_config:
         deep_merge(config.setdefault("interactive_canvas", {}), app_config["interactive_canvas"])
 
+    if "animation" in app_config:
+        deep_merge(config.setdefault("animation", {}), app_config["animation"])
+
     if "music" in app_config:
         deep_merge(config.setdefault("music", {}), app_config["music"])
 

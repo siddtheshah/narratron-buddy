@@ -40,6 +40,8 @@ from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, BenchmarkPrompt, get
 from testlab.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, music_prompt_catalog
 from testlab.text_response_benchmark import BenchmarkTextPrompt, get_text_prompt, text_prompt_catalog
 from testlab.speech_benchmark import BenchmarkSpeechPrompt, get_speech_prompt, speech_prompt_catalog
+from testlab.animation_benchmark import get_animation_prompt, animation_prompt_catalog
+from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
 from testlab.a2ui_canvas_lab import (
     A2UICanvasTestConfig,
     default_canvas_config,
@@ -74,6 +76,10 @@ BENCHMARK_SPEECH_OUTPUT = ROOT / "benchmark_speech_output"
 BENCHMARK_SPEECH_OUTPUT.mkdir(exist_ok=True)
 app.mount("/benchmark-speech", StaticFiles(directory=BENCHMARK_SPEECH_OUTPUT), name="benchmark-speech")
 
+ANIMATION_OUTPUT = ROOT / "benchmark_animation_output"
+ANIMATION_OUTPUT.mkdir(exist_ok=True)
+app.mount("/benchmark-animations", StaticFiles(directory=ANIMATION_OUTPUT), name="benchmark-animations")
+
 _runs: dict[str, dict[str, Any]] = {}
 _music_runs: dict[str, dict[str, Any]] = {}
 _text_runs: dict[str, dict[str, Any]] = {}
@@ -81,6 +87,7 @@ _speech_runs: dict[str, dict[str, Any]] = {}
 _story_planner_runs: dict[str, dict[str, Any]] = {}
 _a2ui_canvas_runs: dict[str, dict[str, Any]] = {}
 _adventure_runner_sessions: dict[str, AdventureSession] = {}
+_animation_runs: dict[str, dict[str, Any]] = {}
 _runs_lock = threading.Lock()
 
 MAX_IN_FLIGHT_PER_PROVIDER = 5
@@ -101,6 +108,45 @@ def vad_lab():
 @app.get("/effects", include_in_schema=False)
 def effects_lab():
     return FileResponse(ROOT / "effects_lab.html", media_type="text/html")
+
+
+@app.get("/animation-benchmark", include_in_schema=False)
+def animation_benchmark_lab():
+    return FileResponse(ROOT / "animation_benchmark.html", media_type="text/html")
+
+
+@app.get("/api/animation-benchmark/catalog")
+def animation_benchmark_catalog():
+    return {"prompts": animation_prompt_catalog(), "providers": list_image_provider_specs()}
+
+
+@app.post("/api/animation-benchmark/runs")
+def start_animation_benchmark_run(body: dict[str, Any]):
+    provider_id = str(body.get("provider_id") or "").strip()
+    prompt = str(body.get("prompt") or "").strip()
+    prompt_id = str(body.get("prompt_id") or "").strip()
+    if not prompt and prompt_id:
+        try:
+            prompt = get_animation_prompt(prompt_id).prompt
+        except StopIteration as exc:
+            raise HTTPException(status_code=400, detail="Unknown animation benchmark prompt.") from exc
+    if not provider_id or not prompt:
+        raise HTTPException(status_code=400, detail="Select an image provider and enter a scene prompt.")
+    run_id = uuid.uuid4().hex
+    run = {"id": run_id, "status": "running", "prompt": prompt, "provider_id": provider_id, "events": [], "debug": {}}
+    with _runs_lock:
+        _animation_runs[run_id] = run
+    threading.Thread(target=_run_animation_benchmark, args=(run_id, provider_id, prompt, dict(body.get("provider_options") or {})), daemon=True).start()
+    return run
+
+
+@app.get("/api/animation-benchmark/runs/{run_id}")
+def get_animation_benchmark_run(run_id: str):
+    with _runs_lock:
+        run = _animation_runs.get(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Animation benchmark run not found.")
+        return dict(run)
 
 
 @app.get("/image-benchmark", include_in_schema=False)
@@ -1142,6 +1188,48 @@ def _estimated_speech_output_cost(provider_id: str, text: str) -> float | None:
     spec = next((item for item in list_speech_provider_specs() if item["id"] == provider_id), None)
     rate = spec.get("estimated_cost_usd_1k_chars") if spec else None
     return round(len(text) / 1_000 * rate, 6) if rate is not None else None
+
+
+def _run_animation_benchmark(run_id: str, provider_id: str, prompt: str, provider_options: dict[str, Any]) -> None:
+    """Run the same two-stage base-image + Qwen decomposition pipeline with rich diagnostics."""
+    started = time.perf_counter()
+    output_dir = ANIMATION_OUTPUT / run_id
+    try:
+        output_dir.mkdir(parents=True, exist_ok=False)
+        from tools.animation_tool import AnimationTools
+
+        # Keep the bench planner independent from the production theater's
+        # story planner while diagnosing structured-output behavior.
+        planner_provider_id = str(provider_options.pop("planner_provider", "gemini-3"))
+        planner_model = str(provider_options.pop("planner_model", "gemini-3.5-flash-lite"))
+        planner = get_text_response_provider(planner_provider_id, {"model": planner_model})
+        plan, planner_debug = AnimationTools.plan_layers_with_provider(planner, prompt)
+        flattened_prompt = AnimationTools._flatten_layer_plan(prompt, plan)
+        decomposition_prompt = AnimationTools._decomposition_prompt(prompt, plan)
+        with _runs_lock:
+            _animation_runs[run_id]["events"].append({"stage": "generating_base", "at": time.time()})
+            _animation_runs[run_id]["debug"] = {"plan": plan, "planner": planner_debug, "flattened_prompt": flattened_prompt, "decomposition_prompt": decomposition_prompt}
+        base = get_image_provider(provider_id, provider_options).generate(ImageGenerationRequest(prompt=flattened_prompt, aspect_ratio="16:9"))
+        base_extension = ".png" if (base.mime_type or "").endswith("png") else ".jpg"
+        base_filename = f"base{base_extension}"
+        (output_dir / base_filename).write_bytes(base.image_bytes)
+        with _runs_lock:
+            _animation_runs[run_id]["events"].append({"stage": "decomposing_qwen", "at": time.time(), "base_model": base.model})
+        result = FalQwenLayeredProvider().decompose(LayeredImageRequest(
+            image_bytes=base.image_bytes, mime_type=base.mime_type or "image/jpeg", prompt=decomposition_prompt, num_layers=len(plan)
+        ))
+        layers = []
+        for index, (data, mime_type) in enumerate(result.images[:len(plan)]):
+            filename = f"layer_{index + 1}.png"
+            (output_dir / filename).write_bytes(data)
+            layers.append({**plan[index], "order": index, "url": f"/benchmark-animations/{run_id}/{filename}", "mime_type": mime_type})
+        manifest = {"id": run_id, "base_url": f"/benchmark-animations/{run_id}/{base_filename}", "layers": layers, "plan": plan, "provider": {"base": base.provider, "base_model": base.model, "qwen_model": "fal-ai/qwen-image-layered", "qwen_request_id": result.request_id, "qwen_usage": result.usage}}
+        (output_dir / "animation.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        with _runs_lock:
+            _animation_runs[run_id].update({"status": "completed", "manifest": manifest, "latency_ms": round((time.perf_counter() - started) * 1000, 1)})
+    except Exception as exc:
+        with _runs_lock:
+            _animation_runs[run_id].update({"status": "failed", "error": str(exc), "latency_ms": round((time.perf_counter() - started) * 1000, 1)})
 
 
 def _run_text_benchmark(run_id: str, provider_ids: list[str], prompts: list[Any], repetitions: int, provider_options: dict[str, Any]) -> None:

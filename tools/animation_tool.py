@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import re
 import threading
@@ -12,13 +13,57 @@ from pathlib import Path
 from typing import Optional, Union
 
 from PIL import Image
+from pydantic import BaseModel, Field
 
-from providers import ImageGenerationRequest, ImageProvider, ImageProviderError, ImageReference
-from tools.base_tool import BaseTools, with_cooldown
+from providers import (
+    ImageGenerationRequest,
+    ImageProvider,
+    ImageProviderError,
+    ImageReference,
+    TextResponseProvider,
+    TextResponseProviderError,
+    TextResponseRequest,
+)
+from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
+from tools.base_tool import BaseTools, single_flight, with_cooldown
 from utils.image_utils import embed_image_metadata
 
 
 logger = logging.getLogger(__name__)
+
+
+class AnimationLayer(BaseModel):
+    description: str = Field(min_length=3, max_length=300)
+    effect: str = Field(pattern="^(none|sway|vibrate|drift|breathe)$")
+
+
+class AnimationLayerPlanResponse(BaseModel):
+    background: AnimationLayer
+    subject: AnimationLayer
+    foreground: AnimationLayer | None = None
+
+
+ANIMATION_LAYER_PLAN_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "background": {"$ref": "#/$defs/layer"},
+        "subject": {"$ref": "#/$defs/layer"},
+        "foreground": {"anyOf": [{"$ref": "#/$defs/layer"}, {"type": "null"}]},
+    },
+    "$defs": {
+        "layer": {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string", "minLength": 3, "maxLength": 180},
+                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "drift", "breathe"]},
+            },
+            "required": ["description", "effect"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["background", "subject"],
+    "additionalProperties": False,
+}
 
 
 class AnimationTools(BaseTools):
@@ -28,6 +73,8 @@ class AnimationTools(BaseTools):
         self,
         image_tools,
         image_provider: ImageProvider,
+        text_response_provider: TextResponseProvider,
+        layered_provider: FalQwenLayeredProvider,
         animation_config: Optional[dict] = None,
     ):
         # ImageTools owns the theater-specific output directory, aliases, canvas
@@ -45,6 +92,9 @@ class AnimationTools(BaseTools):
         os.makedirs(self.animations_dir, exist_ok=True)
         self.default_style = image_tools.default_style
         self._animations: dict[str, list[str]] = {}
+        self._layered_animations: dict[str, dict] = {}
+        self.layered_provider = layered_provider
+        self.text_response_provider = text_response_provider
 
     def join_generation(self, timeout: float = 30.0) -> None:
         """Wait for the latest animation generation; useful in tests and teardown."""
@@ -156,6 +206,163 @@ class AnimationTools(BaseTools):
         thread.start()
         name_message = f" with name '{animation_name}'" if animation_name else ""
         return f"Tri-frame animation generation started in background{name_message}. Animation ID: '{animation_id}'. Call play_animation with that ID once it is ready."
+
+    @single_flight(
+        error_message="A layered animation is already being generated. Please wait for it to complete.",
+        hold_until_released=True,
+    )
+    @with_cooldown("generating another animation")
+    def create_layered_animation(self, scene_prompt: str, animation_name: Optional[str] = None) -> str:
+        """Generate one scene, split it into RGBA layers, and assign gentle motion.
+
+        The caller supplies only a scene prompt.  Layer planning, Qwen grounding,
+        persistence, and canvas playback data are deliberately internal so a live
+        model never has to coordinate those dependent operations.
+        """
+        if not isinstance(scene_prompt, str) or not scene_prompt.strip():
+            return "Error: scene_prompt is required."
+        timestamp = int(time.time())
+        clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_name or "layered")
+        animation_id = f"{clean_name}_{timestamp}"
+        def _worker() -> None:
+            try:
+                self._run_layered_animation(scene_prompt.strip(), animation_id)
+            finally:
+                # ``single_flight(..., hold_until_released=True)`` deliberately
+                # keeps this lease through all remote calls in this worker.
+                self.release_in_flight("create_layered_animation")
+
+        self._last_generation_thread = threading.Thread(target=_worker, daemon=True)
+        self._last_generation_thread.start()
+        return f"Layered animation generation started in background. Animation ID: '{animation_id}'. It will play automatically when ready."
+
+    def _run_layered_animation(self, scene_prompt: str, animation_id: str) -> None:
+        """Run the long-lived pipeline after its public single-flight lease is acquired."""
+        self.image_tools._set_canvas_activity(True)
+        try:
+            animation_dir = Path(self.animations_dir) / animation_id
+            animation_dir.mkdir(parents=True, exist_ok=False)
+            plan, planner_debug = self.plan_layers_with_provider(self.text_response_provider, scene_prompt.strip())
+            logger.debug("[AnimationTools] Layered animation %s LLM plan=%s", animation_id, plan)
+            flattened_prompt = self._flatten_layer_plan(scene_prompt.strip(), plan)
+            base_result = self.image_provider.generate(ImageGenerationRequest(prompt=self.image_tools._apply_default_style(flattened_prompt), aspect_ratio="16:9"))
+            base_path = self._save_named_image(base_result.image_bytes, animation_dir / "base.jpg", flattened_prompt)
+            decomposition_prompt = self._decomposition_prompt(scene_prompt.strip(), plan)
+            provider = self.layered_provider
+            layered = provider.decompose(LayeredImageRequest(image_bytes=base_result.image_bytes, mime_type=base_result.mime_type or "image/jpeg", prompt=decomposition_prompt, num_layers=len(plan)))
+            layer_paths = [self._save_named_image(image_bytes, animation_dir / f"layer_{index + 1}.png", decomposition_prompt) for index, (image_bytes, _mime_type) in enumerate(layered.images[:len(plan)])]
+            if len(layer_paths) < 2:
+                raise ImageProviderError("Layer decomposition did not produce enough playable layers.")
+            manifest = {"version": 1, "id": animation_id, "scene_prompt": scene_prompt.strip(), "flattened_prompt": flattened_prompt, "decomposition_prompt": decomposition_prompt, "base_image": str(base_path), "layers": [{**description, "path": str(path), "order": index} for index, (description, path) in enumerate(zip(plan[:len(layer_paths)], layer_paths))], "provider": {"base": base_result.provider, "base_model": base_result.model, "decomposition": provider.model, "request_id": layered.request_id, "usage": layered.usage, "planner": planner_debug}}
+            manifest_path = animation_dir / "animation.json"
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            self._layered_animations[animation_id] = manifest
+            self._register_layered_aliases(animation_id, base_path, layer_paths)
+            self._notify_image_created(str(base_path))
+            if self.canvas_state_service:
+                self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
+            logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
+        except ImageProviderError as exc:
+            logger.error("[AnimationTools] Layered image provider failed for %s: %s", animation_id, exc)
+        except Exception as exc:
+            logger.exception("[AnimationTools] Layered animation failed for %s", animation_id)
+        finally:
+            self.image_tools._set_canvas_activity(False)
+            self.image_tools._trigger_after_tool_call("create_layered_animation")
+
+    @with_cooldown("playing another animation")
+    def play_layered_animation(self, animation_id: str) -> str:
+        """Display a saved Qwen-decomposed layer animation on the canvas."""
+        manifest = self._find_layered_animation(animation_id)
+        if not manifest:
+            return f"Error: Layered animation '{animation_id}' was not found."
+        if not self.canvas_state_service:
+            return "Error: Canvas state service is unavailable."
+        self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
+        self.image_tools._trigger_after_tool_call("play_layered_animation")
+        return f"Playing layered animation '{animation_id}'."
+
+    @staticmethod
+    def plan_layers_with_provider(
+        text_response_provider: TextResponseProvider,
+        scene_prompt: str,
+    ) -> tuple[list[dict[str, str]], dict[str, object]]:
+        """Use the text provider to return the exact layer grounding for Qwen.
+
+        There is intentionally no heuristic or recovery plan: a valid LLM plan
+        is a prerequisite to creating a layered animation.
+        """
+        request = TextResponseRequest(
+            prompt=("Plan a clean, semantic transparent-layer stack for a locally animated 2D scene. Return exactly one required background, one required subject, "
+                    "and an optional foreground (null when there is no near-camera occluder). Descriptions must be concise (14 words or fewer). "
+                    "BACKGROUND: combine the entire static environment behind the focal subject into one layer—never split it into sky, coast, sea, terrain, buildings, or lighting layers. Its effect must be none. "
+                    "SUBJECT: the single focal character, creature, vehicle, or landmark, including attached parts and immediately associated light. Do not make a second subject layer. "
+                    "FOREGROUND: only close-to-camera objects that visibly overlap or frame the subject, such as leaves, grass, smoke, rain, or nearby waves; otherwise use null. "
+                    "Use effect=none for fixed content; sway for foliage; vibrate for water/waves/rain/smoke; drift for atmospheric objects; breathe only for a living focal subject. "
+                    "Do not invent scene elements. Return JSON only.\n\n"
+                    f"Scene prompt:\n{scene_prompt}"),
+            temperature=0.1, max_output_tokens=512,
+            response_json_schema=ANIMATION_LAYER_PLAN_JSON_SCHEMA,
+        )
+        # A truncated structured response is an upstream-model failure, not a
+        # reason to manufacture a plan. Retry once with the same constrained
+        # LLM request; a second failure is surfaced to the caller.
+        try:
+            response = text_response_provider.generate(request)
+        except TextResponseProviderError as exc:
+            logger.warning("[AnimationTools] Layer planner returned invalid structured output; retrying once: %s", exc)
+            response = text_response_provider.generate(request)
+        parsed = response.parsed
+        draft = parsed if isinstance(parsed, AnimationLayerPlanResponse) else AnimationLayerPlanResponse.model_validate(parsed)
+        plan = [
+            {"name": "background", **draft.background.model_dump()},
+            {"name": "subject", **draft.subject.model_dump()},
+        ]
+        if draft.foreground is not None:
+            plan.append({"name": "foreground", **draft.foreground.model_dump()})
+        return plan, {"provider": response.provider, "model": response.model, "request_id": response.request_id, "usage": dict(response.usage)}
+
+    @staticmethod
+    def _flatten_layer_plan(scene_prompt: str, plan: list[dict[str, str]]) -> str:
+        descriptions = "; ".join(f"{item['name']}: {item['description']}" for item in plan)
+        return f"{scene_prompt}\n\nCompose a single full-bleed 16:9 cinematic still with clear depth separation. Planned depth regions: {descriptions}."
+
+    @staticmethod
+    def _decomposition_prompt(scene_prompt: str, plan: list[dict[str, str]]) -> str:
+        regions = "; ".join(f"layer {index + 1} ({item['name']}): {item['description']}" for index, item in enumerate(plan))
+        return f"Decompose this exact scene into {len(plan)} separate transparent RGBA layers, ordered back to front. Scene: {scene_prompt}. Ground the decomposition in these intended regions: {regions}. Preserve all visible scene content across the layers; no borders, text, or collage."
+
+    @staticmethod
+    def _save_named_image(image_bytes: bytes, path: Path, prompt: str) -> str:
+        image = Image.open(BytesIO(image_bytes))
+        if path.suffix.lower() == ".jpg" and image.mode != "RGB":
+            image = image.convert("RGB")
+        exif = image.getexif()
+        embed_image_metadata(exif, prompt)
+        image.save(path, "PNG" if path.suffix.lower() == ".png" else "JPEG", exif=exif, quality=95)
+        return str(path)
+
+    def _register_layered_aliases(self, animation_id: str, base_path: str, layer_paths: list[str]) -> None:
+        self.image_tools.image_aliases[f"{animation_id}_base"] = base_path
+        for index, path in enumerate(layer_paths, start=1):
+            self.image_tools.image_aliases[f"{animation_id}_layer_{index}"] = path
+
+    def _find_layered_animation(self, animation_id: str) -> Optional[dict]:
+        if animation_id in self._layered_animations:
+            return self._layered_animations[animation_id]
+        clean_id = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_id)
+        manifest_path = Path(self.animations_dir) / clean_id / "animation.json"
+        if not manifest_path.is_file():
+            return None
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if not isinstance(manifest.get("layers"), list) or len(manifest["layers"]) < 2:
+                return None
+            self._layered_animations[clean_id] = manifest
+            return manifest
+        except (OSError, json.JSONDecodeError):
+            logger.warning("[AnimationTools] Invalid layered animation manifest: %s", manifest_path)
+            return None
 
     def _resolve_provider_references(
         self, reference_images: Union[list[str], str, None]

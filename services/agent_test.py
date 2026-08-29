@@ -143,6 +143,8 @@ class TestCreateAgent(unittest.TestCase):
         mock_animation_cls.assert_called_once_with(
             mock_image_cls.return_value,
             mock_image_cls.return_value._get_image_provider.return_value,
+            mock_get_text_provider.return_value,
+            ANY,
             config["animation"],
         )
 

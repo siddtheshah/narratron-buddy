@@ -297,6 +297,7 @@
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
         const playImageSequence = imageRenderer.playSequence;
+        const playLayeredAnimation = imageRenderer.playLayeredAnimation;
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
@@ -372,7 +373,8 @@
                 const currentImageEffect = data.effect || 'gleam3';
                 const animationSignature = data.animation?.type === 'triframe' && Array.isArray(data.animation.frames)
                     ? data.animation.frames.join('|')
-                    : '';
+                    : data.animation?.type === 'layered' && Array.isArray(data.animation.layers)
+                        ? data.animation.layers.map(layer => `${layer.url}:${layer.effect}`).join('|') : '';
                 const isNewImage = data.latest && (
                     data.time > lastTime
                     || data.latest !== lastImageRawUrl
@@ -388,10 +390,13 @@
                         lastImageEffect = currentImageEffect;
                         lastAnimationSignature = animationSignature;
                         if (animationSignature) {
+                            if (data.animation.type === 'layered') { playLayeredAnimation(data.animation.layers); }
+                            else {
                             playImageSequence(data.animation.frames, {
                                 frameDuration: data.animation.frame_duration_ms || 1400,
                                 crossfadeDuration: data.animation.crossfade_duration_ms || 500,
                             });
+                            }
                         } else {
                             const newImgUrl = data.latest + "?t=" + new Date().getTime();
                             applyImageTransition(newImgUrl, 'none', currentImageEffect);
@@ -407,10 +412,13 @@
                     redrawAllDoodles();
 
                     if (animationSignature) {
+                        if (data.animation.type === 'layered') { playLayeredAnimation(data.animation.layers); }
+                        else {
                         playImageSequence(data.animation.frames, {
                             frameDuration: data.animation.frame_duration_ms || 1400,
                             crossfadeDuration: data.animation.crossfade_duration_ms || 500,
                         });
+                        }
                     } else {
                         const newImgUrl = data.latest + "?t=" + new Date().getTime();
                         const transition = (data.transition || 'crossfade').toLowerCase().trim();

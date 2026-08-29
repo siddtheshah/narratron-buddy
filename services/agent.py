@@ -14,6 +14,7 @@ from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.animation_tool import AnimationTools
+from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
 from tools.music_tool import MusicTools
 from tools.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
@@ -115,7 +116,7 @@ Do NOT use reference images that aren't being mentioned by the story planning to
 
 {% if animation_enabled %}
 ## Animation
-Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_triframe` with a complete `base_frame` prompt plus precise `second_frame_change` and `third_frame_change` instructions; add useful reference images when available. It returns an animation ID; then call `play_animation` with that ID after the frames are ready. Creating an animation does not change the canvas until you explicitly play it.
+Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_triframe` with a complete `base_frame` prompt plus precise `second_frame_change` and `third_frame_change` instructions; add useful reference images when available. It returns an animation ID; then call `play_animation` with that ID after the frames are ready. For subtle layered motion, call `create_layered_animation` with just one complete `scene_prompt`; it internally generates the base image, plans background/subject/foreground layers, asks Qwen Image Layered to decompose it, assigns local motion, and plays automatically once ready. Use `play_layered_animation` only to replay a saved layered animation. Creating a tri-frame animation does not change the canvas until you explicitly play it.
 
 To use the animations well, make sure there is a action difference between frames. For example, "walking", "further along", and "even further" is BAD. Use "walking", "further and looking back", "walks and waves back". 
 {% endif %}
@@ -324,14 +325,22 @@ def create_tool_bundle_for_session(
         canvas_state_service=canvas_state_service,
         adventure_mode=adventure_mode,
     )
+
     # Animation is an independent theater capability. It can use mounted
     # assets as references even when standalone image generation is disabled.
     animation_enabled = bool(config.get("animation", {}).get("enabled", False))
+    animation_config = get_app_config().get("animation", {})
+    animation_text_provider = get_text_response_provider(
+        str(animation_config.get("text_provider", "gemini-2-5")),
+        {"model": str(animation_config.get("text_model", "gemini-2.5-flash-lite"))},
+    )
     animation_tools = (
         AnimationTools(
             image_tools,
             image_tools._get_image_provider(),
-            config.get("animation", {}),
+            animation_text_provider,
+            FalQwenLayeredProvider(),
+            animation_config.
         )
         if animation_enabled
         else None
@@ -401,7 +410,10 @@ def create_tool_bundle_for_session(
     if music_tools.use_generated_music:
         tools.append(music_tools.create_music)
     if animation_tools:
-        tools.extend([animation_tools.create_triframe, animation_tools.play_animation])
+        tools.extend([
+            animation_tools.create_triframe, animation_tools.play_animation,
+            animation_tools.create_layered_animation, animation_tools.play_layered_animation,
+        ])
     observability_config = config.get("observability_tool", {})
     if isinstance(observability_config, dict) and observability_config.get("enabled", False):
         observability_tools = ObservabilityTools(observability_config, theater_id=theater_id)

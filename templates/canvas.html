@@ -3505,6 +3505,7 @@
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
         const playImageSequence = imageRenderer.playSequence;
+        const playLayeredAnimation = imageRenderer.playLayeredAnimation;
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
@@ -3518,8 +3519,10 @@
         initializeStoryLogInspector(theaterId);
 
         function getAnimationSignature(animation) {
-            if (!animation || animation.type !== 'triframe' || !Array.isArray(animation.frames)) return '';
-            return animation.frames.join('|');
+            if (!animation) return '';
+            if (animation.type === 'triframe' && Array.isArray(animation.frames)) return animation.frames.join('|');
+            if (animation.type === 'layered' && Array.isArray(animation.layers)) return animation.layers.map(layer => `${layer.url}:${layer.effect}`).join('|');
+            return '';
         }
 
         function playTriFrameAnimation(animation) {
@@ -3527,6 +3530,11 @@
                 frameDuration: animation.frame_duration_ms || 1400,
                 crossfadeDuration: animation.crossfade_duration_ms || 500,
             });
+        }
+
+        function playAnimation(animation) {
+            if (animation.type === 'layered') playLayeredAnimation(animation.layers);
+            else playTriFrameAnimation(animation);
         }
 
         function updatePagingControlsUI() {
@@ -3698,7 +3706,7 @@
                         lastImageEffect = currentImageEffect;
                         lastAnimationSignature = animationSignature;
                         if (animationSignature) {
-                            playTriFrameAnimation(data.animation);
+                            playAnimation(data.animation);
                         } else {
                             const newImgUrl = data.latest + "?t=" + new Date().getTime();
                             applyImageTransition(newImgUrl, 'none', currentImageEffect);
@@ -3732,7 +3740,7 @@
                             promptBtn.classList.remove('expanded');
                             promptBtn.style.display = 'none';
                             promptPinned = false;
-                            playTriFrameAnimation(data.animation);
+                            playAnimation(data.animation);
                             if (data.prompt) {
                                 promptTextSpan.textContent = data.prompt;
                                 promptBtn.style.display = 'flex';

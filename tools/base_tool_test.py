@@ -20,7 +20,7 @@ class SampleTools(BaseTools):
     def quick_tool(self) -> str:
         return "Success"
 
-    @single_flight(timeout=0.1, on_timeout="handle_timeout")
+    @single_flight(timeout=0.1, on_timeout=lambda tool: tool.handle_timeout())
     def slow_tool(self) -> str:
         time.sleep(0.3)
         return "Done"
@@ -29,7 +29,7 @@ class SampleTools(BaseTools):
     def fast_single_flight(self) -> dict:
         return {"status": "ok"}
 
-    @single_flight(timeout=0.1, on_timeout="handle_timeout")
+    @single_flight(timeout=0.1, on_timeout=lambda tool: tool.handle_timeout())
     async def async_slow_tool(self) -> str:
         await asyncio.sleep(0.3)
         return "Async Done"
@@ -104,6 +104,10 @@ class TestBaseTools(BaseTestCase):
         res = sample.fast_single_flight()
         self.assertEqual(res, {"status": "ok"})
         self.assertFalse(sample.is_in_flight("fast_single_flight"))
+
+    def test_single_flight_requires_a_callable_timeout_handler(self):
+        with self.assertRaises(TypeError):
+            single_flight(on_timeout="handle_timeout")
 
     def test_single_flight_decorator_timeout_and_callback(self):
         sample = SampleTools({}, theater_id="test_theater")

@@ -69,6 +69,10 @@ class CanvasStateService:
         state = self.get(theater_id)
         state.show_triframe(frame_paths, theater_id=state.theater_id)
 
+    def show_layered_animation(self, manifest: dict[str, Any], theater_id: Optional[str] = None) -> None:
+        state = self.get(theater_id)
+        state.show_layered_animation(manifest, theater_id=state.theater_id)
+
     def show_triframe_if_current(
         self,
         frame_paths: list[str],

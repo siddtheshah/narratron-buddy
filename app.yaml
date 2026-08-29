@@ -12,6 +12,12 @@ story_planning:
 interactive_canvas:
     model: "gemini-3.5-flash-lite"
 
+# Layer planning is an internal animation operation, independent from the
+# theater's live/story-planning model.
+animation:
+    text_provider: "gemini-3"
+    text_model: "gemini-3.5-flash-lite"
+
 music:
     provider: "lyria"
     catalog_match_threshold: 0.86
