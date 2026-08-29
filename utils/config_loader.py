@@ -2,7 +2,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
-from components.theater_manager import ensure_ephemeral_root
+from components.theater_manager import TheaterManager
 
 _APP_CONFIG_CACHE: Dict[str, Any] | None = None
 _THEATER_DEFAULT_CACHE: Dict[str, Any] | None = None
@@ -60,18 +60,16 @@ def get_theater_default_config() -> Dict[str, Any]:
 
 def get_theater_config(
     theater_id: str,
-    base_dir: Optional[Path] = None,
-    db: Optional[Any] = None,
+    theater_manager: Optional[TheaterManager] = None,
 ) -> Dict[str, Any]:
     """Retrieve and merge theater configuration for a specific theater.
     
     1. Loads baseline theater_default.yaml
     2. Checks if theaters/<theater_id>/theater.yaml exists on disk
-    3. If not on disk, checks DB deployment record for custom theater_config
-    4. Dumps final config to theaters/<theater_id>/theater.yaml
+    3. Dumps final config to theaters/<theater_id>/theater.yaml
     """
-    base_dir = base_dir or ensure_ephemeral_root()
-    theater_dir = base_dir / theater_id
+    theater_manager = theater_manager or TheaterManager()
+    theater_dir = theater_manager.theater(theater_id).directory()
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"
 
@@ -87,24 +85,8 @@ def get_theater_config(
         except Exception as e:
             print(f"[config_loader] Warning: Failed to load {yaml_path}: {e}")
     else:
-        db_config = None
-        if db is not None and hasattr(db, "get_deployment"):
-            try:
-                dep = db.get_deployment(theater_id)
-                if dep and dep.get("theater_config"):
-                    tc = dep.get("theater_config")
-                    if isinstance(tc, str):
-                        db_config = yaml.safe_load(tc) or {}
-                    elif isinstance(tc, dict):
-                        db_config = tc
-            except Exception as e:
-                print(f"[config_loader] Warning: Failed to fetch DB config for {theater_id}: {e}")
-
-        if db_config:
-            deep_merge(config, db_config)
-
         # Save theater.yaml file into theater directory
-        save_theater_config(theater_id, config, base_dir=base_dir, db=None)
+        save_theater_config(theater_id, config, theater_manager=theater_manager)
 
     # Strictly enforce agent_internal from app.yaml so user theater config cannot override it
     if "agent_internal" in app_config:
@@ -130,23 +112,16 @@ def get_theater_config(
 def save_theater_config(
     theater_id: str,
     config_data: Dict[str, Any],
-    base_dir: Optional[Path] = None,
-    db: Optional[Any] = None,
+    theater_manager: Optional[TheaterManager] = None,
 ) -> Path:
-    """Save theater configuration as YAML to theaters/<theater_id>/theater.yaml and optionally sync DB."""
-    base_dir = base_dir or ensure_ephemeral_root()
-    theater_dir = base_dir / theater_id
+    """Save theater configuration as YAML to theaters/<theater_id>/theater.yaml."""
+    theater_manager = theater_manager or TheaterManager()
+    theater_dir = theater_manager.theater(theater_id).directory()
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"
 
     with open(yaml_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(config_data, f, default_flow_style=False)
-
-    if db is not None and hasattr(db, "save_theater_config"):
-        try:
-            db.save_theater_config(theater_id, config_data)
-        except Exception as e:
-            print(f"[config_loader] Warning: Failed to save DB config for {theater_id}: {e}")
 
     return yaml_path
 

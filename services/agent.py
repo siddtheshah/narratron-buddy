@@ -444,7 +444,7 @@ def create_agent(
 ) -> Agent:
     """Create a session-scoped agent whose tools write through canvas state service."""
     if config is None:
-        config = get_theater_config(theater_id)
+        config = get_theater_config(theater_id, theater_manager=theater_manager)
     if tool_bundle is None:
         tool_bundle = create_tool_bundle_for_session(
             theater_id, config, canvas_state_service, theater_manager, database_manager

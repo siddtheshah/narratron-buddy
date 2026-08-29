@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from components.theater_manager import TheaterManager
 from testing.base import BaseTestCase
 from utils.config_loader import (
     get_app_config,
@@ -28,7 +29,8 @@ class TestConfigLoader(BaseTestCase):
         temp_dir = Path(tempfile.mkdtemp())
         try:
             theater_id = "test_theater_cfg"
-            config = get_theater_config(theater_id, base_dir=temp_dir)
+            tm = TheaterManager(base_theaters_dir=temp_dir)
+            config = get_theater_config(theater_id, theater_manager=tm)
             self.assertIsInstance(config, dict)
             self.assertIn("image_generation", config)
             self.assertEqual(config["image_generation"]["provider"], get_app_config()["image_generation"]["provider"])
@@ -42,13 +44,14 @@ class TestConfigLoader(BaseTestCase):
         temp_dir = Path(tempfile.mkdtemp())
         try:
             theater_id = "custom_theater_cfg"
+            tm = TheaterManager(base_theaters_dir=temp_dir)
             custom_data = {
                 "image_generation": {
                     "cooldown_duration": 42
                 }
             }
-            save_theater_config(theater_id, custom_data, base_dir=temp_dir)
-            loaded = get_theater_config(theater_id, base_dir=temp_dir)
+            save_theater_config(theater_id, custom_data, theater_manager=tm)
+            loaded = get_theater_config(theater_id, theater_manager=tm)
             self.assertEqual(loaded.get("image_generation", {}).get("cooldown_duration"), 42)
             # Default keys are also preserved via deep merge
             self.assertIn("music", loaded)
@@ -59,14 +62,15 @@ class TestConfigLoader(BaseTestCase):
         temp_dir = Path(tempfile.mkdtemp())
         try:
             theater_id = "malicious_override_theater"
+            tm = TheaterManager(base_theaters_dir=temp_dir)
             override_attempt = {
                 "agent_internal": {
                     "model_id": "user-custom-fake-model",
                     "compaction": {"trigger_tokens": 1}
                 }
             }
-            save_theater_config(theater_id, override_attempt, base_dir=temp_dir)
-            loaded = get_theater_config(theater_id, base_dir=temp_dir)
+            save_theater_config(theater_id, override_attempt, theater_manager=tm)
+            loaded = get_theater_config(theater_id, theater_manager=tm)
             app_internal = get_app_config().get("agent_internal", {})
             self.assertEqual(loaded.get("agent_internal"), app_internal)
             self.assertNotEqual(loaded.get("agent_internal", {}).get("model_id"), "user-custom-fake-model")
@@ -77,6 +81,7 @@ class TestConfigLoader(BaseTestCase):
         temp_dir = Path(tempfile.mkdtemp())
         try:
             theater_id = "provider_override_theater"
+            tm = TheaterManager(base_theaters_dir=temp_dir)
             custom_data = {
                 "story_planning": {
                     "planner_model": "user-custom-model",
@@ -94,8 +99,8 @@ class TestConfigLoader(BaseTestCase):
                     "cooldown_duration": 42,
                 },
             }
-            save_theater_config(theater_id, custom_data, base_dir=temp_dir)
-            loaded = get_theater_config(theater_id, base_dir=temp_dir)
+            save_theater_config(theater_id, custom_data, theater_manager=tm)
+            loaded = get_theater_config(theater_id, theater_manager=tm)
             app_cfg = get_app_config()
 
             # App.yaml model selections should override theater settings
@@ -113,5 +118,3 @@ class TestConfigLoader(BaseTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

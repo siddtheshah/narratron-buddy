@@ -292,7 +292,7 @@ class TheaterManager:
         config = get_theater_default_config()
         if theater_config:
             deep_merge(config, theater_config)
-        save_theater_config(theater_id, config, base_dir=self.base_dir)
+        save_theater_config(theater_id, config, theater_manager=self)
         metadata = TheaterMetadata(theater_id=theater_id, name=name, mounted_references=mounted_references, mounted_playlists=mounted_playlists, config=config)
         self._save_metadata(metadata)
         return metadata

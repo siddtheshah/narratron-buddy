@@ -297,12 +297,11 @@ async def get_theater_config_endpoint(theater_id: str, request: Request):
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
-    base_dir = theater_manager.base_dir
     theater_dir = theater_manager.theater(theater_id).directory()
     yaml_path = theater_dir / "theater.yaml"
 
     if not yaml_path.exists():
-        get_theater_config(theater_id, base_dir=base_dir, db=db)
+        get_theater_config(theater_id, theater_manager=theater_manager)
 
     if yaml_path.exists():
         try:

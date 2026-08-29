@@ -111,7 +111,7 @@ class CanvasStateManager:
         # Import lazily to avoid a module cycle with TheaterManager.
         from utils.config_loader import get_theater_config
 
-        config = get_theater_config(self.theater_id, base_dir=self.theater_manager.base_dir)
+        config = get_theater_config(self.theater_id, theater_manager=self.theater_manager)
         starting_image = config.get("starting_image", "")
         if not isinstance(starting_image, str) or not starting_image.strip():
             return

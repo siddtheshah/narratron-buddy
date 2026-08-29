@@ -941,7 +941,7 @@ class AgentSessionManager:
 
         canvas_mgr = canvas_state_service.get(theater_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
 
-        theater_config = get_theater_config(theater_id, base_dir=self.theater_manager.base_dir)
+        theater_config = get_theater_config(theater_id, theater_manager=self.theater_manager)
         story_planning_config = theater_config.get("story_planning", {})
         if (
             canvas_mgr
