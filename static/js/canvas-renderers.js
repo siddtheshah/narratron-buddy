@@ -313,7 +313,8 @@ export function createImageRenderer({
         const start = performance.now();
 
         const computeImageCentroid = (sourceImage) => {
-            if (sourceImage._centroid) return sourceImage._centroid;
+            const key = sourceImage?.currentSrc || sourceImage?.src || "";
+            if (sourceImage._centroidKey === key && sourceImage._centroid) return sourceImage._centroid;
             if (!sourceImage || !sourceImage.naturalWidth) return { cx: 0.5, cy: 0.5, maxRadiusRatio: 0.707 };
             try {
                 const tempCanvas = document.createElement("canvas");
@@ -333,16 +334,25 @@ export function createImageRenderer({
                         }
                     }
                 }
-                if (count === 0) { sourceImage._centroid = { cx: 0.5, cy: 0.5, maxRadiusRatio: 0.707 }; return sourceImage._centroid; }
+                if (count === 0) {
+                    const fallbackCentroid = { cx: 0.5, cy: 0.5, maxRadiusRatio: 0.707 };
+                    sourceImage._centroidKey = key;
+                    sourceImage._centroid = fallbackCentroid;
+                    return fallbackCentroid;
+                }
                 const bboxCx = (minX + maxX) / 2 / w;
                 const bboxCy = (minY + maxY) / 2 / h;
                 const halfW = (maxX - minX) / 2 / w;
                 const halfH = (maxY - minY) / 2 / h;
-                sourceImage._centroid = { cx: bboxCx, cy: bboxCy, maxRadiusRatio: Math.max(0.1, Math.hypot(halfW, halfH)) };
-                return sourceImage._centroid;
+                const calculatedCentroid = { cx: bboxCx, cy: bboxCy, maxRadiusRatio: Math.max(0.1, Math.hypot(halfW, halfH)) };
+                sourceImage._centroidKey = key;
+                sourceImage._centroid = calculatedCentroid;
+                return calculatedCentroid;
             } catch {
-                sourceImage._centroid = { cx: 0.5, cy: 0.5, maxRadiusRatio: 0.707 };
-                return sourceImage._centroid;
+                const fallbackCentroid = { cx: 0.5, cy: 0.5, maxRadiusRatio: 0.707 };
+                sourceImage._centroidKey = key;
+                sourceImage._centroid = fallbackCentroid;
+                return fallbackCentroid;
             }
         };
 

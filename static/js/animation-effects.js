@@ -391,7 +391,10 @@ export function layerReflectiveDraw(effect, seconds, context, sourceImage, drawW
 }
 
 function getPieceDominantHue(sourceImage) {
-    if (sourceImage._dominantHue !== undefined) return sourceImage._dominantHue;
+    const key = sourceImage?.currentSrc || sourceImage?.src || "";
+    if (sourceImage._dominantHueKey === key && sourceImage._dominantHue !== undefined) {
+        return sourceImage._dominantHue;
+    }
     if (!sourceImage || !sourceImage.naturalWidth) return 200;
     try {
         const tempCanvas = document.createElement("canvas");
@@ -412,6 +415,7 @@ function getPieceDominantHue(sourceImage) {
             }
         }
         if (count === 0) {
+            sourceImage._dominantHueKey = key;
             sourceImage._dominantHue = 200;
             return 200;
         }
@@ -426,23 +430,27 @@ function getPieceDominantHue(sourceImage) {
             else if (max === g) hDeg = ((b - r) / d + 2) * 60;
             else if (max === b) hDeg = ((r - g) / d + 4) * 60;
         }
+        sourceImage._dominantHueKey = key;
         sourceImage._dominantHue = hDeg;
         return hDeg;
     } catch {
+        sourceImage._dominantHueKey = key;
         sourceImage._dominantHue = 200;
         return 200;
     }
 }
 
 function getPieceMassMoments(sourceImage) {
-    if (sourceImage._massMoments !== undefined) return sourceImage._massMoments;
+    const key = sourceImage?.currentSrc || sourceImage?.src || "";
+    if (sourceImage._massMomentsKey === key && sourceImage._massMoments !== undefined) {
+        return sourceImage._massMoments;
+    }
     if (!sourceImage || !sourceImage.naturalWidth) {
-        sourceImage._massMoments = {
+        return {
             startX: 20, startY: 20, endX: 200, endY: 200, highCx: 200, highCy: 200,
             dx: 0.707, dy: 0.707, nx: -0.707, ny: 0.707,
             majorSpan: 250, minorSpan: 50, waveWidth: 30
         };
-        return sourceImage._massMoments;
     }
 
     try {
@@ -468,14 +476,16 @@ function getPieceMassMoments(sourceImage) {
         }
 
         if (M === 0) {
-            sourceImage._massMoments = {
+            const fallbackMoments = {
                 startX: 0, startY: 0,
                 endX: sourceImage.naturalWidth, endY: sourceImage.naturalHeight,
                 highCx: sourceImage.naturalWidth * 0.75, highCy: sourceImage.naturalHeight * 0.75,
                 dx: 0.707, dy: 0.707, nx: -0.707, ny: 0.707,
                 majorSpan: sourceImage.naturalWidth, minorSpan: 40, waveWidth: 30
             };
-            return sourceImage._massMoments;
+            sourceImage._massMomentsKey = key;
+            sourceImage._massMoments = fallbackMoments;
+            return fallbackMoments;
         }
 
         const cx = m10 / M;
@@ -512,10 +522,6 @@ function getPieceMassMoments(sourceImage) {
         const inertiaRatio = Math.sqrt(lambda2 / lambda1); // Minor to major standard deviation ratio
 
         // 5. Extents along principal axis u and perpendicular axis v
-        let massPos = 0, massNeg = 0;
-        let sumXPos = 0, sumYPos = 0;
-        let sumXNeg = 0, sumYNeg = 0;
-
         let minP = Infinity, maxP = -Infinity;
         let minPerp = Infinity, maxPerp = -Infinity;
 
@@ -532,22 +538,40 @@ function getPieceMassMoments(sourceImage) {
                     if (p > maxP) maxP = p;
                     if (perp < minPerp) minPerp = perp;
                     if (perp > maxPerp) maxPerp = perp;
+                }
+            }
+        }
 
-                    if (p >= 0) {
-                        massPos += alpha;
-                        sumXPos += x * alpha;
-                        sumYPos += y * alpha;
+        // Split major axis at midpoint of total extent to cleanly separate low-mass and high-mass halves
+        const pMid = (minP + maxP) / 2;
+
+        let mass0 = 0, mass1 = 0;
+        let sumX0 = 0, sumY0 = 0;
+        let sumX1 = 0, sumY1 = 0;
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const alpha = data[(y * w + x) * 4 + 3];
+                if (alpha > 30) {
+                    const dxPixel = x - cx;
+                    const dyPixel = y - cy;
+                    const p = dxPixel * uX + dyPixel * uY;
+
+                    if (p < pMid) {
+                        mass0 += alpha;
+                        sumX0 += x * alpha;
+                        sumY0 += y * alpha;
                     } else {
-                        massNeg += alpha;
-                        sumXNeg += x * alpha;
-                        sumYNeg += y * alpha;
+                        mass1 += alpha;
+                        sumX1 += x * alpha;
+                        sumY1 += y * alpha;
                     }
                 }
             }
         }
 
         // Flow Direction vector d (towards higher mass end)
-        const isPosHigh = massPos >= massNeg;
+        const isPosHigh = mass1 >= mass0;
         const dx = isPosHigh ? uX : -uX;
         const dy = isPosHigh ? uY : -uY;
         const nx = -dy;
@@ -565,8 +589,12 @@ function getPieceMassMoments(sourceImage) {
         const endX = (cx + pEnd * uX) * scaleX;
         const endY = (cy + pEnd * uY) * scaleY;
 
-        const highCx = (isPosHigh ? (massPos > 0 ? sumXPos / massPos : cx) : (massNeg > 0 ? sumXNeg / massNeg : cx)) * scaleX;
-        const highCy = (isPosHigh ? (massPos > 0 ? sumYPos / massPos : cy) : (massNeg > 0 ? sumYNeg / massNeg : cy)) * scaleY;
+        // High-mass half centroid (explosion center) and low-mass half centroid
+        const highCx = (isPosHigh ? (mass1 > 0 ? sumX1 / mass1 : cx) : (mass0 > 0 ? sumX0 / mass0 : cx)) * scaleX;
+        const highCy = (isPosHigh ? (mass1 > 0 ? sumY1 / mass1 : cy) : (mass0 > 0 ? sumY0 / mass0 : cy)) * scaleY;
+
+        const lowCx = (isPosHigh ? (mass0 > 0 ? sumX0 / mass0 : cx) : (mass1 > 0 ? sumX1 / mass1 : cx)) * scaleX;
+        const lowCy = (isPosHigh ? (mass0 > 0 ? sumY0 / mass0 : cy) : (mass1 > 0 ? sumY1 / mass1 : cy)) * scaleY;
 
         const majorSpan = (maxP - minP) * Math.max(scaleX, scaleY);
         const minorSpan = (maxPerp - minPerp) * Math.max(scaleX, scaleY);
@@ -574,17 +602,19 @@ function getPieceMassMoments(sourceImage) {
         // Transverse wave width scaled narrower based on the inertia ratio
         const waveWidth = Math.max(10, minorSpan * Math.min(1.0, Math.max(0.20, inertiaRatio * 2.2)));
 
-        sourceImage._massMoments = {
-            startX, startY, endX, endY, highCx, highCy,
+        const calculatedMoments = {
+            startX, startY, endX, endY, lowCx, lowCy, highCx, highCy,
             dx, dy, nx, ny,
             majorSpan: Math.max(20, majorSpan),
             minorSpan: Math.max(20, minorSpan),
             waveWidth,
             inertiaRatio
         };
-        return sourceImage._massMoments;
+        sourceImage._massMomentsKey = key;
+        sourceImage._massMoments = calculatedMoments;
+        return calculatedMoments;
     } catch {
-        sourceImage._massMoments = {
+        const fallbackMoments = {
             startX: 0, startY: 0,
             endX: sourceImage.naturalWidth, endY: sourceImage.naturalHeight,
             highCx: sourceImage.naturalWidth * 0.75, highCy: sourceImage.naturalHeight * 0.75,
@@ -592,7 +622,9 @@ function getPieceMassMoments(sourceImage) {
             majorSpan: sourceImage.naturalWidth * 0.7, minorSpan: sourceImage.naturalHeight * 0.4,
             waveWidth: 30, inertiaRatio: 0.5
         };
-        return sourceImage._massMoments;
+        sourceImage._massMomentsKey = key;
+        sourceImage._massMoments = fallbackMoments;
+        return fallbackMoments;
     }
 }
 
@@ -620,25 +652,30 @@ export function layerEnergyBlastDraw(effect, seconds, context, sourceImage, draw
     // 1. High-mass half centroid ripple waves (8 radial/jagged arcs expanding from highCx, highCy)
     const numRipples = 8;
     for (let k = 0; k < numRipples; k++) {
-        const speedK = 0.35 + (k % 4) * 0.08;
+        const speedK = 0.16 + (k % 4) * 0.04;
         const seedK = (Math.sin(k * 19.17 + 2.45) * 43758.5453) % 1.0;
         const phaseK = (seconds * speedK + Math.abs(seedK)) % 1.0;
         const maxRadiusK = minorSpan * 0.45;
         const radiusK = phaseK * maxRadiusK;
-        const opacityK = (0.60 + (k % 3) * 0.15) * Math.sin(phaseK * Math.PI) * (0.65 + 0.35 * Math.sin(seconds * 10.0 + k * 2.7));
+        const opacityK = (0.60 + (k % 3) * 0.15) * Math.sin(phaseK * Math.PI) * (0.65 + 0.35 * Math.sin(seconds * 5.0 + k * 2.7));
 
         if (opacityK > 0.01) {
-            const hueOffsetK = Math.max(0.0, baseHue - 45.0 - (k % 3) * 6.0);
-            offCtx.lineWidth = Math.max(2.5, Math.min(w, h) * 0.010);
+            // Slight hue offset; desaturation (sFactor -> 0) is tied directly to high brightness (lightK -> 92%)
+            const hueOffsetK = Math.max(0.0, baseHue - 12.0 - (k % 3) * 3.0);
+            const sFactorK = 0.5 + 0.5 * Math.sin(seconds * 4.5 + k * 2.1);
+            const satK = 15.0 + 80.0 * sFactorK;
+            const lightK = 92.0 - 32.0 * sFactorK;
+
+            offCtx.lineWidth = Math.max(4.5, Math.min(w, h) * 0.016);
             offCtx.lineCap = "round";
             offCtx.lineJoin = "miter";
-            offCtx.strokeStyle = `hsla(${hueOffsetK.toFixed(1)}, 95%, 65%, ${opacityK.toFixed(3)})`;
+            offCtx.strokeStyle = `hsla(${hueOffsetK.toFixed(1)}, ${satK.toFixed(1)}%, ${lightK.toFixed(1)}%, ${opacityK.toFixed(3)})`;
 
             offCtx.beginPath();
             const arcSteps = 16;
             for (let s = 0; s <= arcSteps; s++) {
                 const angle = (s / arcSteps) * Math.PI * 2;
-                const jaggedNoise = Math.sin(s * 3.5 + k * 4.2 + seconds * 8.0) * (minorSpan * 0.025);
+                const jaggedNoise = Math.sin(s * 3.5 + k * 4.2 + seconds * 4.0) * (minorSpan * 0.025);
                 const r = radiusK + jaggedNoise;
                 const rx = highCx + r * Math.cos(angle);
                 const ry = highCy + r * Math.sin(angle);
@@ -657,23 +694,28 @@ export function layerEnergyBlastDraw(effect, seconds, context, sourceImage, draw
         const seedRaw = Math.sin(i * 13.37 + 1.23) * 43758.5453;
         const seed = seedRaw - Math.floor(seedRaw);
 
-        const speed = 0.38 + (i % 6) * 0.10;
+        const speed = 0.18 + (i % 6) * 0.05;
         const phase = (seconds * speed + seed) % 1.0;
 
         const sineFade = Math.sin(phase * Math.PI);
-        const winkFlicker = 0.60 + 0.40 * Math.sin(seconds * 12.0 + i * 3.5);
+        const winkFlicker = 0.60 + 0.40 * Math.sin(seconds * 6.0 + i * 3.5);
         const frontOpacity = (0.60 + (i % 3) * 0.15) * sineFade * winkFlicker;
 
         const convergence = Math.pow(phase, 1.4);
 
         if (frontOpacity > 0.01) {
-            const lineWidth = Math.max(2.5, Math.min(w, h) * (0.010 + (i % 3) * 0.004));
-            const hueOffset = Math.max(0.0, baseHue - 45.0 - (i % 3) * 6.0);
+            const lineWidth = Math.max(5.0, Math.min(w, h) * (0.018 + (i % 3) * 0.006));
+            
+            // Slight hue offset; desaturation (sFactor -> 0) is tied directly to high brightness (lightI -> 92%)
+            const hueOffset = Math.max(0.0, baseHue - 12.0 - (i % 3) * 3.0);
+            const sFactorI = 0.5 + 0.5 * Math.sin(seconds * 5.0 + i * 2.8 + phase * 6.28);
+            const satI = 15.0 + 80.0 * sFactorI;
+            const lightI = 92.0 - 32.0 * sFactorI;
 
             offCtx.lineWidth = lineWidth;
             offCtx.lineCap = "round";
             offCtx.lineJoin = "miter";
-            offCtx.strokeStyle = `hsla(${hueOffset.toFixed(1)}, 95%, 65%, ${frontOpacity.toFixed(3)})`;
+            offCtx.strokeStyle = `hsla(${hueOffset.toFixed(1)}, ${satI.toFixed(1)}%, ${lightI.toFixed(1)}%, ${frontOpacity.toFixed(3)})`;
 
             // Travels from startX/startY (low-mass tip) directly to highCx/highCy (explosion centroid)
             const baseX = startX + phase * (highCx - startX);
