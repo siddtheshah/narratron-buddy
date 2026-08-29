@@ -89,6 +89,9 @@ class Theater:
     def music_artifacts_dir(self) -> Path:
         return self.manager._get_theater_music_artifacts_dir(self.theater_id)
 
+    def get_url_for_path(self, file_path: str) -> str:
+        return self.manager.get_url_for_path(self.theater_id, file_path)
+
 
     @property
     def metadata(self) -> Optional[TheaterMetadata]:
@@ -200,6 +203,30 @@ class TheaterManager:
     def music_catalog_dir(self) -> Path:
         """Private catalog shared by theaters; it is intentionally not a theater."""
         return self.base_dir / "_music_catalog"
+
+    def get_url_for_path(self, theater_id: str, file_path: str) -> str:
+        if not file_path:
+            return ""
+        path_obj = Path(file_path)
+        if not path_obj.is_absolute():
+            sel_path_obj = (self._get_theater_output_dir(theater_id) / path_obj).resolve()
+        else:
+            sel_path_obj = path_obj.resolve()
+
+        if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
+            return f"/theaters/{theater_id}/references/{sel_path_obj.name}"
+
+        output_dir = self._get_theater_output_dir(theater_id).resolve()
+        try:
+            relative_path = sel_path_obj.relative_to(output_dir).as_posix()
+        except ValueError:
+            parts = sel_path_obj.parts
+            if "output" in parts:
+                output_idx = len(parts) - 1 - parts[::-1].index("output")
+                relative_path = Path(*parts[output_idx + 1:]).as_posix()
+            else:
+                relative_path = sel_path_obj.name
+        return f"/theaters/{theater_id}/output/{relative_path}"
 
 
     def _metadata_path(self, theater_id: str) -> Path:

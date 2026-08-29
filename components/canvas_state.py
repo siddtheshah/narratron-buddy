@@ -446,17 +446,8 @@ class CanvasStateManager:
         self.current_playlist_time = time.time()
         self._notify_state_changed("latest")
 
-    def _get_url_for_path(self, file_path: str) -> str:
-        if not file_path:
-            return ""
-        sel_path_obj = Path(file_path).resolve()
-        if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
-            return f"/theaters/{self.theater_id}/references/{sel_path_obj.name}"
-        try:
-            relative_path = sel_path_obj.relative_to(self.theater.output_dir().resolve()).as_posix()
-        except ValueError:
-            relative_path = sel_path_obj.name
-        return f"/theaters/{self.theater_id}/output/{relative_path}"
+    def get_url_for_path(self, file_path: str) -> str:
+        return self.theater.get_url_for_path(file_path)
 
     def update_shown_image(
         self,
@@ -499,7 +490,7 @@ class CanvasStateManager:
         self._notify_state_changed("latest")
 
         if file_path:
-            image_url = self._get_url_for_path(file_path)
+            image_url = self.get_url_for_path(file_path)
             history_item = {
                 "path": file_path,
                 "url": image_url,
@@ -568,7 +559,7 @@ class CanvasStateManager:
             "layers": [{
                 "name": item.get("name", f"layer_{index + 1}"), "description": item.get("description", ""),
                 "effect": item.get("effect", "none"), "order": item.get("order", index),
-                "url": self._get_url_for_path(str(item["path"])),
+                "url": self.get_url_for_path(str(item["path"])),
             } for index, item in enumerate(layers) if item.get("path")],
         }
         logger.debug("[CanvasState] Showing layered animation id=%s layers=%s", manifest.get("id"), len(self.shown_layered_animation["layers"]))
@@ -854,7 +845,7 @@ class CanvasStateManager:
         """
         # 1. Explicit shown image
         if self.shown_image_path:
-            return self._get_url_for_path(self.shown_image_path), self.shown_image_path, self.shown_image_time, self.shown_image_prompt
+            return self.get_url_for_path(self.shown_image_path), self.shown_image_path, self.shown_image_time, self.shown_image_prompt
 
         # 2. Output directory latest generated image
         image_folder = str(self.theater.output_dir())
@@ -864,19 +855,19 @@ class CanvasStateManager:
                 files.extend(glob.glob(os.path.join(image_folder, ext)))
             if files:
                 newest = max(files, key=os.path.getmtime)
-                return self._get_url_for_path(newest), newest, os.path.getmtime(newest), extract_image_prompt(newest)
+                return self.get_url_for_path(newest), newest, os.path.getmtime(newest), extract_image_prompt(newest)
 
         # 3. Adventure cover from metadata.json
         cover = self._resolve_adventure_cover()
         if cover:
             cover_path, prompt = cover
-            return self._get_url_for_path(str(cover_path)), str(cover_path), 0.0, prompt
+            return self.get_url_for_path(str(cover_path)), str(cover_path), 0.0, prompt
 
         # 4. Mounted reference fallback
         ref = self._resolve_reference_fallback()
         if ref:
             ref_path, prompt = ref
-            return self._get_url_for_path(str(ref_path)), str(ref_path), 0.0, prompt
+            return self.get_url_for_path(str(ref_path)), str(ref_path), 0.0, prompt
 
         return None, None, 0.0, ""
 
@@ -897,7 +888,7 @@ class CanvasStateManager:
             elif isinstance(h, str):
                 formatted_history.append({
                     "path": h,
-                    "url": self._get_url_for_path(h),
+                    "url": self.get_url_for_path(h),
                     "prompt": extract_image_prompt(h),
                     "time": 0.0,
                     "transition": transition,
@@ -937,7 +928,7 @@ class CanvasStateManager:
         if self.shown_animation_frames:
             res["animation"] = {
                 "type": "triframe",
-                "frames": [self._get_url_for_path(path) for path in self.shown_animation_frames],
+                "frames": [self.get_url_for_path(path) for path in self.shown_animation_frames],
                 "frame_duration_ms": 1400,
                 "crossfade_duration_ms": 500,
             }

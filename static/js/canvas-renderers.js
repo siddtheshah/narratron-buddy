@@ -148,7 +148,6 @@ export function createImageRenderer({
         resize();
 
         const newImage = new Image();
-        newImage.crossOrigin = "anonymous";
         newImage.src = imageUrl;
 
         try {
@@ -225,7 +224,6 @@ export function createImageRenderer({
         const generation = sequenceGeneration;
         const frames = await Promise.all(imageUrls.map(async (imageUrl) => {
             const frame = new Image();
-            frame.crossOrigin = "anonymous";
             frame.src = imageUrl;
             try {
                 await frame.decode();
@@ -293,7 +291,6 @@ export function createImageRenderer({
         const generation = sequenceGeneration;
         const prepared = await Promise.all(layers.map(async (layer) => {
             const source = new Image();
-            source.crossOrigin = "anonymous";
             source.src = layer.url;
             try { await source.decode(); } catch { await new Promise(resolve => { source.onload = resolve; source.onerror = resolve; }); }
             return { ...layer, source };

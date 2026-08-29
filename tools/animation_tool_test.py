@@ -208,6 +208,8 @@ class TestAnimationTools(BaseTestCase):
             manifest = __import__("json").load(stream)
         self.assertEqual(len(manifest["layers"]), 3)
         self.assertEqual(manifest["layers"][-1]["effect"], "sway")
+        self.assertFalse(os.path.isabs(manifest["base_image"]))
+        self.assertFalse(os.path.isabs(manifest["layers"][0]["path"]))
 
         self.assertIn("Playing layered animation", tools.play_animation(animation_id))
         animation = canvas_state_service.latest_state("layered_canvas")["animation"]

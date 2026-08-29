@@ -292,7 +292,37 @@ class AnimationTools(BaseTools):
             layer_paths = [self._save_named_image(image_bytes, animation_dir / f"layer_{index + 1}.png", decomposition_prompt) for index, (image_bytes, _mime_type) in enumerate(layered.images[:len(plan)])]
             if len(layer_paths) < 2:
                 raise ImageProviderError("Layer decomposition did not produce enough playable layers.")
-            manifest = {"version": 1, "id": animation_id, "scene_prompt": scene_prompt.strip(), "flattened_prompt": flattened_prompt, "decomposition_prompt": decomposition_prompt, "base_image": str(base_path), "layers": [{**description, "path": str(path), "order": index} for index, (description, path) in enumerate(zip(plan[:len(layer_paths)], layer_paths))], "provider": {"base": base_result.provider, "base_model": base_result.model, "decomposition": provider.model, "request_id": layered.request_id, "usage": layered.usage, "planner": planner_debug}}
+            output_dir_path = Path(self.output_dir)
+            def _to_rel(p: str | Path) -> str:
+                try:
+                    return Path(p).relative_to(output_dir_path).as_posix()
+                except ValueError:
+                    parts = Path(p).parts
+                    if "animations" in parts:
+                        idx = parts.index("animations")
+                        return Path(*parts[idx:]).as_posix()
+                    return Path(p).name
+
+            manifest = {
+                "version": 1,
+                "id": animation_id,
+                "scene_prompt": scene_prompt.strip(),
+                "flattened_prompt": flattened_prompt,
+                "decomposition_prompt": decomposition_prompt,
+                "base_image": _to_rel(base_path),
+                "layers": [
+                    {**description, "path": _to_rel(path), "order": index}
+                    for index, (description, path) in enumerate(zip(plan[:len(layer_paths)], layer_paths))
+                ],
+                "provider": {
+                    "base": base_result.provider,
+                    "base_model": base_result.model,
+                    "decomposition": provider.model,
+                    "request_id": layered.request_id,
+                    "usage": layered.usage,
+                    "planner": planner_debug,
+                },
+            }
             manifest_path = animation_dir / "animation.json"
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             self._layered_animations[animation_id] = manifest
@@ -470,6 +500,24 @@ class AnimationTools(BaseTools):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             if not isinstance(manifest.get("layers"), list) or len(manifest["layers"]) < 2:
                 return None
+            output_dir_path = Path(self.output_dir)
+            for layer in manifest.get("layers", []):
+                if isinstance(layer, dict) and "path" in layer:
+                    layer_path = Path(layer["path"])
+                    abs_path = (output_dir_path / layer_path) if not layer_path.is_absolute() else layer_path
+                    if not abs_path.is_file():
+                        local_path = Path(self.animations_dir) / clean_id / layer_path.name
+                        if local_path.is_file():
+                            abs_path = local_path
+                    layer["path"] = str(abs_path)
+            if "base_image" in manifest:
+                base_path = Path(manifest["base_image"])
+                abs_base = (output_dir_path / base_path) if not base_path.is_absolute() else base_path
+                if not abs_base.is_file():
+                    local_base = Path(self.animations_dir) / clean_id / base_path.name
+                    if local_base.is_file():
+                        abs_base = local_base
+                manifest["base_image"] = str(abs_base)
             self._layered_animations[clean_id] = manifest
             return manifest
         except (OSError, json.JSONDecodeError):

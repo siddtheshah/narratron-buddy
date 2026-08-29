@@ -127,3 +127,12 @@ class TestTheaterManager(unittest.TestCase):
                 theater_id="invalid-lore",
                 lore_files=[("lore/notes.md", b"Not accepted.")],
             )
+
+    def testget_url_for_path_resolves_output_and_reference_urls(self):
+        theater = self.manager.theater("stage")
+        output_file = str(theater.output_dir() / "animations" / "hero_anim" / "frame_1.png")
+        url = theater.get_url_for_path(output_file)
+        self.assertEqual(url, "/theaters/stage/output/animations/hero_anim/frame_1.png")
+
+        rel_url = theater.get_url_for_path("animations/hero_anim/frame_1.png")
+        self.assertEqual(rel_url, "/theaters/stage/output/animations/hero_anim/frame_1.png")
