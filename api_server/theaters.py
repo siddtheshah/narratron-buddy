@@ -26,12 +26,11 @@ from api_server.shared import (
     _grant_canvas_access,
     PROJECT_ROOT
 )
-from api_server.dependencies import agent_manager, suggestion_service
+from api_server.dependencies import agent_manager, suggestion_service, adventure_service
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
-from services.adventure_service import adventure_service
 
 logger = logging.getLogger(__name__)
 

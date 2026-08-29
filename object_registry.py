@@ -5,6 +5,7 @@ Keeping construction here ensures the HTTP routes, agent runtime, and test
 configuration all operate on the same instances.
 """
 
+from google.adk.auth import oauth2_discovery
 import atexit
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,7 +18,7 @@ from fastapi import FastAPI
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
-from services.adventure_service import AdventureService, adventure_service
+from services.adventure_service import AdventureService, ensure_adventures_root
 from services.agent_manager import AgentSessionManager
 from services.suggestion_service import SuggestionService
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
@@ -105,5 +106,6 @@ agent_manager = AgentSessionManager(
     database_manager=db,
 )
 suggestion_service = SuggestionService(config=config)
+adventure_service = AdventureService(ensure_adventures_root())
 
 atexit.register(shutdown_database_connection)

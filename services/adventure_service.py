@@ -58,15 +58,8 @@ logger = logging.getLogger(__name__)
 class AdventureService:
     """Provides access to premade adventure packages on local or mounted storage."""
 
-    def __init__(self, base_dir: Optional[Path | str] = None, **kwargs: Any):
-        if base_dir is not None:
-            self._base_dir = Path(base_dir).resolve()
-        elif "local_fallback_dir" in kwargs and kwargs["local_fallback_dir"] is not None:
-            self._base_dir = Path(kwargs["local_fallback_dir"]).resolve()
-        elif "adventures_dir" in kwargs and kwargs["adventures_dir"] is not None:
-            self._base_dir = Path(kwargs["adventures_dir"]).resolve()
-        else:
-            self._base_dir = None
+    def __init__(self, base_dir: Path | str):
+        self._base_dir = Path(base_dir).resolve()
 
         self._adventures_cache: Optional[List[Dict[str, Any]]] = None
         self._cache_timestamp: float = 0.0
@@ -281,6 +274,3 @@ class AdventureService:
                         lore_files.append((rel, content))
 
         return reference_files, playlists_data, lore_files, theater_config
-
-
-adventure_service = AdventureService()
