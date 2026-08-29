@@ -6200,7 +6200,7 @@
                 theaterConfigStatus.style.background = 'rgba(99, 102, 241, 0.15)';
                 theaterConfigStatus.style.border = '1px solid rgba(99, 102, 241, 0.4)';
                 theaterConfigStatus.style.color = '#a5b4fc';
-                theaterConfigStatus.textContent = 'Saving theater.yaml to DB & theater directory...';
+                theaterConfigStatus.textContent = 'Saving theater.yaml directly to current theater...';
             }
 
             configModalSaveBtn.disabled = true;
@@ -6222,7 +6222,7 @@
                     theaterConfigStatus.style.background = 'rgba(34, 197, 94, 0.15)';
                     theaterConfigStatus.style.border = '1px solid rgba(34, 197, 94, 0.4)';
                     theaterConfigStatus.style.color = '#4ade80';
-                    theaterConfigStatus.textContent = '✅ ' + (data.message || 'Saved successfully! Restart your agent to apply changes.');
+                    theaterConfigStatus.textContent = '✅ ' + (data.message || 'Saved directly to current theater. Restart to apply configs, and ensure you save the theater state to keep these settings.');
                 }
             } catch (err) {
                 if (theaterConfigStatus) {

@@ -176,7 +176,10 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(bad_post.status_code, 400)
 
         # 3. POST valid YAML
-        new_yaml = "agent:\n  name: TestAgent\n  cooldown: 5\n"
+        new_yaml = """agent:
+  name: TestAgent
+  cooldown: 5
+"""
         post_res = self.client.post(
             "/api/theaters/config_theater/config",
             json={"config_yaml": new_yaml}
@@ -184,7 +187,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(post_res.status_code, 200)
         res_json = post_res.json()
         self.assertEqual(res_json["status"], "ok")
-        self.assertIn("Restart your agent", res_json["message"])
+        self.assertIn("Restart to apply configs", res_json["message"])
 
         # 4. Verify file on disk
         yaml_disk_path = theater_manager.base_dir / "config_theater" / "theater.yaml"

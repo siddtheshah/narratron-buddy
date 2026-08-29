@@ -351,7 +351,7 @@ async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRe
 
     return {
         "status": "ok",
-        "message": "theater.yaml saved directly to DB and theater directory. Restart your agent to apply changes.",
+        "message": "Saved directly to current theater. Restart to apply configs, and ensure you save the theater state to keep these settings.",
         "theater_id": theater_id
     }
 
