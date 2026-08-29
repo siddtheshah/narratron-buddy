@@ -341,10 +341,13 @@ export function createImageRenderer({
         const drawMeshDistortion = (ctx, sourceImage, drawWidth, drawHeight, phase, amplitude = 1.0, centroid = null, mode = "twist") => {
             const W = drawWidth, H = drawHeight;
             const localCx = -W / 2 + (centroid?.cx ?? 0.5) * W;
-            const localCy = -H / 2 + (centroid?.cy ?? 0.5) * H;
+            const localCy = mode === "sway" ? H / 2 : -H / 2 + (centroid?.cy ?? 0.5) * H;
             const Rmax = Math.max(1, (centroid?.maxRadiusRatio ?? 0.707) * Math.max(W, H));
             const GRID = 12;
-            const torque = Math.sin(phase * 2.0) * (amplitude * 0.45);
+            const majorDim = Math.max(W, H);
+            const refDim = 350;
+            const dimDamping = Math.max(0.25, refDim / Math.max(refDim, majorDim));
+            const torque = Math.sin(phase * 2.0) * (amplitude * 0.45) * dimDamping;
             const vertices = [];
             for (let j = 0; j <= GRID; j++) {
                 const row = []; const v = j / GRID; const y0 = -H / 2 + v * H;
@@ -352,7 +355,7 @@ export function createImageRenderer({
                     const u = i / GRID; const x0 = -W / 2 + u * W;
                     const dx = x0 - localCx, dy = y0 - localCy;
                     const r = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
-                    const dTheta = mode === "bend" ? torque * (dy / Rmax) : torque * (r / Rmax);
+                    const dTheta = (mode === "bend" || mode === "sway") ? torque * (dy / Rmax) : torque * (r / Rmax);
                     const newAngle = angle + dTheta;
                     row.push({ u, v, x: localCx + r * Math.cos(newAngle), y: localCy + r * Math.sin(newAngle) });
                 }
@@ -396,7 +399,7 @@ export function createImageRenderer({
             context.translate(cx + transform.x * amp, cy + transform.y * amp);
             context.rotate(transform.rotation * amp);
             context.scale(transform.scale, transform.scale);
-            if (layer.effect === "twist" || layer.effect === "bend") {
+            if (layer.effect === "twist" || layer.effect === "bend" || layer.effect === "sway") {
                 const centroid = computeImageCentroid(source);
                 drawMeshDistortion(context, source, drawWidth, drawHeight, phase, amp, centroid, layer.effect);
             } else {

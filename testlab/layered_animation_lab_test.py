@@ -10,6 +10,7 @@ def test_list_piece_images_discovers_samples():
     filenames = {p["filename"] for p in pieces}
     assert "bg_mountain_sky.png" in filenames
     assert "subject_crystal.png" in filenames
+    assert ("subject_palm_tree.png" in filenames or "palm_tree.png" in filenames)
     for piece in pieces:
         assert "url" in piece
         assert "has_alpha" in piece
@@ -23,7 +24,12 @@ def test_get_layered_animation_catalog_returns_effects_and_presets():
     assert "image_effects" in catalog
     assert "presets" in catalog
     effect_ids = {e["id"] for e in catalog["effects"]}
-    assert {"none", "sway", "vibrate", "drift", "breathe", "twist", "bend"}.issubset(effect_ids)
+    assert {"none", "sway", "gentle_rocking", "vibrate", "drift", "breathe", "twist", "bend"}.issubset(effect_ids)
+    sway_entry = next(e for e in catalog["effects"] if e["id"] == "sway")
+    assert sway_entry["name"] == "Sway (Foliage Bending)"
+    assert "Bottom-anchored" in sway_entry["description"]
+    rocking_entry = next(e for e in catalog["effects"] if e["id"] == "gentle_rocking")
+    assert rocking_entry["name"] == "Gentle Rocking"
 
 
 def test_layered_animation_lab_routes():

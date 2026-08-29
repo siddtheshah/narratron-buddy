@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class AnimationLayer(BaseModel):
     description: str = Field(min_length=3, max_length=300)
-    effect: str = Field(pattern="^(none|sway|vibrate|drift|breathe|twist|bend)$")
+    effect: str = Field(pattern="^(none|sway|vibrate|drift|breathe|twist|bend|gentle_rocking)$")
 
 
 class AnimationLayerPlanResponse(BaseModel):
@@ -55,7 +55,7 @@ ANIMATION_LAYER_PLAN_JSON_SCHEMA = {
             "type": "object",
             "properties": {
                 "description": {"type": "string", "minLength": 3, "maxLength": 180},
-                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "drift", "breathe", "twist", "bend"]},
+                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "drift", "breathe", "twist", "bend", "gentle_rocking"]},
             },
             "required": ["description", "effect"],
             "additionalProperties": False,
@@ -298,7 +298,7 @@ class AnimationTools(BaseTools):
                     "BACKGROUND: combine the entire static environment behind the focal subject into one layer—never split it into sky, coast, sea, terrain, buildings, or lighting layers. Its effect must be none. "
                     "SUBJECT: the single focal character, creature, vehicle, or landmark, including attached parts and immediately associated light. Do not make a second subject layer. "
                     "FOREGROUND: only close-to-camera objects that visibly overlap or frame the subject, such as leaves, grass, smoke, rain, or nearby waves; otherwise use null. "
-                    "Use effect=none for fixed content; sway for foliage; vibrate for water/waves/rain/smoke; drift for atmospheric objects; breathe only for a living focal subject; twist for rotating or swirling cyclical motion around centroid. "
+                    "Use effect=none for fixed content; sway for foliage bending; gentle_rocking for rigid rotational rocking; vibrate for water/waves/rain/smoke; drift for atmospheric objects; breathe only for a living focal subject; twist for rotating or swirling cyclical motion around centroid; bend for curvature distortion. "
                     "Do not invent scene elements. Return JSON only.\n\n"
                     f"Scene prompt:\n{scene_prompt}"),
             temperature=0.1, max_output_tokens=512,

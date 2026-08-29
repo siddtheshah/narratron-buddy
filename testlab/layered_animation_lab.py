@@ -46,7 +46,8 @@ def get_layered_animation_catalog() -> dict[str, Any]:
 
     effects = [
         {"id": "none", "name": "None (Static)", "description": "No motion transform"},
-        {"id": "sway", "name": "Sway", "description": "Gentle rotational oscillation wave"},
+        {"id": "sway", "name": "Sway (Foliage Bending)", "description": "Bottom-anchored bending curvature distorting around bottom of bounding box"},
+        {"id": "gentle_rocking", "name": "Gentle Rocking", "description": "Gentle rotational oscillation wave"},
         {"id": "vibrate", "name": "Vibrate", "description": "Rapid high-frequency jitter motion"},
         {"id": "drift", "name": "Drift", "description": "Slow floating horizontal and vertical translation"},
         {"id": "breathe", "name": "Breathe", "description": "Subtle expanding and contracting scale pulse"},
@@ -136,6 +137,38 @@ def get_layered_animation_catalog() -> dict[str, Any]:
                     "effect": "twist",
                     "speed": 1.2,
                     "amplitude": 1.4,
+                    "opacity": 1.0,
+                    "order": 1,
+                },
+            ]
+        })
+
+    if "subject_palm_tree.png" in piece_map or "palm_tree.png" in piece_map:
+        target_fn = "subject_palm_tree.png" if "subject_palm_tree.png" in piece_map else "palm_tree.png"
+        presets.append({
+            "id": "tropical-breeze-sway",
+            "name": "Swaying Palm Tree (Tropical Breeze)",
+            "description": "Palm tree swaying gently in a tropical breeze.",
+            "layers": [
+                {
+                    "name": "Background Sky",
+                    "piece_id": "bg_mountain_sky",
+                    "filename": "bg_mountain_sky.png",
+                    "url": piece_map.get("bg_mountain_sky.png", {}).get("url", ""),
+                    "effect": "none",
+                    "speed": 1.0,
+                    "amplitude": 1.0,
+                    "opacity": 1.0,
+                    "order": 0,
+                },
+                {
+                    "name": "Palm Tree",
+                    "piece_id": piece_map[target_fn]["id"],
+                    "filename": target_fn,
+                    "url": piece_map[target_fn]["url"],
+                    "effect": "sway",
+                    "speed": 0.9,
+                    "amplitude": 1.3,
                     "opacity": 1.0,
                     "order": 1,
                 },

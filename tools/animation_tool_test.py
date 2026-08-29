@@ -238,3 +238,5 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(layer_twist.effect, "twist")
         layer_bend = AnimationLayer(description="a flexing reed", effect="bend")
         self.assertEqual(layer_bend.effect, "bend")
+        layer_rocking = AnimationLayer(description="a rocking boat", effect="gentle_rocking")
+        self.assertEqual(layer_rocking.effect, "gentle_rocking")
