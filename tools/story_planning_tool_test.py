@@ -70,6 +70,40 @@ class TestStoryPlanningTools(unittest.TestCase):
         with self.assertRaises(ValueError):
             StoryPlanningTools(config={}, theater_id="t", canvas_state_service=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=None)
 
+    def test_story_log_entries_are_written_to_theater_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            theater_manager = TheaterManager(base_theaters_dir=temp_dir)
+            tools = self._make_tools(theater_id="story-log", theater_manager=theater_manager)
+
+            tools._append_story_log_entry("user_action", {"action": "I open the door."})
+
+            log_path = theater_manager.theater("story-log").output_dir() / "story_log.jsonl"
+            entries = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(entries[0]["type"], "user_action")
+            self.assertEqual(entries[0]["action"], "I open the door.")
+            self.assertNotIn("nudge", entries[0])
+
+    def test_planner_initialization_reads_the_last_200_story_log_lines(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            theater_manager = TheaterManager(base_theaters_dir=temp_dir)
+            log_path = theater_manager.theater("story-history").output_dir() / "story_log.jsonl"
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                "".join(
+                    json.dumps({"type": "user_action", "action": f"Action {index}"}) + "\n"
+                    for index in range(205)
+                ),
+                encoding="utf-8",
+            )
+
+            tools = self._make_tools(theater_id="story-history", theater_manager=theater_manager)
+
+            self.assertEqual(len(tools._recent_story_log), 200)
+            self.assertEqual(tools._recent_story_log[0]["action"], "Action 5")
+            instruction = tools._build_planner_instruction()
+            self.assertIn("Player action: Action 5", instruction)
+            self.assertNotIn("Player action: Action 4\n", instruction)
+
     def test_planner_instruction_reserves_player_agency(self):
         prompt = build_scene_reaction_prompt(
             context="Current scene elements: None",

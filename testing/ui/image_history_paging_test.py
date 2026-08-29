@@ -1,9 +1,21 @@
 """Tests for CanvasStateManager image history and paging payloads."""
 
+from pathlib import Path
+
 from testing.ui.base import UITestCase
 
 
 class TestImageHistoryPaging(UITestCase):
+    def test_paging_bar_is_at_the_top_and_reveals_story_log_inspector(self):
+        canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+
+        self.assertIn("#history-paging-controls {", canvas)
+        self.assertIn("top: 1.25rem;", canvas)
+        self.assertIn('id="story-log-inspector"', canvas)
+        self.assertIn('from "/static/js/story-log-inspector.js"', canvas)
+        inspector = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
+        self.assertIn("initializeStoryLogInspector", inspector)
+
     def test_image_history_is_capped_at_100_entries(self):
         manager = self.make_canvas_state("history_cap")
 

@@ -12,7 +12,8 @@ console logging using the existing ``--log_prefixes`` flag when running
     python main.py --log_prefixes="[StoryPlanningTools]"
 """
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
+from datetime import datetime, timezone
 import json
 import logging
 import os
@@ -66,6 +67,7 @@ MAX_STICKY_NOTES = 10
 MAX_NAMED_ELEMENTS = 10
 MAX_ACTIVE_CHARACTERS = 10
 MAX_LORE_DOCUMENTS_LISTED = 100
+STORY_LOG_CONTEXT_LINES = 200
 MAX_READ_LORE_CALLS_PER_TURN = 3
 MAX_SEARCH_LORE_CALLS_PER_TURN = 3
 SUPPORTED_VOICE_TAGS = {"male", "female"}
@@ -342,6 +344,7 @@ class StoryPlanningTools(BaseTools):
         self._last_scene_reaction: Dict[str, Any] = {}
         self.theater_manager = theater_manager
         self.text_response_provider = text_response_provider
+        self._recent_story_log = self._read_recent_story_log()
 
         req_keys = self.config.get("required_stickies", self.config.get("required_sticky_notes", self.config.get("required_elements", [])))
         if isinstance(req_keys, (list, tuple, set)):
@@ -715,6 +718,53 @@ class StoryPlanningTools(BaseTools):
             len(plot_beats),
             self._format_story_log(plot_beats),
         )
+
+    def _append_story_log_entry(self, entry_type: str, payload: Dict[str, Any]) -> None:
+        """Append a structured, theater-local record that the canvas can inspect."""
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": entry_type,
+            **payload,
+        }
+        try:
+            output_dir = self.theater_manager.theater(self.theater_id).output_dir()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            with (output_dir / "story_log.jsonl").open("a", encoding="utf-8") as story_log:
+                story_log.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            # Logging must never prevent a player's action from being resolved.
+            logger.exception("[StoryPlanningTools] Failed to append theater story log")
+
+    def _read_recent_story_log(self) -> List[Dict[str, Any]]:
+        """Load the last 200 durable story-log entries for planner continuity."""
+        try:
+            log_path = self.theater_manager.theater(self.theater_id).output_dir() / "story_log.jsonl"
+            if not log_path.exists():
+                return []
+            with log_path.open(encoding="utf-8") as story_log:
+                lines = deque(story_log, maxlen=STORY_LOG_CONTEXT_LINES)
+            return [json.loads(line) for line in lines if line.strip()]
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("[StoryPlanningTools] Failed to read theater story log: %s", exc)
+            return []
+
+    def _format_recent_story_log(self) -> str:
+        """Format retained player actions, narration, and dialogue for the planner prompt."""
+        lines = []
+        for entry in self._recent_story_log:
+            if entry.get("type") == "user_action" and entry.get("action"):
+                lines.append(f"Player action: {entry['action']}")
+                continue
+            if entry.get("type") != "story_plan":
+                continue
+            output = entry.get("output") or {}
+            if output.get("narration"):
+                lines.append(f"Narration: {output['narration']}")
+            for dialogue in output.get("dialogue") or []:
+                if isinstance(dialogue, dict) and dialogue.get("text"):
+                    speaker = str(dialogue.get("speaker") or "Narrator")
+                    lines.append(f"Dialogue — {speaker}: {dialogue['text']}")
+        return "\n".join(lines)
 
     def get_tools(self) -> List[Any]:
         """Return bound tool methods exposed to the agent based on configuration."""
@@ -1591,6 +1641,12 @@ class StoryPlanningTools(BaseTools):
             ],
             total_characters=snapshot["total_characters"],
         )
+        recent_story_log = self._format_recent_story_log()
+        if recent_story_log:
+            planner_context += (
+                f"\n\nRecent Story Log (last {STORY_LOG_CONTEXT_LINES} entries):\n"
+                f"{recent_story_log}"
+            )
         return build_scene_reaction_prompt(
             context=planner_context,
             style=self.style,
@@ -1641,6 +1697,7 @@ class StoryPlanningTools(BaseTools):
         self._planner_runner = None
         self._planner_agent = None
         self._planner_app = None
+        self._recent_story_log = self._read_recent_story_log()
         self._get_or_create_planner_runner()
 
     @property
@@ -1789,6 +1846,11 @@ class StoryPlanningTools(BaseTools):
                 )
             }
 
+        self._append_story_log_entry(
+            "user_action",
+            {"action": action},
+        )
+
         with self._voice_input_lock:
             if self.require_voice_input:
                 self._voice_input_detected = False
@@ -1802,6 +1864,17 @@ class StoryPlanningTools(BaseTools):
                 result = {"error": f"Story planner failed: {exc}"}
             finally:
                 self.release_in_flight("process_user_action")
+
+            self._append_story_log_entry(
+                "story_plan",
+                {
+                    "output": {
+                        key: (result or {}).get(key)
+                        for key in ("narration", "dialogue")
+                        if (result or {}).get(key)
+                    },
+                },
+            )
 
             callback = self.on_scene_reaction
             if callback and result is not None:

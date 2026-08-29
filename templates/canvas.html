@@ -1379,6 +1379,124 @@
             }
         }
 
+        #history-paging-controls {
+            position: absolute;
+            top: 1.25rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            align-items: center;
+            flex-direction: column;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        #history-paging-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 12px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+        }
+
+        #story-log-inspector {
+            width: min(520px, calc(100vw - 2rem));
+            max-height: min(55vh, 520px);
+            margin-top: 8px;
+            padding: 14px;
+            overflow: auto;
+            background: rgba(15, 23, 42, 0.96);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5);
+            color: #e2e8f0;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-12px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        #history-paging-controls:hover #story-log-inspector,
+        #history-paging-controls:focus-within #story-log-inspector {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        .story-log-entry {
+            padding: 10px 11px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 10px;
+            background: rgba(30, 41, 59, 0.62);
+            font-size: 0.8rem;
+            line-height: 1.45;
+        }
+
+        .story-log-turn {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            margin-top: 10px;
+        }
+
+        .story-log-entry.action {
+            border-left: 3px solid #818cf8;
+        }
+
+        .story-log-entry.plan {
+            border-left: 3px solid #34d399;
+        }
+
+        .story-log-entry.error {
+            border-left-color: #f87171;
+        }
+
+        .story-log-label {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            color: #c7d2fe;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .story-log-time {
+            color: #94a3b8;
+            font-size: 0.67rem;
+            font-weight: 500;
+            letter-spacing: normal;
+            text-transform: none;
+            white-space: nowrap;
+        }
+
+        .story-log-text {
+            margin-top: 5px;
+            color: #f1f5f9;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .story-log-section {
+            margin-top: 8px;
+            color: #a5b4fc;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .story-log-list {
+            margin: 4px 0 0;
+            padding-left: 18px;
+            color: #cbd5e1;
+        }
+
         #chat-messages {
             flex: 1;
             overflow-y: auto;
@@ -2126,7 +2244,8 @@
 
             <!-- Image History Paging Controls -->
             <div id="history-paging-controls"
-                style="display: none; position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 20; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 4px 12px; align-items: center; gap: 8px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4); font-family: 'Outfit', sans-serif;">
+                style="display: none;">
+                <div id="history-paging-bar" aria-label="Image history paging and story log">
                 <button id="page-prev-btn" title="Previous Image (Left Arrow)"
                     style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">◀</button>
                 <span id="page-indicator"
@@ -2140,6 +2259,14 @@
                     <span id="new-head-badge"
                         style="display: none; background: #ef4444; color: #fff; font-size: 0.65rem; border-radius: 10px; padding: 1px 5px; font-weight: 700; animation: pulseBadge 1.5s infinite;">NEW</span>
                 </button>
+                </div>
+                <section id="story-log-inspector" role="dialog" aria-label="Story log">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                        <strong style="font-size: 0.85rem; color: #c7d2fe;">Story log</strong>
+                        <span style="font-size: 0.7rem; color: #94a3b8;">Actions, narration &amp; dialogue</span>
+                    </div>
+                    <div id="story-log-content" style="margin-top: 8px; color: #cbd5e1;">Hover to load the story log.</div>
+                </section>
             </div>
         </div>
 
@@ -2325,6 +2452,8 @@
     </div>
 
     <script type="module">
+        import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
+
         // Keep canvas identity self-contained: this page must still recognize
         // its owner if a shared UI script fails to load. Concurrent consumers
         // on this page nevertheless share the same auth request.
@@ -3367,6 +3496,8 @@
         let isPagedBack = false;
         let hasNewHeadWhilePagedBack = false;
         let lastAnimationSignature = '';
+
+        initializeStoryLogInspector(theaterId);
 
         function getAnimationSignature(animation) {
             if (!animation || animation.type !== 'triframe' || !Array.isArray(animation.frames)) return '';
