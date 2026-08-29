@@ -107,7 +107,12 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return template.render(active_page=active_page, show_pricing=show_pricing)
     except Exception:
         out = raw
-        for p in ["join", "demos", "adventures", "about", "ideas", "stats", "deploy"]:
+        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml"}
+        out = out.replace(
+            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml'] %}active{% endif %}",
+            "active" if docs_active else "",
+        )
+        for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-theater-yaml", "stats", "deploy"]:
             pattern = f"{{% if active_page == '{p}' %}}active{{% endif %}}"
             out = out.replace(pattern, "active" if active_page == p else "")
         if show_pricing:
@@ -178,15 +183,21 @@ def read_credit_gift(token: str):
     return render_page_template("gift.html", active_page="")
 
 
-@app.get("/about", response_class=HTMLResponse)
-def read_about():
+@app.get("/docs", response_class=HTMLResponse)
+def read_docs():
+    """Serve the documentation index."""
+    return render_page_template("docs.html", active_page="docs")
+
+
+@app.get("/docs/about", response_class=HTMLResponse)
+def read_docs_about():
     """Serve the About page from the repository's ABOUT.md source."""
     about_content = render_about_markdown(
         (PROJECT_ROOT / "ABOUT.md").read_text(encoding="utf-8")
     )
     return render_page_template(
         "about.html",
-        active_page="about",
+        active_page="docs-about",
         extra_replacements={"<!-- ABOUT_CONTENT -->": about_content},
     )
 
@@ -195,10 +206,16 @@ def read_adventures():
     """Serve the Premade Adventures showcase & instant deploy page."""
     return render_page_template("adventures.html", active_page="adventures")
 
-@app.get("/ideas", response_class=HTMLResponse)
-def read_ideas():
+@app.get("/docs/ideas", response_class=HTMLResponse)
+def read_docs_ideas():
     """Serve inspiration for making a Narratron theater your own."""
-    return render_page_template("ideas.html", active_page="ideas")
+    return render_page_template("ideas.html", active_page="docs-ideas")
+
+
+@app.get("/docs/theater-yaml", response_class=HTMLResponse)
+def read_docs_theater_yaml():
+    """Explain the configuration fields available in theater.yaml."""
+    return render_page_template("theater_yaml_docs.html", active_page="docs-theater-yaml")
 
 @app.get("/stats", response_class=HTMLResponse)
 def read_stats():

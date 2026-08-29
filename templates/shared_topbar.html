@@ -8,8 +8,7 @@
     <a href="/join" class="deploy-nav-btn {% if active_page == 'join' %}active{% endif %}">Join</a>
     <a href="/demos" class="deploy-nav-btn {% if active_page == 'demos' %}active{% endif %}">▶ Demos</a>
     <a href="/adventures" class="deploy-nav-btn {% if active_page == 'adventures' %}active{% endif %}">🗺️ Adventures</a>
-    <a href="/about" class="deploy-nav-btn {% if active_page == 'about' %}active{% endif %}">About</a>
-    <a href="/ideas" class="deploy-nav-btn {% if active_page == 'ideas' %}active{% endif %}">Ideas</a>
+    <a href="/docs" class="deploy-nav-btn {% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml'] %}active{% endif %}">Docs</a>
     <a href="/stats" class="deploy-nav-btn {% if active_page == 'stats' %}active{% endif %}">Stats</a>
     {% if show_pricing %}
     <button type="button" class="deploy-nav-btn" onclick="openPricingModal()">🏷️ Pricing</button>

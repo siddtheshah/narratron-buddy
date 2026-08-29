@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs · Narratron</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/auth-flow.css">
+  <script src="/static/js/auth-flow.js"></script>
+  <style>
+    :root { --bg:#0b0d12; --panel:rgba(22,27,38,.76); --line:rgba(255,255,255,.12); --ink:#f8fafc; --muted:#a8b4c7; --cyan:#67e8f9; }
+    * { box-sizing:border-box; } body { margin:0; min-height:100vh; color:var(--ink); font-family:Outfit,sans-serif; background:radial-gradient(circle at 10% 8%,rgba(99,102,241,.2),transparent 28rem),radial-gradient(circle at 90% 62%,rgba(34,211,238,.1),transparent 30rem),var(--bg); } main { width:min(1000px,calc(100% - 2rem)); margin:auto; padding:4.5rem 0 5rem; }.eyebrow { margin:0 0 .8rem; color:var(--cyan); font-size:.8rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }h1 { margin:0; font-size:clamp(2.8rem,7vw,5rem); letter-spacing:-.055em; line-height:1; background:linear-gradient(125deg,#fff,#c4b5fd 55%,#67e8f9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }.intro { max-width:640px; margin:1.25rem 0 2.5rem; color:var(--muted); font-size:1.12rem; line-height:1.7; }.cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }.card { display:block; min-height:205px; padding:1.4rem; border:1px solid var(--line); border-radius:18px; color:inherit; text-decoration:none; background:var(--panel); box-shadow:0 18px 42px rgba(0,0,0,.17); transition:.2s ease; }.card:hover { transform:translateY(-3px); border-color:rgba(103,232,249,.5); }.kind { color:var(--cyan); font-size:.78rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }h2 { margin:.8rem 0 .55rem; font-size:1.3rem; }p { margin:0; color:var(--muted); line-height:1.65; }code { padding:.14rem .32rem; border-radius:4px; color:#d8d4fe; background:rgba(129,140,248,.15); }@media(max-width:700px) { main { padding:2.5rem 0 3rem; }.cards { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <!-- SHARED_TOPBAR -->
+  <main>
+    <p class="eyebrow">Narratron documentation</p>
+    <h1>Docs</h1>
+    <p class="intro">Everything you need to understand Narratron, shape a theater, and customize its configuration.</p>
+    <div class="cards">
+      <a class="card" href="/docs/about"><span class="kind">Overview</span><h2>About Narratron</h2><p>Learn about the project, its purpose, and the questions it aims to answer.</p></a>
+      <a class="card" href="/docs/ideas"><span class="kind">Inspiration</span><h2>Ideas &amp; recipes</h2><p>Explore starting points for collaborative stories, performances, and shared worlds.</p></a>
+      <a class="card" href="/docs/theater-yaml"><span class="kind">Reference</span><h2><code>theater.yaml</code></h2><p>Configure your narrator, tools, music, image generation, and story planning.</p></a>
+    </div>
+  </main>
+</body>
+</html>

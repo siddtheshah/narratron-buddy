@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
 
 load_dotenv()
 config = get_app_config()
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, docs_url="/fastapi-docs")
 theater_manager = TheaterManager()
 theater_repository = TheaterRepository()
 pricing_controller = PricingController.from_env()

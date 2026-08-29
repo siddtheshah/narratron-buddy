@@ -56,7 +56,7 @@ class TestTheaterAPI(BaseTestCase):
         join_response = self.client.get("/join")
         self.assertEqual(join_response.status_code, 200)
         self.assertIn("Join a Live Story Theater", join_response.text)
-        self.assertIn('href="/about"', join_response.text)
+        self.assertIn('href="/docs/about"', join_response.text)
         self.assertIn('id="userAccountBar"', join_response.text)
         self.assertIn("openAuthModal('login')", join_response.text)
         self.assertIn("auth-flow.js", join_response.text)
@@ -73,7 +73,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn('id="theaterName"', response.text)
         self.assertIn("if (theaterNameConfig) theaterNameConfig.style.display = 'block';", response.text)
         self.assertNotIn("<th>Status</th>", response.text)
-        self.assertIn('href="/about"', response.text)
+        self.assertIn('href="/docs/about"', response.text)
         self.assertIn("pricingModal", response.text)
         self.assertIn("openPricingModal", response.text)
 
@@ -105,8 +105,8 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(bad_res.status_code, 400)
         self.assertIn("voice_minutes must be non-negative", bad_res.json()["detail"])
 
-    def test_about_page_renders_about_markdown(self):
-        response = self.client.get("/about")
+    def test_docs_about_page_renders_about_markdown(self):
+        response = self.client.get("/docs/about")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron Information Page", response.text)
         self.assertIn("Frequently Asked Questions", response.text)

@@ -3,6 +3,8 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi.testclient import TestClient
+
 from api_server import pages
 
 
@@ -19,10 +21,44 @@ def test_about_renderer_closes_lists_when_type_changes():
     assert html == "<ul><li>one</li><li>two</li></ul>\n<ol><li>three</li></ol>\n<p>paragraph</p>"
 
 
-def test_ideas_page_reads_the_ideas_template():
-    response = pages.read_ideas()
+def test_docs_ideas_page_reads_the_ideas_template():
+    response = pages.read_docs_ideas()
     assert "Stories are better when the room helps make them." in response
     assert "Available image effects" in response
+
+
+def test_docs_theater_yaml_page_reads_the_reference_template():
+    response = pages.read_docs_theater_yaml()
+    assert "Configuration reference" in response
+    assert "story_planning" in response
+    for section_id in [
+        "agent",
+        "starting-image",
+        "observability-tool",
+        "image-generation",
+        "animation",
+        "interactive-canvas",
+        "music",
+        "story-planning",
+        "chat",
+    ]:
+        assert f'href="#{section_id}"' in response
+        assert f'id="{section_id}"' in response
+
+
+def test_docs_index_links_to_each_documentation_page():
+    response = pages.read_docs()
+    assert 'href="/docs/about"' in response
+    assert 'href="/docs/ideas"' in response
+    assert 'href="/docs/theater-yaml"' in response
+
+
+def test_docs_index_is_not_shadowed_by_the_openapi_docs():
+    from api_server.app import app
+
+    client = TestClient(app)
+    assert client.get("/docs").status_code == 200
+    assert client.get("/fastapi-docs").status_code == 200
 
 
 def test_adventures_page_reads_template():
@@ -74,10 +110,10 @@ def test_non_canvas_pages_have_normalized_topbar_and_avatar():
     pages_to_test = [
         ("join_splash", pages.read_join_splash()),
         ("deployer", pages.read_deployer()),
-        ("about", pages.read_about()),
+        ("docs-about", pages.read_docs_about()),
         ("adventures", pages.read_adventures()),
         ("demos", pages.read_demos()),
-        ("ideas", pages.read_ideas()),
+        ("docs-ideas", pages.read_docs_ideas()),
         ("stats", pages.read_stats()),
         ("profile", pages.read_user_profile("demo")),
     ]
@@ -99,6 +135,9 @@ def test_render_shared_topbar_active_highlighting():
 
     demos_topbar = pages.render_shared_topbar(active_page="demos")
     assert 'href="/demos" class="deploy-nav-btn active"' in demos_topbar
+
+    docs_topbar = pages.render_shared_topbar(active_page="docs-about")
+    assert 'href="/docs" class="deploy-nav-btn active"' in docs_topbar
 
     pricing_topbar = pages.render_shared_topbar(active_page="deploy", show_pricing=True)
     assert 'onclick="openPricingModal()"' in pricing_topbar
