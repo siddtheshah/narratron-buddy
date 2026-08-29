@@ -512,10 +512,13 @@ class _DatabaseManagerBase:
             cursor = conn.cursor()
             
             # Check if users table exists and has id column
+            # Check if users table exists and has id column
             cols = _get_cols(cursor, "users")
             if cols and "id" not in cols:
                 cursor.execute("DROP TABLE IF EXISTS auth_sessions")
+                cursor.execute("DROP TABLE IF EXISTS theaters")
                 cursor.execute("DROP TABLE IF EXISTS canvas_deployments")
+                cursor.execute("DROP TABLE IF EXISTS exported_theaters")
                 cursor.execute("DROP TABLE IF EXISTS users")
 
             cursor.execute("""
@@ -614,29 +617,69 @@ class _DatabaseManagerBase:
             """)
 
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS canvas_deployments (
+                CREATE TABLE IF NOT EXISTS theaters (
                     theater_id TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    join_key TEXT NOT NULL,
+                    user_id INTEGER,
+                    name TEXT,
+                    join_key TEXT,
                     cost REAL DEFAULT 5.0,
-                    created_at TEXT NOT NULL,
+                    created_at TEXT,
                     allowed_orators TEXT DEFAULT '[]',
                     active_orator_id INTEGER DEFAULT NULL,
                     baton_request TEXT DEFAULT NULL,
+                    is_persistent INTEGER DEFAULT 0,
+                    last_billed_at TEXT DEFAULT NULL,
+                    theater_config TEXT DEFAULT NULL,
+                    exported_at TEXT DEFAULT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (active_orator_id) REFERENCES users(id) ON DELETE SET NULL
                 )
             """)
 
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS exported_theaters (
-                    theater_id TEXT PRIMARY KEY,
-                    user_id INTEGER,
-                    name TEXT,
-                    exported_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-                )
-            """)
+            # Migrate legacy canvas_deployments and exported_theaters if present
+            legacy_cd_cols = _get_cols(cursor, "canvas_deployments")
+            if legacy_cd_cols:
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO theaters (
+                            theater_id, user_id, join_key, cost, created_at,
+                            allowed_orators, active_orator_id, baton_request,
+                            is_persistent, last_billed_at, theater_config
+                        )
+                        SELECT
+                            theater_id, user_id, join_key,
+                            COALESCE(cost, 5.0),
+                            created_at,
+                            COALESCE(allowed_orators, '[]'),
+                            active_orator_id,
+                            baton_request,
+                            COALESCE(is_persistent, 0),
+                            last_billed_at,
+                            theater_config
+                        FROM canvas_deployments
+                    """)
+                    cursor.execute("DROP TABLE canvas_deployments")
+                except Exception:
+                    pass
+
+            legacy_exp_cols = _get_cols(cursor, "exported_theaters")
+            if legacy_exp_cols:
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO theaters (theater_id, user_id, name, exported_at)
+                        SELECT theater_id, user_id, name, exported_at FROM exported_theaters
+                    """)
+                    cursor.execute("""
+                        UPDATE theaters
+                        SET
+                            name = (SELECT name FROM exported_theaters WHERE exported_theaters.theater_id = theaters.theater_id),
+                            exported_at = (SELECT exported_at FROM exported_theaters WHERE exported_theaters.theater_id = theaters.theater_id),
+                            user_id = COALESCE(theaters.user_id, (SELECT user_id FROM exported_theaters WHERE exported_theaters.theater_id = theaters.theater_id))
+                        WHERE theater_id IN (SELECT theater_id FROM exported_theaters)
+                    """)
+                    cursor.execute("DROP TABLE exported_theaters")
+                except Exception as e:
+                    logger.warning(f"Error migrating legacy exported_theaters: {e}")
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS theater_views (
@@ -649,35 +692,45 @@ class _DatabaseManagerBase:
                 )
             """)
 
-            cd_cols = _get_cols(cursor, "canvas_deployments")
-            if "allowed_orators" not in cd_cols:
+            theater_cols = _get_cols(cursor, "theaters")
+            if "name" not in theater_cols:
                 try:
-                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN allowed_orators TEXT DEFAULT '[]'")
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN name TEXT")
                 except Exception:
                     pass
-            if "active_orator_id" not in cd_cols:
+            if "exported_at" not in theater_cols:
                 try:
-                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN active_orator_id INTEGER DEFAULT NULL")
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN exported_at TEXT")
                 except Exception:
                     pass
-            if "baton_request" not in cd_cols:
+            if "allowed_orators" not in theater_cols:
                 try:
-                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN baton_request TEXT DEFAULT NULL")
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN allowed_orators TEXT DEFAULT '[]'")
                 except Exception:
                     pass
-            if "is_persistent" not in cd_cols:
+            if "active_orator_id" not in theater_cols:
                 try:
-                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN is_persistent INTEGER DEFAULT 0")
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN active_orator_id INTEGER DEFAULT NULL")
                 except Exception:
                     pass
-            if "last_billed_at" not in cd_cols:
+            if "baton_request" not in theater_cols:
                 try:
-                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN last_billed_at TEXT DEFAULT NULL")
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN baton_request TEXT DEFAULT NULL")
                 except Exception:
                     pass
-            if "theater_config" not in cd_cols:
+            if "is_persistent" not in theater_cols:
                 try:
-                    cursor.execute("ALTER TABLE canvas_deployments ADD COLUMN theater_config TEXT DEFAULT NULL")
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN is_persistent INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+            if "last_billed_at" not in theater_cols:
+                try:
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN last_billed_at TEXT DEFAULT NULL")
+                except Exception:
+                    pass
+            if "theater_config" not in theater_cols:
+                try:
+                    cursor.execute("ALTER TABLE theaters ADD COLUMN theater_config TEXT DEFAULT NULL")
                 except Exception:
                     pass
 
@@ -924,8 +977,8 @@ class _DatabaseManagerBase:
                     """
                     SELECT COUNT(*) AS count
                     FROM theater_views views
-                    JOIN canvas_deployments deployments ON deployments.theater_id = views.theater_id
-                    WHERE deployments.user_id = ?
+                    JOIN theaters ON theaters.theater_id = views.theater_id
+                    WHERE theaters.user_id = ?
                     """,
                     (profile_user_id,),
                 )
@@ -1147,7 +1200,7 @@ class _DatabaseManagerBase:
                     UNION
                     SELECT user_id FROM auth_sessions WHERE created_at >= ?
                     UNION
-                    SELECT user_id FROM canvas_deployments WHERE created_at >= ?
+                    SELECT user_id FROM theaters WHERE created_at >= ?
                     UNION
                     SELECT user_id FROM theater_views WHERE user_id IS NOT NULL AND viewed_at >= ?
                 )
@@ -1164,11 +1217,10 @@ class _DatabaseManagerBase:
             # 4. Top viewed theaters
             cursor.execute("""
                 SELECT v.theater_id as theater_id, COUNT(*) as views,
-                       COALESCE(es.name, cd.theater_id, v.theater_id) as name
+                       COALESCE(t.name, t.theater_id, v.theater_id) as name
                 FROM theater_views v
-                LEFT JOIN exported_theaters es ON v.theater_id = es.theater_id
-                LEFT JOIN canvas_deployments cd ON v.theater_id = cd.theater_id
-                GROUP BY v.theater_id, es.name, cd.theater_id
+                LEFT JOIN theaters t ON v.theater_id = t.theater_id
+                GROUP BY v.theater_id, t.name, t.theater_id
                 ORDER BY views DESC
                 LIMIT 10
             """)
@@ -1199,7 +1251,7 @@ class _DatabaseManagerBase:
                         UNION
                         SELECT user_id FROM auth_sessions WHERE created_at >= ? AND created_at < ?
                         UNION
-                        SELECT user_id FROM canvas_deployments WHERE created_at >= ? AND created_at < ?
+                        SELECT user_id FROM theaters WHERE created_at >= ? AND created_at < ?
                         UNION
                         SELECT user_id FROM theater_views WHERE user_id IS NOT NULL AND viewed_at >= ? AND viewed_at < ?
                     )
@@ -1327,7 +1379,7 @@ class _DatabaseManagerBase:
             # Claim the durable theater ID before debiting.  A retry with the
             # same ID hits the primary-key constraint before it can deduct.
             cursor.execute(
-                "INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at, theater_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO theaters (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at, theater_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (theater_id, user_id, join_key, cost, now_iso, persistent_val, last_billed_val, config_str)
             )
             cursor.execute(
@@ -1535,7 +1587,7 @@ class _DatabaseManagerBase:
     def get_deployment(self, theater_id: str) -> Optional[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            cursor.execute("SELECT * FROM theaters WHERE theater_id = ?", (theater_id,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -1560,7 +1612,7 @@ class _DatabaseManagerBase:
                 batch = ids[start:start + 900]
                 placeholders = ", ".join("?" for _ in batch)
                 cursor.execute(
-                    f"SELECT * FROM canvas_deployments WHERE theater_id IN ({placeholders})",
+                    f"SELECT * FROM theaters WHERE theater_id IN ({placeholders})",
                     tuple(batch),
                 )
                 for row in cursor.fetchall():
@@ -1585,20 +1637,18 @@ class _DatabaseManagerBase:
             cursor.execute(
                 """
                 SELECT
-                    deployments.theater_id,
-                    deployments.join_key,
-                    deployments.created_at,
-                    deployments.last_billed_at,
-                    exported.name AS exported_name,
+                    theaters.theater_id,
+                    theaters.join_key,
+                    theaters.created_at,
+                    theaters.last_billed_at,
+                    theaters.name AS exported_name,
                     (
                         SELECT MAX(views.viewed_at)
                         FROM theater_views AS views
-                        WHERE views.theater_id = deployments.theater_id
+                        WHERE views.theater_id = theaters.theater_id
                     ) AS last_viewed_at
-                FROM canvas_deployments AS deployments
-                LEFT JOIN exported_theaters AS exported
-                    ON exported.theater_id = deployments.theater_id
-                WHERE deployments.user_id = ?
+                FROM theaters
+                WHERE theaters.user_id = ?
                 """,
                 (user_id,),
             )
@@ -1631,24 +1681,25 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET theater_config = ? WHERE theater_id = ?",
+                "UPDATE theaters SET theater_config = ? WHERE theater_id = ?",
                 (config_str, theater_id)
             )
             conn.commit()
             return cursor.rowcount > 0
 
     def update_theater_name(self, theater_id: str, new_name: str, user_id: Optional[int] = None) -> bool:
-        """Update the display name of a theater in exported_theaters table."""
+        """Update the display name of a theater in theaters table."""
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO exported_theaters (theater_id, user_id, name, exported_at)
+                INSERT INTO theaters (theater_id, user_id, name, exported_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(theater_id) DO UPDATE SET
                     name = excluded.name,
-                    user_id = coalesce(excluded.user_id, exported_theaters.user_id)
+                    user_id = coalesce(excluded.user_id, theaters.user_id),
+                    exported_at = excluded.exported_at
                 """,
                 (theater_id, user_id, new_name, now_iso)
             )
@@ -1658,12 +1709,10 @@ class _DatabaseManagerBase:
     def delete_deployment(self, theater_id: str) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
             c1 = cursor.rowcount or 0
-            cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
-            c2 = cursor.rowcount or 0
             conn.commit()
-            return (c1 + c2) > 0
+            return c1 > 0
 
 
     def set_theater_persistence(self, theater_id: str, is_persistent: bool) -> bool:
@@ -1671,7 +1720,7 @@ class _DatabaseManagerBase:
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT last_billed_at FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            cursor.execute("SELECT last_billed_at FROM theaters WHERE theater_id = ?", (theater_id,))
             dep = cursor.fetchone()
             if not dep:
                 return False
@@ -1682,12 +1731,12 @@ class _DatabaseManagerBase:
                 if not last_billed:
                     last_billed = now_iso
                 cursor.execute(
-                    "UPDATE canvas_deployments SET is_persistent = ?, last_billed_at = ? WHERE theater_id = ?",
+                    "UPDATE theaters SET is_persistent = ?, last_billed_at = ? WHERE theater_id = ?",
                     (persistent_val, last_billed, theater_id)
                 )
             else:
                 cursor.execute(
-                    "UPDATE canvas_deployments SET is_persistent = ? WHERE theater_id = ?",
+                    "UPDATE theaters SET is_persistent = ? WHERE theater_id = ?",
                     (persistent_val, theater_id)
                 )
             conn.commit()
@@ -1697,7 +1746,7 @@ class _DatabaseManagerBase:
         """Check if a theater session is marked persistent."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT is_persistent FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
+            cursor.execute("SELECT is_persistent FROM theaters WHERE theater_id = ?", (theater_id,))
             row = cursor.fetchone()
             if not row:
                 return False
@@ -1736,7 +1785,7 @@ class _DatabaseManagerBase:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT theater_id, user_id, is_persistent, created_at, last_billed_at FROM canvas_deployments")
+            cursor.execute("SELECT theater_id, user_id, is_persistent, created_at, last_billed_at FROM theaters")
             rows = cursor.fetchall()
             deployments = [dict(r) if isinstance(r, dict) else dict(r) for r in rows]
 
@@ -1758,8 +1807,7 @@ class _DatabaseManagerBase:
                     age_seconds = (now - created_at_dt).total_seconds()
                     if age_seconds > ttl_seconds:
                         logger.info(f"[DatabaseDaemon] Auto-cleaning expired non-persistent theater_id={theater_id}")
-                        cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
-                        cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+                        cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
                         if theater_manager:
                             try:
                                 theater_manager.destroy_theater(theater_id)
@@ -1794,7 +1842,7 @@ class _DatabaseManagerBase:
                             # committed this interval sees rowcount == 0 and
                             # cannot charge it again.
                             cursor.execute(
-                                "UPDATE canvas_deployments SET last_billed_at = ? "
+                                "UPDATE theaters SET last_billed_at = ? "
                                 "WHERE theater_id = ? AND COALESCE(last_billed_at, created_at) = ?",
                                 (new_last_billed, theater_id, last_billed_str or created_at_str),
                             )
@@ -1812,8 +1860,7 @@ class _DatabaseManagerBase:
                                 logger.info(f"[DatabaseDaemon] Accrued {charge_amount} credits charge for persistent theater_id={theater_id}")
                         else:
                             logger.warning(f"[DatabaseDaemon] User user_id={user_id} has insufficient credits ({user_credits}) for persistent theater_id={theater_id}. Expiring session.")
-                            cursor.execute("DELETE FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
-                            cursor.execute("DELETE FROM exported_theaters WHERE theater_id = ?", (theater_id,))
+                            cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
                             if theater_manager:
                                 try:
                                     theater_manager.destroy_theater(theater_id)
@@ -1832,19 +1879,15 @@ class _DatabaseManagerBase:
         clean_key = join_key.strip().upper()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM canvas_deployments WHERE UPPER(join_key) = ?", (clean_key,))
+            cursor.execute("SELECT * FROM theaters WHERE UPPER(join_key) = ?", (clean_key,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
     def get_all_exported_theater_ids(self) -> List[str]:
-        """Get all distinct theater IDs stored in exported_theaters or canvas_deployments."""
+        """Get all distinct theater IDs stored in theaters table."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT theater_id FROM exported_theaters
-                UNION
-                SELECT theater_id FROM canvas_deployments
-            """)
+            cursor.execute("SELECT theater_id FROM theaters")
             return [row["theater_id"] for row in cursor.fetchall() if row["theater_id"]]
 
     def get_theaters_last_used(self) -> Dict[str, str]:
@@ -1852,24 +1895,17 @@ class _DatabaseManagerBase:
         activity_map: Dict[str, str] = {}
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            # 1. canvas_deployments created_at / last_billed_at
-            cursor.execute("SELECT theater_id, created_at, last_billed_at FROM canvas_deployments")
+            # 1. theaters created_at / last_billed_at / exported_at
+            cursor.execute("SELECT theater_id, created_at, last_billed_at, exported_at FROM theaters")
             for row in cursor.fetchall():
                 tid = row["theater_id"]
                 if tid:
-                    ts = row["last_billed_at"] or row["created_at"]
-                    if ts and (tid not in activity_map or ts > activity_map[tid]):
-                        activity_map[tid] = ts
+                    for field in ("last_billed_at", "created_at", "exported_at"):
+                        ts = row[field]
+                        if ts and (tid not in activity_map or ts > activity_map[tid]):
+                            activity_map[tid] = ts
 
-            # 2. exported_theaters exported_at
-            cursor.execute("SELECT theater_id, exported_at FROM exported_theaters")
-            for row in cursor.fetchall():
-                tid = row["theater_id"]
-                ts = row["exported_at"]
-                if tid and ts and (tid not in activity_map or ts > activity_map[tid]):
-                    activity_map[tid] = ts
-
-            # 3. theater_views viewed_at
+            # 2. theater_views viewed_at
             cursor.execute("SELECT theater_id, MAX(viewed_at) as last_viewed FROM theater_views GROUP BY theater_id")
             for row in cursor.fetchall():
                 tid = row["theater_id"]
@@ -1998,7 +2034,7 @@ class _DatabaseManagerBase:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE canvas_deployments SET allowed_orators = ? WHERE theater_id = ?",
+                    "UPDATE theaters SET allowed_orators = ? WHERE theater_id = ?",
                     (json.dumps(allowed_ids), theater_id)
                 )
                 conn.commit()
@@ -2021,7 +2057,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET allowed_orators = ?, active_orator_id = ? WHERE theater_id = ?",
+                "UPDATE theaters SET allowed_orators = ?, active_orator_id = ? WHERE theater_id = ?",
                 (json.dumps(allowed_ids), active_orator_id, theater_id)
             )
             conn.commit()
@@ -2053,7 +2089,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET baton_request = ? WHERE theater_id = ?",
+                "UPDATE theaters SET baton_request = ? WHERE theater_id = ?",
                 (json.dumps(baton_req), theater_id)
             )
             conn.commit()
@@ -2074,7 +2110,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE theater_id = ?",
+                "UPDATE theaters SET active_orator_id = ?, baton_request = NULL WHERE theater_id = ?",
                 (target_user_id, theater_id)
             )
             conn.commit()
@@ -2084,7 +2120,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET baton_request = NULL WHERE theater_id = ?",
+                "UPDATE theaters SET baton_request = NULL WHERE theater_id = ?",
                 (theater_id,)
             )
             conn.commit()
@@ -2098,7 +2134,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE canvas_deployments SET active_orator_id = ?, baton_request = NULL WHERE theater_id = ?",
+                "UPDATE theaters SET active_orator_id = ?, baton_request = NULL WHERE theater_id = ?",
                 (owner_id, theater_id)
             )
             conn.commit()

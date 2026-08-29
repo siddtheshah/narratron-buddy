@@ -65,7 +65,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         self.db.record_deployment("old_temp_theater", user_id, "KEY-OLD", cost=0.0, is_persistent=False)
         with self.db._get_connection() as conn:
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET created_at = ? WHERE theater_id = ?",
+                "UPDATE theaters SET created_at = ? WHERE theater_id = ?",
                 (old_time, "old_temp_theater")
             )
             conn.commit()
@@ -78,7 +78,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         three_hours_ago = (now - datetime.timedelta(hours=3)).isoformat()
         with self.db._get_connection() as conn:
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
+                "UPDATE theaters SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
                 (three_hours_ago, three_hours_ago, "persistent_theater")
             )
             conn.commit()
@@ -130,7 +130,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         self.db.record_deployment("unaffordable_persistent", user_id, "KEY-UNAFFORD", cost=0.0, is_persistent=True)
         with self.db._get_connection() as conn:
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
+                "UPDATE theaters SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
                 (five_hours_ago, five_hours_ago, "unaffordable_persistent")
             )
             conn.commit()
@@ -158,7 +158,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         two_hours_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)).isoformat()
         with self.db._get_connection() as conn:
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET created_at = ? WHERE theater_id = ?",
+                "UPDATE theaters SET created_at = ? WHERE theater_id = ?",
                 (two_hours_ago, "theater_daemon_1")
             )
             conn.commit()
@@ -180,7 +180,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         two_hours_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)).isoformat()
         with self.db._get_connection() as conn:
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
+                "UPDATE theaters SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
                 (two_hours_ago, two_hours_ago, "theater_daemon_2")
             )
             conn.commit()
@@ -212,7 +212,7 @@ class TestStorageDaemonAndPersistence(unittest.TestCase):
         one_day_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)).isoformat()
         with self.db._get_connection() as conn:
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
+                "UPDATE theaters SET created_at = ?, last_billed_at = ? WHERE theater_id = ?",
                 (one_day_ago, one_day_ago, "theater_pricing_1")
             )
             conn.commit()

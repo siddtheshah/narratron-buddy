@@ -377,13 +377,13 @@ class TestUserManagementAndAuth(BaseTestCase):
         # 1. Auth session
         token = self.db.create_auth_session(user_a["id"])
 
-        # 2. Canvas deployments
+        # 2. Theaters & Deployments
         self.db.record_deployment("theater_a", user_a["id"], "KEY-A")
         self.db.record_deployment("theater_b", user_b["id"], "KEY-B")
         with self.db._get_connection() as conn:
-            conn.cursor().execute("UPDATE canvas_deployments SET active_orator_id = ? WHERE theater_id = ?", (user_a["id"], "theater_b"))
+            conn.cursor().execute("UPDATE theaters SET active_orator_id = ? WHERE theater_id = ?", (user_a["id"], "theater_b"))
 
-        # 3. Exported theaters & images
+        # 3. Exported theaters & names
         self.db.update_theater_name("theater_exp", "exp", user_id=user_a["id"])
 
         # 4. Theater views
@@ -411,22 +411,18 @@ class TestUserManagementAndAuth(BaseTestCase):
             cursor.execute("SELECT * FROM auth_sessions WHERE token = ?", (token,))
             self.assertIsNone(cursor.fetchone())
 
-            # Deployment owned by user_a should be CASCADE deleted
-            cursor.execute("SELECT * FROM canvas_deployments WHERE theater_id = 'theater_a'")
+            # Theaters owned by user_a should be CASCADE deleted
+            cursor.execute("SELECT * FROM theaters WHERE theater_id = 'theater_a'")
             self.assertIsNone(cursor.fetchone())
 
-            # Deployment where user_a was active_orator should have active_orator_id SET NULL
-            cursor.execute("SELECT active_orator_id FROM canvas_deployments WHERE theater_id = 'theater_b'")
+            cursor.execute("SELECT * FROM theaters WHERE theater_id = 'theater_exp'")
+            self.assertIsNone(cursor.fetchone())
+
+            # Theater where user_a was active_orator should have active_orator_id SET NULL
+            cursor.execute("SELECT active_orator_id FROM theaters WHERE theater_id = 'theater_b'")
             row = cursor.fetchone()
             self.assertIsNotNone(row)
             self.assertIsNone(row["active_orator_id"])
-
-            # Exported theater should have user_id SET NULL
-            cursor.execute("SELECT user_id, name FROM exported_theaters WHERE theater_id = 'theater_exp'")
-            row = cursor.fetchone()
-            self.assertIsNotNone(row)
-            self.assertIsNone(row["user_id"])
-            self.assertEqual(row["name"], "exp")
 
             # Theater views should have user_id SET NULL
             cursor.execute("SELECT user_id FROM theater_views WHERE theater_id = 'theater_view_1'")
@@ -777,7 +773,7 @@ class TestBatonManagement(BaseTestCase):
         # Directly set orator1 as active orator in DB
         with self.db._get_connection() as conn:
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET active_orator_id = ? WHERE theater_id = ?",
+                "UPDATE theaters SET active_orator_id = ? WHERE theater_id = ?",
                 (self.orator1["id"], self.theater_id)
             )
             conn.commit()
@@ -828,12 +824,12 @@ class TestBatonManagement(BaseTestCase):
         # Set baton request expiration in past
         past_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=10)).isoformat()
         with self.db._get_connection() as conn:
-            dep = conn.cursor().execute("SELECT baton_request FROM canvas_deployments WHERE theater_id = ?", (self.theater_id,)).fetchone()
+            dep = conn.cursor().execute("SELECT baton_request FROM theaters WHERE theater_id = ?", (self.theater_id,)).fetchone()
             import json
             req_dict = json.loads(dep["baton_request"])
             req_dict["expires_at"] = past_time
             conn.cursor().execute(
-                "UPDATE canvas_deployments SET baton_request = ? WHERE theater_id = ?",
+                "UPDATE theaters SET baton_request = ? WHERE theater_id = ?",
                 (json.dumps(req_dict), self.theater_id)
             )
             conn.commit()
@@ -991,6 +987,111 @@ class TestAsyncDatabaseMethods(BaseTestCase):
             self.assertTrue(del_ok)
 
         asyncio.run(_run())
+
+
+class TestLegacyTableMigration(BaseTestCase):
+    """Test automatic migration from legacy canvas_deployments and exported_theaters to theaters table."""
+
+    def setUp(self):
+        super().setUp()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_file = Path(self.temp_dir.name) / "test_legacy_migration.db"
+
+    def tearDown(self):
+        try:
+            self.temp_dir.cleanup()
+        except Exception:
+            pass
+        super().tearDown()
+
+    def test_legacy_tables_auto_migrate_to_theaters(self):
+        # 1. Create legacy SQLite schema and insert legacy rows
+        raw_conn = sqlite3.connect(str(self.db_file))
+        raw_cursor = raw_conn.cursor()
+        raw_cursor.execute("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                credits REAL DEFAULT 10.0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        raw_cursor.execute(
+            "INSERT INTO users (id, username, email, password_hash, salt, created_at) VALUES (1, 'legacy_owner', 'legacy@test.com', 'hash', 'salt', '2026-01-01T00:00:00')"
+        )
+        raw_cursor.execute("""
+            CREATE TABLE canvas_deployments (
+                theater_id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                join_key TEXT NOT NULL,
+                cost REAL DEFAULT 5.0,
+                created_at TEXT NOT NULL,
+                allowed_orators TEXT DEFAULT '[]',
+                active_orator_id INTEGER DEFAULT NULL,
+                baton_request TEXT DEFAULT NULL,
+                is_persistent INTEGER DEFAULT 1,
+                last_billed_at TEXT DEFAULT '2026-01-02T00:00:00',
+                theater_config TEXT DEFAULT '{"theme": "dark"}'
+            )
+        """)
+        raw_cursor.execute("""
+            INSERT INTO canvas_deployments (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at, theater_config)
+            VALUES ('leg_theater_1', 1, 'LEG-KEY-1', 5.0, '2026-01-01T00:00:00', 1, '2026-01-02T00:00:00', '{"theme": "dark"}')
+        """)
+        raw_cursor.execute("""
+            CREATE TABLE exported_theaters (
+                theater_id TEXT PRIMARY KEY,
+                user_id INTEGER,
+                name TEXT,
+                exported_at TEXT NOT NULL
+            )
+        """)
+        raw_cursor.execute("""
+            INSERT INTO exported_theaters (theater_id, user_id, name, exported_at)
+            VALUES ('leg_theater_1', 1, 'Migrated Name', '2026-01-03T00:00:00')
+        """)
+        raw_cursor.execute("""
+            INSERT INTO exported_theaters (theater_id, user_id, name, exported_at)
+            VALUES ('leg_theater_2', 1, 'Export Only', '2026-01-04T00:00:00')
+        """)
+        raw_conn.commit()
+        raw_conn.close()
+
+        # 2. Open via LocalDatabaseManager (triggers _ensure_tables_exist and migration)
+        db = LocalDatabaseManager(str(self.db_file))
+        try:
+            # Verify leg_theater_1 has both deployment data and exported name merged
+            dep1 = db.get_deployment("leg_theater_1")
+            self.assertIsNotNone(dep1)
+            self.assertEqual(dep1["theater_id"], "leg_theater_1")
+            self.assertEqual(dep1["name"], "Migrated Name")
+            self.assertEqual(dep1["join_key"], "LEG-KEY-1")
+            self.assertEqual(dep1["is_persistent"], 1)
+            self.assertEqual(dep1["theater_config"], {"theme": "dark"})
+
+            # Verify leg_theater_2 was migrated
+            dep2 = db.get_deployment("leg_theater_2")
+            self.assertIsNotNone(dep2)
+            self.assertEqual(dep2["name"], "Export Only")
+
+            # Verify user theater records query works with merged table
+            records = db.get_user_theater_records(1)
+            self.assertEqual(len(records), 2)
+            t1_rec = next(r for r in records if r["theater_id"] == "leg_theater_1")
+            self.assertEqual(t1_rec["metadata"]["name"], "Migrated Name")
+            self.assertEqual(t1_rec["metadata"]["join_key"], "LEG-KEY-1")
+
+            # Verify legacy tables are dropped
+            with db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('canvas_deployments', 'exported_theaters')")
+                remaining = cursor.fetchall()
+                self.assertEqual(len(remaining), 0)
+        finally:
+            db.close()
 
 
 if __name__ == "__main__":

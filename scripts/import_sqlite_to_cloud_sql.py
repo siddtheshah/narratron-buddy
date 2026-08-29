@@ -20,8 +20,7 @@ from storage.database import CloudPostgresDatabaseManager
 TABLES = (
     "users",
     "auth_sessions",
-    "canvas_deployments",
-    "exported_theaters",
+    "theaters",
     "theater_views",
     "payment_transactions",
     "usage_events",
@@ -87,7 +86,7 @@ def import_database(source: Path) -> None:
                         value = row[column]
                         if (table, column) in {
                             ("users", "stats_visible"),
-                            ("canvas_deployments", "is_persistent"),
+                            ("theaters", "is_persistent"),
                             ("password_reset_tokens", "used"),
                         } and value is not None:
                             value = bool(value)

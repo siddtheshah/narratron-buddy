@@ -13,8 +13,7 @@ from pathlib import Path
 TABLES = (
     "users",
     "auth_sessions",
-    "canvas_deployments",
-    "exported_theaters",
+    "theaters",
     "theater_views",
     "payment_transactions",
     "usage_events",
@@ -22,7 +21,7 @@ TABLES = (
 )
 BOOLEAN_COLUMNS = {
     ("users", "stats_visible"),
-    ("canvas_deployments", "is_persistent"),
+    ("theaters", "is_persistent"),
     ("password_reset_tokens", "used"),
 }
 IDENTITY_TABLES = ("users", "theater_views", "payment_transactions")
