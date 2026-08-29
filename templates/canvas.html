@@ -2575,6 +2575,11 @@
                 }
             }
 
+            btn.addEventListener('mouseenter', () => {
+                btn.classList.add('expanded');
+                triggerSuggestionsFetch();
+            });
+
             btn.addEventListener('mouseleave', () => {
                 btn.classList.remove('expanded');
             });
