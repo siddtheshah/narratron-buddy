@@ -17,11 +17,12 @@ function formatTime(timestamp) {
 
 function createCard(entry) {
     const isAction = entry.type === 'user_action';
+    const isDieRoll = entry.type === 'die_roll';
     const output = entry.output || {};
     const card = element('article', `story-log-entry ${isAction ? 'action' : 'plan'}`);
     const label = element('div', 'story-log-label');
     label.append(
-        element('span', '', isAction ? 'Player action' : 'Story plan'),
+        element('span', '', isAction ? 'Player action' : isDieRoll ? 'Die roll' : 'Story plan'),
         element('time', 'story-log-time', formatTime(entry.timestamp)),
     );
     card.appendChild(label);
@@ -29,6 +30,29 @@ function createCard(entry) {
     if (isAction) {
         card.appendChild(element('div', 'story-log-text', entry.action || 'No action recorded.'));
         return card;
+    }
+
+    if (isDieRoll) {
+        const roll = entry.result || entry;
+        const notation = roll.notation || 'Roll';
+        const total = roll.total !== undefined ? roll.total : '';
+        const tier = roll.tier ? ` (${roll.tier})` : '';
+        const reason = roll.reason ? ` - ${roll.reason}` : '';
+        card.appendChild(element('div', 'story-log-text', `🎲 ${notation}: ${total}${tier}${reason}`));
+        return card;
+    }
+
+    const dieRolls = output.die_rolls;
+    if (Array.isArray(dieRolls) && dieRolls.length) {
+        card.appendChild(element('div', 'story-log-section', 'Die Rolls'));
+        dieRolls.forEach((roll) => {
+            if (!roll) return;
+            const notation = roll.notation || 'Roll';
+            const total = roll.total !== undefined ? roll.total : '';
+            const tier = roll.tier ? ` (${roll.tier})` : '';
+            const reason = roll.reason ? ` - ${roll.reason}` : '';
+            card.appendChild(element('div', 'story-log-text', `🎲 ${notation}: ${total}${tier}${reason}`));
+        });
     }
 
     if (output.narration) card.appendChild(element('div', 'story-log-text', output.narration));
@@ -39,7 +63,7 @@ function createCard(entry) {
             card.appendChild(element('div', 'story-log-text', `${speaker}${line?.text || ''}`));
         });
     }
-    return output.narration || output.dialogue?.length ? card : null;
+    return (output.narration || output.dialogue?.length || (Array.isArray(dieRolls) && dieRolls.length)) ? card : null;
 }
 
 function groupTurns(entries) {

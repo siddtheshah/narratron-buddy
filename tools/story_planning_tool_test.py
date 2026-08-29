@@ -21,6 +21,9 @@ from tools.story_planning_tool import (
     MAX_STICKY_NOTE_INFO_CHARS,
     MAX_STORY_PLANNING_STYLE_CHARS,
     SceneReaction,
+    StoryLogDieRoll,
+    StoryLogEntry,
+    StoryPlanOutput,
     StoryPlanningTools,
     VertexGemini,
     build_scene_reaction_prompt,
@@ -75,7 +78,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             theater_manager = TheaterManager(base_theaters_dir=temp_dir)
             tools = self._make_tools(theater_id="story-log", theater_manager=theater_manager)
 
-            tools._append_story_log_entry("user_action", {"action": "I open the door."})
+            tools._append_story_log_entry(StoryLogEntry(type="user_action", action="I open the door."))
 
             log_path = theater_manager.theater("story-log").output_dir() / "story_log.jsonl"
             entries = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
@@ -100,9 +103,124 @@ class TestStoryPlanningTools(unittest.TestCase):
 
             self.assertEqual(len(tools._recent_story_log), 200)
             self.assertEqual(tools._recent_story_log[0]["action"], "Action 5")
+            self.assertEqual(tools._recent_story_log[0].action, "Action 5")
             instruction = tools._build_planner_instruction()
             self.assertIn("Player action: Action 5", instruction)
             self.assertNotIn("Player action: Action 4\n", instruction)
+
+    def test_story_log_pydantic_schema_validation_and_serialization(self):
+        # Test StoryLogEntry model validation for user_action
+        user_action_entry = StoryLogEntry(type="user_action", action="I cast a spell")
+        self.assertEqual(user_action_entry.type, "user_action")
+        self.assertEqual(user_action_entry.action, "I cast a spell")
+        self.assertEqual(user_action_entry["action"], "I cast a spell")
+        dumped = user_action_entry.model_dump(mode="json", exclude_none=True)
+        self.assertEqual(dumped["type"], "user_action")
+        self.assertEqual(dumped["action"], "I cast a spell")
+        self.assertNotIn("output", dumped)
+
+        # Test StoryLogEntry with StoryPlanOutput and StoryLogDieRoll
+        plan_entry = StoryLogEntry.model_validate({
+            "type": "story_plan",
+            "output": {
+                "narration": "A beam of light shoots forward.",
+                "dialogue": [{"speaker": "Mage", "text": "Behold!"}],
+                "die_rolls": [{"notation": "1d20+5", "total": 19, "tier": "high", "reason": "Spell hit"}],
+            },
+        })
+        self.assertEqual(plan_entry.output.narration, "A beam of light shoots forward.")
+        self.assertEqual(plan_entry.output["narration"], "A beam of light shoots forward.")
+        self.assertEqual(len(plan_entry.output.die_rolls), 1)
+        self.assertEqual(plan_entry.output.die_rolls[0].total, 19)
+        self.assertEqual(plan_entry.output.die_rolls[0]["reason"], "Spell hit")
+
+    def test_story_log_appends_die_roll_results_with_story_plan(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            theater_manager = TheaterManager(base_theaters_dir=temp_dir)
+            tools = self._make_tools(
+                config={"adventure_mode": True, "nodes_ahead": 1},
+                theater_id="dice-log-test",
+                theater_manager=theater_manager,
+            )
+
+            # Roll dice during turn
+            roll_res = tools.roll_dice(sides=20, count=1, modifier=2, reason="Unlock the chest")
+            self.assertEqual(len(tools.get_die_rolls_this_turn()), 1)
+            self.assertEqual(tools.get_die_rolls_this_turn()[0]["reason"], "Unlock the chest")
+
+            with patch.object(
+                tools,
+                "_run_planner_agent",
+                return_value={
+                    "narration": "The lock clicks open.",
+                    "plot_beats": ["Inside is an ancient scroll."],
+                },
+            ):
+                result = tools._resolve_user_action("I pick the lock.")
+                self.assertIn("die_rolls", result)
+                self.assertEqual(len(result["die_rolls"]), 1)
+                self.assertEqual(result["die_rolls"][0]["reason"], "Unlock the chest")
+
+                # Test async process_user_action appends story_plan with die rolls
+                tools._append_story_log_entry(
+                    StoryLogEntry(
+                        type="story_plan",
+                        output=StoryPlanOutput(
+                            narration=result.get("narration") or "",
+                            dialogue=result.get("dialogue") or [],
+                            die_rolls=result.get("die_rolls") or [],
+                        ),
+                    )
+                )
+
+            log_path = theater_manager.theater("dice-log-test").output_dir() / "story_log.jsonl"
+            entries = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["type"], "story_plan")
+            self.assertIn("die_rolls", entries[0]["output"])
+            self.assertEqual(entries[0]["output"]["die_rolls"][0]["reason"], "Unlock the chest")
+
+    def test_story_log_formats_die_rolls_for_planner_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            theater_manager = TheaterManager(base_theaters_dir=temp_dir)
+            tools = self._make_tools(theater_id="format-dice-test", theater_manager=theater_manager)
+            tools._recent_story_log = [
+                StoryLogEntry.model_validate({"type": "user_action", "action": "I jump over the pit"}),
+                StoryLogEntry.model_validate({
+                    "type": "story_plan",
+                    "output": {
+                        "narration": "You land safely.",
+                        "die_rolls": [
+                            {"notation": "1d20+3", "total": 18, "tier": "high", "reason": "Jump distance"}
+                        ],
+                    },
+                }),
+                StoryLogEntry.model_validate({
+                    "type": "die_roll",
+                    "result": {"notation": "2d6", "total": 8, "tier": "middle", "reason": "Damage check"},
+                }),
+            ]
+            formatted = tools._format_recent_story_log()
+            self.assertIn("Player action: I jump over the pit", formatted)
+            self.assertIn("Die roll result for 'Jump distance': 1d20+3 -> 18 [high]", formatted)
+            self.assertIn("Narration: You land safely.", formatted)
+            self.assertIn("Die roll result for 'Damage check': 2d6 -> 8 [middle]", formatted)
+
+    def test_die_rolls_are_tracked_and_reset_per_turn(self):
+        tools = self._make_tools(theater_id="reset-dice-test")
+        self.assertEqual(tools.get_die_rolls_this_turn(), [])
+
+        tools.roll_dice(sides=6, count=2, modifier=0, reason="Stealth check")
+        self.assertEqual(len(tools.get_die_rolls_this_turn()), 1)
+
+        tools.reset_die_roll_counts()
+        self.assertEqual(tools.get_die_rolls_this_turn(), [])
+
+        tools.roll_dice(sides=20, count=1, modifier=0, reason="Perception")
+        self.assertEqual(len(tools.get_die_rolls_this_turn()), 1)
+
+        tools.reset_lore_call_counts()
+        self.assertEqual(tools.get_die_rolls_this_turn(), [])
 
     def test_planner_instruction_reserves_player_agency(self):
         prompt = build_scene_reaction_prompt(

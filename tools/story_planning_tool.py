@@ -252,6 +252,77 @@ class SceneReaction(BaseModel):
     character_updates: List[PlannerCharacter] = Field(default_factory=list)
 
 
+class StoryLogDieRoll(BaseModel):
+    """Pydantic schema for individual die roll records in the story log."""
+    notation: str
+    total: int
+    rolls: List[int] = Field(default_factory=list)
+    modifier: int = 0
+    tier: str = ""
+    reason: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+    def format_prompt_summary(self) -> str:
+        """Format the die roll result for narrative planner context."""
+        reason_str = f" for '{self.reason}'" if self.reason else ""
+        tier_str = f" [{self.tier}]" if self.tier else ""
+        return f"Die roll result{reason_str}: {self.notation} -> {self.total}{tier_str}"
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item, None) or (self.__pydantic_extra__ or {}).get(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        val = getattr(self, item, None)
+        if val is not None:
+            return val
+        if self.__pydantic_extra__ and item in self.__pydantic_extra__:
+            return self.__pydantic_extra__[item]
+        return default
+
+
+class StoryPlanOutput(BaseModel):
+    """Pydantic schema for output payload of a story plan turn."""
+    narration: str = ""
+    dialogue: List[PlannerDialogue] = Field(default_factory=list)
+    die_rolls: List[StoryLogDieRoll] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item, None) or (self.__pydantic_extra__ or {}).get(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        val = getattr(self, item, None)
+        if val is not None:
+            return val
+        if self.__pydantic_extra__ and item in self.__pydantic_extra__:
+            return self.__pydantic_extra__[item]
+        return default
+
+
+class StoryLogEntry(BaseModel):
+    """Pydantic schema for structured theater-local story log entries."""
+    type: str
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    action: Optional[str] = None
+    output: Optional[StoryPlanOutput] = None
+    result: Optional[StoryLogDieRoll] = None
+
+    model_config = {"extra": "allow"}
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item, None) or (self.__pydantic_extra__ or {}).get(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        val = getattr(self, item, None)
+        if val is not None:
+            return val
+        if self.__pydantic_extra__ and item in self.__pydantic_extra__:
+            return self.__pydantic_extra__[item]
+        return default
+
+
 class VertexGemini(Gemini):
     """ADK Gemini model with an explicit Vertex AI client, independent of env defaults."""
 
@@ -419,6 +490,8 @@ class StoryPlanningTools(BaseTools):
         self._lore_index_cache: Optional[Dict[str, Dict[str, Any]]] = None
         self._lore_cache_lock: Lock = Lock()
         self._search_query_cache: Dict[str, str] = {}
+        self._die_rolls_this_turn: List[Dict[str, Any]] = []
+        self._die_rolls_lock: Lock = Lock()
         # Bound by AgentSession after its live queue is running. The callback
         # receives the completed planner result from a background worker.
         self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = (
@@ -719,23 +792,21 @@ class StoryPlanningTools(BaseTools):
             self._format_story_log(plot_beats),
         )
 
-    def _append_story_log_entry(self, entry_type: str, payload: Dict[str, Any]) -> None:
+    def _append_story_log_entry(self, entry: StoryLogEntry | Dict[str, Any]) -> Optional[StoryLogEntry]:
         """Append a structured, theater-local record that the canvas can inspect."""
-        entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "type": entry_type,
-            **payload,
-        }
         try:
+            log_entry = entry if isinstance(entry, StoryLogEntry) else StoryLogEntry.model_validate(entry)
             output_dir = self.theater_manager.theater(self.theater_id).output_dir()
             output_dir.mkdir(parents=True, exist_ok=True)
             with (output_dir / "story_log.jsonl").open("a", encoding="utf-8") as story_log:
-                story_log.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+                story_log.write(log_entry.model_dump_json(exclude_none=True) + "\n")
+            return log_entry
         except Exception:
             # Logging must never prevent a player's action from being resolved.
             logger.exception("[StoryPlanningTools] Failed to append theater story log")
+            return None
 
-    def _read_recent_story_log(self) -> List[Dict[str, Any]]:
+    def _read_recent_story_log(self) -> List[StoryLogEntry]:
         """Load the last 200 durable story-log entries for planner continuity."""
         try:
             log_path = self.theater_manager.theater(self.theater_id).output_dir() / "story_log.jsonl"
@@ -743,27 +814,36 @@ class StoryPlanningTools(BaseTools):
                 return []
             with log_path.open(encoding="utf-8") as story_log:
                 lines = deque(story_log, maxlen=STORY_LOG_CONTEXT_LINES)
-            return [json.loads(line) for line in lines if line.strip()]
+            entries: List[StoryLogEntry] = []
+            for line in lines:
+                if line.strip():
+                    try:
+                        data = json.loads(line)
+                        entries.append(StoryLogEntry.model_validate(data))
+                    except Exception as e:
+                        logger.warning("[StoryPlanningTools] Failed to validate story log line: %s", e)
+            return entries
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("[StoryPlanningTools] Failed to read theater story log: %s", exc)
             return []
 
     def _format_recent_story_log(self) -> str:
-        """Format retained player actions, narration, and dialogue for the planner prompt."""
+        """Format retained player actions, narration, dialogue, and die rolls for the planner prompt."""
         lines = []
-        for entry in self._recent_story_log:
-            if entry.get("type") == "user_action" and entry.get("action"):
-                lines.append(f"Player action: {entry['action']}")
-                continue
-            if entry.get("type") != "story_plan":
-                continue
-            output = entry.get("output") or {}
-            if output.get("narration"):
-                lines.append(f"Narration: {output['narration']}")
-            for dialogue in output.get("dialogue") or []:
-                if isinstance(dialogue, dict) and dialogue.get("text"):
-                    speaker = str(dialogue.get("speaker") or "Narrator")
-                    lines.append(f"Dialogue — {speaker}: {dialogue['text']}")
+        for raw_entry in self._recent_story_log:
+            entry = raw_entry if isinstance(raw_entry, StoryLogEntry) else StoryLogEntry.model_validate(raw_entry)
+            if entry.type == "user_action" and entry.action:
+                lines.append(f"Player action: {entry.action}")
+            elif entry.type in ("die_roll", "dice_roll") and entry.result:
+                lines.append(entry.result.format_prompt_summary())
+            elif entry.type == "story_plan" and entry.output:
+                for roll in entry.output.die_rolls:
+                    lines.append(roll.format_prompt_summary())
+                if entry.output.narration:
+                    lines.append(f"Narration: {entry.output.narration}")
+                for dlg in entry.output.dialogue:
+                    if dlg.text:
+                        lines.append(f"Dialogue — {dlg.speaker}: {dlg.text}")
         return "\n".join(lines)
 
     def get_tools(self) -> List[Any]:
@@ -788,13 +868,25 @@ class StoryPlanningTools(BaseTools):
             logger.debug("[StoryPlanningTools] Voice input detected; process_user_action is re-enabled.")
 
     def reset_lore_call_counts(self) -> None:
-        """Reset per-turn read_lore and search_lore invocation counters and lore activity."""
+        """Reset per-turn read_lore and search_lore invocation counters, lore activity, and die rolls."""
         with self._read_lore_lock:
             self._read_lore_calls_this_turn = 0
         with self._search_lore_lock:
             self._search_lore_calls_this_turn = 0
         with self._lore_activity_lock:
             self._lore_activity_this_turn = []
+        with self._die_rolls_lock:
+            self._die_rolls_this_turn = []
+
+    def reset_die_roll_counts(self) -> None:
+        """Reset per-turn die roll records."""
+        with self._die_rolls_lock:
+            self._die_rolls_this_turn = []
+
+    def get_die_rolls_this_turn(self) -> List[Dict[str, Any]]:
+        """Return list of die roll results recorded during this turn."""
+        with self._die_rolls_lock:
+            return [dict(r) for r in self._die_rolls_this_turn]
 
     def _record_lore_activity(self, activity_type: str, target: str, summary: str = "", **kwargs: Any) -> None:
         """Record a lore document read, search, or preload event for the active turn."""
@@ -1170,6 +1262,8 @@ class StoryPlanningTools(BaseTools):
         )
         if str(reason or "").strip():
             result["reason"] = str(reason).strip()[:300]
+        with self._die_rolls_lock:
+            self._die_rolls_this_turn.append(dict(result))
         if self.canvas_state_service:
             self.canvas_state_service.set_tool_activity(
                 "dice", active=True, theater_id=self.theater_id, recent_seconds=2.5, result=result,
@@ -1846,10 +1940,7 @@ class StoryPlanningTools(BaseTools):
                 )
             }
 
-        self._append_story_log_entry(
-            "user_action",
-            {"action": action},
-        )
+        self._append_story_log_entry(StoryLogEntry(type="user_action", action=action))
 
         with self._voice_input_lock:
             if self.require_voice_input:
@@ -1865,16 +1956,15 @@ class StoryPlanningTools(BaseTools):
             finally:
                 self.release_in_flight("process_user_action")
 
-            self._append_story_log_entry(
-                "story_plan",
-                {
-                    "output": {
-                        key: (result or {}).get(key)
-                        for key in ("narration", "dialogue")
-                        if (result or {}).get(key)
-                    },
-                },
-            )
+            plan_output = None
+            if isinstance(result, dict) and "error" not in result:
+                plan_output = StoryPlanOutput(
+                    narration=str(result.get("narration") or "").strip(),
+                    dialogue=result.get("dialogue") if isinstance(result.get("dialogue"), list) else [],
+                    die_rolls=result.get("die_rolls") if isinstance(result.get("die_rolls"), list) else [],
+                )
+
+            self._append_story_log_entry(StoryLogEntry(type="story_plan", output=plan_output))
 
             callback = self.on_scene_reaction
             if callback and result is not None:
@@ -1916,6 +2006,7 @@ class StoryPlanningTools(BaseTools):
             raise ValueError("Story planner must produce the complete plot-beat buffer.")
         with self._plot_beats_lock:
             self._plot_beats = plot_beats
+        die_rolls = self.get_die_rolls_this_turn()
         result = {
             "narration": narration,
             "dialogue": dialogue,
@@ -1923,6 +2014,7 @@ class StoryPlanningTools(BaseTools):
             "plot_beats": list(plot_beats),
             "lore_activity": self.get_lore_activity_this_turn(),
             "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),
+            "die_rolls": die_rolls,
         }
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
