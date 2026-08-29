@@ -12,6 +12,7 @@ class TestImageHistoryPaging(UITestCase):
         self.assertIn("#history-paging-controls {", canvas)
         self.assertIn("top: 1.25rem;", canvas)
         self.assertIn('id="story-log-inspector"', canvas)
+        self.assertIn('id="story-log-toggle-btn"', canvas)
         self.assertIn('from "/static/js/story-log-inspector.js"', canvas)
         inspector = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
         self.assertIn("initializeStoryLogInspector", inspector)

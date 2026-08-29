@@ -1111,22 +1111,9 @@
         }
 
         .agent-activity-icon.dice {
-            width: 58px;
-            height: 58px;
-            border-radius: 12px;
-            color: #fff;
-            border-color: rgba(255, 255, 255, 0.9);
-            background: #000;
-            flex-direction: column;
-            gap: 1px;
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.8);
             animation: diceRoll 0.72s cubic-bezier(0.22, 0.75, 0.28, 1) infinite;
-        }
-
-        .dice-roll-total {
-            font-size: 0.72rem;
-            font-weight: 800;
-            line-height: 1;
-            color: #fff;
         }
 
         .agent-activity-icon.dice.dice-result-low {
@@ -1141,9 +1128,9 @@
             animation: diceRoll 0.72s cubic-bezier(0.22, 0.75, 0.28, 1) infinite, diceFlashGreen 0.65s steps(2, end) infinite;
         }
 
-        @keyframes diceFlashRed { 50% { border-color: #ef4444; box-shadow: 0 0 25px #ef4444; } }
-        @keyframes diceFlashYellow { 50% { border-color: #facc15; box-shadow: 0 0 25px #facc15; } }
-        @keyframes diceFlashGreen { 50% { border-color: #22c55e; box-shadow: 0 0 25px #22c55e; } }
+        @keyframes diceFlashRed { 50% { border-color: #ef4444; box-shadow: 0 0 22px #ef4444; color: #ef4444; } }
+        @keyframes diceFlashYellow { 50% { border-color: #facc15; box-shadow: 0 0 22px #facc15; color: #facc15; } }
+        @keyframes diceFlashGreen { 50% { border-color: #22c55e; box-shadow: 0 0 22px #22c55e; color: #22c55e; } }
 
         .agent-activity-icon.live {
             color: #10b981;
@@ -1385,9 +1372,23 @@
             left: 50%;
             transform: translateX(-50%);
             z-index: 20;
+            display: flex;
             align-items: center;
             flex-direction: column;
             font-family: 'Outfit', sans-serif;
+            padding: 10px 20px;
+            margin-top: -10px;
+            opacity: 0;
+            pointer-events: auto;
+            transition: opacity 0.25s ease;
+        }
+
+        #history-paging-controls:hover,
+        #history-paging-controls:focus-within,
+        #history-paging-controls.inspector-open,
+        #history-paging-controls:has(#story-log-inspector.open) {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         #history-paging-bar {
@@ -1420,11 +1421,18 @@
             transition: opacity 0.2s ease, transform 0.2s ease;
         }
 
-        #history-paging-controls:hover #story-log-inspector,
-        #history-paging-controls:focus-within #story-log-inspector {
+        #story-log-inspector.open,
+        #story-log-inspector.is-open {
             opacity: 1;
             pointer-events: auto;
             transform: translateY(0);
+        }
+
+        #story-log-toggle-btn.active,
+        #story-log-toggle-btn[aria-expanded="true"] {
+            background: rgba(99, 102, 241, 0.35) !important;
+            border-color: rgba(99, 102, 241, 0.6) !important;
+            color: #ffffff !important;
         }
 
         .story-log-entry {
@@ -2165,16 +2173,12 @@
                 </div>
                 <div id="agent-dice-indicator" class="agent-activity-icon dice" role="status"
                     title="The story is rolling the dice" aria-hidden="true">
-                    <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="3" y="3" width="18" height="18" rx="3" />
-                        <circle cx="8" cy="8" r="1" fill="currentColor" />
-                        <circle cx="16" cy="8" r="1" fill="currentColor" />
-                        <circle cx="12" cy="12" r="1" fill="currentColor" />
-                        <circle cx="8" cy="16" r="1" fill="currentColor" />
-                        <circle cx="16" cy="16" r="1" fill="currentColor" />
+                        <path d="M12 2L20.5 6.8V17.2L12 22L3.5 17.2V6.8L12 2Z" />
+                        <path d="M6.5 8H17.5L12 17.5L6.5 8Z" />
+                        <path d="M12 2L6.5 8M12 2L17.5 8M3.5 6.8L6.5 8M20.5 6.8L17.5 8M3.5 17.2L6.5 8M3.5 17.2L12 17.5M20.5 17.2L17.5 8M20.5 17.2L12 17.5M12 17.5V22" />
                     </svg>
-                    <span id="dice-roll-total" class="dice-roll-total"></span>
                 </div>
                 <div id="agent-disconnected-indicator" class="agent-activity-icon disconnected" role="status"
                     title="Narratron has wandered away (model disconnected). Click to resummon." aria-hidden="true">
@@ -2243,8 +2247,7 @@
 
 
             <!-- Image History Paging Controls -->
-            <div id="history-paging-controls"
-                style="display: none;">
+            <div id="history-paging-controls">
                 <div id="history-paging-bar" aria-label="Image history paging and story log">
                 <button id="page-prev-btn" title="Previous Image (Left Arrow)"
                     style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">◀</button>
@@ -2259,13 +2262,27 @@
                     <span id="new-head-badge"
                         style="display: none; background: #ef4444; color: #fff; font-size: 0.65rem; border-radius: 10px; padding: 1px 5px; font-weight: 700; animation: pulseBadge 1.5s infinite;">NEW</span>
                 </button>
+                <button id="story-log-toggle-btn" class="story-log-toggle-btn" title="Toggle Story Log" aria-label="Toggle Story Log" aria-expanded="false"
+                    style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #c7d2fe; border-radius: 16px; padding: 4px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-0.5-0.05" />
+                        <path d="M6 6h10" />
+                        <path d="M6 10h10" />
+                        <path d="M6 14h6" />
+                    </svg>
+                    <span>Log</span>
+                </button>
                 </div>
                 <section id="story-log-inspector" role="dialog" aria-label="Story log">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                         <strong style="font-size: 0.85rem; color: #c7d2fe;">Story log</strong>
-                        <span style="font-size: 0.7rem; color: #94a3b8;">Actions, narration &amp; dialogue</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 0.7rem; color: #94a3b8;">Actions, narration &amp; dialogue</span>
+                            <button id="story-log-close-btn" title="Close Story Log" aria-label="Close Story Log"
+                                style="background: transparent; border: none; color: #94a3b8; cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 0 4px; border-radius: 4px;">&times;</button>
+                        </div>
                     </div>
-                    <div id="story-log-content" style="margin-top: 8px; color: #cbd5e1;">Hover to load the story log.</div>
+                    <div id="story-log-content" style="margin-top: 8px; color: #cbd5e1;">Click Log button to view the story log.</div>
                 </section>
             </div>
         </div>
@@ -3376,7 +3393,6 @@
         const pcmBroadcastIndicator = document.getElementById('pcm-broadcast-indicator');
         const drawingIndicator = document.getElementById('agent-drawing-indicator');
         const diceIndicator = document.getElementById('agent-dice-indicator');
-        const diceRollTotal = document.getElementById('dice-roll-total');
         const disconnectedIndicator = document.getElementById('agent-disconnected-indicator');
 
         if (disconnectedIndicator) {
@@ -3404,9 +3420,6 @@
                 diceIndicator.title = diceResult.notation
                     ? `Rolled ${diceResult.notation}: ${diceResult.total}`
                     : 'The story is rolling the dice';
-            }
-            if (diceRollTotal) {
-                diceRollTotal.textContent = Number.isFinite(diceResult.total) ? String(diceResult.total) : '';
             }
         }
 
@@ -3522,28 +3535,21 @@
 
             if (!controls) return;
 
-            if (!imageHistory || imageHistory.length <= 1) {
-                controls.style.display = 'none';
-                return;
-            }
-
-            controls.style.display = 'flex';
-
-            const total = imageHistory.length;
+            const total = Math.max(1, imageHistory ? imageHistory.length : 1);
             const currentNum = currentViewIndex >= 0 ? currentViewIndex + 1 : total;
 
             if (indicator) {
-                indicator.textContent = isPagedBack ? `${currentNum} / ${total}` : `${currentNum} / ${total}`;
+                indicator.textContent = `${currentNum} / ${total}`;
             }
 
             if (prevBtn) {
-                prevBtn.disabled = (currentViewIndex <= 0);
+                prevBtn.disabled = (currentViewIndex <= 0 || total <= 1);
                 prevBtn.style.opacity = prevBtn.disabled ? '0.35' : '1';
                 prevBtn.style.cursor = prevBtn.disabled ? 'default' : 'pointer';
             }
 
             if (nextBtn) {
-                nextBtn.disabled = (currentViewIndex >= total - 1);
+                nextBtn.disabled = (currentViewIndex >= total - 1 || total <= 1);
                 nextBtn.style.opacity = nextBtn.disabled ? '0.35' : '1';
                 nextBtn.style.cursor = nextBtn.disabled ? 'default' : 'pointer';
             }

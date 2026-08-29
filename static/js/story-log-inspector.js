@@ -59,7 +59,12 @@ function groupTurns(entries) {
 export function initializeStoryLogInspector(theaterId) {
     const controls = document.getElementById('history-paging-controls');
     const content = document.getElementById('story-log-content');
-    if (!controls || !content || !theaterId) return;
+    const inspector = document.getElementById('story-log-inspector');
+    const toggleBtn = document.getElementById('story-log-toggle-btn');
+    const closeBtn = document.getElementById('story-log-close-btn');
+    if (!content || !theaterId) return;
+
+    let isOpen = false;
 
     async function loadStoryLog() {
         content.textContent = 'Loading story log…';
@@ -89,6 +94,41 @@ export function initializeStoryLogInspector(theaterId) {
         }
     }
 
-    controls.addEventListener('mouseenter', loadStoryLog);
-    controls.addEventListener('focusin', loadStoryLog);
+    function toggleStoryLog(force) {
+        isOpen = typeof force === 'boolean' ? force : !isOpen;
+        if (inspector) {
+            inspector.classList.toggle('open', isOpen);
+            inspector.classList.toggle('is-open', isOpen);
+        }
+        if (controls) {
+            controls.classList.toggle('inspector-open', isOpen);
+        }
+        if (toggleBtn) {
+            toggleBtn.setAttribute('aria-expanded', String(isOpen));
+            toggleBtn.classList.toggle('active', isOpen);
+        }
+        if (isOpen) {
+            loadStoryLog();
+        }
+    }
+
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleStoryLog();
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleStoryLog(false);
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        if (isOpen && inspector && !inspector.contains(e.target) && toggleBtn && !toggleBtn.contains(e.target)) {
+            toggleStoryLog(false);
+        }
+    });
 }
