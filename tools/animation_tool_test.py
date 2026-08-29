@@ -272,3 +272,15 @@ class TestAnimationTools(BaseTestCase):
         self.assertIn("complex motions and transitions", request.prompt)
         self.assertIn("scenic backdrops", request.prompt)
         self.assertIn("high energy single moment climaxes", request.prompt)
+
+    def test_decomposition_prompt_format(self):
+        plan = [
+            {"name": "background", "description": "distant sky"},
+            {"name": "subject", "description": "hero on cliff"},
+            {"name": "foreground", "description": "swaying leaves"},
+        ]
+        prompt = AnimationTools._decomposition_prompt("A hero on a cliff.", plan)
+        self.assertEqual(prompt, "background: distant sky; subject: hero on cliff; foreground: swaying leaves")
+        self.assertNotIn("RGBA", prompt)
+        self.assertNotIn("ordered", prompt)
+        self.assertNotIn("back to front", prompt)

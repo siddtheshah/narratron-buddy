@@ -442,8 +442,7 @@ class AnimationTools(BaseTools):
 
     @staticmethod
     def _decomposition_prompt(scene_prompt: str, plan: list[dict[str, str]]) -> str:
-        regions = "; ".join(f"layer {index + 1} ({item['name']}): {item['description']}" for index, item in enumerate(plan))
-        return f"Decompose this exact scene into {len(plan)} separate transparent RGBA layers, ordered back to front. Scene: {scene_prompt}. Ground the decomposition in these intended regions: {regions}. Preserve all visible scene content across the layers; no borders, text, or collage."
+        return "; ".join(f"{item['name']}: {item['description']}" for item in plan)
 
     @staticmethod
     def _save_named_image(image_bytes: bytes, path: Path, prompt: str) -> str:
