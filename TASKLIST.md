@@ -10,11 +10,8 @@
 
 ## Narratron UI & Canvas Features
 
-- [ ] Layered animation pipeline. 
-  - Maybe only for pro-canvases. Will require around 4-5 LLM calls to make it, long latency.
-  - Requires creating multiple images with an effective alpha layer. Basic case would be background + foreground elements.
-  - Also would require an emplacer function. 
-  - Allow specification of relative animation, e.g.  a character moving across a background.
+- [x] Layered animation pipeline. 
+  - Set up with qwen image layer model.
 
 ## Refactors
 - [ ] Refactor canvas.html to be more modular.
@@ -34,7 +31,6 @@
 
 ## New Demos
 - [ ] Drawing demo
-- [x] Adventure demo
 
 ## Billing
 - [ ] Storage Daemon is not checking file sizes of owned theaters. Need to fix.

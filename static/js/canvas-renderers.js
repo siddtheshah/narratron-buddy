@@ -141,6 +141,17 @@ export function createImageRenderer({
         layoutImageEffect();
     }
 
+    function captureCanvasSnapshot() {
+        if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+        const snapshot = document.createElement("canvas");
+        snapshot.width = canvas.width;
+        snapshot.height = canvas.height;
+        const snapCtx = snapshot.getContext("2d");
+        if (!snapCtx) return null;
+        snapCtx.drawImage(canvas, 0, 0);
+        return snapshot;
+    }
+
     function stopSequence() {
         sequenceGeneration += 1;
         if (sequenceTimer) {
@@ -155,6 +166,7 @@ export function createImageRenderer({
 
     async function applyTransition(imageUrl, transition = "crossfade", effect = "gleam3") {
         if (!canvas || !context) return;
+        const oldSnapshot = captureCanvasSnapshot();
         stopSequence();
         resize();
 
@@ -186,7 +198,7 @@ export function createImageRenderer({
 
         const rect = canvas.getBoundingClientRect();
         const oldImage = currentImage;
-        const hasOldImage = oldImage?.complete && oldImage.naturalWidth > 0;
+        const hasOldImage = (oldImage?.complete && oldImage.naturalWidth > 0) || oldSnapshot !== null;
 
         const animate = (duration, drawFrame) => {
             const startTime = performance.now();
@@ -212,7 +224,14 @@ export function createImageRenderer({
         if (transition === "crossfade" && hasOldImage) {
             animate(2000, (progress) => {
                 drawScaledImage(newImage, rect.width, rect.height);
-                drawScaledImage(oldImage, rect.width, rect.height, 1 - progress);
+                if (oldSnapshot) {
+                    context.save();
+                    context.globalAlpha = 1 - progress;
+                    context.drawImage(oldSnapshot, 0, 0, rect.width, rect.height);
+                    context.restore();
+                } else if (oldImage) {
+                    drawScaledImage(oldImage, rect.width, rect.height, 1 - progress);
+                }
             });
         } else if (transition === "none") {
             drawSingleImage(newImage);
@@ -229,6 +248,7 @@ export function createImageRenderer({
     async function playSequence(imageUrls, {
         frameDuration = 1400,
         crossfadeDuration = 500,
+        transitionDuration = fadeDuration,
     } = {}) {
         if (!canvas || !context || !Array.isArray(imageUrls) || imageUrls.length < 2) return;
         stopSequence();
@@ -247,6 +267,9 @@ export function createImageRenderer({
             return frame;
         }));
         if (generation !== sequenceGeneration || frames.some((frame) => !frame.naturalWidth)) return;
+
+        const oldSnapshot = captureCanvasSnapshot();
+        const sequenceStartTime = performance.now();
 
         if (imageEffectController) {
             imageEffectController.setEffect("none");
@@ -267,14 +290,47 @@ export function createImageRenderer({
         let index = 0;
         currentImage = frames[0];
         if (image) image.src = imageUrls[0];
-        drawSingleImage(currentImage);
+
+        const drawSnapshotOverlay = (now) => {
+            if (!oldSnapshot || transitionDuration <= 0) return;
+            const elapsed = now - sequenceStartTime;
+            const entryProgress = Math.min(1, Math.max(0, elapsed / transitionDuration));
+            if (entryProgress < 1) {
+                const eased = entryProgress < 0.5
+                    ? 4 * entryProgress * entryProgress * entryProgress
+                    : 1 - Math.pow(-2 * entryProgress + 2, 3) / 2;
+                context.save();
+                context.globalAlpha = 1 - eased;
+                context.drawImage(oldSnapshot, 0, 0, rect.width, rect.height);
+                context.restore();
+            }
+        };
+
+        const rect = canvas.getBoundingClientRect();
+        context.clearRect(0, 0, rect.width, rect.height);
+        drawScaledImage(currentImage, rect.width, rect.height);
+        drawSnapshotOverlay(performance.now());
+
+        if (oldSnapshot && transitionDuration > 0) {
+            const animateEntry = (now) => {
+                if (generation !== sequenceGeneration) return;
+                const elapsed = now - sequenceStartTime;
+                const progress = Math.min(1, elapsed / transitionDuration);
+                context.clearRect(0, 0, rect.width, rect.height);
+                drawScaledImage(currentImage, rect.width, rect.height);
+                drawSnapshotOverlay(now);
+                if (progress < 1 && activeAnimation === null) {
+                    activeAnimation = requestAnimationFrame(animateEntry);
+                }
+            };
+            activeAnimation = requestAnimationFrame(animateEntry);
+        }
 
         const advance = () => {
             if (generation !== sequenceGeneration) return;
             const previous = currentImage;
             index = (index + 1) % frames.length;
             const next = frames[index];
-            const rect = canvas.getBoundingClientRect();
             const startTime = performance.now();
             const fade = (now) => {
                 if (generation !== sequenceGeneration) return;
@@ -282,6 +338,7 @@ export function createImageRenderer({
                 context.clearRect(0, 0, rect.width, rect.height);
                 drawScaledImage(next, rect.width, rect.height);
                 drawScaledImage(previous, rect.width, rect.height, 1 - progress);
+                drawSnapshotOverlay(now);
                 if (progress < 1) {
                     activeAnimation = requestAnimationFrame(fade);
                 } else {
@@ -296,7 +353,7 @@ export function createImageRenderer({
         sequenceTimer = setTimeout(advance, Math.max(0, frameDuration - crossfadeDuration));
     }
 
-    async function playLayeredAnimation(layers) {
+    async function playLayeredAnimation(layers, options = {}) {
         if (!canvas || !context || !Array.isArray(layers) || layers.length < 2) return;
         stopSequence();
         const generation = sequenceGeneration;
@@ -307,9 +364,16 @@ export function createImageRenderer({
             return { ...layer, source };
         }));
         if (generation !== sequenceGeneration || prepared.some(layer => !layer.source.naturalWidth)) return;
+
+        const oldSnapshot = captureCanvasSnapshot();
+        const crossfadeDuration = typeof options === "number"
+            ? options
+            : (options?.crossfadeDuration ?? options?.fadeDuration ?? fadeDuration);
+
         if (imageEffectController) { imageEffectController.setEffect("none"); imageEffectController.element.style.display = "none"; }
         if (image) { image.classList.remove(...loadedClassNames); image.style.opacity = "0"; image.src = prepared[0].url; }
         if (backgroundLayer) backgroundLayer.style.backgroundImage = "none";
+        currentImage = prepared[0].source;
         const start = performance.now();
 
         const computeImageCentroid = (sourceImage) => {
@@ -425,6 +489,21 @@ export function createImageRenderer({
             const rect = canvas.getBoundingClientRect();
             context.clearRect(0, 0, rect.width, rect.height);
             prepared.slice().sort((a, b) => (a.order || 0) - (b.order || 0)).forEach(layer => drawLayer(layer, now, rect.width, rect.height));
+
+            if (oldSnapshot && crossfadeDuration > 0) {
+                const elapsed = now - start;
+                const progress = Math.min(1, Math.max(0, elapsed / crossfadeDuration));
+                if (progress < 1) {
+                    const eased = progress < 0.5
+                        ? 4 * progress * progress * progress
+                        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                    context.save();
+                    context.globalAlpha = 1 - eased;
+                    context.drawImage(oldSnapshot, 0, 0, rect.width, rect.height);
+                    context.restore();
+                }
+            }
+
             activeAnimation = requestAnimationFrame(frame);
         };
         activeAnimation = requestAnimationFrame(frame);
