@@ -218,7 +218,7 @@ class CanvasStateManager:
             self.story_planning_state["named_elements"] = list(notes or [])
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
 
     def get_named_elements(self) -> List[Dict[str, str]]:
@@ -238,7 +238,7 @@ class CanvasStateManager:
             self.named_elements = list(self.story_planning_state["named_elements"])
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
 
     def set_scene_dialogue(self, dialogue: List[Dict[str, str]]):
@@ -246,7 +246,7 @@ class CanvasStateManager:
         self.scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
         if self._scene_speech:
             self._scene_speech.dispatch(self.scene_dialogue)
@@ -319,7 +319,7 @@ class CanvasStateManager:
 
     def _persist_voice_assignments(self) -> None:
         sess_dir = self.theater.directory()
-        self.export_theater_data(theater_dir=sess_dir)
+        self.save_local_theater_data(theater_dir=sess_dir)
 
     def _publish_scene_audio(self, message: Dict[str, Any]) -> None:
         if not self.active_state_ws_connections or not self._state_ws_loop or self._state_ws_loop.is_closed():
@@ -334,7 +334,7 @@ class CanvasStateManager:
         self.narration = " ".join(str(narration or "").strip().split()[:45])[:500]
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
 
     def upsert_interactive_surface(self, surface: Dict[str, Any], max_surfaces: int = 5) -> None:
@@ -347,7 +347,7 @@ class CanvasStateManager:
             self.interactive_surfaces.pop(next(iter(self.interactive_surfaces)))
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
 
     def delete_interactive_surface(self, surface_id: str = "all") -> int:
@@ -360,7 +360,7 @@ class CanvasStateManager:
         if removed:
             sess_dir = self.theater.directory()
             if sess_dir.exists():
-                self.export_theater_data(theater_dir=sess_dir)
+                self.save_local_theater_data(theater_dir=sess_dir)
             self._notify_state_changed("latest")
         return removed
 
@@ -376,7 +376,7 @@ class CanvasStateManager:
         placement["top_pct"] = round(max(2.0, min(98.0, float(top_pct))), 2)
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
         return {"left_pct": placement["left_pct"], "top_pct": placement["top_pct"]}
 
@@ -641,7 +641,7 @@ class CanvasStateManager:
             self.doodles_state.extend(doodles)
         sess_dir = self.theater.directory()
         sess_dir.mkdir(parents=True, exist_ok=True)
-        self.export_theater_data(theater_dir=sess_dir)
+        self.save_local_theater_data(theater_dir=sess_dir)
 
     def get_doodle_snapshot_batches(self) -> List[Dict[str, Any]]:
         """Encode persisted segments into compact, style-grouped stroke paths."""
@@ -667,14 +667,14 @@ class CanvasStateManager:
         self.doodles_enabled = bool(enabled)
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
 
     def set_viewer_collab_enabled(self, enabled: bool):
         """Toggle viewer collaboration mode on or off."""
         self.viewer_collab_enabled = bool(enabled)
         sess_dir = self.theater.directory()
         if sess_dir.exists():
-            self.export_theater_data(theater_dir=sess_dir)
+            self.save_local_theater_data(theater_dir=sess_dir)
         self._notify_state_changed("latest")
 
     def get_doodle_snapshot_data(self) -> List[Dict[str, Any]]:
@@ -919,7 +919,9 @@ class CanvasStateManager:
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, history_len={len(formatted_history)}, playlist={music_state['playlist']}")
         return res
 
-    def export_theater_data(self, theater_dir: Optional[Path] = None) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    export_theater_data = lambda self, *args, **kwargs: self.save_local_theater_data(*args, **kwargs)
+
+    def save_local_theater_data(self, theater_dir: Optional[Path] = None) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Ensure current displayed image is saved and gather theater metadata, canvas data and files."""
         import json
         if self.shown_image_path and theater_dir:
@@ -992,29 +994,4 @@ class CanvasStateManager:
         if "canvas_state" not in state_data:
             state_data["canvas_state"] = canvas_state
 
-        image_files = []
-        seen_filenames = set()
-        if theater_dir and theater_dir.exists():
-            for f in theater_dir.rglob("*"):
-                if f.is_file() and f.name not in ["theater.json", "theater_state.json"]:
-                    rel_path = str(f.relative_to(theater_dir)).replace("\\", "/")
-                    if rel_path not in seen_filenames:
-                        seen_filenames.add(rel_path)
-                        if "references" in f.parts:
-                            category = "reference"
-                        elif "output" in f.parts:
-                            category = "output"
-                        else:
-                            category = str(f.parent.relative_to(theater_dir)).replace("\\", "/")
-
-                        try:
-                            with open(f, "rb") as fp:
-                                image_files.append({
-                                    "filename": f.name,
-                                    "category": category,
-                                    "data": fp.read()
-                                })
-                        except Exception:
-                            pass
-
-        return state_data, image_files
+        return state_data, []

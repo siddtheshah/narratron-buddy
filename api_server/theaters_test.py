@@ -802,7 +802,6 @@ async def test_save_theater_requires_the_registry_deployment_owner():
     with patch.object(object_registry, "db", registry_db), patch.object(theaters, "get_current_user_async", new=AsyncMock(return_value={"id": 3})), pytest.raises(HTTPException) as error:
         await theaters.save_theater_to_db("stage", MagicMock())
     assert error.value.status_code == 403
-    registry_db.persist_canvas_theater_async.assert_not_called()
 
 
 def test_export_theater_requires_the_registry_deployment_owner():

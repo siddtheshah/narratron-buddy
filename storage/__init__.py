@@ -1,6 +1,12 @@
 """Storage module package initialization."""
 
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
-from storage.storage_daemon import StorageDaemon
+from storage.theater_repository import TheaterRepository, ensure_theaters_root, get_theaters_root
 
-__all__ = ["CloudPostgresDatabaseManager", "LocalDatabaseManager", "StorageDaemon"]
+__all__ = [
+    "CloudPostgresDatabaseManager",
+    "LocalDatabaseManager",
+    "TheaterRepository",
+    "ensure_theaters_root",
+    "get_theaters_root",
+]

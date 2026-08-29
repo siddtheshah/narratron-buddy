@@ -20,8 +20,8 @@ from pricing.pricing_controller import PricingController
 from services.agent_manager import AgentSessionManager
 from services.suggestion_service import SuggestionService
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
+from storage.theater_repository import TheaterRepository
 from utils.config_loader import get_app_config
-
 
 # Repository-level paths are shared application constants, alongside the
 # service instances below.  Route modules should import this from the registry
@@ -83,6 +83,7 @@ load_dotenv()
 config = get_app_config()
 app = FastAPI(lifespan=lifespan)
 theater_manager = TheaterManager()
+theater_repository = TheaterRepository()
 pricing_controller = PricingController.from_env()
 db = (
     LocalDatabaseManager("deployer.db", pricing_controller=pricing_controller)
@@ -104,4 +105,3 @@ agent_manager = AgentSessionManager(
 suggestion_service = SuggestionService(config=config)
 
 atexit.register(shutdown_database_connection)
-

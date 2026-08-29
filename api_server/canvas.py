@@ -12,6 +12,7 @@ from api_server.shared import (
     canvas_states,
     db,
     theater_manager,
+    theater_repository,
     get_current_user,
     get_current_user_async,
     _require_canvas_access,
@@ -142,7 +143,7 @@ def get_latest_image(request: Request, theater_id: Optional[str] = None):
         _require_canvas_access(request, theater_id)
         theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
-            db.reconstruct_theater_from_db(theater_id, theater_dir)
+            theater_repository.reconstruct_theater(theater_id, theater_dir)
     return canvas_states.latest_state(theater_id)
 
 @app.get("/api/chat")

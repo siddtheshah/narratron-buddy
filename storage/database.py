@@ -634,20 +634,7 @@ class _DatabaseManagerBase:
                     user_id INTEGER,
                     name TEXT,
                     exported_at TEXT NOT NULL,
-                    state_json TEXT NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-                )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS exported_theater_images (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    theater_id TEXT NOT NULL,
-                    filename TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    image_data BLOB NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (theater_id) REFERENCES exported_theaters(theater_id) ON DELETE CASCADE
                 )
             """)
 
@@ -1603,8 +1590,6 @@ class _DatabaseManagerBase:
                     deployments.created_at,
                     deployments.last_billed_at,
                     exported.name AS exported_name,
-                    exported.exported_at,
-                    exported.state_json,
                     (
                         SELECT MAX(views.viewed_at)
                         FROM theater_views AS views
@@ -1623,35 +1608,20 @@ class _DatabaseManagerBase:
         for row in rows:
             row = dict(row)
             theater_id = row["theater_id"]
-            metadata = None
-            if row.get("state_json"):
-                try:
-                    metadata = json.loads(row["state_json"]).get("metadata")
-                except (TypeError, json.JSONDecodeError):
-                    logger.warning("Skipping invalid exported metadata for theater %s", theater_id)
-
-            if not isinstance(metadata, dict):
-                metadata = {
-                    "theater_id": theater_id,
-                    "name": row.get("exported_name") or theater_id,
-                    "status": "deployed",
-                    "join_key": row["join_key"],
-                    "created_at": row.get("exported_at") or row["created_at"],
-                    "mounted_references": [],
-                    "mounted_playlists": {},
-                    "config": {},
-                }
-            else:
-                metadata = dict(metadata)
-                metadata["theater_id"] = metadata.get("theater_id") or theater_id
-                metadata["name"] = metadata.get("name") or row.get("exported_name") or theater_id
-                # Deployment data is authoritative for the join key.
-                metadata["join_key"] = row["join_key"]
-
+            metadata = {
+                "theater_id": theater_id,
+                "name": row.get("exported_name") or theater_id,
+                "status": "deployed",
+                "join_key": row["join_key"],
+                "created_at": row["created_at"],
+                "mounted_references": [],
+                "mounted_playlists": {},
+                "config": {},
+            }
             last_used_at = max(
-                value for value in (row.get("created_at"), row.get("last_billed_at"), row.get("exported_at"), row.get("last_viewed_at"))
+                value for value in (row.get("created_at"), row.get("last_billed_at"), row.get("last_viewed_at"))
                 if value
-            ) if any((row.get("created_at"), row.get("last_billed_at"), row.get("exported_at"), row.get("last_viewed_at"))) else ""
+            ) if any((row.get("created_at"), row.get("last_billed_at"), row.get("last_viewed_at"))) else ""
             records.append({"theater_id": theater_id, "metadata": metadata, "last_used_at": last_used_at})
         return records
 
@@ -1667,29 +1637,23 @@ class _DatabaseManagerBase:
             conn.commit()
             return cursor.rowcount > 0
 
-    def update_theater_name(self, theater_id: str, new_name: str) -> bool:
-        """Update the display name of a theater in exported_theaters table and state_json."""
+    def update_theater_name(self, theater_id: str, new_name: str, user_id: Optional[int] = None) -> bool:
+        """Update the display name of a theater in exported_theaters table."""
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT state_json FROM exported_theaters WHERE theater_id = ?", (theater_id,))
-            row = cursor.fetchone()
-            if row:
-                state_json = row["state_json"]
-                if state_json:
-                    try:
-                        state_data = json.loads(state_json)
-                        if isinstance(state_data, dict) and "metadata" in state_data and isinstance(state_data["metadata"], dict):
-                            state_data["metadata"]["name"] = new_name
-                            state_json = json.dumps(state_data)
-                    except Exception:
-                        pass
-                cursor.execute(
-                    "UPDATE exported_theaters SET name = ?, state_json = ? WHERE theater_id = ?",
-                    (new_name, state_json, theater_id)
-                )
-                conn.commit()
-                return True
-            return False
+            cursor.execute(
+                """
+                INSERT INTO exported_theaters (theater_id, user_id, name, exported_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(theater_id) DO UPDATE SET
+                    name = excluded.name,
+                    user_id = coalesce(excluded.user_id, exported_theaters.user_id)
+                """,
+                (theater_id, user_id, new_name, now_iso)
+            )
+            conn.commit()
+            return True
 
     def delete_deployment(self, theater_id: str) -> bool:
         with self._get_connection() as conn:
@@ -1915,206 +1879,6 @@ class _DatabaseManagerBase:
 
         return activity_map
 
-    def get_theater_metadata_from_db(self, theater_id: str) -> Optional[Dict]:
-        """Extract metadata dictionary for a theater stored in database without reconstructing disk files."""
-        import json
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT state_json, name, exported_at FROM exported_theaters WHERE theater_id = ?", (theater_id,))
-            theater_row = cursor.fetchone()
-            
-            cursor.execute("SELECT join_key, created_at FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
-            dep_row = cursor.fetchone()
-
-            if not theater_row and not dep_row:
-                return None
-
-            metadata = None
-            if theater_row:
-                try:
-                    state_data = json.loads(theater_row["state_json"])
-                    metadata = state_data.get("metadata")
-                except Exception:
-                    pass
-
-            if not metadata:
-                name = theater_row["name"] if theater_row else theater_id
-                join_key = dep_row["join_key"] if dep_row else "KEY-DEFAULT"
-                created_at = theater_row["exported_at"] if theater_row else (dep_row["created_at"] if dep_row else "")
-                metadata = {
-                    "theater_id": theater_id,
-                    "name": name,
-                    "status": "deployed",
-                    "join_key": join_key,
-                    "created_at": created_at,
-                    "mounted_references": [],
-                    "mounted_playlists": {},
-                    "config": {}
-                }
-            elif metadata:
-                metadata["theater_id"] = metadata.get("theater_id") or theater_id
-                metadata["name"] = metadata.get("name") or (
-                    theater_row["name"] if theater_row else theater_id
-                )
-            return metadata
-
-    def export_theater_to_db(
-        self,
-        theater_id: str,
-        state_data: Dict,
-        image_files: List[Dict[str, Any]],
-        user_id: Optional[int] = None,
-        name: Optional[str] = None
-    ) -> bool:
-        """Export theater metadata, state, and image blobs into SQLite database."""
-        import json
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        state_json = json.dumps(state_data)
-        
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO exported_theaters (theater_id, user_id, name, exported_at, state_json)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(theater_id) DO UPDATE SET
-                    user_id = coalesce(excluded.user_id, exported_theaters.user_id),
-                    name = coalesce(excluded.name, exported_theaters.name),
-                    exported_at = excluded.exported_at,
-                    state_json = excluded.state_json
-                """,
-                (theater_id, user_id, name or theater_id, now_iso, state_json)
-            )
-
-            # Clear previous images for this theater
-            cursor.execute("DELETE FROM exported_theater_images WHERE theater_id = ?", (theater_id,))
-
-            for img in image_files:
-                cursor.execute(
-                    """
-                    INSERT INTO exported_theater_images (theater_id, filename, category, image_data, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (theater_id, img["filename"], img.get("category", "output"), img["data"], now_iso)
-                )
-            conn.commit()
-            return True
-
-    def get_exported_theater(self, theater_id: str) -> Optional[Dict]:
-        """Fetch exported theater record and list of image files."""
-        import json
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM exported_theaters WHERE theater_id = ?", (theater_id,))
-            theater_row = cursor.fetchone()
-            if not theater_row:
-                return None
-            
-            res = dict(theater_row)
-            res["state"] = json.loads(res["state_json"])
-            
-            cursor.execute("SELECT id, filename, category, created_at FROM exported_theater_images WHERE theater_id = ?", (theater_id,))
-            res["images"] = [dict(r) for r in cursor.fetchall()]
-            return res
-
-    def reconstruct_theater_from_db(self, theater_id: str, target_dir: Path) -> bool:
-        """Reconstruct theater folder, theater metadata, state, and files from database if missing."""
-        import json
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT user_id, name, state_json, exported_at FROM exported_theaters WHERE theater_id = ?", (theater_id,))
-            theater_row = cursor.fetchone()
-            if not theater_row:
-                cursor.execute("SELECT theater_id FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
-                dep_row = cursor.fetchone()
-                if not dep_row:
-                    return False
-                theater_row = None
-
-            target_dir = Path(target_dir).resolve()
-            target_dir.mkdir(parents=True, exist_ok=True)
-            out_dir = target_dir / "output"
-            ref_dir = target_dir / "references"
-            pl_dir = target_dir / "playlists"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            ref_dir.mkdir(parents=True, exist_ok=True)
-            pl_dir.mkdir(parents=True, exist_ok=True)
-
-            state_data = {}
-            name = theater_id
-
-            if theater_row:
-                theater_dict = dict(theater_row)
-                name = theater_dict.get("name") or theater_id
-                state_json_str = theater_dict.get("state_json", "{}")
-                try:
-                    state_data = json.loads(state_json_str)
-                except Exception:
-                    state_data = {}
-
-            metadata = state_data.get("metadata") or dict(state_data)
-            if "theater_id" not in metadata:
-                metadata["theater_id"] = theater_id
-            if "name" not in metadata:
-                metadata["name"] = name
-            if "status" not in metadata:
-                metadata["status"] = "deployed"
-            if "join_key" not in metadata:
-                metadata["join_key"] = "KEY-DEFAULT"
-                cursor.execute("SELECT join_key FROM canvas_deployments WHERE theater_id = ?", (theater_id,))
-                dep_row = cursor.fetchone()
-                if dep_row and dep_row["join_key"]:
-                    metadata["join_key"] = dep_row["join_key"]
-            if "created_at" not in metadata:
-                metadata["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-            if "canvas_state" not in metadata and "canvas_state" in state_data:
-                metadata["canvas_state"] = state_data["canvas_state"]
-            elif "canvas_state" not in metadata:
-                c_fields = ["current_image_basename", "shown_image_path", "shown_image_prompt", "shown_images_history", "shown_image_transition", "current_playlist", "current_playlist_tracks", "music_paused", "doodles", "doodles_enabled", "chat_messages"]
-                c_dict = {k: state_data[k] for k in c_fields if k in state_data}
-                if c_dict:
-                    metadata["canvas_state"] = c_dict
-
-            meta_file = target_dir / "theater.json"
-            with open(meta_file, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=2)
-
-            legacy_file = target_dir / "theater_state.json"
-            if legacy_file.exists():
-                try:
-                    legacy_file.unlink()
-                except Exception:
-                    pass
-
-            cursor.execute("SELECT filename, category, image_data FROM exported_theater_images WHERE theater_id = ?", (theater_id,))
-            image_rows = cursor.fetchall()
-
-            for row in image_rows:
-                cat = row["category"]
-                fn = row["filename"]
-                data = row["image_data"]
-                
-                if cat == "reference" or cat == "references":
-                    dest_file = ref_dir / fn
-                elif cat == "output":
-                    dest_file = out_dir / fn
-                elif cat.startswith("references/"):
-                    dest_file = target_dir / cat if cat.endswith(fn) else target_dir / cat / fn
-                elif cat.startswith("output/") or cat.startswith("playlists/") or cat.startswith("chats/"):
-                    dest_file = target_dir / cat if cat.endswith(fn) else target_dir / cat / fn
-                else:
-                    dest_file = target_dir / cat / fn
-
-                dest_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(dest_file, "wb") as f:
-                    f.write(data)
-
-            return True
-
-    # ========================================
-    # Async Methods (Write & Non-Blocking Operations)
-    # ========================================
 
     async def record_theater_view_async(
         self, theater_id: str, user_id: Optional[int] = None, ip_address: Optional[str] = None
@@ -2126,48 +1890,6 @@ class _DatabaseManagerBase:
             )
         except Exception:
             logger.exception("Failed to record view for theater '%s'", theater_id)
-            return False
-
-    async def export_theater_to_db_async(
-        self,
-        theater_id: str,
-        state_data: Dict,
-        image_files: List[Dict[str, Any]],
-        user_id: Optional[int] = None,
-        name: Optional[str] = None
-    ) -> bool:
-        """Export theater to database asynchronously."""
-        try:
-            return await asyncio.to_thread(
-                self.export_theater_to_db, theater_id, state_data, image_files, user_id, name
-            )
-        except Exception:
-            logger.exception("Failed to export theater '%s' to database", theater_id)
-            return False
-
-    async def persist_canvas_theater_async(
-        self, canvas_states: Any, theater_manager: Any, theater_id: str, user_id: Optional[int], name: str
-    ) -> bool:
-        """Snapshot canvas state and save assets to database asynchronously."""
-        try:
-            def _export_and_save():
-                theater_dir = theater_manager.theater(theater_id).directory()
-                state_data, image_files = canvas_states.get(theater_id).export_theater_data(
-                    theater_dir=theater_dir
-                )
-                return self.export_theater_to_db(
-                    theater_id=theater_id,
-                    state_data=state_data,
-                    image_files=image_files,
-                    user_id=user_id,
-                    name=name,
-                )
-            success = await asyncio.to_thread(_export_and_save)
-            if success:
-                logger.info("Theater '%s' saved to database asynchronously.", theater_id)
-            return success
-        except Exception:
-            logger.exception("Failed to save theater '%s' to database", theater_id)
             return False
 
     async def record_deployment_async(

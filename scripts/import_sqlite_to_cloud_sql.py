@@ -22,13 +22,12 @@ TABLES = (
     "auth_sessions",
     "canvas_deployments",
     "exported_theaters",
-    "exported_theater_images",
     "theater_views",
     "payment_transactions",
     "usage_events",
     "password_reset_tokens",
 )
-IDENTITY_TABLES = ("users", "exported_theater_images", "theater_views", "payment_transactions")
+IDENTITY_TABLES = ("users", "theater_views", "payment_transactions")
 
 
 def apply_schema(connection) -> None:

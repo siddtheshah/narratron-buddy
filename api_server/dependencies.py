@@ -42,4 +42,5 @@ db = RegistryDependency("db")
 pricing_controller = RegistryDependency("pricing_controller")
 suggestion_service = RegistryDependency("suggestion_service")
 theater_manager = RegistryDependency("theater_manager")
+theater_repository = RegistryDependency("theater_repository")
 

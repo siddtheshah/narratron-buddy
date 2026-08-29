@@ -55,7 +55,7 @@ class TestImageHistoryPaging(UITestCase):
         manager.update_shown_image("/path/a.png", transition="fade")
         manager.update_shown_image("/path/b.png", transition="crossfade")
 
-        manager.export_theater_data(theater_dir=self.theaters_dir / theater_id)
+        manager.save_local_theater_data(theater_dir=self.theaters_dir / theater_id)
 
         reloaded_manager = self.make_canvas_state(theater_id)
         self.assertEqual(len(reloaded_manager.shown_images_history), 2)

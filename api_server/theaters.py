@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Optional
 import uuid
+import uuid
 import yaml
 
 from fastapi import Request, Response, HTTPException
@@ -16,6 +17,7 @@ from api_server.shared import (
     app,
     db,
     theater_manager,
+    theater_repository,
     canvas_states,
     get_current_user,
     get_current_user_async,
@@ -31,9 +33,19 @@ from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata,
 from utils.config_loader import get_theater_config, get_theater_default_config
 from services.adventure_service import adventure_service
 
-
 logger = logging.getLogger(__name__)
 
+async def _export_canvas_theater_async(theater_id: str) -> bool:
+    """Export theater canvas data to repository asynchronously."""
+    def _export():
+        theater_dir = theater_manager.theater(theater_id).directory()
+        canvas_states.get(theater_id).save_local_theater_data(theater_dir=theater_dir)
+        return theater_repository.export_theater(theater_id, theater_dir)
+    try:
+        return await asyncio.to_thread(_export)
+    except Exception:
+        logger.exception("Failed to export theater '%s' to repository", theater_id)
+        return False
 
 
 async def _sync_agent_controller(theater_id: str, baton_state: dict) -> None:
@@ -227,7 +239,7 @@ async def get_theater(theater_id: str, request: Request):
     deployment = await _require_canvas_access_async(request, theater_id)
     theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
-        db.reconstruct_theater_from_db(theater_id, theater_dir)
+        theater_repository.reconstruct_theater(theater_id, theater_dir)
 
     meta = theater_manager.get_theater(theater_id)
     if not meta:
@@ -555,15 +567,7 @@ async def create_and_deploy_theater(request: Request):
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
-    asyncio.create_task(
-        db.persist_canvas_theater_async(
-            canvas_states,
-            theater_manager,
-            deployed_meta.theater_id,
-            user["id"],
-            deployed_meta.name,
-        )
-    )
+    asyncio.create_task(_export_canvas_theater_async(deployed_meta.theater_id))
     return {"status": "ok", "theater_id": deployed_meta.theater_id, "theater": res_dict}
 
 @app.post("/api/theaters/{theater_id}/deploy")
@@ -575,7 +579,7 @@ def deploy_existing_theater(theater_id: str, request: Request):
 
     theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
-        db.reconstruct_theater_from_db(theater_id, theater_dir)
+        theater_repository.reconstruct_theater(theater_id, theater_dir)
     
     dep = db.get_deployment(theater_id)
     if dep and dep["user_id"] != user["id"]:
@@ -770,15 +774,7 @@ async def save_theater_to_db(theater_id: str, request: Request):
     user_id = dep["user_id"] if dep else None
     name = meta.name if meta else theater_id
 
-    asyncio.create_task(
-        db.persist_canvas_theater_async(
-            canvas_states,
-            theater_manager,
-            theater_id,
-            user_id,
-            name,
-        )
-    )
+    asyncio.create_task(_export_canvas_theater_async(theater_id))
     return {"status": "queued", "theater_id": theater_id}
 
 @app.get("/api/theaters/{theater_id}/export-assets")
@@ -796,11 +792,10 @@ def export_theater_assets(theater_id: str, request: Request):
 
     theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists():
-        db.reconstruct_theater_from_db(theater_id, theater_dir)
-
+        theater_repository.reconstruct_theater(theater_id, theater_dir)
     # Ensure current displayed image is saved into the theater directory
     cs = canvas_states.get(theater_id)
-    cs.export_theater_data(theater_dir=theater_dir)
+    cs.save_local_theater_data(theater_dir=theater_dir)
 
     import io
     import zipfile

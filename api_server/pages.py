@@ -13,6 +13,7 @@ from api_server.shared import (
     app,
     db,
     theater_manager,
+    theater_repository,
     get_current_user_async,
     _require_canvas_access,
     _require_canvas_access_async,
@@ -176,6 +177,7 @@ def read_credit_gift(token: str):
     """Serve the landing page for a single-use credit gift link."""
     return render_page_template("gift.html", active_page="")
 
+
 @app.get("/about", response_class=HTMLResponse)
 def read_about():
     """Serve the About page from the repository's ABOUT.md source."""
@@ -236,7 +238,7 @@ async def read_obs_canvas(
             return response
         theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
-            db.reconstruct_theater_from_db(theater_id, theater_dir)
+            theater_repository.reconstruct_theater(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -272,7 +274,7 @@ async def read_canvas(
 
         theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
-            db.reconstruct_theater_from_db(theater_id, theater_dir)
+            theater_repository.reconstruct_theater(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 

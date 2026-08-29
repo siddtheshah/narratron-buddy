@@ -48,18 +48,20 @@ def test_canvas_with_verified_join_key_redirects_and_grants_cookie():
     grant.assert_called_once_with(response, request, "stage", "JOIN")
 
 
-def test_canvas_reconstructs_missing_theater_using_registry_database(tmp_path):
+def test_canvas_reconstructs_missing_theater_using_theater_repository(tmp_path):
     theater = MagicMock()
     theater.directory.return_value = tmp_path / "missing"
     manager = MagicMock()
     manager.theater.return_value = theater
+    mock_repo = MagicMock()
+    mock_repo.reconstruct_theater.return_value = True
     registry_db = MagicMock()
     registry_db.record_theater_view_async = AsyncMock()
     request = SimpleNamespace(query_params={}, client=None)
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
-    with patch.object(pages, "theater_manager", manager), patch.object(pages, "db", registry_db), patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
+    with patch.object(pages, "theater_manager", manager), patch.object(pages, "theater_repository", mock_repo), patch.object(pages, "db", registry_db), patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
         __import__("asyncio").run(pages.read_canvas(request, "stage"))
-    registry_db.reconstruct_theater_from_db.assert_called_once_with("stage", theater.directory.return_value)
+    mock_repo.reconstruct_theater.assert_called_once_with("stage", theater.directory.return_value)
 
 
 def test_narratron_avatar_endpoint():

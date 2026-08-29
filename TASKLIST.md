@@ -18,6 +18,7 @@
 
 ## Refactors
 - [ ] Refactor canvas.html to be more modular.
+- [x] Theater repository instead of storing theaters in the database.
 
 ## Performance
 - [ ] Add database and request observability before and after optimization.

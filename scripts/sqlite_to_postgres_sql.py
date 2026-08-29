@@ -15,7 +15,6 @@ TABLES = (
     "auth_sessions",
     "canvas_deployments",
     "exported_theaters",
-    "exported_theater_images",
     "theater_views",
     "payment_transactions",
     "usage_events",
@@ -26,7 +25,7 @@ BOOLEAN_COLUMNS = {
     ("canvas_deployments", "is_persistent"),
     ("password_reset_tokens", "used"),
 }
-IDENTITY_TABLES = ("users", "exported_theater_images", "theater_views", "payment_transactions")
+IDENTITY_TABLES = ("users", "theater_views", "payment_transactions")
 
 
 def sql_value(value, is_boolean: bool = False) -> str:

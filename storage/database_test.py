@@ -384,7 +384,7 @@ class TestUserManagementAndAuth(BaseTestCase):
             conn.cursor().execute("UPDATE canvas_deployments SET active_orator_id = ? WHERE theater_id = ?", (user_a["id"], "theater_b"))
 
         # 3. Exported theaters & images
-        self.db.export_theater_to_db("theater_exp", {"name": "exp"}, [{"filename": "img1.png", "category": "bg", "data": b"123"}], user_id=user_a["id"])
+        self.db.update_theater_name("theater_exp", "exp", user_id=user_a["id"])
 
         # 4. Theater views
         self.db.record_theater_view("theater_view_1", user_id=user_a["id"])
@@ -422,10 +422,11 @@ class TestUserManagementAndAuth(BaseTestCase):
             self.assertIsNone(row["active_orator_id"])
 
             # Exported theater should have user_id SET NULL
-            cursor.execute("SELECT user_id FROM exported_theaters WHERE theater_id = 'theater_exp'")
+            cursor.execute("SELECT user_id, name FROM exported_theaters WHERE theater_id = 'theater_exp'")
             row = cursor.fetchone()
             self.assertIsNotNone(row)
             self.assertIsNone(row["user_id"])
+            self.assertEqual(row["name"], "exp")
 
             # Theater views should have user_id SET NULL
             cursor.execute("SELECT user_id FROM theater_views WHERE theater_id = 'theater_view_1'")
@@ -593,13 +594,7 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         other_user = self.db.register_user("otherdepuser", "other-dep@test.com", "Pass12345")
         self.db.record_deployment("my_theater", self.user["id"], "MY-KEY")
         self.db.record_deployment("other_theater", other_user["id"], "OTHER-KEY")
-        self.db.export_theater_to_db(
-            "my_theater",
-            {"metadata": {"theater_id": "my_theater", "name": "My Theater", "status": "stopped"}},
-            [],
-            user_id=self.user["id"],
-            name="My Theater",
-        )
+        self.db.update_theater_name("my_theater", "My Theater")
 
         records = self.db.get_user_theater_records(self.user["id"])
 
@@ -876,124 +871,13 @@ class TestTheaterExportAndReconstruction(BaseTestCase):
 
     def test_get_all_exported_theater_ids(self):
         self.db.record_deployment("theater_in_deployments", self.user["id"], "KEY-1")
-        self.db.export_theater_to_db("theater_in_exports", {}, [], user_id=self.user["id"])
+        self.db.record_deployment("theater_in_exports", self.user["id"], "KEY-2")
 
         ids = self.db.get_all_exported_theater_ids()
         self.assertIn("theater_in_deployments", ids)
         self.assertIn("theater_in_exports", ids)
-
-    def test_get_theater_metadata_from_db_missing_and_fallback(self):
-        # Non-existent theater
-        self.assertIsNone(self.db.get_theater_metadata_from_db("missing_theater"))
-
-        # Deployment exists, but no exported_theaters record -> fallback metadata dict
-        self.db.record_deployment("dep_only_theater", self.user["id"], "KEY-DEP")
-        meta = self.db.get_theater_metadata_from_db("dep_only_theater")
-        self.assertIsNotNone(meta)
-        self.assertEqual(meta["theater_id"], "dep_only_theater")
-        self.assertEqual(meta["join_key"], "KEY-DEP")
-
-    def test_get_theater_metadata_from_db_normalizes_legacy_canvas_only_state(self):
-        self.db.export_theater_to_db(
-            "legacy_canvas_theater",
-            {"canvas_state": {"chat_messages": []}},
-            [],
-            user_id=self.user["id"],
-            name="Legacy Canvas",
-        )
-
-        meta = self.db.get_theater_metadata_from_db("legacy_canvas_theater")
-
-        self.assertEqual(meta["theater_id"], "legacy_canvas_theater")
-        self.assertEqual(meta["name"], "Legacy Canvas")
-
-    def test_reconstruct_theater_from_db_non_existent(self):
-        target_dir = Path(self.temp_dir.name) / "non_existent_recon"
-        self.assertFalse(self.db.reconstruct_theater_from_db("ghost_theater", target_dir))
-
-    def test_reconstruct_theater_with_legacy_file_unlinking_and_categories(self):
-        theater_id = "recon_category_theater"
-        state_data = {
-            "metadata": {"name": "Category Theater", "join_key": "KEY-CAT"},
-            "shown_image_prompt": "Prompt test"
-        }
-        images = [
-            {"filename": "out1.png", "category": "output", "data": b"OUT_DATA"},
-            {"filename": "ref1.jpg", "category": "references", "data": b"REF_DATA"},
-            {"filename": "custom.txt", "category": "custom_cat", "data": b"CUSTOM_DATA"},
-            {"filename": "chat.json", "category": "chats/room1", "data": b"CHAT_DATA"},
-        ]
-        self.db.export_theater_to_db(theater_id, state_data, images, user_id=self.user["id"])
-
-        recon_dir = Path(self.temp_dir.name) / "recon_cat"
-        recon_dir.mkdir(parents=True, exist_ok=True)
-        legacy_file = recon_dir / "theater_state.json"
-        legacy_file.write_text("{}", encoding="utf-8")
-
-        res = self.db.reconstruct_theater_from_db(theater_id, recon_dir)
-        self.assertTrue(res)
-
-        # Legacy file should have been unlinked
-        self.assertFalse(legacy_file.exists())
-
-        # theater.json created
-        self.assertTrue((recon_dir / "theater.json").exists())
-
-        # Category files placed correctly
-        self.assertTrue((recon_dir / "output" / "out1.png").exists())
-        self.assertTrue((recon_dir / "references" / "ref1.jpg").exists())
-        self.assertTrue((recon_dir / "custom_cat" / "custom.txt").exists())
-        self.assertTrue((recon_dir / "chats" / "room1" / "chat.json").exists())
-
-
 class TestDatabaseDaemonLogic(BaseTestCase):
     """Test edge cases in DatabaseDaemon / run_database_daemon logic."""
-
-    def setUp(self):
-        super().setUp()
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_file = Path(self.temp_dir.name) / "test_daemon.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
-        self.user = self.db.register_user("daemonuser", "daemon@test.com", "Pass12345")
-
-    def tearDown(self):
-        self.db.close()
-        try:
-            self.temp_dir.cleanup()
-        except Exception:
-            pass
-        super().tearDown()
-
-    def test_run_database_daemon_with_naive_datetime_and_theater_manager(self):
-        now_naive = datetime.datetime.now()
-
-        # Non-persistent theater older than 1 hour
-        old_time = (now_naive - datetime.timedelta(hours=5)).isoformat()
-        self.db.record_deployment("daemon_temp_theater", self.user["id"], "KEY-T")
-        with self.db._get_connection() as conn:
-            conn.cursor().execute(
-                "UPDATE canvas_deployments SET created_at = ? WHERE theater_id = ?",
-                (old_time, "daemon_temp_theater")
-            )
-            conn.commit()
-
-        mock_deployer = MagicMock()
-        mock_deployer.destroy_theater.side_effect = Exception("File locked error")
-
-        # Running database daemon with naive current_time and mock theater manager.
-        res = self.db.storage_daemon(
-            theater_manager=mock_deployer,
-            ttl_seconds=3600.0,
-            hourly_cost=1.0,
-            current_time=now_naive
-        )
-
-        self.assertIn("daemon_temp_theater", res["cleaned_up_sessions"])
-        mock_deployer.destroy_theater.assert_called_once_with("daemon_temp_theater")
-
-
-class TestCreditGiftExpiry(BaseTestCase):
-    """Credit gift expiry and balance-transfer coverage."""
 
     def setUp(self):
         super().setUp()
@@ -1080,24 +964,7 @@ class TestAsyncDatabaseMethods(BaseTestCase):
             self.assertEqual(usage_res["total_voice_minutes"], 5.0)
             self.assertEqual(usage_res["total_images_created"], 2)
 
-            # export_theater_to_db_async
-            exp_ok = await self.db.export_theater_to_db_async("async_theater", {"prompt": "test"}, [], user_id=user["id"])
-            self.assertTrue(exp_ok)
-
-            # persist_canvas_theater_async
-            mock_canvas_states = {
-                "async_theater": MagicMock(export_theater_data=MagicMock(return_value=({"prompt": "p"}, [])))
-            }
-            mock_deployer = MagicMock()
-            mock_deployer.theater.return_value.directory.return_value = Path(self.temp_dir.name)
-            persist_ok = await self.db.persist_canvas_theater_async(
-                canvas_states=mock_canvas_states,
-                theater_manager=mock_deployer,
-                theater_id="async_theater",
-                user_id=user["id"],
-                name="Async Theater"
-            )
-            self.assertTrue(persist_ok)
+# async theater internals now in theater_repository
 
             # invalidate_session_token_async
             inval_ok = await self.db.invalidate_session_token_async(token)

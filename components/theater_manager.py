@@ -21,28 +21,7 @@ MAX_ZIP_BYTES = 10 * 1024 * 1024
 LORE_TEXT_EXTENSION = ".txt"
 MAX_LORE_DOCUMENT_BYTES = 256 * 1024
 
-
-flags.DEFINE_boolean(
-    "use_cloud_theater_storage",
-    False,
-    "Store theater files under /mnt/storage/theaters instead of the workspace theaters directory.",
-)
-
-FLAGS = flags.FLAGS
-
-
-def get_theaters_root() -> Path:
-    """Return the theater-data root for the selected runtime environment."""
-    if FLAGS["use_cloud_theater_storage"].value:
-        return Path("/mnt/storage/theaters")
-    return Path(__file__).parent.parent / "theaters"
-
-
-def ensure_theaters_root() -> Path:
-    """Return and create the selected theater-data root."""
-    theaters_root = get_theaters_root().resolve()
-    theaters_root.mkdir(parents=True, exist_ok=True)
-    return theaters_root
+from storage.theater_repository import ensure_theaters_root, get_theaters_root
 
 
 class TheaterMetadata(BaseModel):

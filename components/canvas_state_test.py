@@ -188,7 +188,7 @@ class TestCanvasStateManager(BaseTestCase):
         latest_state = manager.get_latest_state()
         self.assertFalse(latest_state.get("doodles_enabled"))
 
-        exported_state, _ = manager.export_theater_data()
+        exported_state, _ = manager.save_local_theater_data()
         self.assertFalse(exported_state["canvas_state"]["doodles_enabled"])
         self.assertFalse(exported_state["canvas_state"]["viewer_collab_enabled"])
 
