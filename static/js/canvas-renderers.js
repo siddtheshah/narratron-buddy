@@ -3,7 +3,15 @@ import {
     IMAGE_EFFECTS,
     IMAGE_EFFECT_DEFAULT_INTENSITIES,
 } from "/static/js/image-effects.js?v=effects-20260811-2";
-import { layerTransform } from "/static/js/animation-effects.js";
+import {
+    layerTransform,
+    layerOpacity,
+    layerHaloParams,
+    layerPieceFilter,
+    layerReflectiveDraw,
+    isMeshDistortionEffect,
+    calculateMeshGrid,
+} from "/static/js/animation-effects.js";
 
 /**
  * Draws generated images to a canvas, including transitions and image effects.
@@ -336,28 +344,8 @@ export function createImageRenderer({
         };
 
         const drawMeshDistortion = (ctx, sourceImage, drawWidth, drawHeight, phase, amplitude = 1.0, centroid = null, mode = "twist") => {
-            const W = drawWidth, H = drawHeight;
-            const localCx = -W / 2 + (centroid?.cx ?? 0.5) * W;
-            const localCy = mode === "sway" ? H / 2 : -H / 2 + (centroid?.cy ?? 0.5) * H;
-            const Rmax = Math.max(1, (centroid?.maxRadiusRatio ?? 0.707) * Math.max(W, H));
-            const GRID = 12;
-            const majorDim = Math.max(W, H);
-            const refDim = 350;
-            const dimDamping = Math.max(0.25, refDim / Math.max(refDim, majorDim));
-            const torque = Math.sin(phase * 2.0) * (amplitude * 0.45) * dimDamping;
-            const vertices = [];
-            for (let j = 0; j <= GRID; j++) {
-                const row = []; const v = j / GRID; const y0 = -H / 2 + v * H;
-                for (let i = 0; i <= GRID; i++) {
-                    const u = i / GRID; const x0 = -W / 2 + u * W;
-                    const dx = x0 - localCx, dy = y0 - localCy;
-                    const r = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
-                    const dTheta = (mode === "bend" || mode === "sway") ? torque * (dy / Rmax) : torque * (r / Rmax);
-                    const newAngle = angle + dTheta;
-                    row.push({ u, v, x: localCx + r * Math.cos(newAngle), y: localCy + r * Math.sin(newAngle) });
-                }
-                vertices.push(row);
-            }
+            const vertices = calculateMeshGrid(drawWidth, drawHeight, phase, amplitude, centroid, mode);
+            const GRID = vertices.length - 1;
             const drawTriangle = (p0, p1, p2) => {
                 const sx0 = p0.u * sourceImage.naturalWidth, sy0 = p0.v * sourceImage.naturalHeight;
                 const sx1 = p1.u * sourceImage.naturalWidth, sy1 = p1.v * sourceImage.naturalHeight;
@@ -391,15 +379,30 @@ export function createImageRenderer({
             const cx = width / 2, cy = height / 2, phase = ((now - start) / 1000) * (layer.speed || 1.0);
             const transform = layerTransform(layer.effect, phase);
             const amp = layer.amplitude ?? 1.0;
+            const halo = layerHaloParams(layer.effect, phase, amp, layer.opacity !== undefined ? layer.opacity : 1.0);
+            if (halo) {
+                context.save();
+                context.globalAlpha = halo.haloAlpha;
+                context.translate(cx + transform.x * amp, cy + transform.y * amp);
+                context.rotate(transform.rotation * amp);
+                context.scale(transform.scale * halo.haloScale, transform.scale * halo.haloScale);
+                context.filter = halo.haloFilter;
+                context.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+                context.restore();
+            }
             context.save();
-            if (layer.opacity !== undefined) context.globalAlpha = layer.opacity;
+            context.globalAlpha = layerOpacity(layer.effect, phase, layer.opacity !== undefined ? layer.opacity : 1.0);
             context.translate(cx + transform.x * amp, cy + transform.y * amp);
             context.rotate(transform.rotation * amp);
             context.scale(transform.scale, transform.scale);
-            if (layer.effect === "twist" || layer.effect === "bend" || layer.effect === "sway") {
+            const pieceFilter = layerPieceFilter(layer.effect, phase);
+            if (pieceFilter !== "none") {
+                context.filter = pieceFilter;
+            }
+            if (isMeshDistortionEffect(layer.effect)) {
                 const centroid = computeImageCentroid(source);
                 drawMeshDistortion(context, source, drawWidth, drawHeight, phase, amp, centroid, layer.effect);
-            } else {
+            } else if (!layerReflectiveDraw(layer.effect, phase, context, source, drawWidth, drawHeight)) {
                 context.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
             }
             context.restore();

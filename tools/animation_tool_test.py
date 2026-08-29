@@ -217,6 +217,113 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animation["layers"][-1]["effect"], "sway")
 
     @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_uses_halo_effects(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="base", model="base-model"
+        )
+        layered_provider = MagicMock()
+        layered_provider.model = "fal-ai/qwen-image-layered"
+        layered_provider.decompose.return_value = LayeredImageResult(
+            images=[(fake_image_bytes(), "image/png")] * 3, request_id="qwen-2", usage={"seed": 12}
+        )
+        planning_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "layered", "reasoning": "energetic aura"}, provider="p", model="m", request_id="1", usage={})
+        layered_resp = MagicMock(
+            parsed={
+                "background": {"description": "dark obsidian cave", "effect": "none"},
+                "subject": {"description": "glowing magic staff", "effect": "light_halo"},
+                "foreground": {"description": "shadowy mist", "effect": "dark_halo"},
+            },
+            provider="planner", model="planner-model", request_id="planner-2", usage={"tokens": 30}
+        )
+        planning_provider.generate.side_effect = [technique_resp, layered_resp]
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "halo_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+
+        result = tools.create_animation("A magic staff glowing inside an obsidian cave.", "halo_staff")
+        tools.join_generation()
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        self.assertIn("Playing layered animation", tools.play_animation(animation_id))
+        animation = canvas_state_service.latest_state("halo_canvas")["animation"]
+        self.assertEqual(animation["type"], "layered")
+        self.assertEqual(animation["layers"][1]["effect"], "light_halo")
+        self.assertEqual(animation["layers"][2]["effect"], "dark_halo")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_uses_ghostly_effect(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="base", model="base-model"
+        )
+        layered_provider = MagicMock()
+        layered_provider.model = "fal-ai/qwen-image-layered"
+        layered_provider.decompose.return_value = LayeredImageResult(
+            images=[(fake_image_bytes(), "image/png")] * 3, request_id="qwen-3", usage={"seed": 15}
+        )
+        planning_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "layered", "reasoning": "ethereal apparition"}, provider="p", model="m", request_id="1", usage={})
+        layered_resp = MagicMock(
+            parsed={
+                "background": {"description": "haunted graveyard", "effect": "none"},
+                "subject": {"description": "phantom phantom apparition", "effect": "ghostly"},
+            },
+            provider="planner", model="planner-model", request_id="planner-3", usage={"tokens": 25}
+        )
+        planning_provider.generate.side_effect = [technique_resp, layered_resp]
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "ghostly_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+
+        result = tools.create_animation("A phantom apparition in a haunted graveyard.", "ghost_scene")
+        tools.join_generation()
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        self.assertIn("Playing layered animation", tools.play_animation(animation_id))
+        animation = canvas_state_service.latest_state("ghostly_canvas")["animation"]
+        self.assertEqual(animation["type"], "layered")
+        self.assertEqual(animation["layers"][1]["effect"], "ghostly")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_uses_reflective_effect(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="base", model="base-model"
+        )
+        layered_provider = MagicMock()
+        layered_provider.model = "fal-ai/qwen-image-layered"
+        layered_provider.decompose.return_value = LayeredImageResult(
+            images=[(fake_image_bytes(), "image/png")] * 3, request_id="qwen-4", usage={"seed": 20}
+        )
+        planning_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "layered", "reasoning": "shiny metallic surface"}, provider="p", model="m", request_id="1", usage={})
+        layered_resp = MagicMock(
+            parsed={
+                "background": {"description": "armory wall", "effect": "none"},
+                "subject": {"description": "polished steel shield", "effect": "reflective"},
+            },
+            provider="planner", model="planner-model", request_id="planner-4", usage={"tokens": 20}
+        )
+        planning_provider.generate.side_effect = [technique_resp, layered_resp]
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "reflective_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+
+        result = tools.create_animation("A polished steel shield hanging on an armory wall.", "shiny_shield")
+        tools.join_generation()
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        self.assertIn("Playing layered animation", tools.play_animation(animation_id))
+        animation = canvas_state_service.latest_state("reflective_canvas")["animation"]
+        self.assertEqual(animation["type"], "layered")
+        self.assertEqual(animation["layers"][1]["effect"], "reflective")
+
+    @patch("tools.image_tool.get_image_provider")
     def test_create_triframe_animation_outputs_triframe_json(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(

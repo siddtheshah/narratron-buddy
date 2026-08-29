@@ -395,7 +395,15 @@
   </main>
 
   <script type="module">
-    import { layerTransform } from '/effects-static/js/animation-effects.js';
+    import {
+      layerTransform,
+      layerOpacity,
+      layerHaloParams,
+      layerPieceFilter,
+      layerReflectiveDraw,
+      isMeshDistortionEffect,
+      calculateMeshGrid,
+    } from '/effects-static/js/animation-effects.js';
 
     let catalog = { pieces: [], effects: [], presets: [] };
     let layers = [];
@@ -543,7 +551,7 @@
 
         const availableEffects = (catalog.effects && catalog.effects.length > 0)
           ? catalog.effects.map(e => e.id)
-          : ['none', 'sway', 'gentle_rocking', 'vibrate', 'pulse', 'twist', 'bend'];
+          : ['none', 'sway', 'gentle_rocking', 'vibrate', 'pulse', 'twist', 'bend', 'light_halo', 'dark_halo', 'ghostly', 'reflective'];
 
         const effectOptions = availableEffects.map(ef =>
           `<option value="${ef}" ${ef === layer.effect ? 'selected' : ''}>${ef.toUpperCase()}</option>`
@@ -711,28 +719,8 @@
     }
 
     function drawMeshDistortion(context, sourceImage, drawWidth, drawHeight, phase, amplitude = 1.0, centroid = null, mode = 'twist') {
-      const W = drawWidth, H = drawHeight;
-      const localCx = -W / 2 + (centroid?.cx ?? 0.5) * W;
-      const localCy = mode === 'sway' ? H / 2 : -H / 2 + (centroid?.cy ?? 0.5) * H;
-      const Rmax = Math.max(1, (centroid?.maxRadiusRatio ?? 0.707) * Math.max(W, H));
-      const GRID = 12;
-      const majorDim = Math.max(W, H);
-      const refDim = 350;
-      const dimDamping = Math.max(0.25, refDim / Math.max(refDim, majorDim));
-      const torque = Math.sin(phase * 2.0) * (amplitude * 0.45) * dimDamping;
-      const vertices = [];
-      for (let j = 0; j <= GRID; j++) {
-        const row = []; const v = j / GRID; const y0 = -H / 2 + v * H;
-        for (let i = 0; i <= GRID; i++) {
-          const u = i / GRID; const x0 = -W / 2 + u * W;
-          const dx = x0 - localCx, dy = y0 - localCy;
-          const r = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
-          const dTheta = (mode === 'bend' || mode === 'sway') ? torque * (dy / Rmax) : torque * (r / Rmax);
-          const newAngle = angle + dTheta;
-          row.push({ u, v, x: localCx + r * Math.cos(newAngle), y: localCy + r * Math.sin(newAngle) });
-        }
-        vertices.push(row);
-      }
+      const vertices = calculateMeshGrid(drawWidth, drawHeight, phase, amplitude, centroid, mode);
+      const GRID = vertices.length - 1;
       const drawTriangle = (p0, p1, p2) => {
         const sx0 = p0.u * sourceImage.naturalWidth, sy0 = p0.v * sourceImage.naturalHeight;
         const sx1 = p1.u * sourceImage.naturalWidth, sy1 = p1.v * sourceImage.naturalHeight;
@@ -803,15 +791,31 @@
         const rotation = rawTransform.rotation * layer.amplitude + (layer.rotation * Math.PI / 180);
         const scaleMod = 1 + (rawTransform.scale - 1) * layer.amplitude;
 
+        const halo = layerHaloParams(layer.effect, effectiveTime, layer.amplitude, layer.opacity);
+        if (halo) {
+          ctx.save();
+          ctx.globalAlpha = halo.haloAlpha;
+          ctx.translate(cx + x, cy + y);
+          ctx.rotate(rotation);
+          ctx.scale(scaleMod * halo.haloScale, scaleMod * halo.haloScale);
+          ctx.filter = halo.haloFilter;
+          ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+          ctx.restore();
+        }
+
         ctx.save();
-        ctx.globalAlpha = layer.opacity;
+        ctx.globalAlpha = layerOpacity(layer.effect, effectiveTime, layer.opacity);
         ctx.translate(cx + x, cy + y);
         ctx.rotate(rotation);
         ctx.scale(scaleMod, scaleMod);
-        if (layer.effect === 'twist' || layer.effect === 'bend' || layer.effect === 'sway') {
+        const pieceFilter = layerPieceFilter(layer.effect, effectiveTime);
+        if (pieceFilter !== 'none') {
+          ctx.filter = pieceFilter;
+        }
+        if (isMeshDistortionEffect(layer.effect)) {
           const centroid = computeImageCentroid(source);
           drawMeshDistortion(ctx, source, drawWidth, drawHeight, effectiveTime, layer.amplitude, centroid, layer.effect);
-        } else {
+        } else if (!layerReflectiveDraw(layer.effect, effectiveTime, ctx, source, drawWidth, drawHeight)) {
           ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
         }
         ctx.restore();

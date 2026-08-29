@@ -24,12 +24,20 @@ def test_get_layered_animation_catalog_returns_effects_and_presets():
     assert "image_effects" in catalog
     assert "presets" in catalog
     effect_ids = {e["id"] for e in catalog["effects"]}
-    assert {"none", "sway", "gentle_rocking", "vibrate", "pulse", "twist", "bend"}.issubset(effect_ids)
+    assert {"none", "sway", "gentle_rocking", "vibrate", "pulse", "twist", "bend", "light_halo", "dark_halo", "ghostly", "reflective"}.issubset(effect_ids)
     sway_entry = next(e for e in catalog["effects"] if e["id"] == "sway")
     assert sway_entry["name"] == "Sway (Foliage Bending)"
     assert "Bottom-anchored" in sway_entry["description"]
     rocking_entry = next(e for e in catalog["effects"] if e["id"] == "gentle_rocking")
     assert rocking_entry["name"] == "Gentle Rocking"
+    light_halo_entry = next(e for e in catalog["effects"] if e["id"] == "light_halo")
+    assert light_halo_entry["name"] == "Light Halo"
+    dark_halo_entry = next(e for e in catalog["effects"] if e["id"] == "dark_halo")
+    assert dark_halo_entry["name"] == "Dark Halo"
+    ghostly_entry = next(e for e in catalog["effects"] if e["id"] == "ghostly")
+    assert ghostly_entry["name"] == "Ghostly"
+    reflective_entry = next(e for e in catalog["effects"] if e["id"] == "reflective")
+    assert reflective_entry["name"] == "Reflective (Light Sheen)"
 
 
 def test_layered_animation_lab_routes():

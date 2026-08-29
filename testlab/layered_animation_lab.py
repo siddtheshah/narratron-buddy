@@ -49,9 +49,13 @@ def get_layered_animation_catalog() -> dict[str, Any]:
         {"id": "sway", "name": "Sway (Foliage Bending)", "description": "Bottom-anchored bending curvature distorting around bottom of bounding box"},
         {"id": "gentle_rocking", "name": "Gentle Rocking", "description": "Gentle rotational oscillation wave"},
         {"id": "vibrate", "name": "Vibrate", "description": "Rapid high-frequency jitter motion"},
-        {"id": "pulse", "name": "Pulse", "description": "Subtle expanding and contracting scale pulse"},
+        {"id": "pulse", "name": "Pulse", "description": "Subtle expanding and contracting scale pulse, like for heartbeats."},
         {"id": "twist", "name": "Twist (S-Curve)", "description": "Radially proportional torque distorting around centroid (opposite ends curve opposite)"},
         {"id": "bend", "name": "Bend (C-Curve)", "description": "Synchronous same-direction curvature distorting around centroid"},
+        {"id": "light_halo", "name": "Light Halo", "description": "Pulsing bright translucent aura around image piece"},
+        {"id": "dark_halo", "name": "Dark Halo", "description": "Pulsing dark translucent aura around image piece"},
+        {"id": "ghostly", "name": "Ghostly", "description": "Ethereal fading in and out transparency cycle"},
+        {"id": "reflective", "name": "Reflective (Light Sheen)", "description": "Sweeping reflective sheen trace over image piece"},
     ]
 
     image_effects = [

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class AnimationLayer(BaseModel):
     description: str = Field(min_length=3, max_length=300)
-    effect: str = Field(pattern="^(none|sway|vibrate|pulse|twist|bend|gentle_rocking)$")
+    effect: str = Field(pattern="^(none|sway|vibrate|pulse|twist|bend|gentle_rocking|light_halo|dark_halo|ghostly|reflective)$")
 
 
 class AnimationLayerPlanResponse(BaseModel):
@@ -55,7 +55,7 @@ ANIMATION_LAYER_PLAN_JSON_SCHEMA = {
             "type": "object",
             "properties": {
                 "description": {"type": "string", "minLength": 3, "maxLength": 180},
-                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "pulse", "twist", "bend", "gentle_rocking"]},
+                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "pulse", "twist", "bend", "gentle_rocking", "light_halo", "dark_halo", "ghostly", "reflective"]},
             },
             "required": ["description", "effect"],
             "additionalProperties": False,
@@ -447,7 +447,7 @@ class AnimationTools(BaseTools):
                     "BACKGROUND: combine the entire static environment behind the focal subject into one layer—never split it into sky, coast, sea, terrain, buildings, or lighting layers. Its effect must be none. "
                     "SUBJECT: the single focal character, creature, vehicle, or landmark, including attached parts and immediately associated light. Do not make a second subject layer. "
                     "FOREGROUND: only close-to-camera objects that visibly overlap or frame the subject, such as leaves, grass, smoke, rain, or nearby waves; otherwise use null. "
-                    "Use effect=none for fixed content; sway for foliage; gentle_rocking for airborne objects; vibrate for rumbling objects; pulse for important objects; bend if the subject layer features heroic dynamic action by a character; twist for rotating or swirling cyclical motion around centroid. "
+                    "Use effect=none for fixed content; sway for foliage; gentle_rocking for airborne objects; vibrate for rumbling objects; pulse for important objects; bend if the subject layer features heroic dynamic action by a character; twist for rotating or swirling cyclical motion around centroid; light_halo or dark_halo for a pulsing energetic aura around an image piece (brightened or darkened respectively); ghostly for fading in and out transparent/ethereal layers; reflective for metallic, glass, or polished surfaces with a sweeping light trace sheen. "
                     "Do not invent scene elements. Return JSON only.\n\n"
                     f"Scene prompt:\n{scene_prompt}"),
             temperature=0.1, max_output_tokens=512,
