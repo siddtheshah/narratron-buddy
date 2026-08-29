@@ -28,9 +28,9 @@ FLAGS = flags.FLAGS
 
 def get_ephemeral_root() -> Path:
     """Return the ephemeral theater workspace root for the active runtime."""
-    if "use_cloud_theater_storage" in FLAGS and FLAGS["use_cloud_theater_storage"].value:
-        return Path("/tmp/ephemeral")
-    return Path(__file__).parent.parent / "ephemeral"
+    if "testing_use_local" in FLAGS and FLAGS["testing_use_local"].value:
+        return Path(__file__).parent.parent / "ephemeral"
+    return Path("/tmp/ephemeral")
 
 
 def ensure_ephemeral_root() -> Path:

@@ -25,7 +25,7 @@ class TestTheaterAPI(BaseTestCase):
     def setUp(self):
         super().setUp()
         FLAGS.allow_mock_payments = True
-        FLAGS.testing_use_local_database = True
+        FLAGS.testing_use_local = True
         self._original_db_is_live = db.is_live
         self._original_db_path = db.db_path
         self.test_dir = tempfile.mkdtemp()
@@ -40,7 +40,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def tearDown(self):
         FLAGS.allow_mock_payments = False
-        FLAGS.testing_use_local_database = False
+        FLAGS.testing_use_local = False
         db.close()
         db.is_live = self._original_db_is_live
         db.db_path = self._original_db_path
@@ -733,10 +733,10 @@ class TestTheaterAPI(BaseTestCase):
 
         # 8. Service unavailable when gateway unconfigured
         orig_key = os.environ.pop("STRIPE_SECRET_KEY", None)
-        orig_local_db_flag = FLAGS.testing_use_local_database
+        orig_local_db_flag = FLAGS.testing_use_local
         try:
             FLAGS.allow_mock_payments = False
-            FLAGS.testing_use_local_database = False
+            FLAGS.testing_use_local = False
             unavail_res = self.client.post("/api/payments/buy-credits", json={
                 "package_id": "starter",
                 "card_number": "4242424242424242",
@@ -746,7 +746,7 @@ class TestTheaterAPI(BaseTestCase):
             self.assertEqual(unavail_res.status_code, 503)
             self.assertEqual(unavail_res.json()["detail"], "Payment service unavailable")
         finally:
-            FLAGS.testing_use_local_database = orig_local_db_flag
+            FLAGS.testing_use_local = orig_local_db_flag
             if orig_key is not None:
                 os.environ["STRIPE_SECRET_KEY"] = orig_key
 

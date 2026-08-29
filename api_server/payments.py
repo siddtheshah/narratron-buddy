@@ -52,7 +52,7 @@ def _is_mock_payment_mode(payment_method: Optional[str] = None) -> bool:
     """Allow simulated payment only when an explicit test flag enables it."""
     if getattr(FLAGS, "allow_mock_payments", False):
         return True
-    if getattr(FLAGS, "testing_use_local_database", False):
+    if getattr(FLAGS, "testing_use_local", False):
         return True
     return False
 
@@ -111,7 +111,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
                 raise HTTPException(status_code=400, detail="Invalid CVV / CVC code (must be 3 or 4 digits).")
 
             stripe_key = os.getenv("STRIPE_SECRET_KEY")
-            allow_mock = bool(FLAGS.allow_mock_payments) or bool(FLAGS.testing_use_local_database)
+            allow_mock = bool(FLAGS.allow_mock_payments) or bool(FLAGS.testing_use_local)
 
             if not stripe_key and not allow_mock:
                 raise HTTPException(status_code=503, detail="Payment service unavailable")

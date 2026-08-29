@@ -36,6 +36,7 @@ class RegistryDependency:
 
 
 FLAGS = RegistryDependency("FLAGS")
+adventure_service = RegistryDependency("adventure_service")
 agent_manager = RegistryDependency("agent_manager")
 canvas_states = RegistryDependency("canvas_states")
 db = RegistryDependency("db")

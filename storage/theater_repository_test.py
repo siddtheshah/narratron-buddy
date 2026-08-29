@@ -9,15 +9,15 @@ from storage.theater_repository import TheaterRepository, ensure_theaters_root, 
 
 
 class TestTheaterRootSelection(unittest.TestCase):
-    def test_local_root_defaults_to_workspace_theaters_directory(self):
+    def test_cloud_root_defaults_to_mnt_storage_theaters(self):
+        self.assertEqual(get_theaters_root(), Path("/mnt/storage/theaters"))
+
+    @flagsaver.flagsaver(testing_use_local=True)
+    def test_local_root_uses_workspace_theaters_directory(self):
         self.assertEqual(
             get_theaters_root().resolve(),
             (Path(__file__).parent.parent / "theaters").resolve(),
         )
-
-    @flagsaver.flagsaver(use_cloud_theater_storage=True)
-    def test_cloud_root_uses_tmp_theaters(self):
-        self.assertEqual(get_theaters_root(), Path("/mnt/storage/theaters"))
 
 
 class TheaterRepositoryTest(unittest.TestCase):

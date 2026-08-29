@@ -18,15 +18,15 @@ from components.theater_manager import (
 
 
 class TestTheaterRootSelection(unittest.TestCase):
-    def test_local_ephemeral_root_defaults_to_workspace_ephemeral_directory(self):
+    def test_cloud_ephemeral_root_defaults_to_tmp(self):
+        self.assertEqual(get_ephemeral_root(), Path("/tmp/ephemeral"))
+
+    @flagsaver.flagsaver(testing_use_local=True)
+    def test_local_ephemeral_root_uses_workspace_ephemeral_directory(self):
         self.assertEqual(
             get_ephemeral_root().resolve(),
             (Path(__file__).parent.parent / "ephemeral").resolve(),
         )
-
-    @flagsaver.flagsaver(use_cloud_theater_storage=True)
-    def test_cloud_ephemeral_root_uses_tmp(self):
-        self.assertEqual(get_ephemeral_root(), Path("/tmp/ephemeral"))
 
     def test_theater_manager_defaults_to_ephemeral_root(self):
         tm = TheaterManager()

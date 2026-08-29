@@ -13,11 +13,11 @@ from typing import Any, Dict, List, Optional
 
 from absl import flags
 
-if "use_cloud_theater_storage" not in flags.FLAGS:
+if "testing_use_local" not in flags.FLAGS:
     flags.DEFINE_boolean(
-        "use_cloud_theater_storage",
+        "testing_use_local",
         False,
-        "Store theater files under /mnt/storage/theaters instead of the workspace theaters directory.",
+        "Use local resources (database, adventures, theater repository) for testing and development.",
     )
 
 FLAGS = flags.FLAGS
@@ -25,9 +25,9 @@ FLAGS = flags.FLAGS
 
 def get_theaters_root() -> Path:
     """Return the theater-data root for the selected runtime environment."""
-    if FLAGS["use_cloud_theater_storage"].value:
-        return Path("/mnt/storage/theaters")
-    return Path(__file__).parent.parent / "theaters"
+    if "testing_use_local" in FLAGS and FLAGS["testing_use_local"].value:
+        return Path(__file__).parent.parent / "theaters"
+    return Path("/mnt/storage/theaters")
 
 
 def ensure_theaters_root() -> Path:

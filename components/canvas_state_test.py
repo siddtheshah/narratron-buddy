@@ -21,7 +21,9 @@ class RecordingWebSocket:
 class TestCanvasStateManager(BaseTestCase):
     def setUp(self):
         super().setUp()
-        self.theater_manager = TheaterManager()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.theater_manager = TheaterManager(base_theaters_dir=self.temp_dir.name)
 
     def test_canvas_state_manager(self):
         manager = CanvasStateManager(theater_id="test_theater", theater_manager=self.theater_manager)

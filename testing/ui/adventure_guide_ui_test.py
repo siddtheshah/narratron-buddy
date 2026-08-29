@@ -12,7 +12,7 @@ class TestAdventureGuideUI(UITestCase):
     def setUp(self):
         super().setUp()
         FLAGS.allow_mock_payments = True
-        FLAGS.testing_use_local_database = True
+        FLAGS.testing_use_local = True
         theater_manager.base_dir = self.theaters_dir
         self._original_db_is_live = db.is_live
         self._original_db_path = db.db_path
@@ -43,7 +43,7 @@ class TestAdventureGuideUI(UITestCase):
         db.is_live = self._original_db_is_live
         db.db_path = self._original_db_path
         FLAGS.allow_mock_payments = False
-        FLAGS.testing_use_local_database = False
+        FLAGS.testing_use_local = False
         super().tearDown()
 
     def test_canvas_template_contains_adventure_guide_elements(self):

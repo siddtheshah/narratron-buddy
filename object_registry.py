@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
+from services.adventure_service import AdventureService, adventure_service
 from services.agent_manager import AgentSessionManager
 from services.suggestion_service import SuggestionService
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
@@ -34,11 +35,12 @@ flags.DEFINE_boolean(
     False,
     "Use PreloadedInMemoryArtifactService pre-loaded with test artifacts.",
 )
-flags.DEFINE_boolean(
-    "testing_use_local_database",
-    False,
-    "Use local test database.",
-)
+if "testing_use_local" not in flags.FLAGS:
+    flags.DEFINE_boolean(
+        "testing_use_local",
+        False,
+        "Use local resources (database, adventures, theater repository) for testing and development.",
+    )
 flags.DEFINE_boolean(
     "allow_mock_payments",
     False,
@@ -87,7 +89,7 @@ theater_repository = TheaterRepository()
 pricing_controller = PricingController.from_env()
 db = (
     LocalDatabaseManager("deployer.db", pricing_controller=pricing_controller)
-    if FLAGS.testing_use_local_database or "pytest" in sys.modules
+    if FLAGS.testing_use_local or "pytest" in sys.modules
     else CloudPostgresDatabaseManager(
         pricing_controller=pricing_controller,
         connection_timeout=FLAGS.database_connection_timeout_seconds,

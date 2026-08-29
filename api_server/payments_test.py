@@ -19,7 +19,7 @@ class TestPaymentsFlow(BaseTestCase):
     def setUp(self):
         super().setUp()
         FLAGS.allow_mock_payments = True
-        FLAGS.testing_use_local_database = True
+        FLAGS.testing_use_local = True
         self.test_dir = tempfile.mkdtemp()
         theater_manager.base_dir = Path(self.test_dir).resolve()
         theater_manager.base_dir.mkdir(parents=True, exist_ok=True)
@@ -47,12 +47,12 @@ class TestPaymentsFlow(BaseTestCase):
     def test_mock_mode_detection(self):
         """Verify _is_mock_payment_mode returns True under testing flag or mock payment method."""
         self.assertTrue(_is_mock_payment_mode("card_mock"))
-        orig_test_flag = FLAGS.testing_use_local_database
+        orig_test_flag = FLAGS.testing_use_local
         try:
-            FLAGS.testing_use_local_database = True
+            FLAGS.testing_use_local = True
             self.assertTrue(_is_mock_payment_mode("anything"))
         finally:
-            FLAGS.testing_use_local_database = orig_test_flag
+            FLAGS.testing_use_local = orig_test_flag
 
     def test_buy_credits_mock_success(self):
         """Verify buy_credits completes mock purchase and adds user credits."""
@@ -75,7 +75,7 @@ class TestPaymentsFlow(BaseTestCase):
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
              patch("api_server.payments.stripe.checkout.Session.create", return_value=checkout_session) as create:
             FLAGS.allow_mock_payments = False
-            FLAGS.testing_use_local_database = False
+            FLAGS.testing_use_local = False
             response = self.client.post("/api/payments/buy-credits", json={
                 "package_id": "pro", "payment_method": "stripe_checkout",
             })
@@ -124,7 +124,7 @@ class TestPaymentsFlow(BaseTestCase):
     def test_verify_session_credits_a_checkout_session_once(self):
         """A browser retry cannot credit an already-settled Checkout session."""
         FLAGS.allow_mock_payments = False
-        FLAGS.testing_use_local_database = False
+        FLAGS.testing_use_local = False
         user = self.client.get("/api/auth/me").json()["user"]
         starting_credits = user["credits"]
         checkout_session = MagicMock(
@@ -144,7 +144,7 @@ class TestPaymentsFlow(BaseTestCase):
 
     def test_webhook_requires_signature_outside_test_mode(self):
         FLAGS.allow_mock_payments = False
-        FLAGS.testing_use_local_database = False
+        FLAGS.testing_use_local = False
         response = self.client.post("/api/payments/webhook", json={"type": "checkout.session.completed"})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Stripe webhook signature is required.")

@@ -47,4 +47,4 @@ COPY reference_library/ reference_library/
 EXPOSE 8080
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
-CMD ["sh", "-c", "python main.py --use_cloud_theater_storage --host=0.0.0.0 --port=8080"]
+CMD ["sh", "-c", "python main.py --host=0.0.0.0 --port=8080"]
