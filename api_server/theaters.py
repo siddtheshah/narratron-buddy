@@ -376,6 +376,9 @@ async def create_and_deploy_theater(request: Request):
     creation_mode = str(form.get("creation_mode", "blank"))
     folder_config_yaml = form.get("folder_theater_config_yaml")
     use_generated_music = str(form.get("use_generated_music", "false")).lower() == "true"
+    # Default to enabled so older clients and existing integrations retain
+    # their current behavior when they do not send the new field.
+    enable_image_generation = str(form.get("enable_image_generation", "true")).lower() == "true"
     enable_scene_animations = str(form.get("enable_scene_animations", "false")).lower() == "true"
     enable_interactive_canvas = str(form.get("enable_interactive_canvas", "false")).lower() == "true"
     enable_adventure_mode = (
@@ -513,6 +516,7 @@ async def create_and_deploy_theater(request: Request):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: image_generation must be a mapping.")
         if style:
             image_config["style"] = style
+        image_config["enabled"] = enable_image_generation
         music_config = theater_config.setdefault("music", {})
         if not isinstance(music_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: music must be a mapping.")

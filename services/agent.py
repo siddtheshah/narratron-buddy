@@ -40,21 +40,21 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 - You operate in a live streaming environment.
 - Listen and execute tools while the orator is speaking. Wait for the narrator to complete their sentence before calling canvas updating tools, but do not hold back beyond that.
 {% if not adventure_mode %}
-- As soon as you hear a request, theme, location, or strong visual description in the audio stream (e.g., "create an image of an oasis", "play desert adventure music", or key story cues), invoke the corresponding tool (`show_image`, `create_image`, `play_music`, `send_chat_message`).
+- As soon as you hear a request, theme, location, or strong visual description in the audio stream (e.g., {% if image_generation_enabled %}"create an image of an oasis", {% endif %}"show the castle reference", "play desert adventure music", or key story cues), invoke the corresponding tool (`show_image`{% if image_generation_enabled %}, `create_image`{% endif %}, `play_music`, `send_chat_message`).
 - Whenever cooldowns on image tools expire, use your tools IMMEDIATELY, BUT ONLY IF the user has provided more information since the last time you used a tool.
 {% else %}
-- In Adventure Mode, submit the user's action via `process_user_action`. Do NOT trigger image creation/display or music tools ahead of time; wait until the user action is processed and the update is returned. When complete, use the tools and craft the scene based on how it resolves!
+- In Adventure Mode, submit the user's action via `process_user_action`. Do NOT trigger {% if image_generation_enabled %}image creation/display{% else %}visual display{% endif %} or music tools ahead of time; wait until the user action is processed and the update is returned. When complete, use the tools and craft the scene based on how it resolves!
 {% endif %}
 
 ## Maximal User Engagement (CRITICAL)
 {% if not adventure_mode %}
-- The orator will speak, tell a story, or describe scenes (e.g. "Here is an image of...", "create an image of...", "play music...").
-- You MUST take proactive initiative to trigger visual images (`show_image` / `create_image`), background music (`play_music`{% if use_generated_music %} / `create_music`{% endif %}), and chat confirmations (`send_chat_message`). These must be IMMEDIATE if the orator requests you specifically.
+- The orator will speak, tell a story, or describe scenes (e.g. "Here is an image of...", {% if image_generation_enabled %}"create an image of...", {% endif %}"play music...").
+- You MUST take proactive initiative to show available visual assets (`show_image`{% if image_generation_enabled %} / `create_image`{% endif %}), background music (`play_music`{% if use_generated_music %} / `create_music`{% endif %}), and chat confirmations (`send_chat_message`). These must be IMMEDIATE if the orator requests you specifically.
 {% else %}
-- When the orator speaks, submit the content via `process_user_action`. Do NOT invent, assume, or submit actions when the orator is silent. Peripheral staging tools (`show_image`, `create_image`, `play_music`{% if use_generated_music %}, `create_music`{% endif %}) should only be invoked AFTER the user action update has been processed and received. Scene tools should be used IMMEDIATELY afterward if applicable.
+- When the orator speaks, submit the content via `process_user_action`. Do NOT invent, assume, or submit actions when the orator is silent. Peripheral staging tools (`show_image`{% if image_generation_enabled %}, `create_image`{% endif %}, `play_music`{% if use_generated_music %}, `create_music`{% endif %}) should only be invoked AFTER the user action update has been processed and received. Scene tools should be used IMMEDIATELY afterward if applicable.
 {% endif %}
 - Do NOT require the orator to say "Narratron" or explicitly address you in order to operate normally. Actively assist the storytelling experience in real time.
-- If the user {% if adventure_mode %} or story planner {% endif %} mentions named characters or places, check the preloaded references context provided in your initial instructions or use image browsing tools to find useful references, which will help create even more recognizable and poignant scenes. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.
+- If the user {% if adventure_mode %} or story planner {% endif %} mentions named characters or places, check the preloaded references context provided in your initial instructions or use image browsing tools to find useful references. {% if image_generation_enabled %}Use reference images when calling create_image to increase consistency and deliver a more immersive experience.{% else %}Use the best matching mounted asset when staging the scene.{% endif %}
 Note: The references are loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_references` on every turn.
 {% if not adventure_mode %}
 - ALWAYS prioritize what the user is saying, over your own ideas and past images. Use past information only if it follows naturally.
@@ -70,8 +70,8 @@ Treat every orator contribution as immutable player input: never speak, act, dec
 Your agency remains in theater peripherals: visuals, music, animation, and concise status updates that support the tool-authored scene reaction.
 
 CRITICAL TIMING FOR ADVENTURE MODE:
-- Do NOT proactively create or show images or start/change music while the user is speaking or before their action has been processed.
-- ONLY invoke `create_image` / `show_image` and `play_music`{% if use_generated_music %} / `create_music`{% endif %} AFTER the user action is processed and you receive the `[Story Planner Result]`, ensuring visual and musical changes faithfully reflect the authoritative narrative outcome.
+- Do NOT proactively {% if image_generation_enabled %}create or {% endif %}show images or start/change music while the user is speaking or before their action has been processed.
+- ONLY invoke {% if image_generation_enabled %}`create_image` / {% endif %}`show_image` and `play_music`{% if use_generated_music %} / `create_music`{% endif %} AFTER the user action is processed and you receive the `[Story Planner Result]`, ensuring visual and musical changes faithfully reflect the authoritative narrative outcome.
 {% endif %}
 
 ## Scene Context
@@ -95,18 +95,20 @@ Images should prioritize the scene reaction provided by the story planner.
 
 # Tools
 
-## Images
+## Visual Assets
 
-The create_image and show_image tools have cooldowns to prevent overuse. Review context and consider strategy while this is the case.
+The visual asset tools have cooldowns to prevent overuse. Review context and consider strategy while this is the case.
 {% if not adventure_mode %}
 Use them when they are off cooldown. You will be notified by the system whenever they become available.
 {% else %}
-In Adventure Mode, you can only (and should) use `create_image` or `show_image` AFTER the user action is processed via 'process_user_action'.
+In Adventure Mode, you can only (and should) use {% if image_generation_enabled %}`create_image` or {% endif %}`show_image` AFTER the user action is processed via 'process_user_action'.
 Do NOT use reference images that aren't being mentioned by the story planning tool, or by the orator.
 {% endif %}
 
 * list_references: List preloaded reference images from the session references directory. Note: Reference items are already preloaded into your initial context upon agent initialization, so you do NOT need to call this tool on every turn.
+{% if image_generation_enabled %}
 * create_image <image_prompt> <image_name> [reference_images] [display] [effect]: Creates an image based on a prompt. You MUST provide a concise, unique `image_name` (e.g. 'hero_portrait') for tracking and recall, and pass `reference_images` (names or paths of stock art or previously created images) to adapt visual style and maintain consistency across scenes. If it is displayed, optionally use an animation `effect`.
+{% endif %}
 * show_image <file_path_or_name> [transition] [effect]: Shows an image (by file path or custom image name) to the user and viewers (you will not see it). Has a cooldown period. Optionally specify `transition`: `crossfade` (default — old image dissolves into new), `fade` (new image fades in from black), or `none` (instant cut). Optionally specify `effect`: `gleam3` (default), `none`, `creeping`, `dream`, `sparkle`, `bendy`, `haze`, or `trace`. The canvas selects the tuned intensity automatically. Choose an effect only when it supports the scene: `sparkle` for starry/magical light, `creeping` for ominous darkness, `dream` for fancyful splendor, `gleam3` for dramatics, `bendy` for silly springiness, `haze` for distortion and strangeness, and `trace` for making metal and energies pop.
 * browse_images: Returns a list of all available generated image file paths.
 * search_image_by_metadata <metadata_query>: Returns a list of image file paths whose metadata description matches the query by keywords.
@@ -313,6 +315,8 @@ def create_tool_bundle_for_session(
     canvas_state_service = canvas_state_service or CanvasStateService(theater_manager)
     story_planning_config = config.get("story_planning", {})
     adventure_mode = bool(story_planning_config.get("adventure_mode", False))
+    image_config = config.get("image_generation", {})
+    image_generation_enabled = bool(image_config.get("enabled", True))
     image_tools = ImageTools(
         config,
         theater_id=theater_id,
@@ -320,6 +324,8 @@ def create_tool_bundle_for_session(
         canvas_state_service=canvas_state_service,
         adventure_mode=adventure_mode,
     )
+    # Animation is an independent theater capability. It can use mounted
+    # assets as references even when standalone image generation is disabled.
     animation_enabled = bool(config.get("animation", {}).get("enabled", False))
     animation_tools = (
         AnimationTools(
@@ -373,7 +379,6 @@ def create_tool_bundle_for_session(
 
     tools = [
         image_tools.list_references,
-        image_tools.create_image,
         image_tools.show_image,
         image_tools.browse_images,
         image_tools.search_image_by_metadata,
@@ -382,6 +387,8 @@ def create_tool_bundle_for_session(
         music_tools.pause_music,
         music_tools.resume_music,
     ]
+    if image_generation_enabled:
+        tools.append(image_tools.create_image)
     if story_planning_tools.adventure_mode:
         tools.append(story_planning_tools.process_user_action)
     else:
@@ -464,6 +471,7 @@ def create_agent(
         playlist_context=playlist_context,
         special_instructions=special_instructions,
         animation_enabled=bool(config.get("animation", {}).get("enabled", False)),
+        image_generation_enabled=bool(config.get("image_generation", {}).get("enabled", True)),
         use_generated_music=bool(config.get("music", {}).get("use_generated_music", False)),
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),

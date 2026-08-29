@@ -1070,6 +1070,14 @@
                                     </div>
                                 </label>
                                 <label class="checkbox-card">
+                                    <input type="checkbox" id="cfgImageGeneration" checked>
+                                    <div>
+                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                            🖼️ AI Image Generation</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Turn off to coordinate your mounted visual assets without generating new images</div>
+                                    </div>
+                                </label>
+                                <label class="checkbox-card">
                                     <input type="checkbox" id="cfgSceneAnimations">
                                     <div>
                                         <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">✨
@@ -2462,6 +2470,7 @@
                 formData.append('agent_special_instructions', specialInstructions);
                 formData.append('advanced_config_canonical', advancedConfigIsCanonical);
                 formData.append('use_generated_music', document.getElementById('cfgUseGeneratedMusic')?.checked ? 'true' : 'false');
+                formData.append('enable_image_generation', document.getElementById('cfgImageGeneration')?.checked ? 'true' : 'false');
                 formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
                 formData.append('enable_adventure_mode',
                     currentCreationPath === 'adventure' || document.getElementById('cfgAdventureMode')?.checked ? 'true' : 'false');

@@ -392,6 +392,26 @@ class TestTheaterAPI(BaseTestCase):
         self.assertTrue(config["interactive_canvas"]["enabled"])
         self.assertTrue(config["story_planning"]["adventure_mode"])
 
+    def test_image_generation_can_be_disabled_while_creating_a_theater(self):
+        self.client.post("/api/auth/register", json={
+            "username": "asset_coordinator",
+            "email": "asset-coordinator@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Preplanned Assets Theater",
+                "enable_image_generation": "false",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        config = yaml.safe_load(
+            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
+        )
+        self.assertFalse(config["image_generation"]["enabled"])
+
     def test_feature_flags_default_to_false_when_omitted(self):
         self.client.post("/api/auth/register", json={
             "username": "flags_default_user",
@@ -411,6 +431,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertFalse(config["animation"]["enabled"])
         self.assertFalse(config["interactive_canvas"]["enabled"])
         self.assertFalse(config["story_planning"]["adventure_mode"])
+        self.assertTrue(config["image_generation"]["enabled"])
 
     def test_story_planning_style_is_saved_for_adventure_mode(self):
         self.client.post("/api/auth/register", json={

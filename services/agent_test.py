@@ -226,6 +226,23 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
 
     @patch("services.agent.get_text_response_provider")
+    def test_create_tool_bundle_omits_image_creation_when_disabled(self, mock_get_text_provider):
+        from services.agent import create_tool_bundle_for_session
+
+        bundle = create_tool_bundle_for_session(
+            "assets_only_theater",
+            config={
+                "image_generation": {"enabled": False, "provider": "hybrid-flux-gemini"},
+                "music": {"provider": "lyria"},
+                "animation": {"enabled": True},
+            },
+        )
+        tool_names = [tool.name for tool in bundle.tools]
+        self.assertNotIn("create_image", tool_names)
+        self.assertIn("show_image", tool_names)
+        self.assertIn("create_triframe", tool_names)
+
+    @patch("services.agent.get_text_response_provider")
     def test_create_tool_bundle_only_includes_observability_tool_when_enabled(self, mock_get_text_provider):
         from services.agent import create_tool_bundle_for_session
 
