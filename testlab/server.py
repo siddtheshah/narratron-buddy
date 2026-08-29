@@ -41,6 +41,7 @@ from testlab.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, musi
 from testlab.text_response_benchmark import BenchmarkTextPrompt, get_text_prompt, text_prompt_catalog
 from testlab.speech_benchmark import BenchmarkSpeechPrompt, get_speech_prompt, speech_prompt_catalog
 from testlab.animation_benchmark import get_animation_prompt, animation_prompt_catalog
+from testlab.layered_animation_lab import get_layered_animation_catalog, list_piece_images
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
 from testlab.a2ui_canvas_lab import (
     A2UICanvasTestConfig,
@@ -108,6 +109,21 @@ def vad_lab():
 @app.get("/effects", include_in_schema=False)
 def effects_lab():
     return FileResponse(ROOT / "effects_lab.html", media_type="text/html")
+
+
+@app.get("/layered-animation", include_in_schema=False)
+def layered_animation_lab():
+    return FileResponse(ROOT / "layered_animation_lab.html", media_type="text/html")
+
+
+@app.get("/api/layered-animation/catalog")
+def layered_animation_catalog():
+    return get_layered_animation_catalog()
+
+
+@app.get("/api/layered-animation/pieces")
+def layered_animation_pieces():
+    return {"pieces": list_piece_images()}
 
 
 @app.get("/animation-benchmark", include_in_schema=False)

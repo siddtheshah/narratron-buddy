@@ -340,7 +340,7 @@ def create_tool_bundle_for_session(
             image_tools._get_image_provider(),
             animation_text_provider,
             FalQwenLayeredProvider(),
-            animation_config.
+            animation_config,
         )
         if animation_enabled
         else None

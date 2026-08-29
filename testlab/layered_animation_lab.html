@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Layered Animation Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080a13;
+      --panel: #101222;
+      --panel-hover: #171930;
+      --line: rgba(255, 255, 255, .12);
+      --ink: #f8fafc;
+      --subtle: #a5b4cc;
+      --violet: #a78bfa;
+      --violet-glow: rgba(167, 139, 250, 0.25);
+      --accent: #818cf8;
+      --danger: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 12% 0%, #2c1d5b 0, transparent 36%), var(--bg);
+      color: var(--ink);
+      font-family: Outfit, sans-serif;
+    }
+
+    header {
+      width: min(1380px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 20px;
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      color: #c4b5fd;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: .75rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 3.5vw, 3rem);
+      letter-spacing: -.04em;
+    }
+
+    .intro {
+      max-width: 720px;
+      margin: 10px 0 20px;
+      line-height: 1.5;
+      color: var(--subtle);
+    }
+
+    main {
+      width: min(1380px, calc(100% - 40px));
+      margin: 0 auto;
+      padding-bottom: 60px;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 24px;
+    }
+
+    @media (max-width: 1080px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(16, 18, 34, .75);
+      backdrop-filter: blur(12px);
+      padding: 20px;
+    }
+
+    /* Stage Controls Bar */
+    .stage-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 18px;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(23, 25, 48, 0.6);
+    }
+
+    label {
+      color: var(--subtle);
+      font-size: .85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    select, input[type=text], input[type=number] {
+      border: 1px solid var(--line);
+      background: #17172a;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font: inherit;
+      font-size: 0.88rem;
+    }
+
+    input[type=range] {
+      accent-color: var(--violet);
+      vertical-align: middle;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, .06);
+      cursor: pointer;
+      font: 500 .85rem Outfit, sans-serif;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    button:hover {
+      background: var(--violet-glow);
+      border-color: var(--violet);
+    }
+
+    button.btn-primary {
+      background: rgba(167, 139, 250, 0.2);
+      border-color: var(--violet);
+      color: #ede9fe;
+    }
+    button.btn-primary:hover {
+      background: rgba(167, 139, 250, 0.35);
+    }
+
+    button.btn-danger {
+      border-color: rgba(248, 113, 113, 0.4);
+      color: var(--danger);
+    }
+    button.btn-danger:hover {
+      background: rgba(248, 113, 113, 0.15);
+    }
+
+    /* Stage Canvas Container */
+    .stage-viewport {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.4);
+      background: #090b14;
+    }
+
+    .stage-viewport.bg-checkerboard {
+      background-image: linear-gradient(45deg, #16192c 25%, transparent 25%),
+                        linear-gradient(-45deg, #16192c 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #16192c 75%),
+                        linear-gradient(-45deg, transparent 75%, #16192c 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0px;
+    }
+
+    .stage-viewport.bg-black { background: #000; }
+    .stage-viewport.bg-white { background: #fff; }
+
+    canvas#stage-canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .stage-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: var(--subtle);
+    }
+
+    /* Layer Controls Side Panel */
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    .layer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 640px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .layer-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 14px;
+      transition: border-color 0.15s ease;
+    }
+
+    .layer-card:hover {
+      border-color: var(--violet);
+    }
+
+    .layer-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .layer-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      object-fit: cover;
+      background: #000;
+    }
+
+    .layer-title {
+      flex: 1;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .layer-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .layer-actions button {
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      border-radius: 6px;
+    }
+
+    .layer-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      font-size: 0.82rem;
+    }
+
+    .layer-body label {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+
+    .layer-body select, .layer-body input {
+      width: 100%;
+      margin: 0;
+    }
+
+    .range-val {
+      font-size: 0.75rem;
+      color: var(--violet);
+      margin-left: auto;
+    }
+
+    /* Modal / JSON Panel */
+    .json-panel {
+      margin-top: 16px;
+    }
+
+    textarea#json-io {
+      width: 100%;
+      height: 120px;
+      background: #0c0e1a;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: #c4b5fd;
+      font-family: monospace;
+      font-size: 0.8rem;
+      padding: 10px;
+      resize: vertical;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <p class="eyebrow">Narratron Test Lab</p>
+    <h1>Layered Animation Lab</h1>
+    <p class="intro">
+      Test local layer motion treatments (sway, vibrate, drift, breathe) and depth ordering on transparent RGBA piece images from <code>testlab/images/pieces</code>.
+    </p>
+  </header>
+
+  <main>
+    <!-- Left Column: Stage & Global Controls -->
+    <section>
+      <div class="card">
+        <div class="stage-bar">
+          <label>Preset:
+            <select id="preset-select">
+              <option value="">-- Custom Composition --</option>
+            </select>
+          </label>
+
+          <label>Stage Background:
+            <select id="bg-select">
+              <option value="checkerboard" selected>Checkerboard (RGBA)</option>
+              <option value="dark">Dark Space</option>
+              <option value="black">Pure Black</option>
+              <option value="white">Pure White</option>
+            </select>
+          </label>
+
+          <label>Aspect Ratio:
+            <select id="aspect-select">
+              <option value="16/9" selected>16 : 9</option>
+              <option value="1/1">1 : 1</option>
+              <option value="4/3">4 : 3</option>
+            </select>
+          </label>
+
+          <button id="btn-play-pause" class="btn-primary" type="button">Pause Motion</button>
+          <label>Master Speed:
+            <input id="master-speed" type="range" min="0.1" max="2.5" step="0.1" value="1.0">
+            <span id="master-speed-val" class="range-val">1.0x</span>
+          </label>
+        </div>
+
+        <div id="stage-viewport" class="stage-viewport bg-checkerboard">
+          <canvas id="stage-canvas"></canvas>
+        </div>
+
+        <div class="stage-status">
+          <span id="fps-counter">60 FPS</span>
+          <span id="layer-count-status">0 Layers Active</span>
+          <span id="canvas-dim-status">Canvas: 1280x720</span>
+        </div>
+      </div>
+
+      <!-- JSON Manifest Export / Import -->
+      <div class="card json-panel">
+        <div class="panel-header">
+          <h3>Layered Animation Manifest JSON</h3>
+          <div>
+            <button id="btn-export-json" type="button">Export JSON</button>
+            <button id="btn-import-json" type="button">Apply JSON</button>
+          </div>
+        </div>
+        <textarea id="json-io" placeholder="Paste or view layer animation manifest JSON..."></textarea>
+      </div>
+    </section>
+
+    <!-- Right Column: Layer Stack Manager -->
+    <section class="card">
+      <div class="panel-header">
+        <h2>Layer Stack</h2>
+        <div>
+          <button id="btn-clear-all" class="btn-danger" type="button">Clear All</button>
+          <button id="btn-add-layer" class="btn-primary" type="button">+ Add Layer</button>
+        </div>
+      </div>
+
+      <div id="layer-list" class="layer-list">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { layerTransform } from '/effects-static/js/animation-effects.js';
+
+    let catalog = { pieces: [], effects: [], presets: [] };
+    let layers = [];
+    let isPlaying = true;
+    let masterSpeed = 1.0;
+    let animFrameId = null;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let fpsTimer = performance.now();
+
+    const canvas = document.getElementById('stage-canvas');
+    const ctx = canvas.getContext('2d');
+    const stageViewport = document.getElementById('stage-viewport');
+    const layerList = document.getElementById('layer-list');
+    const presetSelect = document.getElementById('preset-select');
+    const bgSelect = document.getElementById('bg-select');
+    const aspectSelect = document.getElementById('aspect-select');
+    const btnPlayPause = document.getElementById('btn-play-pause');
+    const masterSpeedInput = document.getElementById('master-speed');
+    const masterSpeedVal = document.getElementById('master-speed-val');
+    const fpsCounter = document.getElementById('fps-counter');
+    const layerCountStatus = document.getElementById('layer-count-status');
+    const canvasDimStatus = document.getElementById('canvas-dim-status');
+    const btnAddLayer = document.getElementById('btn-add-layer');
+    const btnExportJson = document.getElementById('btn-export-json');
+    const btnImportJson = document.getElementById('btn-import-json');
+    const jsonIo = document.getElementById('json-io');
+
+    async function initCatalog() {
+      try {
+        const res = await fetch('/api/layered-animation/catalog');
+        if (res.ok) {
+          catalog = await res.json();
+          populatePresets();
+          if (catalog.presets.length > 0) {
+            loadPreset(catalog.presets[0].id);
+          } else if (catalog.pieces.length > 0) {
+            addDefaultLayerFromPieces();
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load layered animation catalog:', err);
+      }
+    }
+
+    function populatePresets() {
+      presetSelect.innerHTML = '<option value="">-- Custom Composition --</option>';
+      catalog.presets.forEach(preset => {
+        const opt = document.createElement('option');
+        opt.value = preset.id;
+        opt.textContent = preset.name;
+        presetSelect.appendChild(opt);
+      });
+    }
+
+    function addDefaultLayerFromPieces() {
+      if (catalog.pieces.length === 0) return;
+      catalog.pieces.forEach((piece, idx) => {
+        const effect = idx === 1 ? 'breathe' : (idx === 2 ? 'drift' : 'none');
+        addLayer({
+          name: piece.id,
+          url: piece.url,
+          filename: piece.filename,
+          effect: effect,
+          speed: 1.0,
+          amplitude: 1.0,
+          opacity: 1.0,
+          order: idx,
+        });
+      });
+    }
+
+    function addLayer(initialProps = {}) {
+      const defaultPiece = catalog.pieces[0] || { url: '', filename: '' };
+      const newLayer = {
+        id: 'layer_' + Math.random().toString(36).substring(2, 9),
+        name: initialProps.name || defaultPiece.id || `Layer ${layers.length + 1}`,
+        url: initialProps.url || defaultPiece.url || '',
+        filename: initialProps.filename || defaultPiece.filename || '',
+        effect: initialProps.effect || 'none',
+        speed: initialProps.speed ?? 1.0,
+        amplitude: initialProps.amplitude ?? 1.0,
+        opacity: initialProps.opacity ?? 1.0,
+        xOffset: initialProps.xOffset ?? 0,
+        yOffset: initialProps.yOffset ?? 0,
+        scale: initialProps.scale ?? 1.0,
+        rotation: initialProps.rotation ?? 0,
+        visible: true,
+        imgElement: new Image(),
+        loaded: false,
+      };
+
+      if (newLayer.url) {
+        newLayer.imgElement.crossOrigin = 'anonymous';
+        newLayer.imgElement.src = newLayer.url;
+        newLayer.imgElement.onload = () => {
+          newLayer.loaded = true;
+          renderLayerList();
+        };
+      }
+
+      layers.push(newLayer);
+      renderLayerList();
+      updateStatus();
+    }
+
+    function loadPreset(presetId) {
+      const preset = catalog.presets.find(p => p.id === presetId);
+      if (!preset) return;
+
+      layers = [];
+      preset.layers.forEach((l, idx) => {
+        addLayer({
+          name: l.name,
+          url: l.url,
+          filename: l.filename,
+          effect: l.effect,
+          speed: l.speed,
+          amplitude: l.amplitude,
+          opacity: l.opacity,
+          order: idx,
+        });
+      });
+      presetSelect.value = presetId;
+      exportJsonManifest();
+    }
+
+    function renderLayerList() {
+      layerList.innerHTML = '';
+      if (layers.length === 0) {
+        layerList.innerHTML = '<p style="color: var(--subtle); text-align: center; margin: 20px 0;">No layers. Click "+ Add Layer" to start.</p>';
+        return;
+      }
+
+      // Render top-to-bottom in UI (Foreground first, Background last)
+      const sortedLayers = [...layers].reverse();
+
+      sortedLayers.forEach((layer) => {
+        const card = document.createElement('div');
+        card.className = 'layer-card';
+
+        const pieceOptions = catalog.pieces.map(p => 
+          `<option value="${p.url}" ${p.url === layer.url ? 'selected' : ''}>${p.filename}</option>`
+        ).join('');
+
+        const effectOptions = ['none', 'sway', 'vibrate', 'drift', 'breathe'].map(ef =>
+          `<option value="${ef}" ${ef === layer.effect ? 'selected' : ''}>${ef.toUpperCase()}</option>`
+        ).join('');
+
+        card.innerHTML = `
+          <div class="layer-header">
+            <img class="layer-thumb" src="${layer.url}" alt="${layer.name}">
+            <div class="layer-title">
+              <input type="text" value="${layer.name}" data-action="rename" data-id="${layer.id}">
+            </div>
+            <div class="layer-actions">
+              <button type="button" data-action="toggle-vis" data-id="${layer.id}" title="Toggle visibility">${layer.visible ? '👁️' : '🙈'}</button>
+              <button type="button" data-action="move-up" data-id="${layer.id}" title="Move up stack">▲</button>
+              <button type="button" data-action="move-down" data-id="${layer.id}" title="Move down stack">▼</button>
+              <button type="button" class="btn-danger" data-action="delete" data-id="${layer.id}" title="Delete layer">Delete</button>
+            </div>
+          </div>
+          <div class="layer-body">
+            <label>Piece Image:
+              <select data-action="change-image" data-id="${layer.id}">
+                ${pieceOptions}
+              </select>
+            </label>
+            <label>Motion Effect:
+              <select data-action="change-effect" data-id="${layer.id}">
+                ${effectOptions}
+              </select>
+            </label>
+            <label><span id="label-speed-${layer.id}">Speed (${layer.speed}x):</span>
+              <input type="range" min="0.1" max="3.0" step="0.1" value="${layer.speed}" data-action="change-speed" data-id="${layer.id}">
+            </label>
+            <label><span id="label-amp-${layer.id}">Amplitude (${layer.amplitude}x):</span>
+              <input type="range" min="0.0" max="3.0" step="0.1" value="${layer.amplitude}" data-action="change-amp" data-id="${layer.id}">
+            </label>
+            <label><span id="label-opacity-${layer.id}">Opacity (${Math.round(layer.opacity * 100)}%):</span>
+              <input type="range" min="0.0" max="1.0" step="0.05" value="${layer.opacity}" data-action="change-opacity" data-id="${layer.id}">
+            </label>
+            <label><span id="label-scale-${layer.id}">Scale (${layer.scale}x):</span>
+              <input type="range" min="0.2" max="2.5" step="0.05" value="${layer.scale}" data-action="change-scale" data-id="${layer.id}">
+            </label>
+          </div>
+        `;
+
+        layerList.appendChild(card);
+      });
+    }
+
+    layerList.addEventListener('input', (e) => {
+      const id = e.target.getAttribute('data-id');
+      const action = e.target.getAttribute('data-action');
+      const layer = layers.find(l => l.id === id);
+      if (!layer) return;
+
+      if (action === 'rename') layer.name = e.target.value;
+      if (action === 'change-speed') {
+        layer.speed = parseFloat(e.target.value);
+        const lbl = document.getElementById(`label-speed-${id}`);
+        if (lbl) lbl.textContent = `Speed (${layer.speed.toFixed(1)}x):`;
+      }
+      if (action === 'change-amp') {
+        layer.amplitude = parseFloat(e.target.value);
+        const lbl = document.getElementById(`label-amp-${id}`);
+        if (lbl) lbl.textContent = `Amplitude (${layer.amplitude.toFixed(1)}x):`;
+      }
+      if (action === 'change-opacity') {
+        layer.opacity = parseFloat(e.target.value);
+        const lbl = document.getElementById(`label-opacity-${id}`);
+        if (lbl) lbl.textContent = `Opacity (${Math.round(layer.opacity * 100)}%):`;
+      }
+      if (action === 'change-scale') {
+        layer.scale = parseFloat(e.target.value);
+        const lbl = document.getElementById(`label-scale-${id}`);
+        if (lbl) lbl.textContent = `Scale (${layer.scale.toFixed(2)}x):`;
+      }
+    });
+
+    layerList.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-id');
+      const action = e.target.getAttribute('data-action');
+      const layer = layers.find(l => l.id === id);
+      if (!layer) return;
+
+      if (action === 'change-image') {
+        layer.url = e.target.value;
+        layer.imgElement.src = layer.url;
+        const matched = catalog.pieces.find(p => p.url === layer.url);
+        if (matched) layer.filename = matched.filename;
+        renderLayerList();
+      }
+      if (action === 'change-effect') {
+        layer.effect = e.target.value;
+      }
+    });
+
+    layerList.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      const action = btn.getAttribute('data-action');
+      const index = layers.findIndex(l => l.id === id);
+      if (index === -1) return;
+
+      if (action === 'toggle-vis') {
+        layers[index].visible = !layers[index].visible;
+        renderLayerList();
+      } else if (action === 'delete') {
+        layers.splice(index, 1);
+        renderLayerList();
+        updateStatus();
+        exportJsonManifest();
+      } else if (action === 'move-up' && index < layers.length - 1) {
+        const temp = layers[index];
+        layers[index] = layers[index + 1];
+        layers[index + 1] = temp;
+        renderLayerList();
+      } else if (action === 'move-down' && index > 0) {
+        const temp = layers[index];
+        layers[index] = layers[index - 1];
+        layers[index - 1] = temp;
+        renderLayerList();
+      }
+    });
+
+    function resizeCanvas() {
+      const rect = stageViewport.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      canvasDimStatus.textContent = `Canvas: ${canvas.width}x${canvas.height}`;
+    }
+
+    function renderLoop(time) {
+      if (!isPlaying) {
+        lastTime = time;
+      }
+      const seconds = time / 1000;
+
+      // FPS tracking
+      frameCount++;
+      if (time - fpsTimer >= 1000) {
+        fpsCounter.textContent = `${frameCount} FPS`;
+        frameCount = 0;
+        fpsTimer = time;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.width / dpr;
+      const height = canvas.height / dpr;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+
+      // Render layers bottom-to-top (index 0 background first)
+      layers.forEach((layer) => {
+        if (!layer.visible || !layer.imgElement || !layer.imgElement.complete || layer.imgElement.naturalWidth === 0) {
+          return;
+        }
+
+        const source = layer.imgElement;
+        const scaleFit = Math.min(width / source.naturalWidth, height / source.naturalHeight);
+        const drawWidth = source.naturalWidth * scaleFit * layer.scale;
+        const drawHeight = source.naturalHeight * scaleFit * layer.scale;
+        const cx = width / 2 + layer.xOffset;
+        const cy = height / 2 + layer.yOffset;
+
+        const effectiveTime = seconds * layer.speed * masterSpeed;
+        const rawTransform = layerTransform(layer.effect, effectiveTime);
+
+        const x = rawTransform.x * layer.amplitude;
+        const y = rawTransform.y * layer.amplitude;
+        const rotation = rawTransform.rotation * layer.amplitude + (layer.rotation * Math.PI / 180);
+        const scaleMod = 1 + (rawTransform.scale - 1) * layer.amplitude;
+
+        ctx.save();
+        ctx.globalAlpha = layer.opacity;
+        ctx.translate(cx + x, cy + y);
+        ctx.rotate(rotation);
+        ctx.scale(scaleMod, scaleMod);
+        ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+        ctx.restore();
+      });
+
+      ctx.restore();
+      animFrameId = requestAnimationFrame(renderLoop);
+    }
+
+    function updateStatus() {
+      layerCountStatus.textContent = `${layers.length} Layer${layers.length === 1 ? '' : 's'} Active`;
+    }
+
+    function exportJsonManifest() {
+      const manifest = {
+        version: 1,
+        type: "layered_animation_manifest",
+        layers: layers.map((l, idx) => ({
+          name: l.name,
+          url: l.url,
+          filename: l.filename,
+          effect: l.effect,
+          speed: l.speed,
+          amplitude: l.amplitude,
+          opacity: l.opacity,
+          scale: l.scale,
+          order: idx,
+        })),
+      };
+      jsonIo.value = JSON.stringify(manifest, null, 2);
+    }
+
+    function importJsonManifest() {
+      try {
+        const parsed = JSON.parse(jsonIo.value);
+        if (parsed && Array.isArray(parsed.layers)) {
+          layers = [];
+          parsed.layers.forEach((l, idx) => {
+            addLayer({
+              name: l.name || `Layer ${idx + 1}`,
+              url: l.url || '',
+              filename: l.filename || '',
+              effect: l.effect || 'none',
+              speed: l.speed ?? 1.0,
+              amplitude: l.amplitude ?? 1.0,
+              opacity: l.opacity ?? 1.0,
+              scale: l.scale ?? 1.0,
+              order: idx,
+            });
+          });
+          renderLayerList();
+        }
+      } catch (err) {
+        alert('Invalid JSON manifest format.');
+      }
+    }
+
+    const btnClearAll = document.getElementById('btn-clear-all');
+
+    // Event Listeners
+    btnAddLayer.addEventListener('click', () => addLayer());
+    btnClearAll.addEventListener('click', () => {
+      layers = [];
+      renderLayerList();
+      updateStatus();
+      exportJsonManifest();
+    });
+    btnExportJson.addEventListener('click', exportJsonManifest);
+    btnImportJson.addEventListener('click', importJsonManifest);
+
+    presetSelect.addEventListener('change', (e) => {
+      if (e.target.value) loadPreset(e.target.value);
+    });
+
+    bgSelect.addEventListener('change', (e) => {
+      stageViewport.className = `stage-viewport bg-${e.target.value}`;
+    });
+
+    aspectSelect.addEventListener('change', (e) => {
+      const [w, h] = e.target.value.split('/');
+      stageViewport.style.aspectRatio = `${w} / ${h}`;
+      resizeCanvas();
+    });
+
+    btnPlayPause.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      btnPlayPause.textContent = isPlaying ? 'Pause Motion' : 'Resume Motion';
+    });
+
+    masterSpeedInput.addEventListener('input', (e) => {
+      masterSpeed = parseFloat(e.target.value);
+      masterSpeedVal.textContent = `${masterSpeed.toFixed(1)}x`;
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+
+    // Bootstrap
+    resizeCanvas();
+    initCatalog();
+    requestAnimationFrame(renderLoop);
+  </script>
+</body>
+
+</html>
