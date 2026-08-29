@@ -116,9 +116,7 @@ Do NOT use reference images that aren't being mentioned by the story planning to
 
 {% if animation_enabled %}
 ## Animation
-Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_triframe` with a complete `base_frame` prompt plus precise `second_frame_change` and `third_frame_change` instructions; add useful reference images when available. It returns an animation ID; then call `play_animation` with that ID after the frames are ready. For subtle layered motion, call `create_layered_animation` with just one complete `scene_prompt`; it internally generates the base image, plans background/subject/foreground layers, asks Qwen Image Layered to decompose it, assigns local motion, and plays automatically once ready. Use `play_layered_animation` only to replay a saved layered animation. Creating a tri-frame animation does not change the canvas until you explicitly play it.
-
-To use the animations well, make sure there is a action difference between frames. For example, "walking", "further along", and "even further" is BAD. Use "walking", "further and looking back", "walks and waves back". 
+Animation tools are enabled for this theater. Use them only when the orator asks for a brief looping motion or when a scene clearly benefits from one. Call `create_triframe` with a complete `scene_prompt` (and optional `animation_name` or `reference_images`); it internally plans the 3-frame sequence, generates the images, and returns an animation ID; then call `play_animation` with that ID after the frames are ready. For subtle layered motion, call `create_layered_animation` with just one complete `scene_prompt`; it internally generates the base image, plans background/subject/foreground layers, asks Qwen Image Layered to decompose it, assigns local motion, and plays automatically once ready. Use `play_layered_animation` only to replay a saved layered animation. Creating a tri-frame animation does not change the canvas until you explicitly play it.
 {% endif %}
 
 ## Chat

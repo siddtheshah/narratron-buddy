@@ -24,7 +24,7 @@ def test_get_layered_animation_catalog_returns_effects_and_presets():
     assert "image_effects" in catalog
     assert "presets" in catalog
     effect_ids = {e["id"] for e in catalog["effects"]}
-    assert {"none", "sway", "gentle_rocking", "vibrate", "drift", "breathe", "twist", "bend"}.issubset(effect_ids)
+    assert {"none", "sway", "gentle_rocking", "vibrate", "pulse", "twist", "bend"}.issubset(effect_ids)
     sway_entry = next(e for e in catalog["effects"] if e["id"] == "sway")
     assert sway_entry["name"] == "Sway (Foliage Bending)"
     assert "Bottom-anchored" in sway_entry["description"]

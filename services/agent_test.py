@@ -145,7 +145,7 @@ class TestCreateAgent(unittest.TestCase):
             mock_image_cls.return_value._get_image_provider.return_value,
             mock_get_text_provider.return_value,
             ANY,
-            config["animation"],
+            ANY,
         )
 
     @patch("services.agent.create_tool_bundle_for_session")

@@ -49,8 +49,7 @@ def get_layered_animation_catalog() -> dict[str, Any]:
         {"id": "sway", "name": "Sway (Foliage Bending)", "description": "Bottom-anchored bending curvature distorting around bottom of bounding box"},
         {"id": "gentle_rocking", "name": "Gentle Rocking", "description": "Gentle rotational oscillation wave"},
         {"id": "vibrate", "name": "Vibrate", "description": "Rapid high-frequency jitter motion"},
-        {"id": "drift", "name": "Drift", "description": "Slow floating horizontal and vertical translation"},
-        {"id": "breathe", "name": "Breathe", "description": "Subtle expanding and contracting scale pulse"},
+        {"id": "pulse", "name": "Pulse", "description": "Subtle expanding and contracting scale pulse"},
         {"id": "twist", "name": "Twist (S-Curve)", "description": "Radially proportional torque distorting around centroid (opposite ends curve opposite)"},
         {"id": "bend", "name": "Bend (C-Curve)", "description": "Synchronous same-direction curvature distorting around centroid"},
     ]
@@ -74,7 +73,7 @@ def get_layered_animation_catalog() -> dict[str, Any]:
         presets.append({
             "id": "mystic-crystal",
             "name": "Mystic Crystal & Floating Orbs",
-            "description": "3-layer stack featuring static background, breathing crystal subject, and floating ambient orbs.",
+            "description": "3-layer stack featuring static background, pulsing crystal subject, and floating ambient orbs.",
             "layers": [
                 {
                     "name": "Background Sky",
@@ -92,7 +91,7 @@ def get_layered_animation_catalog() -> dict[str, Any]:
                     "piece_id": "subject_crystal",
                     "filename": "subject_crystal.png",
                     "url": piece_map["subject_crystal.png"]["url"],
-                    "effect": "breathe",
+                    "effect": "pulse",
                     "speed": 1.2,
                     "amplitude": 1.5,
                     "opacity": 1.0,
@@ -103,7 +102,7 @@ def get_layered_animation_catalog() -> dict[str, Any]:
                     "piece_id": "fg_floating_orbs",
                     "filename": "fg_floating_orbs.png",
                     "url": piece_map.get("fg_floating_orbs.png", {}).get("url", ""),
-                    "effect": "drift",
+                    "effect": "gentle_rocking",
                     "speed": 0.8,
                     "amplitude": 1.2,
                     "opacity": 0.9,

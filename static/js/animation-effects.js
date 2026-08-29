@@ -12,9 +12,7 @@ export function layerTransform(effect, seconds) {
         return { x: 0, y: 0, rotation: Math.sin(seconds * 1.2) * 0.012, scale: 1 };
     case "vibrate":
         return { x: Math.sin(seconds * 9.1) * 1.2, y: Math.cos(seconds * 7.3) * 0.9, rotation: 0, scale: 1 };
-    case "drift":
-        return { x: Math.sin(seconds * 0.65) * 3, y: Math.cos(seconds * 0.5) * 1.5, rotation: 0, scale: 1 };
-    case "breathe":
+    case "pulse":
         return { x: 0, y: 0, rotation: 0, scale: 1 + Math.sin(seconds * 1.15) * 0.008 };
     case "twist":
         return { x: 0, y: 0, rotation: Math.sin(seconds * 1.5) * 0.02, scale: 1 };

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class AnimationLayer(BaseModel):
     description: str = Field(min_length=3, max_length=300)
-    effect: str = Field(pattern="^(none|sway|vibrate|drift|breathe|twist|bend|gentle_rocking)$")
+    effect: str = Field(pattern="^(none|sway|vibrate|pulse|twist|bend|gentle_rocking)$")
 
 
 class AnimationLayerPlanResponse(BaseModel):
@@ -55,7 +55,7 @@ ANIMATION_LAYER_PLAN_JSON_SCHEMA = {
             "type": "object",
             "properties": {
                 "description": {"type": "string", "minLength": 3, "maxLength": 180},
-                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "drift", "breathe", "twist", "bend", "gentle_rocking"]},
+                "effect": {"type": "string", "enum": ["none", "sway", "vibrate", "pulse", "twist", "bend", "gentle_rocking"]},
             },
             "required": ["description", "effect"],
             "additionalProperties": False,
@@ -64,6 +64,25 @@ ANIMATION_LAYER_PLAN_JSON_SCHEMA = {
     "required": ["background", "subject"],
     "additionalProperties": False,
 }
+
+
+class TriframePlanResponse(BaseModel):
+    base_frame: str = Field(min_length=3, max_length=500)
+    second_frame_change: str = Field(min_length=3, max_length=300)
+    third_frame_change: str = Field(min_length=3, max_length=300)
+
+
+TRIFRAME_PLAN_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "base_frame": {"type": "string", "minLength": 3, "maxLength": 500},
+        "second_frame_change": {"type": "string", "minLength": 3, "maxLength": 300},
+        "third_frame_change": {"type": "string", "minLength": 3, "maxLength": 300},
+    },
+    "required": ["base_frame", "second_frame_change", "third_frame_change"],
+    "additionalProperties": False,
+}
+
 
 
 class AnimationTools(BaseTools):
@@ -105,37 +124,31 @@ class AnimationTools(BaseTools):
     @with_cooldown("generating another animation")
     def create_triframe(
         self,
-        base_frame: str,
-        second_frame_change: str,
-        third_frame_change: str,
+        scene_prompt: str,
         animation_name: Optional[str] = None,
         reference_images: Union[list[str], str, None] = None,
     ) -> str:
         """Generate three matching images that form a short, loopable animation.
 
-        The first and last images deliberately use nearly matching poses so a
-        canvas player can cycle the files without a jarring visual jump.
+        The caller supplies a scene prompt. Frame generation prompts and action changes are
+        planned internally using the text provider. The first and last images deliberately use
+        nearly matching poses so a canvas player can cycle the files without a jarring visual jump.
 
         Args:
-            base_frame: Complete prompt for the initial image.
-            second_frame_change: Specific change to apply to the initial image for the second image.
-            third_frame_change: Specific change to apply to the second image for the third image.
+            scene_prompt: Detailed prompt describing the scene to animate.
             animation_name: Optional friendly name used for the saved frame files.
             reference_images: Optional image aliases or paths to preserve in every frame.
 
         Returns:
             A status message immediately; image generation continues in the background.
         """
-        if not all(isinstance(prompt, str) and prompt.strip() for prompt in (
-            base_frame, second_frame_change, third_frame_change,
-        )):
-            return "Error: base_frame, second_frame_change, and third_frame_change are required."
+        if not isinstance(scene_prompt, str) or not scene_prompt.strip():
+            return "Error: scene_prompt is required."
 
         provider_references, reference_error = self._resolve_provider_references(reference_images)
         if reference_error:
             return reference_error
 
-        effective_base_frame = self.image_tools._apply_default_style(base_frame.strip())
         self.record_tool_call("create_triframe")
         timestamp = int(time.time())
         clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_name or "triframe")
@@ -144,14 +157,20 @@ class AnimationTools(BaseTools):
         def _worker() -> None:
             self.image_tools._set_canvas_activity(True)
             try:
+                plan, planner_debug = self.plan_triframe_with_provider(
+                    self.text_response_provider, scene_prompt.strip()
+                )
+                logger.debug("[AnimationTools] Triframe animation %s LLM plan=%s", animation_id, plan)
+                effective_base_frame = self.image_tools._apply_default_style(plan["base_frame"].strip())
+
                 animation_dir = os.path.join(self.animations_dir, animation_id)
                 os.makedirs(animation_dir, exist_ok=False)
                 previous_frame: Optional[ImageReference] = None
                 saved_paths = []
                 frame_prompts = [
                     effective_base_frame,
-                    f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {second_frame_change.strip()}",
-                    f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {third_frame_change.strip()}",
+                    f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {plan['second_frame_change'].strip()}",
+                    f"{effective_base_frame}\n\nApply this specific change to the supplied previous image: {plan['third_frame_change'].strip()}",
                 ]
                 for frame_number, frame_prompt in enumerate(frame_prompts, start=1):
                     frame_prompt = (
@@ -193,8 +212,8 @@ class AnimationTools(BaseTools):
                     )
                 self._animations[animation_id] = saved_paths
                 logger.debug("[AnimationTools] Animation '%s' is ready to play.", animation_id)
-            except ImageProviderError as exc:
-                logger.error("[AnimationTools] Image provider failed: %s", exc)
+            except (ImageProviderError, TextResponseProviderError) as exc:
+                logger.error("[AnimationTools] Image or text provider failed: %s", exc)
             except Exception:
                 logger.exception("[AnimationTools] Failed to generate tri-frame animation")
             finally:
@@ -283,6 +302,47 @@ class AnimationTools(BaseTools):
         return f"Playing layered animation '{animation_id}'."
 
     @staticmethod
+    def plan_triframe_with_provider(
+        text_response_provider: TextResponseProvider,
+        scene_prompt: str,
+    ) -> tuple[dict[str, str], dict[str, object]]:
+        """Use the text provider to plan base frame and key changes for a 3-frame animation sequence."""
+        request = TextResponseRequest(
+            prompt=(
+                "Plan a 3-frame looping animation sequence for a 2D scene.\n"
+                "Return JSON with three keys:\n"
+                "1. base_frame: A complete, highly descriptive prompt for the initial full-bleed scene image.\n"
+                "2. second_frame_change: Specific, clear action or motion change applied to the initial image for the second frame.\n"
+                "3. third_frame_change: Specific, clear action or motion change applied to the second image for the third frame, leading back towards the initial state to create a smooth loop.\n\n"
+                "IMPORTANT: Make sure there is a clear action difference between frames. "
+                "For example, progressive positional movement like 'walking', 'further along', and 'even further' is BAD. "
+                "Use distinct key actions like 'walking', 'further and looking back', 'walks and waves back'.\n\n"
+                f"Scene prompt:\n{scene_prompt}"
+            ),
+            temperature=0.1,
+            max_output_tokens=512,
+            response_json_schema=TRIFRAME_PLAN_JSON_SCHEMA,
+        )
+        try:
+            response = text_response_provider.generate(request)
+        except TextResponseProviderError as exc:
+            logger.warning("[AnimationTools] Triframe planner returned invalid structured output; retrying once: %s", exc)
+            response = text_response_provider.generate(request)
+        parsed = response.parsed
+        draft = parsed if isinstance(parsed, TriframePlanResponse) else TriframePlanResponse.model_validate(parsed)
+        plan = {
+            "base_frame": draft.base_frame,
+            "second_frame_change": draft.second_frame_change,
+            "third_frame_change": draft.third_frame_change,
+        }
+        return plan, {
+            "provider": response.provider,
+            "model": response.model,
+            "request_id": response.request_id,
+            "usage": dict(response.usage),
+        }
+
+    @staticmethod
     def plan_layers_with_provider(
         text_response_provider: TextResponseProvider,
         scene_prompt: str,
@@ -298,7 +358,7 @@ class AnimationTools(BaseTools):
                     "BACKGROUND: combine the entire static environment behind the focal subject into one layer—never split it into sky, coast, sea, terrain, buildings, or lighting layers. Its effect must be none. "
                     "SUBJECT: the single focal character, creature, vehicle, or landmark, including attached parts and immediately associated light. Do not make a second subject layer. "
                     "FOREGROUND: only close-to-camera objects that visibly overlap or frame the subject, such as leaves, grass, smoke, rain, or nearby waves; otherwise use null. "
-                    "Use effect=none for fixed content; sway for foliage bending; gentle_rocking for rigid rotational rocking; vibrate for water/waves/rain/smoke; drift for atmospheric objects; breathe only for a living focal subject; twist for rotating or swirling cyclical motion around centroid; bend for curvature distortion. "
+                    "Use effect=none for fixed content; sway for foliage; gentle_rocking for airborne objects; vibrate for rumbling objects; pulse for important objects; bend if the subject layer features heroic dynamic action by a character; twist for rotating or swirling cyclical motion around centroid. "
                     "Do not invent scene elements. Return JSON only.\n\n"
                     f"Scene prompt:\n{scene_prompt}"),
             temperature=0.1, max_output_tokens=512,

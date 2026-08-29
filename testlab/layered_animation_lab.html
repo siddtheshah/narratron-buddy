@@ -315,7 +315,7 @@
     <p class="eyebrow">Narratron Test Lab</p>
     <h1>Layered Animation Lab</h1>
     <p class="intro">
-      Test local layer motion treatments (sway, vibrate, drift, breathe) and depth ordering on transparent RGBA piece images from <code>testlab/images/pieces</code>.
+      Test local layer motion treatments (sway, vibrate, pulse) and depth ordering on transparent RGBA piece images from <code>testlab/images/pieces</code>.
     </p>
   </header>
 
@@ -454,7 +454,7 @@
     function addDefaultLayerFromPieces() {
       if (catalog.pieces.length === 0) return;
       catalog.pieces.forEach((piece, idx) => {
-        const effect = idx === 1 ? 'breathe' : (idx === 2 ? 'drift' : 'none');
+        const effect = idx === 1 ? 'pulse' : (idx === 2 ? 'vibrate' : 'none');
         addLayer({
           name: piece.id,
           url: piece.url,
@@ -543,7 +543,7 @@
 
         const availableEffects = (catalog.effects && catalog.effects.length > 0)
           ? catalog.effects.map(e => e.id)
-          : ['none', 'sway', 'gentle_rocking', 'vibrate', 'drift', 'breathe', 'twist', 'bend'];
+          : ['none', 'sway', 'gentle_rocking', 'vibrate', 'pulse', 'twist', 'bend'];
 
         const effectOptions = availableEffects.map(ef =>
           `<option value="${ef}" ${ef === layer.effect ? 'selected' : ''}>${ef.toUpperCase()}</option>`

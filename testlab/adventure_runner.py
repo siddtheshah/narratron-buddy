@@ -227,9 +227,8 @@ class MockToolBundle:
 
     def create_triframe(
         self,
-        base_frame: str,
-        second_frame_change: str,
-        third_frame_change: str,
+        scene_prompt: str,
+        animation_name: Optional[str] = None,
         reference_images: List[str] | str | None = None,
     ) -> Dict[str, Any]:
         """Creates a looping triframe animation."""
@@ -238,9 +237,8 @@ class MockToolBundle:
         return self._record(
             "create_triframe",
             {
-                "base_frame": base_frame,
-                "second_frame_change": second_frame_change,
-                "third_frame_change": third_frame_change,
+                "scene_prompt": scene_prompt,
+                "animation_name": animation_name,
                 "reference_images": reference_images,
             },
             result,
