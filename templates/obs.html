@@ -104,7 +104,7 @@
     </div>
 
     <script type="module">
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=triframe-20260812-1";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=layered-20260829-1";
         // Extract Theater ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
         let currenttheaterId = urlParams.get('theater_id') || '';
@@ -297,7 +297,7 @@
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
         const playImageSequence = imageRenderer.playSequence;
-        const playLayeredAnimation = imageRenderer.playLayeredAnimation;
+        const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
@@ -390,7 +390,7 @@
                         lastImageEffect = currentImageEffect;
                         lastAnimationSignature = animationSignature;
                         if (animationSignature) {
-                            if (data.animation.type === 'layered') { playLayeredAnimation(data.animation.layers); }
+                            if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') { playLayeredAnimation(data.animation.layers); }
                             else {
                             playImageSequence(data.animation.frames, {
                                 frameDuration: data.animation.frame_duration_ms || 1400,
@@ -412,7 +412,7 @@
                     redrawAllDoodles();
 
                     if (animationSignature) {
-                        if (data.animation.type === 'layered') { playLayeredAnimation(data.animation.layers); }
+                        if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') { playLayeredAnimation(data.animation.layers); }
                         else {
                         playImageSequence(data.animation.frames, {
                             frameDuration: data.animation.frame_duration_ms || 1400,

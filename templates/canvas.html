@@ -2706,7 +2706,7 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=triframe-20260812-1";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=layered-20260829-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20260821-3";
 
         let lastTime = -1;
@@ -3505,7 +3505,7 @@
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
         const playImageSequence = imageRenderer.playSequence;
-        const playLayeredAnimation = imageRenderer.playLayeredAnimation;
+        const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
@@ -3533,7 +3533,7 @@
         }
 
         function playAnimation(animation) {
-            if (animation.type === 'layered') playLayeredAnimation(animation.layers);
+            if (animation.type === 'layered' && typeof playLayeredAnimation === 'function') playLayeredAnimation(animation.layers);
             else playTriFrameAnimation(animation);
         }
 
