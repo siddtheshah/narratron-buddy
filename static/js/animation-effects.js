@@ -14,6 +14,10 @@ export function layerTransform(effect, seconds) {
         return { x: Math.sin(seconds * 0.65) * 3, y: Math.cos(seconds * 0.5) * 1.5, rotation: 0, scale: 1 };
     case "breathe":
         return { x: 0, y: 0, rotation: 0, scale: 1 + Math.sin(seconds * 1.15) * 0.008 };
+    case "twist":
+        return { x: 0, y: 0, rotation: Math.sin(seconds * 1.5) * 0.02, scale: 1 };
+    case "bend":
+        return { x: Math.sin(seconds * 1.5) * 1.5, y: 0, rotation: 0, scale: 1 };
     default:
         return { x: 0, y: 0, rotation: 0, scale: 1 };
     }

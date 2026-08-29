@@ -23,7 +23,7 @@ def test_get_layered_animation_catalog_returns_effects_and_presets():
     assert "image_effects" in catalog
     assert "presets" in catalog
     effect_ids = {e["id"] for e in catalog["effects"]}
-    assert {"none", "sway", "vibrate", "drift", "breathe"}.issubset(effect_ids)
+    assert {"none", "sway", "vibrate", "drift", "breathe", "twist", "bend"}.issubset(effect_ids)
 
 
 def test_layered_animation_lab_routes():

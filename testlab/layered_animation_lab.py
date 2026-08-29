@@ -50,6 +50,8 @@ def get_layered_animation_catalog() -> dict[str, Any]:
         {"id": "vibrate", "name": "Vibrate", "description": "Rapid high-frequency jitter motion"},
         {"id": "drift", "name": "Drift", "description": "Slow floating horizontal and vertical translation"},
         {"id": "breathe", "name": "Breathe", "description": "Subtle expanding and contracting scale pulse"},
+        {"id": "twist", "name": "Twist (S-Curve)", "description": "Radially proportional torque distorting around centroid (opposite ends curve opposite)"},
+        {"id": "bend", "name": "Bend (C-Curve)", "description": "Synchronous same-direction curvature distorting around centroid"},
     ]
 
     image_effects = [
@@ -105,6 +107,37 @@ def get_layered_animation_catalog() -> dict[str, Any]:
                     "amplitude": 1.2,
                     "opacity": 0.9,
                     "order": 2,
+                },
+            ]
+        })
+
+    if "subject_stick_figure_sword.png" in piece_map:
+        presets.append({
+            "id": "sword-hero-twist",
+            "name": "Jumping Sword Hero (Twist & Bend)",
+            "description": "Dynamic stick figure hero leaping into battle with cyclical torque distortion.",
+            "layers": [
+                {
+                    "name": "Background Sky",
+                    "piece_id": "bg_mountain_sky",
+                    "filename": "bg_mountain_sky.png",
+                    "url": piece_map.get("bg_mountain_sky.png", {}).get("url", ""),
+                    "effect": "none",
+                    "speed": 1.0,
+                    "amplitude": 1.0,
+                    "opacity": 1.0,
+                    "order": 0,
+                },
+                {
+                    "name": "Stick Figure Hero",
+                    "piece_id": "subject_stick_figure_sword",
+                    "filename": "subject_stick_figure_sword.png",
+                    "url": piece_map["subject_stick_figure_sword.png"]["url"],
+                    "effect": "twist",
+                    "speed": 1.2,
+                    "amplitude": 1.4,
+                    "opacity": 1.0,
+                    "order": 1,
                 },
             ]
         })

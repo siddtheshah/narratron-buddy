@@ -231,3 +231,10 @@ class TestAnimationTools(BaseTestCase):
         tools.join_generation(timeout=2)
         self.assertIn("generation started", first_result[0])
         self.assertFalse(tools.is_in_flight("create_layered_animation"))
+
+    def test_animation_layer_accepts_twist_and_bend_effects(self):
+        from tools.animation_tool import AnimationLayer
+        layer_twist = AnimationLayer(description="a spinning magic portal", effect="twist")
+        self.assertEqual(layer_twist.effect, "twist")
+        layer_bend = AnimationLayer(description="a flexing reed", effect="bend")
+        self.assertEqual(layer_bend.effect, "bend")
