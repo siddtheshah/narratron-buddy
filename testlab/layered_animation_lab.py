@@ -66,7 +66,6 @@ def get_layered_animation_catalog() -> dict[str, Any]:
         {"id": "haze", "name": "Drifting haze"},
         {"id": "trace", "name": "Light trace"},
         {"id": "sparkle", "name": "Starlight twinkle"},
-        {"id": "bendy", "name": "Bendy"},
         {"id": "creeping", "name": "Creeping darkness"},
         {"id": "dream", "name": "Cloudy dreams"},
     ]

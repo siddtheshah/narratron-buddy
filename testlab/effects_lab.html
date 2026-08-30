@@ -179,23 +179,21 @@
           <option value="astrolabe">Brass astrolabe</option>
         </select></label>
       <label>Effect <select id="effect">
-          <option value="bendy" selected>Bendy</option>
+          <option value="gleam3" selected>Gleam 3</option>
           <option value="haze">Drifting haze</option>
           <option value="trace">Light trace</option>
-          <option value="gleam3">Gleam 3</option>
           <option value="creeping">Creeping darkness</option>
           <option value="dream">Cloudy dreams</option>
           <option value="sparkle">Starlight twinkle</option>
         </select></label>
-      <label>Intensity <input id="intensity" type="range" min="-100" max="100" value="0"
-          aria-label="Bendy intensity: negative reverses the warp, zero is undistorted, positive applies the warp"><output
-          id="intensity-value" for="intensity">0</output></label>
+      <label>Intensity <input id="intensity" type="range" min="0" max="100" value="75"
+          aria-label="Effect intensity"><output
+          id="intensity-value" for="intensity">75</output></label>
       <button id="pause" type="button">Pause motion</button>
       <button id="gleam3-seed-map" type="button" aria-pressed="false">Show Gleam 3 flow seeds</button>
       <button id="inverse-blur-map" type="button" aria-pressed="false">Show V inverse-Gaussian map</button>
-      <button id="bendy-line-map" type="button" aria-pressed="false">Show Bendy region lines</button>
       <button id="trace-map" type="button" aria-pressed="false">Show Light trace pixels</button>
-      <span id="status" class="status">Bendy: undistorted</span>
+      <span id="status" class="status">Gleam 3: 75</span>
     </div>
     <section class="stage" aria-label="Large image effects preview">
       <figure id="featured-figure">
@@ -220,10 +218,10 @@
       astrolabe: { src: '/carousel/brass-astrolabe.png', alt: 'Brass astrolabe preview', title: 'Brass astrolabe', kind: 'dense specular detail' },
     };
     const featuredImage = document.querySelector('#featured-image');
-    const controllers = [attachImageEffect(featuredImage, { effect: 'bendy', intensity: 0 })];
-    const artwork = document.querySelector('#artwork'); const effect = document.querySelector('#effect'); const intensity = document.querySelector('#intensity'); const intensityValue = document.querySelector('#intensity-value'); const status = document.querySelector('#status'); const pause = document.querySelector('#pause'); const gleam3SeedMap = document.querySelector('#gleam3-seed-map'); const inverseBlurMap = document.querySelector('#inverse-blur-map'); const bendyLineMap = document.querySelector('#bendy-line-map'); const traceMap = document.querySelector('#trace-map');
-    function apply() { const signedIntensity = intensity.value / 100; const effectIntensity = effect.value === 'bendy' ? signedIntensity : Math.abs(signedIntensity); controllers.forEach(controller => { controller.setEffect(effect.value); controller.setIntensity(effectIntensity); }); intensityValue.value = intensity.value; intensityValue.textContent = intensity.value; status.textContent = `${IMAGE_EFFECTS[effect.value].label}: ${Number(intensity.value) === 0 ? 'undistorted' : `${intensity.value > 0 ? '+' : ''}${intensity.value}`}`; }
-    effect.addEventListener('change', () => { if (effect.value !== 'bendy' && Number(intensity.value) === 0) intensity.value = 75; apply(); }); intensity.addEventListener('input', apply);
+    const controllers = [attachImageEffect(featuredImage, { effect: 'gleam3', intensity: 0.75 })];
+    const artwork = document.querySelector('#artwork'); const effect = document.querySelector('#effect'); const intensity = document.querySelector('#intensity'); const intensityValue = document.querySelector('#intensity-value'); const status = document.querySelector('#status'); const pause = document.querySelector('#pause'); const gleam3SeedMap = document.querySelector('#gleam3-seed-map'); const inverseBlurMap = document.querySelector('#inverse-blur-map'); const traceMap = document.querySelector('#trace-map');
+    function apply() { const effectIntensity = Math.abs(intensity.value / 100); controllers.forEach(controller => { controller.setEffect(effect.value); controller.setIntensity(effectIntensity); }); intensityValue.value = intensity.value; intensityValue.textContent = intensity.value; status.textContent = `${IMAGE_EFFECTS[effect.value].label}: ${intensity.value}`; }
+    effect.addEventListener('change', () => { apply(); }); intensity.addEventListener('input', apply);
     function syncPreviewAspectRatio() {
       if (featuredImage.naturalWidth && featuredImage.naturalHeight) {
         controllers[0].element.style.aspectRatio = `${featuredImage.naturalWidth} / ${featuredImage.naturalHeight}`;
@@ -235,7 +233,6 @@
     pause.addEventListener('click', () => { const frozen = document.body.classList.toggle('motion-paused'); controllers.forEach(controller => controller.setPaused(frozen)); pause.textContent = frozen ? 'Resume motion' : 'Pause motion'; });
     gleam3SeedMap.addEventListener('click', () => { const visible = gleam3SeedMap.getAttribute('aria-pressed') !== 'true'; controllers.forEach(controller => controller.setGleam3SeedMapVisible(visible)); gleam3SeedMap.setAttribute('aria-pressed', String(visible)); gleam3SeedMap.textContent = visible ? 'Hide Gleam 3 flow seeds' : 'Show Gleam 3 flow seeds'; });
     inverseBlurMap.addEventListener('click', () => { const visible = inverseBlurMap.getAttribute('aria-pressed') !== 'true'; controllers.forEach(controller => controller.setInverseBlurMapVisible(visible)); inverseBlurMap.setAttribute('aria-pressed', String(visible)); inverseBlurMap.textContent = visible ? 'Hide V inverse-Gaussian map' : 'Show V inverse-Gaussian map'; });
-    bendyLineMap.addEventListener('click', () => { const visible = bendyLineMap.getAttribute('aria-pressed') !== 'true'; controllers.forEach(controller => controller.setBendyLineMapVisible(visible)); bendyLineMap.setAttribute('aria-pressed', String(visible)); bendyLineMap.textContent = visible ? 'Hide Bendy region lines' : 'Show Bendy region lines'; });
     traceMap.addEventListener('click', () => { const visible = traceMap.getAttribute('aria-pressed') !== 'true'; controllers.forEach(controller => controller.setTraceMapVisible(visible)); traceMap.setAttribute('aria-pressed', String(visible)); traceMap.textContent = visible ? 'Hide Light trace pixels' : 'Show Light trace pixels'; });
   </script>
   <style>

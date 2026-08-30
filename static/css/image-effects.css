@@ -71,27 +71,6 @@
   image-rendering: auto;
 }
 
-/* Bendy is a complete reverse-mapped replacement, not a blended overlay. */
-.image-effect-bendy {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  image-rendering: auto;
-}
-
-/* Debug view: cyan marks the image lines that partition Bendy's regions. */
-.image-effect-bendy-line-map {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  image-rendering: auto;
-}
 
 /* Haze redraws soft, moving source-image bubbles without altering the artwork. */
 .image-effect-haze {

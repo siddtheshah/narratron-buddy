@@ -16,7 +16,6 @@ export const IMAGE_EFFECTS = Object.freeze({
   dream: { label: 'Cloudy dreams', classes: ['fx-periodic-light', 'fx-bloom'] },
   sparkle: { label: 'Starlight twinkle', classes: ['fx-star-twinkle'] },
   gleam3: { label: 'Gleam 3', classes: ['fx-gleam3'] },
-  bendy: { label: 'Bendy', classes: ['fx-bendy'] },
   haze: { label: 'Drifting haze', classes: ['fx-haze'] },
   trace: { label: 'Light trace', classes: ['fx-trace'] },
 });
@@ -28,7 +27,6 @@ export const IMAGE_EFFECT_DEFAULT_INTENSITIES = Object.freeze({
   dream: 0.62,
   sparkle: 0.72,
   gleam3: 0.68,
-  bendy: 0.45,
   haze: 0.75,
   trace: 0.60,
 });
@@ -39,11 +37,6 @@ const ALL_EFFECT_CLASSES = Object.values(IMAGE_EFFECTS)
 function normaliseIntensity(value) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : 0.72;
-}
-
-function normaliseSignedIntensity(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.min(1, Math.max(-1, number)) : 0;
 }
 
 function smoothstep(edge0, edge1, value) {
@@ -1139,394 +1132,7 @@ function mirrorCoordinate(value, maximum) {
   return wrapped <= maximum ? wrapped : period - wrapped;
 }
 
-/**
- * Finds prominent image-spanning edges with a small weighted Hough transform.
- * Lines are stored in normal form: normal . point = offset.
- */
-function findStrongLines(sourcePixels, width, height) {
-  const luminance = new Float32Array(width * height);
-  for (let index = 0; index < luminance.length; index += 1) {
-    const pixel = index * 4;
-    luminance[index] = (0.2126 * sourcePixels.data[pixel] + 0.7152 * sourcePixels.data[pixel + 1] + 0.0722 * sourcePixels.data[pixel + 2]) / 255;
-  }
 
-  const diagonal = Math.hypot(width, height);
-  const angleCount = 54;
-  const rhoCount = Math.ceil(diagonal * 2) + 1;
-  const accumulator = new Float32Array(angleCount * rhoCount);
-  const cosines = Array.from({ length: angleCount }, (_, angle) => Math.cos(Math.PI * angle / angleCount));
-  const sines = Array.from({ length: angleCount }, (_, angle) => Math.sin(Math.PI * angle / angleCount));
-  const candidates = [];
-
-  for (let y = 1; y < height - 1; y += 2) {
-    for (let x = 1; x < width - 1; x += 2) {
-      const gradientX = luminance[y * width + x + 1] - luminance[y * width + x - 1];
-      const gradientY = luminance[(y + 1) * width + x] - luminance[(y - 1) * width + x];
-      const strength = Math.hypot(gradientX, gradientY);
-      if (strength < 0.12) continue;
-      // The edge gradient is already the line normal, so a narrow angular vote
-      // is less noisy than voting for every possible direction.
-      const normalAngle = Math.atan2(gradientY, gradientX);
-      const centerAngle = Math.round((((normalAngle / Math.PI) % 1 + 1) % 1) * angleCount) % angleCount;
-      for (let delta = -2; delta <= 2; delta += 1) {
-        const angle = (centerAngle + delta + angleCount) % angleCount;
-        const rho = Math.round(x * cosines[angle] + y * sines[angle] + diagonal);
-        accumulator[angle * rhoCount + clamp(rho, 0, rhoCount - 1)] += strength * (delta === 0 ? 1 : 0.55);
-      }
-    }
-  }
-
-  for (let angle = 0; angle < angleCount; angle += 1) {
-    for (let rho = 0; rho < rhoCount; rho += 1) {
-      const score = accumulator[angle * rhoCount + rho];
-      if (score > 0) candidates.push({ angle, rho, score });
-    }
-  }
-  candidates.sort((a, b) => b.score - a.score);
-
-  const strongest = candidates[0];
-  if (!strongest) return [];
-  const primary = {
-    angle: strongest.angle,
-    nx: cosines[strongest.angle],
-    ny: sines[strongest.angle],
-    offset: strongest.rho - diagonal,
-    score: strongest.score,
-  };
-
-  // Find the strongest line's in-frame segment, then place the derived line
-  // perpendicular to it through that segment's midpoint.
-  const point = { x: primary.nx * primary.offset, y: primary.ny * primary.offset };
-  const direction = { x: -primary.ny, y: primary.nx };
-  const intersections = [];
-  const addIntersection = (x, y) => {
-    if (x >= -0.001 && x <= width - 1 + 0.001 && y >= -0.001 && y <= height - 1 + 0.001
-      && !intersections.some((existing) => Math.hypot(existing.x - x, existing.y - y) < 0.01)) {
-      intersections.push({ x: clamp(x, 0, width - 1), y: clamp(y, 0, height - 1) });
-    }
-  };
-  if (Math.abs(direction.x) > 0.0001) {
-    addIntersection(0, point.y - point.x * direction.y / direction.x);
-    addIntersection(width - 1, point.y + (width - 1 - point.x) * direction.y / direction.x);
-  }
-  if (Math.abs(direction.y) > 0.0001) {
-    addIntersection(point.x - point.y * direction.x / direction.y, 0);
-    addIntersection(point.x + (height - 1 - point.y) * direction.x / direction.y, height - 1);
-  }
-  let start = intersections[0] || { x: width / 2, y: height / 2 };
-  let end = intersections[1] || start;
-  let largestDistance = -1;
-  for (const first of intersections) {
-    for (const second of intersections) {
-      const distance = Math.hypot(first.x - second.x, first.y - second.y);
-      if (distance > largestDistance) {
-        start = first;
-        end = second;
-        largestDistance = distance;
-      }
-    }
-  }
-  const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  const secondary = {
-    // This normal follows the primary line, making the derived line itself
-    // perpendicular to the detected boundary.
-    nx: direction.x,
-    ny: direction.y,
-    offset: midpoint.x * direction.x + midpoint.y * direction.y,
-    score: strongest.score,
-    derived: 'perpendicular-bisector',
-  };
-  return [primary, secondary];
-}
-
-function sampleBilinear(source, width, height, x, y, output, outputIndex) {
-  x = mirrorCoordinate(x, width - 1);
-  y = mirrorCoordinate(y, height - 1);
-  const left = Math.floor(x);
-  const top = Math.floor(y);
-  const right = Math.min(width - 1, left + 1);
-  const bottom = Math.min(height - 1, top + 1);
-  const horizontal = x - left;
-  const vertical = y - top;
-  const topLeft = (top * width + left) * 4;
-  const topRight = (top * width + right) * 4;
-  const bottomLeft = (bottom * width + left) * 4;
-  const bottomRight = (bottom * width + right) * 4;
-  for (let channel = 0; channel < 4; channel += 1) {
-    const upper = source.data[topLeft + channel] * (1 - horizontal) + source.data[topRight + channel] * horizontal;
-    const lower = source.data[bottomLeft + channel] * (1 - horizontal) + source.data[bottomRight + channel] * horizontal;
-    output.data[outputIndex + channel] = Math.round(upper * (1 - vertical) + lower * vertical);
-  }
-}
-
-/**
- * Bendy partitions the artwork with its strongest lines then reverse-maps the
- * output canvas through a collection of boundary-preserving normal warps.
- * Each warp is zero at the detected line and at the image boundary, leaving all
- * lookup coordinates inside the input image while expanding/compressing regions.
- */
-function createBendyLayer(frame, image) {
-  const canvas = document.createElement('canvas');
-  canvas.className = 'image-effect-bendy';
-  canvas.setAttribute('aria-hidden', 'true');
-  frame.appendChild(canvas);
-
-  const lineMapCanvas = document.createElement('canvas');
-  lineMapCanvas.className = 'image-effect-bendy-line-map';
-  lineMapCanvas.setAttribute('aria-hidden', 'true');
-  lineMapCanvas.hidden = true;
-  frame.appendChild(lineMapCanvas);
-
-  const sourceCanvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
-  const lineMapContext = lineMapCanvas.getContext('2d');
-  let sourcePixels;
-  let outputPixels;
-  let lines = [];
-  let analysedSourceKey;
-  let enabled = false;
-  let lineMapVisible = false;
-  let paused = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let animationFrame;
-  let motionStartedAt = performance.now();
-  let cacheGeneration = 0;
-  let cacheSignature;
-  let cacheFrames = new Map();
-  let cacheReady = false;
-  // A restrained cycle: at the zero resting intensity this yields
-  // -0.03, -0.02, -0.01, 0, +0.01, +0.02, +0.03.
-  const cachedFrameCount = 7;
-  const motionAmplitude = 0.03;
-  // Cached-frame playback only composites two canvases, so it can move faster
-  // than the one-time reverse-warp calculation without a quality penalty.
-  const motionPeriod = 900;
-
-  function drawLineMap() {
-    if (!lineMapContext || !sourcePixels) return;
-    const map = lineMapContext.createImageData(canvas.width, canvas.height);
-    map.data.set(sourcePixels.data);
-    for (let y = 0; y < canvas.height; y += 1) {
-      for (let x = 0; x < canvas.width; x += 1) {
-        let nearest = Infinity;
-        for (const line of lines) nearest = Math.min(nearest, Math.abs(x * line.nx + y * line.ny - line.offset));
-        if (nearest < 1.35) {
-          const pixel = (y * canvas.width + x) * 4;
-          const glow = 1 - nearest / 1.35;
-          map.data[pixel] = Math.round(72 + 183 * glow);
-          map.data[pixel + 1] = Math.round(220 + 35 * glow);
-          map.data[pixel + 2] = 255;
-        }
-      }
-    }
-    lineMapContext.putImageData(map, 0, 0);
-  }
-
-  function renderPixels(targetPixels, intensity) {
-    if (!sourcePixels || !targetPixels) return;
-    // At full intensity the transform remains monotonic on either side of each
-    // line; this avoids folds and guarantees the reverse lookup stays legal.
-    const warpAmount = intensity * 0.115;
-    const { width, height } = canvas;
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        let sourceX = x;
-        let sourceY = y;
-        for (let index = 0; index < lines.length; index += 1) {
-          const line = lines[index];
-          const signedDistance = sourceX * line.nx + sourceY * line.ny - line.offset;
-          const direction = signedDistance < 0 ? -1 : 1;
-          const boundaryDistance = direction > 0
-            ? Math.min((width - 1 - sourceX) / Math.max(0.001, line.nx), (height - 1 - sourceY) / Math.max(0.001, line.ny))
-            : Math.min(sourceX / Math.max(0.001, -line.nx), sourceY / Math.max(0.001, -line.ny));
-          // A corner can be the first boundary, even when a normal component is
-          // negative. Evaluate all four ray intersections and retain the nearest.
-          const rayLimits = [
-            line.nx > 0 ? (width - 1 - sourceX) / line.nx : line.nx < 0 ? -sourceX / line.nx : Infinity,
-            line.ny > 0 ? (height - 1 - sourceY) / line.ny : line.ny < 0 ? -sourceY / line.ny : Infinity,
-          ];
-          const edgeDistance = Math.min(...rayLimits.filter((value) => value >= 0));
-          const sideLength = Math.max(1, Math.min(Math.abs(signedDistance) + edgeDistance, diagonalFor(width, height)));
-          const normalized = clamp(Math.abs(signedDistance) / sideLength, 0, 1);
-          const bend = Math.sin(Math.PI * normalized) * sideLength * warpAmount * (index % 2 === 0 ? 1 : -1);
-          sourceX += direction * line.nx * bend;
-          sourceY += direction * line.ny * bend;
-        }
-        // A combined line field may cross an image edge. The sampler reflects
-        // that coordinate back across the edge, so every texel read stays in
-        // the source image without creating a stretched border colour.
-        sampleBilinear(sourcePixels, width, height, sourceX, sourceY, targetPixels, (y * width + x) * 4);
-      }
-    }
-  }
-
-  function cacheSettings() {
-    const center = normaliseSignedIntensity(frame.style.getPropertyValue('--fx-intensity'));
-    const amplitude = Math.min(motionAmplitude, 1 - Math.abs(center));
-    return { center, amplitude, signature: `${analysedSourceKey}|${center.toFixed(4)}|${amplitude.toFixed(4)}` };
-  }
-
-  function displayCachedFrame(time) {
-    if (!context || !enabled) return;
-    const { center, amplitude } = cacheSettings();
-    const phase = paused ? 0 : (time - motionStartedAt) / motionPeriod;
-    const targetIntensity = center + amplitude * Math.sin(Math.PI * 2 * phase);
-    const position = amplitude ? (targetIntensity - (center - amplitude)) / (amplitude * 2) : 0.5;
-    const index = clamp(Math.round(position * (cachedFrameCount - 1)), 0, cachedFrameCount - 1);
-    const cachedFrame = cacheFrames.get(index);
-    if (!cachedFrame) return;
-    canvas.hidden = false;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(cachedFrame, 0, 0);
-  }
-
-  function buildFrameCache() {
-    if (!context || !sourcePixels || !outputPixels) return false;
-    const { center, amplitude, signature } = cacheSettings();
-    if (cacheSignature === signature) return cacheReady;
-    cacheSignature = signature;
-    cacheFrames = new Map();
-    cacheReady = false;
-    canvas.dataset.bendyCacheState = 'building';
-    const generation = ++cacheGeneration;
-    const values = Array.from({ length: cachedFrameCount }, (_, index) => (
-      center - amplitude + (index / (cachedFrameCount - 1)) * amplitude * 2
-    ));
-    canvas.dataset.bendyCachedIntensityFrames = values.map((value) => value.toFixed(3)).join(',');
-    // Build the resting frame first so the source is replaced immediately, then
-    // fill outward through the motion range one cached frame per paint cycle.
-    const centerIndex = Math.floor(cachedFrameCount / 2);
-    const buildOrder = [centerIndex, centerIndex + 1, centerIndex - 1, centerIndex + 2, centerIndex - 2, centerIndex + 3, centerIndex - 3]
-      .filter((index) => index >= 0 && index < cachedFrameCount);
-    let orderIndex = 0;
-    const buildNext = () => {
-      if (generation !== cacheGeneration || !sourcePixels || !enabled) return;
-      const index = buildOrder[orderIndex];
-      const pixels = context.createImageData(canvas.width, canvas.height);
-      renderPixels(pixels, values[index]);
-      const cachedCanvas = document.createElement('canvas');
-      cachedCanvas.width = canvas.width;
-      cachedCanvas.height = canvas.height;
-      cachedCanvas.getContext('2d')?.putImageData(pixels, 0, 0);
-      cacheFrames.set(index, cachedCanvas);
-      canvas.dataset.bendyCachedFrames = String(cacheFrames.size);
-      orderIndex += 1;
-      if (orderIndex < buildOrder.length) {
-        requestAnimationFrame(buildNext);
-      } else {
-        cacheReady = true;
-        canvas.dataset.bendyCacheState = 'ready';
-        motionStartedAt = performance.now();
-        displayCachedFrame(motionStartedAt);
-        if (!paused) restartAnimation();
-      }
-    };
-    requestAnimationFrame(buildNext);
-    return false;
-  }
-
-  function animate(time) {
-    displayCachedFrame(time);
-    if (enabled && !paused) animationFrame = requestAnimationFrame(animate);
-  }
-
-  function restartAnimation() {
-    cancelAnimationFrame(animationFrame);
-    if (enabled && !paused) {
-      motionStartedAt = performance.now();
-      animationFrame = requestAnimationFrame(animate);
-    }
-  }
-
-  function render() {
-    if (!enabled || !sourcePixels) return;
-    if (!buildFrameCache()) {
-      // The untouched source remains on screen until the entire cycle exists.
-      canvas.hidden = true;
-      cancelAnimationFrame(animationFrame);
-      return;
-    }
-    if (paused) {
-      displayCachedFrame(motionStartedAt);
-      return;
-    }
-    displayCachedFrame(performance.now());
-    restartAnimation();
-  }
-
-  function analyse() {
-    if (!sourceContext || !image.naturalWidth) return;
-    const sourceKey = image.currentSrc || image.src;
-    // Rendering responds to intensity changes, but the expensive Hough pass is
-    // retained until the source artwork actually changes.
-    if (sourceKey === analysedSourceKey && sourcePixels && outputPixels) {
-      canvas.hidden = !enabled;
-      lineMapCanvas.hidden = !lineMapVisible;
-      render();
-      return;
-    }
-    // Keep both line detection and reverse sampling at source resolution. The
-    // only downsampling happens later when CSS displays the finished canvas.
-    const width = image.naturalWidth;
-    const height = image.naturalHeight;
-    canvas.width = lineMapCanvas.width = sourceCanvas.width = width;
-    canvas.height = lineMapCanvas.height = sourceCanvas.height = height;
-    sourceContext.clearRect(0, 0, width, height);
-    sourceContext.drawImage(image, 0, 0, width, height);
-    try {
-      sourcePixels = sourceContext.getImageData(0, 0, width, height);
-      outputPixels = context?.createImageData(width, height);
-      lines = findStrongLines(sourcePixels, width, height);
-      analysedSourceKey = sourceKey;
-      canvas.dataset.bendyLineCount = String(lines.length);
-      drawLineMap();
-      canvas.hidden = !enabled;
-      lineMapCanvas.hidden = !lineMapVisible;
-      render();
-    } catch (error) {
-      sourcePixels = undefined;
-      outputPixels = undefined;
-      lines = [];
-      analysedSourceKey = undefined;
-      canvas.hidden = true;
-      lineMapCanvas.hidden = true;
-      console.warn('Bendy needs a same-origin or CORS-enabled image.', error);
-    }
-  }
-
-  image.addEventListener('load', analyse);
-  if (image.complete) analyse();
-
-  return {
-    setEnabled(nextEnabled) {
-      enabled = nextEnabled;
-      canvas.hidden = !enabled;
-      if (enabled && !sourcePixels) analyse();
-      render();
-      if (!enabled) {
-        cancelAnimationFrame(animationFrame);
-        cacheGeneration += 1;
-        cacheSignature = undefined;
-        cacheReady = false;
-      }
-    },
-    setPaused(nextPaused) {
-      paused = nextPaused || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      render();
-    },
-    setLineMapVisible(nextVisible) {
-      lineMapVisible = nextVisible;
-      lineMapCanvas.hidden = !lineMapVisible;
-    },
-    destroy() {
-      cancelAnimationFrame(animationFrame);
-      cacheGeneration += 1;
-      image.removeEventListener('load', analyse);
-      canvas.remove();
-      lineMapCanvas.remove();
-    },
-  };
-}
 
 /** Soft, blurred copies of the source drift as slow atmospheric bubbles. */
 function createHazeLayer(frame, image) {
@@ -1987,17 +1593,12 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
   const periodicLightLayer = createPeriodicLightLayer(frame, image);
   const starTwinkleLayer = createStarTwinkleLayer(frame, image);
   const gleam3Layer = createGleam3Layer(frame, image);
-  const bendyLayer = createBendyLayer(frame, image);
   const hazeLayer = createHazeLayer(frame, image);
   const traceLayer = createTraceLayer(frame, image);
 
   const apply = (nextEffect = effect, nextIntensity = intensity) => {
     const definition = IMAGE_EFFECTS[nextEffect] || IMAGE_EFFECTS.gleam3;
-    // Bendy's direction is meaningful: negative values are its inverse warp.
-    // The other effects retain their existing non-negative intensity contract.
-    const resolvedIntensity = nextEffect === 'bendy'
-      ? normaliseSignedIntensity(nextIntensity)
-      : normaliseIntensity(nextIntensity);
+    const resolvedIntensity = normaliseIntensity(nextIntensity);
     frame.classList.remove(...ALL_EFFECT_CLASSES);
     frame.classList.add(...definition.classes);
     frame.dataset.effect = nextEffect;
@@ -2007,7 +1608,6 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
     periodicLightLayer.setEnabled(definition.classes.includes('fx-periodic-light'));
     starTwinkleLayer.setEnabled(definition.classes.includes('fx-star-twinkle'));
     gleam3Layer.setEnabled(definition.classes.includes('fx-gleam3'));
-    bendyLayer.setEnabled(definition.classes.includes('fx-bendy'));
     hazeLayer.setEnabled(definition.classes.includes('fx-haze'));
     traceLayer.setEnabled(definition.classes.includes('fx-trace'));
   };
@@ -2023,13 +1623,11 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
       periodicLightLayer.setPaused(isPaused);
       starTwinkleLayer.setPaused(isPaused);
       gleam3Layer.setPaused(isPaused);
-      bendyLayer.setPaused(isPaused);
       hazeLayer.setPaused(isPaused);
       traceLayer.setPaused(isPaused);
     },
     setInverseBlurMapVisible(isVisible) { gleam3Layer.setInverseMapVisible(isVisible); },
     setGleam3SeedMapVisible(isVisible) { gleam3Layer.setSeedMapVisible(isVisible); },
-    setBendyLineMapVisible(isVisible) { bendyLayer.setLineMapVisible(isVisible); },
     setTraceMapVisible(isVisible) { traceLayer.setMapVisible(isVisible); },
     destroy() {
       frame.classList.remove(...ALL_EFFECT_CLASSES);
@@ -2039,7 +1637,6 @@ export function attachImageEffect(image, { effect = 'gleam3', intensity = 0.72 }
       periodicLightLayer.destroy();
       starTwinkleLayer.destroy();
       gleam3Layer.destroy();
-      bendyLayer.destroy();
       hazeLayer.destroy();
       traceLayer.destroy();
     },
