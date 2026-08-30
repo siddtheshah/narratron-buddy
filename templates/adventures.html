@@ -671,7 +671,7 @@
 
         const theaterId = data.theater_id || (data.theater && data.theater.theater_id);
         if (theaterId) {
-          window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}`;
+          window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}&role=orator`;
         } else {
           window.location.href = '/deploy';
         }

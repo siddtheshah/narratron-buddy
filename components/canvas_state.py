@@ -15,7 +15,11 @@ from fastapi import WebSocket
 from components.chat_manager import ChatManager
 from components.scene_speech import SceneSpeechDispatcher, speaker_key
 from providers.speech_provider import SpeechProvider
-from utils.image_utils import extract_image_prompt
+from utils.image_utils import (
+    extract_image_prompt,
+    extract_image_metadata_description,
+    extract_image_metadata_title,
+)
 from components.theater_manager import TheaterManager
 
 logger = logging.getLogger(__name__)
@@ -479,7 +483,7 @@ class CanvasStateManager:
         elif not getattr(self, "shown_image_time", None):
             self.shown_image_time = time.time()
         self.shown_image_path = file_path
-        self.shown_image_prompt = extract_image_prompt(file_path)
+        self.shown_image_prompt = self._resolve_prompt_for_file(file_path)
         self.shown_image_transition = transition
         self.shown_image_effect = effect
         if clear_animation:
@@ -837,6 +841,47 @@ class CanvasStateManager:
         prompt = extract_image_prompt(str(chosen)) or f"Mounted Reference: {chosen.stem}"
         return chosen, prompt
 
+    def _resolve_prompt_for_file(self, file_path: Optional[str], fallback_prompt: str = "") -> str:
+        """Robustly resolve human-readable prompt metadata for an image file."""
+        if fallback_prompt:
+            return fallback_prompt
+        if not file_path or not os.path.exists(file_path):
+            return ""
+        # 1. Try embedded PNG tEXt or EXIF prompt
+        prompt = extract_image_prompt(file_path)
+        if prompt:
+            return prompt
+        # 2. Try embedded EXIF/PNG title or description fields
+        title_meta = extract_image_metadata_title(file_path)
+        if title_meta:
+            return title_meta
+        desc_meta = extract_image_metadata_description(file_path)
+        if desc_meta:
+            return desc_meta
+
+        # 3. Check if image matches adventure cover
+        path_obj = Path(file_path)
+        meta = None
+        if hasattr(self, "theater") and self.theater:
+            try:
+                meta_file = self.theater.directory() / "metadata.json"
+                if meta_file.exists():
+                    import json
+                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                meta = None
+        if meta and meta.get("cover_image"):
+            cover_name = Path(meta["cover_image"]).name.lower()
+            if path_obj.name.lower() == cover_name:
+                title = meta.get("title")
+                return f"Adventure Cover: {title}" if title else f"Adventure Cover: {path_obj.stem}"
+
+        # 4. Fallback based on filename stem
+        stem_clean = path_obj.stem.replace("_", " ").replace("-", " ").title()
+        if "reference" in str(path_obj).lower() or "ref" in path_obj.stem.lower():
+            return f"Reference Visual: {stem_clean}"
+        return f"Image: {stem_clean}"
+
     def _resolve_active_image(self) -> Tuple[Optional[str], Optional[str], float, str]:
         """Resolve current displayed image: explicit shown image, newest artifact, adventure cover, or mounted reference.
 
@@ -845,7 +890,8 @@ class CanvasStateManager:
         """
         # 1. Explicit shown image
         if self.shown_image_path:
-            return self.get_url_for_path(self.shown_image_path), self.shown_image_path, self.shown_image_time, self.shown_image_prompt
+            prompt = self._resolve_prompt_for_file(self.shown_image_path, getattr(self, "shown_image_prompt", ""))
+            return self.get_url_for_path(self.shown_image_path), self.shown_image_path, self.shown_image_time, prompt
 
         # 2. Output directory latest generated image
         image_folder = str(self.theater.output_dir())
@@ -855,18 +901,21 @@ class CanvasStateManager:
                 files.extend(glob.glob(os.path.join(image_folder, ext)))
             if files:
                 newest = max(files, key=os.path.getmtime)
-                return self.get_url_for_path(newest), newest, os.path.getmtime(newest), extract_image_prompt(newest)
+                prompt = self._resolve_prompt_for_file(newest)
+                return self.get_url_for_path(newest), newest, os.path.getmtime(newest), prompt
 
         # 3. Adventure cover from metadata.json
         cover = self._resolve_adventure_cover()
         if cover:
             cover_path, prompt = cover
+            prompt = self._resolve_prompt_for_file(str(cover_path), prompt)
             return self.get_url_for_path(str(cover_path)), str(cover_path), 0.0, prompt
 
         # 4. Mounted reference fallback
         ref = self._resolve_reference_fallback()
         if ref:
             ref_path, prompt = ref
+            prompt = self._resolve_prompt_for_file(str(ref_path), prompt)
             return self.get_url_for_path(str(ref_path)), str(ref_path), 0.0, prompt
 
         return None, None, 0.0, ""
@@ -884,12 +933,14 @@ class CanvasStateManager:
         formatted_history = []
         for h in self.shown_images_history:
             if isinstance(h, dict):
-                formatted_history.append(h)
+                h_copy = dict(h)
+                h_copy["prompt"] = self._resolve_prompt_for_file(h_copy.get("path"), h_copy.get("prompt", ""))
+                formatted_history.append(h_copy)
             elif isinstance(h, str):
                 formatted_history.append({
                     "path": h,
                     "url": self.get_url_for_path(h),
-                    "prompt": extract_image_prompt(h),
+                    "prompt": self._resolve_prompt_for_file(h),
                     "time": 0.0,
                     "transition": transition,
                     "effect": effect,
