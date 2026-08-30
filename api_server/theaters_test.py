@@ -950,6 +950,9 @@ async def test_create_and_deploy_theater_with_preset_adventure():
         assert create_args["theater_config"]["agent"]["style"] == "eerie"
         assert create_args["theater_config"]["story_planning"]["adventure_mode"] is True
         assert create_args["metadata_json"] == mock_adv_meta
+        mock_db.record_deployment.assert_called_once_with(
+            "theater_preset123", 42, "KEY-TEST1", cost=0.0, name="Lesovik Station"
+        )
 
 
 

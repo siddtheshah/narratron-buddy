@@ -579,6 +579,24 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         # Deleting non-existent deployment returns False
         self.assertFalse(self.db.delete_deployment("theater_to_delete"))
 
+    def test_record_deployment_with_name(self):
+        self.db.record_deployment(
+            "adv_named_theater",
+            self.user["id"],
+            "KEY-ADV-NAME",
+            cost=0.0,
+            name="Lesovik Station Adventure",
+        )
+        dep = self.db.get_deployment("adv_named_theater")
+        self.assertIsNotNone(dep)
+        self.assertEqual(dep["theater_id"], "adv_named_theater")
+        self.assertEqual(dep["user_id"], self.user["id"])
+        self.assertEqual(dep["name"], "Lesovik Station Adventure")
+
+        records = self.db.get_user_theater_records(self.user["id"])
+        adv_record = next(r for r in records if r["theater_id"] == "adv_named_theater")
+        self.assertEqual(adv_record["metadata"]["name"], "Lesovik Station Adventure")
+
     def test_get_user_theater_records_is_scoped_and_uses_exported_metadata(self):
         other_user = self.db.register_user("otherdepuser", "other-dep@test.com", "Pass12345")
         self.db.record_deployment("my_theater", self.user["id"], "MY-KEY")

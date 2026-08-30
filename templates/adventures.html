@@ -682,6 +682,16 @@
     }
 
     // Auto-resume deploy after auth login if triggered
+    window.onAuthSuccess = function(action, data) {
+      if ((action === 'login' || action === 'register') && pendingDeployAdventureId) {
+        const targetAdvId = pendingDeployAdventureId;
+        pendingDeployAdventureId = null;
+        const adv = allAdventures.find(a => a.id === targetAdvId);
+        const title = adv ? adv.title : 'Narratron Adventure';
+        deployAndPlay(targetAdvId, title);
+      }
+    };
+
     window.addEventListener('load', () => {
       loadAdventures();
     });

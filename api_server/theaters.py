@@ -552,7 +552,13 @@ async def create_and_deploy_theater(request: Request):
     deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
 
     # Record deployment & deduct credits (0.0 cost)
-    db.record_deployment(deployed_meta.theater_id, user["id"], deployed_meta.join_key, cost=0.0)
+    db.record_deployment(
+        deployed_meta.theater_id,
+        user["id"],
+        deployed_meta.join_key,
+        cost=0.0,
+        name=name or deployed_meta.name,
+    )
     auth_session_cache.invalidate_user(user["id"])
     theater_access_cache.invalidate_theater(deployed_meta.theater_id)
 
@@ -586,6 +592,14 @@ def deploy_existing_theater(theater_id: str, request: Request):
                 pass
 
     meta = theater_manager.deploy_theater(theater_id)
+    if not dep:
+        db.record_deployment(
+            theater_id,
+            user["id"],
+            meta.join_key,
+            cost=0.0,
+            name=meta.name if meta else theater_id,
+        )
     theater_access_cache.invalidate_theater(theater_id)
     return {"status": "ok", "theater": meta}
 

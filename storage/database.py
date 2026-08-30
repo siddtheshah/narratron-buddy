@@ -1041,7 +1041,7 @@ class _DatabaseManagerBase:
             conn.commit()
             return True
 
-    def record_deployment(self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0, is_persistent: bool = False) -> bool:
+    def record_deployment(self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0, is_persistent: bool = False, name: Optional[str] = None) -> bool:
         """Record deployment in database and deduct cost from user credits."""
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
@@ -1056,8 +1056,8 @@ class _DatabaseManagerBase:
             # Claim the durable theater ID before debiting.  A retry with the
             # same ID hits the primary-key constraint before it can deduct.
             cursor.execute(
-                "INSERT INTO theaters (theater_id, user_id, join_key, cost, created_at, is_persistent, last_billed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (theater_id, user_id, join_key, cost, now_iso, persistent_val, last_billed_val)
+                "INSERT INTO theaters (theater_id, user_id, name, join_key, cost, created_at, is_persistent, last_billed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (theater_id, user_id, name, join_key, cost, now_iso, persistent_val, last_billed_val)
             )
             cursor.execute(
                 "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
@@ -1609,11 +1609,11 @@ class _DatabaseManagerBase:
             return False
 
     async def record_deployment_async(
-        self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0
+        self, theater_id: str, user_id: int, join_key: str, cost: float = 0.0, is_persistent: bool = False, name: Optional[str] = None
     ) -> bool:
         """Record deployment asynchronously."""
         return await asyncio.to_thread(
-            self.record_deployment, theater_id, user_id, join_key, cost
+            self.record_deployment, theater_id, user_id, join_key, cost, is_persistent, name
         )
 
     async def register_user_async(self, username: str, email: str, password: str) -> Dict:
