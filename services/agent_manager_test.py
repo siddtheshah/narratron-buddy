@@ -8,11 +8,67 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from components.theater_manager import TheaterManager
-from services.agent_manager import AgentSessionManager, AgentSession
+from services.agent_manager import (
+    AUTO_BEGIN_ADVENTURE_ACTION,
+    AgentSessionManager,
+    AgentSession,
+)
 from tools.observability_tool import ObservabilityTools
 
 
 class TestAgentSessionManager(unittest.TestCase):
+    def test_auto_begin_adventure_starts_planner_once_on_connect(self):
+        class PlannerTools:
+            def record_voice_input(self):
+                pass
+
+            def process_user_action(self, user_action):
+                return {"status": "processing"}
+
+        planner_tools = PlannerTools()
+        mock_agent = MagicMock()
+        mock_agent.tools = [
+            SimpleNamespace(
+                name="process_user_action", func=planner_tools.process_user_action
+            )
+        ]
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(
+            theater_id="auto_begin",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            config={"story_planning": {"adventure_mode": True, "auto_begin": True}},
+        )
+        session.story_planning_tools.record_voice_input = MagicMock()
+        session.story_planning_tools.process_user_action = MagicMock(
+            return_value={"status": "processing"}
+        )
+
+        asyncio.run(session.add_websocket(MagicMock()))
+        asyncio.run(session.remove_websocket(next(iter(session.websockets))))
+        asyncio.run(session.add_websocket(MagicMock()))
+
+        session.story_planning_tools.record_voice_input.assert_called_once()
+        session.story_planning_tools.process_user_action.assert_called_once_with(
+            AUTO_BEGIN_ADVENTURE_ACTION
+        )
+
+    def test_auto_begin_is_disabled_unless_both_adventure_flags_are_true(self):
+        planner_tools = MagicMock()
+        session = AgentSession.__new__(AgentSession)
+        session.theater_id = "not_auto_begin"
+        session.config = {
+            "story_planning": {"adventure_mode": False, "auto_begin": True}
+        }
+        session.story_planning_tools = planner_tools
+        session._auto_begin_started = False
+
+        session._auto_begin_adventure()
+
+        planner_tools.process_user_action.assert_not_called()
+
     def test_baton_handoff_ends_outgoing_audio_without_closing_session(self):
         session = AgentSession.__new__(AgentSession)
         session.active_controller_user_id = 1

@@ -33,6 +33,11 @@ DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
 DEFAULT_LIVE_TOOL_BUDGET = 3
+AUTO_BEGIN_ADVENTURE_ACTION = (
+    "Begin or resume the adventure. If this is a resumed adventure, briefly summarize "
+    "where the player left off; then introduce the current scene, situation, and an "
+    "immediate opportunity for the player."
+)
 
 
 class AgentSession:
@@ -163,6 +168,7 @@ class AgentSession:
         self.state_lock = threading.Lock()
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._doodle_snapshot_task: Optional[asyncio.Task] = None
+        self._auto_begin_started = False
 
     @staticmethod
     def _get_nonnegative_config_seconds(value: Any, setting_name: str) -> float:
@@ -702,6 +708,41 @@ class AgentSession:
         if was_disconnected:
             logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state()
+            self._auto_begin_adventure()
+
+    def _auto_begin_adventure(self) -> None:
+        """Start one configured Adventure Mode opening without involving Live."""
+        story_planning_config = self.config.get("story_planning", {})
+        if (
+            self._auto_begin_started
+            or not isinstance(story_planning_config, dict)
+            or not story_planning_config.get("adventure_mode", False)
+            or not story_planning_config.get("auto_begin", False)
+            or not self.story_planning_tools
+            or not hasattr(self.story_planning_tools, "process_user_action")
+        ):
+            return
+
+        # The opening is system-initiated, so it must not wait for a spoken
+        # player action even when subsequent actions require voice input.
+        if hasattr(self.story_planning_tools, "record_voice_input"):
+            self.story_planning_tools.record_voice_input()
+
+        self._auto_begin_started = True
+        try:
+            result = self.story_planning_tools.process_user_action(
+                AUTO_BEGIN_ADVENTURE_ACTION
+            )
+            logger.info(
+                "[AgentSession] Auto-begin requested for theater %s: %s",
+                self.theater_id,
+                result,
+            )
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to auto-begin adventure for theater %s",
+                self.theater_id,
+            )
 
     async def revoke_websockets_except(self, active_user_id: int) -> None:
         """Close agent-control sockets belonging to a previous baton holder."""

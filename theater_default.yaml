@@ -41,6 +41,9 @@ story_planning:
     required_stickies: []
 
     adventure_mode: false
+    # Immediately generate and publish an opening scene through the story
+    # planner when the user connects to an Adventure Mode session.
+    auto_begin: false
     # When Adventure Mode NPC dialogue is enabled, synthesize each spoken line
     # with a stable, automatically assigned Seed Speech voice.
     character_voicing: false
