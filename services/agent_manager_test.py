@@ -25,6 +25,9 @@ class TestAgentSessionManager(unittest.TestCase):
             def process_user_action(self, user_action):
                 return {"status": "processing"}
 
+            def process_system_action(self, user_action, message_type):
+                return {"status": "processing"}
+
         planner_tools = PlannerTools()
         mock_agent = MagicMock()
         mock_agent.tools = [
@@ -42,7 +45,7 @@ class TestAgentSessionManager(unittest.TestCase):
             config={"story_planning": {"adventure_mode": True, "auto_begin": True}},
         )
         session.story_planning_tools.record_voice_input = MagicMock()
-        session.story_planning_tools.process_user_action = MagicMock(
+        session.story_planning_tools.process_system_action = MagicMock(
             return_value={"status": "processing"}
         )
 
@@ -51,8 +54,8 @@ class TestAgentSessionManager(unittest.TestCase):
         asyncio.run(session.add_websocket(MagicMock()))
 
         session.story_planning_tools.record_voice_input.assert_called_once()
-        session.story_planning_tools.process_user_action.assert_called_once_with(
-            AUTO_BEGIN_ADVENTURE_ACTION
+        session.story_planning_tools.process_system_action.assert_called_once_with(
+            AUTO_BEGIN_ADVENTURE_ACTION, "Starting/Resuming Adventure"
         )
 
     def test_auto_begin_is_disabled_unless_both_adventure_flags_are_true(self):

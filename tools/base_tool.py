@@ -134,6 +134,7 @@ def with_cooldown(
     func_or_desc=None,
     action_desc: Optional[str] = None,
     duration: Optional[Any] = None,
+    tool_name: Optional[str] = None,
 ):
     """Decorator annotation for BaseTools methods that enforces cooldown tracking.
 
@@ -155,18 +156,18 @@ def with_cooldown(
 
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
-            tool_name = func.__name__
-            self.log_tool_call(tool_name, _tool_call_arguments(func, args, kwargs))
-            cooldown_err = self.check_cooldown(tool_name, desc, duration)
+            cooldown_key = tool_name or func.__name__
+            self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
+            cooldown_err = self.check_cooldown(cooldown_key, desc, duration)
             if cooldown_err:
                 trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                 if callable(trigger_cb):
-                    trigger_cb(tool_name)
+                    trigger_cb(cooldown_key)
                 return cooldown_err
 
             result = func(self, *args, **kwargs)
             if not (isinstance(result, str) and result.startswith("Error:")):
-                self.record_tool_call(tool_name, duration)
+                self.record_tool_call(cooldown_key, duration)
             return result
 
         return wrapper
@@ -176,18 +177,18 @@ def with_cooldown(
         def decorator(func: Callable):
             @functools.wraps(func)
             def wrapper(self, *args, **kwargs):
-                tool_name = func.__name__
-                self.log_tool_call(tool_name, _tool_call_arguments(func, args, kwargs))
-                cooldown_err = self.check_cooldown(tool_name, desc, duration)
+                cooldown_key = tool_name or func.__name__
+                self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
+                cooldown_err = self.check_cooldown(cooldown_key, desc, duration)
                 if cooldown_err:
                     trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                     if callable(trigger_cb):
-                        trigger_cb(tool_name)
+                        trigger_cb(cooldown_key)
                     return cooldown_err
 
                 result = func(self, *args, **kwargs)
                 if not (isinstance(result, str) and result.startswith("Error:")):
-                    self.record_tool_call(tool_name, duration)
+                    self.record_tool_call(cooldown_key, duration)
                 return result
             return wrapper
 

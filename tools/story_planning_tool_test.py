@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import threading
 import tempfile
@@ -675,6 +676,23 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(result["status"], "processing")
             time.sleep(0.05)
             mock_resolve.assert_called_once_with("I examine the mural", nudge="Reveal a hidden compartment")
+
+    def test_system_action_log_label_does_not_change_the_planner_prompt(self):
+        tools = self._make_tools(config={"adventure_mode": True, "nodes_ahead": 1})
+        tools._append_story_log_entry = MagicMock()
+
+        self.assertNotIn(
+            "message_type", inspect.signature(tools.process_user_action).parameters
+        )
+
+        with patch.object(tools, "_resolve_user_action", return_value={"error": "ignored"}):
+            result = tools.process_system_action(
+                "Begin or resume the adventure.", "Starting/Resuming Adventure"
+            )
+
+        self.assertEqual(result["status"], "processing")
+        log_entry = tools._append_story_log_entry.call_args_list[0].args[0]
+        self.assertEqual(log_entry.action, "<Starting/Resuming Adventure>")
 
     def test_run_planner_agent_includes_nudge_in_user_message(self):
         tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})

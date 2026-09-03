@@ -1898,17 +1898,35 @@ class StoryPlanningTools(BaseTools):
                 )
             }
 
-    @with_cooldown(
-        "resolving another player action",
-        duration=lambda tools: tools.get_user_action_cooldown_seconds(),
-    )
     def process_user_action(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
+        """Live-agent tool for submitting an orator's action or speech."""
+        return self._process_user_action(user_action, nudge=nudge)
+
+    def process_system_action(
+        self, user_action: str, message_type: str, nudge: str = ""
+    ) -> Dict[str, Any]:
+        """Process an internal action while labeling it clearly in the story log."""
+        return self._process_user_action(
+            user_action,
+            nudge=nudge,
+            message_type=message_type,
+        )
+
+    @with_cooldown(
+        "resolving story update",
+        duration=lambda tools: tools.get_user_action_cooldown_seconds(),
+        tool_name="process_user_action",
+    )
+    def _process_user_action(
+        self, user_action: str, nudge: str = "", message_type: str = ""
+    ) -> Dict[str, Any]:
         """Queue a non-blocking authoritative resolution of an orator action.
 
         Args:
             user_action: The player's submitted action or speech in the interactive story.
             nudge: An optional suggestion, event, or direction that the live agent wishes to
                 introduce to the story, which the story planner is meant to accommodate.
+            message_type: Internal label for a system-initiated action's story-log entry.
 
         The final reaction is delivered through ``on_scene_reaction``. Callers
         receive immediately so a slow planner cannot stall the Live session.
@@ -1940,7 +1958,8 @@ class StoryPlanningTools(BaseTools):
                 )
             }
 
-        self._append_story_log_entry(StoryLogEntry(type="user_action", action=action))
+        log_action = f"<{str(message_type).strip()}>" if str(message_type).strip() else action
+        self._append_story_log_entry(StoryLogEntry(type="user_action", action=log_action))
 
         with self._voice_input_lock:
             if self.require_voice_input:

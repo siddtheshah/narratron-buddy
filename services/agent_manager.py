@@ -719,7 +719,7 @@ class AgentSession:
             or not story_planning_config.get("adventure_mode", False)
             or not story_planning_config.get("auto_begin", False)
             or not self.story_planning_tools
-            or not hasattr(self.story_planning_tools, "process_user_action")
+            or not hasattr(self.story_planning_tools, "process_system_action")
         ):
             return
 
@@ -727,11 +727,10 @@ class AgentSession:
         # player action even when subsequent actions require voice input.
         if hasattr(self.story_planning_tools, "record_voice_input"):
             self.story_planning_tools.record_voice_input()
-
         self._auto_begin_started = True
         try:
-            result = self.story_planning_tools.process_user_action(
-                AUTO_BEGIN_ADVENTURE_ACTION
+            result = self.story_planning_tools.process_system_action(
+                AUTO_BEGIN_ADVENTURE_ACTION, "Starting/Resuming Adventure"
             )
             logger.info(
                 "[AgentSession] Auto-begin requested for theater %s: %s",
