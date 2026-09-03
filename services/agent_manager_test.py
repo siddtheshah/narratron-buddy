@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import json
 import os
 import tempfile
@@ -71,6 +72,38 @@ class TestAgentSessionManager(unittest.TestCase):
         session._auto_begin_adventure()
 
         planner_tools.process_user_action.assert_not_called()
+
+    def test_auto_begin_is_skipped_after_a_recent_theater_connection(self):
+        planner_tools = MagicMock()
+        session = AgentSession.__new__(AgentSession)
+        session.theater_id = "recent_auto_begin"
+        session.config = {
+            "story_planning": {"adventure_mode": True, "auto_begin": True}
+        }
+        session.story_planning_tools = planner_tools
+        session._auto_begin_started = False
+
+        recent_connection = datetime.now(timezone.utc).isoformat()
+        session._auto_begin_adventure(recent_connection)
+
+        planner_tools.process_system_action.assert_not_called()
+
+    def test_auto_begin_prefers_the_last_disconnection_time(self):
+        planner_tools = MagicMock()
+        session = AgentSession.__new__(AgentSession)
+        session.theater_id = "recent_disconnect"
+        session.config = {
+            "story_planning": {"adventure_mode": True, "auto_begin": True}
+        }
+        session.story_planning_tools = planner_tools
+        session._auto_begin_started = False
+
+        session._auto_begin_adventure(
+            "2020-01-01T00:00:00+00:00",
+            datetime.now(timezone.utc).isoformat(),
+        )
+
+        planner_tools.process_system_action.assert_not_called()
 
     def test_baton_handoff_ends_outgoing_audio_without_closing_session(self):
         session = AgentSession.__new__(AgentSession)

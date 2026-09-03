@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 import mimetypes
@@ -6,7 +7,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, Optional, Any, Set
+from typing import Dict, Optional, Any, Set, Tuple
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.adk.runners import Runner
@@ -33,6 +34,7 @@ DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
 DEFAULT_LIVE_TOOL_BUDGET = 3
+AUTO_BEGIN_RECENT_CONNECTION_SECONDS = 60 * 60
 AUTO_BEGIN_ADVENTURE_ACTION = (
     "Begin or resume the adventure. If this is a resumed adventure, briefly summarize "
     "where the player left off; then introduce the current scene, situation, and an "
@@ -49,6 +51,7 @@ class AgentSession:
         database_manager: Optional[Any] = None,
         config: Optional[dict] = None,
         canvas_state_manager: Optional[Any] = None,
+        theater_manager: Optional[TheaterManager] = None,
     ):
         self.theater_id = theater_id
         self.adk_session_id = f"adk_{theater_id}_{uuid.uuid4().hex[:8]}"
@@ -60,6 +63,7 @@ class AgentSession:
         self.database_manager = database_manager
         self.config = config or {}
         self.canvas_state_manager = canvas_state_manager
+        self.theater_manager = theater_manager
         self.owner_user_id: Optional[int] = None
         agent_internal = self.config.get("agent_internal", {})
         self.enable_tool_injection = bool(agent_internal.get("enable_tool_injection", False))
@@ -169,6 +173,7 @@ class AgentSession:
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._doodle_snapshot_task: Optional[asyncio.Task] = None
         self._auto_begin_started = False
+        self._has_connected = False
 
     @staticmethod
     def _get_nonnegative_config_seconds(value: Any, setting_name: str) -> float:
@@ -703,14 +708,58 @@ class AgentSession:
             self.websocket_user_ids[websocket] = user_id
             self.status = "active"
             self.last_active_at = time.time()
+            self._has_connected = True
             logger.info(f"[AgentSession] WebSocket attached to session {self.theater_id} (total={len(self.websockets)})")
 
         if was_disconnected:
             logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state()
-            self._auto_begin_adventure()
+            last_connected_at, last_disconnected_at = self._record_theater_connection()
+            self._auto_begin_adventure(last_connected_at, last_disconnected_at)
 
-    def _auto_begin_adventure(self) -> None:
+    def _record_theater_connection(self) -> Tuple[Optional[str], Optional[str]]:
+        """Record this connection and return the previous lifecycle timestamps."""
+        if not getattr(self, "theater_manager", None):
+            return None, None
+        try:
+            return self.theater_manager.record_theater_connected(self.theater_id)
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to record theater connection for %s",
+                self.theater_id,
+            )
+            return None, None
+
+    def _record_theater_disconnection(self) -> None:
+        """Persist the end of a theater connection without disrupting teardown."""
+        if not getattr(self, "theater_manager", None):
+            return
+        try:
+            self.theater_manager.record_theater_disconnected(self.theater_id)
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to record theater disconnection for %s",
+                self.theater_id,
+            )
+
+    @staticmethod
+    def _was_connected_within_auto_begin_window(last_connected_at: Optional[str]) -> bool:
+        if not last_connected_at:
+            return False
+        try:
+            connected_at = datetime.fromisoformat(last_connected_at.replace("Z", "+00:00"))
+            if connected_at.tzinfo is None:
+                connected_at = connected_at.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - connected_at).total_seconds() < AUTO_BEGIN_RECENT_CONNECTION_SECONDS
+        except (TypeError, ValueError):
+            logger.warning("Invalid last_connected_at value %r; allowing auto-begin.", last_connected_at)
+            return False
+
+    def _auto_begin_adventure(
+        self,
+        last_connected_at: Optional[str] = None,
+        last_disconnected_at: Optional[str] = None,
+    ) -> None:
         """Start one configured Adventure Mode opening without involving Live."""
         story_planning_config = self.config.get("story_planning", {})
         if (
@@ -721,6 +770,13 @@ class AgentSession:
             or not self.story_planning_tools
             or not hasattr(self.story_planning_tools, "process_system_action")
         ):
+            return
+        last_session_end = last_disconnected_at or last_connected_at
+        if self._was_connected_within_auto_begin_window(last_session_end):
+            logger.info(
+                "[AgentSession] Skipping auto-begin for theater %s; its last session ended within the last hour.",
+                self.theater_id,
+            )
             return
 
         # The opening is system-initiated, so it must not wait for a spoken
@@ -969,6 +1025,8 @@ class AgentSession:
             if is_now_disconnected:
                 logger.info(f"[AgentSession] User disconnected for session {self.theater_id}; inputs are now suppressed.")
                 self.save_named_elements_to_session_state()
+        if is_now_disconnected:
+            self._record_theater_disconnection()
         self.flush_usage_to_db()
 
     async def broadcast_text(self, text: str):
@@ -985,6 +1043,8 @@ class AgentSession:
 
     def close(self):
         """Close LiveRequestQueue and cancel background tasks."""
+        if self.websocket_connected:
+            self._record_theater_disconnection()
         self.status = "stopped"
         self.save_named_elements_to_session_state()
         self.flush_usage_to_db()
@@ -1099,6 +1159,7 @@ class AgentSessionManager:
             database_manager=self.database_manager,
             config=theater_config,
             canvas_state_manager=canvas_mgr,
+            theater_manager=self.theater_manager,
         )
 
         agent_session.start_background_tasks()

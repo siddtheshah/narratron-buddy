@@ -48,6 +48,8 @@ class TheaterMetadata(BaseModel):
     status: str = "created"
     join_key: str = Field(default_factory=lambda: f"KEY-{''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(6))}")
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_connected_at: Optional[str] = None
+    last_disconnected_at: Optional[str] = None
     mounted_references: List[str] = Field(default_factory=list)
     mounted_playlists: Dict[str, List[str]] = Field(default_factory=dict)
     config: Dict = Field(default_factory=dict)
@@ -244,6 +246,26 @@ class TheaterManager:
         metadata.name = new_name
         self._save_metadata(metadata)
         return metadata
+
+    def record_theater_connected(
+        self, theater_id: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Persist a connection timestamp and return prior connection lifecycle times."""
+        metadata = self.get_theater(theater_id)
+        if metadata is None:
+            return None, None
+        previous = (metadata.last_connected_at, metadata.last_disconnected_at)
+        metadata.last_connected_at = datetime.now(timezone.utc).isoformat()
+        self._save_metadata(metadata)
+        return previous
+
+    def record_theater_disconnected(self, theater_id: str) -> None:
+        """Persist the time at which the last active theater connection ended."""
+        metadata = self.get_theater(theater_id)
+        if metadata is None:
+            return
+        metadata.last_disconnected_at = datetime.now(timezone.utc).isoformat()
+        self._save_metadata(metadata)
 
     def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, lore_files: Optional[List[tuple[str, bytes]]] = None, theater_config: Optional[Dict] = None, metadata_json: Optional[Any] = None) -> TheaterMetadata:
         # Import lazily so config loading can reuse the theater-root helper.
