@@ -28,6 +28,7 @@ from utils.auth_cache import auth_session_cache
 logger = logging.getLogger(__name__)
 
 TOOL_INJECTION_INTERVAL_SECONDS = 30.0
+LIVE_TOOL_REMINDER_INTERVAL_SECONDS = 3.0
 DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
@@ -155,6 +156,7 @@ class AgentSession:
         self.downstream_task: Optional[asyncio.Task] = None
         self.refresh_task: Optional[asyncio.Task] = None
         self.tool_injection_task: Optional[asyncio.Task] = None
+        self.live_tool_reminder_task: Optional[asyncio.Task] = None
         self.observability_available_at = time.monotonic() + self.observability_startup_delay
         self.last_canvas_state_sent: Optional[float] = None
         self.last_collaboration_observability_sent: Optional[float] = None
@@ -543,7 +545,7 @@ class AgentSession:
             logger.exception("Failed to render viewer doodle snapshot for theater %s", self.theater_id)
 
     def start_background_tasks(self):
-        """Start long-running downstream_task (runner.run_live), canvas refresh loop, and tool injection loop."""
+        """Start the live runner plus independent refresh and notification loops."""
         self._event_loop = asyncio.get_running_loop()
         if self.downstream_task is None or self.downstream_task.done():
             self.downstream_task = asyncio.create_task(self._run_downstream())
@@ -553,6 +555,11 @@ class AgentSession:
 
         if self.enable_tool_injection and (self.tool_injection_task is None or self.tool_injection_task.done()):
             self.tool_injection_task = asyncio.create_task(self._run_tool_injection_loop())
+
+        if self.live_tool_reminder_task is None or self.live_tool_reminder_task.done():
+            self.live_tool_reminder_task = asyncio.create_task(
+                self._run_live_tool_reminder_loop()
+            )
 
         # Canvas observability begins after the configured startup delay.
         self.send_canvas_state()
@@ -657,6 +664,28 @@ class AgentSession:
                 if self.websocket_connected and self.tool_bundle:
                     logger.info(f"[AgentSession] Populating live request queue with tool definitions for session {self.theater_id}")
                     self.inject_tool_definitions()
+        except asyncio.CancelledError:
+            return
+
+    def send_live_tool_reminder(self) -> bool:
+        """Remind the model to use tools while its post-speech budget remains."""
+        if not self.websocket_connected or not self.live_request_queue.live_tool_window_active:
+            return False
+        content = types.Content(parts=[types.Part(
+            text="[System Notification] The speaker is silent and you still have tool-call budget. You may use your available tools now."
+        )])
+        return self.send_content(content)
+
+    async def _run_live_tool_reminder_loop(self):
+        """Inject a tool reminder every three seconds during a post-VAD tool window."""
+        try:
+            while True:
+                await asyncio.sleep(LIVE_TOOL_REMINDER_INTERVAL_SECONDS)
+                if self.send_live_tool_reminder():
+                    logger.debug(
+                        "[AgentSession] Sent live tool reminder for theater %s.",
+                        self.theater_id,
+                    )
         except asyncio.CancelledError:
             return
 
@@ -925,6 +954,8 @@ class AgentSession:
             self.refresh_task.cancel()
         if self.tool_injection_task and not self.tool_injection_task.done():
             self.tool_injection_task.cancel()
+        if self.live_tool_reminder_task and not self.live_tool_reminder_task.done():
+            self.live_tool_reminder_task.cancel()
         if self._doodle_snapshot_task and not self._doodle_snapshot_task.done():
             self._doodle_snapshot_task.cancel()
         try:

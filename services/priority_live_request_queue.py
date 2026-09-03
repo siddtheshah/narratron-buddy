@@ -33,6 +33,11 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         """Model function calls still allowed before post-VAD state changes."""
         return self._remaining_live_tool_budget
 
+    @property
+    def live_tool_window_active(self) -> bool:
+        """Whether the model is in the post-speech tool-call window."""
+        return self._post_vad_window_active and self._remaining_live_tool_budget > 0
+
     def record_model_tool_calls(self, count: int = 1) -> None:
         """Charge model-emitted function calls to the active post-VAD window.
 

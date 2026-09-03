@@ -692,6 +692,31 @@ class TestAgentSessionManager(unittest.TestCase):
         content = args[0]
         self.assertIn("sample_tool", content.parts[0].text)
 
+    def test_live_tool_reminder_only_sends_during_post_vad_tool_window(self):
+        mock_runner = MagicMock()
+        mock_runner.agent = MagicMock()
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(
+            theater_id="test_tool_reminder",
+            runner=mock_runner,
+            tool_bundle=None,
+        )
+        session.live_request_queue = MagicMock()
+        session.live_request_queue.live_tool_window_active = True
+        mock_ws = MagicMock()
+
+        asyncio.run(session.add_websocket(mock_ws))
+        session.live_request_queue.send_content.reset_mock()
+
+        self.assertTrue(session.send_live_tool_reminder())
+        content = session.live_request_queue.send_content.call_args.args[0]
+        self.assertIn("tool-call budget", content.parts[0].text)
+
+        session.live_request_queue.live_tool_window_active = False
+        session.live_request_queue.send_content.reset_mock()
+        self.assertFalse(session.send_live_tool_reminder())
+        session.live_request_queue.send_content.assert_not_called()
+
     def test_enable_tool_injection_flag_default(self):
         async def run_test():
             default_runner = MagicMock()
@@ -705,10 +730,13 @@ class TestAgentSessionManager(unittest.TestCase):
             self.assertFalse(session_default.enable_tool_injection)
             session_default.start_background_tasks()
             self.assertIsNone(session_default.tool_injection_task)
+            self.assertIsNotNone(session_default.live_tool_reminder_task)
             if session_default.downstream_task:
                 session_default.downstream_task.cancel()
             if session_default.refresh_task:
                 session_default.refresh_task.cancel()
+            if session_default.live_tool_reminder_task:
+                session_default.live_tool_reminder_task.cancel()
 
             enabled_runner = MagicMock()
             enabled_runner.agent = MagicMock()
@@ -723,10 +751,15 @@ class TestAgentSessionManager(unittest.TestCase):
             self.assertTrue(session_enabled.enable_tool_injection)
             session_enabled.start_background_tasks()
             self.assertIsNotNone(session_enabled.tool_injection_task)
+            self.assertIsNotNone(session_enabled.live_tool_reminder_task)
             if session_enabled.downstream_task:
                 session_enabled.downstream_task.cancel()
             if session_enabled.refresh_task:
                 session_enabled.refresh_task.cancel()
+            if session_enabled.tool_injection_task:
+                session_enabled.tool_injection_task.cancel()
+            if session_enabled.live_tool_reminder_task:
+                session_enabled.live_tool_reminder_task.cancel()
 
 
 
