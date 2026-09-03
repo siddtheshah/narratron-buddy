@@ -1233,9 +1233,11 @@ class TestStoryPlanningTools(unittest.TestCase):
                 "plot_beats": [{"plot_beat": "Beat 1"}],
             }
 
+        canvas_state_service = MagicMock()
         tools = self._make_tools(
             config={"adventure_mode": True, "nodes_ahead": 1, "action_cooldown_base_seconds": 0.0},
             theater_id="concurrent_test",
+            canvas_state_service=canvas_state_service,
         )
 
         with patch.object(tools, "_resolve_user_action", side_effect=slow_resolve):
@@ -1243,6 +1245,9 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(res1["status"], "processing")
             self.assertTrue(started_event.wait(timeout=2))
             self.assertTrue(tools.is_action_in_flight)
+            canvas_state_service.set_tool_activity.assert_called_once_with(
+                "user_action", active=True, theater_id="concurrent_test"
+            )
 
             # Second concurrent call while first is in flight
             res2 = tools.process_user_action("Second action")
@@ -1257,6 +1262,9 @@ class TestStoryPlanningTools(unittest.TestCase):
                     break
                 time.sleep(0.02)
             self.assertFalse(tools.is_action_in_flight)
+            canvas_state_service.set_tool_activity.assert_called_with(
+                "user_action", active=False, theater_id="concurrent_test"
+            )
 
     def test_run_planner_agent_timeout_restarts_agent(self):
         tools = self._make_tools(

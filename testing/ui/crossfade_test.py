@@ -75,7 +75,9 @@ class TestCrossfade(UITestCase):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"
         content = template_path.read_text(encoding="utf-8")
         self.assertIn('id="agent-drawing-indicator"', content)
+        self.assertIn('id="agent-writing-indicator"', content)
         self.assertIn('id="agent-dice-indicator"', content)
+        self.assertIn("toolActivity.user_action_processing", content)
         self.assertIn("toolActivity.dice_rolling", content)
         self.assertIn("data.tool_activity", content)
 

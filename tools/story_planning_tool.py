@@ -1955,6 +1955,10 @@ class StoryPlanningTools(BaseTools):
                 result = {"error": f"Story planner failed: {exc}"}
             finally:
                 self.release_in_flight("process_user_action")
+                if self.canvas_state_service:
+                    self.canvas_state_service.set_tool_activity(
+                        "user_action", active=False, theater_id=self.theater_id
+                    )
 
             plan_output = None
             if isinstance(result, dict) and "error" not in result:
@@ -1972,6 +1976,11 @@ class StoryPlanningTools(BaseTools):
                     callback(result)
                 except Exception:
                     logger.exception("[StoryPlanningTools] Scene reaction callback failed")
+
+        if self.canvas_state_service:
+            self.canvas_state_service.set_tool_activity(
+                "user_action", active=True, theater_id=self.theater_id
+            )
 
         import threading
         threading.Thread(target=resolve_and_notify, daemon=True).start()

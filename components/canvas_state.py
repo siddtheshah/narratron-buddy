@@ -94,6 +94,7 @@ class CanvasStateManager:
         # reconnect should not show an activity indicator left over from a
         # previous server process.
         self.image_generation_active: bool = False
+        self.user_action_processing_active: bool = False
         self.live_connection_active: bool = False
         self.live_connection_until: float = 0.0
         self.dice_roll_until: float = 0.0
@@ -740,6 +741,8 @@ class CanvasStateManager:
         """Update transient canvas indicators for agent tool use."""
         if tool == "image":
             self.image_generation_active = bool(active)
+        elif tool == "user_action":
+            self.user_action_processing_active = bool(active)
         elif tool == "live":
             self.live_connection_active = bool(active)
             if active and recent_seconds > 0:
@@ -760,6 +763,7 @@ class CanvasStateManager:
         dice_rolling = now < self.dice_roll_until
         return {
             "image_generating": self.image_generation_active,
+            "user_action_processing": self.user_action_processing_active,
             "live_ready": self.live_connection_active or (now < self.live_connection_until),
             "dice_rolling": dice_rolling,
             "dice_result": self.dice_roll_result if dice_rolling else None,
