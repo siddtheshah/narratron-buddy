@@ -47,6 +47,12 @@ uv run main.py
 ```
 - Open http://localhost:8000 to open the app.
 
+For local testing, run `uv run main.py --testing_use_local`. This uses local
+resources and automatically signs unauthenticated browsers in as the seeded
+`localtest` user (password `narratron`) during the initial auth check. Each browser
+receives a normal session cookie; existing logins are preserved. Logging out in
+this mode signs you back in at the next auth check.
+
 
 ## Exporting the Frontend
 

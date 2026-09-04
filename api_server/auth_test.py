@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from absl.testing import flagsaver
 from fastapi import HTTPException, Response
 
 import object_registry
@@ -59,9 +60,49 @@ def test_logout_invalidates_present_cookie_and_always_clears_it():
 def test_auth_me_returns_a_timeout_response_when_no_connection_is_available():
     with patch.object(auth, "get_current_user", side_effect=DatabaseConnectionTimeout("pool busy")):
         with pytest.raises(HTTPException) as error:
-            auth.get_auth_me(request())
+            auth.get_auth_me(request(), Response())
 
     assert error.value.status_code == 503
+
+
+@pytest.mark.parametrize("local_mode", [False, True])
+def test_auth_me_only_auto_logs_in_in_local_mode(local_mode):
+    registry_db = MagicMock()
+    user = {"id": 7, "username": "localtest"}
+    registry_db.authenticate_user.return_value = user
+    registry_db.create_auth_session.return_value = "local-session"
+    response = Response()
+    with flagsaver.flagsaver(testing_use_local=local_mode), patch.object(
+        object_registry, "db", registry_db
+    ), patch.object(auth, "get_current_user", return_value=None):
+        result = auth.get_auth_me(request(), response)
+
+    assert result["authenticated"] is local_mode
+    if local_mode:
+        assert result["user"] == user
+        registry_db.authenticate_user.assert_called_once_with("localtest", "narratron")
+        registry_db.create_auth_session.assert_called_once_with(7)
+        assert "auth_token=local-session" in response.headers["set-cookie"]
+        assert "HttpOnly" in response.headers["set-cookie"]
+    else:
+        registry_db.authenticate_user.assert_not_called()
+        registry_db.create_auth_session.assert_not_called()
+        assert "set-cookie" not in response.headers
+
+
+@flagsaver.flagsaver(testing_use_local=True)
+def test_local_auto_login_preserves_existing_session():
+    user = {"id": 9, "username": "existing"}
+    response = Response()
+    with patch.object(object_registry, "db", MagicMock()) as registry_db, patch.object(
+        auth, "get_current_user", return_value=user
+    ):
+        result = auth.get_auth_me(request(), response)
+
+    assert result["user"] == user
+    registry_db.authenticate_user.assert_not_called()
+    registry_db.create_auth_session.assert_not_called()
+    assert "set-cookie" not in response.headers
 
 
 def test_mic_sensitivity_validates_range_before_writing_registry():

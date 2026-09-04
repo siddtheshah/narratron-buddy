@@ -7,7 +7,7 @@ from fastapi import Request, Response, HTTPException
 from pydantic import BaseModel
 
 from utils.auth_cache import auth_session_cache
-from api_server.shared import app, db, get_current_user
+from api_server.shared import FLAGS, app, db, get_current_user
 from storage.database import DatabaseConnectionTimeout
 from utils.config_loader import get_app_config
 from utils.email_service import send_password_reset_email
@@ -76,11 +76,17 @@ def logout_user(request: Request, response: Response):
     return {"status": "ok"}
 
 @app.get("/api/auth/me")
-def get_auth_me(request: Request):
+def get_auth_me(request: Request, response: Response):
     app_cfg = get_app_config()
     use_ricky = app_cfg.get("audio", {}).get("use_ricky0123_vad", True)
     try:
         user = get_current_user(request)
+        if not user and FLAGS.testing_use_local:
+            # Use a normal per-browser session for the seeded local test account.
+            user = login_user(
+                LoginRequest(username_or_email="localtest", password="narratron"),
+                response,
+            )["user"]
     except (DatabaseConnectionTimeout, TimeoutError):
         logger.warning("Authentication lookup timed out.")
         raise HTTPException(status_code=503, detail="Authentication service is temporarily unavailable.")
