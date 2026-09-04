@@ -48,6 +48,7 @@ The `testing/` directory contains UI integration tests, test data, evaluation sc
 
 ```text
 testing/
+├── e2e/               # End-to-end browser validation and load harnesses
 ├── ui/                # UI integration tests (for example, canvas and OBS routes)
 ├── testcases/         # Evaluation test scenarios containing expectations.json and audio files
 │   └── desert_basic/
@@ -61,10 +62,10 @@ testing/
 
 ---
 
-## 3. End-to-End Narration Evaluation (`evaluate_narration.py`)
+## 3. End-to-End Narration Evaluation (`testing/e2e/validate_single_image_generation.py`)
 
 ### Overview
-`evaluate_narration.py` performs automated end-to-end video evaluation:
+`validate_single_image_generation.py` performs automated end-to-end video evaluation:
 1. Transcodes input audio narration to 16kHz mono WAV.
 2. Boots `main.py` FastAPI server on a free port with preloaded test artifacts (`USE_IN_MEMORY_ARTIFACTS=1`).
 3. Launches a Playwright browser context, opens the Orator Canvas (`http://127.0.0.1:<port>/?role=orator`), and records WebM video.
@@ -75,7 +76,7 @@ testing/
 ### Running an Evaluation Testcase
 
 ```bash
-python evaluate_narration.py --testcase=testing/testcases/desert_basic --headless=True
+python testing/e2e/validate_single_image_generation.py --testcase=testing/testcases/desert_basic --headless=True
 ```
 
 ### Available Command Flags

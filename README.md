@@ -53,6 +53,19 @@ resources and automatically signs unauthenticated browsers in as the seeded
 receives a normal session cookie; existing logins are preserved. Logging out in
 this mode signs you back in at the next auth check.
 
+To load test a disposable local canvas, run:
+
+```powershell
+uv run testing/e2e/load_canvas_viewers.py --viewers 25 --trials 5 --testcase desert_basic
+```
+
+The harness starts and stops its own local server, creates a disposable canvas,
+then creates a separate local account and isolated browser context for every
+viewer. It streams the selected testcase narration to the connected agent,
+measures when the generated image is fully visible to each viewer, and writes
+per-viewer latencies plus trial mean and standard deviation to
+`evaluation_results/`.
+
 
 ## Exporting the Frontend
 

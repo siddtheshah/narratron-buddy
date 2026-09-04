@@ -20,6 +20,8 @@ from google import genai
 from google.genai import types
 from playwright.async_api import async_playwright
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
 load_dotenv()
 
 FLAGS = flags.FLAGS
@@ -397,7 +399,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
         server_cmd,
         stdout=server_log,
         stderr=subprocess.STDOUT,
-        cwd=str(Path(__file__).parent.resolve()),
+        cwd=str(REPOSITORY_ROOT),
         env=server_env
     )
     
@@ -575,7 +577,7 @@ def main(argv):
     
     # If the input path doesn't exist directly, check if it refers to a case name in testing/testcases
     if not input_path.exists():
-        testcase_dir = Path("testing/testcases") / input_str
+        testcase_dir = REPOSITORY_ROOT / "testing" / "testcases" / input_str
         if testcase_dir.exists() and testcase_dir.is_dir():
             input_path = testcase_dir
             

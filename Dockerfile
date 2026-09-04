@@ -22,7 +22,6 @@ COPY --from=builder /install /usr/local
 # Copy application source
 COPY object_registry.py .
 COPY main.py .
-COPY evaluate_narration.py .
 COPY app.yaml .
 COPY theater_default.yaml .
 COPY ABOUT.md .
