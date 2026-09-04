@@ -1850,7 +1850,7 @@ class _DatabaseManagerBase:
 
 
 class LocalDatabaseManager(_DatabaseManagerBase):
-    """Narratron storage backed by testing.postgresql, used for development and tests."""
+    """Narratron storage backed by storage.postgresql, used for development and tests."""
 
     def __init__(
         self,
@@ -1887,8 +1887,8 @@ class LocalDatabaseManager(_DatabaseManagerBase):
             if self._conn is not None and self._cached_db_path != db_path:
                 self.close()
             if self._conn is None:
-                import testing.postgresql
-                self._pg = testing.postgresql.Postgresql(
+                from storage.postgresql import Postgresql
+                self._pg = Postgresql(
                     base_dir=db_path if db_path and os.path.isdir(db_path) else None,
                     database=Path(db_path).stem if db_path and db_path != ":memory:" else "test",
                 )

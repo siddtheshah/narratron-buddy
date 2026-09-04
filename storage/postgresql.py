@@ -1,6 +1,6 @@
 """Ephemeral PostgreSQL database manager for tests.
 
-Provides a drop-in testing.postgresql module compatible with PostgreSQL schemas and queries.
+Provides a SQLite-backed adapter compatible with PostgreSQL schemas and queries.
 """
 
 import math
