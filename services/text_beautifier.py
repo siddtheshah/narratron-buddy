@@ -2,8 +2,8 @@
 
 Underneath, uses a TextResponseProvider (default: gemini-3.5-flash-lite)
 to identify spans of high emotion, intensity, magic, or suspense, and apply
-kinetic effects (vibrating, scintillating, glitching, flame, pulse, glow, wave)
-and expressive fonts (cinematic, creepster, bangers, medieval, glitch).
+kinetic effects (vibrating, scintillating, glitching, flame, pulse, glow, wave, drip)
+and expressive fonts (cinematic, lacquer, bangers, medieval, glitch).
 """
 
 from __future__ import annotations
@@ -31,12 +31,13 @@ EFFECTS: Dict[str, str] = {
     "pulse": "Throbbing dread, heartbeat suspense, slow surging power.",
     "glow": "Soft ethereal halos, divine blessings, luminescent runes.",
     "wave": "Hypnotic water ripples, ghostly whispers, eerie melodic singing.",
+    "drip": "Viscous horror, messages written in blood, ominous oozing dread.",
     "none": "Neutral or normal delivery.",
 }
 
 FONTS: Dict[str, str] = {
     "cinematic": "Grand, regal, epic announcements.",
-    "creepster": "Horrifying, spooky, monstrous dread.",
+    "lacquer": "Horrifying, psychological dread, raw dripping scratch.",
     "bangers": "Loud comic punch, sudden shouting.",
     "medieval": "Ancient arcane scrolls, runes, fantasy.",
     "glitch": "Futuristic, corrupted digital text.",
@@ -225,6 +226,8 @@ class TextBeautifier:
             effect_str = "none"
 
         font_str = str(font or "default").lower().strip()
+        if font_str == "creepster":
+            font_str = "lacquer"
         if font_str not in ALLOWED_FONTS:
             font_str = "default"
 

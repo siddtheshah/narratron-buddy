@@ -7,7 +7,7 @@
   <title>Narratron Text Effects & Beautifier Lab</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=MedievalSharp&family=Rubik+Glitch&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=Lacquer&family=MedievalSharp&family=Rubik+Glitch&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/effects-static/css/splitting.css">
   <link rel="stylesheet" href="/effects-static/css/text-effects.css">
   <script src="/effects-static/js/splitting.min.js"></script>
@@ -591,11 +591,13 @@
             <option value="pulse">Effect: Pulse</option>
             <option value="glow">Effect: Glow</option>
             <option value="wave">Effect: Wave</option>
+            <option value="drip">Effect: Blood Drip</option>
             <option value="none">Effect: None</option>
           </select>
           <select id="sandboxFont" onchange="updateSandbox()">
             <option value="default">Font: Default</option>
             <option value="bangers" selected>Font: Bangers</option>
+            <option value="lacquer">Font: Lacquer (Creepy)</option>
             <option value="creepster">Font: Creepster</option>
             <option value="cinematic">Font: Cinematic</option>
             <option value="medieval">Font: Medieval</option>
@@ -674,6 +676,17 @@
           <p class="effect-desc">Harmonious ambient neon pulsation for artifacts, runic symbols, and warnings.</p>
           <div class="preview-box">
             <span class="text-span text-effect-glow text-font-medieval" style="color:#a855f7;">Ancient Rune Awakens</span>
+          </div>
+        </div>
+
+        <div class="catalog-card">
+          <div class="catalog-card-header">
+            <h4 class="effect-title">Blood Drip</h4>
+            <span class="badge">Horror Visceral</span>
+          </div>
+          <p class="effect-desc">Viscous bleeding text with oozing droplets falling from characters, written in blood.</p>
+          <div class="preview-box">
+            <span class="text-span text-effect-drip text-font-lacquer" style="color:#dc2626;" data-splitting>BEWARE THE SHADOWS</span>
           </div>
         </div>
       </div>

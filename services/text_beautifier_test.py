@@ -165,7 +165,7 @@ class TestTextBeautifier(unittest.TestCase):
             parsed=BeautifiedSceneResponse(
                 narration_spans=[
                     TextSpanEffect(text="The torch flickers.", effect="none"),
-                    TextSpanEffect(text="A scream echoes!", effect="vibrate", font="creepster"),
+                    TextSpanEffect(text="A scream echoes!", effect="vibrate", font="lacquer"),
                 ],
                 dialogue=[
                     BeautifiedDialogueLine(
@@ -190,7 +190,7 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(len(result["narration_spans"]), 2)
         self.assertEqual(result["narration_spans"][0]["effect"], "none")
         self.assertEqual(result["narration_spans"][1]["effect"], "vibrate")
-        self.assertEqual(result["narration_spans"][1]["font"], "creepster")
+        self.assertEqual(result["narration_spans"][1]["font"], "lacquer")
 
         self.assertEqual(len(result["dialogue"]), 1)
         self.assertEqual(result["dialogue"][0]["speaker"], "Grim")
@@ -292,7 +292,28 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertIn("NARRATION: A dark hallway awaits.", scene_prompt)
         self.assertIn("[Guard] (speech): Who goes there?", scene_prompt)
         self.assertNotIn("Annotate the following text into sequential spans", scene_prompt)
+    def test_allowed_effects_and_fonts_definitions(self):
+        self.assertIn("drip", ALLOWED_EFFECTS)
+        self.assertIn("lacquer", ALLOWED_FONTS)
 
+    def test_creepster_alias_maps_to_lacquer(self):
+        beautifier = TextBeautifier()
+        normalized = beautifier._sanitize_span(
+            TextSpanEffect(text="Beware!", effect="drip", font="creepster", color="#dc2626")
+        )
+        self.assertEqual(normalized["font"], "lacquer")
+        self.assertEqual(normalized["effect"], "drip")
+        self.assertEqual(normalized["color"], "#dc2626")
+
+    def test_drip_effect_and_lacquer_font_span(self):
+        beautifier = TextBeautifier()
+        normalized = beautifier._sanitize_span(
+            {"text": "Blood on the wall", "effect": "drip", "font": "lacquer", "color": "#991b1b"}
+        )
+        self.assertEqual(normalized["text"], "Blood on the wall")
+        self.assertEqual(normalized["effect"], "drip")
+        self.assertEqual(normalized["font"], "lacquer")
+        self.assertEqual(normalized["color"], "#991b1b")
 
 
 if __name__ == "__main__":

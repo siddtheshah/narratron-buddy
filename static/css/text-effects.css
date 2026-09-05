@@ -2,7 +2,7 @@
    Narratron Immersive Text Effects & Typography System
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=MedievalSharp&family=Rubik+Glitch&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=Lacquer&family=MedievalSharp&family=Rubik+Glitch&display=swap');
 
 /* --- Font Utility Classes --- */
 .text-font-cinematic {
@@ -11,8 +11,13 @@
   text-transform: uppercase;
 }
 
+.text-font-lacquer {
+  font-family: 'Lacquer', cursive !important;
+  letter-spacing: 0.05em;
+}
+
 .text-font-creepster {
-  font-family: 'Creepster', cursive !important;
+  font-family: 'Lacquer', cursive !important;
   letter-spacing: 0.05em;
 }
 
@@ -75,6 +80,7 @@
    Magical radiance, sparkling crystals, celestial wonders, gleaming relics */
 .text-effect-scintillate {
   display: inline-block;
+  color: #fef08a;
   background: linear-gradient(
     90deg,
     #fef08a 0%,
@@ -85,15 +91,37 @@
   );
   background-size: 200% auto;
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: scintillate-shimmer 2.5s linear infinite;
   filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6)) drop-shadow(0 0 14px rgba(232, 121, 249, 0.4));
 }
 
+.text-effect-scintillate.splitting {
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: initial !important;
+}
+
 .text-effect-scintillate.splitting .char {
   display: inline-block;
-  animation: char-twinkle 1.8s ease-in-out infinite;
-  animation-delay: calc(var(--char-index) * 0.12s);
+  background: linear-gradient(
+    90deg,
+    #fef08a 0%,
+    #38bdf8 25%,
+    #e879f9 50%,
+    #fde047 75%,
+    #38bdf8 100%
+  );
+  background-size: 300% auto;
+  background-position: calc(var(--char-index) * 20%) 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: char-twinkle 1.8s ease-in-out infinite, scintillate-shimmer 2.5s linear infinite;
+  animation-delay: calc(var(--char-index) * 0.12s), calc(var(--char-index) * -0.15s);
+  filter: drop-shadow(0 0 3px rgba(254, 240, 138, 0.7));
 }
 
 @keyframes scintillate-shimmer {
@@ -253,6 +281,96 @@
   50% { transform: translateY(-4px); }
 }
 
+/* 8. DRIP / BLOOD OOZE
+   Written in blood, sinister horror, dripping dread, visceral slaughter */
+.text-effect-drip {
+  display: inline-block;
+  position: relative;
+  color: #dc2626;
+  text-shadow:
+    0 1px 1px #7f1d1d,
+    0 3px 4px #450a0a,
+    0 7px 8px rgba(69, 10, 10, 0.7),
+    0 12px 14px rgba(0, 0, 0, 0.85);
+  animation: span-drip-bleed 3s ease-in-out infinite alternate;
+}
+
+.text-effect-drip.splitting .char {
+  display: inline-block;
+  position: relative;
+  animation: char-drip-ooze 3s ease-in-out infinite;
+  animation-delay: calc(var(--char-index) * 0.15s);
+}
+
+.text-effect-drip.splitting .char::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  width: 3px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  opacity: 0;
+  pointer-events: none;
+  animation: blood-drop-fall 3.2s cubic-bezier(0.55, 0.085, 0.68, 0.53) infinite;
+  animation-delay: calc(var(--char-index) * 0.35s + 0.5s);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+}
+
+@keyframes span-drip-bleed {
+  0% {
+    text-shadow:
+      0 1px 1px #7f1d1d,
+      0 3px 4px #450a0a,
+      0 6px 8px rgba(69, 10, 10, 0.7),
+      0 10px 12px rgba(0, 0, 0, 0.85);
+  }
+  100% {
+    text-shadow:
+      0 2px 2px #991b1b,
+      0 5px 6px #450a0a,
+      0 10px 12px rgba(69, 10, 10, 0.9),
+      0 16px 18px rgba(0, 0, 0, 0.95);
+  }
+}
+
+@keyframes char-drip-ooze {
+  0%, 100% {
+    transform: translateY(0) scaleY(1);
+  }
+  50% {
+    transform: translateY(1.5px) scaleY(1.08);
+  }
+}
+
+@keyframes blood-drop-fall {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(0) scale(0.6, 0.6);
+  }
+  30% {
+    opacity: 0.85;
+    transform: translateX(-50%) translateY(2px) scale(1, 1.2);
+  }
+  60% {
+    opacity: 0.95;
+    transform: translateX(-50%) translateY(5px) scale(0.9, 1.6);
+  }
+  80% {
+    opacity: 0.9;
+    transform: translateX(-50%) translateY(14px) scale(0.8, 1.8);
+  }
+  92% {
+    opacity: 0.4;
+    transform: translateX(-50%) translateY(20px) scale(1.4, 0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(22px) scale(1.6, 0.3);
+  }
+}
+
 /* --- Accessibility: prefers-reduced-motion --- */
 @media (prefers-reduced-motion: reduce) {
   .text-effect-vibrate,
@@ -262,11 +380,14 @@
   .text-effect-pulse,
   .text-effect-glow,
   .text-effect-wave,
+  .text-effect-drip,
   .text-effect-vibrate.splitting .char,
   .text-effect-scintillate.splitting .char,
   .text-effect-glitch.splitting .char,
   .text-effect-flame.splitting .char,
-  .text-effect-wave.splitting .char {
+  .text-effect-wave.splitting .char,
+  .text-effect-drip.splitting .char,
+  .text-effect-drip.splitting .char::after {
     animation: none !important;
     transform: none !important;
   }
