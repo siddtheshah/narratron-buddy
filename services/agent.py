@@ -21,7 +21,7 @@ from tools.observability_tool import ObservabilityTools
 from tools.story_planning_tool import StoryPlanningTools
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
-from providers import get_text_response_provider
+from providers import get_text_response_provider, get_video_provider
 from utils.config_loader import get_app_config, get_theater_config
 
 logger = logging.getLogger(__name__)
@@ -332,6 +332,8 @@ def create_tool_bundle_for_session(
         str(animation_config.get("text_provider", "gemini-2-5")),
         {"model": str(animation_config.get("text_model", "gemini-2.5-flash-lite"))},
     )
+    video_provider = get_video_provider(str(animation_config.get("video_provider", "fal-minimax-h3-turbo")))
+
     animation_tools = (
         AnimationTools(
             image_tools,
@@ -339,6 +341,7 @@ def create_tool_bundle_for_session(
             animation_text_provider,
             FalQwenLayeredProvider(),
             animation_config,
+            video_provider=video_provider,
         )
         if animation_enabled
         else None

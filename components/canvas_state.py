@@ -63,6 +63,7 @@ class CanvasStateManager:
         self.shown_image_effect: str = "gleam3"
         self.shown_animation_frames: List[str] = []
         self.shown_layered_animation: Optional[Dict[str, Any]] = None
+        self.shown_video_animation: Optional[Dict[str, Any]] = None
         # Changes only when the displayed image/presentation changes. This lets
         # long-running tools avoid replacing a newer image chosen meanwhile.
         self.image_revision: int = 0
@@ -248,6 +249,7 @@ class CanvasStateManager:
                     self.shown_image_effect = c_state.get("shown_image_effect", "gleam3")
                     self.shown_animation_frames = c_state.get("shown_animation_frames", [])
                     self.shown_layered_animation = c_state.get("shown_layered_animation")
+                    self.shown_video_animation = c_state.get("shown_video_animation")
                     self.current_playlist = c_state.get("current_playlist")
                     self.current_playlist_tracks = c_state.get("current_playlist_tracks", [])
                     self.music_paused = c_state.get("music_paused", False)
@@ -599,6 +601,7 @@ class CanvasStateManager:
         if clear_animation:
             self.shown_animation_frames = []
             self.shown_layered_animation = None
+            self.shown_video_animation = None
         if presentation_changed:
             self.image_revision += 1
         self._notify_state_changed("latest")
@@ -677,6 +680,36 @@ class CanvasStateManager:
             } for index, item in enumerate(layers) if item.get("path")],
         }
         logger.debug("[CanvasState] Showing layered animation id=%s layers=%s", manifest.get("id"), len(self.shown_layered_animation["layers"]))
+        self._notify_state_changed("latest")
+
+    def show_video_animation(self, manifest: Dict[str, Any], theater_id: Optional[str] = None) -> None:
+        """Display a persisted video animation."""
+        video_path = str(manifest.get("video_path") or manifest.get("path") or "")
+        video_url = manifest.get("video_url")
+        if not video_url and video_path:
+            video_url = self.get_url_for_path(video_path)
+        if not video_url:
+            raise ValueError("A video animation requires a video URL or valid video path.")
+
+        poster_path = str(manifest.get("poster_image") or "")
+        display_path = poster_path if poster_path and os.path.exists(poster_path) else (video_path if video_path and os.path.exists(video_path) else None)
+        if display_path:
+            self.update_shown_image(
+                display_path,
+                theater_id=theater_id,
+                transition="crossfade",
+                effect="none",
+                clear_animation=False,
+            )
+        self.shown_animation_frames = []
+        self.shown_layered_animation = None
+        self.shown_video_animation = {
+            "id": manifest.get("id"),
+            "scene_prompt": manifest.get("scene_prompt", ""),
+            "video_url": video_url,
+            "poster_url": self.get_url_for_path(poster_path) if poster_path else None,
+        }
+        logger.debug("[CanvasState] Showing video animation id=%s video_url=%s", manifest.get("id"), video_url)
         self._notify_state_changed("latest")
 
     def add_chat_message(self, text: str, author: str = "agent", profile_username: Optional[str] = None, profile_color: Optional[str] = None):
@@ -1122,6 +1155,8 @@ class CanvasStateManager:
             }
         elif self.shown_layered_animation:
             res["animation"] = {"type": "layered", **self.shown_layered_animation}
+        elif self.shown_video_animation:
+            res["animation"] = {"type": "video", **self.shown_video_animation}
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, history_len={len(formatted_history)}, playlist={music_state['playlist']}")
         return res
 
@@ -1148,6 +1183,7 @@ class CanvasStateManager:
             "shown_image_effect": getattr(self, "shown_image_effect", "gleam3"),
             "shown_animation_frames": list(self.shown_animation_frames),
             "shown_layered_animation": self.shown_layered_animation,
+            "shown_video_animation": self.shown_video_animation,
             "current_playlist": self.current_playlist,
             "current_playlist_tracks": self.current_playlist_tracks,
             "music_paused": self.music_paused,

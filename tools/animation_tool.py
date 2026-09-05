@@ -23,6 +23,9 @@ from providers import (
     TextResponseProvider,
     TextResponseProviderError,
     TextResponseRequest,
+    VideoGenerationRequest,
+    VideoProvider,
+    VideoProviderError,
 )
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
 from tools.base_tool import BaseTools, logged_tool_call, single_flight, with_cooldown
@@ -68,7 +71,7 @@ class TriframePlanResponse(BaseModel):
 
 
 class AnimationTechniquePlanResponse(BaseModel):
-    technique: str = Field(pattern="^(triframe|layered)$")
+    technique: str = Field(pattern="^(triframe|layered|video)$")
     reasoning: str = Field(min_length=3, max_length=300)
 
 
@@ -84,6 +87,7 @@ class AnimationTools(BaseTools):
         text_response_provider: TextResponseProvider,
         layered_provider: FalQwenLayeredProvider,
         animation_config: Optional[dict] = None,
+        video_provider: Optional[VideoProvider] = None,
     ):
         # ImageTools owns the theater-specific output directory, aliases, canvas
         # hooks, and configured image-generation cooldown.
@@ -101,8 +105,17 @@ class AnimationTools(BaseTools):
         self.default_style = image_tools.default_style
         self._animations: dict[str, list[str]] = {}
         self._layered_animations: dict[str, dict] = {}
+        self._video_animations: dict[str, dict] = {}
         self.layered_provider = layered_provider
         self.text_response_provider = text_response_provider
+        self.video_provider = video_provider
+        if self.video_provider is None:
+            v_provider_id = (animation_config or {}).get("video_provider", "fal-minimax-h3-turbo")
+            try:
+                from providers.registry import get_video_provider
+                self.video_provider = get_video_provider(v_provider_id)
+            except Exception:
+                self.video_provider = None
         self.on_animation_ready: Optional[Any] = None
         self.on_layered_animation_created: Optional[Any] = None
 
@@ -123,17 +136,20 @@ class AnimationTools(BaseTools):
         scene_prompt: str,
         animation_name: str,
         reference_images: Union[list[str], str, None] = None,
+        technique: Optional[str] = None,
     ) -> str:
-        """Generate an animation sequence by automatically deciding between triframe and layered techniques.
+        """Generate an animation sequence by automatically deciding between triframe, layered, and video techniques.
 
         The caller supplies a scene prompt and animation name. An internal LLM decision prompt determines whether to use:
         - 'triframe' for complex motions and transitions
         - 'layered' for scenic backdrops or high-energy single-moment climaxes
+        - 'video' for cinematic, continuous motion or fluid natural action scenes
 
         Args:
             scene_prompt: Detailed prompt describing the scene to animate.
             animation_name: Friendly name used for saved animation files.
             reference_images: Optional image aliases or paths to preserve.
+            technique: Optional manual override ('triframe', 'layered', or 'video').
 
         Returns:
             A status message immediately; animation generation continues in background.
@@ -154,16 +170,21 @@ class AnimationTools(BaseTools):
 
         def _worker() -> None:
             try:
-                technique, decision_debug = self.plan_animation_technique_with_provider(
-                    self.text_response_provider, scene_prompt.strip()
-                )
+                selected_technique = technique
+                decision_debug: dict[str, object] = {}
+                if not selected_technique:
+                    selected_technique, decision_debug = self.plan_animation_technique_with_provider(
+                        self.text_response_provider, scene_prompt.strip()
+                    )
                 logger.debug(
                     "[AnimationTools] Animation %s decided technique '%s', debug=%s",
                     animation_id,
-                    technique,
+                    selected_technique,
                     decision_debug,
                 )
-                if technique == "triframe":
+                if selected_technique == "video":
+                    self._run_video_animation(scene_prompt.strip(), animation_id)
+                elif selected_technique == "triframe":
                     self._run_triframe_animation(scene_prompt.strip(), animation_id, provider_references)
                 else:
                     self._run_layered_animation(scene_prompt.strip(), animation_id)
@@ -317,6 +338,60 @@ class AnimationTools(BaseTools):
             self.image_tools._set_canvas_activity(False)
             self.image_tools._trigger_after_tool_call("create_animation")
 
+    def _run_video_animation(self, scene_prompt: str, animation_id: str) -> None:
+        """Run the video generation pipeline."""
+        if not self.video_provider:
+            logger.error("[AnimationTools] Cannot run video animation: video_provider is not configured.")
+            return
+
+        self.image_tools._set_canvas_activity(True)
+        try:
+            effective_prompt = self.image_tools._apply_default_style(scene_prompt.strip())
+            animation_dir = Path(self.animations_dir) / animation_id
+            animation_dir.mkdir(parents=True, exist_ok=False)
+
+            result = self.video_provider.generate(
+                VideoGenerationRequest(
+                    prompt=effective_prompt,
+                    aspect_ratio="16:9",
+                )
+            )
+            video_filename = "video.mp4"
+            video_path = animation_dir / video_filename
+            video_path.write_bytes(result.video_bytes)
+
+            manifest = {
+                "version": 1,
+                "id": animation_id,
+                "type": "video",
+                "scene_prompt": scene_prompt.strip(),
+                "video_path": self._to_relative_path(video_path),
+                "video_url": result.video_url,
+                "mime_type": result.mime_type or "video/mp4",
+                "provider": {
+                    "provider": result.provider,
+                    "model": result.model,
+                    "request_id": result.request_id,
+                    "usage": dict(result.usage),
+                },
+            }
+            manifest_path = animation_dir / "video.json"
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+            self._video_animations[animation_id] = manifest
+            self.image_tools.image_aliases[f"{animation_id}_video"] = str(video_path)
+            self.image_tools.image_aliases[animation_id] = str(video_path)
+
+            logger.debug("[AnimationTools] Video animation '%s' is ready to play at %s.", animation_id, video_path)
+            self._notify_animation_ready(animation_id, "video")
+        except VideoProviderError as exc:
+            logger.error("[AnimationTools] Video provider failed for %s: %s", animation_id, exc)
+        except Exception:
+            logger.exception("[AnimationTools] Video animation failed for %s", animation_id)
+        finally:
+            self.image_tools._set_canvas_activity(False)
+            self.image_tools._trigger_after_tool_call("create_animation")
+
     @staticmethod
     def plan_animation_technique_with_provider(
         text_response_provider: TextResponseProvider,
@@ -325,13 +400,14 @@ class AnimationTools(BaseTools):
         """Use the text provider to decide whether to generate a triframe or layered animation."""
         request = TextResponseRequest(
             prompt=(
-                "Decide whether to use 'triframe' or 'layered' animation technique for a given 2D scene.\n"
+                "Decide whether to use 'triframe', 'layered', or 'video' animation technique for a given 2D scene.\n"
                 "Return JSON with two keys:\n"
-                "1. technique: Must be either 'triframe' or 'layered'.\n"
+                "1. technique: Must be either 'triframe', 'layered', or 'video'.\n"
                 "2. reasoning: Short explanation of why this technique was chosen.\n\n"
                 "GUIDANCE ON TECHNIQUE CHOICE:\n"
-                "- For a scene that involves complex motions and transitions, use 'triframe'.\n"
-                "- Avoid using 'triframe' (use 'layered' instead) for scenes that are scenic backdrops, or during high energy single moment climaxes.\n\n"
+                "- For a scene that very high complexity motions and transitions, use 'triframe'.\n"
+                "- For cinematic, continuous motion or fluid natural scenes, use 'video'.\n"
+                "- Use layered for scenes that are scenic backdrops, or during high energy single moment climaxes.\n\n"
                 f"Scene prompt:\n{scene_prompt}"
             ),
             temperature=0.1,
@@ -515,6 +591,48 @@ class AnimationTools(BaseTools):
             logger.warning("[AnimationTools] Invalid layered animation manifest: %s", manifest_path)
             return None
 
+    def _find_video_animation(self, animation_id: str) -> Optional[dict]:
+        clean_id = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_id)
+        if clean_id in self._video_animations:
+            return self._video_animations[clean_id]
+        if animation_id in self._video_animations:
+            return self._video_animations[animation_id]
+
+        anim_dir = Path(self.animations_dir) / clean_id
+        manifest_path = anim_dir / "video.json"
+        if manifest_path.is_file():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                video_path = anim_dir / "video.mp4"
+                output_dir_path = Path(self.output_dir)
+                if "video_path" in manifest:
+                    vp = Path(manifest["video_path"])
+                    abs_vp = (output_dir_path / vp) if not vp.is_absolute() else vp
+                    if abs_vp.is_file():
+                        manifest["video_path"] = str(abs_vp)
+                    elif video_path.is_file():
+                        manifest["video_path"] = str(video_path)
+                elif video_path.is_file():
+                    manifest["video_path"] = str(video_path)
+                self._video_animations[clean_id] = manifest
+                return manifest
+            except (OSError, json.JSONDecodeError):
+                logger.warning("[AnimationTools] Invalid video animation manifest: %s", manifest_path)
+                return None
+
+        video_path = anim_dir / "video.mp4"
+        if video_path.is_file():
+            manifest = {
+                "id": clean_id,
+                "type": "video",
+                "scene_prompt": "",
+                "video_path": str(video_path),
+            }
+            self._video_animations[clean_id] = manifest
+            return manifest
+
+        return None
+
     def _resolve_provider_references(
         self, reference_images: Union[list[str], str, None]
     ) -> tuple[list[ImageReference], Optional[str]]:
@@ -550,6 +668,12 @@ class AnimationTools(BaseTools):
         """
         if not self.canvas_state_service:
             return "Error: Canvas state service is unavailable."
+
+        manifest = self._find_video_animation(animation_id)
+        if manifest:
+            self.canvas_state_service.show_video_animation(manifest, theater_id=self.active_theater_id)
+            self.image_tools._trigger_after_tool_call("play_animation")
+            return f"Playing video animation '{animation_id}'."
 
         manifest = self._find_layered_animation(animation_id)
         if manifest:
@@ -655,6 +779,16 @@ class AnimationTools(BaseTools):
                         "base_image": manifest.get("base_image", ""),
                         "layers": manifest.get("layers", []),
                     })
+            for anim_id, manifest in self._video_animations.items():
+                if anim_id not in seen_ids:
+                    seen_ids.add(anim_id)
+                    results.append({
+                        "id": anim_id,
+                        "type": "video",
+                        "scene_prompt": manifest.get("scene_prompt", ""),
+                        "video_path": self._to_relative_path(manifest.get("video_path", "")),
+                        "video_url": manifest.get("video_url"),
+                    })
             for anim_id, frames in self._animations.items():
                 if anim_id not in seen_ids:
                     seen_ids.add(anim_id)
@@ -704,6 +838,29 @@ class AnimationTools(BaseTools):
                     }
             except (OSError, json.JSONDecodeError):
                 pass
+
+        video_manifest_path = subfolder / "video.json"
+        if video_manifest_path.is_file():
+            try:
+                manifest = json.loads(video_manifest_path.read_text(encoding="utf-8"))
+                if isinstance(manifest, dict):
+                    return {
+                        "id": manifest.get("id", anim_id),
+                        "type": "video",
+                        "scene_prompt": manifest.get("scene_prompt", ""),
+                        "video_path": manifest.get("video_path", self._to_relative_path(subfolder / "video.mp4")),
+                        "video_url": manifest.get("video_url"),
+                    }
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        if (subfolder / "video.mp4").is_file():
+            return {
+                "id": anim_id,
+                "type": "video",
+                "scene_prompt": "",
+                "video_path": self._to_relative_path(subfolder / "video.mp4"),
+            }
 
         frame_paths = [str(subfolder / f"frame_{number}.jpg") for number in range(1, 4)]
         if all(Path(p).is_file() for p in frame_paths):

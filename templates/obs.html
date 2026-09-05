@@ -301,6 +301,7 @@
         const applyImageTransition = imageRenderer.applyTransition;
         const playImageSequence = imageRenderer.playSequence;
         const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
+        const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
@@ -442,7 +443,9 @@
                 const animationSignature = data.animation?.type === 'triframe' && Array.isArray(data.animation.frames)
                     ? data.animation.frames.join('|')
                     : data.animation?.type === 'layered' && Array.isArray(data.animation.layers)
-                        ? data.animation.layers.map(layer => `${layer.url}:${layer.effect}`).join('|') : '';
+                        ? data.animation.layers.map(layer => `${layer.url}:${layer.effect}`).join('|')
+                        : data.animation?.type === 'video' && (data.animation.video_url || data.animation.url)
+                            ? (data.animation.video_url || data.animation.url) : '';
                 const isNewImage = data.latest && (
                     data.time > lastTime
                     || data.latest !== lastImageRawUrl
@@ -458,12 +461,15 @@
                         lastImageEffect = currentImageEffect;
                         lastAnimationSignature = animationSignature;
                         if (animationSignature) {
-                            if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') { playLayeredAnimation(data.animation.layers); }
-                            else {
-                            playImageSequence(data.animation.frames, {
-                                frameDuration: data.animation.frame_duration_ms || 1400,
-                                crossfadeDuration: data.animation.crossfade_duration_ms || 500,
-                            });
+                            if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
+                                playLayeredAnimation(data.animation.layers);
+                            } else if (data.animation.type === 'video' && typeof playVideoAnimation === 'function') {
+                                playVideoAnimation(data.animation.video_url || data.animation.url, data.animation);
+                            } else {
+                                playImageSequence(data.animation.frames, {
+                                    frameDuration: data.animation.frame_duration_ms || 1400,
+                                    crossfadeDuration: data.animation.crossfade_duration_ms || 500,
+                                });
                             }
                         } else {
                             const newImgUrl = data.latest + "?t=" + new Date().getTime();
@@ -480,12 +486,15 @@
                     redrawAllDoodles();
 
                     if (animationSignature) {
-                        if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') { playLayeredAnimation(data.animation.layers); }
-                        else {
-                        playImageSequence(data.animation.frames, {
-                            frameDuration: data.animation.frame_duration_ms || 1400,
-                            crossfadeDuration: data.animation.crossfade_duration_ms || 500,
-                        });
+                        if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
+                            playLayeredAnimation(data.animation.layers);
+                        } else if (data.animation.type === 'video' && typeof playVideoAnimation === 'function') {
+                            playVideoAnimation(data.animation.video_url || data.animation.url, data.animation);
+                        } else {
+                            playImageSequence(data.animation.frames, {
+                                frameDuration: data.animation.frame_duration_ms || 1400,
+                                crossfadeDuration: data.animation.crossfade_duration_ms || 500,
+                            });
                         }
                     } else {
                         const newImgUrl = data.latest + "?t=" + new Date().getTime();

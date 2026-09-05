@@ -31,6 +31,7 @@ export function createImageRenderer({
 }) {
     const context = canvas?.getContext("2d");
     let currentImage = null;
+    let currentVideo = null;
     let activeAnimation = null;
     let sequenceTimer = null;
     let sequenceGeneration = 0;
@@ -161,6 +162,14 @@ export function createImageRenderer({
         if (activeAnimation) {
             cancelAnimationFrame(activeAnimation);
             activeAnimation = null;
+        }
+        if (currentVideo) {
+            try {
+                currentVideo.pause();
+                currentVideo.removeAttribute("src");
+                currentVideo.load();
+            } catch (e) {}
+            currentVideo = null;
         }
     }
 
@@ -509,7 +518,112 @@ export function createImageRenderer({
         activeAnimation = requestAnimationFrame(frame);
     }
 
-    return { resize, applyTransition, playSequence, playLayeredAnimation };
+    async function playVideoAnimation(videoUrl, options = {}) {
+        if (!canvas || !context || !videoUrl) return;
+        stopSequence();
+        const generation = sequenceGeneration;
+
+        const oldSnapshot = captureCanvasSnapshot();
+        const crossfadeDuration = typeof options === "number"
+            ? options
+            : (options?.crossfadeDuration ?? options?.fadeDuration ?? fadeDuration);
+
+        if (imageEffectController) {
+            imageEffectController.setEffect("none");
+            imageEffectController.element.style.display = "none";
+        }
+        if (image) {
+            image.classList.remove(...loadedClassNames);
+            image.style.opacity = "0";
+        }
+        if (backgroundLayer) {
+            backgroundLayer.style.backgroundImage = "none";
+        }
+
+        const video = document.createElement("video");
+        video.crossOrigin = "anonymous";
+        video.src = videoUrl;
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.autoplay = true;
+
+        currentVideo = video;
+
+        await new Promise((resolve) => {
+            let resolved = false;
+            const onReady = () => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve();
+                }
+            };
+            if (video.readyState >= 2) {
+                onReady();
+            } else {
+                video.oncanplay = onReady;
+                video.onloadeddata = onReady;
+                video.onerror = onReady;
+                setTimeout(onReady, 5000);
+            }
+        });
+
+        if (generation !== sequenceGeneration) {
+            try { video.pause(); } catch (e) {}
+            return;
+        }
+
+        try {
+            await video.play();
+        } catch (err) {
+            console.warn("[CanvasRenderer] Video autoplay prevented or failed:", err);
+        }
+
+        const start = performance.now();
+
+        const drawScaledVideo = (sourceVideo, width, height, opacity = 1) => {
+            const vWidth = sourceVideo.videoWidth || width;
+            const vHeight = sourceVideo.videoHeight || height;
+            if (!vWidth || !vHeight) return;
+
+            const scale = fitMode === "cover"
+                ? Math.max(width / vWidth, height / vHeight)
+                : Math.min(width / vWidth, height / vHeight);
+            const drawWidth = vWidth * scale;
+            const drawHeight = vHeight * scale;
+
+            context.save();
+            context.globalAlpha = opacity;
+            context.drawImage(sourceVideo, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+            context.restore();
+        };
+
+        const frame = (now) => {
+            if (generation !== sequenceGeneration) return;
+            const rect = canvas.getBoundingClientRect();
+            context.clearRect(0, 0, rect.width, rect.height);
+            drawScaledVideo(video, rect.width, rect.height);
+
+            if (oldSnapshot && crossfadeDuration > 0) {
+                const elapsed = now - start;
+                const progress = Math.min(1, Math.max(0, elapsed / crossfadeDuration));
+                if (progress < 1) {
+                    const eased = progress < 0.5
+                        ? 4 * progress * progress * progress
+                        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                    context.save();
+                    context.globalAlpha = 1 - eased;
+                    context.drawImage(oldSnapshot, 0, 0, rect.width, rect.height);
+                    context.restore();
+                }
+            }
+
+            activeAnimation = requestAnimationFrame(frame);
+        };
+        activeAnimation = requestAnimationFrame(frame);
+    }
+
+    return { resize, applyTransition, playSequence, playLayeredAnimation, playVideoAnimation };
 }
 
 /** Draws normalized doodle segments and replays them after canvas resizes. */

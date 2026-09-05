@@ -569,7 +569,27 @@ class TestCanvasStateManager(BaseTestCase):
         manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
         self.assertIsNotNone(manager.text_beautifier)
 
+    def test_video_animation_is_exposed_in_canvas_state(self):
+        manager = CanvasStateManager(theater_id="test_video_anim_state", theater_manager=self.theater_manager)
+        manifest = {
+            "id": "dragon_anim_123",
+            "scene_prompt": "A dragon flying over volcanoes.",
+            "video_path": "/path/to/dragon.mp4",
+            "video_url": "/theaters/test_video_anim_state/output/animations/dragon_anim_123/video.mp4",
+        }
+        manager.show_video_animation(manifest)
+
+        state = manager.get_latest_state()
+        self.assertIn("animation", state)
+        self.assertEqual(state["animation"]["type"], "video")
+        self.assertEqual(state["animation"]["id"], "dragon_anim_123")
+        self.assertEqual(
+            state["animation"]["video_url"],
+            "/theaters/test_video_anim_state/output/animations/dragon_anim_123/video.mp4",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

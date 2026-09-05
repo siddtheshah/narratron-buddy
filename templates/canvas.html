@@ -3534,6 +3534,7 @@
         const applyImageTransition = imageRenderer.applyTransition;
         const playImageSequence = imageRenderer.playSequence;
         const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
+        const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
@@ -3550,6 +3551,7 @@
             if (!animation) return '';
             if (animation.type === 'triframe' && Array.isArray(animation.frames)) return animation.frames.join('|');
             if (animation.type === 'layered' && Array.isArray(animation.layers)) return animation.layers.map(layer => `${layer.url}:${layer.effect}`).join('|');
+            if (animation.type === 'video') return animation.video_url || animation.url || animation.id || '';
             return '';
         }
 
@@ -3561,8 +3563,13 @@
         }
 
         function playAnimation(animation) {
-            if (animation.type === 'layered' && typeof playLayeredAnimation === 'function') playLayeredAnimation(animation.layers);
-            else playTriFrameAnimation(animation);
+            if (animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
+                playLayeredAnimation(animation.layers);
+            } else if (animation.type === 'video' && typeof playVideoAnimation === 'function') {
+                playVideoAnimation(animation.video_url || animation.url, animation);
+            } else {
+                playTriFrameAnimation(animation);
+            }
         }
 
         function updatePagingControlsUI() {

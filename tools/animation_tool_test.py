@@ -11,6 +11,7 @@ from PIL import Image
 from components.theater_manager import TheaterManager
 from components.canvas_state_service import CanvasStateService
 from providers import ImageGenerationResult
+from providers.video_provider import VideoGenerationResult
 from providers.fal_qwen_layered_provider import LayeredImageResult
 from testing.base import BaseTestCase
 from tools.animation_tool import AnimationTools
@@ -22,6 +23,10 @@ def fake_image_bytes() -> bytes:
     output = io.BytesIO()
     image.save(output, format="JPEG")
     return output.getvalue()
+
+
+def fake_video_bytes() -> bytes:
+    return b"\x00\x00\x00 ftypisom\x00\x00\x02\x00isomiso2mp41\x00\x00\x00\x08free"
 
 
 BASE_FRAME = "A lantern hangs in a quiet tavern."
@@ -562,4 +567,165 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
         self.assertEqual(len(ready_notifications), 1)
         self.assertEqual(ready_notifications[0], (animation_id, "layered"))
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_uses_video_technique(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-req-1",
+            usage={"inference": 1.2},
+            video_url="https://fal.media/dragon_flight.mp4",
+        )
+        planning_provider = MagicMock()
+        technique_resp = MagicMock(
+            parsed={"technique": "video", "reasoning": "cinematic action and fluid continuous motion"},
+            provider="p", model="m", request_id="1", usage={},
+        )
+        planning_provider.generate.return_value = technique_resp
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "video_test_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(
+            image_tools, image_provider, planning_provider, MagicMock(),
+            {"cooldown_duration": 0}, video_provider=video_provider,
+        )
+
+        result = tools.create_animation("A dragon soaring through stormy clouds.", "dragon_storm")
+        tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        self.assertEqual(video_provider.generate.call_count, 1)
+        request = video_provider.generate.call_args[0][0]
+        self.assertIn("dragon soaring", request.prompt.lower())
+
+        # Verify folder structure under animations directory
+        anim_folder = os.path.join(tools.animations_dir, animation_id)
+        self.assertTrue(os.path.isdir(anim_folder))
+        video_file = os.path.join(anim_folder, "video.mp4")
+        self.assertTrue(os.path.isfile(video_file))
+        with open(video_file, "rb") as f:
+            self.assertEqual(f.read(), fake_video_bytes())
+
+        manifest_file = os.path.join(anim_folder, "video.json")
+        self.assertTrue(os.path.isfile(manifest_file))
+        with open(manifest_file, "r", encoding="utf-8") as f:
+            manifest = __import__("json").load(f)
+        self.assertEqual(manifest["type"], "video")
+        self.assertEqual(manifest["id"], animation_id)
+        self.assertEqual(manifest["video_url"], "https://fal.media/dragon_flight.mp4")
+        self.assertTrue(os.path.exists(image_tools.image_aliases[f"{animation_id}_video"]))
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_play_video_animation_publishes_to_canvas_state(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-req-2",
+            usage={},
+            video_url="https://fal.media/ocean.mp4",
+        )
+        planning_provider = MagicMock()
+        planning_provider.generate.return_value = MagicMock(
+            parsed={"technique": "video", "reasoning": "continuous waves"},
+            provider="p", model="m", request_id="1", usage={},
+        )
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "video_canvas_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(
+            image_tools, image_provider, planning_provider, MagicMock(),
+            {"cooldown_duration": 0}, video_provider=video_provider,
+        )
+
+        result = tools.create_animation("Ocean waves crashing on rocks.", "ocean_waves")
+        tools.join_generation()
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        play_msg = tools.play_animation(animation_id)
+        self.assertIn("Playing video animation", play_msg)
+
+        state = canvas_state_service.latest_state("video_canvas_theater")
+        self.assertIn("animation", state)
+        self.assertEqual(state["animation"]["type"], "video")
+        self.assertEqual(state["animation"]["id"], animation_id)
+        self.assertEqual(state["animation"]["video_url"], "https://fal.media/ocean.mp4")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_on_animation_ready_notifies_callback_for_video(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-req-3",
+            usage={},
+            video_url="https://fal.media/video3.mp4",
+        )
+        planning_provider = MagicMock()
+        planning_provider.generate.return_value = MagicMock(
+            parsed={"technique": "video", "reasoning": "continuous video"},
+            provider="p", model="m", request_id="1", usage={},
+        )
+
+        image_tools = ImageTools(self.config, "video_callback_theater", self.manager)
+        tools = AnimationTools(
+            image_tools, image_provider, planning_provider, MagicMock(),
+            {"cooldown_duration": 0}, video_provider=video_provider,
+        )
+
+        ready_notifications = []
+        tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
+
+        result = tools.create_animation("Fast sports car racing.", "race_car")
+        tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        self.assertEqual(len(ready_notifications), 1)
+        self.assertEqual(ready_notifications[0], (animation_id, "video"))
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_browse_animations_returns_video_animations(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-req-4",
+            usage={},
+            video_url="https://fal.media/browse.mp4",
+        )
+        planning_provider = MagicMock()
+        planning_provider.generate.return_value = MagicMock(
+            parsed={"technique": "video", "reasoning": "video action"},
+            provider="p", model="m", request_id="1", usage={},
+        )
+
+        image_tools = ImageTools(self.config, "video_browse_theater", self.manager)
+        tools = AnimationTools(
+            image_tools, image_provider, planning_provider, MagicMock(),
+            {"cooldown_duration": 0}, video_provider=video_provider,
+        )
+
+        result = tools.create_animation("A spaceship entering hyperdrive.", "hyperspace")
+        tools.join_generation()
+
+        animations = tools.browse_animations()
+        video_anims = [a for a in animations if a["type"] == "video"]
+        self.assertEqual(len(video_anims), 1)
+        self.assertEqual(video_anims[0]["scene_prompt"], "A spaceship entering hyperdrive.")
+        self.assertEqual(video_anims[0]["video_url"], "https://fal.media/browse.mp4")
+
 
