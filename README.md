@@ -66,6 +66,17 @@ measures when the generated image is fully visible to each viewer, and writes
 per-viewer latencies plus trial mean and standard deviation to
 `evaluation_results/`.
 
+To load test a baton handoff to a secondary authenticated viewer while other
+viewers remain connected, run:
+
+```powershell
+uv run testing/e2e/load_canvas_baton_handoff.py --viewers 25 --trials 5
+```
+
+The first viewer receives and accepts the baton; the remaining viewers stay
+connected as spectators. The harness verifies the baton UI updates for every
+viewer and writes request and handoff delivery timings to `evaluation_results/`.
+
 
 ## Exporting the Frontend
 
