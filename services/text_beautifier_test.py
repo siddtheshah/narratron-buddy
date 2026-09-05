@@ -12,6 +12,7 @@ from services.text_beautifier import (
     ALLOWED_FONTS,
     EFFECTS,
     FONTS,
+    _BEAUTIFIER_PROMPT_TEMPLATE,
     _BEAUTIFY_SCENE_PROMPT_TEMPLATE,
     _BEAUTIFY_TEXT_PROMPT_TEMPLATE,
     BeautifiedDialogueLine,
@@ -19,6 +20,7 @@ from services.text_beautifier import (
     SingleTextBeautifyResponse,
     TextBeautifier,
     TextSpanEffect,
+    build_beautify_prompt,
     build_beautify_scene_prompt,
     build_beautify_text_prompt,
 )
@@ -42,43 +44,33 @@ class MockTextProvider(TextResponseProvider):
 
 
 class TestTextBeautifier(unittest.TestCase):
-    @patch("services.text_beautifier.get_text_response_provider")
-    def test_initialization_matches_suggestion_service(self, mock_get_provider):
-        mock_provider = MockTextProvider(model="gemini-from-config")
-        mock_get_provider.return_value = mock_provider
+    def setUp(self):
+        self.mock_provider = MagicMock(spec=TextResponseProvider)
+        self.mock_provider.model = "gemini-3.5-flash-lite"
+        self.mock_provider.id = "gemini-mock"
+        self.mock_provider.display_name = "Gemini Mock"
 
-        # Test with config dict matching SuggestionService(config=...)
-        beautifier = TextBeautifier(config={"story_planning": {"beautifier_model": "gemini-from-config"}})
-        self.assertEqual(beautifier.model, "gemini-from-config")
-        mock_get_provider.assert_called_with("gemini-2-5", options={"model": "gemini-from-config"})
+        self.get_provider_patcher = patch(
+            "services.text_beautifier.get_text_response_provider",
+            return_value=self.mock_provider,
+        )
+        self.mock_get_provider = self.get_provider_patcher.start()
 
-        # Test with explicit model matching SuggestionService(model=...)
-        beautifier2 = TextBeautifier(model="custom-direct-model")
-        self.assertEqual(beautifier2.model, "custom-direct-model")
-        mock_get_provider.assert_called_with("gemini-2-5", options={"model": "custom-direct-model"})
+    def tearDown(self):
+        self.get_provider_patcher.stop()
 
-    def test_initialization_validation_and_provider_injection(self):
+    def test_initialization_validation(self):
         # Invalid config type raises TypeError
         with self.assertRaises(TypeError):
             TextBeautifier("not-a-dict")  # type: ignore
 
-        # Invalid text_provider type raises TypeError
-        with self.assertRaises(TypeError):
-            TextBeautifier(text_provider="not-a-provider")  # type: ignore
-
-        # Valid TextResponseProvider injection
-        provider = MockTextProvider(model="gemini-custom")
-        beautifier = TextBeautifier(text_provider=provider)
-        self.assertEqual(beautifier.model, "gemini-custom")
-        self.assertIs(beautifier.text_provider, provider)
-
-        # Provider passed positionally
-        beautifier2 = TextBeautifier(provider)
-        self.assertEqual(beautifier2.model, "gemini-custom")
-        self.assertIs(beautifier2.text_provider, provider)
+        # Valid default construction
+        beautifier = TextBeautifier()
+        self.assertEqual(beautifier.model, "gemini-3.5-flash-lite")
+        self.mock_get_provider.assert_called_with("gemini-2-5", options={"model": "gemini-3.5-flash-lite"})
 
     def test_argument_validation(self):
-        beautifier = TextBeautifier(MockTextProvider())
+        beautifier = TextBeautifier()
         # Invalid type for beautify_text
         with self.assertRaises(TypeError):
             beautifier.beautify_text(123)  # type: ignore
@@ -94,14 +86,12 @@ class TestTextBeautifier(unittest.TestCase):
             beautifier.beautify_scene("valid", ["not-a-dict"])  # type: ignore
 
     def test_empty_text_returns_empty_spans(self):
-        beautifier = TextBeautifier(MockTextProvider())
+        beautifier = TextBeautifier()
         self.assertEqual(beautifier.beautify_text(""), [])
         self.assertEqual(beautifier.beautify_text("   "), [])
 
     def test_beautify_text_with_mock_provider(self):
-        provider = MagicMock(spec=TextResponseProvider)
-        provider.model = "gemini-3.5-flash-lite"
-        provider.generate.return_value = TextResponseResult(
+        self.mock_provider.generate.return_value = TextResponseResult(
             text="{}",
             provider="gemini",
             model="gemini-3.5-flash-lite",
@@ -113,7 +103,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier(provider)
+        beautifier = TextBeautifier()
         spans = beautifier.beautify_text("The ancient chamber begins to SHUDDER AND CRUMBLE!")
 
         self.assertEqual(len(spans), 2)
@@ -127,15 +117,13 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(spans[1]["color"], "#ef4444")
 
         # Verify provider call arguments
-        provider.generate.assert_called_once()
-        req: TextResponseRequest = provider.generate.call_args[0][0]
+        self.mock_provider.generate.assert_called_once()
+        req: TextResponseRequest = self.mock_provider.generate.call_args[0][0]
         self.assertIn("The ancient chamber begins to SHUDDER AND CRUMBLE!", req.prompt)
         self.assertEqual(req.response_schema, SingleTextBeautifyResponse)
 
     def test_beautify_text_sanitizes_invalid_effects(self):
-        provider = MagicMock(spec=TextResponseProvider)
-        provider.model = "gemini-3.5-flash-lite"
-        provider.generate.return_value = TextResponseResult(
+        self.mock_provider.generate.return_value = TextResponseResult(
             text="{}",
             provider="gemini",
             model="gemini-3.5-flash-lite",
@@ -146,18 +134,16 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier(provider)
+        beautifier = TextBeautifier()
         spans = beautifier.beautify_text("Text")
         self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0]["effect"], "none")
         self.assertEqual(spans[0]["font"], "default")
 
     def test_beautify_text_fallback_on_provider_error(self):
-        provider = MagicMock(spec=TextResponseProvider)
-        provider.model = "gemini-3.5-flash-lite"
-        provider.generate.side_effect = TextResponseProviderError("Provider unavailable")
+        self.mock_provider.generate.side_effect = TextResponseProviderError("Provider unavailable")
 
-        beautifier = TextBeautifier(provider)
+        beautifier = TextBeautifier()
         spans = beautifier.beautify_text("Watch out!")
         self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0]["text"], "Watch out!")
@@ -165,16 +151,14 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(spans[0]["font"], "default")
 
     def test_beautify_scene_empty_returns_clean(self):
-        beautifier = TextBeautifier(MockTextProvider())
+        beautifier = TextBeautifier()
         res = beautifier.beautify_scene("", [])
         self.assertEqual(res["narration"], "")
         self.assertEqual(res["narration_spans"], [])
         self.assertEqual(res["dialogue"], [])
 
     def test_beautify_scene_with_mock_provider(self):
-        provider = MagicMock(spec=TextResponseProvider)
-        provider.model = "gemini-3.5-flash-lite"
-        provider.generate.return_value = TextResponseResult(
+        self.mock_provider.generate.return_value = TextResponseResult(
             text="{}",
             provider="gemini",
             model="gemini-3.5-flash-lite",
@@ -196,7 +180,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier(provider)
+        beautifier = TextBeautifier()
         result = beautifier.beautify_scene(
             narration="The torch flickers. A scream echoes!",
             dialogue=[{"speaker": "Grim", "text": "Did you hear that?", "kind": "speech"}],
@@ -214,11 +198,9 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(result["dialogue"][0]["spans"][0]["effect"], "pulse")
 
     def test_beautify_scene_fallback_on_error(self):
-        provider = MagicMock(spec=TextResponseProvider)
-        provider.model = "gemini-3.5-flash-lite"
-        provider.generate.side_effect = Exception("Internal error")
+        self.mock_provider.generate.side_effect = Exception("Internal error")
 
-        beautifier = TextBeautifier(provider)
+        beautifier = TextBeautifier()
         result = beautifier.beautify_scene(
             narration="The storm rages.",
             dialogue=[{"speaker": "Captain", "text": "Hold on!", "kind": "speech"}],
@@ -234,9 +216,7 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(result["dialogue"][0]["spans"][0]["effect"], "none")
 
     def test_logging_in_beautify_text(self):
-        provider = MagicMock(spec=TextResponseProvider)
-        provider.model = "gemini-3.5-flash-lite"
-        provider.generate.return_value = TextResponseResult(
+        self.mock_provider.generate.return_value = TextResponseResult(
             text="{}",
             provider="gemini",
             model="gemini-3.5-flash-lite",
@@ -248,7 +228,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier(provider)
+        beautifier = TextBeautifier()
         with self.assertLogs("services.text_beautifier", level="INFO") as log_context:
             beautifier.beautify_text("The ancient gate EXPLODES IN FIRE!")
 
@@ -259,9 +239,7 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertIn("flame/bangers", log_output)
 
     def test_logging_in_beautify_scene(self):
-        provider = MagicMock(spec=TextResponseProvider)
-        provider.model = "gemini-3.5-flash-lite"
-        provider.generate.return_value = TextResponseResult(
+        self.mock_provider.generate.return_value = TextResponseResult(
             text="{}",
             provider="gemini",
             model="gemini-3.5-flash-lite",
@@ -271,7 +249,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier(provider)
+        beautifier = TextBeautifier()
         with self.assertLogs("services.text_beautifier", level="INFO") as log_context:
             beautifier.beautify_scene("Quiet night.", [])
 
@@ -296,6 +274,24 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertIn("[Theron] (speech): Halt!", rendered)
         self.assertIn("Available effects:", rendered)
         self.assertIn("Available fonts:", rendered)
+
+    def test_single_prompt_template_conditional_stanza_selection(self):
+        # When is_scene is False: renders text stanza, not scene stanza
+        text_prompt = build_beautify_prompt(is_scene=False, text="A dark hallway awaits.")
+        self.assertIn("A dark hallway awaits.", text_prompt)
+        self.assertIn("Annotate the following text into sequential spans", text_prompt)
+        self.assertNotIn("Scene Elements to Beautify:", text_prompt)
+
+        # When is_scene is True: renders scene stanza, not text stanza
+        scene_prompt = build_beautify_prompt(
+            is_scene=True,
+            narration="A dark hallway awaits.",
+            dialogue=[{"speaker": "Guard", "text": "Who goes there?", "kind": "speech"}],
+        )
+        self.assertIn("Scene Elements to Beautify:", scene_prompt)
+        self.assertIn("NARRATION: A dark hallway awaits.", scene_prompt)
+        self.assertIn("[Guard] (speech): Who goes there?", scene_prompt)
+        self.assertNotIn("Annotate the following text into sequential spans", scene_prompt)
 
 
 

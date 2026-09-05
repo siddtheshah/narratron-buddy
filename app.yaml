@@ -43,4 +43,5 @@ agent_internal:
         trigger_tokens: 20000
         target_tokens: 8000
 
+text_beautifier_model: "gemini-3.5-flash-lite"
 suggestion_model: "gemini-3.6-flash"

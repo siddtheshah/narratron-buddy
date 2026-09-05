@@ -91,7 +91,7 @@ class SingleTextBeautifyResponse(BaseModel):
     )
 
 
-_BEAUTIFY_TEXT_PROMPT_TEMPLATE = Template(
+_BEAUTIFIER_PROMPT_TEMPLATE = Template(
     """You are a cinematic text effects director for an interactive adventure experience.
 Your task is to break the text into sequential spans that EXACTLY reconstruct the input text without changing words or punctuation.
 
@@ -106,26 +106,8 @@ Available fonts:
 Color (optional): hex code for dramatic emphasis (e.g. #ef4444, #38bdf8, #fbbf24, #a855f7).
 Apply effects selectively to the most poignant words or phrases.
 
-Annotate the following text into sequential spans, assigning text effects and font styles to phrases that carry intense sensory or emotional weight:
-
-{{ text }}"""
-)
-
-_BEAUTIFY_SCENE_PROMPT_TEMPLATE = Template(
-    """You are a cinematic text effects director for an interactive adventure experience.
-Annotate the scene's narration and dialogue lines into sequential spans with effects and fonts.
-Every line's spans MUST concatenate to reproduce the exact line text without changing words or punctuation.
-
-Available effects:
-{% for name, desc in effects.items() -%}
-- '{{ name }}': {{ desc }}
-{% endfor %}
-Available fonts:
-{% for name, desc in fonts.items() -%}
-- '{{ name }}': {{ desc }}
-{% endfor %}
-Color (optional): e.g. '#ef4444' (fire/danger), '#38bdf8' (frost/magic), '#fbbf24' (radiance), '#a855f7' (arcane/shadow).
-Apply effects selectively to the most poignant words or phrases.
+{% if is_scene or mode == 'scene' -%}
+Annotate the scene's narration and dialogue lines into sequential spans with effects and fonts:
 
 Scene Elements to Beautify:
 {% if narration -%}
@@ -133,8 +115,38 @@ NARRATION: {{ narration }}
 {% endif -%}
 {% for item in dialogue -%}
 [{{ item.speaker or 'Narrator' }}] ({{ item.kind or 'speech' }}): {{ item.text or '' }}
-{% endfor %}"""
+{% endfor -%}
+{% else -%}
+Annotate the following text into sequential spans, assigning text effects and font styles to phrases that carry intense sensory or emotional weight:
+
+{{ text }}
+{% endif %}"""
 )
+
+# Aliases for compatibility
+_BEAUTIFY_TEXT_PROMPT_TEMPLATE = _BEAUTIFIER_PROMPT_TEMPLATE
+_BEAUTIFY_SCENE_PROMPT_TEMPLATE = _BEAUTIFIER_PROMPT_TEMPLATE
+
+
+def build_beautify_prompt(
+    is_scene: bool = False,
+    mode: Optional[str] = None,
+    text: Optional[str] = None,
+    narration: Optional[str] = None,
+    dialogue: Optional[List[Dict[str, Any]]] = None,
+    effects: Optional[Dict[str, str]] = None,
+    fonts: Optional[Dict[str, str]] = None,
+) -> str:
+    """Render beautification prompt selecting single text or scene stanza via conditional variable."""
+    return _BEAUTIFIER_PROMPT_TEMPLATE.render(
+        is_scene=is_scene,
+        mode=mode or ("scene" if is_scene else "text"),
+        text=text or "",
+        narration=narration or "",
+        dialogue=dialogue or [],
+        effects=effects or EFFECTS,
+        fonts=fonts or FONTS,
+    ).strip()
 
 
 def build_beautify_text_prompt(
@@ -143,11 +155,12 @@ def build_beautify_text_prompt(
     fonts: Optional[Dict[str, str]] = None,
 ) -> str:
     """Render single text beautification prompt binding all variables at once."""
-    return _BEAUTIFY_TEXT_PROMPT_TEMPLATE.render(
+    return build_beautify_prompt(
+        is_scene=False,
         text=text,
-        effects=effects or EFFECTS,
-        fonts=fonts or FONTS,
-    ).strip()
+        effects=effects,
+        fonts=fonts,
+    )
 
 
 def build_beautify_scene_prompt(
@@ -157,12 +170,13 @@ def build_beautify_scene_prompt(
     fonts: Optional[Dict[str, str]] = None,
 ) -> str:
     """Render adventure scene beautification prompt binding all variables at once."""
-    return _BEAUTIFY_SCENE_PROMPT_TEMPLATE.render(
+    return build_beautify_prompt(
+        is_scene=True,
         narration=narration,
-        dialogue=dialogue or [],
-        effects=effects or EFFECTS,
-        fonts=fonts or FONTS,
-    ).strip()
+        dialogue=dialogue,
+        effects=effects,
+        fonts=fonts,
+    )
 
 
 class TextBeautifier:
@@ -172,45 +186,15 @@ class TextBeautifier:
         self,
         config: Optional[dict] = None,
         model: Optional[str] = None,
-        text_provider: Optional[TextResponseProvider] = None,
     ) -> None:
-        if isinstance(config, TextResponseProvider):
-            text_provider = config
-            config = None
-        elif config is not None and not isinstance(config, dict):
+        if config is not None and not isinstance(config, dict):
             raise TypeError(f"config must be a dict or None, got {type(config).__name__}")
 
         self.config: Dict[str, Any] = config or {}
-        resolved_model = (
-            model
-            or self.config.get("beautifier_model")
-            or self.config.get("text_beautifier_model")
-            or self.config.get("story_planning", {}).get("beautifier_model")
-            or self.config.get("story_planning", {}).get("text_beautifier_model")
+        self.model = model or self.config.get("text_beautifier_model", "gemini-3.5-flash-lite")
+        self.text_provider = get_text_response_provider(
+            "gemini-2-5", options={"model": self.model}
         )
-        if not resolved_model:
-            from utils.config_loader import get_app_config
-            app_cfg = get_app_config()
-            if isinstance(app_cfg, dict):
-                resolved_model = (
-                    app_cfg.get("beautifier_model")
-                    or app_cfg.get("story_planning", {}).get("beautifier_model")
-                    or app_cfg.get("story_planning", {}).get("text_beautifier_model")
-                )
-        self.model = resolved_model or "gemini-3.5-flash-lite"
-
-        if text_provider is not None:
-            if not isinstance(text_provider, TextResponseProvider):
-                raise TypeError(
-                    f"text_provider must be an instance of TextResponseProvider, got {type(text_provider).__name__}"
-                )
-            self.text_provider = text_provider
-            if hasattr(text_provider, "model") and text_provider.model:
-                self.model = text_provider.model
-        else:
-            self.text_provider = get_text_response_provider(
-                "gemini-2-5", options={"model": self.model}
-            )
 
     @staticmethod
     def _sanitize_span(span: TextSpanEffect | dict) -> Dict[str, Any]:
