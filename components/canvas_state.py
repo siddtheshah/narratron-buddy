@@ -39,7 +39,8 @@ class CanvasStateManager:
         self.theater_id = theater_id
         self.theater_manager = theater_manager
         self.text_beautifier = text_beautifier
-        if self.text_beautifier is None:
+        self._text_beautifier_initialized = text_beautifier is not None
+        if not self._text_beautifier_initialized:
             self._init_text_beautifier()
         self.theater = theater_manager.theater(theater_id)
         chat_output_dir = str(self.theater.output_dir() / "chats")
@@ -119,19 +120,67 @@ class CanvasStateManager:
         self._initialize_starting_image()
 
     def _init_text_beautifier(self) -> None:
+        self._text_beautifier_initialized = True
         try:
             from utils.config_loader import get_theater_config
             config = get_theater_config(self.theater_id, theater_manager=self.theater_manager)
             sp_cfg = config.get("story_planning", {})
-            if (
-                isinstance(sp_cfg, dict)
-                and sp_cfg.get("adventure_mode", False)
-                and sp_cfg.get("text_beautification", True)
-            ):
-                from components.text_beautifier import TextBeautifier
-                self.text_beautifier = TextBeautifier(config=sp_cfg)
+            if not isinstance(sp_cfg, dict):
+                logger.info(
+                    "[CanvasStateManager] TextBeautifier skipped for theater '%s': story_planning config is missing or not a dict",
+                    self.theater_id,
+                )
+                return
+
+            adv_val = sp_cfg.get("adventure_mode", False)
+            if isinstance(adv_val, str):
+                adventure_mode = adv_val.strip().lower() in ("true", "1", "yes", "on")
+            else:
+                adventure_mode = bool(adv_val)
+
+            tb_val = sp_cfg.get("text_beautification", True)
+            if isinstance(tb_val, str):
+                text_beautification = tb_val.strip().lower() in ("true", "1", "yes", "on")
+            elif tb_val is None:
+                text_beautification = True
+            else:
+                text_beautification = bool(tb_val)
+
+            logger.info(
+                "[CanvasStateManager] Evaluating TextBeautifier for theater '%s': adventure_mode=%s, text_beautification=%s",
+                self.theater_id,
+                adventure_mode,
+                text_beautification,
+            )
+
+            if adventure_mode and text_beautification:
+                beautifier = None
+                try:
+                    import object_registry
+                    if hasattr(object_registry, "text_beautifier") and object_registry.text_beautifier is not None:
+                        beautifier = object_registry.text_beautifier
+                except Exception:
+                    pass
+
+                if beautifier is None:
+                    from services.text_beautifier import TextBeautifier
+                    beautifier = TextBeautifier(config=sp_cfg)
+
+                self.text_beautifier = beautifier
+                logger.info(
+                    "[CanvasStateManager] TextBeautifier enabled and initialized for theater '%s' (model=%s)",
+                    self.theater_id,
+                    self.text_beautifier.model,
+                )
+            else:
+                logger.info(
+                    "[CanvasStateManager] TextBeautifier not enabled for theater '%s' (adventure_mode=%s, text_beautification=%s)",
+                    self.theater_id,
+                    adventure_mode,
+                    text_beautification,
+                )
         except Exception as e:
-            logger.debug("[CanvasStateManager] Could not initialize TextBeautifier: %s", e)
+            logger.error("[CanvasStateManager] Could not initialize TextBeautifier for theater '%s': %s", self.theater_id, e, exc_info=True)
 
     def _initialize_starting_image(self) -> None:
         """Seed an otherwise blank canvas from its theater configuration."""
@@ -275,16 +324,25 @@ class CanvasStateManager:
 
     def set_scene_dialogue(self, dialogue: List[Dict[str, str]]):
         """Set the planner-authored speech/thought bubbles shown on the canvas."""
+        if not getattr(self, "_text_beautifier_initialized", False):
+            self._init_text_beautifier()
         self.scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
         if self.text_beautifier and self.scene_dialogue:
-            for item in self.scene_dialogue:
+            logger.info("[CanvasStateManager] Requesting text beautification for %d dialogue line(s)", len(self.scene_dialogue))
+            for idx, item in enumerate(self.scene_dialogue):
                 if not item.get("spans"):
                     text = str(item.get("text") or "").strip()
                     if text:
                         try:
                             item["spans"] = self.text_beautifier.beautify_text(text)
+                            logger.info(
+                                "[CanvasStateManager] Dialogue line %d (%s) beautified into %d span(s)",
+                                idx,
+                                item.get("speaker", "unknown"),
+                                len(item["spans"]),
+                            )
                         except Exception as exc:
-                            logger.warning("[CanvasStateManager] Text beautification failed for dialogue line: %s", exc)
+                            logger.warning("[CanvasStateManager] Text beautification failed for dialogue line %d: %s", idx, exc)
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.save_local_theater_data(theater_dir=sess_dir)
@@ -372,16 +430,23 @@ class CanvasStateManager:
 
     def set_narration(self, narration: str, spans: Optional[List[Dict[str, Any]]] = None):
         """Set the planner-authored narration shown in white italics."""
+        if not getattr(self, "_text_beautifier_initialized", False):
+            self._init_text_beautifier()
         self.narration = " ".join(str(narration or "").strip().split()[:45])[:500]
         if spans is not None:
             self.narration_spans = [dict(s) for s in spans]
+            logger.info("[CanvasStateManager] Narration updated with %d pre-supplied span(s)", len(self.narration_spans))
         elif self.text_beautifier and self.narration:
+            logger.info("[CanvasStateManager] Requesting text beautification for narration (%d chars): '%.50s'", len(self.narration), self.narration)
             try:
                 self.narration_spans = self.text_beautifier.beautify_text(self.narration)
+                logger.info("[CanvasStateManager] Narration beautification produced %d span(s)", len(self.narration_spans))
             except Exception as exc:
                 logger.warning("[CanvasStateManager] Text beautification failed for narration: %s", exc)
                 self.narration_spans = []
         else:
+            if not self.text_beautifier and self.narration:
+                logger.info("[CanvasStateManager] TextBeautifier not active on theater '%s', skipping narration beautification", self.theater_id)
             self.narration_spans = []
         sess_dir = self.theater.directory()
         if sess_dir.exists():

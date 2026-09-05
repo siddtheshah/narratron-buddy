@@ -54,7 +54,8 @@ from testlab.adventure_runner import (
 )
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
-from components.text_beautifier import TextBeautifier
+from services.text_beautifier import TextBeautifier
+
 from tools.story_planning_tool import StoryPlanningTools
 
 ROOT = Path(__file__).resolve().parent
@@ -269,10 +270,15 @@ def beautify_text_endpoint(body: dict[str, Any]):
     dialogue = body.get("dialogue") or []
     if not narration and not dialogue:
         raise HTTPException(status_code=400, detail="Either narration or dialogue must be provided.")
-    model = str(body.get("model") or "gemini-3.5-flash-lite").strip()
+    req_model = str(body.get("model") or "").strip()
+    if req_model:
+        beautifier = TextBeautifier(model=req_model)
+    else:
+        import object_registry
+        beautifier = object_registry.text_beautifier
 
     start_time = time.monotonic()
-    beautifier = TextBeautifier(config={"beautifier_model": model})
+
     result = beautifier.beautify_scene(narration, dialogue)
     elapsed_seconds = round(time.monotonic() - start_time, 3)
 
@@ -281,8 +287,9 @@ def beautify_text_endpoint(body: dict[str, Any]):
         "dialogue": result.get("dialogue", dialogue),
         "narration_spans": result.get("narration_spans", []),
         "latency_seconds": elapsed_seconds,
-        "model": model,
+        "model": beautifier.model,
     }
+
 
 
 

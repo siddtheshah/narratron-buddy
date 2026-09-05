@@ -21,6 +21,7 @@ from pricing.pricing_controller import PricingController
 from services.adventure_service import AdventureService, ensure_adventures_root
 from services.agent_manager import AgentSessionManager
 from services.suggestion_service import SuggestionService
+from services.text_beautifier import TextBeautifier
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
 from storage.theater_repository import TheaterRepository
 from utils.config_loader import get_app_config
@@ -107,5 +108,6 @@ agent_manager = AgentSessionManager(
 )
 suggestion_service = SuggestionService(config=config)
 adventure_service = AdventureService(ensure_adventures_root())
+text_beautifier = TextBeautifier(config=config)
 
 atexit.register(shutdown_database_connection)

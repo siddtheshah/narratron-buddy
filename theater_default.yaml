@@ -49,7 +49,7 @@ story_planning:
     character_voicing: false
     # In Adventure Mode, apply dynamic visual text effects (vibrating,
     # scintillating, glitch, fonts) to high-energy spans using TextBeautifier.
-    text_beautification: false
+    text_beautification: true
     nodes_ahead: 3
     # Guidance for the Adventure Mode story planner. Theater creators can
     # override this with a voice, tone, or consequence philosophy (for

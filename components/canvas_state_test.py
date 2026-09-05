@@ -495,13 +495,79 @@ class TestCanvasStateManager(BaseTestCase):
             text_beautifier=mock_beautifier,
         )
 
-        manager.set_narration("The monster awakens!")
+        with self.assertLogs("components.canvas_state", level="INFO") as log_context:
+            manager.set_narration("The monster awakens!")
+            manager.set_scene_dialogue([{"speaker": "Elena", "text": "Look out!"}])
+
         self.assertEqual(len(manager.narration_spans), 1)
         self.assertEqual(manager.narration_spans[0]["effect"], "vibrate")
-
-        manager.set_scene_dialogue([{"speaker": "Elena", "text": "Look out!"}])
         self.assertEqual(len(manager.scene_dialogue[0]["spans"]), 1)
         self.assertEqual(manager.scene_dialogue[0]["spans"][0]["effect"], "vibrate")
+
+        log_output = "\n".join(log_context.output)
+        self.assertIn("Requesting text beautification for narration", log_output)
+        self.assertIn("Narration beautification produced 1 span(s)", log_output)
+        self.assertIn("Requesting text beautification for 1 dialogue line(s)", log_output)
+        self.assertIn("Dialogue line 0 (Elena) beautified into 1 span(s)", log_output)
+
+    def test_init_text_beautifier_enabled_from_config(self):
+        import yaml
+        theater_id = "test_adv_beautify_enabled"
+        theater_dir = self.theater_manager._get_theater_dir(theater_id)
+        theater_dir.mkdir(parents=True, exist_ok=True)
+        config = {
+            "story_planning": {
+                "adventure_mode": True,
+                "text_beautification": True,
+            }
+        }
+        (theater_dir / "theater.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+
+        with self.assertLogs("components.canvas_state", level="INFO") as log_context:
+            manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
+
+        self.assertIsNotNone(manager.text_beautifier)
+        self.assertEqual(manager.text_beautifier.model, "gemini-3.5-flash-lite")
+        log_output = "\n".join(log_context.output)
+        self.assertIn(f"Evaluating TextBeautifier for theater '{theater_id}': adventure_mode=True, text_beautification=True", log_output)
+        self.assertIn(f"TextBeautifier enabled and initialized for theater '{theater_id}'", log_output)
+
+    def test_init_text_beautifier_disabled_when_flag_false(self):
+        import yaml
+        theater_id = "test_adv_beautify_disabled"
+        theater_dir = self.theater_manager._get_theater_dir(theater_id)
+        theater_dir.mkdir(parents=True, exist_ok=True)
+        config = {
+            "story_planning": {
+                "adventure_mode": True,
+                "text_beautification": False,
+            }
+        }
+        (theater_dir / "theater.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+
+        with self.assertLogs("components.canvas_state", level="INFO") as log_context:
+            manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
+
+        self.assertIsNone(manager.text_beautifier)
+        log_output = "\n".join(log_context.output)
+        self.assertIn(f"Evaluating TextBeautifier for theater '{theater_id}': adventure_mode=True, text_beautification=False", log_output)
+        self.assertIn(f"TextBeautifier not enabled for theater '{theater_id}'", log_output)
+
+    def test_init_text_beautifier_string_config_parsing(self):
+        import yaml
+        theater_id = "test_adv_beautify_string_cfg"
+        theater_dir = self.theater_manager._get_theater_dir(theater_id)
+        theater_dir.mkdir(parents=True, exist_ok=True)
+        config = {
+            "story_planning": {
+                "adventure_mode": "true",
+                "text_beautification": "true",
+            }
+        }
+        (theater_dir / "theater.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+
+        manager = CanvasStateManager(theater_id=theater_id, theater_manager=self.theater_manager)
+        self.assertIsNotNone(manager.text_beautifier)
 
 
 if __name__ == "__main__":

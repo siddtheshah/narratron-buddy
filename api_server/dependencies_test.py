@@ -75,3 +75,11 @@ def test_suggestion_service_initialized_in_object_registry():
     assert hasattr(object_registry, "suggestion_service")
     assert suggestion_service.target is object_registry.suggestion_service
 
+
+def test_text_beautifier_initialized_in_object_registry():
+    from api_server.dependencies import text_beautifier
+    assert hasattr(object_registry, "text_beautifier")
+    assert text_beautifier.target is object_registry.text_beautifier
+    from services.text_beautifier import TextBeautifier
+    assert isinstance(object_registry.text_beautifier, TextBeautifier)
+
