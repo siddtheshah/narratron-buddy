@@ -18,6 +18,18 @@ class RecordingWebSocket:
     async def send_json(self, message):
         self.messages.append(message)
 
+
+class BlockingWebSocket(RecordingWebSocket):
+    def __init__(self):
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def send_json(self, message):
+        self.started.set()
+        await self.release.wait()
+        await super().send_json(message)
+
 class TestCanvasStateManager(BaseTestCase):
     def setUp(self):
         super().setUp()
@@ -56,12 +68,37 @@ class TestCanvasStateManager(BaseTestCase):
             socket = RecordingWebSocket()
             manager.register_state_websocket(socket)
             manager.update_current_music("test_playlist", ["/playlists/test/1.mp3"])
-            await asyncio.sleep(0)
+            for _ in range(10):
+                if socket.messages:
+                    break
+                await asyncio.sleep(0)
             self.assertEqual(manager.state_revision, 1)
             self.assertEqual(socket.messages, [{
                 "type": "state_changed", "revision": 1, "domains": ["latest"],
             }])
             manager.unregister_state_websocket(socket)
+
+        asyncio.run(exercise())
+
+    def test_broadcasts_do_not_serialize_clients_behind_a_slow_socket(self):
+        async def exercise():
+            manager = CanvasStateManager(theater_id="parallel_broadcast", theater_manager=self.theater_manager)
+            slow_doodle = BlockingWebSocket()
+            fast_doodle = RecordingWebSocket()
+            manager.register_websocket(slow_doodle)
+            manager.register_websocket(fast_doodle)
+
+            broadcast = asyncio.create_task(manager.broadcast_ws_message({"type": "draw"}))
+            await asyncio.wait_for(slow_doodle.started.wait(), timeout=0.2)
+            for _ in range(10):
+                if fast_doodle.messages:
+                    break
+                await asyncio.sleep(0)
+            self.assertEqual(fast_doodle.messages, [{"type": "draw"}])
+            self.assertFalse(broadcast.done())
+
+            slow_doodle.release.set()
+            await broadcast
 
         asyncio.run(exercise())
 

@@ -622,10 +622,20 @@ class CanvasStateManager:
             self.active_state_ws_connections.remove(websocket)
 
     async def broadcast_state_ws_message(self, message: Dict[str, Any]):
-        for connection in list(self.active_state_ws_connections):
-            try:
-                await connection.send_json(message)
-            except Exception:
+        """Send a state notification to every client concurrently.
+
+        WebSocket I/O is already asynchronous and must remain on the event
+        loop that owns the socket.  Starting all sends before awaiting any of
+        them prevents one slow recipient from serializing delivery to the
+        rest of the canvas audience.
+        """
+        connections = list(self.active_state_ws_connections)
+        results = await asyncio.gather(
+            *(connection.send_json(message) for connection in connections),
+            return_exceptions=True,
+        )
+        for connection, result in zip(connections, results):
+            if isinstance(result, BaseException):
                 self.unregister_state_websocket(connection)
 
     def get_active_viewers(self) -> List[Dict[str, Any]]:
@@ -640,12 +650,25 @@ class CanvasStateManager:
 
 
     async def broadcast_ws_message(self, message: Dict[str, Any], sender: Optional[WebSocket] = None):
-        for connection in list(self.active_ws_connections):
-            if connection != sender:
-                try:
-                    await connection.send_json(message)
-                except Exception:
-                    pass
+        """Fan out a canvas event concurrently without blocking on each peer.
+
+        This deliberately does not use a worker thread: ``send_json`` is
+        event-loop-bound async I/O.  ``gather`` lets every socket make
+        progress concurrently while retaining a completion point for callers
+        that need delivery work to finish before they acknowledge an action.
+        """
+        connections = [
+            connection
+            for connection in list(self.active_ws_connections)
+            if connection != sender
+        ]
+        results = await asyncio.gather(
+            *(connection.send_json(message) for connection in connections),
+            return_exceptions=True,
+        )
+        for connection, result in zip(connections, results):
+            if isinstance(result, BaseException):
+                self.unregister_websocket(connection)
 
     def add_doodle(self, doodle: Dict[str, Any]):
         self.add_doodles([doodle])
