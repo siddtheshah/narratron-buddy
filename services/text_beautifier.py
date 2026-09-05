@@ -92,8 +92,17 @@ class SingleTextBeautifyResponse(BaseModel):
 
 
 _BEAUTIFIER_PROMPT_TEMPLATE = Template(
-    """You are a cinematic text effects director for an interactive adventure experience.
+"""
+# Objective
+    You are a cinematic text effects director for an interactive adventure experience.
 Your task is to break the text into sequential spans that EXACTLY reconstruct the input text without changing words or punctuation.
+
+# Guidelines
+Do not apply effects to more than two spans total. More than that is too chaotic.
+For span length, choose either a short 1-2 word span, or cover the entire line. Intermediate ranges are
+not appealing.
+
+# Effects and Fonts
 
 Available effects:
 {% for name, desc in effects.items() -%}
