@@ -54,6 +54,7 @@ from testlab.adventure_runner import (
 )
 from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
+from components.text_beautifier import TextBeautifier
 from tools.story_planning_tool import StoryPlanningTools
 
 ROOT = Path(__file__).resolve().parent
@@ -209,6 +210,80 @@ def a2ui_canvas_lab():
 @app.get("/adventure-runner", include_in_schema=False)
 def adventure_runner_lab():
     return FileResponse(ROOT / "adventure_runner.html", media_type="text/html")
+
+
+@app.get("/text-effects", include_in_schema=False)
+def text_effects_lab():
+    return FileResponse(ROOT / "text_effects_lab.html", media_type="text/html")
+
+
+@app.get("/api/text-effects/presets")
+def text_effects_presets():
+    return {
+        "presets": [
+            {
+                "id": "dragon",
+                "title": "Dragon Awakening",
+                "badge": "Action & Heat",
+                "narration": "The cavern floor fractures with a deafening CRACK as an ancient dragon erupts from the molten chasm!",
+                "dialogue": [
+                    {"speaker": "Theresa", "text": "Shields up! Don't let the hellfire scorch your armor!", "kind": "speech"},
+                    {"speaker": "Kael", "text": "Its eyes... they are glowing with dark celestial rage.", "kind": "thought"},
+                ],
+            },
+            {
+                "id": "crypt",
+                "title": "Haunted Crypt",
+                "badge": "Horror & Eerie",
+                "narration": "A chilling whisper slithers down your spine. The cobwebs tremble as ghostly green lights flicker in the dark.",
+                "dialogue": [
+                    {"speaker": "Mirena", "text": "Did you hear that? Something is crawling beneath the stone coffins.", "kind": "speech"},
+                    {"speaker": "Ghostly Voice", "text": "LEAVE THIS SACRED TOMB OR JOIN US FOREVER.", "kind": "speech"},
+                ],
+            },
+            {
+                "id": "celestial",
+                "title": "Celestial Beacon",
+                "badge": "Fantasy & Wonder",
+                "narration": "The crystal spire radiates blinding celestial luminescence, humming with the timeless harmony of the stars.",
+                "dialogue": [
+                    {"speaker": "Archmage Varis", "text": "Behold, the Crown of Luminance has chosen its rightful bearer!", "kind": "speech"},
+                ],
+            },
+            {
+                "id": "cyberpunk",
+                "title": "System Corruption",
+                "badge": "Sci-Fi Glitch",
+                "narration": "WARNING: NEURAL LINK COMPROMISED. The neon cityscape distorts violently as rogue static floods your optic feed.",
+                "dialogue": [
+                    {"speaker": "AI Core", "text": "CRITICAL EXCEPTION 0x99F4: The overseer protocol has shattered.", "kind": "speech"},
+                ],
+            },
+        ]
+    }
+
+
+@app.post("/api/text-effects/beautify")
+def beautify_text_endpoint(body: dict[str, Any]):
+    narration = str(body.get("narration") or "").strip()
+    dialogue = body.get("dialogue") or []
+    if not narration and not dialogue:
+        raise HTTPException(status_code=400, detail="Either narration or dialogue must be provided.")
+    model = str(body.get("model") or "gemini-3.5-flash-lite").strip()
+
+    start_time = time.monotonic()
+    beautifier = TextBeautifier(config={"beautifier_model": model})
+    result = beautifier.beautify_scene(narration, dialogue)
+    elapsed_seconds = round(time.monotonic() - start_time, 3)
+
+    return {
+        "narration": narration,
+        "dialogue": result.get("dialogue", dialogue),
+        "narration_spans": result.get("narration_spans", []),
+        "latency_seconds": elapsed_seconds,
+        "model": model,
+    }
+
 
 
 @app.get("/api/a2ui-canvas/default-config")

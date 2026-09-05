@@ -47,6 +47,9 @@ story_planning:
     # When Adventure Mode NPC dialogue is enabled, synthesize each spoken line
     # with a stable, automatically assigned Seed Speech voice.
     character_voicing: false
+    # In Adventure Mode, apply dynamic visual text effects (vibrating,
+    # scintillating, glitch, fonts) to high-energy spans using TextBeautifier.
+    text_beautification: false
     nodes_ahead: 3
     # Guidance for the Adventure Mode story planner. Theater creators can
     # override this with a voice, tone, or consequence philosophy (for

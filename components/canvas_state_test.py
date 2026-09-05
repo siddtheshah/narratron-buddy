@@ -468,6 +468,42 @@ class TestCanvasStateManager(BaseTestCase):
 
         self.assertEqual(latest_state["latest"], f"/theaters/{theater_id}/references/main_cover.png")
 
+    def test_set_narration_with_spans(self):
+        manager = CanvasStateManager(theater_id="test_spans_theater", theater_manager=self.theater_manager)
+        spans = [
+            {"text": "The ground ", "effect": "none", "font": "default"},
+            {"text": "TREMBLES!", "effect": "vibrate", "font": "cinematic", "color": "#ef4444"},
+        ]
+        manager.set_narration("The ground TREMBLES!", spans=spans)
+        state = manager.get_latest_state()
+        self.assertEqual(state["narration"], "The ground TREMBLES!")
+        self.assertEqual(len(state["narration_spans"]), 2)
+        self.assertEqual(state["narration_spans"][1]["effect"], "vibrate")
+        self.assertEqual(state["narration_spans"][1]["font"], "cinematic")
+
+
+    def test_canvas_state_manager_applies_text_beautifier_to_narration_and_dialogue(self):
+        from unittest.mock import MagicMock
+        mock_beautifier = MagicMock()
+        mock_beautifier.beautify_text.side_effect = lambda text: [
+            {"text": text, "effect": "vibrate", "font": "bangers", "color": "#ef4444"}
+        ]
+
+        manager = CanvasStateManager(
+            theater_id="test_beautify_canvas",
+            theater_manager=self.theater_manager,
+            text_beautifier=mock_beautifier,
+        )
+
+        manager.set_narration("The monster awakens!")
+        self.assertEqual(len(manager.narration_spans), 1)
+        self.assertEqual(manager.narration_spans[0]["effect"], "vibrate")
+
+        manager.set_scene_dialogue([{"speaker": "Elena", "text": "Look out!"}])
+        self.assertEqual(len(manager.scene_dialogue[0]["spans"]), 1)
+        self.assertEqual(manager.scene_dialogue[0]["spans"][0]["effect"], "vibrate")
+
 
 if __name__ == "__main__":
     unittest.main()
+

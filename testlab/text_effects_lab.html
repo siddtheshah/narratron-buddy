@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Text Effects & Beautifier Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=MedievalSharp&family=Rubik+Glitch&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/effects-static/css/splitting.css">
+  <link rel="stylesheet" href="/effects-static/css/text-effects.css">
+  <script src="/effects-static/js/splitting.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090c16;
+      --panel: #13182a;
+      --panel-elevated: #1a223a;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-bright: rgba(167, 139, 250, 0.4);
+      --accent: #9b87f5;
+      --accent-glow: rgba(155, 135, 245, 0.35);
+      --accent-warm: #f97316;
+      --text: #f3f5fc;
+      --muted: #9ba7c0;
+      --bubble-bg: rgba(26, 32, 53, 0.85);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 10% 0%, #201742 0%, transparent 40%),
+                  radial-gradient(circle at 90% 100%, #172440 0%, transparent 45%),
+                  var(--bg);
+      color: var(--text);
+      font-family: Outfit, system-ui, sans-serif;
+      padding-bottom: 60px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      background: rgba(11, 14, 26, 0.8);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-inner {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-tag {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(155, 135, 245, 0.15);
+      border: 1px solid rgba(155, 135, 245, 0.3);
+      color: #c4b5fd;
+      font-weight: 600;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--panel-elevated);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    main {
+      max-width: 1240px;
+      margin: 28px auto 0;
+      padding: 0 24px;
+    }
+
+    .grid-layout {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    @media (max-width: 960px) {
+      .grid-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+    }
+
+    /* Preset Chips */
+    .presets-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .preset-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .preset-chip:hover {
+      border-color: var(--accent);
+      background: rgba(155, 135, 245, 0.1);
+      transform: translateY(-1px);
+    }
+
+    .preset-chip.active {
+      border-color: var(--accent);
+      background: rgba(155, 135, 245, 0.2);
+      color: #fff;
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    /* Form controls */
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    textarea, input[type="text"], select {
+      width: 100%;
+      background: rgba(10, 14, 26, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      transition: border-color 0.15s ease;
+    }
+
+    textarea:focus, input[type="text"]:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(155, 135, 245, 0.2);
+    }
+
+    .dialogue-item {
+      display: grid;
+      grid-template-columns: 100px 1fr 34px;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+
+    .del-btn {
+      width: 34px;
+      height: 38px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: #f87171;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-weight: bold;
+    }
+
+    .del-btn:hover {
+      background: rgba(239, 68, 68, 0.15);
+    }
+
+    .add-line-btn {
+      background: transparent;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 8px;
+      width: 100%;
+      font-family: inherit;
+      cursor: pointer;
+      font-size: 0.85rem;
+      margin-top: 4px;
+    }
+
+    .add-line-btn:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    .action-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+      align-items: center;
+    }
+
+    .primary-btn {
+      flex: 1;
+      background: linear-gradient(135deg, #7c3aed, #9b87f5);
+      border: none;
+      color: #fff;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 12px 20px;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px var(--accent-glow);
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .primary-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 22px rgba(155, 135, 245, 0.5);
+    }
+
+    .primary-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Canvas Stage */
+    .canvas-stage {
+      background: radial-gradient(circle at 50% 30%, #1e2540 0%, #0d111d 80%);
+      border: 1px solid var(--border-bright);
+      border-radius: 16px;
+      min-height: 480px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 32px;
+      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.6), 0 10px 30px rgba(0, 0, 0, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stage-top-bar {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .stage-pill {
+      font-size: 0.75rem;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 4px 10px;
+      border-radius: 999px;
+      color: #cbd5e1;
+    }
+
+    .replay-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s ease;
+    }
+
+    .replay-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Dialogue Overlays matching canvas.html & obs.html */
+    .scene-narration-banner {
+      background: rgba(12, 16, 28, 0.85);
+      border-left: 4px solid var(--accent);
+      backdrop-filter: blur(10px);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      font-size: 1.15rem;
+      line-height: 1.6;
+      color: #f1f5f9;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .dialogue-bubbles {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .dialogue-bubble {
+      background: var(--bubble-bg);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 14px 18px;
+      max-width: 90%;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      animation: bubbleFadeIn 0.3s ease-out;
+    }
+
+    @keyframes bubbleFadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .speaker-tag {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .dialogue-text {
+      font-size: 1.12rem;
+      line-height: 1.5;
+    }
+
+    /* Catalog Mode */
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .catalog-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      transition: all 0.2s ease;
+    }
+
+    .catalog-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .catalog-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .effect-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin: 0;
+      color: #e2e8f0;
+    }
+
+    .effect-desc {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 0 0 16px;
+    }
+
+    .preview-box {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 20px;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      text-align: center;
+    }
+
+    /* JSON Drawer */
+    .json-panel {
+      margin-top: 24px;
+      background: #080a12;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 0.82rem;
+      max-height: 240px;
+      overflow-y: auto;
+      color: #93c5fd;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="header-inner">
+      <a href="/" class="brand">
+        <span class="brand-tag">Test Lab</span>
+        <h1>Text Effects & Beautifier Demo</h1>
+      </a>
+      <div class="tabs">
+        <button class="tab-btn active" id="tabAiBtn" onclick="switchTab('ai')">AI Beautifier</button>
+        <button class="tab-btn" id="tabCatalogBtn" onclick="switchTab('catalog')">Effect & Font Catalog</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- TAB 1: AI SCENE BEAUTIFIER -->
+    <section id="viewAi" class="grid-layout">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Adventure Scene Input</h2>
+          <span id="latencyBadge" class="badge">Ready</span>
+        </div>
+
+        <label style="font-size:0.84rem; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:8px; display:block;">
+          Quick Presets
+        </label>
+        <div class="presets-row" id="presetsRow">
+          <!-- Loaded dynamically from API -->
+        </div>
+
+        <div class="form-group">
+          <label for="narrationInput">Scene Narration</label>
+          <textarea id="narrationInput" rows="3" placeholder="Enter high-energy scene narration..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Dialogue Lines</label>
+          <div id="dialogueContainer">
+            <!-- Dynamic lines -->
+          </div>
+          <button type="button" class="add-line-btn" onclick="addDialogueRow()">+ Add Dialogue Line</button>
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+          <label for="modelSelect">LLM Model</label>
+          <select id="modelSelect">
+            <option value="gemini-3.5-flash-lite" selected>gemini-3.5-flash-lite (Fastest / Recommended)</option>
+            <option value="gemini-3-flash">gemini-3-flash</option>
+            <option value="gemini-3.7-flash">gemini-3.7-flash</option>
+          </select>
+        </div>
+
+        <div class="action-row">
+          <button id="beautifyBtn" class="primary-btn" onclick="submitBeautification()">
+            <span id="btnIcon">✨</span>
+            <span id="btnText">Beautify & Animate Scene</span>
+          </button>
+        </div>
+
+        <div id="jsonContainer" style="display:none; margin-top:20px;">
+          <label style="font-size:0.8rem; font-weight:600; color:var(--muted); text-transform:uppercase;">Generated Spans Payload</label>
+          <pre class="json-panel" id="jsonViewer"></pre>
+        </div>
+      </div>
+
+      <!-- Live Canvas Preview Stage -->
+      <div>
+        <div class="canvas-stage" id="canvasStage">
+          <div class="stage-top-bar">
+            <span class="stage-pill">Adventure Canvas Preview</span>
+            <button class="replay-btn" onclick="replayCurrentScene()">↺ Replay Animation</button>
+          </div>
+
+          <div id="sceneNarrationEl" class="scene-narration-banner" style="display:none;"></div>
+          <div id="sceneDialogueEl" class="dialogue-bubbles"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: EFFECT & FONT CATALOG -->
+    <section id="viewCatalog" style="display:none;">
+      <div class="panel" style="margin-bottom:24px;">
+        <div class="panel-header">
+          <h2>Interactive Custom Sandbox</h2>
+          <span class="badge">Live Playground</span>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 160px 160px 100px; gap:12px; align-items:center;">
+          <input type="text" id="sandboxText" value="THE DRAGON ROARS WITH CELESTIAL FURY!" placeholder="Type custom text...">
+          <select id="sandboxEffect" onchange="updateSandbox()">
+            <option value="vibrate">Effect: Vibrate</option>
+            <option value="scintillate">Effect: Scintillate</option>
+            <option value="glitch">Effect: Glitch</option>
+            <option value="flame" selected>Effect: Flame</option>
+            <option value="pulse">Effect: Pulse</option>
+            <option value="glow">Effect: Glow</option>
+            <option value="wave">Effect: Wave</option>
+            <option value="none">Effect: None</option>
+          </select>
+          <select id="sandboxFont" onchange="updateSandbox()">
+            <option value="default">Font: Default</option>
+            <option value="bangers" selected>Font: Bangers</option>
+            <option value="creepster">Font: Creepster</option>
+            <option value="cinematic">Font: Cinematic</option>
+            <option value="medieval">Font: Medieval</option>
+            <option value="glitch">Font: Glitch</option>
+          </select>
+          <input type="color" id="sandboxColor" value="#ff5722" onchange="updateSandbox()" style="height:40px; padding:2px; cursor:pointer; width:100%;">
+        </div>
+
+        <div class="preview-box" style="margin-top:20px; min-height:100px; font-size:2rem;" id="sandboxPreview">
+          <!-- Rendered text -->
+        </div>
+      </div>
+
+      <h3 style="margin:28px 0 16px; font-size:1.2rem;">Text Effects Catalog</h3>
+      <div class="catalog-grid">
+        <div class="catalog-card">
+          <div class="catalog-card-header">
+            <h4 class="effect-title">Vibrate</h4>
+            <span class="badge">Dynamic CSS</span>
+          </div>
+          <p class="effect-desc">High-frequency tremor indicating terror, roaring power, or seismic earthquakes.</p>
+          <div class="preview-box">
+            <span class="text-span text-effect-vibrate text-font-bangers" style="color:#ef4444;">EARTHQUAKE SHAKE</span>
+          </div>
+        </div>
+
+        <div class="catalog-card">
+          <div class="catalog-card-header">
+            <h4 class="effect-title">Scintillate</h4>
+            <span class="badge">Splitting.js</span>
+          </div>
+          <p class="effect-desc">Luminescent shimmering with hue shifts and scale pulses for magical celestial moments.</p>
+          <div class="preview-box">
+            <span class="text-span text-effect-scintillate text-font-cinematic" style="color:#f59e0b;" data-splitting>CELESTIAL RADIANCE</span>
+          </div>
+        </div>
+
+        <div class="catalog-card">
+          <div class="catalog-card-header">
+            <h4 class="effect-title">Glitch</h4>
+            <span class="badge">RGB Split</span>
+          </div>
+          <p class="effect-desc">Chromatic aberration jitter for cyber systems, corrupted magic, or mental fracturing.</p>
+          <div class="preview-box">
+            <span class="text-span text-effect-glitch text-font-glitch" style="color:#06b6d4;">SYSTEM_CORRUPT_0x8F</span>
+          </div>
+        </div>
+
+        <div class="catalog-card">
+          <div class="catalog-card-header">
+            <h4 class="effect-title">Flame</h4>
+            <span class="badge">Fiery Aura</span>
+          </div>
+          <p class="effect-desc">Flickering warm glow and shadow oscillation for fire spells and blazing heat.</p>
+          <div class="preview-box">
+            <span class="text-span text-effect-flame text-font-bangers" style="color:#ff4500;">INFERNAL BLAST</span>
+          </div>
+        </div>
+
+        <div class="catalog-card">
+          <div class="catalog-card-header">
+            <h4 class="effect-title">Wave</h4>
+            <span class="badge">Splitting.js</span>
+          </div>
+          <p class="effect-desc">Per-character undulating wave using character-index offset for songs, whispers, or water.</p>
+          <div class="preview-box">
+            <span class="text-span text-effect-wave" style="color:#38bdf8;" data-splitting>Mysterious Whispers...</span>
+          </div>
+        </div>
+
+        <div class="catalog-card">
+          <div class="catalog-card-header">
+            <h4 class="effect-title">Glow & Pulse</h4>
+            <span class="badge">Subtle Magic</span>
+          </div>
+          <p class="effect-desc">Harmonious ambient neon pulsation for artifacts, runic symbols, and warnings.</p>
+          <div class="preview-box">
+            <span class="text-span text-effect-glow text-font-medieval" style="color:#a855f7;">Ancient Rune Awakens</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let currentPresets = [];
+    let lastRenderPayload = null;
+    let renderId = 0;
+
+    function switchTab(tab) {
+      document.getElementById('viewAi').style.display = tab === 'ai' ? 'grid' : 'none';
+      document.getElementById('viewCatalog').style.display = tab === 'catalog' ? 'block' : 'none';
+      document.getElementById('tabAiBtn').classList.toggle('active', tab === 'ai');
+      document.getElementById('tabCatalogBtn').classList.toggle('active', tab === 'catalog');
+      if (tab === 'catalog') {
+        updateSandbox();
+        if (window.Splitting) window.Splitting();
+      }
+    }
+
+    async function loadPresets() {
+      try {
+        const res = await fetch('/api/text-effects/presets');
+        const data = await res.json();
+        currentPresets = data.presets || [];
+        renderPresetChips();
+        if (currentPresets.length > 0) {
+          selectPreset(currentPresets[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load presets:', err);
+      }
+    }
+
+    function renderPresetChips() {
+      const row = document.getElementById('presetsRow');
+      row.replaceChildren();
+      for (const p of currentPresets) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'preset-chip';
+        chip.id = `preset-${p.id}`;
+        chip.innerHTML = `<span>${p.title}</span><small style="opacity:0.7;">(${p.badge})</small>`;
+        chip.onclick = () => selectPreset(p.id);
+        row.appendChild(chip);
+      }
+    }
+
+    function selectPreset(presetId) {
+      const preset = currentPresets.find(p => p.id === presetId);
+      if (!preset) return;
+      document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+      const activeChip = document.getElementById(`preset-${presetId}`);
+      if (activeChip) activeChip.classList.add('active');
+
+      document.getElementById('narrationInput').value = preset.narration || '';
+      const container = document.getElementById('dialogueContainer');
+      container.replaceChildren();
+      for (const line of (preset.dialogue || [])) {
+        addDialogueRow(line.speaker, line.text);
+      }
+    }
+
+    function addDialogueRow(speaker = '', text = '') {
+      const container = document.getElementById('dialogueContainer');
+      const row = document.createElement('div');
+      row.className = 'dialogue-item';
+      row.innerHTML = `
+        <input type="text" placeholder="Speaker" value="${escapeHtml(speaker)}" class="diag-speaker">
+        <input type="text" placeholder="Spoken line..." value="${escapeHtml(text)}" class="diag-text">
+        <button type="button" class="del-btn" title="Remove line" onclick="this.parentElement.remove()">✕</button>
+      `;
+      container.appendChild(row);
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function getSpeakerColor(speaker) {
+      const colors = ['#38bdf8', '#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#f87171'];
+      let hash = 0;
+      for (let i = 0; i < speaker.length; i++) hash = (hash * 31 + speaker.charCodeAt(i)) >>> 0;
+      return colors[hash % colors.length];
+    }
+
+    function createSpanElement(span) {
+      const el = document.createElement('span');
+      el.className = 'text-span';
+      if (span.effect && span.effect !== 'none') el.classList.add(`text-effect-${span.effect}`);
+      if (span.font && span.font !== 'default') el.classList.add(`text-font-${span.font}`);
+      if (span.color) el.style.color = span.color;
+      return el;
+    }
+
+    function applySplittingIfAvailable(el) {
+      if (typeof window.Splitting === 'function') {
+        try { window.Splitting({ target: el, by: 'chars' }); } catch (e) { }
+      }
+    }
+
+    async function submitBeautification() {
+      const narration = document.getElementById('narrationInput').value.trim();
+      const dialogueRows = document.querySelectorAll('.dialogue-item');
+      const dialogue = [];
+      for (const row of dialogueRows) {
+        const spk = row.querySelector('.diag-speaker').value.trim();
+        const txt = row.querySelector('.diag-text').value.trim();
+        if (txt) dialogue.push({ speaker: spk || 'Narrator', text: txt, kind: 'speech' });
+      }
+
+      if (!narration && dialogue.length === 0) {
+        alert('Please provide scene narration or at least one dialogue line.');
+        return;
+      }
+
+      const model = document.getElementById('modelSelect').value;
+      const btn = document.getElementById('beautifyBtn');
+      const btnIcon = document.getElementById('btnIcon');
+      const btnText = document.getElementById('btnText');
+      const badge = document.getElementById('latencyBadge');
+
+      btn.disabled = true;
+      btnIcon.innerHTML = '<div class="spinner"></div>';
+      btnText.textContent = 'Calling Gemini...';
+      badge.textContent = 'Generating...';
+
+      try {
+        const res = await fetch('/api/text-effects/beautify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ narration, dialogue, model })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+
+        lastRenderPayload = data;
+        badge.textContent = `⚡ ${data.latency_seconds}s (${data.model})`;
+
+        document.getElementById('jsonContainer').style.display = 'block';
+        document.getElementById('jsonViewer').textContent = JSON.stringify(data, null, 2);
+
+        await renderScene(data);
+      } catch (err) {
+        console.error('Beautification error:', err);
+        alert('Error: ' + err.message);
+        badge.textContent = 'Failed';
+      } finally {
+        btn.disabled = false;
+        btnIcon.textContent = '✨';
+        btnText.textContent = 'Beautify & Animate Scene';
+      }
+    }
+
+    async function renderScene(data) {
+      const activeRenderId = ++renderId;
+      const narrationEl = document.getElementById('sceneNarrationEl');
+      const dialogueEl = document.getElementById('sceneDialogueEl');
+
+      narrationEl.replaceChildren();
+      dialogueEl.replaceChildren();
+
+      // Render Narration
+      if (data.narration) {
+        narrationEl.style.display = 'block';
+        const spans = (data.narration_spans && data.narration_spans.length > 0)
+          ? data.narration_spans
+          : [{ text: data.narration, effect: 'none', font: 'default' }];
+
+        for (const s of spans) {
+          if (activeRenderId !== renderId) return;
+          const spanEl = createSpanElement(s);
+          narrationEl.appendChild(spanEl);
+          for (const char of Array.from(s.text)) {
+            if (activeRenderId !== renderId) return;
+            spanEl.textContent += char;
+            await new Promise(r => setTimeout(r, 14));
+          }
+          if (s.effect && s.effect !== 'none') applySplittingIfAvailable(spanEl);
+        }
+      } else {
+        narrationEl.style.display = 'none';
+      }
+
+      // Render Dialogue with typewriter
+      for (const line of (data.dialogue || [])) {
+        if (activeRenderId !== renderId) return;
+        const bubble = document.createElement('div');
+        bubble.className = 'dialogue-bubble';
+
+        const speaker = document.createElement('span');
+        speaker.className = 'speaker-tag';
+        speaker.textContent = line.speaker;
+        speaker.style.color = getSpeakerColor(line.speaker);
+
+        const textContainer = document.createElement('div');
+        textContainer.className = 'dialogue-text';
+
+        bubble.append(speaker, textContainer);
+        dialogueEl.appendChild(bubble);
+
+        const lineSpans = (line.spans && line.spans.length > 0)
+          ? line.spans
+          : [{ text: line.text, effect: 'none', font: 'default' }];
+
+        for (const s of lineSpans) {
+          if (activeRenderId !== renderId) return;
+          const spanEl = createSpanElement(s);
+          textContainer.appendChild(spanEl);
+          for (const char of Array.from(s.text)) {
+            if (activeRenderId !== renderId) return;
+            spanEl.textContent += char;
+            await new Promise(r => setTimeout(r, 16));
+          }
+          if (s.effect && s.effect !== 'none') applySplittingIfAvailable(spanEl);
+        }
+      }
+    }
+
+    function replayCurrentScene() {
+      if (lastRenderPayload) renderScene(lastRenderPayload);
+    }
+
+    function updateSandbox() {
+      const text = document.getElementById('sandboxText').value || 'TEST EFFECT';
+      const effect = document.getElementById('sandboxEffect').value;
+      const font = document.getElementById('sandboxFont').value;
+      const color = document.getElementById('sandboxColor').value;
+      const preview = document.getElementById('sandboxPreview');
+
+      preview.replaceChildren();
+      const span = createSpanElement({ text, effect, font, color });
+      span.textContent = text;
+      preview.appendChild(span);
+      if (effect && effect !== 'none') applySplittingIfAvailable(span);
+    }
+
+    document.getElementById('sandboxText').addEventListener('input', updateSandbox);
+    window.addEventListener('DOMContentLoaded', loadPresets);
+  </script>
+</body>
+
+</html>

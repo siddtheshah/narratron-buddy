@@ -1,0 +1,273 @@
+/* ==========================================================================
+   Narratron Immersive Text Effects & Typography System
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=MedievalSharp&family=Rubik+Glitch&display=swap');
+
+/* --- Font Utility Classes --- */
+.text-font-cinematic {
+  font-family: 'Cinzel', serif !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.text-font-creepster {
+  font-family: 'Creepster', cursive !important;
+  letter-spacing: 0.05em;
+}
+
+.text-font-bangers {
+  font-family: 'Bangers', cursive !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.text-font-medieval {
+  font-family: 'MedievalSharp', cursive !important;
+  letter-spacing: 0.04em;
+}
+
+.text-font-glitch {
+  font-family: 'Rubik Glitch', monospace !important;
+  letter-spacing: 0.06em;
+}
+
+/* Base text span */
+.text-span {
+  display: inline;
+  position: relative;
+  transition: color 0.2s ease;
+}
+
+/* ==========================================================================
+   Text Effects
+   ========================================================================== */
+
+/* 1. VIBRATE / SEISMIC TREMOR
+   High-energy explosive impact, screaming, earthquake, terror */
+.text-effect-vibrate {
+  display: inline-block;
+  animation: span-vibrate 0.1s linear infinite;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.7), 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+
+.text-effect-vibrate.splitting .char {
+  display: inline-block;
+  animation: char-vibrate 0.08s infinite alternate ease-in-out;
+  animation-delay: calc(var(--char-index) * -0.03s);
+}
+
+@keyframes span-vibrate {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-1px, 1px) rotate(-0.5deg); }
+  50% { transform: translate(1px, -1px) rotate(0.5deg); }
+  75% { transform: translate(-1.5px, -0.5px) rotate(-0.3deg); }
+  100% { transform: translate(1px, 1.5px) rotate(0.4deg); }
+}
+
+@keyframes char-vibrate {
+  0% { transform: translate(-0.8px, -0.5px); }
+  50% { transform: translate(0.9px, 0.7px); }
+  100% { transform: translate(-0.7px, 0.9px); }
+}
+
+/* 2. SCINTILLATE / STARRY SHIMMER
+   Magical radiance, sparkling crystals, celestial wonders, gleaming relics */
+.text-effect-scintillate {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    #fef08a 0%,
+    #38bdf8 25%,
+    #e879f9 50%,
+    #fde047 75%,
+    #38bdf8 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: scintillate-shimmer 2.5s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6)) drop-shadow(0 0 14px rgba(232, 121, 249, 0.4));
+}
+
+.text-effect-scintillate.splitting .char {
+  display: inline-block;
+  animation: char-twinkle 1.8s ease-in-out infinite;
+  animation-delay: calc(var(--char-index) * 0.12s);
+}
+
+@keyframes scintillate-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes char-twinkle {
+  0%, 100% {
+    filter: brightness(1) drop-shadow(0 0 2px rgba(255, 255, 255, 0.4));
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    filter: brightness(1.7) drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
+    transform: translateY(-1.5px) scale(1.06);
+  }
+}
+
+/* 3. GLITCH / DIGITAL CORRUPTION
+   Cybernetic anomalies, reality tears, dimensional rifts, eldritch glitches */
+.text-effect-glitch {
+  display: inline-block;
+  position: relative;
+  color: #f8fafc;
+  text-shadow: 2px 0 #06b6d4, -2px 0 #ec4899;
+  animation: glitch-skew 1.8s infinite ease-in-out alternate-reverse;
+}
+
+.text-effect-glitch.splitting .char {
+  display: inline-block;
+  animation: char-glitch 2s infinite ease-in-out;
+  animation-delay: calc(var(--char-index) * 0.08s);
+}
+
+@keyframes glitch-skew {
+  0% { transform: skew(0deg); }
+  20% { transform: skew(0deg); text-shadow: 2px 0 #06b6d4, -2px 0 #ec4899; }
+  21% { transform: skew(-3deg); text-shadow: -2px 0 #06b6d4, 2px 0 #ec4899; }
+  22% { transform: skew(3deg); text-shadow: 3px 0 #06b6d4, -3px 0 #ec4899; }
+  23% { transform: skew(0deg); text-shadow: 2px 0 #06b6d4, -2px 0 #ec4899; }
+  80% { transform: skew(0deg); }
+  82% { transform: translateX(2px) skew(-2deg); }
+  84% { transform: translateX(-2px) skew(2deg); }
+  86% { transform: skew(0deg); }
+  100% { transform: skew(0deg); }
+}
+
+@keyframes char-glitch {
+  0%, 90%, 100% { transform: translateY(0); }
+  92% { transform: translateY(-2px) scaleY(1.2); }
+  94% { transform: translateY(1.5px) scaleY(0.8); }
+}
+
+/* 4. FLAME / INFERNO
+   Fiery rage, burning torch, hellfire, lava heat */
+.text-effect-flame {
+  display: inline-block;
+  color: #fff7ed;
+  text-shadow:
+    0 0 4px #fbbf24,
+    0 -2px 8px #f97316,
+    0 -4px 14px #ef4444,
+    0 -8px 20px rgba(220, 38, 38, 0.7);
+  animation: flame-flicker 1.4s ease-in-out infinite alternate;
+}
+
+.text-effect-flame.splitting .char {
+  display: inline-block;
+  animation: char-flame-lick 1.2s ease-in-out infinite alternate;
+  animation-delay: calc(var(--char-index) * 0.09s);
+}
+
+@keyframes flame-flicker {
+  0% {
+    text-shadow:
+      0 0 4px #fbbf24,
+      0 -2px 8px #f97316,
+      0 -4px 14px #ef4444,
+      0 -8px 20px rgba(220, 38, 38, 0.7);
+  }
+  100% {
+    text-shadow:
+      0 0 6px #fef08a,
+      0 -3px 12px #fb923c,
+      0 -6px 18px #dc2626,
+      0 -11px 26px rgba(185, 28, 28, 0.9);
+  }
+}
+
+@keyframes char-flame-lick {
+  0% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-1.5px) scaleY(1.08); }
+  100% { transform: translateY(0.5px) scaleY(0.96); }
+}
+
+/* 5. PULSE / HEARTBEAT
+   Ominous dread, suspense, ticking countdown, surging power */
+.text-effect-pulse {
+  display: inline-block;
+  animation: span-pulse 1.3s ease-in-out infinite;
+  text-shadow: 0 0 12px rgba(168, 85, 247, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes span-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.07);
+    filter: brightness(1.3);
+    text-shadow: 0 0 20px rgba(192, 132, 252, 1), 0 0 30px rgba(168, 85, 247, 0.6);
+  }
+}
+
+/* 6. GLOW / RADIANCE
+   Soft ethereal halos, sacred blessings, glowing runes */
+.text-effect-glow {
+  display: inline-block;
+  color: #ffffff;
+  text-shadow:
+    0 0 8px rgba(147, 197, 253, 0.9),
+    0 0 16px rgba(96, 165, 250, 0.7),
+    0 0 26px rgba(59, 130, 246, 0.5);
+  animation: glow-breathe 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes glow-breathe {
+  0% {
+    text-shadow:
+      0 0 6px rgba(147, 197, 253, 0.8),
+      0 0 12px rgba(96, 165, 250, 0.5);
+  }
+  100% {
+    text-shadow:
+      0 0 12px rgba(191, 219, 254, 1),
+      0 0 24px rgba(96, 165, 250, 0.9),
+      0 0 36px rgba(59, 130, 246, 0.7);
+  }
+}
+
+/* 7. WAVE / UNDULATION
+   Eerie spirits, water currents, hypnotic sirens, ghostly drifting */
+.text-effect-wave {
+  display: inline-block;
+}
+
+.text-effect-wave.splitting .char {
+  display: inline-block;
+  animation: char-wave 2s ease-in-out infinite;
+  animation-delay: calc(var(--char-index) * 0.1s);
+  text-shadow: 0 2px 8px rgba(45, 212, 191, 0.7);
+}
+
+@keyframes char-wave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* --- Accessibility: prefers-reduced-motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .text-effect-vibrate,
+  .text-effect-scintillate,
+  .text-effect-glitch,
+  .text-effect-flame,
+  .text-effect-pulse,
+  .text-effect-glow,
+  .text-effect-wave,
+  .text-effect-vibrate.splitting .char,
+  .text-effect-scintillate.splitting .char,
+  .text-effect-glitch.splitting .char,
+  .text-effect-flame.splitting .char,
+  .text-effect-wave.splitting .char {
+    animation: none !important;
+    transform: none !important;
+  }
+}

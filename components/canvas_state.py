@@ -30,9 +30,17 @@ class CanvasStateManager:
     """Encapsulates state for the web canvas UI including music playback, shown images,
     chat manager history, WebSocket connections, and doodle drawings.
     """
-    def __init__(self, theater_id: str, theater_manager: TheaterManager):
+    def __init__(
+        self,
+        theater_id: str,
+        theater_manager: TheaterManager,
+        text_beautifier: Optional[Any] = None,
+    ):
         self.theater_id = theater_id
         self.theater_manager = theater_manager
+        self.text_beautifier = text_beautifier
+        if self.text_beautifier is None:
+            self._init_text_beautifier()
         self.theater = theater_manager.theater(theater_id)
         chat_output_dir = str(self.theater.output_dir() / "chats")
         self.chat_manager = ChatManager(output_dir=chat_output_dir)
@@ -83,6 +91,7 @@ class CanvasStateManager:
         # top of the current scene image.
         self.scene_dialogue: List[Dict[str, str]] = []
         self.narration: str = ""
+        self.narration_spans: List[Dict[str, Any]] = []
         # A2UI protocol messages plus host-owned normalized canvas placement.
         self.interactive_surfaces: Dict[str, Dict[str, Any]] = {}
         # Normalized speaker name -> assigned Seed voice.  This is persisted
@@ -108,6 +117,21 @@ class CanvasStateManager:
 
         self.load_state_from_disk()
         self._initialize_starting_image()
+
+    def _init_text_beautifier(self) -> None:
+        try:
+            from utils.config_loader import get_theater_config
+            config = get_theater_config(self.theater_id, theater_manager=self.theater_manager)
+            sp_cfg = config.get("story_planning", {})
+            if (
+                isinstance(sp_cfg, dict)
+                and sp_cfg.get("adventure_mode", False)
+                and sp_cfg.get("text_beautification", True)
+            ):
+                from components.text_beautifier import TextBeautifier
+                self.text_beautifier = TextBeautifier(config=sp_cfg)
+        except Exception as e:
+            logger.debug("[CanvasStateManager] Could not initialize TextBeautifier: %s", e)
 
     def _initialize_starting_image(self) -> None:
         """Seed an otherwise blank canvas from its theater configuration."""
@@ -185,6 +209,7 @@ class CanvasStateManager:
                     self.story_planning_state = c_state.get("story_planning_state", {})
                     self.scene_dialogue = c_state.get("scene_dialogue", [])
                     self.narration = str(c_state.get("narration") or "")
+                    self.narration_spans = c_state.get("narration_spans", [])
                     surfaces = c_state.get("interactive_surfaces", [])
                     self.interactive_surfaces = {
                         str(item.get("surface_id")): dict(item)
@@ -251,6 +276,15 @@ class CanvasStateManager:
     def set_scene_dialogue(self, dialogue: List[Dict[str, str]]):
         """Set the planner-authored speech/thought bubbles shown on the canvas."""
         self.scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
+        if self.text_beautifier and self.scene_dialogue:
+            for item in self.scene_dialogue:
+                if not item.get("spans"):
+                    text = str(item.get("text") or "").strip()
+                    if text:
+                        try:
+                            item["spans"] = self.text_beautifier.beautify_text(text)
+                        except Exception as exc:
+                            logger.warning("[CanvasStateManager] Text beautification failed for dialogue line: %s", exc)
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.save_local_theater_data(theater_dir=sess_dir)
@@ -336,9 +370,19 @@ class CanvasStateManager:
         except RuntimeError:
             pass
 
-    def set_narration(self, narration: str):
+    def set_narration(self, narration: str, spans: Optional[List[Dict[str, Any]]] = None):
         """Set the planner-authored narration shown in white italics."""
         self.narration = " ".join(str(narration or "").strip().split()[:45])[:500]
+        if spans is not None:
+            self.narration_spans = [dict(s) for s in spans]
+        elif self.text_beautifier and self.narration:
+            try:
+                self.narration_spans = self.text_beautifier.beautify_text(self.narration)
+            except Exception as exc:
+                logger.warning("[CanvasStateManager] Text beautification failed for narration: %s", exc)
+                self.narration_spans = []
+        else:
+            self.narration_spans = []
         sess_dir = self.theater.directory()
         if sess_dir.exists():
             self.save_local_theater_data(theater_dir=sess_dir)
@@ -999,6 +1043,7 @@ class CanvasStateManager:
             "agent_thought": self.get_agent_thought(),
             "scene_dialogue": list(self.scene_dialogue),
             "narration": self.narration,
+            "narration_spans": list(self.narration_spans),
             "character_voice_assignments": dict(self.character_voice_assignments),
             "sticky_notes": self.get_sticky_notes(),
             "interactive_surfaces": list(self.interactive_surfaces.values()),
@@ -1048,6 +1093,7 @@ class CanvasStateManager:
             "story_planning_state": dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {},
             "scene_dialogue": list(self.scene_dialogue),
             "narration": self.narration,
+            "narration_spans": list(self.narration_spans),
             "interactive_surfaces": list(self.interactive_surfaces.values()),
             "character_voice_assignments": dict(self.character_voice_assignments),
             "suggestions": self.chat_manager.export_suggestions(),

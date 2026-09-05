@@ -6,8 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Narratron Canvas</title>
     <link rel="icon" type="image/png" href="/favicon.png">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=MedievalSharp&family=Rubik+Glitch&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/image-effects.css?v=effects-20260811-2">
+    <link rel="stylesheet" href="/static/css/splitting.css">
+    <link rel="stylesheet" href="/static/css/text-effects.css">
+    <script src="/static/js/splitting.min.js"></script>
     <style>
         :root {
             --bg-color: #0f1115;
@@ -3640,7 +3643,7 @@
                 const data = await response.json();
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
-                updateSceneDialogue(data.scene_dialogue, data.narration);
+                updateSceneDialogue(data.scene_dialogue, data.narration, data.narration_spans);
                 a2uiCanvasRenderer.render(data.interactive_surfaces);
                 if (data.sticky_notes !== undefined && typeof window.updateCanvasStickyNotes === 'function') {
                     window.updateCanvasStickyNotes(data.sticky_notes);
@@ -3878,7 +3881,32 @@
             lastAgentThought = text;
         }
 
-        function updateSceneDialogue(dialogue, narration) {
+        function createSpanElement(span) {
+            const el = document.createElement('span');
+            el.className = 'text-span';
+            if (span.effect && span.effect !== 'none') {
+                el.classList.add(`text-effect-${span.effect}`);
+            }
+            if (span.font && span.font !== 'default') {
+                el.classList.add(`text-font-${span.font}`);
+            }
+            if (span.color) {
+                el.style.color = span.color;
+            }
+            return el;
+        }
+
+        function applySplittingIfAvailable(element) {
+            if (typeof window.Splitting === 'function') {
+                try {
+                    window.Splitting({ target: element, by: 'chars' });
+                } catch (e) {
+                    console.warn('Splitting error:', e);
+                }
+            }
+        }
+
+        function updateSceneDialogue(dialogue, narration, narration_spans) {
             if (!sceneDialogueOverlay) return;
             const lines = (Array.isArray(dialogue) ? dialogue : [])
                 .filter(item => item && item.text)
@@ -3886,9 +3914,11 @@
                     speaker: String(item.speaker || 'Narrator'),
                     text: String(item.text),
                     kind: item.kind === 'thought' ? 'thought' : 'speech',
+                    spans: Array.isArray(item.spans) ? item.spans : null,
                 }));
             const description = String(narration || '').trim();
-            const signature = JSON.stringify({ lines, description });
+            const nSpans = Array.isArray(narration_spans) ? narration_spans : null;
+            const signature = JSON.stringify({ lines, description, nSpans });
             if (signature === sceneDialogueSignature) return;
             sceneDialogueSignature = signature;
             stopSceneSpeech();
@@ -3899,7 +3929,17 @@
             if (description) {
                 const caption = document.createElement('div');
                 caption.className = 'narration scene-narration scene-description';
-                caption.textContent = description;
+                const spansToRender = nSpans && nSpans.length > 0
+                    ? nSpans
+                    : [{ text: description, effect: 'none', font: 'default' }];
+                for (const s of spansToRender) {
+                    const spanEl = createSpanElement(s);
+                    spanEl.textContent = s.text;
+                    caption.appendChild(spanEl);
+                    if (s.effect && s.effect !== 'none' && !reduceMotion) {
+                        applySplittingIfAvailable(spanEl);
+                    }
+                }
                 sceneDialogueOverlay.appendChild(caption);
             }
 
@@ -3912,21 +3952,41 @@
                     speaker.className = 'scene-dialogue-speaker';
                     speaker.textContent = item.speaker;
                     speaker.style.color = getDialogueSpeakerColor(item.speaker);
-                    const text = document.createElement('span');
-                    bubble.append(speaker, text);
+                    const textContainer = document.createElement('span');
+                    textContainer.className = 'scene-dialogue-text';
+                    bubble.append(speaker, textContainer);
                     sceneDialogueOverlay.appendChild(bubble);
 
+                    const lineSpans = item.spans && item.spans.length > 0
+                        ? item.spans
+                        : [{ text: item.text, effect: 'none', font: 'default' }];
+
                     if (reduceMotion) {
-                        text.textContent = item.text;
+                        for (const s of lineSpans) {
+                            const spanEl = createSpanElement(s);
+                            spanEl.textContent = s.text;
+                            textContainer.appendChild(spanEl);
+                        }
                         continue;
                     }
-                    const characters = Array.from(item.text);
+
                     const wordCount = item.text.trim().split(/\s+/).filter(Boolean).length;
-                    const delay = Math.round((wordCount * 1000) / (4.5 * Math.max(characters.length, 1)));
-                    for (const character of characters) {
+                    const charCount = Math.max(Array.from(item.text).length, 1);
+                    const delay = Math.round((wordCount * 1000) / (4.5 * charCount));
+
+                    for (const s of lineSpans) {
                         if (renderId !== sceneDialogueRenderId) return;
-                        text.textContent += character;
-                        await new Promise(resolve => window.setTimeout(resolve, delay));
+                        const spanEl = createSpanElement(s);
+                        textContainer.appendChild(spanEl);
+                        const characters = Array.from(s.text);
+                        for (const character of characters) {
+                            if (renderId !== sceneDialogueRenderId) return;
+                            spanEl.textContent += character;
+                            await new Promise(resolve => window.setTimeout(resolve, delay));
+                        }
+                        if (s.effect && s.effect !== 'none') {
+                            applySplittingIfAvailable(spanEl);
+                        }
                     }
                 }
             })();
