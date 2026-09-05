@@ -30,11 +30,15 @@ from providers import (
     get_music_provider,
     get_text_response_provider,
     get_speech_provider,
+    get_video_provider,
     list_image_provider_specs,
     list_music_provider_specs,
     list_music_adapter_specs,
     list_text_response_provider_specs,
     list_speech_provider_specs,
+    list_video_provider_specs,
+    VideoGenerationRequest,
+    VideoProviderError,
 )
 from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, BenchmarkPrompt, get_prompt, prompt_catalog
 from testlab.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, music_prompt_catalog
@@ -42,6 +46,7 @@ from testlab.text_response_benchmark import BenchmarkTextPrompt, get_text_prompt
 from testlab.speech_benchmark import BenchmarkSpeechPrompt, get_speech_prompt, speech_prompt_catalog
 from testlab.animation_benchmark import get_animation_prompt, animation_prompt_catalog
 from testlab.layered_animation_lab import get_layered_animation_catalog, list_piece_images
+from testlab.video_benchmark import get_video_prompt, video_prompt_catalog
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
 from testlab.a2ui_canvas_lab import (
     A2UICanvasTestConfig,
@@ -83,6 +88,10 @@ ANIMATION_OUTPUT = ROOT / "benchmark_animation_output"
 ANIMATION_OUTPUT.mkdir(exist_ok=True)
 app.mount("/benchmark-animations", StaticFiles(directory=ANIMATION_OUTPUT), name="benchmark-animations")
 
+BENCHMARK_VIDEO_OUTPUT = ROOT / "benchmark_video_output"
+BENCHMARK_VIDEO_OUTPUT.mkdir(exist_ok=True)
+app.mount("/benchmark-video", StaticFiles(directory=BENCHMARK_VIDEO_OUTPUT), name="benchmark-video")
+
 _runs: dict[str, dict[str, Any]] = {}
 _music_runs: dict[str, dict[str, Any]] = {}
 _text_runs: dict[str, dict[str, Any]] = {}
@@ -91,6 +100,7 @@ _story_planner_runs: dict[str, dict[str, Any]] = {}
 _a2ui_canvas_runs: dict[str, dict[str, Any]] = {}
 _adventure_runner_sessions: dict[str, AdventureSession] = {}
 _animation_runs: dict[str, dict[str, Any]] = {}
+_video_runs: dict[str, dict[str, Any]] = {}
 _runs_lock = threading.Lock()
 
 MAX_IN_FLIGHT_PER_PROVIDER = 5
@@ -175,6 +185,67 @@ def get_animation_benchmark_run(run_id: str):
         run = _animation_runs.get(run_id)
         if not run:
             raise HTTPException(status_code=404, detail="Animation benchmark run not found.")
+        return dict(run)
+
+
+@app.get("/video-benchmark", include_in_schema=False)
+@app.get("/video-lab", include_in_schema=False)
+def video_benchmark_lab():
+    return FileResponse(ROOT / "video_benchmark.html", media_type="text/html")
+
+
+@app.get("/api/video-benchmark/catalog")
+def video_benchmark_catalog():
+    return {
+        "prompts": video_prompt_catalog(),
+        "providers": list_video_provider_specs(),
+    }
+
+
+@app.post("/api/video-benchmark/runs")
+def start_video_benchmark_run(body: dict[str, Any]):
+    provider_id = str(body.get("provider_id") or "fal-minimax-h3-turbo").strip()
+    prompt = str(body.get("prompt") or "").strip()
+    prompt_id = str(body.get("prompt_id") or "").strip()
+    title = "Custom Prompt"
+
+    if not prompt and prompt_id:
+        try:
+            p = get_video_prompt(prompt_id)
+            prompt = p.prompt
+            title = p.title
+        except (KeyError, StopIteration) as exc:
+            raise HTTPException(status_code=400, detail="Unknown video benchmark prompt.") from exc
+
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Please select or enter a video prompt.")
+
+    run_id = uuid.uuid4().hex
+    run = {
+        "id": run_id,
+        "status": "running",
+        "title": title,
+        "prompt": prompt,
+        "provider_id": provider_id,
+        "started_at": time.time(),
+    }
+    with _runs_lock:
+        _video_runs[run_id] = run
+
+    threading.Thread(
+        target=_run_video_benchmark,
+        args=(run_id, provider_id, prompt, title, dict(body.get("provider_options") or {})),
+        daemon=True,
+    ).start()
+    return run
+
+
+@app.get("/api/video-benchmark/runs/{run_id}")
+def get_video_benchmark_run(run_id: str):
+    with _runs_lock:
+        run = _video_runs.get(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Video benchmark run not found.")
         return dict(run)
 
 
@@ -1339,6 +1410,47 @@ def _run_animation_benchmark(run_id: str, provider_id: str, prompt: str, provide
     except Exception as exc:
         with _runs_lock:
             _animation_runs[run_id].update({"status": "failed", "error": str(exc), "latency_ms": round((time.perf_counter() - started) * 1000, 1)})
+
+
+def _run_video_benchmark(
+    run_id: str,
+    provider_id: str,
+    prompt: str,
+    title: str,
+    provider_options: dict[str, Any],
+) -> None:
+    started = time.perf_counter()
+    output_dir = BENCHMARK_VIDEO_OUTPUT / run_id
+    try:
+        output_dir.mkdir(parents=True, exist_ok=False)
+        provider = get_video_provider(provider_id, provider_options)
+        result = provider.generate(VideoGenerationRequest(prompt=prompt))
+
+        video_filename = "video.mp4"
+        video_file = output_dir / video_filename
+        video_file.write_bytes(result.video_bytes)
+
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        video_url = f"/benchmark-video/{run_id}/{video_filename}"
+
+        with _runs_lock:
+            _video_runs[run_id].update({
+                "status": "completed",
+                "video_url": video_url,
+                "latency_ms": latency_ms,
+                "provider": result.provider,
+                "model": result.model,
+                "request_id": result.request_id,
+                "usage": dict(result.usage),
+            })
+    except Exception as exc:
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        with _runs_lock:
+            _video_runs[run_id].update({
+                "status": "failed",
+                "error": str(exc),
+                "latency_ms": latency_ms,
+            })
 
 
 def _run_text_benchmark(run_id: str, provider_ids: list[str], prompts: list[Any], repetitions: int, provider_options: dict[str, Any]) -> None:

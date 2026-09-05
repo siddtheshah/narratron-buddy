@@ -20,6 +20,8 @@ from providers.speech_provider import SpeechProvider, SpeechProviderError
 from providers.gemini_speech_provider import GeminiSpeechProvider
 from providers.fal_seed_speech_provider import FalSeedSpeechProvider
 from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
+from providers.video_provider import VideoProvider, VideoProviderError
+from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 
 
 
@@ -323,6 +325,41 @@ def get_speech_provider(provider_id: str, options: dict[str, Any] | None = None)
     if spec:
         raise SpeechProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
     raise SpeechProviderError(f"Unknown speech provider: {provider_id}")
+
+
+_VIDEO_SPECS = (
+    {
+        "id": "fal-minimax-h3-turbo",
+        "name": "MiniMax H3 Turbo Video (FAL)",
+        "model": "fal-ai/minimax-h3-turbo/text-to-video",
+        "status": "unconfigured",
+        "notes": "Fast text-to-video generation via FAL MiniMax H3 Turbo.",
+    },
+)
+
+
+def list_video_provider_specs() -> list[dict[str, Any]]:
+    specs = [dict(spec) for spec in _VIDEO_SPECS]
+    for spec in specs:
+        if spec["id"] == "fal-minimax-h3-turbo":
+            spec["status"] = (
+                "available"
+                if (os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY"))
+                else "unconfigured"
+            )
+    return specs
+
+
+def get_video_provider(provider_id: str, options: dict[str, Any] | None = None) -> VideoProvider:
+    options = options or {}
+    if provider_id in ("fal-minimax-h3-turbo", "minimax-h3-turbo", "minimax"):
+        return FalMinimaxVideoProvider(
+            prompt_expansion_mode=str(options.get("prompt_expansion_mode", "balanced")),
+        )
+    spec = next((item for item in _VIDEO_SPECS if item["id"] == provider_id), None)
+    if spec:
+        raise VideoProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
+    raise VideoProviderError(f"Unknown video provider: {provider_id}")
 
 
 

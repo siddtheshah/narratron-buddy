@@ -17,6 +17,7 @@ testlab/benchmark_output/
 testlab/benchmark_music_output/
 testlab/benchmark_speech_output/
 testlab/benchmark_animation_output/
+testlab/benchmark_video_output/
 training_data/
 .env
 *.db

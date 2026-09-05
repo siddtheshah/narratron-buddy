@@ -43,15 +43,24 @@ from providers.speech_provider import (
 from providers.gemini_speech_provider import GEMINI_VOICES, GeminiSpeechProvider
 from providers.fal_seed_speech_provider import SEED_CHARACTER_VOICES, FalSeedSpeechProvider
 from providers.google_chirp_speech_provider import CHIRP_VOICES, GoogleChirpSpeechProvider
+from providers.video_provider import (
+    VideoGenerationRequest,
+    VideoGenerationResult,
+    VideoProvider,
+    VideoProviderError,
+)
+from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 from providers.registry import (
     get_image_provider,
     get_music_provider,
     get_music_adapter,
     get_text_response_provider,
+    get_video_provider,
     list_image_provider_specs,
     list_music_provider_specs,
     list_music_adapter_specs,
     list_text_response_provider_specs,
+    list_video_provider_specs,
     get_speech_provider,
     list_speech_provider_specs,
 )
@@ -98,14 +107,21 @@ __all__ = [
     "SEED_CHARACTER_VOICES",
     "GoogleChirpSpeechProvider",
     "CHIRP_VOICES",
+    "VideoGenerationRequest",
+    "VideoGenerationResult",
+    "VideoProvider",
+    "VideoProviderError",
+    "FalMinimaxVideoProvider",
     "get_image_provider",
     "get_music_provider",
     "get_text_response_provider",
+    "get_video_provider",
     "list_image_provider_specs",
     "list_music_provider_specs",
     "get_music_adapter",
     "list_music_adapter_specs",
     "list_text_response_provider_specs",
+    "list_video_provider_specs",
     "get_speech_provider",
     "list_speech_provider_specs",
 ]
