@@ -22,7 +22,7 @@ class TestTriFrameAnimationUI(UITestCase):
             Image.new("RGB", (16, 16), color).save(frame_path, "JPEG")
             frame_paths.append(str(frame_path))
 
-        manager.show_triframe(frame_paths)
+        manager.visual.show_triframe(frame_paths, url_for_path=manager.theater.get_url_for_path)
         state = manager.get_latest_state()
 
         self.assertEqual(state["animation"]["type"], "triframe")

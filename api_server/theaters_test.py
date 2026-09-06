@@ -535,7 +535,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["viewer_collab_enabled"])
-        self.assertTrue(canvas_states.get(theater_id).viewer_collab_enabled)
+        self.assertTrue(canvas_states.get(theater_id).ui.viewer_collab_enabled)
 
     def test_destroy_theater_not_on_disk(self):
         reg_res = self.client.post("/api/auth/register", json={
@@ -597,9 +597,9 @@ class TestTheaterAPI(BaseTestCase):
         img_path = images_dir / "scene_01.jpg"
         img_path.write_bytes(b"fake_jpeg_data")
 
-        # Simulate update_shown_image and history addition
+        # Simulate a visual component update and history addition.
         cs = canvas_states.get(theater_id)
-        cs.update_shown_image(str(img_path), theater_id=theater_id)
+        cs.visual.show_image(str(img_path), url_for_path=cs.theater.get_url_for_path)
 
         # Also save theater to DB
         self.client.post(f"/api/theaters/{theater_id}/save")

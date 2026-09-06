@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Optional
 import uuid
-import uuid
 import yaml
 
 from fastapi import Request, Response, HTTPException
@@ -27,6 +26,7 @@ from api_server.shared import (
     PROJECT_ROOT
 )
 from api_server.dependencies import agent_manager, suggestion_service, adventure_service
+from api_server.canvas import broadcast_baton_update
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
@@ -661,8 +661,13 @@ async def get_theater_baton_state(theater_id: str, request: Request):
     if not state:
         raise HTTPException(status_code=404, detail="Theater baton state not found.")
     
-    cs = canvas_states.get(theater_id)
-    state["active_viewers"] = cs.get_active_viewers()
+    connections = canvas_states.get(theater_id).connections
+    viewers = {
+        user["id"]: {"id": user["id"], "username": user.get("username", "")}
+        for user in connections.active_user_connections.values()
+        if user and "id" in user
+    }
+    state["active_viewers"] = list(viewers.values())
     return state
 
 
@@ -675,7 +680,7 @@ async def add_allowed_orator(theater_id: str, req: AddAllowedOratorRequest, requ
     try:
         updated_state = await db.add_allowed_orator_async(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
-        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        await broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -691,7 +696,7 @@ async def remove_allowed_orator(theater_id: str, target_user_id: int, request: R
         updated_state = await db.remove_allowed_orator_async(theater_id, owner_id=user["id"], target_user_id=target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
-        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        await broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -710,7 +715,7 @@ async def request_baton_pass(theater_id: str, req: RequestBatonRequest, request:
             target_user_id=req.target_user_id,
             timeout_seconds=req.timeout_seconds or 30
         )
-        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        await broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -726,7 +731,7 @@ async def accept_baton_pass(theater_id: str, request: Request):
         updated_state = await db.accept_baton_async(theater_id, target_user_id=user["id"])
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
-        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        await broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -740,7 +745,7 @@ async def decline_baton_pass(theater_id: str, request: Request):
     
     try:
         updated_state = await db.decline_baton_async(theater_id, target_user_id=user["id"])
-        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        await broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -756,7 +761,7 @@ async def take_back_baton(theater_id: str, request: Request):
         updated_state = await db.take_back_baton_async(theater_id, owner_id=user["id"])
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
-        await canvas_states.broadcast_baton_update(theater_id, updated_state)
+        await broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -774,10 +779,6 @@ async def save_theater_to_db(theater_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Active theater not found.")
     if dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only the theater owner can save this theater.")
-
-    meta = theater_manager.get_theater(theater_id)
-    user_id = dep["user_id"] if dep else None
-    name = meta.name if meta else theater_id
 
     asyncio.create_task(_export_canvas_theater_async(theater_id))
     return {"status": "queued", "theater_id": theater_id}
@@ -836,9 +837,7 @@ async def get_theater_suggestions(theater_id: str, request: Request):
         named_elements = session_tools.get_present_elements()
     if not named_elements and canvas_states:
         try:
-            mgr = canvas_states.get(theater_id)
-            if hasattr(mgr, "get_named_elements"):
-                named_elements = mgr.get_named_elements()
+            named_elements = canvas_states.get(theater_id).story.sticky_notes()
         except Exception:
             pass
 
@@ -871,11 +870,7 @@ async def get_theater_sticky_notes(theater_id: str, request: Request):
 
     if not sticky_notes and canvas_states:
         try:
-            mgr = canvas_states.get(theater_id)
-            if hasattr(mgr, "get_sticky_notes"):
-                sticky_notes = mgr.get_sticky_notes()
-            elif hasattr(mgr, "get_named_elements"):
-                sticky_notes = mgr.get_named_elements()
+            sticky_notes = canvas_states.get(theater_id).story.sticky_notes()
         except Exception:
             pass
 

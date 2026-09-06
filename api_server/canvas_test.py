@@ -19,7 +19,8 @@ def test_post_chat_uses_registry_canvas_service_for_regular_message():
     with patch.object(object_registry, "canvas_states", service), patch.object(canvas, "_require_canvas_access"):
         result = canvas.post_chat(canvas.ChatMessage(author="Ada", text="hello"), request(), "stage")
     assert result == {"status": "ok", "type": "chat"}
-    service.add_chat_message.assert_called_once_with("hello", author="Ada", theater_id="stage")
+    service.get.assert_called_once_with("stage")
+    service.get.return_value.chat.add_message.assert_called_once_with({"author": "Ada", "text": "hello"})
 
 
 def test_post_chat_uses_verified_identity_for_profile_link():
@@ -27,8 +28,9 @@ def test_post_chat_uses_verified_identity_for_profile_link():
     with patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user", return_value={"id": 3, "username": "Ada", "profile_color": "#f97316"}):
         result = canvas.post_chat(canvas.ChatMessage(author="Imposter", text="hello"), request())
     assert result == {"status": "ok", "type": "chat"}
-    service.add_chat_message.assert_called_once_with(
-        "hello", author="Ada", theater_id=None, profile_username="Ada", profile_color="#f97316"
+    service.get.assert_called_once_with(None)
+    service.get.return_value.chat.add_message.assert_called_once_with(
+        {"author": "Ada", "text": "hello", "profile_username": "Ada", "profile_color": "#f97316"}
     )
 
 
@@ -42,7 +44,7 @@ def test_suggestion_requires_text_and_does_not_call_registry():
 
 def test_suggestion_converts_service_validation_error_to_bad_request():
     service = MagicMock()
-    service.add_suggestion.side_effect = ValueError("already suggested")
+    service.get.return_value.chat.add_suggestion.side_effect = ValueError("already suggested")
     with patch.object(object_registry, "canvas_states", service), pytest.raises(HTTPException) as error:
         canvas.post_chat(canvas.ChatMessage(author="Ada", text="/suggest rain"), request())
     assert error.value.status_code == 400
@@ -51,7 +53,7 @@ def test_suggestion_converts_service_validation_error_to_bad_request():
 
 def test_upvote_reports_missing_suggestion():
     service = MagicMock()
-    service.upvote_suggestion.return_value = False
+    service.get.return_value.chat.upvote_suggestion.return_value = False
     with patch.object(object_registry, "canvas_states", service), pytest.raises(HTTPException) as error:
         canvas.upvote_suggestion(canvas.SuggestionVote(voter="Ada", target_author="Lin"), request(), "stage")
     assert error.value.status_code == 404
@@ -72,7 +74,7 @@ def test_get_sticky_notes_uses_session_or_canvas_state():
     # Test fallback to canvas_states
     mock_agent_mgr.get_session.return_value = None
     mock_canvas_states = MagicMock()
-    mock_canvas_states.get_sticky_notes.return_value = [{"topic": "Fallback", "info": "Cached note"}]
+    mock_canvas_states.get.return_value.story.sticky_notes.return_value = [{"topic": "Fallback", "info": "Cached note"}]
     with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "agent_manager", mock_agent_mgr), patch.object(object_registry, "canvas_states", mock_canvas_states):
         result = canvas.get_sticky_notes(request(), "stage")
     assert result == {"sticky_notes": [{"topic": "Fallback", "info": "Cached note"}], "count": 1}
@@ -80,15 +82,20 @@ def test_get_sticky_notes_uses_session_or_canvas_state():
 
 
 @pytest.mark.asyncio
-async def test_toggle_microphone_requires_owner_then_calls_registry_service():
+async def test_toggle_microphone_requires_owner_then_notifies_canvas_connections():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3}
     service = MagicMock()
-    service.toggle_microphone = AsyncMock(return_value=2)
+    first, second = MagicMock(), MagicMock()
+    first.send_json = AsyncMock()
+    second.send_json = AsyncMock()
+    service.get.return_value.connections.active_ws_connections = [first, second]
     with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), patch.object(canvas, "get_current_user_async", AsyncMock(return_value={"id": 3})):
         result = await canvas.trigger_orator_mic_toggle(request(), "stage")
     assert result == {"status": "ok", "broadcasted_to": 2}
-    service.toggle_microphone.assert_awaited_once_with("stage")
+    service.get.assert_called_once_with("stage")
+    first.send_json.assert_awaited_once_with({"type": "toggle_mic"})
+    second.send_json.assert_awaited_once_with({"type": "toggle_mic"})
 
 
 def test_collaboration_mode_checks_owner_before_updating_registry_state():
@@ -98,7 +105,7 @@ def test_collaboration_mode_checks_owner_before_updating_registry_state():
     with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user", return_value={"id": 4}), pytest.raises(HTTPException) as error:
         canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
     assert error.value.status_code == 403
-    service.set_viewer_collab_enabled.assert_not_called()
+    service.get.assert_not_called()
 
 
 def test_collaboration_mode_requests_agent_observability_update():
@@ -112,7 +119,8 @@ def test_collaboration_mode_requests_agent_observability_update():
         result = canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
 
     assert result == {"theater_id": "stage", "viewer_collab_enabled": True}
-    service.set_viewer_collab_enabled.assert_called_once_with(True, "stage")
+    service.get.assert_called_once_with("stage")
+    service.get.return_value.ui.set_viewer_collab_enabled.assert_called_once_with(True)
     session.send_collaboration_toggle_observability.assert_called_once_with()
 
 
@@ -120,10 +128,9 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
     state = MagicMock()
-    state.get_interactive_action.return_value = {
-        "name": "grabSword",
-        "context": {"playerAction": "I grab the sword."},
-    }
+    state.ui.interactive_surfaces = {"sword_card": {"messages": [{"createSurface": {"components": [{
+        "id": "grab", "action": {"event": {"name": "grabSword", "context": {"playerAction": "I grab the sword."}}}
+    }]}}]}}
     service = MagicMock()
     service.get.return_value = state
     session = MagicMock(websocket_connected=True)
@@ -150,7 +157,7 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     sent_text = session.send_content.call_args.args[0].parts[0].text
     assert "I grab the sword." in sent_text
     assert "forged client text" not in sent_text
-    state.delete_interactive_surface.assert_called_once_with("sword_card")
+    state.ui.delete_surface.assert_called_once_with("sword_card")
 
 
 def test_a2ui_action_rejects_non_orator():
@@ -173,8 +180,8 @@ def test_active_orator_can_move_and_delete_a2ui_surface():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
     service = MagicMock()
-    service.move_interactive_surface.return_value = {"left_pct": 76.5, "top_pct": 20.0}
-    service.delete_interactive_surface.return_value = 1
+    service.get.return_value.ui.move_surface.return_value = {"left_pct": 76.5, "top_pct": 20.0}
+    service.get.return_value.ui.delete_surface.return_value = 1
 
     with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), \
             patch.object(canvas, "_require_canvas_access"), \
@@ -189,5 +196,5 @@ def test_active_orator_can_move_and_delete_a2ui_surface():
 
     assert moved["placement"] == {"left_pct": 76.5, "top_pct": 20.0}
     assert deleted == {"status": "deleted", "surface_id": "health"}
-    service.move_interactive_surface.assert_called_once_with("health", 76.5, 20.0, "stage")
-    service.delete_interactive_surface.assert_called_once_with("health", "stage")
+    service.get.return_value.ui.move_surface.assert_called_once_with("health", 76.5, 20.0)
+    service.get.return_value.ui.delete_surface.assert_called_once_with("health")

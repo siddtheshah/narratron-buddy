@@ -21,10 +21,10 @@ class TestImageHistoryPaging(UITestCase):
         manager = self.make_canvas_state("history_cap")
 
         for index in range(105):
-            manager.update_shown_image(f"/virtual/path/to/image_{index}.png")
+            manager.visual.show_image(f"/virtual/path/to/image_{index}.png")
 
         history = manager.get_latest_state()["history"]
-        self.assertEqual(len(manager.shown_images_history), 100)
+        self.assertEqual(len(manager.visual.shown_images_history), 100)
         self.assertEqual(len(history), 100)
         self.assertIn("image_5.png", history[0]["path"])
         self.assertIn("image_104.png", history[-1]["path"])
@@ -36,8 +36,8 @@ class TestImageHistoryPaging(UITestCase):
         second_image.write_bytes(b"scene2_data")
 
         manager = self.make_canvas_state("history_payload")
-        manager.update_shown_image(str(first_image), transition="fade")
-        manager.update_shown_image(str(second_image), transition="crossfade")
+        manager.visual.show_image(str(first_image), transition="fade", url_for_path=manager.theater.get_url_for_path)
+        manager.visual.show_image(str(second_image), transition="crossfade", url_for_path=manager.theater.get_url_for_path)
 
         history = manager.get_latest_state()["history"]
         self.assertEqual(len(history), 2)
@@ -53,13 +53,13 @@ class TestImageHistoryPaging(UITestCase):
     def test_history_persists_in_the_test_theater_directory(self):
         theater_id = "history_persistence"
         manager = self.make_canvas_state(theater_id)
-        manager.update_shown_image("/path/a.png", transition="fade")
-        manager.update_shown_image("/path/b.png", transition="crossfade")
+        manager.visual.show_image("/path/a.png", transition="fade")
+        manager.visual.show_image("/path/b.png", transition="crossfade")
 
         manager.save_local_theater_data(theater_dir=self.theaters_dir / theater_id)
 
         reloaded_manager = self.make_canvas_state(theater_id)
-        self.assertEqual(len(reloaded_manager.shown_images_history), 2)
+        self.assertEqual(len(reloaded_manager.visual.shown_images_history), 2)
 
     def test_animations_are_recorded_in_history_with_original_prompt_and_payload(self):
         theater_id = "anim_history_theater"
@@ -68,7 +68,7 @@ class TestImageHistoryPaging(UITestCase):
         # 1. Static image
         img_file = self.workspace / "initial_scene.png"
         img_file.write_bytes(b"initial_data")
-        manager.update_shown_image(str(img_file))
+        manager.visual.show_image(str(img_file), url_for_path=manager.theater.get_url_for_path)
 
         # 2. Tri-frame animation with adjacent triframe.json
         anim_dir = manager.theater.output_dir() / "animations" / "crystal_glow"
@@ -85,7 +85,11 @@ class TestImageHistoryPaging(UITestCase):
             "scene_prompt": "A glowing mystical crystal in an ancient cavern.",
         }), encoding="utf-8")
 
-        manager.show_triframe(frame_paths)
+        manager.visual.show_triframe(
+            frame_paths,
+            prompt="A glowing mystical crystal in an ancient cavern.",
+            url_for_path=manager.theater.get_url_for_path,
+        )
 
         # 3. Video animation
         vid_dir = manager.theater.output_dir() / "animations" / "dragon_flight"
@@ -98,7 +102,7 @@ class TestImageHistoryPaging(UITestCase):
             "scene_prompt": "A fire-breathing dragon soaring above a volcanic crater.",
         }), encoding="utf-8")
 
-        manager.show_video_animation({
+        manager.visual.show_video_animation({
             "id": "dragon_flight",
             "video_path": str(vid_file),
             "video_url": f"/theaters/{theater_id}/output/animations/dragon_flight/video.mp4",
@@ -112,7 +116,7 @@ class TestImageHistoryPaging(UITestCase):
         layer1_img = layered_dir / "waves.png"
         base_img.write_bytes(b"base")
         layer1_img.write_bytes(b"waves")
-        manager.show_layered_animation({
+        manager.visual.show_layered_animation({
             "id": "layered_lake",
             "scene_prompt": "Gentle moonlit waves on a calm alpine lake.",
             "base_image": str(base_img),

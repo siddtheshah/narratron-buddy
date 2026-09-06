@@ -1,6 +1,7 @@
 """Canvas WebSocket, chat, orator control, and stats API endpoints."""
 
-from typing import Optional
+import asyncio
+from typing import Any, Optional
 
 from fastapi import Request, WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel, Field
@@ -63,6 +64,142 @@ class A2UISurfacePlacement(BaseModel):
 # Canvas & WebSocket Endpoints
 # ========================================
 
+def _state(theater_id: Optional[str] = None):
+    """Resolve the theater coordinator before selecting one of its components."""
+    return canvas_states.get(theater_id)
+
+
+def _unregister_doodle_websocket(state: Any, websocket: WebSocket) -> None:
+    connections = state.connections
+    if websocket in connections.active_ws_connections:
+        connections.active_ws_connections.remove(websocket)
+    connections.active_user_connections.pop(websocket, None)
+
+
+async def _broadcast_doodle(state: Any, message: dict[str, object], sender: WebSocket | None = None) -> None:
+    connections = state.connections
+    recipients = [connection for connection in connections.active_ws_connections if connection is not sender]
+    results = await asyncio.gather(*(connection.send_json(message) for connection in recipients), return_exceptions=True)
+    for connection, result in zip(recipients, results):
+        if isinstance(result, BaseException):
+            _unregister_doodle_websocket(state, connection)
+
+
+async def _broadcast_state_message(state: Any, message: dict[str, object]) -> None:
+    connections = state.connections
+    recipients = list(connections.active_state_ws_connections)
+    results = await asyncio.gather(*(connection.send_json(message) for connection in recipients), return_exceptions=True)
+    for connection, result in zip(recipients, results):
+        if isinstance(result, BaseException) and connection in connections.active_state_ws_connections:
+            connections.active_state_ws_connections.remove(connection)
+
+
+def _enable_state_notifications(state: Any) -> None:
+    """Bind component invalidations to this route module's WebSocket transport."""
+    connections = state.connections
+    if getattr(connections, "_api_state_notification_transport", False):
+        return
+
+    def notify(*domains: str) -> None:
+        connections.state_revision += 1
+        loop = connections.state_ws_loop
+        if not connections.active_state_ws_connections or loop is None or loop.is_closed():
+            return
+        payload = {
+            "type": "state_changed",
+            "revision": connections.state_revision,
+            "domains": sorted(set(domains)),
+        }
+        try:
+            running_loop = asyncio.get_running_loop()
+            if running_loop is loop:
+                loop.create_task(_broadcast_state_message(state, payload))
+            else:
+                asyncio.run_coroutine_threadsafe(_broadcast_state_message(state, payload), loop)
+        except RuntimeError:
+            pass
+
+    connections.notify = notify
+    connections._api_state_notification_transport = True
+
+
+async def broadcast_baton_update(theater_id: str, baton_state: dict[str, object]) -> None:
+    """Send the baton state through the theater's doodle transport."""
+    state = _state(theater_id)
+    users = {
+        user["id"]: {"id": user["id"], "username": user.get("username", "")}
+        for user in state.connections.active_user_connections.values()
+        if user and "id" in user
+    }
+    await _broadcast_doodle(state, {"type": "baton_state", "baton_state": baton_state, "active_viewers": list(users.values())})
+
+
+def _interactive_action(state: Any, surface_id: str, component_id: str, action_name: str) -> dict[str, object] | None:
+    surface = state.ui.interactive_surfaces.get(surface_id, {})
+    for message in surface.get("messages", []) if isinstance(surface, dict) else []:
+        payload = message.get("createSurface") or message.get("updateComponents") or {} if isinstance(message, dict) else {}
+        for component in payload.get("components", []) if isinstance(payload, dict) else []:
+            if not isinstance(component, dict) or str(component.get("id")) != component_id:
+                continue
+            event = (component.get("action") or {}).get("event", {})
+            if isinstance(event, dict) and event.get("name") == action_name:
+                return dict(event)
+    return None
+
+
+async def _apply_doodle_message(state: Any, data: dict[str, object], sender: WebSocket) -> None:
+    """Validate, persist, and relay the browser doodle protocol."""
+    connections = state.connections
+    message_id = data.get("client_message_id")
+    message_id = message_id if isinstance(message_id, str) and len(message_id) <= 128 else None
+
+    async def acknowledge() -> None:
+        if not message_id:
+            return
+        connections.processed_doodle_message_ids.add(message_id)
+        if len(connections.processed_doodle_message_ids) > 2_000:
+            connections.processed_doodle_message_ids.clear()
+            connections.processed_doodle_message_ids.add(message_id)
+        await sender.send_json({"type": "doodle_ack", "client_message_id": message_id})
+
+    if message_id and message_id in connections.processed_doodle_message_ids:
+        await sender.send_json({"type": "doodle_ack", "client_message_id": message_id})
+        return
+
+    if data.get("type") == "toggle_doodles":
+        state.doodles.enabled = bool(data.get("enabled", True))
+        state.persist()
+        await _broadcast_doodle(state, {"type": "doodles_toggle", "enabled": state.doodles.enabled})
+        await acknowledge()
+        return
+
+    if data.get("type") == "draw_batch":
+        color, size, points = data.get("color"), data.get("size", 3), data.get("points")
+        if not isinstance(points, list) or len(points) < 4 or len(points) % 2 or len(points) > 400:
+            return
+        try:
+            normalized_points = [float(point) for point in points]
+            normalized_size = float(size)
+        except (TypeError, ValueError):
+            return
+        if not all(0 <= point <= 1 for point in normalized_points) or not 1 <= normalized_size <= 100:
+            return
+        state.doodles.add([
+            {"type": "draw", "x0": normalized_points[index], "y0": normalized_points[index + 1],
+             "x1": normalized_points[index + 2], "y1": normalized_points[index + 3],
+             "color": color, "size": normalized_size}
+            for index in range(0, len(normalized_points) - 2, 2)
+        ])
+        await _broadcast_doodle(state, {"type": "draw_batch", "color": color, "size": normalized_size,
+                                        "points": normalized_points}, sender)
+        await acknowledge()
+        return
+
+    if data.get("type") in {"clear", "draw"}:
+        state.doodles.add([data])
+        await _broadcast_doodle(state, data, sender)
+        await acknowledge()
+
 @app.websocket("/ws/doodle")
 async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = None):
     if theater_id:
@@ -74,23 +211,29 @@ async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = N
     await websocket.accept()
     websocket.state.theater_id = theater_id
     current_user = await get_current_user_async(websocket)
-    cs = await canvas_states.connect_doodle_websocket(websocket, theater_id, user=current_user)
+    cs = _state(theater_id)
+    connections = cs.connections
+    if websocket not in connections.active_ws_connections:
+        connections.active_ws_connections.append(websocket)
+    connections.active_user_connections[websocket] = current_user
+    await websocket.send_json({"type": "doodles_toggle", "enabled": cs.doodles.enabled})
+    await websocket.send_json({"type": "doodle_snapshot", "batches": cs.doodles.snapshot_batches()})
     
     if theater_id:
         baton_st = await db.get_theater_baton_state_async(theater_id)
         if baton_st:
-            await canvas_states.broadcast_baton_update(theater_id, baton_st)
+            await broadcast_baton_update(theater_id, baton_st)
 
     try:
         while True:
             data = await websocket.receive_json()
-            await canvas_states.apply_doodle_message(cs, data, sender=websocket)
+            await _apply_doodle_message(cs, data, websocket)
     except WebSocketDisconnect:
-        cs.unregister_websocket(websocket)
+        _unregister_doodle_websocket(cs, websocket)
         if theater_id:
             baton_st = await db.get_theater_baton_state_async(theater_id)
             if baton_st:
-                await canvas_states.broadcast_baton_update(theater_id, baton_st)
+                await broadcast_baton_update(theater_id, baton_st)
 
 
 @app.websocket("/ws/canvas-state")
@@ -103,7 +246,13 @@ async def canvas_state_websocket_endpoint(websocket: WebSocket, theater_id: Opti
             await websocket.close(code=1008)
             return
     await websocket.accept()
-    state = await canvas_states.connect_state_websocket(websocket, theater_id)
+    state = _state(theater_id)
+    connections = state.connections
+    _enable_state_notifications(state)
+    if websocket not in connections.active_state_ws_connections:
+        connections.active_state_ws_connections.append(websocket)
+    connections.state_ws_loop = asyncio.get_running_loop()
+    await websocket.send_json({"type": "state_ready", "revision": connections.state_revision})
     try:
         # This endpoint accepts no application commands. Receiving here only
         # lets the server promptly notice a disconnected browser.
@@ -112,7 +261,8 @@ async def canvas_state_websocket_endpoint(websocket: WebSocket, theater_id: Opti
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
-        state.unregister_state_websocket(websocket)
+        if websocket in connections.active_state_ws_connections:
+            connections.active_state_ws_connections.remove(websocket)
 
 
 @app.api_route("/api/orator/toggle_mic", methods=["GET", "POST"])
@@ -126,7 +276,15 @@ async def trigger_orator_mic_toggle(request: Request, theater_id: Optional[str] 
         if dep and dep["user_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can control the Orator microphone.")
 
-    count = await canvas_states.toggle_microphone(theater_id)
+    states = [_state(theater_id)] if theater_id else list(canvas_states.states.values())
+    count = 0
+    for state in states:
+        for websocket in list(state.connections.active_ws_connections):
+            try:
+                await websocket.send_json({"type": "toggle_mic"})
+                count += 1
+            except Exception:
+                _unregister_doodle_websocket(state, websocket)
     return {"status": "ok", "broadcasted_to": count}
 
 
@@ -144,13 +302,13 @@ def get_latest_image(request: Request, theater_id: Optional[str] = None):
         theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
             theater_repository.reconstruct_theater(theater_id, theater_dir)
-    return canvas_states.latest_state(theater_id)
+    return _state(theater_id).get_latest_state()
 
 @app.get("/api/chat")
 def get_chat(request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
-    return canvas_states.chat_messages(theater_id)
+    return _state(theater_id).chat.get_messages()
 
 
 @app.post("/api/a2ui/action")
@@ -163,8 +321,9 @@ def post_a2ui_action(payload: A2UIActionEnvelope, request: Request, theater_id: 
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can use interactive canvas controls.")
-    state = canvas_states.get(theater_id)
-    action = state.get_interactive_action(
+    state = _state(theater_id)
+    action = _interactive_action(
+        state,
         payload.action.surfaceId,
         payload.action.sourceComponentId,
         payload.action.name,
@@ -187,7 +346,7 @@ def post_a2ui_action(payload: A2UIActionEnvelope, request: Request, theater_id: 
     )
     if not session.send_content(types.Content(parts=[types.Part(text=notification)])):
         raise HTTPException(status_code=409, detail="The live agent could not receive the action.")
-    state.delete_interactive_surface(payload.action.surfaceId)
+    state.ui.delete_surface(payload.action.surfaceId)
     return {"status": "accepted", "surface_id": payload.action.surfaceId}
 
 
@@ -201,9 +360,7 @@ def move_a2ui_surface(
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can move interactables.")
-    placement = canvas_states.move_interactive_surface(
-        surface_id, payload.left_pct, payload.top_pct, theater_id
-    )
+    placement = _state(theater_id).ui.move_surface(surface_id, payload.left_pct, payload.top_pct)
     if placement is None:
         raise HTTPException(status_code=404, detail="This interactable is no longer active.")
     return {"status": "moved", "surface_id": surface_id, "placement": placement}
@@ -217,7 +374,7 @@ def delete_a2ui_surface(surface_id: str, request: Request, theater_id: str):
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can delete interactables.")
-    if not canvas_states.delete_interactive_surface(surface_id, theater_id):
+    if not _state(theater_id).ui.delete_surface(surface_id):
         raise HTTPException(status_code=404, detail="This interactable is no longer active.")
     return {"status": "deleted", "surface_id": surface_id}
 
@@ -236,22 +393,26 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
         if not suggestion_text:
             raise HTTPException(status_code=400, detail="A suggestion must include text after /suggest.")
         try:
-            suggestion_kwargs = {"theater_id": theater_id}
+            suggestion_kwargs = {}
             if profile_username:
                 suggestion_kwargs["profile_username"] = profile_username
                 if profile_color:
                     suggestion_kwargs["profile_color"] = profile_color
-            suggestion = canvas_states.add_suggestion(author, suggestion_text, **suggestion_kwargs)
+            state = _state(theater_id)
+            suggestion = state.chat.add_suggestion(author, suggestion_text, **suggestion_kwargs)
+            state.notify_changed("chat", "suggestions")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "ok", "type": "suggestion", "suggestion": suggestion}
 
-    chat_kwargs = {"author": author, "theater_id": theater_id}
+    chat_kwargs = {"author": author}
     if profile_username:
         chat_kwargs["profile_username"] = profile_username
         if profile_color:
             chat_kwargs["profile_color"] = profile_color
-    canvas_states.add_chat_message(msg.text, **chat_kwargs)
+    state = _state(theater_id)
+    state.chat.add_message({"text": msg.text, **chat_kwargs})
+    state.notify_changed("chat")
     return {"status": "ok", "type": "chat"}
 
 
@@ -259,7 +420,7 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
 def get_suggestions(request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
-    return canvas_states.get_suggestions(theater_id)
+    return _state(theater_id).chat.get_suggestions()
 
 
 @app.get("/api/sticky-notes")
@@ -274,7 +435,7 @@ def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
     elif session_tools and hasattr(session_tools, "get_present_elements"):
         notes = session_tools.get_present_elements()
         return {"sticky_notes": notes, "count": len(notes)}
-    notes = canvas_states.get_sticky_notes(theater_id)
+    notes = _state(theater_id).story.sticky_notes()
     return {"sticky_notes": notes, "count": len(notes)}
 
 
@@ -282,8 +443,10 @@ def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
 def upvote_suggestion(vote: SuggestionVote, request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
-    if not canvas_states.upvote_suggestion(vote.voter, vote.target_author, theater_id):
+    state = _state(theater_id)
+    if not state.chat.upvote_suggestion(vote.voter, vote.target_author):
         raise HTTPException(status_code=404, detail="Suggestion not found or cannot be upvoted.")
+    state.notify_changed("suggestions")
     return {"status": "ok", "type": "suggestion"}
 
 
@@ -291,8 +454,10 @@ def upvote_suggestion(vote: SuggestionVote, request: Request, theater_id: Option
 def withdraw_suggestion(withdrawal: SuggestionWithdrawal, request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
-    if not canvas_states.withdraw_suggestion(withdrawal.author, theater_id):
+    state = _state(theater_id)
+    if not state.chat.withdraw_suggestion(withdrawal.author):
         raise HTTPException(status_code=404, detail="Suggestion not found.")
+    state.notify_changed("chat", "suggestions")
     return {"status": "ok", "type": "suggestion"}
 
 
@@ -313,7 +478,7 @@ def set_viewer_collab_mode(
     if deployment["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only the theater owner can change collaboration mode.")
 
-    canvas_states.set_viewer_collab_enabled(payload.enabled, theater_id)
+    _state(theater_id).ui.set_viewer_collab_enabled(payload.enabled)
     session = agent_manager.get_session(theater_id)
     if session:
         session.send_collaboration_toggle_observability()

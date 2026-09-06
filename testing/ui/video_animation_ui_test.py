@@ -1,7 +1,5 @@
 """UI-facing regression coverage for video animation playback in the canvas."""
 
-from pathlib import Path
-
 from api_server.shared import PROJECT_ROOT
 from testing.ui.base import UITestCase
 
@@ -25,7 +23,7 @@ class TestVideoAnimationUI(UITestCase):
             "loop": True,
             "muted": True,
         }
-        manager.show_video_animation(manifest)
+        manager.visual.show_video_animation(manifest, url_for_path=manager.theater.get_url_for_path)
         state = manager.get_latest_state()
 
         self.assertEqual(state["animation"]["type"], "video")
