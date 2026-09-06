@@ -5,14 +5,30 @@ from unittest.mock import Mock, patch
 import pytest
 
 from components.canvas.visual_state import VisualState
+from components.theater_manager import Theater
+
+
+def make_theater(theater_id: str = "th_test") -> Mock:
+    theater = Mock(spec=Theater)
+    theater.theater_id = theater_id
+    theater.get_url_for_path.side_effect = lambda p: p
+    return theater
 
 
 # ---------------------------------------------------------------------------
 # 1. Initial State & Defaults
 # ---------------------------------------------------------------------------
 
+def test_visual_state_requires_theater() -> None:
+    with pytest.raises(TypeError):
+        VisualState()  # type: ignore[call-arg]
+
+
 def test_visual_state_starts_with_a_crossfade_presentation() -> None:
-    state = VisualState()
+    theater = make_theater("th_main")
+    state = VisualState(theater)
+    assert state.theater == theater
+    assert state.theater_id == "th_main"
     assert state.shown_image_path is None
     assert (state.shown_image_transition, state.shown_image_effect) == ("crossfade", "gleam3")
     assert state.current_image_basename is None
@@ -30,7 +46,7 @@ def test_visual_state_starts_with_a_crossfade_presentation() -> None:
 # ---------------------------------------------------------------------------
 
 def test_show_image_sets_attributes_and_increments_revision() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     before = time.time()
     changed = state.show_image(
         "scenes/mountain.png",
@@ -60,7 +76,7 @@ def test_show_image_sets_attributes_and_increments_revision() -> None:
 
 
 def test_show_image_uses_url_for_path_callback() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.show_image(
         "images/hero.png",
         url_for_path=lambda path: f"https://cdn.example.com/{path}",
@@ -72,14 +88,14 @@ def test_show_image_uses_url_for_path_callback() -> None:
 
 
 def test_show_image_falls_back_to_defaults_on_falsy_transition_or_effect() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.show_image("bg.png", transition="", effect="")
     assert state.shown_image_transition == "crossfade"
     assert state.shown_image_effect == "gleam3"
 
 
 def test_show_image_identical_call_returns_false_and_preserves_revision_and_time() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     changed1 = state.show_image("img1.png", transition="fade", effect="zoom")
     assert changed1 is True
     first_time = state.shown_image_time
@@ -92,7 +108,7 @@ def test_show_image_identical_call_returns_false_and_preserves_revision_and_time
 
 
 def test_show_image_updating_prompt_on_same_image_updates_history_in_place() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.show_image("scene.png", prompt="First draft prompt")
     assert len(state.shown_images_history) == 1
     assert state.shown_images_history[0]["prompt"] == "First draft prompt"
@@ -105,7 +121,7 @@ def test_show_image_updating_prompt_on_same_image_updates_history_in_place() -> 
 
 
 def test_show_image_changing_transition_or_effect_triggers_change() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.show_image("scene.png", transition="crossfade", effect="gleam3")
     assert state.image_revision == 1
 
@@ -121,7 +137,7 @@ def test_show_image_changing_transition_or_effect_triggers_change() -> None:
 
 
 def test_show_image_clears_active_animations_by_default() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.show_triframe(["f1.png", "f2.png", "f3.png"], prompt="Animating frames")
     assert len(state.shown_animation_frames) == 3
 
@@ -132,7 +148,7 @@ def test_show_image_clears_active_animations_by_default() -> None:
 
 
 def test_show_image_preserves_animation_when_clear_animation_is_false() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     custom_anim = {"type": "particle", "density": 50}
     state.show_image("space.png", clear_animation=False, animation=custom_anim)
 
@@ -141,7 +157,7 @@ def test_show_image_preserves_animation_when_clear_animation_is_false() -> None:
 
 
 def test_show_image_history_is_capped_at_100_entries() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     for i in range(105):
         state.show_image(f"img_{i}.png")
 
@@ -151,7 +167,7 @@ def test_show_image_history_is_capped_at_100_entries() -> None:
 
 
 def test_show_image_empty_path_does_not_append_to_history() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.show_image("")
     assert state.shown_images_history == []
 
@@ -161,7 +177,7 @@ def test_show_image_empty_path_does_not_append_to_history() -> None:
 # ---------------------------------------------------------------------------
 
 def test_show_triframe_success() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     frames = ["f1.png", "f2.png", "f3.png"]
     changed = state.show_triframe(frames, prompt="Walking loop")
 
@@ -186,7 +202,7 @@ def test_show_triframe_success() -> None:
 
 
 def test_show_triframe_with_url_for_path() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     frames = ["a.png", "b.png", "c.png"]
     state.show_triframe(frames, url_for_path=lambda p: f"/static/{p}")
 
@@ -207,7 +223,7 @@ def test_show_triframe_with_url_for_path() -> None:
     ],
 )
 def test_show_triframe_requires_exactly_three_valid_paths(invalid_frames: list[str]) -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     with pytest.raises(ValueError, match="A tri-frame animation requires exactly three image paths."):
         state.show_triframe(invalid_frames)
 
@@ -217,7 +233,7 @@ def test_show_triframe_requires_exactly_three_valid_paths(invalid_frames: list[s
 # ---------------------------------------------------------------------------
 
 def test_show_layered_animation_success() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     manifest = {
         "id": "anim_layer_1",
         "scene_prompt": "A deep dungeon",
@@ -250,7 +266,7 @@ def test_show_layered_animation_success() -> None:
 
 
 def test_show_layered_animation_fallbacks_and_defaults() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     manifest = {
         "prompt": "Prompt fallback",
         "layers": [
@@ -271,7 +287,7 @@ def test_show_layered_animation_fallbacks_and_defaults() -> None:
 
 
 def test_show_layered_animation_with_url_for_path() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     manifest = {
         "base_image": "base.png",
         "layers": [
@@ -295,13 +311,13 @@ def test_show_layered_animation_with_url_for_path() -> None:
     ],
 )
 def test_show_layered_animation_requires_at_least_two_layers(invalid_manifest: dict) -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     with pytest.raises(ValueError, match="A layered animation requires at least two layers."):
         state.show_layered_animation(invalid_manifest)
 
 
 def test_show_layered_animation_requires_base_image() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     manifest = {
         "layers": [
             {"no_path": "x"},
@@ -317,7 +333,7 @@ def test_show_layered_animation_requires_base_image() -> None:
 # ---------------------------------------------------------------------------
 
 def test_show_video_animation_success() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     manifest = {
         "id": "vid_cutscene",
         "video_path": "cutscene.mp4",
@@ -348,7 +364,7 @@ def test_show_video_animation_success() -> None:
 
 
 def test_show_video_animation_display_target_and_duration_fallbacks() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     # Without poster, display target falls back to video_path
     manifest1 = {"video_path": "scene.mp4", "duration_seconds": 12}
     state.show_video_animation(manifest1)
@@ -371,7 +387,7 @@ def test_show_video_animation_display_target_and_duration_fallbacks() -> None:
 
 
 def test_show_video_animation_with_url_for_path() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     manifest = {
         "video_path": "clip.mp4",
         "poster_image": "poster.png",
@@ -383,7 +399,7 @@ def test_show_video_animation_with_url_for_path() -> None:
 
 
 def test_show_video_animation_requires_video_path_or_url() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     with pytest.raises(ValueError, match="A video animation requires a video URL or valid video path."):
         state.show_video_animation({})
 
@@ -393,7 +409,7 @@ def test_show_video_animation_requires_video_path_or_url() -> None:
 # ---------------------------------------------------------------------------
 
 def test_serialize_returns_all_expected_keys() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.current_image_basename = "base.png"
     state.show_image("current.png", transition="fade", effect="zoom", prompt="Prompt")
 
@@ -431,7 +447,7 @@ def test_load_restores_complete_state() -> None:
         "shown_video_animation": {"id": "vid_1", "video_url": "clip.mp4"},
     }
 
-    state = VisualState()
+    state = VisualState(make_theater())
     state.load(data)
 
     assert state.current_image_basename == "cover.png"
@@ -446,7 +462,7 @@ def test_load_restores_complete_state() -> None:
 
 
 def test_load_handles_malformed_and_partial_data_gracefully() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     # Populate initial non-default values
     state.current_image_basename = "kept.png"
     state.shown_image_path = "kept_path.png"
@@ -473,12 +489,12 @@ def test_load_handles_malformed_and_partial_data_gracefully() -> None:
 
 
 def test_serialize_and_load_roundtrip() -> None:
-    original = VisualState()
+    original = VisualState(make_theater())
     original.current_image_basename = "forest.png"
     original.show_triframe(["a.png", "b.png", "c.png"], prompt="Triframe test")
 
     serialized = original.serialize()
-    restored = VisualState()
+    restored = VisualState(make_theater())
     restored.load(serialized)
 
     assert restored.serialize() == serialized
@@ -489,8 +505,10 @@ def test_serialize_and_load_roundtrip() -> None:
 # ---------------------------------------------------------------------------
 
 def test_payload_empty_state() -> None:
-    state = VisualState()
-    theater = Mock()
+    theater = Mock(spec=Theater)
+    theater.theater_id = "th_1"
+    theater.get_url_for_path.side_effect = lambda p: p
+    state = VisualState(theater)
     p = state.payload(theater)
 
     assert p["latest"] is None
@@ -504,8 +522,10 @@ def test_payload_empty_state() -> None:
 
 
 def test_payload_resolves_local_path_via_theater() -> None:
-    state = VisualState()
-    theater = Mock()
+    theater = Mock(spec=Theater)
+    theater.theater_id = "1"
+    theater.get_url_for_path.return_value = "/theaters/1/images/hero.png"
+    state = VisualState(theater)
     theater.get_url_for_path.return_value = "/theaters/1/images/hero.png"
 
     state.show_image("local/hero.png", prompt="Hero")
@@ -524,8 +544,8 @@ def test_payload_resolves_local_path_via_theater() -> None:
     ],
 )
 def test_payload_bypasses_theater_lookup_for_external_or_theater_urls(url_path: str) -> None:
-    state = VisualState()
-    theater = Mock()
+    theater = Mock(spec=Theater)
+    state = VisualState(theater)
     state.show_image(url_path)
 
     p = state.payload(theater)
@@ -534,8 +554,10 @@ def test_payload_bypasses_theater_lookup_for_external_or_theater_urls(url_path: 
 
 
 def test_payload_includes_triframe_animation() -> None:
-    state = VisualState()
-    theater = Mock()
+    theater = Mock(spec=Theater)
+    theater.theater_id = "th_tri"
+    theater.get_url_for_path.side_effect = lambda p: f"/url/{p}"
+    state = VisualState(theater)
     theater.get_url_for_path.side_effect = lambda p: f"/url/{p}"
 
     frames = ["f1.png", "https://remote.com/f2.png", "/theaters/f3.png"]
@@ -552,8 +574,10 @@ def test_payload_includes_triframe_animation() -> None:
 
 
 def test_payload_includes_layered_animation() -> None:
-    state = VisualState()
-    theater = Mock()
+    theater = Mock(spec=Theater)
+    theater.theater_id = "th_layer"
+    theater.get_url_for_path.side_effect = lambda p: p
+    state = VisualState(theater)
     state.show_layered_animation({
         "id": "layered_scene",
         "scene_prompt": "Layered Forest",
@@ -565,8 +589,10 @@ def test_payload_includes_layered_animation() -> None:
 
 
 def test_payload_includes_video_animation() -> None:
-    state = VisualState()
-    theater = Mock()
+    theater = Mock(spec=Theater)
+    theater.theater_id = "th_video"
+    theater.get_url_for_path.side_effect = lambda p: p
+    state = VisualState(theater)
     state.show_video_animation({
         "id": "video_scene",
         "video_path": "clip.mp4",
@@ -646,7 +672,7 @@ def test_find_starting_reference(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_initialize_starting_image_skips_when_image_already_shown() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     state.shown_image_path = "already_set.png"
     theater_mgr, theater = Mock(), Mock()
 
@@ -656,8 +682,9 @@ def test_initialize_starting_image_skips_when_image_already_shown() -> None:
 
 
 def test_initialize_starting_image_skips_when_generated_image_exists(tmp_path: Path) -> None:
-    state = VisualState()
-    theater_mgr, theater = Mock(), Mock()
+    theater_mgr, theater = Mock(), Mock(spec=Theater)
+    theater.theater_id = "th_1"
+    state = VisualState(theater)
 
     img_dir = tmp_path / "artifacts"
     img_dir.mkdir()
@@ -670,8 +697,9 @@ def test_initialize_starting_image_skips_when_generated_image_exists(tmp_path: P
 
 @patch("utils.config_loader.get_theater_config")
 def test_initialize_starting_image_skips_when_config_raises_or_missing(mock_config: Mock) -> None:
-    state = VisualState()
-    theater_mgr, theater = Mock(), Mock()
+    theater_mgr, theater = Mock(), Mock(spec=Theater)
+    theater.theater_id = "th_1"
+    state = VisualState(theater)
     theater.image_artifacts_dir.return_value = Path("/nonexistent")
 
     # Exception raised by get_theater_config
@@ -688,8 +716,9 @@ def test_initialize_starting_image_skips_when_config_raises_or_missing(mock_conf
 
 @patch("utils.config_loader.get_theater_config")
 def test_initialize_starting_image_success(mock_config: Mock, tmp_path: Path) -> None:
-    state = VisualState()
-    theater_mgr, theater = Mock(), Mock()
+    theater_mgr, theater = Mock(), Mock(spec=Theater)
+    theater.theater_id = "th_1"
+    state = VisualState(theater)
     theater.image_artifacts_dir.return_value = tmp_path / "artifacts"
 
     ref_dir = tmp_path / "references"
@@ -711,12 +740,12 @@ def test_initialize_starting_image_success(mock_config: Mock, tmp_path: Path) ->
 # ---------------------------------------------------------------------------
 
 def test_resolve_prompt_for_file_with_fallback_prompt() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     assert state._resolve_prompt_for_file("missing.png", fallback_prompt="Explicit prompt") == "Explicit prompt"
 
 
 def test_resolve_prompt_for_file_missing_or_empty_path() -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
     assert state._resolve_prompt_for_file(None) == ""
     assert state._resolve_prompt_for_file("") == ""
     assert state._resolve_prompt_for_file("non_existent_file_12345.png") == ""
@@ -728,7 +757,7 @@ def test_resolve_prompt_for_file_from_image_metadata_prompt(mock_prompt: Mock, t
     img_file.write_text("data", encoding="utf-8")
 
     mock_prompt.return_value = "A neon cyberpunk cityscape"
-    state = VisualState()
+    state = VisualState(make_theater())
     assert state._resolve_prompt_for_file(str(img_file)) == "A neon cyberpunk cityscape"
 
 
@@ -739,7 +768,7 @@ def test_resolve_prompt_for_file_from_metadata_title(mock_title: Mock, _mock_pro
     img_file.write_text("data", encoding="utf-8")
 
     mock_title.return_value = "The Enchanted Woods"
-    state = VisualState()
+    state = VisualState(make_theater())
     assert state._resolve_prompt_for_file(str(img_file)) == "The Enchanted Woods"
 
 
@@ -753,7 +782,7 @@ def test_resolve_prompt_for_file_from_metadata_description(
     img_file.write_text("data", encoding="utf-8")
 
     mock_desc.return_value = "Detailed scene description here"
-    state = VisualState()
+    state = VisualState(make_theater())
     assert state._resolve_prompt_for_file(str(img_file)) == "Detailed scene description here"
 
 
@@ -766,12 +795,11 @@ def test_resolve_prompt_for_file_adventure_cover(
     img_file = tmp_path / "cover.png"
     img_file.write_text("data", encoding="utf-8")
 
-    state = VisualState()
-    theater = Mock()
+    theater = Mock(spec=Theater)
     th_dir = tmp_path / "theater"
     th_dir.mkdir()
     theater.directory.return_value = th_dir
-    state.theater = theater
+    state = VisualState(theater)
 
     # Cover matches with title
     (th_dir / "metadata.json").write_text(
@@ -803,7 +831,7 @@ def test_resolve_prompt_for_file_adjacent_manifest(
         json.dumps({"scene_prompt": "Storm rolling in over the ocean"}),
         encoding="utf-8",
     )
-    state = VisualState()
+    state = VisualState(make_theater())
     assert state._resolve_prompt_for_file(str(img_file)) == "Storm rolling in over the ocean"
 
 
@@ -813,7 +841,7 @@ def test_resolve_prompt_for_file_adjacent_manifest(
 def test_resolve_prompt_for_file_fallback_stem(
     _d: Mock, _t: Mock, _p: Mock, tmp_path: Path
 ) -> None:
-    state = VisualState()
+    state = VisualState(make_theater())
 
     ref_img = tmp_path / "reference_guard_captain.png"
     ref_img.write_text("data", encoding="utf-8")
@@ -825,7 +853,9 @@ def test_resolve_prompt_for_file_fallback_stem(
 
 
 def test_resolve_reference_fallback(tmp_path: Path) -> None:
-    state = VisualState()
+    theater = Mock(spec=Theater)
+    theater.theater_id = None
+    state = VisualState(theater)
 
     # theater_id not set
     state.theater_id = None
@@ -833,7 +863,7 @@ def test_resolve_reference_fallback(tmp_path: Path) -> None:
 
     # references_dir does not exist
     state.theater_id = "th_1"
-    theater = Mock()
+    theater = Mock(spec=Theater)
     theater.references_dir.return_value = tmp_path / "non_existent"
     state.theater = theater
     assert state._resolve_reference_fallback() is None

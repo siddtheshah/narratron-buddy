@@ -24,7 +24,7 @@ class CanvasStateManager:
         self.theater_id, self.theater_manager = theater_id, theater_manager
         self.theater = theater_manager.theater(theater_id)
         self.connections = ConnectionState()
-        self.visual = VisualState()
+        self.visual = VisualState(self.theater)
         self.audio = AudioState(self.notify_changed)
         self.doodles = DoodleState(self.persist)
         self.ui = UIState(self.persist, self.notify_changed)
