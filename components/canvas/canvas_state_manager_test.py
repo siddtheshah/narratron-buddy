@@ -31,7 +31,7 @@ def test_manager_serializes_components_and_bundles_their_canvas_payload(tmp_path
     manager.visual.shown_image_path = "C:/art/moon.png"
     manager.visual.shown_image_prompt = "Moonlit harbor"
     manager.audio.update_music("night", ["night.mp3"])
-    manager.ui.update({"surface_id": "hud", "messages": []})
+    manager.ui.upsert_surface({"surface_id": "hud", "messages": []})
     manager.story.narration = "A bell rings."
 
     document, files = manager.save_local_theater_data()

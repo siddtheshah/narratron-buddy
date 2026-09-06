@@ -20,7 +20,7 @@ MAX_AGENT_THOUGHT_LENGTH = 360
 
 
 class CanvasStateManager:
-    def __init__(self, theater_id: str, theater_manager: TheaterManager, text_beautifier: Optional[Any] = None) -> None:
+    def __init__(self, theater_id: str, theater_manager: TheaterManager) -> None:
         self.theater_id, self.theater_manager = theater_id, theater_manager
         self.theater = theater_manager.theater(theater_id)
         self.connections = ConnectionState()
@@ -31,7 +31,6 @@ class CanvasStateManager:
         self.tool_response = ToolResponseState(self.notify_changed)
         self.story = StoryState(self.persist, self.notify_changed, publish_audio_fn=self.connections.broadcast)
         self.chat = ChatManager(output_dir=str(self.theater.output_dir() / "chats"))
-        self.text_beautifier = text_beautifier
         self.load_state_from_disk()
         self.visual.initialize_starting_image(self.theater_id, self.theater_manager, self.theater)
 
@@ -69,8 +68,6 @@ class CanvasStateManager:
         document["canvas_state"] = self.serialized_state()
         target.write_text(json.dumps(document, indent=2), encoding="utf-8")
         return document, []
-
-    export_theater_data = save_local_theater_data
 
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload(self.theater)

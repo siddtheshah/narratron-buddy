@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 from PIL import Image
 
-from components.canvas.doodle_state import DoodleState
+from components.canvas.doodle_state import DoodleState, doodle_snapshot_batches
 
 
 def test_doodle_state_compacts_adjacent_segments_and_persists() -> None:

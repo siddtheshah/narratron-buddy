@@ -5,9 +5,25 @@ import io
 import logging
 from typing import Any, Optional
 
-from components.canvas_state_utils import doodle_snapshot_batches
-
 logger = logging.getLogger(__name__)
+
+
+def doodle_snapshot_batches(doodles: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Compact adjacent line segments with the same style into stroke paths."""
+    batches: list[dict[str, object]] = []
+    for action in doodles:
+        if action.get("type") != "draw":
+            continue
+        try:
+            x0, y0, x1, y1 = action["x0"], action["y0"], action["x1"], action["y1"]
+        except KeyError:
+            continue
+        color, size = action.get("color"), action.get("size", 3)
+        if batches and batches[-1]["color"] == color and batches[-1]["size"] == size and batches[-1]["points"][-2:] == [x0, y0]:
+            batches[-1]["points"].extend([x1, y1])
+        else:
+            batches.append({"color": color, "size": size, "points": [x0, y0, x1, y1]})
+    return batches
 
 
 class DoodleState:

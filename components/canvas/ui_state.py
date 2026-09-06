@@ -1,7 +1,11 @@
 """Canvas UI, collaboration, and A2UI surface state."""
 
 from collections.abc import Callable
-from components.canvas_state_utils import clamp_surface_placement
+from typing import Any, Dict, Optional
+
+
+def clamp_surface_placement(left_pct: float, top_pct: float) -> dict[str, float]:
+    return {"left_pct": round(max(2.0, min(98.0, float(left_pct))), 2), "top_pct": round(max(2.0, min(98.0, float(top_pct))), 2)}
 
 
 class UIState:
@@ -12,10 +16,6 @@ class UIState:
 
     def set_viewer_collab_enabled(self, enabled: bool) -> None:
         self.viewer_collab_enabled = bool(enabled); self._persist(); self._notify_changed("latest")
-
-    def update(self, surface: dict[str, object], max_surfaces: int = 5) -> None:
-        """Canonical UI mutation entry point for theater-scoped callers."""
-        self.upsert_surface(surface, max_surfaces)
 
     def upsert_surface(self, surface: dict[str, object], max_surfaces: int = 5) -> None:
         surface_id = str(surface.get("surface_id") or "")
@@ -38,6 +38,23 @@ class UIState:
         placement.update(clamp_surface_placement(left_pct, top_pct))
         self._persist(); self._notify_changed("latest")
         return {"left_pct": float(placement["left_pct"]), "top_pct": float(placement["top_pct"])}
+
+    def get_interactive_action(self, surface_id: str, component_id: str, action_name: str) -> Optional[Dict[str, Any]]:
+        """Resolve an action against the authoritative generated component tree."""
+        surface = self.interactive_surfaces.get(str(surface_id))
+        components: dict[str, dict[str, Any]] = {}
+        for message in (surface or {}).get("messages", []):
+            if not isinstance(message, dict):
+                continue
+            payload = message.get("createSurface") or message.get("updateComponents") or {}
+            for component in payload.get("components", []):
+                if isinstance(component, dict) and component.get("id"):
+                    components[str(component["id"])] = component
+        component = components.get(str(component_id), {})
+        event = (component.get("action") or {}).get("event", {})
+        if event.get("name") == action_name:
+            return dict(event)
+        return None
 
     def load(self, data: dict[str, object]) -> None:
         self.viewer_collab_enabled = bool(data.get("viewer_collab_enabled", False))
