@@ -62,3 +62,45 @@ def test_manager_hydrates_each_persisted_component(tmp_path: Path) -> None:
     assert manager.ui.viewer_collab_enabled is True
     assert manager.story.narration == "Previously."
     assert manager.chat.get_messages() == [{"author": "a", "text": "hi"}]
+
+
+def test_manager_hydrates_from_legacy_theater_state_json(tmp_path: Path) -> None:
+    directory = tmp_path / "legacy"; directory.mkdir()
+    (directory / "theater_state.json").write_text(json.dumps({"canvas_state": {
+        "shown_image_path": "legacy.png",
+        "narration": "From legacy file.",
+    }}), encoding="utf-8")
+
+    manager = CanvasStateManager("legacy", FakeTheaterManager(tmp_path))
+    assert manager.visual.shown_image_path == "legacy.png"
+    assert manager.story.narration == "From legacy file."
+
+
+def test_manager_handles_corrupt_json_gracefully(tmp_path: Path) -> None:
+    directory = tmp_path / "corrupted"; directory.mkdir()
+    (directory / "theater.json").write_text("{invalid json corrupt content...", encoding="utf-8")
+
+    # Should not raise exception
+    manager = CanvasStateManager("corrupted", FakeTheaterManager(tmp_path))
+    assert manager.visual.shown_image_path is None
+    assert manager.story.narration == ""
+
+
+def test_manager_notify_changed_delegates_to_connections(tmp_path: Path) -> None:
+    manager = CanvasStateManager("notify_test", FakeTheaterManager(tmp_path))
+    initial_rev = manager.connections.state_revision
+
+    manager.notify_changed("visual", "story")
+    assert manager.connections.state_revision == initial_rev + 1
+
+
+def test_manager_persist_writes_theater_json(tmp_path: Path) -> None:
+    manager = CanvasStateManager("persist_test", FakeTheaterManager(tmp_path))
+    manager.story.narration = "Persisted narration"
+    manager.persist()
+
+    target = tmp_path / "persist_test" / "theater.json"
+    assert target.exists()
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data["canvas_state"]["narration"] == "Persisted narration"
+

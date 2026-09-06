@@ -154,6 +154,81 @@ class TestChatManagerSuggestions(unittest.TestCase):
         restored.load_suggestions(exported)
         self.assertEqual(restored.get_suggestions()[0]["upvote_count"], 1)
 
+    # --- message management and export ---
+
+    def test_add_message_caps_at_100_messages_fifo(self):
+        for i in range(105):
+            self.cm.add_message({"author": f"user_{i}", "text": f"msg {i}"})
+        messages = self.cm.get_messages()
+        self.assertEqual(len(messages), 100)
+        self.assertEqual(messages[0]["text"], "msg 5")
+        self.assertEqual(messages[-1]["text"], "msg 104")
+
+    def test_add_suggestion_preserves_profile_metadata(self):
+        self.cm.add_suggestion("alice", "Look around", profile_username="AliceV", profile_color="#ff55aa")
+        msgs = self.cm.get_messages()
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0]["profile_username"], "AliceV")
+        self.assertEqual(msgs[0]["profile_color"], "#ff55aa")
+
+    def test_export_and_reset_empty_messages_does_nothing(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cm = ChatManager(output_dir=temp_dir)
+            cm.export_and_reset("scene_1")
+            self.assertEqual(os.listdir(temp_dir), [])
+
+    def test_export_and_reset_writes_file_and_resets(self):
+        import json
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cm = ChatManager(output_dir=temp_dir)
+            cm.add_message({"author": "hero", "text": "charge!"})
+            cm.add_message({"author": "mage", "text": "fireball!"})
+            self.assertEqual(len(cm.get_messages()), 2)
+
+            cm.export_and_reset("scenes/hero@#1.png")
+
+            # Chat messages reset to empty
+            self.assertEqual(len(cm.get_messages()), 0)
+
+            # File created in output_dir
+            files = os.listdir(temp_dir)
+            self.assertEqual(len(files), 1)
+            self.assertTrue(files[0].startswith("chat_sceneshero1.png_"))
+            self.assertTrue(files[0].endswith(".json"))
+
+            # Exported content is valid JSON matching the messages
+            file_path = os.path.join(temp_dir, files[0])
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertEqual(len(data), 2)
+            self.assertEqual(data[0]["author"], "hero")
+            self.assertEqual(data[1]["text"], "fireball!")
+
+    def test_load_suggestions_handles_malformed_entries_gracefully(self):
+        malformed = [
+            "not_a_dict",
+            {},
+            {"author": "bob"},  # missing text
+            {"text": "idea"},  # missing author
+            {"author": "   ", "text": "idea"},
+            {"author": "charlie", "text": "   "},
+            {
+                "author": "dave",
+                "text": "explore cave",
+                "upvoters": ["eve", 123, None, "frank"],
+                "created_at": "not_a_float",
+            },
+        ]
+        self.cm.load_suggestions(malformed)
+        suggestions = self.cm.get_suggestions()
+        self.assertEqual(len(suggestions), 1)
+        self.assertEqual(suggestions[0]["author"], "dave")
+        self.assertEqual(suggestions[0]["text"], "explore cave")
+
 
 if __name__ == "__main__":
     unittest.main()

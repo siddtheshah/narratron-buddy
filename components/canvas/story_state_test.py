@@ -261,3 +261,66 @@ def test_load_and_serialize_round_trip() -> None:
     assert serialized["narration_spans"] == [{"text": "rises", "effect": "glow"}]
     assert serialized["character_voice_assignments"] == {"hero": "voice_1"}
     assert state.payload() == serialized
+
+
+def test_set_narration_truncates_at_45_words_and_500_chars() -> None:
+    state = StoryState()
+    state.text_beautifier = False
+    long_text = " ".join([f"word{i}" for i in range(60)])
+    state.set_narration(long_text)
+
+    words = state.narration.split()
+    assert len(words) == 45
+    assert len(state.narration) <= 500
+
+
+def test_set_scene_dialogue_caps_at_three_entries() -> None:
+    state = StoryState()
+    state.text_beautifier = False
+    five_lines = [{"speaker": f"Char_{i}", "text": f"Line {i}"} for i in range(5)]
+    state.set_scene_dialogue(five_lines)
+
+    assert len(state.scene_dialogue) == 3
+    assert state.scene_dialogue[0]["speaker"] == "Char_0"
+    assert state.scene_dialogue[2]["speaker"] == "Char_2"
+
+
+def test_sticky_notes_falls_back_to_named_elements() -> None:
+    state = StoryState()
+    state.named_elements = [{"name": "Relic", "type": "artifact"}]
+    # No sticky_notes key in story_planning_state
+    assert state.sticky_notes() == [{"name": "Relic", "type": "artifact"}]
+
+    # When explicit sticky_notes present in planning state
+    state.story_planning_state["sticky_notes"] = [{"name": "Note 1", "info": "Clue"}]
+    assert state.sticky_notes() == [{"name": "Note 1", "info": "Clue"}]
+
+
+def test_get_character_voice_tags_filters_to_binary_gender_and_handles_single_string() -> None:
+    state = StoryState()
+    state.story_planning_state = {
+        "characters": [
+            {"name": "Elder", "voice_tags": ["elderly", "deep", "male", "wise"]},
+            {"name": "Princess", "voice_tags": "female"},
+            {"name": "Robot", "voice_tags": ["robotic", "metallic"]},
+        ]
+    }
+
+    # Only "male" is retained
+    assert state.get_character_voice_tags("Elder") == ["male"]
+    # Single string "female" handled
+    assert state.get_character_voice_tags("Princess") == ["female"]
+    # Non-gender tags filtered to empty list
+    assert state.get_character_voice_tags("Robot") == []
+
+
+def test_load_handles_none_or_non_dict_gracefully() -> None:
+    state = StoryState()
+    state.narration = "Original"
+
+    state.load(None)
+    assert state.narration == "Original"
+
+    state.load("not_a_dict")
+    assert state.narration == "Original"
+
