@@ -9,7 +9,7 @@ from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 from jinja2 import StrictUndefined, Template
 
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools

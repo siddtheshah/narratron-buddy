@@ -273,7 +273,7 @@ class MusicTools(BaseTools):
             if not tracks:
                 return f"Error: Music or playlist '{music_id}' not found."
 
-            self.canvas_manager.update_music(music_id, tracks)
+            self.canvas_manager.audio.update_music(music_id, tracks)
             if self.on_play_music:
                 self.on_play_music(music_id, tracks)
 
@@ -306,7 +306,7 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
-            self.canvas_manager.pause_music()
+            self.canvas_manager.audio.pause()
             if self.on_pause_music:
                 self.on_pause_music()
             logger.debug("[MusicTools] pause_music requested for theater=%s.", self.active_theater_id)
@@ -323,7 +323,7 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
-            self.canvas_manager.resume_music()
+            self.canvas_manager.audio.resume()
             if self.on_resume_music:
                 self.on_resume_music()
             logger.debug("[MusicTools] resume_music requested for theater=%s.", self.active_theater_id)

@@ -57,7 +57,7 @@ from testlab.adventure_runner import (
     AdventureSession,
     list_available_adventures,
 )
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from services.text_beautifier import TextBeautifier
 

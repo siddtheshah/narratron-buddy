@@ -18,7 +18,7 @@ class TestChatTools(BaseTestCase):
 
         res = self.chat_tools.send_chat_message("Hello traveler!")
         self.assertIn("Successfully updated the Narratron thought panel: Hello traveler!", res)
-        self.chat_tools.canvas_manager.set_agent_thought.assert_called_once_with("Hello traveler!")
+        self.chat_tools.canvas_manager.tool_response.set_agent_thought.assert_called_once_with("Hello traveler!")
         mock_cb.assert_called_once_with("Hello traveler!")
 
     def test_send_chat_message_no_callback(self):

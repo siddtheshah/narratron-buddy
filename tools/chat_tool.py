@@ -28,7 +28,7 @@ class ChatTools(BaseTools):
         """
         try:
             logger.debug(f"[ChatTools] Updating agent thought: {text}")
-            self.canvas_manager.set_agent_thought(text)
+            self.canvas_manager.tool_response.set_agent_thought(text)
             if self.on_send_chat_message:
                 self.on_send_chat_message(text)
             return f"Successfully updated the Narratron thought panel: {text}"

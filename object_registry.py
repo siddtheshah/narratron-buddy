@@ -15,7 +15,7 @@ from absl import flags
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from services.adventure_service import AdventureService, ensure_adventures_root

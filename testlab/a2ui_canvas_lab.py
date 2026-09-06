@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from providers import TextResponseProvider
 from tools.interactive_canvas_tool import InteractiveCanvasTools

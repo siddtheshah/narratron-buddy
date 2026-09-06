@@ -47,7 +47,7 @@ def make_tools(response_factory, config=None, adventure_mode=False):
         "sticky_notes": [],
         "interactive_surfaces": [],
     }
-    canvas._resolve_active_image.return_value = (None, None, 0, "")
+    canvas.visual.shown_image_path = None
     theater_manager = MagicMock(theater_id="stage")
     provider = MagicMock()
     # Keep this test double on the provider-neutral path. The concrete Gemini
@@ -114,7 +114,7 @@ def test_canvas_generation_uses_text_provider_with_catalog_response_schema():
 def test_canvas_generation_attaches_the_active_canvas_image():
     tools, canvas = make_tools(lambda *_: valid_draft())
     image_path = Path(__file__).resolve().parent.parent / "testlab" / "images" / "trace-knight-sword.png"
-    canvas._resolve_active_image.return_value = (None, str(image_path), 0, "Two knights duel.")
+    canvas.visual.shown_image_path = str(image_path)
 
     result = tools.update_interactive_canvas("Put health bars beneath the fighters")
 
@@ -131,13 +131,13 @@ def test_update_interactive_canvas_without_id_creates_a2ui_surface():
     result = tools.update_interactive_canvas("Put a sword interaction beside the blade")
 
     assert result["status"] == "displayed"
-    surface = canvas.upsert_interactive_surface.call_args.args[0]
+    surface = canvas.ui.upsert_surface.call_args.args[0]
     create = surface["messages"][0]["createSurface"]
     assert surface["placement"] == {"left_pct": 72.0, "top_pct": 42.0, "width_pct": 25.0}
     assert create["surfaceId"] == result["surface_id"]
     assert create["catalogId"] == CANVAS_CATALOG_ID
     assert create["components"][-1]["action"]["event"]["context"]["userAction"] == "I grab the sword."
-    canvas.upsert_interactive_surface.assert_called_once()
+    canvas.ui.upsert_surface.assert_called_once()
 
 
 def test_update_interactive_canvas_creation_preserves_ui_agent_persistence_choice():
@@ -145,7 +145,7 @@ def test_update_interactive_canvas_creation_preserves_ui_agent_persistence_choic
     result = tools.update_interactive_canvas("Create a persistent health tracker")
 
     assert result["persistent"] is True
-    assert canvas.upsert_interactive_surface.call_args.args[0]["persistent"] is True
+    assert canvas.ui.upsert_surface.call_args.args[0]["persistent"] is True
 
 
 def test_update_interactive_canvas_creates_multiple_independent_surfaces_in_one_response():
@@ -174,8 +174,8 @@ def test_update_interactive_canvas_creates_multiple_independent_surfaces_in_one_
     assert result["status"] == "displayed"
     assert result["surface_count"] == 2
     assert len(result["surface_ids"]) == 2
-    assert canvas.upsert_interactive_surface.call_count == 2
-    placements = [call.args[0]["placement"]["left_pct"] for call in canvas.upsert_interactive_surface.call_args_list]
+    assert canvas.ui.upsert_surface.call_count == 2
+    placements = [call.args[0]["placement"]["left_pct"] for call in canvas.ui.upsert_surface.call_args_list]
     assert placements == [25, 75]
 
 
@@ -212,7 +212,7 @@ def test_update_interactive_canvas_accepts_display_only_progress_grid():
     result = tools.update_interactive_canvas("Show a persistent health and mana grid")
 
     assert result["status"] == "displayed"
-    components = canvas.upsert_interactive_surface.call_args.args[0]["messages"][0]["createSurface"]["components"]
+    components = canvas.ui.upsert_surface.call_args.args[0]["messages"][0]["createSurface"]["components"]
     assert [component["component"] for component in components] == ["Card", "Grid", "Progress", "Progress"]
 
 
@@ -226,7 +226,7 @@ def test_update_interactive_canvas_rejects_invalid_grid_columns():
     result = tools.update_interactive_canvas("Make an enormous grid")
 
     assert "error" in result
-    canvas.upsert_interactive_surface.assert_not_called()
+    canvas.ui.upsert_surface.assert_not_called()
 
 
 def test_update_interactive_canvas_normalizes_common_generated_identifier_mistakes():
@@ -244,7 +244,7 @@ def test_update_interactive_canvas_normalizes_common_generated_identifier_mistak
     result = tools.update_interactive_canvas("Show health and an action")
 
     assert result["status"] == "displayed"
-    components = canvas.upsert_interactive_surface.call_args.args[0]["messages"][0]["createSurface"]["components"]
+    components = canvas.ui.upsert_surface.call_args.args[0]["messages"][0]["createSurface"]["components"]
     by_id = {component["id"]: component for component in components}
     assert set(by_id) == {"root", "health_bar", "take_label", "take_action"}
     assert by_id["root"]["children"] == ["health_bar", "take_action"]
@@ -263,7 +263,7 @@ def test_update_interactive_canvas_reports_missing_component_id_precisely():
 
     assert "index 1" in result["error"]
     assert "missing" in result["error"].lower()
-    canvas.upsert_interactive_surface.assert_not_called()
+    canvas.ui.upsert_surface.assert_not_called()
 
 
 def test_update_interactive_canvas_retries_one_invalid_catalog_draft():
@@ -276,7 +276,7 @@ def test_update_interactive_canvas_retries_one_invalid_catalog_draft():
     assert result["status"] == "displayed"
     assert len(prompts) == 2
     assert "Card component root needs a child" in prompts[1]
-    canvas.upsert_interactive_surface.assert_called_once()
+    canvas.ui.upsert_surface.assert_called_once()
 
 
 def test_update_interactive_canvas_emits_a2ui_updates_and_preserves_user_placement():
@@ -297,13 +297,13 @@ def test_update_interactive_canvas_emits_a2ui_updates_and_preserves_user_placeme
             },
         }],
     }
-    canvas.interactive_surfaces = {"health_hud": existing}
+    canvas.ui.interactive_surfaces = {"health_hud": existing}
     canvas.get_latest_state.return_value["interactive_surfaces"] = [existing]
 
     result = tools.update_interactive_canvas("Health fell to seven")
 
     assert result["status"] == "updated"
-    surface = canvas.upsert_interactive_surface.call_args.args[0]
+    surface = canvas.ui.upsert_surface.call_args.args[0]
     assert surface["placement"] == existing["placement"]
     assert surface["persistent"] is True
     assert "updateComponents" in surface["messages"][1]
@@ -315,10 +315,10 @@ def test_update_interactive_canvas_emits_a2ui_updates_and_preserves_user_placeme
 
 def test_update_interactive_canvas_rejects_missing_surface():
     tools, canvas = make_tools(lambda *_: valid_draft(target_surface_id="missing"))
-    canvas.interactive_surfaces = {}
+    canvas.ui.interactive_surfaces = {}
     result = tools.update_interactive_canvas("Update it")
     assert "error" in result
-    canvas.upsert_interactive_surface.assert_not_called()
+    canvas.ui.upsert_surface.assert_not_called()
 
 
 def test_update_interactive_canvas_creation_rejects_unknown_component():
@@ -328,7 +328,7 @@ def test_update_interactive_canvas_creation_rejects_unknown_component():
     result = tools.update_interactive_canvas("Make it executable")
 
     assert "error" in result
-    canvas.upsert_interactive_surface.assert_not_called()
+    canvas.ui.upsert_surface.assert_not_called()
 
 
 def test_update_interactive_canvas_creation_requires_player_action():
@@ -338,7 +338,7 @@ def test_update_interactive_canvas_creation_requires_player_action():
     result = tools.update_interactive_canvas("Make a button")
 
     assert "error" in result
-    canvas.upsert_interactive_surface.assert_not_called()
+    canvas.ui.upsert_surface.assert_not_called()
 
 
 def test_update_interactive_canvas_has_configurable_cooldown():
@@ -351,7 +351,7 @@ def test_update_interactive_canvas_has_configurable_cooldown():
     assert first["status"] == "displayed"
     assert isinstance(second, str)
     assert second.startswith("Error: update_interactive_canvas is on cooldown")
-    assert canvas.upsert_interactive_surface.call_count == 1
+    assert canvas.ui.upsert_surface.call_count == 1
 
 
 def test_adventure_mode_locks_interactive_canvas_until_story_plan_completes():
@@ -368,7 +368,7 @@ def test_adventure_mode_locks_interactive_canvas_until_story_plan_completes():
     blocked = tools.update_interactive_canvas("Create an action card")
 
     assert "Waiting for the story planner" in blocked["error"]
-    canvas.upsert_interactive_surface.assert_not_called()
+    canvas.ui.upsert_surface.assert_not_called()
 
     tools.record_story_plan_completed()
     displayed = tools.update_interactive_canvas("Create an action card")
@@ -384,7 +384,7 @@ def test_non_adventure_mode_does_not_lock_interactive_canvas_mutations():
 
     assert tools.update_interactive_canvas("Create a status card")["status"] == "displayed"
     assert tools.clear_interactive_canvas()["status"] == "cleared"
-    canvas.delete_interactive_surface.assert_called_once_with("all")
+    canvas.ui.delete_surface.assert_called_once_with("all")
 
 
 def test_interactive_canvas_ignores_theater_model_setting():

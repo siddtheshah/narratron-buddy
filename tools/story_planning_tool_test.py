@@ -31,7 +31,7 @@ from tools.story_planning_tool import (
     build_story_context_prompt,
 )
 from components.theater_manager import TheaterManager
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from providers import TextResponseProvider, TextResponseRequest, TextResponseResult
 
 

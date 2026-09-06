@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from components.theater_manager import TheaterManager
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from providers.music_provider import MusicGenerationResult
 from testing.base import BaseTestCase
 from services.agent import get_playlists_context

@@ -370,7 +370,7 @@ class InteractiveCanvasTools(BaseTools):
         image_bytes = None
         mime_type = "image/png"
         try:
-            _, image_path, _, _ = canvas._resolve_active_image()
+            image_path = canvas.visual.shown_image_path
             if image_path and Path(image_path).is_file():
                 image_path = Path(image_path)
                 image_bytes = image_path.read_bytes()
@@ -721,7 +721,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
         prepared: list[tuple[dict[str, Any], bool]] = []
         for surface_draft, components in validated_drafts:
             target_surface_id = str(surface_draft.target_surface_id or "").strip()[:100]
-            existing = canvas.interactive_surfaces.get(target_surface_id) if target_surface_id else None
+            existing = canvas.ui.interactive_surfaces.get(target_surface_id) if target_surface_id else None
             if target_surface_id and not existing:
                 return {"error": "The UI agent selected a surface that is no longer active."}
             if not existing:
@@ -760,7 +760,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
             prepared.append((updated, False))
 
         for surface, _ in prepared:
-            canvas.upsert_interactive_surface(surface, max_surfaces=self.max_surfaces)
+            canvas.ui.upsert_surface(surface, max_surfaces=self.max_surfaces)
         created = [surface["surface_id"] for surface, is_new in prepared if is_new]
         updated = [surface["surface_id"] for surface, is_new in prepared if not is_new]
         for surface, is_new in prepared:
@@ -801,7 +801,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
         blocked = self._consume_story_plan_completion("clear the interactive canvas")
         if blocked:
             return blocked
-        removed = self._canvas().delete_interactive_surface("all")
+        removed = self._canvas().ui.delete_surface("all")
         logger.info(
             "%s Cleared surfaces theater=%s removed=%s",
             LOG_PREFIX,

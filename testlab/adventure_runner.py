@@ -32,7 +32,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from services.agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, get_references_context
 from tools.story_planning_tool import StoryPlanningTools, VertexGemini

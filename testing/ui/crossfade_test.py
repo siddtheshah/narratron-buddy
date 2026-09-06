@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from PIL import Image
 
 from api_server.shared import PROJECT_ROOT
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from testing.ui.base import UITestCase
 

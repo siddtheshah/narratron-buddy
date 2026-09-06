@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from components.theater_manager import TheaterManager
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from providers import ImageGenerationResult
 from providers.video_provider import VideoGenerationResult
 from providers.fal_qwen_layered_provider import LayeredImageResult

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image, PngImagePlugin
 
-from components.canvas_state_service import CanvasStateService
+from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from providers import ImageGenerationResult
 from testing.base import BaseTestCase
