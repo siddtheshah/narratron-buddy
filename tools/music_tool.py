@@ -16,7 +16,7 @@ from providers import (
 from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.music_catalog import MusicCatalog
+from services.music_catalog import MusicCatalog
 
 logger = logging.getLogger(__name__)
 

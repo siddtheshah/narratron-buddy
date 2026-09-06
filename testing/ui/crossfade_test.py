@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from PIL import Image
 
 from api_server.shared import PROJECT_ROOT
+from components.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from testing.ui.base import UITestCase
 
@@ -28,10 +29,12 @@ class TestCrossfade(UITestCase):
     def test_show_image_forwards_transition_and_effect_to_callback(self):
         from tools.image_tool import ImageTools
 
+        theater_id = "image_tool_transition"
+        theater_manager = TheaterManager(base_theaters_dir=self.theaters_dir)
         tool = ImageTools(
             config={"image_generation": {"cooldown_duration": 0, "provider": "hybrid-flux-gemini"}},
-            theater_id="image_tool_transition",
-            theater_manager=TheaterManager(base_theaters_dir=self.theaters_dir),
+            theater_manager=theater_manager.theater(theater_id),
+            canvas_manager=CanvasStateService(theater_manager).get(theater_id),
         )
 
         image = Path(tool.output_dir) / "test_image.jpg"

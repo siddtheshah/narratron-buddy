@@ -2002,3 +2002,6 @@ class CloudPostgresDatabaseManager(_DatabaseManagerBase):
                 "Cloud SQL schema is unavailable. Import storage/schema/postgres.sql before starting "
                 f"the application. PostgreSQL reported: {exc}"
             ) from exc
+
+
+DatabaseManager = _DatabaseManagerBase

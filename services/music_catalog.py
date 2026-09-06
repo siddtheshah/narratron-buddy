@@ -11,7 +11,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from providers import TextResponseProvider, TextResponseRequest
+from providers import (
+    TextResponseProvider,
+    TextResponseRequest,
+    get_text_response_provider,
+)
+from storage.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -23,24 +28,63 @@ class MusicCatalog:
     def __init__(
         self,
         directory: Path,
+        database_manager: DatabaseManager,
         match_threshold: float = 0.86,
         candidate_count: int = 5,
         reranker_provider: Optional[TextResponseProvider] = None,
         reranker: Optional[Callable[[str, list[dict[str, Any]]], tuple[str, float] | None]] = None,
-        database_manager: Any = None,
     ) -> None:
-        self.directory = directory
+        if directory is None:
+            raise ValueError("directory is required")
+        if database_manager is None:
+            raise ValueError("database_manager is required")
+
+        self.directory = Path(directory)
+        self.database_manager = database_manager
         self.match_threshold = max(0.0, min(1.0, float(match_threshold)))
         self.candidate_count = max(1, int(candidate_count))
         self.reranker_provider = reranker_provider
         self._reranker = reranker
-        self.database_manager = database_manager
         self.directory.mkdir(parents=True, exist_ok=True)
 
+    @classmethod
+    def from_config(
+        cls,
+        config: Optional[dict] = None,
+        theater_manager: Optional[Any] = None,
+        database_manager: Optional[DatabaseManager] = None,
+    ) -> MusicCatalog:
+        if theater_manager is None:
+            from components.theater_manager import TheaterManager
+            theater_manager = TheaterManager()
+        if database_manager is None:
+            try:
+                import object_registry
+                database_manager = getattr(object_registry, "db", None)
+            except Exception:
+                database_manager = None
+        if database_manager is None:
+            raise ValueError("database_manager is required")
+
+        music_config = (config or {}).get("music", {}) if isinstance(config, dict) else {}
+        reranker_provider = None
+        try:
+            reranker_provider = get_text_response_provider(
+                str(music_config.get("catalog_reranker_provider", "gemini-2-5")),
+                {"model": str(music_config.get("catalog_reranker_model", "gemini-2.5-flash-lite"))},
+            )
+        except Exception as exc:
+            logger.warning("[MusicCatalog] Could not initialize reranker provider: %s", exc)
+
+        return cls(
+            directory=theater_manager.music_catalog_dir(),
+            database_manager=database_manager,
+            match_threshold=float(music_config.get("catalog_match_threshold", 0.86)),
+            candidate_count=int(music_config.get("catalog_candidate_count", 5)),
+            reranker_provider=reranker_provider,
+        )
+
     def find_match(self, prompt: str) -> Optional[dict[str, Any]]:
-        if not self.database_manager:
-            logger.debug("[MusicCatalog] Search skipped: no catalog database is configured.")
-            return None
         query_terms = Counter(self._tokens(prompt))
         if not query_terms:
             logger.debug("[MusicCatalog] Search skipped: prompt produced no searchable terms.")
@@ -80,13 +124,10 @@ class MusicCatalog:
         extension = source_path.suffix.lower() or ".mp3"
         entry = {"id": uuid.uuid4().hex, "filename": f"{uuid.uuid4().hex}{extension}", "prompt": prompt, "provider": provider, "model": model}
         shutil.copy2(source_path, self.directory / entry["filename"])
-        if self.database_manager:
-            self.database_manager.add_music_catalog_track(
-                entry["id"], entry["filename"], prompt, provider, model, Counter(self._tokens(prompt))
-            )
-            logger.debug("[MusicCatalog] Indexed track id=%s provider=%s model=%s.", entry["id"], provider, model)
-        else:
-            logger.debug("[MusicCatalog] Saved track id=%s without a searchable database index.", entry["id"])
+        self.database_manager.add_music_catalog_track(
+            entry["id"], entry["filename"], prompt, provider, model, Counter(self._tokens(prompt))
+        )
+        logger.debug("[MusicCatalog] Indexed track id=%s provider=%s model=%s.", entry["id"], provider, model)
         return entry
 
     def _rerank(self, prompt: str, candidates: list[dict[str, Any]]) -> tuple[str, float] | None:
@@ -117,7 +158,6 @@ class MusicCatalog:
         except Exception as exc:
             logger.warning("[MusicCatalog] Reranker unavailable: %s", exc)
             return None
-
 
     @staticmethod
     def _tokens(text: str) -> list[str]:

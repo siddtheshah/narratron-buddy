@@ -10,7 +10,7 @@ from components.canvas_state_service import CanvasStateService
 from providers.music_provider import MusicGenerationResult
 from testing.base import BaseTestCase
 from services.agent import get_playlists_context
-from tools.music_catalog import MusicCatalog
+from services.music_catalog import MusicCatalog
 from tools.music_tool import MusicTools
 
 
@@ -70,7 +70,10 @@ class TestMusicTools(BaseTestCase):
             config,
             theater_manager=self.theater_manager.theater("test_theater"),
             canvas_manager=canvas_manager,
-            music_catalog=MusicCatalog(self.theater_manager.music_catalog_dir()),
+            music_catalog=MusicCatalog(
+                directory=self.theater_manager.music_catalog_dir(),
+                database_manager=FakeMusicCatalogDatabase(),
+            ),
         )
 
     def test_get_playlists_context(self):

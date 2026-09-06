@@ -8,15 +8,15 @@ from tools.base_tool import BaseTools, with_cooldown, single_flight
 
 
 class SampleTools(BaseTools):
-    @with_cooldown("showing a sample image", duration=0)
+    @with_cooldown(action_desc="showing a sample image", duration=0)
     def show_sample_image(self, file_path: str, transition: str = "crossfade") -> str:
         return "Success"
 
-    @with_cooldown("doing action")
+    @with_cooldown(action_desc="doing action")
     def decorated_tool(self) -> str:
         return "Success"
 
-    @with_cooldown("doing quick action", duration=0.1)
+    @with_cooldown(action_desc="doing quick action", duration=0.1)
     def quick_tool(self) -> str:
         return "Success"
 

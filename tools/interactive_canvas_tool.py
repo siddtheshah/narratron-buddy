@@ -661,7 +661,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
         return normalized
 
     @single_flight(timeout=30.0, error_message="An interactive canvas design is already in progress.")
-    @with_cooldown("updating the interactive canvas")
+    @with_cooldown(action_desc="updating the interactive canvas")
     def update_interactive_canvas(self, request: str) -> dict[str, Any]:
         """Ask the UI agent to add new UI or update the relevant current surface.
 

@@ -83,3 +83,11 @@ def test_text_beautifier_initialized_in_object_registry():
     from services.text_beautifier import TextBeautifier
     assert isinstance(object_registry.text_beautifier, TextBeautifier)
 
+
+def test_music_catalog_initialized_in_object_registry():
+    from api_server.dependencies import music_catalog
+    assert hasattr(object_registry, "music_catalog")
+    assert music_catalog.target is object_registry.music_catalog
+    from services.music_catalog import MusicCatalog
+    assert isinstance(object_registry.music_catalog, MusicCatalog)
+

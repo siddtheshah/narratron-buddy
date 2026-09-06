@@ -20,6 +20,7 @@ from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from services.adventure_service import AdventureService, ensure_adventures_root
 from services.agent_manager import AgentSessionManager
+from services.music_catalog import MusicCatalog
 from services.suggestion_service import SuggestionService
 from services.text_beautifier import TextBeautifier
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
@@ -100,11 +101,17 @@ db = (
     )
 )
 canvas_states = CanvasStateService(theater_manager)
+music_catalog = MusicCatalog.from_config(
+    config=config,
+    theater_manager=theater_manager,
+    database_manager=db,
+)
 agent_manager = AgentSessionManager(
     app_name="narratron-combined",
     config=config,
     theater_manager=theater_manager,
     database_manager=db,
+    music_catalog=music_catalog,
 )
 suggestion_service = SuggestionService(config=config)
 adventure_service = AdventureService(ensure_adventures_root())

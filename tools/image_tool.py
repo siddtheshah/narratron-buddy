@@ -299,7 +299,7 @@ class ImageTools(BaseTools):
         if thread and thread.is_alive():
             thread.join(timeout=timeout)
 
-    @with_cooldown("generating another image")
+    @with_cooldown(action_desc="generating another image")
     def create_image(
         self,
         image_prompt: str,
@@ -565,7 +565,7 @@ class ImageTools(BaseTools):
                 if self._cycle_active and self.cycle_length > 0:
                     self._schedule_next_cycle_tick()
 
-    @with_cooldown("showing another image")
+    @with_cooldown(action_desc="showing another image")
     def show_image(
         self,
         file_path: str,

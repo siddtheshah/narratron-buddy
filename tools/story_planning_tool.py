@@ -1418,7 +1418,7 @@ class StoryPlanningTools(BaseTools):
             "voice_tags": clean_tags,
         }
 
-    @with_cooldown("generating character")
+    @with_cooldown(action_desc="generating character")
     def generate_character(
         self,
         name: str,
@@ -1870,7 +1870,7 @@ class StoryPlanningTools(BaseTools):
         )
 
     @with_cooldown(
-        "resolving story update",
+        action_desc="resolving story update",
         duration=lambda tools: tools.get_user_action_cooldown_seconds(),
         tool_name="process_user_action",
     )

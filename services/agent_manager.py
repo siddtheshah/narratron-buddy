@@ -52,6 +52,7 @@ class AgentSession:
         config: Optional[dict] = None,
         canvas_state_manager: Optional[Any] = None,
         theater_manager: Optional[TheaterManager] = None,
+        music_catalog: Optional[Any] = None,
     ):
         self.theater_id = theater_id
         self.adk_session_id = f"adk_{theater_id}_{uuid.uuid4().hex[:8]}"
@@ -64,6 +65,7 @@ class AgentSession:
         self.config = config or {}
         self.canvas_state_manager = canvas_state_manager
         self.theater_manager = theater_manager
+        self.music_catalog = music_catalog
         self.owner_user_id: Optional[int] = None
         agent_internal = self.config.get("agent_internal", {})
         self.enable_tool_injection = bool(agent_internal.get("enable_tool_injection", False))
@@ -1073,16 +1075,32 @@ class AgentSessionManager:
         database_manager: Any,
         app_name: str = "narratron-combined",
         config: Optional[dict] = None,
+        music_catalog: Optional[Any] = None,
     ):
         self.app_name = app_name
         self.config = config or {}
         self.theater_manager = theater_manager
         self.database_manager = database_manager
+        self._music_catalog = music_catalog
         self._sessions: Dict[str, AgentSession] = {}
         self.shared_session_service = InMemorySessionService()
 
         # Construct run_config internally from configuration
         self.run_config = build_run_config(config=self.config)
+
+    @property
+    def music_catalog(self) -> Optional[Any]:
+        if self._music_catalog is not None:
+            return self._music_catalog
+        try:
+            import object_registry
+            return getattr(object_registry, "music_catalog", None)
+        except Exception:
+            return None
+
+    @music_catalog.setter
+    def music_catalog(self, value: Optional[Any]) -> None:
+        self._music_catalog = value
 
     def get_session(self, theater_id: str) -> Optional[AgentSession]:
         """Retrieve an active agent session by theater_id if present."""
@@ -1125,6 +1143,7 @@ class AgentSessionManager:
             canvas_state_service=canvas_state_service,
             theater_manager=self.theater_manager,
             database_manager=self.database_manager,
+            music_catalog=self.music_catalog,
         )
 
         session_agent = create_agent(
@@ -1134,6 +1153,7 @@ class AgentSessionManager:
             tool_bundle=tool_bundle,
             theater_manager=self.theater_manager,
             database_manager=self.database_manager,
+            music_catalog=self.music_catalog,
         )
 
         disk_service_path = self.theater_manager.theater(theater_id).artifacts_dir()
@@ -1160,6 +1180,7 @@ class AgentSessionManager:
             config=theater_config,
             canvas_state_manager=canvas_mgr,
             theater_manager=self.theater_manager,
+            music_catalog=self.music_catalog,
         )
 
         agent_session.start_background_tasks()

@@ -16,7 +16,7 @@ class ChatTools(BaseTools):
         )
         self.on_send_chat_message = None
 
-    @with_cooldown("sending chat message")
+    @with_cooldown(action_desc="sending chat message")
     def send_chat_message(self, text: str) -> str:
         """Updates Narratron's pinned current-thought panel.
 

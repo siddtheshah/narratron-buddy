@@ -146,11 +146,11 @@ def with_cooldown(
         def my_tool(self, ...): ...
 
     or:
-        @with_cooldown("doing something")
+        @with_cooldown(action_desc="doing something")
         def my_tool(self, ...): ...
 
     A method can override the suite's default cooldown duration:
-        @with_cooldown("doing something", duration=4.0)
+        @with_cooldown(action_desc="doing something", duration=4.0)
         def my_tool(self, ...): ...
     """
     if callable(func_or_desc):
@@ -161,7 +161,7 @@ def with_cooldown(
         def wrapper(self, *args, **kwargs):
             cooldown_key = tool_name or func.__name__
             self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
-            cooldown_err = self.check_cooldown(cooldown_key, duration)
+            cooldown_err = self.check_cooldown(cooldown_key, duration=duration)
             if cooldown_err:
                 trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                 if callable(trigger_cb):
@@ -170,7 +170,7 @@ def with_cooldown(
 
             result = func(self, *args, **kwargs)
             if not (isinstance(result, str) and result.startswith("Error:")):
-                self.record_tool_call(cooldown_key, duration)
+                self.record_tool_call(cooldown_key, duration=duration)
             return result
 
         return wrapper
@@ -182,7 +182,7 @@ def with_cooldown(
             def wrapper(self, *args, **kwargs):
                 cooldown_key = tool_name or func.__name__
                 self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
-                cooldown_err = self.check_cooldown(cooldown_key, duration)
+                cooldown_err = self.check_cooldown(cooldown_key, duration=duration)
                 if cooldown_err:
                     trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                     if callable(trigger_cb):
@@ -191,7 +191,7 @@ def with_cooldown(
 
                 result = func(self, *args, **kwargs)
                 if not (isinstance(result, str) and result.startswith("Error:")):
-                    self.record_tool_call(cooldown_key, duration)
+                    self.record_tool_call(cooldown_key, duration=duration)
                 return result
             return wrapper
 
@@ -296,11 +296,6 @@ class BaseTools:
         If on cooldown, schedules the timer and returns an error message.
         Otherwise returns None.
         """
-        # Older callers supplied the duration as the second positional
-        # argument; decorators supply a human-readable description followed by
-        # a duration.  The description is logging-only, so support both forms.
-        if duration is None and action_desc is not None:
-            duration = action_desc
         cooldown_duration = self._resolve_cooldown_duration(duration)
         now = time.time()
         last_time = self._last_call_times.get(tool_name, 0.0)

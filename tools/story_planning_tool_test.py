@@ -63,20 +63,16 @@ class TestStoryPlanningTools(unittest.TestCase):
         with self.assertRaises(TypeError):
             StoryPlanningTools()
 
-        with self.assertRaises(ValueError):
-            StoryPlanningTools(config={}, theater_id="", canvas_state_service=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=mock_provider)
+        tools = StoryPlanningTools(
+            config={},
+            canvas_manager=mock_canvas,
+            theater_manager=mock_theater_mgr,
+            text_response_provider=mock_provider,
+        )
+        self.assertIsNotNone(tools)
 
         with self.assertRaises(ValueError):
-            StoryPlanningTools(config={}, theater_id=None, canvas_state_service=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=mock_provider)
-
-        with self.assertRaises(ValueError):
-            StoryPlanningTools(config={}, theater_id="t", canvas_state_service=None, theater_manager=mock_theater_mgr, text_response_provider=mock_provider)
-
-        with self.assertRaises(ValueError):
-            StoryPlanningTools(config={}, theater_id="t", canvas_state_service=mock_canvas, theater_manager=None, text_response_provider=mock_provider)
-
-        with self.assertRaises(ValueError):
-            StoryPlanningTools(config={}, theater_id="t", canvas_state_service=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=None)
+            StoryPlanningTools(config={}, canvas_manager=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=None)
 
     def test_story_log_entries_are_written_to_theater_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:

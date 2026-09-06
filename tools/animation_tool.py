@@ -140,7 +140,7 @@ class AnimationTools(BaseTools):
         hold_until_released=True,
         timeout=80.0,
     )
-    @with_cooldown("generating another animation")
+    @with_cooldown(action_desc="generating another animation")
     def create_animation(
         self,
         scene_prompt: str,
@@ -740,7 +740,7 @@ class AnimationTools(BaseTools):
             )
         return resolved_references, None
 
-    @with_cooldown("playing another animation")
+    @with_cooldown(action_desc="playing another animation")
     def play_animation(self, animation_id: str) -> str:
         """Display a saved animation (triframe or layered) on the canvas.
 

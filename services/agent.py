@@ -16,7 +16,7 @@ from tools.image_tool import ImageTools
 from tools.animation_tool import AnimationTools
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
 from tools.music_tool import MusicTools
-from tools.music_catalog import MusicCatalog
+from services.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
 from tools.story_planning_tool import StoryPlanningTools
 from tools.interactive_canvas_tool import InteractiveCanvasTools
@@ -308,6 +308,7 @@ def create_tool_bundle_for_session(
     canvas_state_service: Optional[Any] = None,
     theater_manager: Optional[TheaterManager] = None,
     database_manager: Optional[Any] = None,
+    music_catalog: Optional[MusicCatalog] = None,
 ) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
     theater_manager = theater_manager or TheaterManager()
@@ -372,18 +373,26 @@ def create_tool_bundle_for_session(
             model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
             adventure_mode=adventure_mode,
         )
-    music_config = config.get("music", {})
-    reranker_provider = get_text_response_provider(
-        str(music_config.get("catalog_reranker_provider", "gemini-2-5")),
-        {"model": str(music_config.get("catalog_reranker_model", "gemini-2.5-flash-lite"))},
-    )
-    music_catalog = MusicCatalog(
-        theater_manager.music_catalog_dir(),
-        match_threshold=float(music_config.get("catalog_match_threshold", 0.86)),
-        candidate_count=int(music_config.get("catalog_candidate_count", 5)),
-        reranker_provider=reranker_provider,
-        database_manager=database_manager,
-    )
+    if music_catalog is None:
+        music_config = config.get("music", {})
+        reranker_provider = get_text_response_provider(
+            str(music_config.get("catalog_reranker_provider", "gemini-2-5")),
+            {"model": str(music_config.get("catalog_reranker_model", "gemini-2.5-flash-lite"))},
+        )
+        catalog_db = database_manager
+        if catalog_db is None:
+            try:
+                import object_registry
+                catalog_db = getattr(object_registry, "db", None)
+            except Exception:
+                catalog_db = None
+        music_catalog = MusicCatalog(
+            theater_manager.music_catalog_dir(),
+            database_manager=catalog_db,
+            match_threshold=float(music_config.get("catalog_match_threshold", 0.86)),
+            candidate_count=int(music_config.get("catalog_candidate_count", 5)),
+            reranker_provider=reranker_provider,
+        )
     music_tools = MusicTools(
         config.get("music", {}), theater, canvas_manager,
         music_catalog=music_catalog,
@@ -455,13 +464,19 @@ def create_agent(
     tool_bundle: Optional[ToolBundle] = None,
     theater_manager: Optional[TheaterManager] = None,
     database_manager: Optional[Any] = None,
+    music_catalog: Optional[MusicCatalog] = None,
 ) -> Agent:
     """Create a session-scoped agent whose tools write through canvas state service."""
     if config is None:
         config = get_theater_config(theater_id, theater_manager=theater_manager)
     if tool_bundle is None:
         tool_bundle = create_tool_bundle_for_session(
-            theater_id, config, canvas_state_service, theater_manager, database_manager
+            theater_id,
+            config,
+            canvas_state_service,
+            theater_manager,
+            database_manager,
+            music_catalog=music_catalog,
         )
 
     references = get_references_context(tool_bundle)

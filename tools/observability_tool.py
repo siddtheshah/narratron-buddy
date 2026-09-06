@@ -22,7 +22,7 @@ class ObservabilityTools(BaseTools):
         self.cooldown_duration = float(config.get("cooldown_duration", 30.0))
         self.on_observability_requested: Optional[Callable[[], bool]] = None
 
-    @with_cooldown("requesting another canvas observability update")
+    @with_cooldown(action_desc="requesting another canvas observability update")
     def request_canvas_observability(self) -> str:
         """Request the current canvas state when it would help continue the story.
 
