@@ -1,7 +1,7 @@
 import time
 import unittest
 
-from components.chat_manager import ChatManager
+from components.canvas.chat_manager import ChatManager
 
 
 class TestChatManagerSuggestions(unittest.TestCase):
