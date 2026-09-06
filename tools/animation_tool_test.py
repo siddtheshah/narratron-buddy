@@ -602,6 +602,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(video_provider.generate.call_count, 1)
         request = video_provider.generate.call_args[0][0]
         self.assertIn("dragon soaring", request.prompt.lower())
+        self.assertEqual(request.prompt, "A dragon soaring through stormy clouds.\n\nStyle: loopable")
 
         # Verify folder structure under animations directory
         anim_folder = os.path.join(tools.animations_dir, animation_id)
@@ -833,6 +834,113 @@ class TestAnimationTools(BaseTestCase):
         self.assertIn("started", result)
         planning_provider.generate.assert_not_called()
         video_provider.generate.assert_called_once()
+
+    def test_apply_video_style_with_image_tool_config_style(self):
+        config = {
+            "image_generation": {
+                "cooldown_duration": 0,
+                "provider": "gemini",
+                "style": "watercolor impressionist",
+            }
+        }
+        image_tools = ImageTools(config, "video_style_test", self.manager)
+        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        prompt = tools._apply_video_style("A lone castle on a cliff.")
+        self.assertEqual(prompt, "A lone castle on a cliff.\n\nStyle: watercolor impressionist, loopable")
+
+    def test_apply_video_style_without_style(self):
+        config = {
+            "image_generation": {
+                "cooldown_duration": 0,
+                "provider": "gemini",
+            }
+        }
+        image_tools = ImageTools(config, "video_style_none_test", self.manager)
+        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        prompt = tools._apply_video_style("A lone castle on a cliff.")
+        self.assertEqual(prompt, "A lone castle on a cliff.\n\nStyle: loopable")
+
+    def test_apply_video_style_when_config_style_already_contains_loopable(self):
+        config = {
+            "image_generation": {
+                "cooldown_duration": 0,
+                "provider": "gemini",
+                "style": "watercolor impressionist, loopable",
+            }
+        }
+        image_tools = ImageTools(config, "video_style_loopable_test", self.manager)
+        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        prompt = tools._apply_video_style("A lone castle on a cliff.")
+        self.assertEqual(prompt, "A lone castle on a cliff.\n\nStyle: watercolor impressionist, loopable")
+
+    def test_apply_video_style_when_prompt_already_has_style(self):
+        config = {
+            "image_generation": {
+                "cooldown_duration": 0,
+                "provider": "gemini",
+                "style": "watercolor impressionist",
+            }
+        }
+        image_tools = ImageTools(config, "video_style_override_test", self.manager)
+        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        prompt = tools._apply_video_style("A lone castle on a cliff. Style: oil painting")
+        self.assertEqual(prompt, "A lone castle on a cliff. Style: oil painting, loopable")
+
+    def test_apply_video_style_when_prompt_already_has_style_and_loopable(self):
+        config = {
+            "image_generation": {
+                "cooldown_duration": 0,
+                "provider": "gemini",
+                "style": "watercolor impressionist",
+            }
+        }
+        image_tools = ImageTools(config, "video_style_dup_test", self.manager)
+        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        prompt = tools._apply_video_style("A lone castle on a cliff. Style: oil painting, loopable")
+        self.assertEqual(prompt, "A lone castle on a cliff. Style: oil painting, loopable")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_video_passes_image_tool_style_and_loopable(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-styled",
+            usage={},
+            video_url="https://fal.media/styled.mp4",
+        )
+        planning_provider = MagicMock()
+
+        config = {
+            "image_generation": {
+                "cooldown_duration": 0,
+                "provider": "gemini",
+                "style": "wistful and bygone glories",
+            }
+        }
+        image_tools = ImageTools(config, "video_style_flow_theater", self.manager)
+        tools = AnimationTools(
+            image_tools,
+            image_provider,
+            planning_provider,
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        result = tools.create_animation("Ancient ruins under twin moons.", "ruins")
+        tools.join_generation()
+
+        self.assertIn("started", result)
+        video_provider.generate.assert_called_once()
+        request = video_provider.generate.call_args[0][0]
+        self.assertEqual(
+            request.prompt,
+            "Ancient ruins under twin moons.\n\nStyle: wistful and bygone glories, loopable",
+        )
 
 
 

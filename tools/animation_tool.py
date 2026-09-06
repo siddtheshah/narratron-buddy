@@ -364,6 +364,30 @@ class AnimationTools(BaseTools):
             self.image_tools._set_canvas_activity(False)
             self.image_tools._trigger_after_tool_call("create_animation")
 
+    def _apply_video_style(self, prompt: str) -> str:
+        """Apply the theater's image style with a loopable constraint to the video prompt."""
+        prompt = prompt.strip()
+        base_style = (
+            getattr(self.image_tools, "default_style", "")
+            or getattr(self, "default_style", "")
+            or ""
+        ).strip()
+
+        if base_style:
+            if re.search(r"\bloopable\b", base_style, flags=re.IGNORECASE):
+                combined_style = base_style
+            else:
+                combined_style = f"{base_style}, loopable"
+        else:
+            combined_style = "loopable"
+
+        if not re.search(r"\bstyle\b", prompt, flags=re.IGNORECASE):
+            return f"{prompt}\n\nStyle: {combined_style}"
+
+        if not re.search(r"\bloopable\b", prompt, flags=re.IGNORECASE):
+            return f"{prompt}, loopable"
+        return prompt
+
     def _run_video_animation(self, scene_prompt: str, animation_id: str) -> None:
         """Run the video generation pipeline."""
         if not self.video_provider:
@@ -372,7 +396,7 @@ class AnimationTools(BaseTools):
 
         self.image_tools._set_canvas_activity(True)
         try:
-            effective_prompt = self.image_tools._apply_default_style(scene_prompt.strip())
+            effective_prompt = self._apply_video_style(scene_prompt)
             animation_dir = Path(self.animations_dir) / animation_id
             animation_dir.mkdir(parents=True, exist_ok=False)
 
@@ -391,6 +415,7 @@ class AnimationTools(BaseTools):
                 "id": animation_id,
                 "type": "video",
                 "scene_prompt": scene_prompt.strip(),
+                "effective_prompt": effective_prompt,
                 "video_path": self._to_relative_path(video_path),
                 "video_url": result.video_url,
                 "mime_type": result.mime_type or "video/mp4",
