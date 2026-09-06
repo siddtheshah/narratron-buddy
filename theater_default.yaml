@@ -22,6 +22,9 @@ image_generation:
 animation:
     enabled: false
     cooldown_duration: 20
+    # Force a single animation type across the theater, bypassing classification.
+    # Supported values: 'triframe', 'layered', 'video', or null (automatic classification).
+    forced_technique: null
 
 interactive_canvas:
     enabled: false

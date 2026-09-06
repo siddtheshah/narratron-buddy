@@ -326,8 +326,8 @@ def create_tool_bundle_for_session(
 
     # Animation is an independent theater capability. It can use mounted
     # assets as references even when standalone image generation is disabled.
-    animation_enabled = bool(config.get("animation", {}).get("enabled", False))
-    animation_config = get_app_config().get("animation", {})
+    animation_config = config.get("animation", {})
+    animation_enabled = bool(animation_config.get("enabled", False))
     animation_text_provider = get_text_response_provider(
         str(animation_config.get("text_provider", "gemini-2-5")),
         {"model": str(animation_config.get("text_model", "gemini-2.5-flash-lite"))},

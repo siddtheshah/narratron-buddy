@@ -140,7 +140,8 @@ class AnimationTools(BaseTools):
     ) -> str:
         """Generate an animation sequence by automatically deciding between triframe, layered, and video techniques.
 
-        The caller supplies a scene prompt and animation name. An internal LLM decision prompt determines whether to use:
+        The caller supplies a scene prompt and animation name. If forced_technique is set in config,
+        it bypasses the classification decision and uses that technique directly. Otherwise, an internal LLM decision prompt determines whether to use:
         - 'triframe' for complex motions and transitions
         - 'layered' for scenic backdrops or high-energy single-moment climaxes
         - 'video' for cinematic, continuous motion or fluid natural action scenes
@@ -170,12 +171,37 @@ class AnimationTools(BaseTools):
 
         def _worker() -> None:
             try:
-                selected_technique = technique
+                forced_override = (
+                    self.config.get("forced_technique")
+                    or self.config.get("force_technique")
+                    or self.config.get("technique")
+                )
+                if not forced_override and isinstance(self.config.get("animation"), dict):
+                    forced_override = (
+                        self.config["animation"].get("forced_technique")
+                        or self.config["animation"].get("technique")
+                    )
+
+                forced_technique: Optional[str] = None
+                if isinstance(forced_override, str) and forced_override.strip():
+                    norm = forced_override.strip().lower()
+                    if norm in ("triframe", "layered", "video"):
+                        forced_technique = norm
+                    else:
+                        logger.warning(
+                            "[AnimationTools] Unrecognized forced animation technique '%s'; bypassing override.",
+                            forced_override,
+                        )
+
+                selected_technique = forced_technique or technique
                 decision_debug: dict[str, object] = {}
                 if not selected_technique:
                     selected_technique, decision_debug = self.plan_animation_technique_with_provider(
                         self.text_response_provider, scene_prompt.strip()
                     )
+                else:
+                    source = "config_override" if forced_technique else "argument"
+                    decision_debug = {"technique": selected_technique, "source": source, "forced": True}
                 logger.debug(
                     "[AnimationTools] Animation %s decided technique '%s', debug=%s",
                     animation_id,

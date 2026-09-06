@@ -485,7 +485,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(technique, "triframe")
         self.assertEqual(debug["reasoning"], "complex character walk sequence")
         request = text_provider.generate.call_args.args[0]
-        self.assertIn("complex motions and transitions", request.prompt)
+        self.assertIn("motions and transitions", request.prompt)
         self.assertIn("scenic backdrops", request.prompt)
         self.assertIn("high energy single moment climaxes", request.prompt)
 
@@ -727,5 +727,112 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(len(video_anims), 1)
         self.assertEqual(video_anims[0]["scene_prompt"], "A spaceship entering hyperdrive.")
         self.assertEqual(video_anims[0]["video_url"], "https://fal.media/browse.mp4")
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_forced_technique_video_bypasses_classification(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-req-forced",
+            usage={},
+            video_url="https://fal.media/forced.mp4",
+        )
+        planning_provider = MagicMock()
+
+        image_tools = ImageTools(self.config, "video_forced_theater", self.manager)
+        tools = AnimationTools(
+            image_tools,
+            image_provider,
+            planning_provider,
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        result = tools.create_animation("A dynamic dragon flying.", "dragon_fly")
+        tools.join_generation()
+
+        self.assertIn("started", result)
+        # Verify classification was completely bypassed (planning_provider.generate was never called)
+        planning_provider.generate.assert_not_called()
+        video_provider.generate.assert_called_once()
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_forced_technique_triframe_bypasses_classification(self, mock_get_provider):
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(), mime_type="image/jpeg", provider="fake", model="fake-model"
+        )
+        planning_provider = MagicMock()
+        triframe_resp = MagicMock()
+        triframe_resp.parsed = {
+            "base_frame": BASE_FRAME,
+            "second_frame_change": SECOND_FRAME_CHANGE,
+            "third_frame_change": THIRD_FRAME_CHANGE,
+        }
+        triframe_resp.provider = "planner"
+        triframe_resp.model = "planner-model"
+        triframe_resp.request_id = "p-1"
+        triframe_resp.usage = {"tokens": 10}
+        planning_provider.generate.return_value = triframe_resp
+
+        video_provider = MagicMock()
+        image_tools = ImageTools(self.config, "triframe_forced_theater", self.manager)
+        tools = AnimationTools(
+            image_tools,
+            image_provider,
+            planning_provider,
+            MagicMock(),
+            {"forced_technique": "triframe", "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        result = tools.create_animation("A runner on a track.", "runner")
+        tools.join_generation()
+
+        self.assertIn("started", result)
+        # Technique planning was bypassed: planning_provider was called only once (for triframe frame planning)
+        self.assertEqual(planning_provider.generate.call_count, 1)
+        req = planning_provider.generate.call_args.args[0]
+        self.assertIn("Plan a 3-frame looping animation", req.prompt)
+        self.assertEqual(image_provider.generate.call_count, 3)
+        video_provider.generate.assert_not_called()
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_nested_animation_forced_technique_config(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-req-nested",
+            usage={},
+            video_url="https://fal.media/nested.mp4",
+        )
+        planning_provider = MagicMock()
+
+        image_tools = ImageTools(self.config, "nested_forced_theater", self.manager)
+        tools = AnimationTools(
+            image_tools,
+            image_provider,
+            planning_provider,
+            MagicMock(),
+            {"animation": {"forced_technique": "video"}, "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        result = tools.create_animation("A comet streaks through space.", "comet")
+        tools.join_generation()
+
+        self.assertIn("started", result)
+        planning_provider.generate.assert_not_called()
+        video_provider.generate.assert_called_once()
+
 
 

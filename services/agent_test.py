@@ -146,6 +146,7 @@ class TestCreateAgent(unittest.TestCase):
             mock_get_text_provider.return_value,
             ANY,
             ANY,
+            video_provider=ANY,
         )
 
     @patch("services.agent.create_tool_bundle_for_session")
