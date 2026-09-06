@@ -1346,11 +1346,15 @@
         /* Reveal UI on mouseover / mouse move in cinematic fullscreen */
         body.fullscreen-cinematic.ui-visible header,
         body.fullscreen-cinematic.ui-visible #bottom-bar,
-        body.fullscreen-cinematic.ui-visible #history-paging-controls,
         body.fullscreen-cinematic.ui-visible #chat-sidebar:not(.collapsed),
         body.fullscreen-cinematic.ui-visible #popout-expand-btn {
             opacity: 1 !important;
             pointer-events: auto !important;
+        }
+
+        body.fullscreen-cinematic.ui-visible #history-paging-controls {
+            opacity: 1 !important;
+            pointer-events: none !important;
         }
 
         body.fullscreen-cinematic.ui-visible #chat-sidebar.collapsed {
@@ -1388,16 +1392,17 @@
             padding: 10px 20px;
             margin-top: -10px;
             opacity: 0;
-            pointer-events: auto;
+            pointer-events: none;
             transition: opacity 0.25s ease;
         }
 
+        #history-paging-controls.hover-discovered,
         #history-paging-controls:hover,
         #history-paging-controls:focus-within,
         #history-paging-controls.inspector-open,
-        #history-paging-controls:has(#story-log-inspector.open) {
+        #history-paging-controls:has(#story-log-inspector.open),
+        #history-paging-controls:has(#story-log-inspector.is-open) {
             opacity: 1;
-            pointer-events: auto;
         }
 
         #history-paging-bar {
@@ -1411,9 +1416,11 @@
             border: 1px solid var(--glass-border);
             border-radius: 24px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            pointer-events: auto;
         }
 
         #story-log-inspector {
+            display: none;
             width: min(520px, calc(100vw - 2rem));
             max-height: min(55vh, 520px);
             margin-top: 8px;
@@ -1432,6 +1439,7 @@
 
         #story-log-inspector.open,
         #story-log-inspector.is-open {
+            display: block;
             opacity: 1;
             pointer-events: auto;
             transform: translateY(0);
@@ -3862,6 +3870,44 @@
                 displayHistoryImage(imageHistory.length - 1, 'crossfade');
             }
         });
+
+        // Paging bar hover discovery: reveal controls when mouse moves near top center,
+        // without letting the discovery area block clicks to underlying canvas or interactive UI elements.
+        const pagingControls = document.getElementById('history-paging-controls');
+        const imgContainer = document.getElementById('image-container');
+        if (pagingControls && imgContainer) {
+            let pagingHoverTimeout = null;
+            imgContainer.addEventListener('pointermove', (e) => {
+                if (pagingControls.classList.contains('inspector-open')) return;
+                const rect = imgContainer.getBoundingClientRect();
+                const relY = e.clientY - rect.top;
+                const relX = e.clientX - rect.left;
+                const centerX = rect.width / 2;
+                // Discovery zone: within 70px of the container top and within 180px of center
+                const inZone = relY >= 0 && relY <= 70 && Math.abs(relX - centerX) <= 180;
+                if (inZone) {
+                    if (pagingHoverTimeout) {
+                        clearTimeout(pagingHoverTimeout);
+                        pagingHoverTimeout = null;
+                    }
+                    pagingControls.classList.add('hover-discovered');
+                } else if (pagingControls.classList.contains('hover-discovered')) {
+                    if (!pagingHoverTimeout) {
+                        pagingHoverTimeout = setTimeout(() => {
+                            pagingControls.classList.remove('hover-discovered');
+                            pagingHoverTimeout = null;
+                        }, 350);
+                    }
+                }
+            });
+            imgContainer.addEventListener('pointerleave', () => {
+                if (pagingHoverTimeout) {
+                    clearTimeout(pagingHoverTimeout);
+                    pagingHoverTimeout = null;
+                }
+                pagingControls.classList.remove('hover-discovered');
+            });
+        }
 
         window.addEventListener('keydown', (e) => {
             const active = document.activeElement;
