@@ -29,6 +29,8 @@ from providers import (
 )
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
 from tools.base_tool import BaseTools, logged_tool_call, single_flight, with_cooldown
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
 
 
@@ -82,21 +84,23 @@ class AnimationTools(BaseTools):
 
     def __init__(
         self,
+        config: dict,
+        theater_manager: Theater,
+        canvas_manager: CanvasStateManager,
         image_tools,
         image_provider: ImageProvider,
         text_response_provider: TextResponseProvider,
         layered_provider: FalQwenLayeredProvider,
-        animation_config: Optional[dict] = None,
         video_provider: Optional[VideoProvider] = None,
     ):
         # ImageTools owns the theater-specific output directory, aliases, canvas
         # hooks, and configured image-generation cooldown.
         super().__init__(
-            config=animation_config or {},
-            theater_id=image_tools.active_theater_id,
-            canvas_state_service=image_tools.canvas_state_service,
-            default_cooldown=image_tools.cooldown_duration,
+            config=config,
+            theater_manager=theater_manager,
+            canvas_manager=canvas_manager,
         )
+        self.cooldown_duration = float(config.get("cooldown_duration", image_tools.cooldown_duration))
         self.image_tools = image_tools
         self.image_provider = image_provider
         self.output_dir = image_tools.output_dir
@@ -110,7 +114,7 @@ class AnimationTools(BaseTools):
         self.text_response_provider = text_response_provider
         self.video_provider = video_provider
         if self.video_provider is None:
-            v_provider_id = (animation_config or {}).get("video_provider", "fal-minimax-h3-turbo")
+            v_provider_id = config.get("video_provider", "fal-minimax-h3-turbo")
             try:
                 from providers.registry import get_video_provider
                 self.video_provider = get_video_provider(v_provider_id)
@@ -123,10 +127,7 @@ class AnimationTools(BaseTools):
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that animation generation has started or finished."""
         self.is_generating = bool(active)
-        if self.canvas_state_service:
-            self.canvas_state_service.set_tool_activity(
-                "animation", active=active, theater_id=self.active_theater_id
-            )
+        self.canvas_manager.set_tool_activity("animation", active=active)
 
     def join_generation(self, timeout: float = 30.0) -> None:
         """Wait for the latest animation generation; useful in tests and teardown."""
@@ -363,8 +364,7 @@ class AnimationTools(BaseTools):
             self._layered_animations[animation_id] = manifest
             self._register_layered_aliases(animation_id, base_path, layer_paths)
             self._notify_layered_animation_created(animation_id)
-            if self.canvas_state_service:
-                self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
+            self.canvas_manager.show_layered_animation(manifest)
             logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
             self._notify_animation_ready(animation_id, "layered")
         except ImageProviderError as exc:
@@ -747,24 +747,21 @@ class AnimationTools(BaseTools):
         Args:
             animation_id: The ID returned by create_animation.
         """
-        if not self.canvas_state_service:
-            return "Error: Canvas state service is unavailable."
-
         manifest = self._find_video_animation(animation_id)
         if manifest:
-            self.canvas_state_service.show_video_animation(manifest, theater_id=self.active_theater_id)
+            self.canvas_manager.show_video_animation(manifest)
             self.image_tools._trigger_after_tool_call("play_animation")
             return f"Playing video animation '{animation_id}'."
 
         manifest = self._find_layered_animation(animation_id)
         if manifest:
-            self.canvas_state_service.show_layered_animation(manifest, theater_id=self.active_theater_id)
+            self.canvas_manager.show_layered_animation(manifest)
             self.image_tools._trigger_after_tool_call("play_animation")
             return f"Playing layered animation '{animation_id}'."
 
         frame_paths = self._find_triframe_animation(animation_id)
         if frame_paths:
-            self.canvas_state_service.show_triframe(frame_paths, theater_id=self.active_theater_id)
+            self.canvas_manager.show_triframe(frame_paths)
             self.image_tools._trigger_after_tool_call("play_animation")
             return f"Playing animation '{animation_id}'."
 

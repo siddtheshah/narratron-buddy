@@ -23,7 +23,8 @@ from utils.image_utils import (
     extract_image_metadata_title,
     extract_image_prompt,
 )
-from components.theater_manager import TheaterManager
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 
 logger = logging.getLogger(__name__)
 
@@ -34,22 +35,19 @@ class ImageTools(BaseTools):
     def __init__(
         self,
         config: dict,
-        theater_id: str,
-        theater_manager: TheaterManager,
-        canvas_state_service: Any = None,
+        theater_manager: Theater,
+        canvas_manager: CanvasStateManager,
         adventure_mode: bool = False,
     ):
         raw_config = config or {}
         subconfig = raw_config.get("image_generation", raw_config) if "image_generation" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            theater_id=theater_id,
-            canvas_state_service=canvas_state_service,
-            default_cooldown=60.0,
+            theater_manager=theater_manager,
+            canvas_manager=canvas_manager,
         )
 
-        self.theater_manager = theater_manager
-        self.theater = theater_manager.theater(self.active_theater_id)
+        self.theater = theater_manager
         self.default_style = str(subconfig.get("style", "")).strip()
         self.output_dir = str(self.theater.image_artifacts_dir())
         os.makedirs(self.output_dir, exist_ok=True)
@@ -77,7 +75,8 @@ class ImageTools(BaseTools):
         self.image_aliases: Dict[str, str] = {}
 
         # Image cycle configuration and state
-        self.cycle_length: float = float(subconfig.get("cycle_length", subconfig.get("cooldown_duration", 20.0)))
+        self.cooldown_duration = float(subconfig.get("cooldown_duration", 60.0))
+        self.cycle_length: float = float(subconfig.get("cycle_length", self.cooldown_duration))
         self._cycle_lock = threading.RLock()
         self._cycle_timer: Optional[threading.Timer] = None
         self._cycle_active: bool = False
@@ -158,10 +157,7 @@ class ImageTools(BaseTools):
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that image generation has started or finished."""
         self.is_generating = bool(active)
-        if self.canvas_state_service:
-            self.canvas_state_service.set_tool_activity(
-                "image", active=active, theater_id=self.active_theater_id
-            )
+        self.canvas_manager.set_tool_activity("image", active=active)
 
     def _load_references(self):
         """Scans the references folder once at startup and builds a read-only manifest."""
@@ -503,13 +499,8 @@ class ImageTools(BaseTools):
 
     def _has_active_animation(self) -> bool:
         """Check if an animation is currently active on the canvas."""
-        canvas_state_service = getattr(self, "canvas_state_service", None)
-        if not canvas_state_service:
-            return False
         try:
-            state = canvas_state_service.get(self.active_theater_id)
-            if not state:
-                return False
+            state = self.canvas_manager
             return bool(
                 getattr(state, "shown_video_animation", None)
                 or getattr(state, "shown_layered_animation", None)
@@ -677,11 +668,9 @@ class ImageTools(BaseTools):
                     logger.error("[ImageTools] %s", res)
                     self._trigger_after_tool_call("show_image")
                     return res
-                canvas_state_service = getattr(self, "canvas_state_service", None)
-                if canvas_state_service:
-                    canvas_state_service.show_image(
+                if self.canvas_manager:
+                    self.canvas_manager.show_image(
                         display_path,
-                        theater_id=self.active_theater_id,
                         transition=transition,
                         effect=effect,
                     )
@@ -700,7 +689,7 @@ class ImageTools(BaseTools):
                         )
                     except Exception as e:
                         logger.error(f"[ImageTools] Exception in on_show_image callback: {e}")
-                elif not canvas_state_service:
+                elif not self.canvas_manager:
                     logger.warning("[ImageTools] on_show_image callback is not set")
                 self.currently_displayed_image_path = resolved_path
                 self.currently_displayed_image_transition = transition

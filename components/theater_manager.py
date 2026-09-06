@@ -114,6 +114,12 @@ class Theater:
     def playlists(self) -> Dict[str, List[Dict[str, str]]]:
         return self.manager.get_theater_playlists(self.theater_id)
 
+    def lore_documents(self) -> List[str]:
+        return self.manager.get_lore_documents(self.theater_id)
+
+    def read_lore_document(self, document: str) -> str:
+        return self.manager.read_lore_document(self.theater_id, document)
+
 
 def extract_asset_package(
     zip_bytes: bytes, max_bytes: int = MAX_ZIP_BYTES,

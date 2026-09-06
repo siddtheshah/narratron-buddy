@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
+
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 
 from tools.base_tool import BaseTools, with_cooldown
 
@@ -10,12 +13,13 @@ from tools.base_tool import BaseTools, with_cooldown
 class ObservabilityTools(BaseTools):
     """Expose an agent-controlled, cooldown-protected observation request."""
 
-    def __init__(self, config: Optional[dict] = None, theater_id: str = "") -> None:
+    def __init__(self, config: dict, theater_manager: Theater, canvas_manager: CanvasStateManager) -> None:
         super().__init__(
             config=config,
-            theater_id=theater_id,
-            default_cooldown=30.0,
+            theater_manager=theater_manager,
+            canvas_manager=canvas_manager,
         )
+        self.cooldown_duration = float(config.get("cooldown_duration", 30.0))
         self.on_observability_requested: Optional[Callable[[], bool]] = None
 
     @with_cooldown("requesting another canvas observability update")

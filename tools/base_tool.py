@@ -7,6 +7,9 @@ import threading
 import time
 from typing import Any, Callable, Dict, Optional, Set
 
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
+
 logger = logging.getLogger(__name__)
 
 
@@ -158,7 +161,7 @@ def with_cooldown(
         def wrapper(self, *args, **kwargs):
             cooldown_key = tool_name or func.__name__
             self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
-            cooldown_err = self.check_cooldown(cooldown_key, desc, duration)
+            cooldown_err = self.check_cooldown(cooldown_key, duration)
             if cooldown_err:
                 trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                 if callable(trigger_cb):
@@ -179,7 +182,7 @@ def with_cooldown(
             def wrapper(self, *args, **kwargs):
                 cooldown_key = tool_name or func.__name__
                 self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
-                cooldown_err = self.check_cooldown(cooldown_key, desc, duration)
+                cooldown_err = self.check_cooldown(cooldown_key, duration)
                 if cooldown_err:
                     trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                     if callable(trigger_cb):
@@ -200,14 +203,13 @@ class BaseTools:
 
     def __init__(
         self,
-        config: dict = None,
-        theater_id: str = "",
-        canvas_state_service: Any = None,
-        default_cooldown: float = 0.0,
-    ):
-        self.config: dict = config or {}
-        self._active_theater_id: str = theater_id
-        self.canvas_state_service: Any = canvas_state_service
+        config: dict,
+        theater_manager: Theater,
+        canvas_manager: CanvasStateManager,
+    ) -> None:
+        self.config = config
+        self.theater_manager = theater_manager
+        self.canvas_manager = canvas_manager
 
         # Callback hooks
         self.on_cooldown_expired: Optional[Callable[[str], None]] = None
@@ -220,23 +222,15 @@ class BaseTools:
         self._in_flight_lock = threading.Lock()
 
         # Determine cooldown duration directly from tool subconfig
-        self.cooldown_duration: float = float(self.config.get("cooldown_duration", default_cooldown))
+        self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
 
     @property
     def theater_id(self) -> str:
-        return self._active_theater_id
-
-    @theater_id.setter
-    def theater_id(self, value: str) -> None:
-        self._active_theater_id = value
+        return self.theater_manager.theater_id
 
     @property
     def active_theater_id(self) -> str:
-        return self._active_theater_id
-
-    @active_theater_id.setter
-    def active_theater_id(self, value: str) -> None:
-        self._active_theater_id = value
+        return self.theater_id
 
     def is_in_flight(self, tool_name: str) -> bool:
         """Return True if the specified tool is currently executing."""
@@ -302,6 +296,11 @@ class BaseTools:
         If on cooldown, schedules the timer and returns an error message.
         Otherwise returns None.
         """
+        # Older callers supplied the duration as the second positional
+        # argument; decorators supply a human-readable description followed by
+        # a duration.  The description is logging-only, so support both forms.
+        if duration is None and action_desc is not None:
+            duration = action_desc
         cooldown_duration = self._resolve_cooldown_duration(duration)
         now = time.time()
         last_time = self._last_call_times.get(tool_name, 0.0)
@@ -325,7 +324,7 @@ class BaseTools:
             "[%s] %s called (theater=%s, args=%s).",
             self.__class__.__name__,
             tool_name,
-            self.active_theater_id or "default",
+            self.theater_id,
             arguments or {},
         )
 

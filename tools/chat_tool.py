@@ -1,17 +1,18 @@
 import logging
-from typing import Any
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 from tools.base_tool import BaseTools, with_cooldown
 
 logger = logging.getLogger(__name__)
 
 class ChatTools(BaseTools):
-    def __init__(self, config: dict, theater_id: str, canvas_state_service: Any = None):
+    def __init__(self, config: dict, theater_manager: Theater, canvas_manager: CanvasStateManager):
         raw_config = config or {}
         subconfig = raw_config.get("chat", raw_config) if "chat" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            theater_id=theater_id,
-            canvas_state_service=canvas_state_service,
+            theater_manager=theater_manager,
+            canvas_manager=canvas_manager,
         )
         self.on_send_chat_message = None
 
@@ -27,8 +28,7 @@ class ChatTools(BaseTools):
         """
         try:
             logger.debug(f"[ChatTools] Updating agent thought: {text}")
-            if self.canvas_state_service:
-                self.canvas_state_service.set_agent_thought(text, theater_id=self.theater_id)
+            self.canvas_manager.set_agent_thought(text)
             if self.on_send_chat_message:
                 self.on_send_chat_message(text)
             return f"Successfully updated the Narratron thought panel: {text}"

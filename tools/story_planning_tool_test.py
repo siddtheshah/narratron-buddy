@@ -31,6 +31,7 @@ from tools.story_planning_tool import (
     build_story_context_prompt,
 )
 from components.theater_manager import TheaterManager
+from components.canvas_state_service import CanvasStateService
 from providers import TextResponseProvider, TextResponseRequest, TextResponseResult
 
 
@@ -43,11 +44,14 @@ class TestStoryPlanningTools(unittest.TestCase):
         theater_manager=None,
         text_response_provider=None,
     ):
+        manager = theater_manager or MagicMock(theater_id=theater_id)
+        theater = manager.theater(theater_id) if isinstance(manager, TheaterManager) else manager
+        canvas = canvas_state_service or MagicMock()
+        canvas_manager = canvas.get(theater_id) if isinstance(canvas, CanvasStateService) else canvas
         return StoryPlanningTools(
             config=config or {},
-            theater_id=theater_id,
-            canvas_state_service=canvas_state_service or MagicMock(),
-            theater_manager=theater_manager or MagicMock(),
+            theater_manager=theater,
+            canvas_manager=canvas_manager,
             text_response_provider=text_response_provider or MagicMock(),
         )
 
@@ -387,7 +391,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn(result["tier"], {"low", "middle", "high"})
         self.assertEqual(result["reason"], "Leap across the chasm")
         canvas_state_service.set_tool_activity.assert_called_once_with(
-            "dice", active=True, theater_id="dice", recent_seconds=2.5, result=result,
+            "dice", active=True, recent_seconds=2.5, result=result,
         )
 
     def test_dice_roll_rejects_unsafe_ranges(self):
@@ -1076,8 +1080,8 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(billed_plans, [1])
             self.assertIn("plot_beats", tools.export_story_planning_state())
             self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
-            state.get.return_value.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
-            state.get.return_value.set_narration.assert_called_once_with(results[0]["narration"])
+            state.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
+            state.set_narration.assert_called_once_with(results[0]["narration"])
             self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
     def test_clear_scene_preserves_plot_beats_and_removes_characters(self):
@@ -1264,7 +1268,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertTrue(started_event.wait(timeout=2))
             self.assertTrue(tools.is_action_in_flight)
             canvas_state_service.set_tool_activity.assert_called_once_with(
-                "user_action", active=True, theater_id="concurrent_test"
+                "user_action", active=True
             )
 
             # Second concurrent call while first is in flight
@@ -1281,7 +1285,7 @@ class TestStoryPlanningTools(unittest.TestCase):
                 time.sleep(0.02)
             self.assertFalse(tools.is_action_in_flight)
             canvas_state_service.set_tool_activity.assert_called_with(
-                "user_action", active=False, theater_id="concurrent_test"
+                "user_action", active=False
             )
 
     def test_run_planner_agent_timeout_restarts_agent(self):

@@ -48,8 +48,7 @@ def make_tools(response_factory, config=None, adventure_mode=False):
         "interactive_surfaces": [],
     }
     canvas._resolve_active_image.return_value = (None, None, 0, "")
-    service = MagicMock()
-    service.get.return_value = canvas
+    theater_manager = MagicMock(theater_id="stage")
     provider = MagicMock()
     # Keep this test double on the provider-neutral path. The concrete Gemini
     # provider exposes `client` for the optional multimodal fast path.
@@ -62,8 +61,8 @@ def make_tools(response_factory, config=None, adventure_mode=False):
     )
     return InteractiveCanvasTools(
         config or {"max_surfaces": 3},
-        theater_id="stage",
-        canvas_state_service=service,
+        theater_manager=theater_manager,
+        canvas_manager=canvas,
         text_response_provider=provider,
         adventure_mode=adventure_mode,
     ), canvas
@@ -390,14 +389,13 @@ def test_non_adventure_mode_does_not_lock_interactive_canvas_mutations():
 
 def test_interactive_canvas_ignores_theater_model_setting():
     canvas = MagicMock()
-    service = MagicMock()
-    service.get.return_value = canvas
+    theater_manager = MagicMock(theater_id="stage")
     provider = MagicMock()
     provider.client = None
     tools = InteractiveCanvasTools(
         {"model": "theater-controlled-model"},
-        theater_id="stage",
-        canvas_state_service=service,
+        theater_manager=theater_manager,
+        canvas_manager=canvas,
         text_response_provider=provider,
         model="app-controlled-model",
     )

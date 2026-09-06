@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from components.theater_manager import TheaterManager
+from components.canvas_state_service import CanvasStateService
 from providers.music_provider import MusicGenerationResult
 from testing.base import BaseTestCase
 from services.agent import get_playlists_context
@@ -64,10 +65,11 @@ class TestMusicTools(BaseTestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def make_tools(self, config):
+        canvas_manager = CanvasStateService(self.theater_manager).get("test_theater")
         return MusicTools(
             config,
-            theater_id="test_theater",
-            theater_manager=self.theater_manager,
+            theater_manager=self.theater_manager.theater("test_theater"),
+            canvas_manager=canvas_manager,
             music_catalog=MusicCatalog(self.theater_manager.music_catalog_dir()),
         )
 

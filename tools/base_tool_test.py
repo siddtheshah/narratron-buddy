@@ -44,7 +44,12 @@ class TestBaseTools(BaseTestCase):
         self.config = {
             "cooldown_duration": 10.0
         }
-        self.base_tools = BaseTools(self.config, theater_id="test_theater")
+        self.theater_manager = MagicMock(theater_id="test_theater")
+        self.canvas_manager = MagicMock()
+        self.base_tools = BaseTools(self.config, self.theater_manager, self.canvas_manager)
+
+    def make_sample(self, config: dict) -> SampleTools:
+        return SampleTools(config, self.theater_manager, self.canvas_manager)
 
     def test_cooldown_checking_and_recording(self):
         self.assertIsNone(self.base_tools.check_cooldown("sample_tool", "running sample tool"))
@@ -66,7 +71,7 @@ class TestBaseTools(BaseTestCase):
         mock_on_expired.assert_called_with("play_music")
 
     def test_with_cooldown_decorator(self):
-        sample = SampleTools({"cooldown_duration": 10.0}, theater_id="test_theater")
+        sample = self.make_sample({"cooldown_duration": 10.0})
         res1 = sample.decorated_tool()
         self.assertEqual(res1, "Success")
 
@@ -74,7 +79,7 @@ class TestBaseTools(BaseTestCase):
         self.assertIn("decorated_tool is on cooldown", res2)
 
     def test_with_cooldown_decorator_uses_override_duration(self):
-        sample = SampleTools({"cooldown_duration": 10.0}, theater_id="test_theater")
+        sample = self.make_sample({"cooldown_duration": 10.0})
         self.assertEqual(sample.quick_tool(), "Success")
         self.assertIn("quick_tool is on cooldown", sample.quick_tool())
 
@@ -82,7 +87,7 @@ class TestBaseTools(BaseTestCase):
         self.assertEqual(sample.quick_tool(), "Success")
 
     def test_with_cooldown_logs_named_arguments(self):
-        sample = SampleTools({}, theater_id="test_theater")
+        sample = self.make_sample({})
 
         with self.assertLogs("tools.base_tool", level="INFO") as logs:
             self.assertEqual(sample.show_sample_image("scene.png", transition="fade"), "Success")
@@ -100,7 +105,7 @@ class TestBaseTools(BaseTestCase):
         self.assertTrue(self.base_tools.acquire_in_flight("my_tool"))
 
     def test_single_flight_decorator_success(self):
-        sample = SampleTools({}, theater_id="test_theater")
+        sample = self.make_sample({})
         res = sample.fast_single_flight()
         self.assertEqual(res, {"status": "ok"})
         self.assertFalse(sample.is_in_flight("fast_single_flight"))
@@ -110,7 +115,7 @@ class TestBaseTools(BaseTestCase):
             single_flight(on_timeout="handle_timeout")
 
     def test_single_flight_decorator_timeout_and_callback(self):
-        sample = SampleTools({}, theater_id="test_theater")
+        sample = self.make_sample({})
         sample.timeout_called = False
         with self.assertRaises(TimeoutError):
             sample.slow_tool()
@@ -118,7 +123,7 @@ class TestBaseTools(BaseTestCase):
         self.assertFalse(sample.is_in_flight("slow_tool"))
 
     def test_async_single_flight_decorator_timeout(self):
-        sample = SampleTools({}, theater_id="test_theater")
+        sample = self.make_sample({})
         sample.timeout_called = False
         with self.assertRaises(TimeoutError):
             asyncio.run(sample.async_slow_tool())

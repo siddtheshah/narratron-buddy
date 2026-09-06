@@ -14,7 +14,8 @@ from providers import (
     get_music_provider,
 )
 from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
-from components.theater_manager import TheaterManager
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 from tools.music_catalog import MusicCatalog
 
 logger = logging.getLogger(__name__)
@@ -23,21 +24,18 @@ class MusicTools(BaseTools):
     def __init__(
         self,
         config: dict,
-        theater_id: str,
-        theater_manager: TheaterManager,
+        theater_manager: Theater,
+        canvas_manager: CanvasStateManager,
         music_catalog: MusicCatalog,
-        canvas_state_service: Any = None,
     ):
         raw_config = config or {}
         subconfig = raw_config.get("music", raw_config) if "music" in raw_config else raw_config
         super().__init__(
             config=subconfig,
-            theater_id=theater_id,
-            canvas_state_service=canvas_state_service,
-            default_cooldown=60.0,
+            theater_manager=theater_manager,
+            canvas_manager=canvas_manager,
         )
-        self.theater_manager = theater_manager
-        self.theater = theater_manager.theater(self.active_theater_id)
+        self.theater = theater_manager
         
         # User-provided playlists directory
         self.theater_playlists_dir = str(self.theater.playlists_dir())
@@ -275,8 +273,7 @@ class MusicTools(BaseTools):
             if not tracks:
                 return f"Error: Music or playlist '{music_id}' not found."
 
-            if self.canvas_state_service:
-                self.canvas_state_service.update_music(music_id, tracks, theater_id=self.active_theater_id)
+            self.canvas_manager.update_music(music_id, tracks)
             if self.on_play_music:
                 self.on_play_music(music_id, tracks)
 
@@ -309,8 +306,7 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
-            if self.canvas_state_service:
-                self.canvas_state_service.pause_music(theater_id=self.theater_id)
+            self.canvas_manager.pause_music()
             if self.on_pause_music:
                 self.on_pause_music()
             logger.debug("[MusicTools] pause_music requested for theater=%s.", self.active_theater_id)
@@ -327,8 +323,7 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
-            if self.canvas_state_service:
-                self.canvas_state_service.resume_music(theater_id=self.theater_id)
+            self.canvas_manager.resume_music()
             if self.on_resume_music:
                 self.on_resume_music()
             logger.debug("[MusicTools] resume_music requested for theater=%s.", self.active_theater_id)

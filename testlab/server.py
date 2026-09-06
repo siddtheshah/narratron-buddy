@@ -453,9 +453,8 @@ def create_story_planner_session(body: dict[str, Any]):
             "planner_model": model,
             "on_scene_reaction": on_scene_reaction,
         },
-        theater_id=f"testlab_{run_id}",
-        canvas_state_service=canvas_state_service,
-        theater_manager=theater_manager,
+        theater_manager=theater_manager.theater(f"testlab_{run_id}"),
+        canvas_manager=canvas_state_service.get(f"testlab_{run_id}"),
         text_response_provider=get_text_response_provider("gemini-3", options={"model": model}),
     )
     run["tools"] = tools

@@ -44,6 +44,14 @@ class TestAnimationTools(BaseTestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def make_image_tools(self, config, theater_id, theater_manager, canvas_state_service=None, **kwargs):
+        canvas_service = canvas_state_service or CanvasStateService(theater_manager)
+        canvas_manager = canvas_service if isinstance(canvas_service, MagicMock) else canvas_service.get(theater_id)
+        return ImageTools(config, theater_manager.theater(theater_id), canvas_manager, **kwargs)
+
+    def make_animation_tools(self, image_tools, image_provider, text_provider, layered_provider, animation_config=None, **kwargs):
+        return AnimationTools(animation_config or {}, image_tools.theater_manager, image_tools.canvas_manager, image_tools, image_provider, text_provider, layered_provider, **kwargs)
+
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_uses_triframe_technique(self, mock_get_provider):
         image_provider = MagicMock()
@@ -71,8 +79,8 @@ class TestAnimationTools(BaseTestCase):
 
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        image_tools = ImageTools(self.config, "tri_frame", self.manager)
-        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+        image_tools = self.make_image_tools(self.config, "tri_frame", self.manager)
+        animation_tools = self.make_animation_tools(image_tools, image_provider, text_provider, MagicMock())
 
         result = animation_tools.create_animation("A hero running across a bridge.", "hero_run")
         animation_tools.join_generation()
@@ -104,10 +112,10 @@ class TestAnimationTools(BaseTestCase):
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(
+        image_tools = self.make_image_tools(
             self.config, "tri_frame_canvas", self.manager, canvas_state_service=canvas_state_service
         )
-        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+        animation_tools = self.make_animation_tools(image_tools, image_provider, text_provider, MagicMock())
 
         result = animation_tools.create_animation("A candle burns in a still room.", "candle")
         animation_tools.join_generation()
@@ -139,11 +147,11 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        image_tools = ImageTools(self.config, "tri_frame_references", self.manager)
+        image_tools = self.make_image_tools(self.config, "tri_frame_references", self.manager)
         reference_path = os.path.join(image_tools.reference_dir, "hero.png")
         Image.new("RGB", (10, 10), color="red").save(reference_path)
         image_tools._load_references()
-        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+        animation_tools = self.make_animation_tools(image_tools, image_provider, text_provider, MagicMock())
 
         animation_tools.create_animation("A hero stands in a courtyard.", "hero_stand", reference_images="hero")
         animation_tools.join_generation()
@@ -154,8 +162,8 @@ class TestAnimationTools(BaseTestCase):
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_rejects_unknown_reference(self, mock_get_provider):
-        image_tools = ImageTools(self.config, "tri_frame_missing_reference", self.manager)
-        animation_tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock())
+        image_tools = self.make_image_tools(self.config, "tri_frame_missing_reference", self.manager)
+        animation_tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock())
 
         result = animation_tools.create_animation("A hero stands in a courtyard.", "hero_stand", reference_images="missing")
 
@@ -163,16 +171,16 @@ class TestAnimationTools(BaseTestCase):
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_requires_animation_name(self, mock_get_provider):
-        image_tools = ImageTools(self.config, "missing_anim_name", self.manager)
-        animation_tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock())
+        image_tools = self.make_image_tools(self.config, "missing_anim_name", self.manager)
+        animation_tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock())
 
         result = animation_tools.create_animation("A hero stands in a courtyard.", "")
         self.assertIn("animation_name is required", result)
 
     @patch("tools.image_tool.get_image_provider")
     def test_animation_cooldown_uses_animation_configuration(self, mock_get_provider):
-        image_tools = ImageTools(self.config, "tri_frame_cooldown", self.manager)
-        animation_tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "tri_frame_cooldown", self.manager)
+        animation_tools = self.make_animation_tools(
             image_tools, MagicMock(), MagicMock(), MagicMock(), {"enabled": True, "cooldown_duration": 27}
         )
 
@@ -202,8 +210,8 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.side_effect = [technique_resp, layered_resp]
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "layered_canvas", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(self.config, "layered_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
 
         result = tools.create_animation("A hero on a scenic cliff with foreground leaves.", "cliff")
         tools.join_generation()
@@ -245,8 +253,8 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.side_effect = [technique_resp, layered_resp]
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "halo_canvas", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(self.config, "halo_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
 
         result = tools.create_animation("A magic staff glowing inside an obsidian cave.", "halo_staff")
         tools.join_generation()
@@ -281,8 +289,8 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.side_effect = [technique_resp, layered_resp]
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "ghostly_canvas", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(self.config, "ghostly_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
 
         result = tools.create_animation("A phantom apparition in a haunted graveyard.", "ghost_scene")
         tools.join_generation()
@@ -316,8 +324,8 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.side_effect = [technique_resp, layered_resp]
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "reflective_canvas", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(self.config, "reflective_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
 
         result = tools.create_animation("A polished steel shield hanging on an armory wall.", "shiny_shield")
         tools.join_generation()
@@ -351,8 +359,8 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.side_effect = [technique_resp, layered_resp]
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "energy_blast_canvas", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(self.config, "energy_blast_canvas", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
 
         result = tools.create_animation("A glowing laser beam firing across deep space.", "laser_beam")
         tools.join_generation()
@@ -381,8 +389,8 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        image_tools = ImageTools(self.config, "tri_json_test", self.manager)
-        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+        image_tools = self.make_image_tools(self.config, "tri_json_test", self.manager)
+        animation_tools = self.make_animation_tools(image_tools, image_provider, text_provider, MagicMock())
 
         result = animation_tools.create_animation("A hero running across a bridge.", "hero_run")
         animation_tools.join_generation()
@@ -415,8 +423,8 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        image_tools = ImageTools(self.config, "browse_test", self.manager)
-        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+        image_tools = self.make_image_tools(self.config, "browse_test", self.manager)
+        animation_tools = self.make_animation_tools(image_tools, image_provider, text_provider, MagicMock())
 
         result = animation_tools.create_animation("A hero running across a bridge.", "hero_run")
         animation_tools.join_generation()
@@ -441,8 +449,8 @@ class TestAnimationTools(BaseTestCase):
         planner.generate.side_effect = plan
         image_provider = MagicMock()
         layered_provider = MagicMock(model="fal-ai/qwen-image-layered")
-        image_tools = ImageTools(self.config, "single_flight", self.manager)
-        tools = AnimationTools(image_tools, image_provider, planner, layered_provider, {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(self.config, "single_flight", self.manager)
+        tools = self.make_animation_tools(image_tools, image_provider, planner, layered_provider, {"cooldown_duration": 0})
         first_result = []
         first = threading.Thread(target=lambda: first_result.append(tools.create_animation("A traveler under stars.", "traveler")))
         first.start()
@@ -519,8 +527,8 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        image_tools = ImageTools(self.config, "tri_callback", self.manager)
-        animation_tools = AnimationTools(image_tools, image_provider, text_provider, MagicMock())
+        image_tools = self.make_image_tools(self.config, "tri_callback", self.manager)
+        animation_tools = self.make_animation_tools(image_tools, image_provider, text_provider, MagicMock())
 
         ready_notifications = []
         animation_tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
@@ -555,8 +563,8 @@ class TestAnimationTools(BaseTestCase):
         )
         planning_provider.generate.side_effect = [technique_resp, layered_resp]
 
-        image_tools = ImageTools(self.config, "layered_callback", self.manager)
-        tools = AnimationTools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(self.config, "layered_callback", self.manager)
+        tools = self.make_animation_tools(image_tools, image_provider, planning_provider, layered_provider, {"cooldown_duration": 0})
 
         ready_notifications = []
         tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
@@ -589,8 +597,8 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.return_value = technique_resp
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "video_test_theater", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_test_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(
             image_tools, image_provider, planning_provider, MagicMock(),
             {"cooldown_duration": 0}, video_provider=video_provider,
         )
@@ -647,8 +655,8 @@ class TestAnimationTools(BaseTestCase):
         )
 
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "video_canvas_theater", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_canvas_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(
             image_tools, image_provider, planning_provider, MagicMock(),
             {"cooldown_duration": 0}, video_provider=video_provider,
         )
@@ -685,8 +693,8 @@ class TestAnimationTools(BaseTestCase):
             provider="p", model="m", request_id="1", usage={},
         )
 
-        image_tools = ImageTools(self.config, "video_callback_theater", self.manager)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_callback_theater", self.manager)
+        tools = self.make_animation_tools(
             image_tools, image_provider, planning_provider, MagicMock(),
             {"cooldown_duration": 0}, video_provider=video_provider,
         )
@@ -720,8 +728,8 @@ class TestAnimationTools(BaseTestCase):
             provider="p", model="m", request_id="1", usage={},
         )
 
-        image_tools = ImageTools(self.config, "video_browse_theater", self.manager)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_browse_theater", self.manager)
+        tools = self.make_animation_tools(
             image_tools, image_provider, planning_provider, MagicMock(),
             {"cooldown_duration": 0}, video_provider=video_provider,
         )
@@ -750,8 +758,8 @@ class TestAnimationTools(BaseTestCase):
         )
         planning_provider = MagicMock()
 
-        image_tools = ImageTools(self.config, "video_forced_theater", self.manager)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_forced_theater", self.manager)
+        tools = self.make_animation_tools(
             image_tools,
             image_provider,
             planning_provider,
@@ -788,8 +796,8 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.return_value = triframe_resp
 
         video_provider = MagicMock()
-        image_tools = ImageTools(self.config, "triframe_forced_theater", self.manager)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "triframe_forced_theater", self.manager)
+        tools = self.make_animation_tools(
             image_tools,
             image_provider,
             planning_provider,
@@ -824,8 +832,8 @@ class TestAnimationTools(BaseTestCase):
         )
         planning_provider = MagicMock()
 
-        image_tools = ImageTools(self.config, "nested_forced_theater", self.manager)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "nested_forced_theater", self.manager)
+        tools = self.make_animation_tools(
             image_tools,
             image_provider,
             planning_provider,
@@ -849,8 +857,8 @@ class TestAnimationTools(BaseTestCase):
                 "style": "watercolor impressionist",
             }
         }
-        image_tools = ImageTools(config, "video_style_test", self.manager)
-        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(config, "video_style_test", self.manager)
+        tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
         prompt = tools._apply_video_style("A lone castle on a cliff.")
         self.assertEqual(prompt, "A lone castle on a cliff.\n\nStyle: watercolor impressionist, loopable")
 
@@ -861,8 +869,8 @@ class TestAnimationTools(BaseTestCase):
                 "provider": "gemini",
             }
         }
-        image_tools = ImageTools(config, "video_style_none_test", self.manager)
-        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(config, "video_style_none_test", self.manager)
+        tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
         prompt = tools._apply_video_style("A lone castle on a cliff.")
         self.assertEqual(prompt, "A lone castle on a cliff.\n\nStyle: loopable")
 
@@ -874,8 +882,8 @@ class TestAnimationTools(BaseTestCase):
                 "style": "watercolor impressionist, loopable",
             }
         }
-        image_tools = ImageTools(config, "video_style_loopable_test", self.manager)
-        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(config, "video_style_loopable_test", self.manager)
+        tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
         prompt = tools._apply_video_style("A lone castle on a cliff.")
         self.assertEqual(prompt, "A lone castle on a cliff.\n\nStyle: watercolor impressionist, loopable")
 
@@ -887,8 +895,8 @@ class TestAnimationTools(BaseTestCase):
                 "style": "watercolor impressionist",
             }
         }
-        image_tools = ImageTools(config, "video_style_override_test", self.manager)
-        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(config, "video_style_override_test", self.manager)
+        tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
         prompt = tools._apply_video_style("A lone castle on a cliff. Style: oil painting")
         self.assertEqual(prompt, "A lone castle on a cliff. Style: oil painting, loopable")
 
@@ -900,8 +908,8 @@ class TestAnimationTools(BaseTestCase):
                 "style": "watercolor impressionist",
             }
         }
-        image_tools = ImageTools(config, "video_style_dup_test", self.manager)
-        tools = AnimationTools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
+        image_tools = self.make_image_tools(config, "video_style_dup_test", self.manager)
+        tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 0})
         prompt = tools._apply_video_style("A lone castle on a cliff. Style: oil painting, loopable")
         self.assertEqual(prompt, "A lone castle on a cliff. Style: oil painting, loopable")
 
@@ -927,8 +935,8 @@ class TestAnimationTools(BaseTestCase):
                 "style": "wistful and bygone glories",
             }
         }
-        image_tools = ImageTools(config, "video_style_flow_theater", self.manager)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(config, "video_style_flow_theater", self.manager)
+        tools = self.make_animation_tools(
             image_tools,
             image_provider,
             planning_provider,
@@ -961,15 +969,15 @@ class TestAnimationTools(BaseTestCase):
         )
         canvas_state_service = MagicMock()
         image_tools = MagicMock()
-        image_tools.active_theater_id = "test_theater"
-        image_tools.canvas_state_service = canvas_state_service
+        image_tools.theater_manager = self.manager.theater("test_theater")
+        image_tools.canvas_manager = canvas_state_service
         image_tools.cooldown_duration = 0
         image_tools.output_dir = str(self.manager.theater("test_theater").output_dir())
         image_tools.theater = self.manager.theater("test_theater")
         image_tools.default_style = ""
         image_tools.image_aliases = {}
 
-        tools = AnimationTools(
+        tools = self.make_animation_tools(
             image_tools,
             MagicMock(),
             MagicMock(),
@@ -995,12 +1003,8 @@ class TestAnimationTools(BaseTestCase):
         self.assertIn((True, True), observed_activity)
         self.assertIn((False, False), observed_activity)
         # Verify canvas_state_service received "animation" tool activity
-        canvas_state_service.set_tool_activity.assert_any_call(
-            "animation", active=True, theater_id="test_theater"
-        )
-        canvas_state_service.set_tool_activity.assert_any_call(
-            "animation", active=False, theater_id="test_theater"
-        )
+        canvas_state_service.set_tool_activity.assert_any_call("animation", active=True)
+        canvas_state_service.set_tool_activity.assert_any_call("animation", active=False)
         # Ensure image_tools internal _set_canvas_activity was NOT called
         self.assertFalse(getattr(image_tools, "_set_canvas_activity").called)
 
@@ -1017,8 +1021,8 @@ class TestAnimationTools(BaseTestCase):
             video_url="https://fal.media/5s_clip.mp4",
         )
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "video_duration_theater", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_duration_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(
             image_tools,
             image_provider,
             MagicMock(),
@@ -1062,8 +1066,8 @@ class TestAnimationTools(BaseTestCase):
             video_url="https://fal.media/10s_clip.mp4",
         )
         canvas_state_service = CanvasStateService(self.manager)
-        image_tools = ImageTools(self.config, "video_custom_dur_theater", self.manager, canvas_state_service=canvas_state_service)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_custom_dur_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = self.make_animation_tools(
             image_tools,
             image_provider,
             MagicMock(),
@@ -1098,8 +1102,8 @@ class TestAnimationTools(BaseTestCase):
             request_id="vid-dur-3",
             video_url="https://fal.media/7s_clip.mp4",
         )
-        image_tools = ImageTools(self.config, "video_nested_dur_theater", self.manager)
-        tools = AnimationTools(
+        image_tools = self.make_image_tools(self.config, "video_nested_dur_theater", self.manager)
+        tools = self.make_animation_tools(
             image_tools,
             image_provider,
             MagicMock(),
@@ -1115,7 +1119,5 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(video_provider.generate.call_count, 1)
         request = video_provider.generate.call_args[0][0]
         self.assertEqual(request.video_duration_seconds, 7)
-
-
 
 

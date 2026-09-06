@@ -312,15 +312,16 @@ def create_tool_bundle_for_session(
     """Build tools bound to one theater's canvas state."""
     theater_manager = theater_manager or TheaterManager()
     canvas_state_service = canvas_state_service or CanvasStateService(theater_manager)
+    theater = theater_manager.theater(theater_id)
+    canvas_manager = canvas_state_service.get(theater_id)
     story_planning_config = config.get("story_planning", {})
     adventure_mode = bool(story_planning_config.get("adventure_mode", False))
     image_config = config.get("image_generation", {})
     image_generation_enabled = bool(image_config.get("enabled", True))
     image_tools = ImageTools(
         config,
-        theater_id=theater_id,
-        theater_manager=theater_manager,
-        canvas_state_service=canvas_state_service,
+        theater_manager=theater,
+        canvas_manager=canvas_manager,
         adventure_mode=adventure_mode,
     )
 
@@ -336,26 +337,27 @@ def create_tool_bundle_for_session(
 
     animation_tools = (
         AnimationTools(
+            animation_config,
+            theater,
+            canvas_manager,
             image_tools,
             image_tools._get_image_provider(),
             animation_text_provider,
             FalQwenLayeredProvider(),
-            animation_config,
             video_provider=video_provider,
         )
         if animation_enabled
         else None
     )
-    chat_tools = ChatTools(config.get("chat", {}), theater_id=theater_id, canvas_state_service=canvas_state_service)
+    chat_tools = ChatTools(config.get("chat", {}), theater, canvas_manager)
     story_planning_text_provider = get_text_response_provider(
         str(story_planning_config.get("text_provider", "gemini-3")),
         {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
     )
     story_planning_tools = StoryPlanningTools(
         story_planning_config,
-        theater_id=theater_id,
-        canvas_state_service=canvas_state_service,
-        theater_manager=theater_manager,
+        theater_manager=theater,
+        canvas_manager=canvas_manager,
         text_response_provider=story_planning_text_provider,
     )
     interactive_canvas_tools = None
@@ -364,8 +366,8 @@ def create_tool_bundle_for_session(
         app_interactive_canvas_config = get_app_config().get("interactive_canvas", {})
         interactive_canvas_tools = InteractiveCanvasTools(
             interactive_canvas_config,
-            theater_id=theater_id,
-            canvas_state_service=canvas_state_service,
+            theater_manager=theater,
+            canvas_manager=canvas_manager,
             text_response_provider=story_planning_text_provider,
             model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
             adventure_mode=adventure_mode,
@@ -383,8 +385,8 @@ def create_tool_bundle_for_session(
         database_manager=database_manager,
     )
     music_tools = MusicTools(
-        config.get("music", {}), theater_id=theater_id, theater_manager=theater_manager,
-        music_catalog=music_catalog, canvas_state_service=canvas_state_service,
+        config.get("music", {}), theater, canvas_manager,
+        music_catalog=music_catalog,
     )
 
     tools = [
@@ -416,7 +418,7 @@ def create_tool_bundle_for_session(
         ])
     observability_config = config.get("observability_tool", {})
     if isinstance(observability_config, dict) and observability_config.get("enabled", False):
-        observability_tools = ObservabilityTools(observability_config, theater_id=theater_id)
+        observability_tools = ObservabilityTools(observability_config, theater, canvas_manager)
         tools.append(observability_tools.request_canvas_observability)
     return ToolBundle(tools)
 

@@ -524,7 +524,9 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
     def test_agent_requested_observability_defers_the_next_regular_pulse(self):
-        observability_tools = ObservabilityTools({"cooldown_duration": 0})
+        observability_tools = ObservabilityTools(
+            {"cooldown_duration": 0}, MagicMock(theater_id="test-theater"), MagicMock()
+        )
         mock_agent = MagicMock()
         mock_agent.tools = [SimpleNamespace(
             name="request_canvas_observability",

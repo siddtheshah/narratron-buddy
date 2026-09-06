@@ -545,6 +545,20 @@ class CanvasStateManager:
             # sends state_ready and the browser performs a full refresh.
             pass
 
+    # Bound-manager convenience methods.  ``theater_id`` is deliberately not
+    # accepted: this object already represents exactly one theater.
+    def update_music(self, music_id: str, tracks: List[str]) -> None:
+        self.update_current_music(music_id, tracks)
+
+    def pause_music(self) -> None:
+        self.pause_current_music()
+
+    def resume_music(self) -> None:
+        self.resume_current_music()
+
+    def show_image(self, file_path: str, transition: str = "crossfade", effect: str = "gleam3") -> None:
+        self.update_shown_image(file_path, theater_id=self.theater_id, transition=transition, effect=effect)
+
     def update_current_music(self, music_id: str, tracks: List[str]):
         self.current_music_id = music_id
         self.current_playlist = music_id

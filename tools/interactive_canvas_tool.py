@@ -11,6 +11,9 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
+
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, Field
 
@@ -285,19 +288,19 @@ class InteractiveCanvasTools(BaseTools):
 
     def __init__(
         self,
-        config: Optional[dict] = None,
-        theater_id: str = "",
-        canvas_state_service: Any = None,
+        config: dict,
+        theater_manager: Theater,
+        canvas_manager: CanvasStateManager,
         text_response_provider: Optional[TextResponseProvider] = None,
         model: Optional[str] = None,
         adventure_mode: bool = False,
     ) -> None:
         super().__init__(
             config=config,
-            theater_id=theater_id,
-            canvas_state_service=canvas_state_service,
-            default_cooldown=10.0,
+            theater_manager=theater_manager,
+            canvas_manager=canvas_manager,
         )
+        self.cooldown_duration = float(config.get("cooldown_duration", 10.0))
         self.text_response_provider = text_response_provider
         # Model selection is application-owned. Theater YAML controls behavior
         # and enablement, and any theater-level model value is ignored.
@@ -314,7 +317,7 @@ class InteractiveCanvasTools(BaseTools):
         logger.debug(
             "%s Initialized theater=%s model=%s catalog=%s components=%s cooldown=%.2fs max_surfaces=%d provider=%s",
             LOG_PREFIX,
-            theater_id or "default",
+            self.theater_id,
             self.model,
             CANVAS_CATALOG_ID,
             sorted(SUPPORTED_COMPONENTS),
@@ -351,9 +354,7 @@ class InteractiveCanvasTools(BaseTools):
         return None
 
     def _canvas(self) -> Any:
-        if self.canvas_state_service is None:
-            raise RuntimeError("Canvas state is unavailable.")
-        return self.canvas_state_service.get(self.active_theater_id)
+        return self.canvas_manager
 
     def _canvas_context(self) -> tuple[str, Optional[bytes], str]:
         canvas = self._canvas()

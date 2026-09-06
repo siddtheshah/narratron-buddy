@@ -39,6 +39,16 @@ class TestImageTools(BaseTestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def make_image_tools(self, config, theater_id, theater_manager, canvas_state_service=None, **kwargs):
+        canvas_service = canvas_state_service or CanvasStateService(theater_manager)
+        canvas_manager = canvas_service if isinstance(canvas_service, MagicMock) else canvas_service.get(theater_id)
+        return ImageTools(
+            config,
+            theater_manager=theater_manager.theater(theater_id),
+            canvas_manager=canvas_manager,
+            **kwargs,
+        )
+
     def _provider_result(self):
         return ImageGenerationResult(
             image_bytes=create_fake_image_bytes(),
@@ -51,7 +61,7 @@ class TestImageTools(BaseTestCase):
     def test_create_image_uses_configured_provider(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        tools = ImageTools(self.config, theater_id="configured_provider", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="configured_provider", theater_manager=self.manager)
         tools.stop_cycle()
 
         tools.create_image("a dog carrying a bag", image_name="bag_dog", display=False)
@@ -69,7 +79,7 @@ class TestImageTools(BaseTestCase):
     def test_create_image_passes_loaded_references_to_provider(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        tools = ImageTools(self.config, theater_id="references", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="references", theater_manager=self.manager)
         tools.stop_cycle()
         reference_path = os.path.join(tools.reference_dir, "hero.png")
         Image.new("RGB", (10, 10), color="red").save(reference_path)
@@ -88,7 +98,7 @@ class TestImageTools(BaseTestCase):
     def test_create_image_saves_output_and_registers_alias(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        tools = ImageTools(self.config, theater_id="alias", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="alias", theater_manager=self.manager)
         tools.stop_cycle()
         created = MagicMock()
         tools.on_image_created = created
@@ -102,11 +112,11 @@ class TestImageTools(BaseTestCase):
 
     def test_create_image_requires_a_provider(self):
         with self.assertRaisesRegex(ValueError, "image_generation.provider"):
-            ImageTools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
+            self.make_image_tools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_image_rejects_an_empty_required_image_name(self, mock_get_provider):
-        tools = ImageTools(self.config, theater_id="required_name", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="required_name", theater_manager=self.manager)
         tools.stop_cycle()
 
         self.assertEqual(
@@ -117,7 +127,7 @@ class TestImageTools(BaseTestCase):
         tools.stop_cycle()
 
     def test_search_image_by_metadata_matches_standard_description_and_title(self):
-        tools = ImageTools(self.config, theater_id="metadata_search", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="metadata_search", theater_manager=self.manager)
         tools.stop_cycle()
         reference_path = os.path.join(tools.reference_dir, "scene.png")
         png_info = PngImagePlugin.PngInfo()
@@ -133,7 +143,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.get_image_provider")
     def test_show_image_cycle_and_staging(self, mock_get_provider):
-        tools = ImageTools(self.config, theater_id="show_cycle", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="show_cycle", theater_manager=self.manager)
         tools.stop_cycle()
         img1 = os.path.join(tools.reference_dir, "scene1.jpg")
         img2 = os.path.join(tools.reference_dir, "scene2.jpg")
@@ -186,7 +196,7 @@ class TestImageTools(BaseTestCase):
     def test_create_image_has_priority_over_show_image_in_next_cycle(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        tools = ImageTools(self.config, theater_id="priority_test", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="priority_test", theater_manager=self.manager)
         tools.stop_cycle()
 
         img_ref = os.path.join(tools.reference_dir, "ref.jpg")
@@ -223,7 +233,7 @@ class TestImageTools(BaseTestCase):
 
     @patch("tools.image_tool.get_image_provider")
     def test_missing_reference_returns_error_without_calling_provider(self, mock_get_provider):
-        tools = ImageTools(self.config, theater_id="missing_reference", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="missing_reference", theater_manager=self.manager)
         tools.stop_cycle()
 
         result = tools.create_image("a castle", image_name="castle", reference_images="not-here")
@@ -239,7 +249,7 @@ class TestImageTools(BaseTestCase):
                 "style": style,
             },
         }
-        tools = ImageTools(config, theater_id="style_test", theater_manager=self.manager)
+        tools = self.make_image_tools(config, theater_id="style_test", theater_manager=self.manager)
         tools.stop_cycle()
         return tools
 
@@ -262,7 +272,7 @@ class TestImageTools(BaseTestCase):
         tools.stop_cycle()
 
     def test_default_style_empty_no_change(self):
-        tools = ImageTools(self.config, theater_id="no_style", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="no_style", theater_manager=self.manager)
         tools.stop_cycle()
         prompt = "a lone samurai on a hill"
         result = tools._apply_default_style(prompt)
@@ -276,7 +286,7 @@ class TestImageTools(BaseTestCase):
         config = {
             **self.config,
         }
-        tools = ImageTools(config, theater_id="adv_create_test", theater_manager=self.manager, adventure_mode=True)
+        tools = self.make_image_tools(config, theater_id="adv_create_test", theater_manager=self.manager, adventure_mode=True)
         tools.stop_cycle()
         self.assertTrue(tools.adventure_mode)
         self.assertFalse(tools.is_story_plan_completed)
@@ -314,7 +324,7 @@ class TestImageTools(BaseTestCase):
         config = {
             **self.config,
         }
-        tools = ImageTools(config, theater_id="adv_show_test", theater_manager=self.manager, adventure_mode=True)
+        tools = self.make_image_tools(config, theater_id="adv_show_test", theater_manager=self.manager, adventure_mode=True)
         tools.stop_cycle()
         self.assertTrue(tools.adventure_mode)
         self.assertFalse(tools.is_story_plan_completed)
@@ -351,7 +361,7 @@ class TestImageTools(BaseTestCase):
     def test_non_adventure_mode_does_not_throttle(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        tools = ImageTools(self.config, theater_id="non_adv_test", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="non_adv_test", theater_manager=self.manager)
         tools.stop_cycle()
         self.assertFalse(tools.adventure_mode)
         self.assertTrue(tools.is_story_plan_completed)
@@ -367,7 +377,7 @@ class TestImageTools(BaseTestCase):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         mock_canvas_service = MagicMock()
-        tools = ImageTools(
+        tools = self.make_image_tools(
             self.config,
             theater_id="webp_test",
             theater_manager=self.manager,
@@ -397,7 +407,7 @@ class TestImageTools(BaseTestCase):
 
     def test_show_image_sends_compressed_webp_to_canvas_state_service(self):
         mock_canvas_service = MagicMock()
-        tools = ImageTools(
+        tools = self.make_image_tools(
             self.config,
             theater_id="show_webp_test",
             theater_manager=self.manager,
@@ -419,7 +429,7 @@ class TestImageTools(BaseTestCase):
 
     def test_show_image_resolves_underscore_alias_and_publishes_webp_to_canvas(self):
         canvas_state_service = CanvasStateService(self.manager)
-        tools = ImageTools(
+        tools = self.make_image_tools(
             self.config,
             theater_id="monk_alias_test",
             theater_manager=self.manager,
@@ -446,7 +456,7 @@ class TestImageTools(BaseTestCase):
         tools.stop_cycle()
 
     def test_show_image_refreshes_references_added_after_session_start(self):
-        tools = ImageTools(self.config, theater_id="late_reference", theater_manager=self.manager)
+        tools = self.make_image_tools(self.config, theater_id="late_reference", theater_manager=self.manager)
         tools.stop_cycle()
         reference_path = os.path.join(tools.reference_dir, "the monk.png")
         Image.new("RGB", (20, 20), color="gold").save(reference_path)
@@ -458,7 +468,7 @@ class TestImageTools(BaseTestCase):
     def test_show_image_takes_priority_when_animation_is_active(self):
         canvas_state_service = CanvasStateService(self.manager)
         theater_id = "anim_priority_show"
-        tools = ImageTools(
+        tools = self.make_image_tools(
             self.config,
             theater_id=theater_id,
             theater_manager=self.manager,
@@ -498,7 +508,7 @@ class TestImageTools(BaseTestCase):
         provider.generate.return_value = self._provider_result()
         canvas_state_service = CanvasStateService(self.manager)
         theater_id = "anim_priority_create"
-        tools = ImageTools(
+        tools = self.make_image_tools(
             self.config,
             theater_id=theater_id,
             theater_manager=self.manager,

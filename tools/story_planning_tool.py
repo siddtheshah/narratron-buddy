@@ -35,8 +35,8 @@ from google.adk.sessions import InMemorySessionService
 from google import genai
 from google.genai import types
 
-from components.canvas_state_service import CanvasStateService
-from components.theater_manager import TheaterManager
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from services.quirk_service import get_quirk_generator_service
 from providers import (
@@ -383,25 +383,18 @@ class StoryPlanningTools(BaseTools):
 
     def __init__(
         self,
-        config: dict | None,
-        theater_id: str,
-        canvas_state_service: CanvasStateService,
-        theater_manager: TheaterManager,
+        config: dict,
+        theater_manager: Theater,
+        canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
     ):
-        if not theater_id:
-            raise ValueError("theater_id is required.")
-        if canvas_state_service is None:
-            raise ValueError("canvas_state_service is required.")
-        if theater_manager is None:
-            raise ValueError("theater_manager is required.")
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
 
         super().__init__(
-            config=config or {},
-            theater_id=theater_id,
-            canvas_state_service=canvas_state_service,
+            config=config,
+            theater_manager=theater_manager,
+            canvas_manager=canvas_manager,
         )
         self._sticky_notes: OrderedDict[str, str] = OrderedDict()
         self._required_stickies: OrderedDict[str, str] = OrderedDict()
@@ -413,7 +406,6 @@ class StoryPlanningTools(BaseTools):
         self._plot_beats: List[Dict[str, str]] = []
         self._plot_beats_lock = Lock()
         self._last_scene_reaction: Dict[str, Any] = {}
-        self.theater_manager = theater_manager
         self.text_response_provider = text_response_provider
         self._recent_story_log = self._read_recent_story_log()
 
@@ -668,18 +660,8 @@ class StoryPlanningTools(BaseTools):
 
     def reload_from_session_state(self) -> None:
         """Reload story planning state from session state manager if present."""
-        if not self.canvas_state_service or not self.theater_id:
-            return
         try:
-            state_mgr = None
-            if hasattr(self.canvas_state_service, "get"):
-                state_mgr = self.canvas_state_service.get(self.theater_id)
-            elif (
-                hasattr(self.canvas_state_service, "get_story_planning_state")
-                or hasattr(self.canvas_state_service, "get_sticky_notes")
-                or hasattr(self.canvas_state_service, "get_named_elements")
-            ):
-                state_mgr = self.canvas_state_service
+            state_mgr = self.canvas_manager
 
             if state_mgr and hasattr(state_mgr, "get_story_planning_state"):
                 sp_state = state_mgr.get_story_planning_state()
@@ -734,18 +716,8 @@ class StoryPlanningTools(BaseTools):
 
     def save_to_session_state(self) -> None:
         """Persist story planning snapshot to session state."""
-        if not self.canvas_state_service or not self.theater_id:
-            return
         try:
-            state_mgr = None
-            if hasattr(self.canvas_state_service, "get"):
-                state_mgr = self.canvas_state_service.get(self.theater_id)
-            elif (
-                hasattr(self.canvas_state_service, "set_story_planning_state")
-                or hasattr(self.canvas_state_service, "set_sticky_notes")
-                or hasattr(self.canvas_state_service, "set_named_elements")
-            ):
-                state_mgr = self.canvas_state_service
+            state_mgr = self.canvas_manager
 
             if state_mgr and hasattr(state_mgr, "set_story_planning_state"):
                 state_mgr.set_story_planning_state(self.export_story_planning_state())
@@ -796,7 +768,7 @@ class StoryPlanningTools(BaseTools):
         """Append a structured, theater-local record that the canvas can inspect."""
         try:
             log_entry = entry if isinstance(entry, StoryLogEntry) else StoryLogEntry.model_validate(entry)
-            output_dir = self.theater_manager.theater(self.theater_id).output_dir()
+            output_dir = self.theater_manager.output_dir()
             output_dir.mkdir(parents=True, exist_ok=True)
             with (output_dir / "story_log.jsonl").open("a", encoding="utf-8") as story_log:
                 story_log.write(log_entry.model_dump_json(exclude_none=True) + "\n")
@@ -809,7 +781,7 @@ class StoryPlanningTools(BaseTools):
     def _read_recent_story_log(self) -> List[StoryLogEntry]:
         """Load the last 200 durable story-log entries for planner continuity."""
         try:
-            log_path = self.theater_manager.theater(self.theater_id).output_dir() / "story_log.jsonl"
+            log_path = self.theater_manager.output_dir() / "story_log.jsonl"
             if not log_path.exists():
                 return []
             with log_path.open(encoding="utf-8") as story_log:
@@ -961,7 +933,7 @@ class StoryPlanningTools(BaseTools):
             logger.warning("[StoryPlanningTools] Read lore called without active theater.")
             return "No theater is active, so no lore documents are available." + limit_note
         if not document:
-            documents = self.theater_manager.get_lore_documents(self.theater_id)
+            documents = self.theater_manager.lore_documents()
             listed_documents = documents[:MAX_LORE_DOCUMENTS_LISTED]
             omission = (
                 f"\n[+{len(documents) - len(listed_documents)} additional documents omitted.]"
@@ -985,7 +957,7 @@ class StoryPlanningTools(BaseTools):
         if not clean_doc.lower().endswith(".txt"):
             prefix = clean_doc.rstrip("/") + "/"
             matching = [
-                doc for doc in self.theater_manager.get_lore_documents(self.theater_id)
+                doc for doc in self.theater_manager.lore_documents()
                 if doc.startswith(prefix)
             ]
             if matching:
@@ -1014,7 +986,7 @@ class StoryPlanningTools(BaseTools):
                     + limit_note
                 )
         try:
-            content = self.theater_manager.read_lore_document(self.theater_id, clean_doc)
+            content = self.theater_manager.read_lore_document(clean_doc)
         except ValueError as error:
             logger.warning(
                 "[StoryPlanningTools] Failed to read lore document '%s' for theater=%s: %s",
@@ -1071,11 +1043,11 @@ class StoryPlanningTools(BaseTools):
             if not self.theater_id:
                 return {}
 
-            documents = self.theater_manager.get_lore_documents(self.theater_id)
+            documents = self.theater_manager.lore_documents()
             corpus_index: Dict[str, Dict[str, Any]] = {}
             for doc_path in documents:
                 try:
-                    content = self.theater_manager.read_lore_document(self.theater_id, doc_path)
+                    content = self.theater_manager.read_lore_document(doc_path)
                 except Exception:
                     continue
                 tokens = re.findall(r"\w+", content.lower())
@@ -1264,10 +1236,7 @@ class StoryPlanningTools(BaseTools):
             result["reason"] = str(reason).strip()[:300]
         with self._die_rolls_lock:
             self._die_rolls_this_turn.append(dict(result))
-        if self.canvas_state_service:
-            self.canvas_state_service.set_tool_activity(
-                "dice", active=True, theater_id=self.theater_id, recent_seconds=2.5, result=result,
-            )
+        self.canvas_manager.set_tool_activity("dice", active=True, recent_seconds=2.5, result=result)
         logger.debug(
             "[StoryPlanningTools] Dice roll (theater=%s, reason=%s): %s",
             self.theater_id or "default",
@@ -1278,7 +1247,7 @@ class StoryPlanningTools(BaseTools):
 
     def _get_lore_context(self) -> str:
         """List top-level lore documents and directories for the planner context, automatically expanding files prefixed with 'read'."""
-        documents = self.theater_manager.get_lore_documents(self.theater_id)
+        documents = self.theater_manager.lore_documents()
         if not documents:
             return ""
         top_level_files: list[str] = []
@@ -1288,7 +1257,7 @@ class StoryPlanningTools(BaseTools):
             parts = doc.split("/")
             filename = parts[-1]
             if filename.lower().startswith("read") or doc.lower().startswith("read"):
-                content = self.theater_manager.read_lore_document(self.theater_id, doc)
+                content = self.theater_manager.read_lore_document(doc)
                 self._record_lore_activity(
                     "preloaded",
                     doc,
@@ -1619,14 +1588,8 @@ class StoryPlanningTools(BaseTools):
 
     def _publish_scene_dialogue(self, dialogue: List[Dict[str, str]]) -> None:
         """Persist dialogue for the canvas without making the live agent own it."""
-        if not self.canvas_state_service or not self.theater_id:
-            return
         try:
-            state_mgr = (
-                self.canvas_state_service.get(self.theater_id)
-                if hasattr(self.canvas_state_service, "get")
-                else self.canvas_state_service
-            )
+            state_mgr = self.canvas_manager
             if hasattr(state_mgr, "set_scene_dialogue"):
                 state_mgr.set_scene_dialogue(dialogue)
         except Exception as exc:
@@ -1634,14 +1597,8 @@ class StoryPlanningTools(BaseTools):
 
     def _publish_narration(self, narration: str) -> None:
         """Persist the planner's narration for the canvas."""
-        if not self.canvas_state_service or not self.theater_id:
-            return
         try:
-            state_mgr = (
-                self.canvas_state_service.get(self.theater_id)
-                if hasattr(self.canvas_state_service, "get")
-                else self.canvas_state_service
-            )
+            state_mgr = self.canvas_manager
             if hasattr(state_mgr, "set_narration"):
                 state_mgr.set_narration(narration)
         except Exception as exc:
@@ -1974,10 +1931,7 @@ class StoryPlanningTools(BaseTools):
                 result = {"error": f"Story planner failed: {exc}"}
             finally:
                 self.release_in_flight("process_user_action")
-                if self.canvas_state_service:
-                    self.canvas_state_service.set_tool_activity(
-                        "user_action", active=False, theater_id=self.theater_id
-                    )
+                self.canvas_manager.set_tool_activity("user_action", active=False)
 
             plan_output = None
             if isinstance(result, dict) and "error" not in result:
@@ -1996,10 +1950,7 @@ class StoryPlanningTools(BaseTools):
                 except Exception:
                     logger.exception("[StoryPlanningTools] Scene reaction callback failed")
 
-        if self.canvas_state_service:
-            self.canvas_state_service.set_tool_activity(
-                "user_action", active=True, theater_id=self.theater_id
-            )
+        self.canvas_manager.set_tool_activity("user_action", active=True)
 
         import threading
         threading.Thread(target=resolve_and_notify, daemon=True).start()
