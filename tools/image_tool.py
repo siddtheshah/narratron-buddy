@@ -91,6 +91,7 @@ class ImageTools(BaseTools):
         self.adventure_mode = bool(adventure_mode)
         self._story_plan_completed: bool = not self.adventure_mode
         self._story_plan_lock: threading.Lock = threading.Lock()
+        self.is_generating: bool = False
         
         # Reuse cached references manifest if directory hasn't changed
         if ImageTools._reference_dir_cached == self.reference_dir and ImageTools._references_cache:
@@ -156,6 +157,7 @@ class ImageTools(BaseTools):
 
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that image generation has started or finished."""
+        self.is_generating = bool(active)
         if self.canvas_state_service:
             self.canvas_state_service.set_tool_activity(
                 "image", active=active, theater_id=self.active_theater_id

@@ -118,6 +118,15 @@ class AnimationTools(BaseTools):
                 self.video_provider = None
         self.on_animation_ready: Optional[Any] = None
         self.on_layered_animation_created: Optional[Any] = None
+        self.is_generating: bool = False
+
+    def _set_canvas_activity(self, active: bool) -> None:
+        """Notify connected canvases that animation generation has started or finished."""
+        self.is_generating = bool(active)
+        if self.canvas_state_service:
+            self.canvas_state_service.set_tool_activity(
+                "animation", active=active, theater_id=self.active_theater_id
+            )
 
     def join_generation(self, timeout: float = 30.0) -> None:
         """Wait for the latest animation generation; useful in tests and teardown."""
@@ -170,6 +179,7 @@ class AnimationTools(BaseTools):
         animation_id = f"{clean_name}_{timestamp}"
 
         def _worker() -> None:
+            self._set_canvas_activity(True)
             try:
                 forced_override = (
                     self.config.get("forced_technique")
@@ -217,6 +227,7 @@ class AnimationTools(BaseTools):
             except Exception:
                 logger.exception("[AnimationTools] Failed to create animation for %s", animation_id)
             finally:
+                self._set_canvas_activity(False)
                 self.release_in_flight("create_animation")
 
         thread = threading.Thread(target=_worker, daemon=True)
@@ -234,7 +245,7 @@ class AnimationTools(BaseTools):
         provider_references: list[ImageReference],
     ) -> None:
         """Run the triframe generation pipeline."""
-        self.image_tools._set_canvas_activity(True)
+        self._set_canvas_activity(True)
         try:
             plan, planner_debug = self.plan_triframe_with_provider(
                 self.text_response_provider, scene_prompt
@@ -307,12 +318,12 @@ class AnimationTools(BaseTools):
         except Exception:
             logger.exception("[AnimationTools] Failed to generate tri-frame animation")
         finally:
-            self.image_tools._set_canvas_activity(False)
+            self._set_canvas_activity(False)
             self.image_tools._trigger_after_tool_call("create_animation")
 
     def _run_layered_animation(self, scene_prompt: str, animation_id: str) -> None:
         """Run the long-lived pipeline after its public single-flight lease is acquired."""
-        self.image_tools._set_canvas_activity(True)
+        self._set_canvas_activity(True)
         try:
             animation_dir = Path(self.animations_dir) / animation_id
             animation_dir.mkdir(parents=True, exist_ok=False)
@@ -361,7 +372,7 @@ class AnimationTools(BaseTools):
         except Exception:
             logger.exception("[AnimationTools] Layered animation failed for %s", animation_id)
         finally:
-            self.image_tools._set_canvas_activity(False)
+            self._set_canvas_activity(False)
             self.image_tools._trigger_after_tool_call("create_animation")
 
     def _apply_video_style(self, prompt: str) -> str:
@@ -394,7 +405,7 @@ class AnimationTools(BaseTools):
             logger.error("[AnimationTools] Cannot run video animation: video_provider is not configured.")
             return
 
-        self.image_tools._set_canvas_activity(True)
+        self._set_canvas_activity(True)
         try:
             effective_prompt = self._apply_video_style(scene_prompt)
             animation_dir = Path(self.animations_dir) / animation_id
@@ -442,7 +453,7 @@ class AnimationTools(BaseTools):
         except Exception:
             logger.exception("[AnimationTools] Video animation failed for %s", animation_id)
         finally:
-            self.image_tools._set_canvas_activity(False)
+            self._set_canvas_activity(False)
             self.image_tools._trigger_after_tool_call("create_animation")
 
     @staticmethod

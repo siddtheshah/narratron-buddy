@@ -944,5 +944,61 @@ class TestAnimationTools(BaseTestCase):
             "Ancient ruins under twin moons.\n\nStyle: wistful and bygone glories, loopable",
         )
 
+    def test_create_animation_toggles_animation_activity_without_reaching_into_image_tools(self):
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=b"fake-video-bytes",
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-activity",
+            usage={},
+            video_url="https://fal.media/act.mp4",
+        )
+        canvas_state_service = MagicMock()
+        image_tools = MagicMock()
+        image_tools.active_theater_id = "test_theater"
+        image_tools.canvas_state_service = canvas_state_service
+        image_tools.cooldown_duration = 0
+        image_tools.output_dir = str(self.manager.theater("test_theater").output_dir())
+        image_tools.theater = self.manager.theater("test_theater")
+        image_tools.default_style = ""
+        image_tools.image_aliases = {}
+
+        tools = AnimationTools(
+            image_tools,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        observed_activity = []
+        original_set_activity = tools._set_canvas_activity
+
+        def tracking_set_activity(active):
+            observed_activity.append((active, tools.is_generating))
+            original_set_activity(active)
+
+        tools._set_canvas_activity = tracking_set_activity
+
+        tools.create_animation("A dragon over a castle.", "dragon")
+        tools.join_generation()
+
+        self.assertFalse(tools.is_generating)
+        # Verify activity was turned on then off
+        self.assertIn((True, True), observed_activity)
+        self.assertIn((False, False), observed_activity)
+        # Verify canvas_state_service received "animation" tool activity
+        canvas_state_service.set_tool_activity.assert_any_call(
+            "animation", active=True, theater_id="test_theater"
+        )
+        canvas_state_service.set_tool_activity.assert_any_call(
+            "animation", active=False, theater_id="test_theater"
+        )
+        # Ensure image_tools internal _set_canvas_activity was NOT called
+        self.assertFalse(getattr(image_tools, "_set_canvas_activity").called)
+
 
 

@@ -3442,7 +3442,17 @@
                 element.classList.toggle('active', !!visible);
                 element.setAttribute('aria-hidden', String(!visible));
             };
-            setVisible(drawingIndicator, toolActivity.image_generating);
+            const isGeneratingImage = Boolean(toolActivity.image_generating);
+            const isGeneratingAnimation = Boolean(toolActivity.animation_generating);
+            const isDrawing = isGeneratingImage || isGeneratingAnimation;
+            setVisible(drawingIndicator, isDrawing);
+            if (drawingIndicator) {
+                if (isGeneratingAnimation && !isGeneratingImage) {
+                    drawingIndicator.title = 'Agent is generating an animation';
+                } else {
+                    drawingIndicator.title = 'Agent is painting a scene';
+                }
+            }
             setVisible(writingIndicator, toolActivity.user_action_processing);
             setVisible(diceIndicator, toolActivity.dice_rolling);
             const diceResult = toolActivity.dice_result || {};
