@@ -661,53 +661,29 @@ class StoryPlanningTools(BaseTools):
     def reload_from_session_state(self) -> None:
         """Reload story planning state from session state manager if present."""
         try:
-            state_mgr = self.canvas_manager
+            sp_state = self.canvas_manager.story.get_story_planning_state()
+            if sp_state:
+                self.import_story_planning_state(sp_state)
+                return
 
-            if state_mgr and hasattr(state_mgr, "get_story_planning_state"):
-                sp_state = state_mgr.get_story_planning_state()
-                if sp_state:
-                    self.import_story_planning_state(sp_state)
-                    return
-
-            if state_mgr and hasattr(state_mgr, "get_sticky_notes"):
-                saved_notes = state_mgr.get_sticky_notes()
-                if saved_notes:
-                    with self._sticky_notes_lock:
-                        self._sticky_notes.clear()
-                        if isinstance(saved_notes, list):
-                            for elem in saved_notes:
-                                if isinstance(elem, dict):
-                                    topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                                    info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
-                                    if topic and info:
-                                        self._sticky_notes[topic] = info
-                        elif isinstance(saved_notes, dict):
-                            for k, v in saved_notes.items():
-                                self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
-                        for req_topic, req_info in self._required_stickies.items():
-                            if req_topic not in self._sticky_notes:
-                                self._sticky_notes[req_topic] = req_info
-                    return
-
-            if state_mgr and hasattr(state_mgr, "get_named_elements"):
-                saved_elements = state_mgr.get_named_elements()
-                if saved_elements:
-                    with self._sticky_notes_lock:
-                        self._sticky_notes.clear()
-                        if isinstance(saved_elements, list):
-                            for elem in saved_elements:
-                                if isinstance(elem, dict):
-                                    topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                                    info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
-                                    if topic and info:
-                                        self._sticky_notes[topic] = info
-                        elif isinstance(saved_elements, dict):
-                            for k, v in saved_elements.items():
-                                self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
-                        for req_topic, req_info in self._required_stickies.items():
-                            if req_topic not in self._sticky_notes:
-                                self._sticky_notes[req_topic] = req_info
-                    return
+            saved_notes = self.canvas_manager.story.get_sticky_notes()
+            if saved_notes:
+                with self._sticky_notes_lock:
+                    self._sticky_notes.clear()
+                    if isinstance(saved_notes, list):
+                        for elem in saved_notes:
+                            if isinstance(elem, dict):
+                                topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                                info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
+                                if topic and info:
+                                    self._sticky_notes[topic] = info
+                    elif isinstance(saved_notes, dict):
+                        for k, v in saved_notes.items():
+                            self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
+                    for req_topic, req_info in self._required_stickies.items():
+                        if req_topic not in self._sticky_notes:
+                            self._sticky_notes[req_topic] = req_info
+                return
         except Exception as e:
             logger.warning(
                 "[StoryPlanningTools] Failed to reload story planning state from session state: %s",
@@ -717,14 +693,7 @@ class StoryPlanningTools(BaseTools):
     def save_to_session_state(self) -> None:
         """Persist story planning snapshot to session state."""
         try:
-            state_mgr = self.canvas_manager
-
-            if state_mgr and hasattr(state_mgr, "set_story_planning_state"):
-                state_mgr.set_story_planning_state(self.export_story_planning_state())
-            elif state_mgr and hasattr(state_mgr, "set_sticky_notes"):
-                state_mgr.set_sticky_notes(self.get_present_sticky_notes())
-            elif state_mgr and hasattr(state_mgr, "set_named_elements"):
-                state_mgr.set_named_elements(self.get_present_elements())
+            self.canvas_manager.story.set_story_planning_state(self.export_story_planning_state())
         except Exception as e:
             logger.warning(
                 "[StoryPlanningTools] Failed to save story planning state to session state: %s",
@@ -1586,23 +1555,12 @@ class StoryPlanningTools(BaseTools):
             })
         return cleaned
 
-    def _publish_scene_dialogue(self, dialogue: List[Dict[str, str]]) -> None:
-        """Persist dialogue for the canvas without making the live agent own it."""
+    def _publish_scene(self, narration: str, dialogue: List[Dict[str, str]]) -> None:
+        """Publish the completed, beautified scene to canvas in one update."""
         try:
-            state_mgr = self.canvas_manager
-            if hasattr(state_mgr, "set_scene_dialogue"):
-                state_mgr.set_scene_dialogue(dialogue)
+            self.canvas_manager.story.set_scene(narration, dialogue)
         except Exception as exc:
-            logger.warning("[StoryPlanningTools] Failed to publish scene dialogue: %s", exc)
-
-    def _publish_narration(self, narration: str) -> None:
-        """Persist the planner's narration for the canvas."""
-        try:
-            state_mgr = self.canvas_manager
-            if hasattr(state_mgr, "set_narration"):
-                state_mgr.set_narration(narration)
-        except Exception as exc:
-            logger.warning("[StoryPlanningTools] Failed to publish narration: %s", exc)
+            logger.warning("[StoryPlanningTools] Failed to publish scene: %s", exc)
 
     def _apply_planner_character_updates(self, updates: Any) -> List[Dict[str, str]]:
         """Execute planner-selected character manifestations without live-agent control."""
@@ -2001,8 +1959,7 @@ class StoryPlanningTools(BaseTools):
         if last_action_time is not None:
             remaining = self.get_user_action_cooldown_seconds() - (time.time() - last_action_time)
             self._schedule_cooldown_timer("process_user_action", remaining)
-        self._publish_scene_dialogue(dialogue)
-        self._publish_narration(narration)
+        self._publish_scene(narration, dialogue)
         self.save_to_session_state()
         self._log_story_update(plot_beats, source="user_action")
         scene_name = str(parsed.get("scene_label") or "").strip()

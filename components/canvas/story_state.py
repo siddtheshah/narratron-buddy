@@ -127,6 +127,56 @@ class StoryState:
 
     payload = serialize
 
+    def set_scene(self, narration: str, dialogue: list[dict[str, Any]]) -> None:
+        """Commit a fully beautified scene and notify canvas clients once.
+
+        Keeping beautification ahead of the state mutation prevents clients from
+        rendering the plain scene and then restarting it when styled spans arrive.
+        """
+        scene_narration = " ".join(str(narration or "").strip().split()[:45])[:500]
+        scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
+        narration_spans: list[dict[str, Any]] = []
+        beautifier = self.text_beautifier
+
+        if beautifier and (scene_narration or scene_dialogue):
+            logger.info(
+                "Requesting scene text beautification (narration=%d chars, dialogue=%d line(s))",
+                len(scene_narration),
+                len(scene_dialogue),
+            )
+            try:
+                beautified = beautifier.beautify_scene(scene_narration, scene_dialogue)
+                if not isinstance(beautified, dict):
+                    raise TypeError("scene beautifier returned a non-dictionary result")
+                narration_spans = [
+                    dict(span)
+                    for span in beautified.get("narration_spans", [])
+                    if isinstance(span, dict)
+                ]
+                beautified_dialogue = beautified.get("dialogue", scene_dialogue)
+                if not isinstance(beautified_dialogue, list):
+                    raise TypeError("scene beautifier returned non-list dialogue")
+                scene_dialogue = [
+                    dict(item) for item in beautified_dialogue if isinstance(item, dict)
+                ][:3]
+                logger.info(
+                    "Scene beautification produced %d narration span(s) and %d dialogue line(s)",
+                    len(narration_spans),
+                    len(scene_dialogue),
+                )
+            except Exception as exc:
+                logger.warning("Scene text beautification failed: %s", exc)
+
+        self.narration = scene_narration
+        self.narration_spans = narration_spans
+        self.scene_dialogue = scene_dialogue
+        if self._persist:
+            self._persist()
+        if self._notify_changed:
+            self._notify_changed("latest")
+        if self._scene_speech_enabled and self._speech_provider:
+            self.dispatch(self.scene_dialogue)
+
     def set_scene_dialogue(self, dialogue: list[dict[str, str]]) -> None:
         """Set up to three planner-authored speech or thought bubbles."""
         self.scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
@@ -167,6 +217,35 @@ class StoryState:
                 self.narration_spans = []
         else:
             self.narration_spans = []
+        if self._persist:
+            self._persist()
+        if self._notify_changed:
+            self._notify_changed("latest")
+
+    def get_sticky_notes(self) -> list[dict[str, str]]:
+        """Return active sticky notes."""
+        return self.sticky_notes()
+
+    def set_sticky_notes(self, notes: list[dict[str, str]]) -> None:
+        """Persist sticky notes to story state and notify canvas clients."""
+        self.named_elements = [dict(n) for n in (notes or []) if isinstance(n, dict)]
+        if not isinstance(self.story_planning_state, dict):
+            self.story_planning_state = {}
+        self.story_planning_state["sticky_notes"] = list(self.named_elements)
+        if self._persist:
+            self._persist()
+        if self._notify_changed:
+            self._notify_changed("latest")
+
+    def get_story_planning_state(self) -> dict[str, Any]:
+        """Return a snapshot of full story planning state."""
+        return dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
+
+    def set_story_planning_state(self, state: dict[str, Any]) -> None:
+        """Persist full story planning state, synchronize sticky notes, and notify canvas clients."""
+        self.story_planning_state = dict(state) if isinstance(state, dict) else {}
+        if "sticky_notes" in self.story_planning_state and isinstance(self.story_planning_state["sticky_notes"], list):
+            self.named_elements = [dict(n) for n in self.story_planning_state["sticky_notes"] if isinstance(n, dict)]
         if self._persist:
             self._persist()
         if self._notify_changed:

@@ -31,6 +31,35 @@ def test_dialogue_persists_beautified_lines_and_notifies() -> None:
     notify.assert_called_once_with("latest")
 
 
+def test_scene_waits_for_beautification_then_commits_once() -> None:
+    persist, notify = Mock(), Mock()
+    beautifier = Mock()
+    state = StoryState(persist=persist, notify_changed=notify)
+    state.narration = "Previous scene."
+    state.scene_dialogue = [{"speaker": "Old", "text": "Previous dialogue."}]
+
+    def beautify_scene(narration, dialogue):
+        assert state.narration == "Previous scene."
+        assert state.scene_dialogue == [{"speaker": "Old", "text": "Previous dialogue."}]
+        assert persist.call_count == 0
+        assert notify.call_count == 0
+        return {
+            "narration_spans": [{"text": narration, "effect": "glow"}],
+            "dialogue": [{**dialogue[0], "spans": [{"text": dialogue[0]["text"], "effect": "vibrate"}]}],
+        }
+
+    beautifier.beautify_scene.side_effect = beautify_scene
+    state.text_beautifier = beautifier
+
+    state.set_scene("A new scene begins.", [{"speaker": "Mara", "text": "Look!"}])
+
+    assert state.narration == "A new scene begins."
+    assert state.narration_spans == [{"text": "A new scene begins.", "effect": "glow"}]
+    assert state.scene_dialogue == [{"speaker": "Mara", "text": "Look!", "spans": [{"text": "Look!", "effect": "vibrate"}]}]
+    persist.assert_called_once_with()
+    notify.assert_called_once_with("latest")
+
+
 def test_narration_uses_supplied_spans_without_beautifying() -> None:
     persist, notify = Mock(), Mock()
     beautifier = Mock()
@@ -323,4 +352,35 @@ def test_load_handles_none_or_non_dict_gracefully() -> None:
 
     state.load("not_a_dict")
     assert state.narration == "Original"
+
+
+def test_get_and_set_story_planning_state_persists_and_notifies() -> None:
+    persist, notify = Mock(), Mock()
+    state = StoryState(persist=persist, notify_changed=notify)
+
+    planning_data = {
+        "plot_beats": [{"plot_beat": "A door opens."}],
+        "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
+    }
+    state.set_story_planning_state(planning_data)
+
+    assert state.get_story_planning_state() == planning_data
+    assert state.sticky_notes() == [{"topic": "Key", "info": "Brass key"}]
+    assert state.named_elements == [{"topic": "Key", "info": "Brass key"}]
+    persist.assert_called_once_with()
+    notify.assert_called_once_with("latest")
+
+
+def test_get_and_set_sticky_notes_persists_and_notifies() -> None:
+    persist, notify = Mock(), Mock()
+    state = StoryState(persist=persist, notify_changed=notify)
+
+    notes = [{"topic": "Chest", "info": "Heavy lock"}]
+    state.set_sticky_notes(notes)
+
+    assert state.get_sticky_notes() == notes
+    assert state.story_planning_state["sticky_notes"] == notes
+    assert state.named_elements == notes
+    persist.assert_called_once_with()
+    notify.assert_called_once_with("latest")
 

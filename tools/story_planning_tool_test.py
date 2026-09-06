@@ -31,6 +31,7 @@ from tools.story_planning_tool import (
     build_story_context_prompt,
 )
 from components.theater_manager import TheaterManager
+from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.canvas_state_service import CanvasStateService
 from providers import TextResponseProvider, TextResponseRequest, TextResponseResult
 
@@ -1076,8 +1077,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(billed_plans, [1])
             self.assertIn("plot_beats", tools.export_story_planning_state())
             self.assertEqual(tools.get_present_characters()[0]["name"], "Lantern Warden")
-            state.set_scene_dialogue.assert_called_once_with(results[0]["dialogue"])
-            state.set_narration.assert_called_once_with(results[0]["narration"])
+            state.story.set_scene.assert_called_once_with(results[0]["narration"], results[0]["dialogue"])
             self.assertIn("process_user_action is on cooldown", tools.process_user_action("I open the doorway."))
 
     def test_clear_scene_preserves_plot_beats_and_removes_characters(self):
@@ -1474,6 +1474,29 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertIn("Char2", prompt)
         self.assertIn("Char3", prompt)
         self.assertNotIn("Char1", prompt)
+
+    def test_story_planning_output_reaches_real_canvas_state_manager(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            theater_manager = TheaterManager(base_theaters_dir=temp_dir)
+            canvas_manager = CanvasStateManager("integration_test", theater_manager)
+            tools = StoryPlanningTools(
+                config={"adventure_mode": True, "nodes_ahead": 2},
+                theater_manager=theater_manager.theater("integration_test"),
+                canvas_manager=canvas_manager,
+                text_response_provider=MagicMock(),
+            )
+
+            tools._publish_scene("The archway illuminates.", [{"speaker": "Mara", "text": "I found the key."}])
+            tools.update_sticky_note("Golden Key", "Opens the inner chamber")
+
+            latest = canvas_manager.get_latest_state()
+            self.assertEqual(len(latest["scene_dialogue"]), 1)
+            self.assertEqual(latest["scene_dialogue"][0]["speaker"], "Mara")
+            self.assertEqual(latest["scene_dialogue"][0]["text"], "I found the key.")
+            self.assertEqual(latest["narration"], "The archway illuminates.")
+            self.assertEqual(len(latest["sticky_notes"]), 1)
+            self.assertEqual(latest["sticky_notes"][0]["topic"], "Golden Key")
+            self.assertEqual(latest["sticky_notes"][0]["info"], "Opens the inner chamber")
 
 
 if __name__ == "__main__":
