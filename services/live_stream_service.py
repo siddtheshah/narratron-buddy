@@ -221,7 +221,7 @@ async def handle_live_websocket_connection(
 
                 elif msg_type == "ping":
                     if agent_session.canvas_state_manager:
-                        agent_session.canvas_state_manager.set_tool_activity("live", active=True, recent_seconds=10.0)
+                        agent_session.canvas_state_manager.tool_response.set_activity("live", active=True, recent_seconds=10.0)
                     try:
                         await websocket.send_text(json.dumps({"type": "pong", "ts": json_message.get("ts")}))
                     except Exception:
