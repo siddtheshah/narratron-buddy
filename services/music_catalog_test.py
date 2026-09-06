@@ -7,10 +7,35 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from absl import flags
+from absl.testing import flagsaver
+
 import object_registry
 from providers.text_response_provider import TextResponseResult
-from services.music_catalog import MusicCatalog
+from services.music_catalog import (
+    PROJECT_ROOT,
+    MusicCatalog,
+    ensure_music_catalog_root,
+    get_music_catalog_root,
+)
 from storage.database import DatabaseManager
+
+
+class TestMusicCatalogRootSelection(unittest.TestCase):
+    def test_cloud_root_defaults_to_mnt_storage_music_catalog(self):
+        orig_local = flags.FLAGS["testing_use_local"].value
+        try:
+            flags.FLAGS["testing_use_local"].value = False
+            self.assertEqual(get_music_catalog_root(), Path("/mnt/storage/music_catalog"))
+        finally:
+            flags.FLAGS["testing_use_local"].value = orig_local
+
+    @flagsaver.flagsaver(testing_use_local=True)
+    def test_local_root_uses_workspace_music_catalog_directory(self):
+        self.assertEqual(
+            get_music_catalog_root().resolve(),
+            (PROJECT_ROOT / "music_catalog").resolve(),
+        )
 
 
 class FakeMusicDb:
@@ -56,14 +81,14 @@ class TestMusicCatalog(unittest.TestCase):
             MusicCatalog(directory=self.catalog_dir, database_manager=None)
         self.assertIn("database_manager is required", str(ctx.exception))
 
-    def test_init_requires_directory(self):
-        with self.assertRaises(ValueError) as ctx:
-            MusicCatalog(directory=None, database_manager=self.db)
-        self.assertIn("directory is required", str(ctx.exception))
+    def test_init_defaults_directory_to_music_catalog_root(self):
+        catalog = MusicCatalog(database_manager=self.db)
+        self.assertEqual(catalog.directory, get_music_catalog_root())
 
-    def test_init_missing_required_positional_arguments_raises_type_error(self):
-        with self.assertRaises(TypeError):
-            MusicCatalog()  # Missing both directory and database_manager
+    def test_init_missing_database_manager_raises_value_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            MusicCatalog()
+        self.assertIn("database_manager is required", str(ctx.exception))
 
     def test_from_config_with_mocked_database_manager(self):
         config = {
@@ -74,14 +99,12 @@ class TestMusicCatalog(unittest.TestCase):
                 "catalog_reranker_model": "gemini-2.5-flash-lite",
             }
         }
-        mock_tm = MagicMock()
-        mock_tm.music_catalog_dir.return_value = self.catalog_dir
         mock_db = MagicMock(spec=DatabaseManager)
 
         catalog = MusicCatalog.from_config(
             config=config,
-            theater_manager=mock_tm,
             database_manager=mock_db,
+            directory=self.catalog_dir,
         )
         self.assertEqual(catalog.directory, self.catalog_dir)
         self.assertEqual(catalog.match_threshold, 0.75)
@@ -89,26 +112,29 @@ class TestMusicCatalog(unittest.TestCase):
         self.assertIs(catalog.database_manager, mock_db)
         self.assertIsNotNone(catalog.reranker_provider)
 
+    def test_from_config_defaults_directory(self):
+        mock_db = MagicMock(spec=DatabaseManager)
+        catalog = MusicCatalog.from_config(
+            config={},
+            database_manager=mock_db,
+        )
+        self.assertEqual(catalog.directory, get_music_catalog_root())
+
     def test_from_config_resolves_object_registry_db_when_unspecified(self):
-        mock_tm = MagicMock()
-        mock_tm.music_catalog_dir.return_value = self.catalog_dir
         mock_db = MagicMock(spec=DatabaseManager)
         with patch.object(object_registry, "db", mock_db):
             catalog = MusicCatalog.from_config(
                 config={},
-                theater_manager=mock_tm,
                 database_manager=None,
+                directory=self.catalog_dir,
             )
             self.assertIs(catalog.database_manager, mock_db)
 
     def test_from_config_raises_when_no_database_available(self):
-        mock_tm = MagicMock()
-        mock_tm.music_catalog_dir.return_value = self.catalog_dir
         with patch.object(object_registry, "db", None):
             with self.assertRaises(ValueError) as ctx:
                 MusicCatalog.from_config(
                     config={},
-                    theater_manager=mock_tm,
                     database_manager=None,
                 )
             self.assertIn("database_manager is required", str(ctx.exception))

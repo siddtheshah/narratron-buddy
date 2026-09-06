@@ -11,6 +11,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from absl import flags
+
 from providers import (
     TextResponseProvider,
     TextResponseRequest,
@@ -21,42 +23,69 @@ from storage.database import DatabaseManager
 logger = logging.getLogger(__name__)
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if "testing_use_local" not in flags.FLAGS:
+    flags.DEFINE_boolean(
+        "testing_use_local",
+        False,
+        "Use local resources (database, adventures, theater repository) for testing and development.",
+    )
+
+FLAGS = flags.FLAGS
+
+
+def get_music_catalog_root() -> Path:
+    """Return the music catalog root for the selected runtime environment."""
+    if "testing_use_local" in FLAGS and FLAGS["testing_use_local"].value:
+        return PROJECT_ROOT / "music_catalog"
+    return Path("/mnt/storage/music_catalog")
+
+
+def ensure_music_catalog_root() -> Path:
+    """Return and create the selected music catalog root."""
+    catalog_root = get_music_catalog_root().resolve()
+    catalog_root.mkdir(parents=True, exist_ok=True)
+    return catalog_root
+
+
+get_music_catalog_dir = get_music_catalog_root
+ensure_music_catalog_dir = ensure_music_catalog_root
+
 
 class MusicCatalog:
     """Use TF-IDF to nominate tracks and an LLM to approve the final match."""
 
     def __init__(
         self,
-        directory: Path,
-        database_manager: DatabaseManager,
+        directory: Optional[Path] = None,
+        database_manager: Optional[DatabaseManager] = None,
         match_threshold: float = 0.86,
         candidate_count: int = 5,
         reranker_provider: Optional[TextResponseProvider] = None,
         reranker: Optional[Callable[[str, list[dict[str, Any]]], tuple[str, float] | None]] = None,
     ) -> None:
-        if directory is None:
-            raise ValueError("directory is required")
         if database_manager is None:
             raise ValueError("database_manager is required")
 
-        self.directory = Path(directory)
+        self.directory = Path(directory) if directory is not None else get_music_catalog_root()
         self.database_manager = database_manager
         self.match_threshold = max(0.0, min(1.0, float(match_threshold)))
         self.candidate_count = max(1, int(candidate_count))
         self.reranker_provider = reranker_provider
         self._reranker = reranker
-        self.directory.mkdir(parents=True, exist_ok=True)
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.warning("[MusicCatalog] Could not create directory: %s", self.directory)
 
     @classmethod
     def from_config(
         cls,
         config: Optional[dict] = None,
-        theater_manager: Optional[Any] = None,
         database_manager: Optional[DatabaseManager] = None,
+        directory: Optional[Path] = None,
     ) -> MusicCatalog:
-        if theater_manager is None:
-            from components.theater_manager import TheaterManager
-            theater_manager = TheaterManager()
         if database_manager is None:
             try:
                 import object_registry
@@ -77,7 +106,7 @@ class MusicCatalog:
             logger.warning("[MusicCatalog] Could not initialize reranker provider: %s", exc)
 
         return cls(
-            directory=theater_manager.music_catalog_dir(),
+            directory=directory or get_music_catalog_root(),
             database_manager=database_manager,
             match_threshold=float(music_config.get("catalog_match_threshold", 0.86)),
             candidate_count=int(music_config.get("catalog_candidate_count", 5)),
@@ -123,6 +152,7 @@ class MusicCatalog:
     def add(self, source_path: Path, prompt: str, provider: str, model: str) -> dict[str, Any]:
         extension = source_path.suffix.lower() or ".mp3"
         entry = {"id": uuid.uuid4().hex, "filename": f"{uuid.uuid4().hex}{extension}", "prompt": prompt, "provider": provider, "model": model}
+        self.directory.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, self.directory / entry["filename"])
         self.database_manager.add_music_catalog_track(
             entry["id"], entry["filename"], prompt, provider, model, Counter(self._tokens(prompt))

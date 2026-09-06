@@ -13,7 +13,6 @@ from components.theater_manager import (
     extract_asset_package,
     get_ephemeral_root,
     ensure_ephemeral_root,
-    get_theaters_root,
 )
 
 

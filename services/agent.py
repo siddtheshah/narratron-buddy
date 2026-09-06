@@ -374,24 +374,9 @@ def create_tool_bundle_for_session(
             adventure_mode=adventure_mode,
         )
     if music_catalog is None:
-        music_config = config.get("music", {})
-        reranker_provider = get_text_response_provider(
-            str(music_config.get("catalog_reranker_provider", "gemini-2-5")),
-            {"model": str(music_config.get("catalog_reranker_model", "gemini-2.5-flash-lite"))},
-        )
-        catalog_db = database_manager
-        if catalog_db is None:
-            try:
-                import object_registry
-                catalog_db = getattr(object_registry, "db", None)
-            except Exception:
-                catalog_db = None
-        music_catalog = MusicCatalog(
-            theater_manager.music_catalog_dir(),
-            database_manager=catalog_db,
-            match_threshold=float(music_config.get("catalog_match_threshold", 0.86)),
-            candidate_count=int(music_config.get("catalog_candidate_count", 5)),
-            reranker_provider=reranker_provider,
+        music_catalog = MusicCatalog.from_config(
+            config=config,
+            database_manager=database_manager,
         )
     music_tools = MusicTools(
         config.get("music", {}), theater, canvas_manager,

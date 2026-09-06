@@ -30,6 +30,7 @@ class TestMusicTools(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.temp_dir = tempfile.mkdtemp()
+        self.catalog_dir = Path(self.temp_dir) / "catalog"
         self.theater_manager = TheaterManager(base_theaters_dir=self.temp_dir)
         self.config = {
             "music": {
@@ -71,7 +72,7 @@ class TestMusicTools(BaseTestCase):
             theater_manager=self.theater_manager.theater("test_theater"),
             canvas_manager=canvas_manager,
             music_catalog=MusicCatalog(
-                directory=self.theater_manager.music_catalog_dir(),
+                directory=self.catalog_dir,
                 database_manager=FakeMusicCatalogDatabase(),
             ),
         )
@@ -139,7 +140,7 @@ class TestMusicTools(BaseTestCase):
         play_res = self.music_tools.play_music("hero_theme")
         self.assertIn("Successfully started playing music 'hero_theme'", play_res)
 
-        catalog_files = [name for name in os.listdir(self.theater_manager.music_catalog_dir()) if name.endswith(".mp3")]
+        catalog_files = [name for name in os.listdir(self.catalog_dir) if name.endswith(".mp3")]
         self.assertEqual(len(catalog_files), 1)
 
     def test_create_music_reuses_private_catalog_without_provider_call(self):

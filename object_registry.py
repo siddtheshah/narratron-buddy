@@ -103,7 +103,6 @@ db = (
 canvas_states = CanvasStateService(theater_manager)
 music_catalog = MusicCatalog.from_config(
     config=config,
-    theater_manager=theater_manager,
     database_manager=db,
 )
 agent_manager = AgentSessionManager(
