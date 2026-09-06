@@ -619,6 +619,8 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(manifest["type"], "video")
         self.assertEqual(manifest["id"], animation_id)
         self.assertEqual(manifest["video_url"], "https://fal.media/dragon_flight.mp4")
+        self.assertTrue(manifest["loop"])
+        self.assertTrue(manifest["muted"])
         self.assertTrue(os.path.exists(image_tools.image_aliases[f"{animation_id}_video"]))
 
     @patch("tools.image_tool.get_image_provider")

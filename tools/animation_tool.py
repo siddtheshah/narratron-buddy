@@ -419,6 +419,8 @@ class AnimationTools(BaseTools):
                 "video_path": self._to_relative_path(video_path),
                 "video_url": result.video_url,
                 "mime_type": result.mime_type or "video/mp4",
+                "loop": True,
+                "muted": True,
                 "provider": {
                     "provider": result.provider,
                     "model": result.model,
@@ -678,6 +680,8 @@ class AnimationTools(BaseTools):
                 "type": "video",
                 "scene_prompt": "",
                 "video_path": str(video_path),
+                "loop": True,
+                "muted": True,
             }
             self._video_animations[clean_id] = manifest
             return manifest

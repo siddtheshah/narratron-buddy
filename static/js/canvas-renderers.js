@@ -168,6 +168,9 @@ export function createImageRenderer({
                 currentVideo.pause();
                 currentVideo.removeAttribute("src");
                 currentVideo.load();
+                if (currentVideo.parentElement) {
+                    currentVideo.parentElement.removeChild(currentVideo);
+                }
             } catch (e) {}
             currentVideo = null;
         }
@@ -541,14 +544,73 @@ export function createImageRenderer({
         }
 
         const video = document.createElement("video");
-        video.crossOrigin = "anonymous";
-        video.src = videoUrl;
-        video.loop = true;
+        // Guarantee that the video is completely silent (no audio output) across all browsers
         video.muted = true;
+        video.defaultMuted = true;
+        video.volume = 0;
+        video.setAttribute("muted", "");
+        video.setAttribute("playsinline", "");
+        video.setAttribute("webkit-playsinline", "");
+        video.setAttribute("autoplay", "");
+        video.setAttribute("loop", "");
         video.playsInline = true;
+        video.loop = true;
         video.autoplay = true;
+        video.crossOrigin = "anonymous";
 
+        // Keep video completely silent at all times (e.g., if unmuted by browser policies or extensions)
+        const silenceVideo = () => {
+            video.muted = true;
+            video.defaultMuted = true;
+            video.volume = 0;
+            if (video.audioTracks) {
+                try {
+                    for (let i = 0; i < video.audioTracks.length; i++) {
+                        video.audioTracks[i].enabled = false;
+                    }
+                } catch (e) {}
+            }
+        };
+        silenceVideo();
+        video.addEventListener("volumechange", silenceVideo);
+        video.addEventListener("play", silenceVideo);
+        video.addEventListener("playing", silenceVideo);
+        video.addEventListener("loadedmetadata", silenceVideo);
+
+        // Attach video element to DOM to prevent browser power-saver throttling on detached media elements
+        video.style.position = "absolute";
+        video.style.width = "1px";
+        video.style.height = "1px";
+        video.style.opacity = "0.001";
+        video.style.pointerEvents = "none";
+        video.style.zIndex = "-1";
+        if (sizingElement) {
+            sizingElement.appendChild(video);
+        }
+
+        video.src = videoUrl;
         currentVideo = video;
+
+        const autoLoop = options.loop !== false;
+        const restartVideoLoop = () => {
+            if (generation === sequenceGeneration && currentVideo === video && autoLoop) {
+                try {
+                    video.currentTime = 0;
+                    video.play().catch(() => {});
+                } catch (e) {}
+            }
+        };
+
+        if (autoLoop) {
+            video.addEventListener("ended", restartVideoLoop);
+            video.addEventListener("pause", () => {
+                if (generation === sequenceGeneration && currentVideo === video && autoLoop) {
+                    if (video.ended || (video.duration > 0 && video.currentTime >= video.duration - 0.15)) {
+                        restartVideoLoop();
+                    }
+                }
+            });
+        }
 
         await new Promise((resolve) => {
             let resolved = false;
@@ -569,9 +631,16 @@ export function createImageRenderer({
         });
 
         if (generation !== sequenceGeneration) {
-            try { video.pause(); } catch (e) {}
+            try {
+                video.pause();
+                if (video.parentElement) {
+                    video.parentElement.removeChild(video);
+                }
+            } catch (e) {}
             return;
         }
+
+        silenceVideo();
 
         try {
             await video.play();
@@ -600,6 +669,21 @@ export function createImageRenderer({
 
         const frame = (now) => {
             if (generation !== sequenceGeneration) return;
+
+            // Auto-loop watchdog: if the video has ended or stalled near the end without an image/video update, rewind and replay
+            if (autoLoop && currentVideo === video) {
+                if (video.ended || (video.duration > 0 && video.currentTime >= video.duration - 0.05)) {
+                    try {
+                        video.currentTime = 0;
+                        if (video.paused) {
+                            video.play().catch(() => {});
+                        }
+                    } catch (e) {}
+                } else if (video.paused && !video.seeking && video.readyState >= 2) {
+                    video.play().catch(() => {});
+                }
+            }
+
             const rect = canvas.getBoundingClientRect();
             context.clearRect(0, 0, rect.width, rect.height);
             drawScaledVideo(video, rect.width, rect.height);

@@ -587,6 +587,8 @@ class TestCanvasStateManager(BaseTestCase):
             state["animation"]["video_url"],
             "/theaters/test_video_anim_state/output/animations/dragon_anim_123/video.mp4",
         )
+        self.assertTrue(state["animation"]["loop"])
+        self.assertTrue(state["animation"]["muted"])
 
 
 if __name__ == "__main__":

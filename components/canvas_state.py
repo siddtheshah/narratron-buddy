@@ -708,6 +708,8 @@ class CanvasStateManager:
             "scene_prompt": manifest.get("scene_prompt", ""),
             "video_url": video_url,
             "poster_url": self.get_url_for_path(poster_path) if poster_path else None,
+            "loop": manifest.get("loop", True),
+            "muted": manifest.get("muted", True),
         }
         logger.debug("[CanvasState] Showing video animation id=%s video_url=%s", manifest.get("id"), video_url)
         self._notify_state_changed("latest")
