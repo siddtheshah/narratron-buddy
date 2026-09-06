@@ -34,8 +34,15 @@ class RegistryDependency:
     def __repr__(self) -> str:
         return f"RegistryDependency({object.__getattribute__(self, '_name')!r})"
 
+    def __str__(self) -> str:
+        return str(self.target)
+
+    def __eq__(self, other: Any) -> bool:
+        return self.target == other
+
 
 FLAGS = RegistryDependency("FLAGS")
+SERVER_RUN_ID = RegistryDependency("SERVER_RUN_ID")
 adventure_service = RegistryDependency("adventure_service")
 agent_manager = RegistryDependency("agent_manager")
 canvas_states = RegistryDependency("canvas_states")

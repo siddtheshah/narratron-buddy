@@ -10,6 +10,7 @@ import atexit
 from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
+import uuid
 
 from absl import flags
 from dotenv import load_dotenv
@@ -31,6 +32,7 @@ from utils.config_loader import get_app_config
 # service instances below.  Route modules should import this from the registry
 # rather than deriving their own location from ``__file__``.
 PROJECT_ROOT = Path(__file__).resolve().parent
+SERVER_RUN_ID = str(uuid.uuid4())
 
 
 flags.DEFINE_boolean(

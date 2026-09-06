@@ -49,9 +49,10 @@ uv run main.py
 
 For local testing, run `uv run main.py --testing_use_local`. This uses local
 resources and automatically signs unauthenticated browsers in as the seeded
-`localtest` user (password `narratron`) during the initial auth check. Each browser
-receives a normal session cookie; existing logins are preserved. Logging out in
-this mode signs you back in at the next auth check.
+`localtest` user (password `narratron`) on the initial page visit for each unique
+server run. A unique server run UUID is tracked in frontend browser storage;
+subsequent visits and other browser tabs retain their logged-out or chosen
+account session so you can test multi-party behavior with different accounts.
 
 To load test a disposable local canvas, run:
 

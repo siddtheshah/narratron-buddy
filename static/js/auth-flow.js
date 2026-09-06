@@ -6,12 +6,34 @@
 window.currentUser = null;
 let authStatePromise = null;
 
+const SERVER_RUN_STORAGE_KEY = 'narratron_server_run_id';
+
 /** Return one shared auth-state request for the lifetime of the current page. */
 function getAuthState({ refresh = false } = {}) {
   if (refresh) authStatePromise = null;
   if (!authStatePromise) {
     authStatePromise = fetch('/api/auth/me')
       .then(res => res.json())
+      .then(async data => {
+        if (data && data.testing_use_local && data.server_run_id) {
+          try {
+            const storedRunId = localStorage.getItem(SERVER_RUN_STORAGE_KEY);
+            if (storedRunId !== data.server_run_id) {
+              if (!data.authenticated) {
+                const autoRes = await fetch('/api/auth/auto-login', { method: 'POST' });
+                if (autoRes.ok) {
+                  const autoData = await autoRes.json();
+                  data = { ...data, authenticated: true, user: autoData.user };
+                }
+              }
+              localStorage.setItem(SERVER_RUN_STORAGE_KEY, data.server_run_id);
+            }
+          } catch (storageErr) {
+            console.warn('Testing auto-login check failed:', storageErr);
+          }
+        }
+        return data;
+      })
       .catch(error => {
         // Do not make a transient network failure stick for the whole page.
         authStatePromise = null;

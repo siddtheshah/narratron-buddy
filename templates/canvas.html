@@ -2513,6 +2513,27 @@
             if (!canvasAuthStatePromise) {
                 canvasAuthStatePromise = fetch('/api/auth/me')
                     .then(res => res.json())
+                    .then(async data => {
+                        if (data && data.testing_use_local && data.server_run_id) {
+                            try {
+                                const storageKey = 'narratron_server_run_id';
+                                const storedRunId = localStorage.getItem(storageKey);
+                                if (storedRunId !== data.server_run_id) {
+                                    if (!data.authenticated) {
+                                        const autoRes = await fetch('/api/auth/auto-login', { method: 'POST' });
+                                        if (autoRes.ok) {
+                                            const autoData = await autoRes.json();
+                                            data = { ...data, authenticated: true, user: autoData.user };
+                                        }
+                                    }
+                                    localStorage.setItem(storageKey, data.server_run_id);
+                                }
+                            } catch (e) {
+                                console.warn('Canvas testing auto-login check failed:', e);
+                            }
+                        }
+                        return data;
+                    })
                     .catch(error => {
                         canvasAuthStatePromise = null;
                         throw error;

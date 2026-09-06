@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import object_registry
-from api_server.dependencies import FLAGS, canvas_states, db, theater_manager, theater_repository  # noqa: F401
+from api_server.dependencies import FLAGS, canvas_states, db, theater_manager, theater_repository, SERVER_RUN_ID  # noqa: F401
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from storage.database import DatabaseConnectionTimeout
@@ -38,6 +38,13 @@ async def database_connection_timeout_handler(request: Request, exc: DatabaseCon
 
 
 theaters_folder = str(theater_manager.base_dir)
+
+@app.middleware("http")
+async def add_cache_control_headers(request: Request, call_next):
+    response = await call_next(request)
+    if FLAGS.testing_use_local or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
 
 static_dir = PROJECT_ROOT / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

@@ -20,6 +20,7 @@ from api_server.shared import (
     _valid_join_key,
     _grant_canvas_access,
     PROJECT_ROOT,
+    SERVER_RUN_ID,
 )
 
 
@@ -133,6 +134,16 @@ def render_page_template(
     html_content = template_path.read_text(encoding="utf-8")
     topbar_html = render_shared_topbar(active_page=active_page, show_pricing=show_pricing)
     html_content = html_content.replace("<!-- SHARED_TOPBAR -->", topbar_html)
+    html_content = re.sub(
+        r"/static/js/auth-flow\.js(?:\?[^\"'>\s]*)?",
+        f"/static/js/auth-flow.js?v={SERVER_RUN_ID}",
+        html_content,
+    )
+    html_content = re.sub(
+        r"/static/css/auth-flow\.css(?:\?[^\"'>\s]*)?",
+        f"/static/css/auth-flow.css?v={SERVER_RUN_ID}",
+        html_content,
+    )
     if extra_replacements:
         for placeholder, replacement in extra_replacements.items():
             html_content = html_content.replace(placeholder, replacement)

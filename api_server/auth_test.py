@@ -66,28 +66,51 @@ def test_auth_me_returns_a_timeout_response_when_no_connection_is_available():
 
 
 @pytest.mark.parametrize("local_mode", [False, True])
-def test_auth_me_only_auto_logs_in_in_local_mode(local_mode):
+def test_auth_me_returns_server_run_id_and_testing_flag(local_mode):
     registry_db = MagicMock()
-    user = {"id": 7, "username": "localtest"}
-    registry_db.authenticate_user.return_value = user
-    registry_db.create_auth_session.return_value = "local-session"
     response = Response()
     with flagsaver.flagsaver(testing_use_local=local_mode), patch.object(
         object_registry, "db", registry_db
     ), patch.object(auth, "get_current_user", return_value=None):
         result = auth.get_auth_me(request(), response)
 
-    assert result["authenticated"] is local_mode
-    if local_mode:
-        assert result["user"] == user
-        registry_db.authenticate_user.assert_called_once_with("localtest", "narratron")
-        registry_db.create_auth_session.assert_called_once_with(7)
-        assert "auth_token=local-session" in response.headers["set-cookie"]
-        assert "HttpOnly" in response.headers["set-cookie"]
-    else:
-        registry_db.authenticate_user.assert_not_called()
-        registry_db.create_auth_session.assert_not_called()
-        assert "set-cookie" not in response.headers
+    assert result["authenticated"] is False
+    assert result["user"] is None
+    assert result["testing_use_local"] is local_mode
+    assert isinstance(result["server_run_id"], str) and len(result["server_run_id"]) > 0
+    registry_db.authenticate_user.assert_not_called()
+    registry_db.create_auth_session.assert_not_called()
+    assert "set-cookie" not in response.headers
+
+
+@flagsaver.flagsaver(testing_use_local=True)
+def test_auto_login_endpoint_in_local_mode():
+    registry_db = MagicMock()
+    user = {"id": 7, "username": "localtest"}
+    registry_db.authenticate_user.return_value = user
+    registry_db.create_auth_session.return_value = "local-session"
+    response = Response()
+    with patch.object(object_registry, "db", registry_db):
+        result = auth.auto_login_user(response)
+
+    assert result["status"] == "ok"
+    assert result["user"] == user
+    registry_db.authenticate_user.assert_called_once_with("localtest", "narratron")
+    registry_db.create_auth_session.assert_called_once_with(7)
+    assert "auth_token=local-session" in response.headers["set-cookie"]
+    assert "HttpOnly" in response.headers["set-cookie"]
+
+
+@flagsaver.flagsaver(testing_use_local=False)
+def test_auto_login_endpoint_forbidden_without_testing_flag():
+    registry_db = MagicMock()
+    response = Response()
+    with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException) as error:
+        auth.auto_login_user(response)
+
+    assert error.value.status_code == 403
+    registry_db.authenticate_user.assert_not_called()
+    registry_db.create_auth_session.assert_not_called()
 
 
 @flagsaver.flagsaver(testing_use_local=True)
