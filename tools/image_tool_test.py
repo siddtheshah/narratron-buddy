@@ -187,7 +187,7 @@ class TestImageTools(BaseTestCase):
         canvas_state = canvas_state_service.get("starting_image")
 
         self.assertEqual(
-            canvas_state.shown_image_path,
+            canvas_state.visual.shown_image_path,
             str(image_path),
         )
         self.assertEqual(canvas_state.get_latest_state()["latest"], "/theaters/starting_image/references/opening scene.jpg")
@@ -398,8 +398,8 @@ class TestImageTools(BaseTestCase):
         self.assertTrue(os.path.exists(webp_path))
 
         # Canvas state service received the WebP path for display
-        mock_canvas_service.show_image.assert_called_once()
-        args, kwargs = mock_canvas_service.show_image.call_args
+        mock_canvas_service.visual.show_image.assert_called_once()
+        args, kwargs = mock_canvas_service.visual.show_image.call_args
         displayed_path = args[0]
         self.assertTrue(displayed_path.endswith(".webp"))
         self.assertEqual(displayed_path, webp_path)
@@ -420,8 +420,8 @@ class TestImageTools(BaseTestCase):
 
         tools.show_image("ref_card.jpg")
 
-        mock_canvas_service.show_image.assert_called_once()
-        args, kwargs = mock_canvas_service.show_image.call_args
+        mock_canvas_service.visual.show_image.assert_called_once()
+        args, kwargs = mock_canvas_service.visual.show_image.call_args
         displayed_path = args[0]
         self.assertTrue(displayed_path.endswith(".webp"))
         self.assertTrue(os.path.exists(displayed_path))
@@ -442,10 +442,10 @@ class TestImageTools(BaseTestCase):
 
         self.assertIn("Successfully displayed", tools.show_image("the_monk"))
 
-        state = canvas_state_service.latest_state("monk_alias_test")
+        state = canvas_state_service.get("monk_alias_test").get_latest_state()
         expected_webp = os.path.join(tools.output_dir, "the monk.webp")
         self.assertEqual(
-            canvas_state_service.get("monk_alias_test").shown_image_path,
+            canvas_state_service.get("monk_alias_test").visual.shown_image_path,
             expected_webp,
         )
         self.assertTrue(os.path.exists(expected_webp))
@@ -486,12 +486,12 @@ class TestImageTools(BaseTestCase):
 
         # 2. Simulate active video animation playing on canvas
         c_state = canvas_state_service.get(theater_id)
-        c_state.show_video_animation({
+        c_state.visual.show_video_animation({
             "id": "cascade_anim",
             "video_url": "https://example.com/video.mp4",
             "scene_prompt": "falling sand",
         })
-        self.assertIsNotNone(c_state.shown_video_animation)
+        self.assertIsNotNone(c_state.visual.shown_video_animation)
 
         # 3. Request new image -> must bypass cycle queue and take priority immediately
         res = tools.show_image("scene2.jpg")
@@ -499,7 +499,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(tools.current_cycle_image["path"], img2)
         self.assertIsNone(tools.next_cycle_image)
         # Verify canvas state cleared animation
-        self.assertIsNone(c_state.shown_video_animation)
+        self.assertIsNone(c_state.visual.shown_video_animation)
         tools.stop_cycle()
 
     @patch("tools.image_tool.get_image_provider")
@@ -524,12 +524,12 @@ class TestImageTools(BaseTestCase):
 
         # Simulate active animation
         c_state = canvas_state_service.get(theater_id)
-        c_state.show_video_animation({
+        c_state.visual.show_video_animation({
             "id": "cascade_anim_2",
             "video_url": "https://example.com/video2.mp4",
             "scene_prompt": "swirling vortex",
         })
-        self.assertIsNotNone(c_state.shown_video_animation)
+        self.assertIsNotNone(c_state.visual.shown_video_animation)
 
         # Create new image -> must display immediately with priority over active animation
         tools.create_image("ancient ruins", image_name="ruins", display=True)
@@ -538,7 +538,7 @@ class TestImageTools(BaseTestCase):
         self.assertIsNotNone(tools.current_cycle_image)
         self.assertIn("ruins", tools.current_cycle_image["path"])
         self.assertIsNone(tools.next_cycle_image)
-        self.assertIsNone(c_state.shown_video_animation)
+        self.assertIsNone(c_state.visual.shown_video_animation)
         tools.stop_cycle()
 
 

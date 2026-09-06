@@ -32,6 +32,7 @@ class CanvasStateManager:
         self.chat = ChatManager(output_dir=str(self.theater.output_dir() / "chats"))
         self.text_beautifier = text_beautifier
         self.load_state_from_disk()
+        self.visual.initialize_starting_image(self.theater_id, self.theater_manager, self.theater)
 
     def notify_changed(self, *domains: str) -> None:
         self.connections.notify(*domains)

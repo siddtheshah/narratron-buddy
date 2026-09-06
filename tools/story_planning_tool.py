@@ -1236,7 +1236,7 @@ class StoryPlanningTools(BaseTools):
             result["reason"] = str(reason).strip()[:300]
         with self._die_rolls_lock:
             self._die_rolls_this_turn.append(dict(result))
-        self.canvas_manager.set_tool_activity("dice", active=True, recent_seconds=2.5, result=result)
+        self.canvas_manager.tool_response.set_activity("dice", active=True, recent_seconds=2.5, result=result)
         logger.debug(
             "[StoryPlanningTools] Dice roll (theater=%s, reason=%s): %s",
             self.theater_id or "default",
@@ -1931,7 +1931,7 @@ class StoryPlanningTools(BaseTools):
                 result = {"error": f"Story planner failed: {exc}"}
             finally:
                 self.release_in_flight("process_user_action")
-                self.canvas_manager.set_tool_activity("user_action", active=False)
+                self.canvas_manager.tool_response.set_activity("user_action", active=False)
 
             plan_output = None
             if isinstance(result, dict) and "error" not in result:
@@ -1950,7 +1950,7 @@ class StoryPlanningTools(BaseTools):
                 except Exception:
                     logger.exception("[StoryPlanningTools] Scene reaction callback failed")
 
-        self.canvas_manager.set_tool_activity("user_action", active=True)
+        self.canvas_manager.tool_response.set_activity("user_action", active=True)
 
         import threading
         threading.Thread(target=resolve_and_notify, daemon=True).start()

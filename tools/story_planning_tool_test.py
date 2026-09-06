@@ -386,7 +386,7 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertEqual(result["total"], sum(result["rolls"]) + 3)
         self.assertIn(result["tier"], {"low", "middle", "high"})
         self.assertEqual(result["reason"], "Leap across the chasm")
-        canvas_state_service.set_tool_activity.assert_called_once_with(
+        canvas_state_service.tool_response.set_activity.assert_called_once_with(
             "dice", active=True, recent_seconds=2.5, result=result,
         )
 
@@ -1263,7 +1263,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(res1["status"], "processing")
             self.assertTrue(started_event.wait(timeout=2))
             self.assertTrue(tools.is_action_in_flight)
-            canvas_state_service.set_tool_activity.assert_called_once_with(
+            canvas_state_service.tool_response.set_activity.assert_called_once_with(
                 "user_action", active=True
             )
 
@@ -1280,7 +1280,7 @@ class TestStoryPlanningTools(unittest.TestCase):
                     break
                 time.sleep(0.02)
             self.assertFalse(tools.is_action_in_flight)
-            canvas_state_service.set_tool_activity.assert_called_with(
+            canvas_state_service.tool_response.set_activity.assert_called_with(
                 "user_action", active=False
             )
 

@@ -157,7 +157,7 @@ class ImageTools(BaseTools):
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that image generation has started or finished."""
         self.is_generating = bool(active)
-        self.canvas_manager.set_tool_activity("image", active=active)
+        self.canvas_manager.tool_response.set_activity("image", active=active)
 
     def _load_references(self):
         """Scans the references folder once at startup and builds a read-only manifest."""
@@ -500,7 +500,7 @@ class ImageTools(BaseTools):
     def _has_active_animation(self) -> bool:
         """Check if an animation is currently active on the canvas."""
         try:
-            state = self.canvas_manager
+            state = self.canvas_manager.visual
             return bool(
                 getattr(state, "shown_video_animation", None)
                 or getattr(state, "shown_layered_animation", None)
@@ -669,11 +669,19 @@ class ImageTools(BaseTools):
                     self._trigger_after_tool_call("show_image")
                     return res
                 if self.canvas_manager:
-                    self.canvas_manager.show_image(
-                        display_path,
-                        transition=transition,
-                        effect=effect,
+                    visual = self.canvas_manager.visual
+                    image_changed = visual.show_image(
+                        display_path, transition=transition, effect=effect,
+                        prompt=extract_image_prompt(display_path),
+                        url_for_path=self.theater.get_url_for_path,
                     )
+                    if image_changed:
+                        self.canvas_manager.doodles.doodles.clear()
+                        self.canvas_manager.ui.interactive_surfaces = {
+                            surface_id: surface for surface_id, surface in self.canvas_manager.ui.interactive_surfaces.items()
+                            if bool(surface.get("persistent", False))
+                        }
+                    self.canvas_manager.notify_changed("latest")
                     logger.info(
                         "[ImageTools] Published WebP image to canvas (theater=%s, path=%s).",
                         self.active_theater_id,

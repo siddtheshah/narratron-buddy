@@ -121,10 +121,10 @@ class TestAnimationTools(BaseTestCase):
         animation_tools.join_generation()
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
 
-        self.assertNotIn("animation", canvas_state_service.latest_state("tri_frame_canvas"))
+        self.assertNotIn("animation", canvas_state_service.get("tri_frame_canvas").get_latest_state())
         self.assertIn("Playing animation", animation_tools.play_animation(animation_id))
 
-        animation = canvas_state_service.latest_state("tri_frame_canvas")["animation"]
+        animation = canvas_state_service.get("tri_frame_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "triframe")
         self.assertEqual(len(animation["frames"]), 3)
         self.assertIn(f"/output/animations/{animation_id}/frame_1.jpg", animation["frames"][0])
@@ -225,7 +225,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertFalse(os.path.isabs(manifest["layers"][0]["path"]))
 
         self.assertIn("Playing layered animation", tools.play_animation(animation_id))
-        animation = canvas_state_service.latest_state("layered_canvas")["animation"]
+        animation = canvas_state_service.get("layered_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][-1]["effect"], "sway")
 
@@ -261,7 +261,7 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
 
         self.assertIn("Playing layered animation", tools.play_animation(animation_id))
-        animation = canvas_state_service.latest_state("halo_canvas")["animation"]
+        animation = canvas_state_service.get("halo_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][1]["effect"], "light_halo")
         self.assertEqual(animation["layers"][2]["effect"], "dark_halo")
@@ -297,7 +297,7 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
 
         self.assertIn("Playing layered animation", tools.play_animation(animation_id))
-        animation = canvas_state_service.latest_state("ghostly_canvas")["animation"]
+        animation = canvas_state_service.get("ghostly_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][1]["effect"], "ghostly")
 
@@ -332,7 +332,7 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
 
         self.assertIn("Playing layered animation", tools.play_animation(animation_id))
-        animation = canvas_state_service.latest_state("reflective_canvas")["animation"]
+        animation = canvas_state_service.get("reflective_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][1]["effect"], "reflective")
 
@@ -367,7 +367,7 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
 
         self.assertIn("Playing layered animation", tools.play_animation(animation_id))
-        animation = canvas_state_service.latest_state("energy_blast_canvas")["animation"]
+        animation = canvas_state_service.get("energy_blast_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][1]["effect"], "energy_blast")
 
@@ -668,7 +668,7 @@ class TestAnimationTools(BaseTestCase):
         play_msg = tools.play_animation(animation_id)
         self.assertIn("Playing video animation", play_msg)
 
-        state = canvas_state_service.latest_state("video_canvas_theater")
+        state = canvas_state_service.get("video_canvas_theater").get_latest_state()
         self.assertIn("animation", state)
         self.assertEqual(state["animation"]["type"], "video")
         self.assertEqual(state["animation"]["id"], animation_id)
@@ -1003,8 +1003,8 @@ class TestAnimationTools(BaseTestCase):
         self.assertIn((True, True), observed_activity)
         self.assertIn((False, False), observed_activity)
         # Verify canvas_state_service received "animation" tool activity
-        canvas_state_service.set_tool_activity.assert_any_call("animation", active=True)
-        canvas_state_service.set_tool_activity.assert_any_call("animation", active=False)
+        canvas_state_service.tool_response.set_activity.assert_any_call("animation", active=True)
+        canvas_state_service.tool_response.set_activity.assert_any_call("animation", active=False)
         # Ensure image_tools internal _set_canvas_activity was NOT called
         self.assertFalse(getattr(image_tools, "_set_canvas_activity").called)
 
@@ -1047,7 +1047,7 @@ class TestAnimationTools(BaseTestCase):
 
         # Also verify playing the animation exposes duration in canvas state
         tools.play_animation(animation_id)
-        state = canvas_state_service.latest_state("video_duration_theater")
+        state = canvas_state_service.get("video_duration_theater").get_latest_state()
         self.assertEqual(state["animation"]["type"], "video")
         self.assertEqual(state["animation"]["video_duration_seconds"], 5)
         self.assertNotIn("duration", state["animation"])

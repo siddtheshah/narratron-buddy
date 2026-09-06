@@ -127,7 +127,7 @@ class AnimationTools(BaseTools):
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that animation generation has started or finished."""
         self.is_generating = bool(active)
-        self.canvas_manager.set_tool_activity("animation", active=active)
+        self.canvas_manager.tool_response.set_activity("animation", active=active)
 
     def join_generation(self, timeout: float = 30.0) -> None:
         """Wait for the latest animation generation; useful in tests and teardown."""
@@ -364,7 +364,10 @@ class AnimationTools(BaseTools):
             self._layered_animations[animation_id] = manifest
             self._register_layered_aliases(animation_id, base_path, layer_paths)
             self._notify_layered_animation_created(animation_id)
-            self.canvas_manager.show_layered_animation(manifest)
+            self.canvas_manager.visual.show_layered_animation(
+                manifest, url_for_path=self.image_tools.theater.get_url_for_path
+            )
+            self.canvas_manager.notify_changed("latest")
             logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
             self._notify_animation_ready(animation_id, "layered")
         except ImageProviderError as exc:
@@ -749,19 +752,28 @@ class AnimationTools(BaseTools):
         """
         manifest = self._find_video_animation(animation_id)
         if manifest:
-            self.canvas_manager.show_video_animation(manifest)
+            self.canvas_manager.visual.show_video_animation(
+                manifest, url_for_path=self.image_tools.theater.get_url_for_path
+            )
+            self.canvas_manager.notify_changed("latest")
             self.image_tools._trigger_after_tool_call("play_animation")
             return f"Playing video animation '{animation_id}'."
 
         manifest = self._find_layered_animation(animation_id)
         if manifest:
-            self.canvas_manager.show_layered_animation(manifest)
+            self.canvas_manager.visual.show_layered_animation(
+                manifest, url_for_path=self.image_tools.theater.get_url_for_path
+            )
+            self.canvas_manager.notify_changed("latest")
             self.image_tools._trigger_after_tool_call("play_animation")
             return f"Playing layered animation '{animation_id}'."
 
         frame_paths = self._find_triframe_animation(animation_id)
         if frame_paths:
-            self.canvas_manager.show_triframe(frame_paths)
+            self.canvas_manager.visual.show_triframe(
+                frame_paths, url_for_path=self.image_tools.theater.get_url_for_path
+            )
+            self.canvas_manager.notify_changed("latest")
             self.image_tools._trigger_after_tool_call("play_animation")
             return f"Playing animation '{animation_id}'."
 
