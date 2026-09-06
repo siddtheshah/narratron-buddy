@@ -12,20 +12,6 @@ from testing.ui.base import UITestCase
 
 
 class TestCrossfade(UITestCase):
-    def test_canvas_state_stores_transition_and_effect(self):
-        image = self.workspace / "shown.jpg"
-        image.write_bytes(b"image")
-        manager = self.make_canvas_state("transition_storage")
-
-        for transition, effect in (("crossfade", "gleam3"), ("fade", "sparkle"), ("none", "none")):
-            manager.visual.show_image(str(image), transition=transition, effect=effect)
-            self.assertEqual(manager.visual.shown_image_transition, transition)
-            self.assertEqual(manager.visual.shown_image_effect, effect)
-
-        manager.visual.show_image(str(image), transition=None, effect=None)
-        self.assertEqual(manager.visual.shown_image_transition, "crossfade")
-        self.assertEqual(manager.visual.shown_image_effect, "gleam3")
-
     def test_show_image_forwards_transition_and_effect_to_callback(self):
         from tools.image_tool import ImageTools
 
@@ -53,17 +39,6 @@ class TestCrossfade(UITestCase):
                 str(image.with_suffix(".webp")), transition=transition, effect=effect
             )
             tool.on_show_image.reset_mock()
-
-    def test_latest_state_contains_transition_and_effect(self):
-        image = self.workspace / "shown.jpg"
-        image.write_bytes(b"image")
-        manager = self.make_canvas_state("latest_state")
-
-        for transition, effect in (("crossfade", "gleam3"), ("fade", "sparkle"), ("none", "none")):
-            manager.visual.show_image(str(image), transition=transition, effect=effect)
-            state = manager.get_latest_state()
-            self.assertEqual(state["transition"], transition)
-            self.assertEqual(state["effect"], effect)
 
     def test_canvas_template_supports_crossfade(self):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"

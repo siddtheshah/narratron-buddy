@@ -94,6 +94,34 @@ def test_show_image_falls_back_to_defaults_on_falsy_transition_or_effect() -> No
     assert state.shown_image_effect == "gleam3"
 
 
+def test_show_image_stores_transition_and_effect() -> None:
+    state = VisualState(make_theater())
+
+    for index, (transition, effect) in enumerate(
+        (("crossfade", "gleam3"), ("fade", "sparkle"), ("none", "none"))
+    ):
+        state.show_image(f"shown-{index}.jpg", transition=transition, effect=effect)
+        assert state.shown_image_transition == transition
+        assert state.shown_image_effect == effect
+
+    state.show_image("shown2.jpg", transition=None, effect=None)
+    assert state.shown_image_transition == "crossfade"
+    assert state.shown_image_effect == "gleam3"
+
+
+def test_payload_contains_transition_and_effect() -> None:
+    theater = make_theater()
+    state = VisualState(theater)
+
+    for index, (transition, effect) in enumerate(
+        (("crossfade", "gleam3"), ("fade", "sparkle"), ("none", "none"))
+    ):
+        state.show_image(f"shown-{index}.jpg", transition=transition, effect=effect)
+        payload = state.payload(theater)
+        assert payload["transition"] == transition
+        assert payload["effect"] == effect
+
+
 def test_show_image_identical_call_returns_false_and_preserves_revision_and_time() -> None:
     state = VisualState(make_theater())
     changed1 = state.show_image("img1.png", transition="fade", effect="zoom")
