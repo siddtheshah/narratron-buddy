@@ -28,7 +28,7 @@ class CanvasStateManager:
         self.doodles = DoodleState(self.persist)
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
-        self.story = StoryState()
+        self.story = StoryState(self.persist, self.notify_changed)
         self.chat = ChatManager(output_dir=str(self.theater.output_dir() / "chats"))
         self.text_beautifier = text_beautifier
         self.load_state_from_disk()
