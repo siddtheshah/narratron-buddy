@@ -49,6 +49,8 @@ class FalMinimaxVideoProvider(VideoProvider):
         mode = request.prompt_expansion_mode or self.prompt_expansion_mode
         if mode:
             payload["prompt_expansion_mode"] = mode
+        if request.video_duration_seconds is not None:
+            payload["duration"] = request.video_duration_seconds
 
         response = self._request_json(self.model, payload)
         video_field = response.get("video")

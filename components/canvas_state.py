@@ -709,6 +709,7 @@ class CanvasStateManager:
             "scene_prompt": manifest.get("scene_prompt", ""),
             "video_url": video_url,
             "poster_url": self.get_url_for_path(poster_path) if poster_path else None,
+            "video_duration_seconds": manifest.get("video_duration_seconds", manifest.get("duration_seconds", manifest.get("duration", 5))),
             "loop": manifest.get("loop", True),
             "muted": manifest.get("muted", True),
         }

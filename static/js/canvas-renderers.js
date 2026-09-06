@@ -530,6 +530,9 @@ export function createImageRenderer({
         const crossfadeDuration = typeof options === "number"
             ? options
             : (options?.crossfadeDuration ?? options?.fadeDuration ?? fadeDuration);
+        const videoDurationSeconds = typeof options?.video_duration_seconds === "number" && options.video_duration_seconds > 0
+            ? options.video_duration_seconds
+            : 5;
 
         if (imageEffectController) {
             imageEffectController.setEffect("none");
@@ -605,7 +608,8 @@ export function createImageRenderer({
             video.addEventListener("ended", restartVideoLoop);
             video.addEventListener("pause", () => {
                 if (generation === sequenceGeneration && currentVideo === video && autoLoop) {
-                    if (video.ended || (video.duration > 0 && video.currentTime >= video.duration - 0.15)) {
+                    const dur = (video.duration > 0) ? video.duration : videoDurationSeconds;
+                    if (video.ended || (dur > 0 && video.currentTime >= dur - 0.15)) {
                         restartVideoLoop();
                     }
                 }
@@ -672,7 +676,8 @@ export function createImageRenderer({
 
             // Auto-loop watchdog: if the video has ended or stalled near the end without an image/video update, rewind and replay
             if (autoLoop && currentVideo === video) {
-                if (video.ended || (video.duration > 0 && video.currentTime >= video.duration - 0.05)) {
+                const dur = (video.duration > 0) ? video.duration : videoDurationSeconds;
+                if (video.ended || (dur > 0 && video.currentTime >= dur - 0.05)) {
                     try {
                         video.currentTime = 0;
                         if (video.paused) {

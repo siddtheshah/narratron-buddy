@@ -86,3 +86,27 @@ def test_minimax_video_raises_when_no_video_url():
     )
     with pytest.raises(VideoProviderError, match="no generated video URL"):
         provider.generate(VideoGenerationRequest(prompt="A castle on a mountain."))
+
+
+def test_minimax_video_passes_duration():
+    calls = []
+
+    def request_json(endpoint, payload):
+        calls.append((endpoint, payload))
+        return {"video": {"url": "https://fal.media/video.mp4"}}
+
+    provider = FalMinimaxVideoProvider(
+        api_key="test-key",
+        request_json=request_json,
+        download=lambda url: (b"video", "video/mp4"),
+    )
+    provider.generate(
+        VideoGenerationRequest(
+            prompt="A majestic eagle flying over snowy peaks.",
+            video_duration_seconds=5,
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0][1]["duration"] == 5
+

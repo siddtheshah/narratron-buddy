@@ -17,6 +17,7 @@ interactive_canvas:
 animation:
     text_provider: "gemini-3"
     text_model: "gemini-3.5-flash-lite"
+    video_duration_seconds: 5
 
 music:
     provider: "lyria"

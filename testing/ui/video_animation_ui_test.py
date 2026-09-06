@@ -31,10 +31,12 @@ class TestVideoAnimationUI(UITestCase):
         self.assertEqual(state["animation"]["type"], "video")
         self.assertEqual(state["animation"]["id"], "flight_123")
         self.assertEqual(state["animation"]["video_url"], f"/theaters/{theater_id}/output/animations/flight_123/video.mp4")
+        self.assertEqual(state["animation"]["video_duration_seconds"], 5)
         self.assertTrue(state["animation"]["loop"])
         self.assertTrue(state["animation"]["muted"])
 
         renderer = (PROJECT_ROOT / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
+        self.assertIn("video_duration_seconds", renderer)
         canvas = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
         obs = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
 

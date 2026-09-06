@@ -411,10 +411,18 @@ class AnimationTools(BaseTools):
             animation_dir = Path(self.animations_dir) / animation_id
             animation_dir.mkdir(parents=True, exist_ok=False)
 
+            anim_cfg = self.config or {}
+            if isinstance(anim_cfg.get("animation"), dict):
+                anim_cfg = anim_cfg["animation"]
+            video_duration_seconds = int(
+                anim_cfg.get("video_duration_seconds")
+                or 5
+            )
             result = self.video_provider.generate(
                 VideoGenerationRequest(
                     prompt=effective_prompt,
                     aspect_ratio="16:9",
+                    video_duration_seconds=video_duration_seconds,
                 )
             )
             video_filename = "video.mp4"
@@ -430,6 +438,7 @@ class AnimationTools(BaseTools):
                 "video_path": self._to_relative_path(video_path),
                 "video_url": result.video_url,
                 "mime_type": result.mime_type or "video/mp4",
+                "video_duration_seconds": video_duration_seconds,
                 "loop": True,
                 "muted": True,
                 "provider": {
@@ -678,6 +687,11 @@ class AnimationTools(BaseTools):
                         manifest["video_path"] = str(video_path)
                 elif video_path.is_file():
                     manifest["video_path"] = str(video_path)
+                manifest.setdefault(
+                    "video_duration_seconds",  5
+                )
+                manifest.pop("duration", None)
+                manifest.pop("duration_seconds", None)
                 self._video_animations[clean_id] = manifest
                 return manifest
             except (OSError, json.JSONDecodeError):
@@ -691,6 +705,7 @@ class AnimationTools(BaseTools):
                 "type": "video",
                 "scene_prompt": "",
                 "video_path": str(video_path),
+                "video_duration_seconds": 5,
                 "loop": True,
                 "muted": True,
             }
@@ -916,6 +931,7 @@ class AnimationTools(BaseTools):
                         "scene_prompt": manifest.get("scene_prompt", ""),
                         "video_path": manifest.get("video_path", self._to_relative_path(subfolder / "video.mp4")),
                         "video_url": manifest.get("video_url"),
+                        "video_duration_seconds": manifest.get("video_duration_seconds", manifest.get("duration_seconds", manifest.get("duration", 5))),
                     }
             except (OSError, json.JSONDecodeError):
                 pass
@@ -926,6 +942,7 @@ class AnimationTools(BaseTools):
                 "type": "video",
                 "scene_prompt": "",
                 "video_path": self._to_relative_path(subfolder / "video.mp4"),
+                "video_duration_seconds": 5,
             }
 
         frame_paths = [str(subfolder / f"frame_{number}.jpg") for number in range(1, 4)]

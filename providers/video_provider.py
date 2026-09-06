@@ -15,7 +15,7 @@ class VideoProviderError(RuntimeError):
 class VideoGenerationRequest:
     prompt: str
     aspect_ratio: str = "16:9"
-    duration_seconds: int | None = None
+    video_duration_seconds: int | None = None
     prompt_expansion_mode: str | None = None
 
 

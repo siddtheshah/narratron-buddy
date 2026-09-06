@@ -603,6 +603,7 @@ class TestAnimationTools(BaseTestCase):
         request = video_provider.generate.call_args[0][0]
         self.assertIn("dragon soaring", request.prompt.lower())
         self.assertEqual(request.prompt, "A dragon soaring through stormy clouds.\n\nStyle: loopable")
+        self.assertEqual(request.video_duration_seconds, 5)
 
         # Verify folder structure under animations directory
         anim_folder = os.path.join(tools.animations_dir, animation_id)
@@ -619,6 +620,9 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(manifest["type"], "video")
         self.assertEqual(manifest["id"], animation_id)
         self.assertEqual(manifest["video_url"], "https://fal.media/dragon_flight.mp4")
+        self.assertEqual(manifest["video_duration_seconds"], 5)
+        self.assertNotIn("duration", manifest)
+        self.assertNotIn("duration_seconds", manifest)
         self.assertTrue(manifest["loop"])
         self.assertTrue(manifest["muted"])
         self.assertTrue(os.path.exists(image_tools.image_aliases[f"{animation_id}_video"]))
@@ -999,6 +1003,119 @@ class TestAnimationTools(BaseTestCase):
         )
         # Ensure image_tools internal _set_canvas_activity was NOT called
         self.assertFalse(getattr(image_tools, "_set_canvas_activity").called)
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_video_duration_defaults_to_5s(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-dur-1",
+            video_url="https://fal.media/5s_clip.mp4",
+        )
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "video_duration_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(
+            image_tools,
+            image_provider,
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        result = tools.create_animation("Aurora borealis shimmering across the night sky.", "aurora")
+        tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        self.assertEqual(video_provider.generate.call_count, 1)
+        request = video_provider.generate.call_args[0][0]
+        self.assertEqual(request.video_duration_seconds, 5)
+
+        manifest = tools._find_video_animation(animation_id)
+        self.assertIsNotNone(manifest)
+        self.assertEqual(manifest["video_duration_seconds"], 5)
+        self.assertNotIn("duration", manifest)
+        self.assertNotIn("duration_seconds", manifest)
+
+        # Also verify playing the animation exposes duration in canvas state
+        tools.play_animation(animation_id)
+        state = canvas_state_service.latest_state("video_duration_theater")
+        self.assertEqual(state["animation"]["type"], "video")
+        self.assertEqual(state["animation"]["video_duration_seconds"], 5)
+        self.assertNotIn("duration", state["animation"])
+        self.assertNotIn("duration_seconds", state["animation"])
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_video_duration_configurable(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-dur-2",
+            video_url="https://fal.media/10s_clip.mp4",
+        )
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = ImageTools(self.config, "video_custom_dur_theater", self.manager, canvas_state_service=canvas_state_service)
+        tools = AnimationTools(
+            image_tools,
+            image_provider,
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "video_duration_seconds": 10, "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        result = tools.create_animation("A slow-motion waterfall cascading over mossy rocks.", "waterfall")
+        tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        self.assertEqual(video_provider.generate.call_count, 1)
+        request = video_provider.generate.call_args[0][0]
+        self.assertEqual(request.video_duration_seconds, 10)
+
+        manifest = tools._find_video_animation(animation_id)
+        self.assertIsNotNone(manifest)
+        self.assertEqual(manifest["video_duration_seconds"], 10)
+        self.assertNotIn("duration", manifest)
+        self.assertNotIn("duration_seconds", manifest)
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_video_duration_from_nested_config(self, mock_get_provider):
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="fal-ai/minimax-h3-turbo/text-to-video",
+            request_id="vid-dur-3",
+            video_url="https://fal.media/7s_clip.mp4",
+        )
+        image_tools = ImageTools(self.config, "video_nested_dur_theater", self.manager)
+        tools = AnimationTools(
+            image_tools,
+            image_provider,
+            MagicMock(),
+            MagicMock(),
+            {"animation": {"forced_technique": "video", "video_duration_seconds": 7}, "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+
+        result = tools.create_animation("A shooting star blazing across the night.", "star")
+        tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+        self.assertEqual(video_provider.generate.call_count, 1)
+        request = video_provider.generate.call_args[0][0]
+        self.assertEqual(request.video_duration_seconds, 7)
+
 
 
 
