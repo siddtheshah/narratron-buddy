@@ -30,9 +30,11 @@ class StoryState:
         self,
         persist: Callable[[], None] | None = None,
         notify_changed: Callable[..., None] | None = None,
+        publish_audio_fn: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._persist = persist
         self._notify_changed = notify_changed
+        self.publish_audio_fn = publish_audio_fn
         self.named_elements: list[dict[str, str]] = []
         self.story_planning_state: dict[str, object] = {}
         self.scene_dialogue: list[dict[str, Any]] = []
@@ -46,7 +48,6 @@ class StoryState:
         self._speech_executor: ThreadPoolExecutor | None = None
         self._speech_lock = threading.Lock()
         self._speech_generation = 0
-        self._publish_audio_callback: Callable[[dict[str, Any]], None] | None = None
 
     @property
     def text_beautifier(self) -> Any:
@@ -72,7 +73,6 @@ class StoryState:
         *,
         persist: Callable[[], None] | None = None,
         notify_changed: Callable[..., None] | None = None,
-        publish_audio: Callable[[dict[str, Any]], None] | None = None,
         text_beautifier: Any = None,
         character_lookup: Callable[[str], Any] | None = None,
         provider: SpeechProvider | None = None,
@@ -82,8 +82,6 @@ class StoryState:
             self._persist = persist
         if notify_changed is not None:
             self._notify_changed = notify_changed
-        if publish_audio is not None:
-            self._publish_audio_callback = publish_audio
         if text_beautifier is not None:
             self._text_beautifier = text_beautifier
         if character_lookup is not None:
@@ -285,23 +283,21 @@ class StoryState:
                 mime = result.mime_type or "audio/mpeg"
                 audio_url = f"data:{mime};base64,{audio_b64}"
 
-                self.publish_audio({
-                    "type": "scene_speech_ready",
-                    "speaker": speaker,
-                    "voice": voice,
-                    "audio_url": audio_url,
-                    "mime_type": result.mime_type,
-                    "generation": generation,
-                })
+                if callable(self.publish_audio_fn):
+                    self.publish_audio_fn({
+                        "type": "scene_speech_ready",
+                        "speaker": speaker,
+                        "voice": voice,
+                        "audio_url": audio_url,
+                        "mime_type": result.mime_type,
+                        "generation": generation,
+                    })
             except (SpeechProviderError, OSError, ValueError) as exc:
                 logger.warning("[SceneSpeech] Failed to synthesize dialogue for %s: %s", speaker, exc)
 
-    def publish_audio(self, message: dict[str, Any]) -> None:
-        """Publish synthesized scene speech audio."""
-        if callable(self._publish_audio_callback):
-            self._publish_audio_callback(message)
-        if self._notify_changed:
-            self._notify_changed("latest")
+    @property
+    def _scene_speech(self) -> Any:
+        return self if self._scene_speech_enabled and self._speech_provider else None
 
     def _get_executor(self) -> ThreadPoolExecutor:
         if self._speech_executor is None:

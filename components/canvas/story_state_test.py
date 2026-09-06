@@ -132,8 +132,7 @@ def test_dispatch_synthesizes_and_publishes_audio_as_data_uri() -> None:
     )
 
     published = []
-    state = StoryState()
-    state.publish_audio = published.append
+    state = StoryState(publish_audio_fn=published.append)
     state.enable_scene_speech(mock_provider)
 
     state.dispatch([
@@ -155,8 +154,7 @@ def test_dispatch_newer_scene_aborts_previous_scene_synthesis() -> None:
     mock_provider.select_voice.return_value = "voice_alpha"
 
     published = []
-    state = StoryState()
-    state.publish_audio = published.append
+    state = StoryState(publish_audio_fn=published.append)
     state.enable_scene_speech(mock_provider)
 
     scene1_started = threading.Event()
@@ -195,8 +193,7 @@ def test_cancel_aborts_in_flight_synthesis() -> None:
     mock_provider.select_voice.return_value = "voice_alpha"
 
     published = []
-    state = StoryState()
-    state.publish_audio = published.append
+    state = StoryState(publish_audio_fn=published.append)
     state.enable_scene_speech(mock_provider)
 
     def cancelling_synthesize(req):
@@ -214,6 +211,33 @@ def test_cancel_aborts_in_flight_synthesis() -> None:
     state._executor.shutdown(wait=True)
 
     assert len(published) == 0
+
+
+def test_story_state_publish_audio_fn_delegates_to_connection_state_broadcast() -> None:
+    from components.canvas.connection_state import ConnectionState
+    conn = ConnectionState()
+    received = []
+    conn.broadcast = received.append
+
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+    mock_provider.synthesize.return_value = SpeechSynthesisResult(
+        audio_bytes=b"audio",
+        mime_type="audio/mpeg",
+        provider="mock",
+        model="mock",
+    )
+
+    state = StoryState(publish_audio_fn=conn.broadcast)
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([{"speaker": "Alice", "text": "Speaking aloud", "kind": "speech"}])
+    state._executor.shutdown(wait=True)
+
+    assert len(received) == 1
+    assert received[0]["type"] == "scene_speech_ready"
+    assert received[0]["speaker"] == "Alice"
+
 
 
 def test_load_and_serialize_round_trip() -> None:

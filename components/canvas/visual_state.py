@@ -2,10 +2,15 @@
 
 import time
 from collections.abc import Callable
+import os
 from pathlib import Path
 import re
-from typing import Any
-
+from typing import Any, Optional, Tuple
+from utils.image_utils import (
+    extract_image_prompt,
+    extract_image_metadata_description,
+    extract_image_metadata_title,
+)
 
 class VisualState:
     def __init__(self) -> None:
@@ -30,6 +35,114 @@ class VisualState:
         image_path = self._find_starting_reference(theater, configured.strip())
         if image_path:
             self.show_image(str(image_path), url_for_path=theater.get_url_for_path)
+
+    def _resolve_reference_fallback(self) -> Optional[Tuple[Path, str]]:
+        """Fallback to first reference image (prioritizing cover-named images)."""
+        if not self.theater_id:
+            return None
+        theater_ref_dir = self.theater.references_dir()
+        if not theater_ref_dir.exists():
+            return None
+        ref_images = [f for f in theater_ref_dir.iterdir() if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        if not ref_images:
+            return None
+        cover_candidates = [f for f in ref_images if "cover" in f.stem.lower()]
+        chosen = cover_candidates[0] if cover_candidates else ref_images[0]
+        prompt = extract_image_prompt(str(chosen)) or f"Mounted Reference: {chosen.stem}"
+        return chosen, prompt
+
+    def _resolve_prompt_for_file(self, file_path: Optional[str], fallback_prompt: str = "") -> str:
+        """Robustly resolve human-readable prompt metadata for an image file."""
+        if fallback_prompt:
+            return fallback_prompt
+        if not file_path or not os.path.exists(file_path):
+            return ""
+        # 1. Try embedded PNG tEXt or EXIF prompt
+        prompt = extract_image_prompt(file_path)
+        if prompt:
+            return prompt
+        # 2. Try embedded EXIF/PNG title or description fields
+        title_meta = extract_image_metadata_title(file_path)
+        if title_meta:
+            return title_meta
+        desc_meta = extract_image_metadata_description(file_path)
+        if desc_meta:
+            return desc_meta
+
+        # 3. Check if image matches adventure cover
+        path_obj = Path(file_path)
+        meta = None
+        if hasattr(self, "theater") and self.theater:
+            try:
+                meta_file = self.theater.directory() / "metadata.json"
+                if meta_file.exists():
+                    import json
+                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                meta = None
+        if meta and meta.get("cover_image"):
+            cover_name = Path(meta["cover_image"]).name.lower()
+            if path_obj.name.lower() == cover_name:
+                title = meta.get("title")
+                return f"Adventure Cover: {title}" if title else f"Adventure Cover: {path_obj.stem}"
+
+        # 4. Check for adjacent animation manifests (video.json, layered.json, triframe.json)
+        parent_dir = path_obj.parent
+        for manifest_name in ("video.json", "layered.json", "triframe.json"):
+            candidate = parent_dir / manifest_name
+            if candidate.is_file():
+                try:
+                    import json
+                    data = json.loads(candidate.read_text(encoding="utf-8"))
+                    anim_prompt = data.get("scene_prompt") or data.get("prompt")
+                    if anim_prompt:
+                        return str(anim_prompt).strip()
+                except Exception:
+                    pass
+
+        # 5. Fallback based on filename stem
+        stem_clean = path_obj.stem.replace("_", " ").replace("-", " ").title()
+        if "reference" in str(path_obj).lower() or "ref" in path_obj.stem.lower():
+            return f"Reference Visual: {stem_clean}"
+        return f"Image: {stem_clean}"
+
+    def _resolve_active_image(self) -> Tuple[Optional[str], Optional[str], float, str]:
+        """Resolve current displayed image: explicit shown image, newest artifact, adventure cover, or mounted reference.
+
+        Returns:
+            Tuple of (image_url, file_path_str, timestamp, prompt_text)
+        """
+        # 1. Explicit shown image
+        if self.shown_image_path:
+            prompt = self._resolve_prompt_for_file(self.shown_image_path, getattr(self, "shown_image_prompt", ""))
+            return self.get_url_for_path(self.shown_image_path), self.shown_image_path, self.shown_image_time, prompt
+
+        # 2. Output directory latest generated image
+        image_folder = str(self.theater.output_dir())
+        if os.path.exists(image_folder):
+            files = []
+            for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp"):
+                files.extend(glob.glob(os.path.join(image_folder, ext)))
+            if files:
+                newest = max(files, key=os.path.getmtime)
+                prompt = self._resolve_prompt_for_file(newest)
+                return self.get_url_for_path(newest), newest, os.path.getmtime(newest), prompt
+
+        # 3. Adventure cover from metadata.json
+        cover = self._resolve_adventure_cover()
+        if cover:
+            cover_path, prompt = cover
+            prompt = self._resolve_prompt_for_file(str(cover_path), prompt)
+            return self.get_url_for_path(str(cover_path)), str(cover_path), 0.0, prompt
+
+        # 4. Mounted reference fallback
+        ref = self._resolve_reference_fallback()
+        if ref:
+            ref_path, prompt = ref
+            prompt = self._resolve_prompt_for_file(str(ref_path), prompt)
+            return self.get_url_for_path(str(ref_path)), str(ref_path), 0.0, prompt
+
+        return None, None, 0.0, ""
 
     @staticmethod
     def _has_generated_image(theater: Any) -> bool:

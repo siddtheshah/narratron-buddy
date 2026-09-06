@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,7 +29,7 @@ class CanvasStateManager:
         self.doodles = DoodleState(self.persist)
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
-        self.story = StoryState(self.persist, self.notify_changed)
+        self.story = StoryState(self.persist, self.notify_changed, publish_audio_fn=self.connections.broadcast)
         self.chat = ChatManager(output_dir=str(self.theater.output_dir() / "chats"))
         self.text_beautifier = text_beautifier
         self.load_state_from_disk()
