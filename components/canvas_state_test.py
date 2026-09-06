@@ -593,6 +593,49 @@ class TestCanvasStateManager(BaseTestCase):
         )
         self.assertTrue(state["animation"]["loop"])
         self.assertTrue(state["animation"]["muted"])
+        self.assertEqual(state["prompt"], "A dragon flying over volcanoes.")
+        self.assertEqual(len(state["history"]), 1)
+        self.assertEqual(state["history"][0]["prompt"], "A dragon flying over volcanoes.")
+        self.assertEqual(state["history"][0]["animation"]["type"], "video")
+
+    def test_manifest_prompt_resolution_adjacent_files(self):
+        manager = CanvasStateManager(theater_id="test_manifest_prompts", theater_manager=self.theater_manager)
+        from pathlib import Path
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            anim_dir = Path(tmp_dir) / "animations" / "test_anim"
+            anim_dir.mkdir(parents=True)
+            video_file = anim_dir / "video.mp4"
+            video_file.write_bytes(b"fake_video")
+            (anim_dir / "video.json").write_text(json.dumps({
+                "scene_prompt": "A serene forest waterfall at sunrise.",
+            }), encoding="utf-8")
+
+            resolved = manager._resolve_prompt_for_file(str(video_file))
+            self.assertEqual(resolved, "A serene forest waterfall at sunrise.")
+            self.assertNotEqual(resolved, "Image: Video")
+
+    def test_animation_history_transitions_and_replay(self):
+        manager = CanvasStateManager(theater_id="test_anim_replay", theater_manager=self.theater_manager)
+        manager.update_shown_image("/path/to/scene1.png")
+        self.assertEqual(len(manager.shown_images_history), 1)
+        self.assertIsNone(manager.shown_images_history[0].get("animation"))
+
+        frames = ["/path/to/frame1.jpg", "/path/to/frame2.jpg", "/path/to/frame3.jpg"]
+        manager.show_triframe(frames, prompt="Glowing lanterns in the mist.")
+        self.assertEqual(len(manager.shown_images_history), 2)
+        self.assertEqual(manager.shown_images_history[1]["animation"]["type"], "triframe")
+        self.assertEqual(manager.shown_images_history[1]["prompt"], "Glowing lanterns in the mist.")
+
+        manager.update_shown_image("/path/to/scene2.png")
+        self.assertEqual(len(manager.shown_images_history), 3)
+        self.assertIsNone(manager.shown_images_history[2].get("animation"))
+
+        state = manager.get_latest_state()
+        self.assertEqual(len(state["history"]), 3)
+        self.assertIsNone(state["history"][0].get("animation"))
+        self.assertEqual(state["history"][1]["animation"]["type"], "triframe")
+        self.assertIsNone(state["history"][2].get("animation"))
 
 
 if __name__ == "__main__":

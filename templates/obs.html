@@ -302,6 +302,7 @@
         const playImageSequence = imageRenderer.playSequence;
         const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
         const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
+        const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
@@ -497,6 +498,9 @@
                             });
                         }
                     } else {
+                        if (typeof stopImageAnimation === 'function') {
+                            stopImageAnimation();
+                        }
                         const newImgUrl = data.latest + "?t=" + new Date().getTime();
                         const transition = (data.transition || 'crossfade').toLowerCase().trim();
                         applyImageTransition(newImgUrl, transition, currentImageEffect);

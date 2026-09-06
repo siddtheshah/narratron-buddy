@@ -3545,6 +3545,7 @@
         const playImageSequence = imageRenderer.playSequence;
         const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
         const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
+        const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
@@ -3634,21 +3635,26 @@
             }
 
             const item = imageHistory[currentViewIndex];
-            if (!item || !item.url) return;
-
-            const imgUrl = item.url + (item.url.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+            if (!item || (!item.url && !item.animation)) return;
 
             promptBtn.classList.remove('expanded');
             promptBtn.style.display = 'none';
             promptPinned = false;
-            if (item.prompt) {
-                promptTextSpan.textContent = item.prompt;
+            const promptText = item.prompt || (item.animation && item.animation.scene_prompt) || "";
+            if (promptText) {
+                promptTextSpan.textContent = promptText;
                 promptBtn.style.display = 'flex';
             } else {
                 promptBtn.style.display = 'none';
             }
 
-            applyImageTransition(imgUrl, transition, item.effect || 'gleam3');
+            const animSignature = getAnimationSignature(item.animation);
+            if (animSignature) {
+                playAnimation(item.animation);
+            } else if (item.url) {
+                const imgUrl = item.url + (item.url.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+                applyImageTransition(imgUrl, transition, item.effect || 'gleam3');
+            }
 
             updatePagingControlsUI();
         }
@@ -3721,11 +3727,12 @@
                 } else if (data.latest) {
                     imageHistory = [{
                         url: data.latest,
-                        prompt: data.prompt || "",
+                        prompt: data.prompt || (data.animation && data.animation.scene_prompt) || "",
                         time: data.time || 0,
                         transition: data.transition || "fade",
                         effect: data.effect || "gleam3",
-                        path: data.latest
+                        path: data.latest,
+                        animation: data.animation || null
                     }];
                 }
 
@@ -3734,7 +3741,7 @@
                 // A show_image call may change only presentation (for example,
                 // applying haze to an image the fallback already displayed).
                 // Treat that as an update even when the URL has not changed.
-                const isNewImage = data.latest && (
+                const isNewImage = (data.latest || animationSignature) && (
                     data.time > lastTime
                     || data.latest !== lastImageRawUrl
                     || currentImageEffect !== lastImageEffect
@@ -3745,7 +3752,7 @@
                     currentViewIndex = imageHistory.length - 1;
                     isPagedBack = false;
                     hasNewHeadWhilePagedBack = false;
-                    if (data.latest) {
+                    if (data.latest || animationSignature) {
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
                         lastImageEffect = currentImageEffect;
@@ -3756,8 +3763,9 @@
                             const newImgUrl = data.latest + "?t=" + new Date().getTime();
                             applyImageTransition(newImgUrl, 'none', currentImageEffect);
                         }
-                        if (data.prompt) {
-                            promptTextSpan.textContent = data.prompt;
+                        const activePrompt = data.prompt || (data.animation && data.animation.scene_prompt) || "";
+                        if (activePrompt) {
+                            promptTextSpan.textContent = activePrompt;
                             promptBtn.style.display = 'flex';
                         }
                     }
@@ -3781,17 +3789,22 @@
                             ws.send(JSON.stringify({ type: 'clear' }));
                         }
 
+                        const activePrompt = data.prompt || (data.animation && data.animation.scene_prompt) || "";
                         if (animationSignature) {
                             promptBtn.classList.remove('expanded');
                             promptBtn.style.display = 'none';
                             promptPinned = false;
                             playAnimation(data.animation);
-                            if (data.prompt) {
-                                promptTextSpan.textContent = data.prompt;
+                            if (activePrompt) {
+                                promptTextSpan.textContent = activePrompt;
                                 promptBtn.style.display = 'flex';
                             }
                             updatePagingControlsUI();
                             return;
+                        }
+
+                        if (typeof stopImageAnimation === 'function') {
+                            stopImageAnimation();
                         }
 
                         const tempImage = new Image();
@@ -3802,8 +3815,8 @@
 
                             applyImageTransition(newImgUrl, transition, currentImageEffect);
 
-                            if (data.prompt) {
-                                promptTextSpan.textContent = data.prompt;
+                            if (activePrompt) {
+                                promptTextSpan.textContent = activePrompt;
                                 promptBtn.style.display = 'flex';
                             }
                         };
@@ -3811,11 +3824,14 @@
                         tempImage.onload = triggerTransition;
                         tempImage.onerror = triggerTransition;
                         tempImage.src = newImgUrl;
+                        if (tempImage.complete) {
+                            triggerTransition();
+                        }
                     } else {
                         hasNewHeadWhilePagedBack = true;
                     }
                     updatePagingControlsUI();
-                } else if (!data.latest && imageHistory.length === 0) {
+                } else if (!data.latest && !data.animation && imageHistory.length === 0) {
                     bgLayer.style.backgroundImage = 'none';
                     if (currentImage) currentImage.classList.remove('loaded');
                     if (ghostImage) { ghostImage.src = ''; ghostImage.style.opacity = '0'; }

@@ -455,3 +455,80 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(tools.currently_displayed_image_path, reference_path)
         tools.stop_cycle()
 
+    def test_show_image_takes_priority_when_animation_is_active(self):
+        canvas_state_service = CanvasStateService(self.manager)
+        theater_id = "anim_priority_show"
+        tools = ImageTools(
+            self.config,
+            theater_id=theater_id,
+            theater_manager=self.manager,
+            canvas_state_service=canvas_state_service,
+        )
+        tools.stop_cycle()
+        img1 = os.path.join(tools.reference_dir, "scene1.jpg")
+        img2 = os.path.join(tools.reference_dir, "scene2.jpg")
+        Image.new("RGB", (10, 10), color="blue").save(img1)
+        Image.new("RGB", (10, 10), color="green").save(img2)
+
+        # 1. Establish initial displayed image
+        tools.show_image("scene1.jpg")
+        self.assertEqual(tools.current_cycle_image["path"], img1)
+
+        # 2. Simulate active video animation playing on canvas
+        c_state = canvas_state_service.get(theater_id)
+        c_state.show_video_animation({
+            "id": "cascade_anim",
+            "video_url": "https://example.com/video.mp4",
+            "scene_prompt": "falling sand",
+        })
+        self.assertIsNotNone(c_state.shown_video_animation)
+
+        # 3. Request new image -> must bypass cycle queue and take priority immediately
+        res = tools.show_image("scene2.jpg")
+        self.assertIn("Successfully displayed", res)
+        self.assertEqual(tools.current_cycle_image["path"], img2)
+        self.assertIsNone(tools.next_cycle_image)
+        # Verify canvas state cleared animation
+        self.assertIsNone(c_state.shown_video_animation)
+        tools.stop_cycle()
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_takes_priority_when_animation_is_active(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        canvas_state_service = CanvasStateService(self.manager)
+        theater_id = "anim_priority_create"
+        tools = ImageTools(
+            self.config,
+            theater_id=theater_id,
+            theater_manager=self.manager,
+            canvas_state_service=canvas_state_service,
+        )
+        tools.stop_cycle()
+        img1 = os.path.join(tools.reference_dir, "scene1.jpg")
+        Image.new("RGB", (10, 10), color="blue").save(img1)
+
+        # Establish initial image
+        tools.show_image("scene1.jpg")
+        self.assertEqual(tools.current_cycle_image["path"], img1)
+
+        # Simulate active animation
+        c_state = canvas_state_service.get(theater_id)
+        c_state.show_video_animation({
+            "id": "cascade_anim_2",
+            "video_url": "https://example.com/video2.mp4",
+            "scene_prompt": "swirling vortex",
+        })
+        self.assertIsNotNone(c_state.shown_video_animation)
+
+        # Create new image -> must display immediately with priority over active animation
+        tools.create_image("ancient ruins", image_name="ruins", display=True)
+        tools.join_generation()
+
+        self.assertIsNotNone(tools.current_cycle_image)
+        self.assertIn("ruins", tools.current_cycle_image["path"])
+        self.assertIsNone(tools.next_cycle_image)
+        self.assertIsNone(c_state.shown_video_animation)
+        tools.stop_cycle()
+
+

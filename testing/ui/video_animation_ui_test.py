@@ -35,6 +35,13 @@ class TestVideoAnimationUI(UITestCase):
         self.assertTrue(state["animation"]["loop"])
         self.assertTrue(state["animation"]["muted"])
 
+        # Prompt resolution must show the original scene prompt, not "Image: Video"
+        self.assertEqual(state["prompt"], "A soaring griffin over snow-capped mountains.")
+        self.assertNotEqual(state["prompt"], "Image: Video")
+        self.assertEqual(len(state["history"]), 1)
+        self.assertEqual(state["history"][0]["prompt"], "A soaring griffin over snow-capped mountains.")
+        self.assertEqual(state["history"][0]["animation"]["type"], "video")
+
         renderer = (PROJECT_ROOT / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
         self.assertIn("video_duration_seconds", renderer)
         canvas = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")

@@ -16,6 +16,24 @@ import {
     calculateMeshGrid,
 } from "/static/js/animation-effects.js";
 
+export const WHITELISTED_CDN_DOMAINS = [
+    "fal.media",
+    "fal.ai",
+];
+
+export function isWhitelistedCdn(url) {
+    if (!url) return false;
+    try {
+        const parsed = new URL(url, window.location.href);
+        if (parsed.origin === window.location.origin) return true;
+        return WHITELISTED_CDN_DOMAINS.some(
+            (domain) => parsed.hostname === domain || parsed.hostname.endsWith("." + domain)
+        );
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Draws generated images to a canvas, including transitions and image effects.
  * This is shared by the interactive canvas and the UI-free OBS canvas.
@@ -180,17 +198,23 @@ export function createImageRenderer({
         if (!canvas || !context) return;
         const oldSnapshot = captureCanvasSnapshot();
         stopSequence();
-        resize();
 
         const newImage = new Image();
+        if (isWhitelistedCdn(imageUrl)) {
+            newImage.crossOrigin = "anonymous";
+        }
         newImage.src = imageUrl;
 
         try {
             await newImage.decode();
         } catch {
             await new Promise((resolve) => {
-                newImage.onload = resolve;
-                newImage.onerror = resolve;
+                if (newImage.complete && newImage.naturalWidth > 0) {
+                    resolve();
+                    return;
+                }
+                newImage.onload = () => resolve();
+                newImage.onerror = () => resolve();
             });
         }
 
@@ -267,6 +291,9 @@ export function createImageRenderer({
         const generation = sequenceGeneration;
         const frames = await Promise.all(imageUrls.map(async (imageUrl) => {
             const frame = new Image();
+            if (isWhitelistedCdn(imageUrl)) {
+                frame.crossOrigin = "anonymous";
+            }
             frame.src = imageUrl;
             try {
                 await frame.decode();
@@ -371,6 +398,9 @@ export function createImageRenderer({
         const generation = sequenceGeneration;
         const prepared = await Promise.all(layers.map(async (layer) => {
             const source = new Image();
+            if (isWhitelistedCdn(layer.url)) {
+                source.crossOrigin = "anonymous";
+            }
             source.src = layer.url;
             try { await source.decode(); } catch { await new Promise(resolve => { source.onload = resolve; source.onerror = resolve; }); }
             return { ...layer, source };
@@ -559,7 +589,9 @@ export function createImageRenderer({
         video.playsInline = true;
         video.loop = true;
         video.autoplay = true;
-        video.crossOrigin = "anonymous";
+        if (isWhitelistedCdn(videoUrl)) {
+            video.crossOrigin = "anonymous";
+        }
 
         // Keep video completely silent at all times (e.g., if unmuted by browser policies or extensions)
         const silenceVideo = () => {
@@ -616,6 +648,9 @@ export function createImageRenderer({
             });
         }
 
+        const fallbackUrl = options?.local_video_url || options?.fallback_url || (options?.video_path ? options.video_path : null);
+        let triedFallback = false;
+
         await new Promise((resolve) => {
             let resolved = false;
             const onReady = () => {
@@ -624,12 +659,23 @@ export function createImageRenderer({
                     resolve();
                 }
             };
+            const onError = () => {
+                if (!triedFallback && fallbackUrl && fallbackUrl !== video.src && fallbackUrl !== videoUrl) {
+                    triedFallback = true;
+                    console.warn("Video CDN URL failed to load, falling back to local theater copy:", fallbackUrl);
+                    silenceVideo();
+                    video.src = fallbackUrl;
+                    video.load();
+                    return;
+                }
+                onReady();
+            };
             if (video.readyState >= 2) {
                 onReady();
             } else {
                 video.oncanplay = onReady;
                 video.onloadeddata = onReady;
-                video.onerror = onReady;
+                video.onerror = onError;
                 setTimeout(onReady, 5000);
             }
         });
@@ -712,7 +758,7 @@ export function createImageRenderer({
         activeAnimation = requestAnimationFrame(frame);
     }
 
-    return { resize, applyTransition, playSequence, playLayeredAnimation, playVideoAnimation };
+    return { resize, applyTransition, playSequence, playLayeredAnimation, playVideoAnimation, stopSequence };
 }
 
 /** Draws normalized doodle segments and replays them after canvas resizes. */

@@ -564,6 +564,10 @@ class CanvasStateManager:
         self._notify_state_changed("latest")
 
     def get_url_for_path(self, file_path: str) -> str:
+        if not file_path:
+            return ""
+        if file_path.startswith(("http://", "https://", "/theaters/")):
+            return file_path
         return self.theater.get_url_for_path(file_path)
 
     def update_shown_image(
@@ -573,6 +577,8 @@ class CanvasStateManager:
         transition: str = "crossfade",
         effect: str = "gleam3",
         clear_animation: bool = True,
+        animation: Optional[Dict[str, Any]] = None,
+        prompt: Optional[str] = None,
     ):
         transition = transition or "crossfade"
         effect = effect or "gleam3"
@@ -596,13 +602,31 @@ class CanvasStateManager:
         elif not getattr(self, "shown_image_time", None):
             self.shown_image_time = time.time()
         self.shown_image_path = file_path
-        self.shown_image_prompt = self._resolve_prompt_for_file(file_path)
+        if prompt is not None:
+            self.shown_image_prompt = prompt
+        else:
+            self.shown_image_prompt = self._resolve_prompt_for_file(file_path)
         self.shown_image_transition = transition
         self.shown_image_effect = effect
         if clear_animation:
             self.shown_animation_frames = []
             self.shown_layered_animation = None
             self.shown_video_animation = None
+            animation = None
+        elif animation is None:
+            if self.shown_animation_frames:
+                animation = {
+                    "type": "triframe",
+                    "frames": [self.get_url_for_path(path) for path in self.shown_animation_frames],
+                    "frame_paths": list(self.shown_animation_frames),
+                    "frame_duration_ms": 1400,
+                    "crossfade_duration_ms": 500,
+                    "scene_prompt": self.shown_image_prompt or "",
+                }
+            elif self.shown_layered_animation:
+                animation = {"type": "layered", **self.shown_layered_animation}
+            elif self.shown_video_animation:
+                animation = {"type": "video", **self.shown_video_animation}
         if presentation_changed:
             self.image_revision += 1
         self._notify_state_changed("latest")
@@ -617,12 +641,19 @@ class CanvasStateManager:
                 "transition": self.shown_image_transition,
                 "effect": self.shown_image_effect,
             }
-            # Append if history is empty or last item path differs from file_path
+            if animation:
+                history_item["animation"] = animation
+            # Append if history is empty or last item path/animation differs
             last_path = None
+            last_anim = None
             if self.shown_images_history:
                 last_entry = self.shown_images_history[-1]
-                last_path = last_entry.get("path") if isinstance(last_entry, dict) else last_entry
-            if last_path != file_path:
+                if isinstance(last_entry, dict):
+                    last_path = last_entry.get("path")
+                    last_anim = last_entry.get("animation")
+                else:
+                    last_path = last_entry
+            if last_path != file_path or last_anim != animation:
                 self.shown_images_history.append(history_item)
                 if len(self.shown_images_history) > 100:
                     self.shown_images_history = self.shown_images_history[-100:]
@@ -647,19 +678,43 @@ class CanvasStateManager:
                     except Exception as e:
                         logger.warning(f"Failed to copy shown image to theater output dir: {e}")
 
-    def show_triframe(self, frame_paths: List[str], theater_id: Optional[str] = None) -> None:
+    def show_triframe(self, frame_paths: List[str], theater_id: Optional[str] = None, prompt: Optional[str] = None) -> None:
         """Display a generated three-frame sequence as a looping canvas animation."""
         if len(frame_paths) != 3 or any(not path for path in frame_paths):
             raise ValueError("A tri-frame animation requires exactly three image paths.")
+        resolved_prompt = prompt
+        if not resolved_prompt:
+            try:
+                manifest_file = Path(frame_paths[0]).parent / "triframe.json"
+                if manifest_file.is_file():
+                    import json
+                    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+                    resolved_prompt = manifest.get("scene_prompt") or manifest.get("prompt")
+            except Exception:
+                pass
+            if not resolved_prompt:
+                resolved_prompt = self._resolve_prompt_for_file(frame_paths[0])
+
+        self.shown_animation_frames = list(frame_paths)
+        self.shown_layered_animation = None
+        self.shown_video_animation = None
+        anim_payload = {
+            "type": "triframe",
+            "frames": [self.get_url_for_path(path) for path in frame_paths],
+            "frame_paths": list(frame_paths),
+            "frame_duration_ms": 1400,
+            "crossfade_duration_ms": 500,
+            "scene_prompt": resolved_prompt or "",
+        }
         self.update_shown_image(
             frame_paths[0],
             theater_id=theater_id,
             transition="crossfade",
             effect="none",
             clear_animation=False,
+            animation=anim_payload,
+            prompt=resolved_prompt,
         )
-        self.shown_animation_frames = list(frame_paths)
-        self.shown_layered_animation = None
         self._notify_state_changed("latest")
 
     def show_layered_animation(self, manifest: Dict[str, Any], theater_id: Optional[str] = None) -> None:
@@ -670,16 +725,28 @@ class CanvasStateManager:
         base_path = str(manifest.get("base_image") or layers[0].get("path") or "")
         if not base_path:
             raise ValueError("A layered animation requires a base image path.")
-        self.update_shown_image(base_path, theater_id=theater_id, transition="crossfade", effect="none", clear_animation=False)
+        scene_prompt = manifest.get("scene_prompt") or manifest.get("prompt") or self._resolve_prompt_for_file(base_path)
         self.shown_animation_frames = []
+        self.shown_video_animation = None
         self.shown_layered_animation = {
-            "id": manifest.get("id"), "scene_prompt": manifest.get("scene_prompt", ""),
+            "id": manifest.get("id"),
+            "scene_prompt": scene_prompt or "",
             "layers": [{
                 "name": item.get("name", f"layer_{index + 1}"), "description": item.get("description", ""),
                 "effect": item.get("effect", "none"), "order": item.get("order", index),
                 "url": self.get_url_for_path(str(item["path"])),
             } for index, item in enumerate(layers) if item.get("path")],
         }
+        anim_payload = {"type": "layered", **self.shown_layered_animation}
+        self.update_shown_image(
+            base_path,
+            theater_id=theater_id,
+            transition="crossfade",
+            effect="none",
+            clear_animation=False,
+            animation=anim_payload,
+            prompt=scene_prompt,
+        )
         logger.debug("[CanvasState] Showing layered animation id=%s layers=%s", manifest.get("id"), len(self.shown_layered_animation["layers"]))
         self._notify_state_changed("latest")
 
@@ -694,25 +761,32 @@ class CanvasStateManager:
 
         poster_path = str(manifest.get("poster_image") or "")
         display_path = poster_path if poster_path and os.path.exists(poster_path) else (video_path if video_path and os.path.exists(video_path) else None)
-        if display_path:
-            self.update_shown_image(
-                display_path,
-                theater_id=theater_id,
-                transition="crossfade",
-                effect="none",
-                clear_animation=False,
-            )
+        scene_prompt = manifest.get("scene_prompt") or manifest.get("prompt") or (self._resolve_prompt_for_file(display_path) if display_path else "")
+        local_video_url = self.get_url_for_path(video_path) if video_path else None
         self.shown_animation_frames = []
         self.shown_layered_animation = None
         self.shown_video_animation = {
             "id": manifest.get("id"),
-            "scene_prompt": manifest.get("scene_prompt", ""),
-            "video_url": video_url,
+            "scene_prompt": scene_prompt or "",
+            "video_url": video_url or local_video_url,
+            "local_video_url": local_video_url,
+            "fallback_url": local_video_url,
             "poster_url": self.get_url_for_path(poster_path) if poster_path else None,
             "video_duration_seconds": manifest.get("video_duration_seconds", manifest.get("duration_seconds", manifest.get("duration", 5))),
             "loop": manifest.get("loop", True),
             "muted": manifest.get("muted", True),
         }
+        anim_payload = {"type": "video", **self.shown_video_animation}
+        display_target = display_path or poster_path or video_path or video_url
+        self.update_shown_image(
+            display_target,
+            theater_id=theater_id,
+            transition="crossfade",
+            effect="none",
+            clear_animation=False,
+            animation=anim_payload,
+            prompt=scene_prompt,
+        )
         logger.debug("[CanvasState] Showing video animation id=%s video_url=%s", manifest.get("id"), video_url)
         self._notify_state_changed("latest")
 
@@ -1052,7 +1126,21 @@ class CanvasStateManager:
                 title = meta.get("title")
                 return f"Adventure Cover: {title}" if title else f"Adventure Cover: {path_obj.stem}"
 
-        # 4. Fallback based on filename stem
+        # 4. Check for adjacent animation manifests (video.json, layered.json, triframe.json)
+        parent_dir = path_obj.parent
+        for manifest_name in ("video.json", "layered.json", "triframe.json"):
+            candidate = parent_dir / manifest_name
+            if candidate.is_file():
+                try:
+                    import json
+                    data = json.loads(candidate.read_text(encoding="utf-8"))
+                    anim_prompt = data.get("scene_prompt") or data.get("prompt")
+                    if anim_prompt:
+                        return str(anim_prompt).strip()
+                except Exception:
+                    pass
+
+        # 5. Fallback based on filename stem
         stem_clean = path_obj.stem.replace("_", " ").replace("-", " ").title()
         if "reference" in str(path_obj).lower() or "ref" in path_obj.stem.lower():
             return f"Reference Visual: {stem_clean}"
@@ -1111,6 +1199,11 @@ class CanvasStateManager:
             if isinstance(h, dict):
                 h_copy = dict(h)
                 h_copy["prompt"] = self._resolve_prompt_for_file(h_copy.get("path"), h_copy.get("prompt", ""))
+                if h_copy.get("animation"):
+                    anim = dict(h_copy["animation"])
+                    if anim.get("type") == "triframe" and anim.get("frame_paths"):
+                        anim["frames"] = [self.get_url_for_path(p) for p in anim["frame_paths"]]
+                    h_copy["animation"] = anim
                 formatted_history.append(h_copy)
             elif isinstance(h, str):
                 formatted_history.append({
@@ -1122,6 +1215,21 @@ class CanvasStateManager:
                     "effect": effect,
                 })
 
+        anim_info = None
+        if self.shown_animation_frames:
+            anim_info = {
+                "type": "triframe",
+                "frames": [self.get_url_for_path(path) for path in self.shown_animation_frames],
+                "frame_paths": list(self.shown_animation_frames),
+                "frame_duration_ms": 1400,
+                "crossfade_duration_ms": 500,
+                "scene_prompt": getattr(self, "shown_image_prompt", "") or "",
+            }
+        elif self.shown_layered_animation:
+            anim_info = {"type": "layered", **self.shown_layered_animation}
+        elif self.shown_video_animation:
+            anim_info = {"type": "video", **self.shown_video_animation}
+
         if selected_file and not self.shown_images_history:
             item = {
                 "path": selected_file,
@@ -1131,6 +1239,8 @@ class CanvasStateManager:
                 "transition": transition,
                 "effect": effect,
             }
+            if anim_info:
+                item["animation"] = anim_info
             self.shown_images_history.append(item)
             formatted_history.append(item)
 
@@ -1153,17 +1263,8 @@ class CanvasStateManager:
             "sticky_notes": self.get_sticky_notes(),
             "interactive_surfaces": list(self.interactive_surfaces.values()),
         }
-        if self.shown_animation_frames:
-            res["animation"] = {
-                "type": "triframe",
-                "frames": [self.get_url_for_path(path) for path in self.shown_animation_frames],
-                "frame_duration_ms": 1400,
-                "crossfade_duration_ms": 500,
-            }
-        elif self.shown_layered_animation:
-            res["animation"] = {"type": "layered", **self.shown_layered_animation}
-        elif self.shown_video_animation:
-            res["animation"] = {"type": "video", **self.shown_video_animation}
+        if anim_info:
+            res["animation"] = anim_info
         logger.debug(f"[/api/latest] returning latest={res['latest']}, time={res['time']}, history_len={len(formatted_history)}, playlist={music_state['playlist']}")
         return res
 

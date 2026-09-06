@@ -8,14 +8,12 @@
   - The current lifecycle endpoints accept a theater ID without checking the caller's identity or authorization.
 - [ ] Cloudflare
 
-## Narratron UI & Canvas Features
-
-- [x] Layered animation pipeline. 
-  - Set up with qwen image layer model.
 
 ## Refactors
 - [ ] Refactor canvas.html to be more modular.
-- [x] Theater repository instead of storing theaters in the database.
+- [ ] Refactor canvas_state and split responsibilities.
+- [ ] Refactor the tools to use only required parameters in construction.
+
 
 ## Performance
 - [ ] Add database and request observability before and after optimization.

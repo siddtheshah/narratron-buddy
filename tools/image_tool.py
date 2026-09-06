@@ -456,7 +456,8 @@ class ImageTools(BaseTools):
                     saved_path = saved_paths[0]
                     if display:
                         with self._cycle_lock:
-                            if self.current_cycle_image is None and not self.currently_displayed_image_path:
+                            has_active_anim = self._has_active_animation()
+                            if (self.current_cycle_image is None and not self.currently_displayed_image_path) or has_active_anim:
                                 self.current_cycle_image = {
                                     "path": saved_path,
                                     "transition": "crossfade",
@@ -464,6 +465,7 @@ class ImageTools(BaseTools):
                                     "priority": self.PRIORITY_CREATE,
                                     "source": "create_image",
                                 }
+                                self.next_cycle_image = None
                                 self._display_image(saved_path, transition="crossfade", effect=effect)
                                 self._schedule_next_cycle_tick()
                             else:
@@ -498,6 +500,23 @@ class ImageTools(BaseTools):
         if self._image_provider is None:
             self._image_provider = get_image_provider(self.image_provider_id, self.image_provider_options)
         return self._image_provider
+
+    def _has_active_animation(self) -> bool:
+        """Check if an animation is currently active on the canvas."""
+        canvas_state_service = getattr(self, "canvas_state_service", None)
+        if not canvas_state_service:
+            return False
+        try:
+            state = canvas_state_service.get(self.active_theater_id)
+            if not state:
+                return False
+            return bool(
+                getattr(state, "shown_video_animation", None)
+                or getattr(state, "shown_layered_animation", None)
+                or getattr(state, "shown_animation_frames", None)
+            )
+        except Exception:
+            return False
 
     def advance_cycle(self) -> Optional[dict]:
         """Advance to the next image cycle.
@@ -600,8 +619,10 @@ class ImageTools(BaseTools):
                 self._story_plan_completed = False
 
         with self._cycle_lock:
-            # If no image is currently displayed (cold start), display immediately and start cycle
-            if self.current_cycle_image is None and not self.currently_displayed_image_path:
+            has_active_anim = self._has_active_animation()
+            # If no image is currently displayed (cold start) or an animation is active on canvas,
+            # display immediately so the image takes priority over the animation
+            if (self.current_cycle_image is None and not self.currently_displayed_image_path) or has_active_anim:
                 self.current_cycle_image = {
                     "path": resolved_path,
                     "transition": transition,
@@ -609,6 +630,7 @@ class ImageTools(BaseTools):
                     "priority": self.PRIORITY_SHOW,
                     "source": "show_image",
                 }
+                self.next_cycle_image = None
                 res = self._display_image(resolved_path, transition=transition, effect=effect)
                 self._schedule_next_cycle_tick()
                 return res
