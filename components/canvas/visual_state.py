@@ -316,8 +316,9 @@ class VisualState:
     ) -> bool:
         """Record a visual presentation and return whether the scene changed."""
         transition, effect = transition or "crossfade", effect or "gleam3"
-        changed = (file_path != self.shown_image_path or transition != self.shown_image_transition
-                   or effect != self.shown_image_effect)
+        if file_path and file_path == self.shown_image_path:
+            transition = "none"
+        changed = (file_path != self.shown_image_path or effect != self.shown_image_effect)
         if changed or not self.shown_image_time:
             self.shown_image_time = time.time()
         self.shown_image_path, self.shown_image_prompt = file_path, prompt
@@ -338,7 +339,12 @@ class VisualState:
             if animation:
                 item["animation"] = animation
             last = self.shown_images_history[-1] if self.shown_images_history else None
-            if not isinstance(last, dict) or last.get("path") != file_path or last.get("animation") != animation:
+            if (
+                not isinstance(last, dict)
+                or last.get("path") != file_path
+                or last.get("effect") != effect
+                or last.get("animation") != animation
+            ):
                 self.shown_images_history.append(item)
                 self.shown_images_history = self.shown_images_history[-100:]
             else:

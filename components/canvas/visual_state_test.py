@@ -129,11 +129,107 @@ def test_show_image_changing_transition_or_effect_triggers_change() -> None:
     assert changed_effect is True
     assert state.image_revision == 2
     assert state.shown_image_effect == "zoom"
+    assert state.shown_image_transition == "none"
 
-    changed_transition = state.show_image("scene.png", transition="cut", effect="zoom")
+    changed_transition = state.show_image("scene2.png", transition="cut", effect="zoom")
     assert changed_transition is True
     assert state.image_revision == 3
     assert state.shown_image_transition == "cut"
+
+
+def test_show_image_same_image_with_effect_applied_does_not_apply_transition() -> None:
+    theater = make_theater()
+    state = VisualState(theater)
+
+    # First presentation with default crossfade
+    state.show_image("scenes/forest.png", effect="gleam3")
+    assert state.shown_image_transition == "crossfade"
+    assert state.shown_image_effect == "gleam3"
+
+    # Presenting the same image with a new effect should NOT apply the transition
+    changed = state.show_image("scenes/forest.png", effect="haze")
+    assert changed is True
+    assert state.shown_image_transition == "none"
+    assert state.shown_image_effect == "haze"
+    assert state.shown_images_history[-1]["transition"] == "none"
+    assert state.shown_images_history[-1]["effect"] == "haze"
+
+    payload = state.payload(theater)
+    assert payload["transition"] == "none"
+    assert payload["effect"] == "haze"
+
+
+def test_show_image_same_image_with_explicit_transition_suppresses_it_when_effect_applied() -> None:
+    theater = make_theater()
+    state = VisualState(theater)
+
+    state.show_image("hero.png", transition="fade", effect="gleam3")
+    assert state.shown_image_transition == "fade"
+
+    # Even if transition="crossfade" or "fade" is passed, effect applied on same image forces transition to "none"
+    state.show_image("hero.png", transition="crossfade", effect="sparkle")
+    assert state.shown_image_transition == "none"
+    assert state.shown_image_effect == "sparkle"
+
+
+def test_show_image_different_image_applies_transition() -> None:
+    theater = make_theater()
+    state = VisualState(theater)
+
+    state.show_image("scenes/forest.png", effect="gleam3")
+    assert state.shown_image_transition == "crossfade"
+
+    # Different image with effect should still use the transition
+    state.show_image("scenes/castle.png", transition="fade", effect="zoom")
+    assert state.shown_image_transition == "fade"
+    assert state.shown_image_effect == "zoom"
+
+
+def test_show_image_same_image_repeated_call_preserves_transition_none_and_returns_false() -> None:
+    theater = make_theater()
+    state = VisualState(theater)
+
+    state.show_image("scene.png", effect="gleam3")
+    assert len(state.shown_images_history) == 1
+
+    state.show_image("scene.png", effect="zoom")
+    assert state.shown_image_transition == "none"
+    assert state.image_revision == 2
+    assert len(state.shown_images_history) == 2
+
+    # Repeating same call should remain unchanged, not reset transition to crossfade, and not add a history entry
+    changed = state.show_image("scene.png", effect="zoom")
+    assert changed is False
+    assert state.shown_image_transition == "none"
+    assert state.image_revision == 2
+    assert len(state.shown_images_history) == 2
+
+
+def test_show_image_no_effect_change_does_not_make_new_history_entry() -> None:
+    theater = make_theater()
+    state = VisualState(theater)
+
+    # Initial image presentation
+    state.show_image("scene.png", effect="gleam3", prompt="Initial prompt")
+    assert len(state.shown_images_history) == 1
+    assert state.shown_images_history[0]["prompt"] == "Initial prompt"
+
+    # Same image, no change in effect -> should NOT make a new entry in image history
+    state.show_image("scene.png", effect="gleam3", prompt="Updated prompt")
+    assert len(state.shown_images_history) == 1
+    assert state.shown_images_history[0]["prompt"] == "Updated prompt"
+
+    # Same image, WITH change in effect -> DOES make a new entry in image history
+    state.show_image("scene.png", effect="haze", prompt="Hazy scene")
+    assert len(state.shown_images_history) == 2
+    assert state.shown_images_history[0]["effect"] == "gleam3"
+    assert state.shown_images_history[1]["effect"] == "haze"
+    assert state.shown_images_history[1]["prompt"] == "Hazy scene"
+
+    # Same image, same effect again -> should NOT make a new entry
+    state.show_image("scene.png", effect="haze", prompt="Still hazy")
+    assert len(state.shown_images_history) == 2
+    assert state.shown_images_history[1]["prompt"] == "Still hazy"
 
 
 def test_show_image_clears_active_animations_by_default() -> None:
@@ -226,6 +322,19 @@ def test_show_triframe_requires_exactly_three_valid_paths(invalid_frames: list[s
     state = VisualState(make_theater())
     with pytest.raises(ValueError, match="A tri-frame animation requires exactly three image paths."):
         state.show_triframe(invalid_frames)
+
+
+def test_show_triframe_repeated_call_creates_only_one_history_entry() -> None:
+    state = VisualState(make_theater())
+    frames = ["f1.png", "f2.png", "f3.png"]
+
+    changed1 = state.show_triframe(frames, prompt="Walking loop")
+    assert changed1 is True
+    assert len(state.shown_images_history) == 1
+
+    changed2 = state.show_triframe(frames, prompt="Walking loop")
+    assert changed2 is False
+    assert len(state.shown_images_history) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +437,27 @@ def test_show_layered_animation_requires_base_image() -> None:
         state.show_layered_animation(manifest)
 
 
+def test_show_layered_animation_repeated_call_creates_only_one_history_entry() -> None:
+    state = VisualState(make_theater())
+    manifest = {
+        "id": "anim_layer_1",
+        "scene_prompt": "A deep dungeon",
+        "base_image": "dungeon_bg.png",
+        "layers": [
+            {"path": "layers/bg.png", "name": "background", "effect": "pan", "order": 0},
+            {"path": "layers/fog.png", "name": "fog", "effect": "float", "order": 1},
+        ],
+    }
+
+    changed1 = state.show_layered_animation(manifest)
+    assert changed1 is True
+    assert len(state.shown_images_history) == 1
+
+    changed2 = state.show_layered_animation(manifest)
+    assert changed2 is False
+    assert len(state.shown_images_history) == 1
+
+
 # ---------------------------------------------------------------------------
 # 5. show_video_animation
 # ---------------------------------------------------------------------------
@@ -402,6 +532,24 @@ def test_show_video_animation_requires_video_path_or_url() -> None:
     state = VisualState(make_theater())
     with pytest.raises(ValueError, match="A video animation requires a video URL or valid video path."):
         state.show_video_animation({})
+
+
+def test_show_video_animation_repeated_call_creates_only_one_history_entry() -> None:
+    state = VisualState(make_theater())
+    manifest = {
+        "id": "vid_cutscene",
+        "video_path": "cutscene.mp4",
+        "poster_image": "cutscene_poster.png",
+        "scene_prompt": "Dragon taking flight",
+    }
+
+    changed1 = state.show_video_animation(manifest)
+    assert changed1 is True
+    assert len(state.shown_images_history) == 1
+
+    changed2 = state.show_video_animation(manifest)
+    assert changed2 is False
+    assert len(state.shown_images_history) == 1
 
 
 # ---------------------------------------------------------------------------

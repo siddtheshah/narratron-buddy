@@ -13,7 +13,10 @@
 - [ ] Refactor canvas.html to be more modular.
 - [ ] Refactor canvas_state and split responsibilities.
 - [ ] Refactor the tools to use only required parameters in construction.
+- [ ] Refactor image cycle into VisualState
 
+## Quality
+- [ ] In animation technique selection, avoid video if there is any reference attached.
 
 ## Performance
 - [ ] Add database and request observability before and after optimization.
