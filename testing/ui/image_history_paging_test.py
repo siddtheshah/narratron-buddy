@@ -17,6 +17,14 @@ class TestImageHistoryPaging(UITestCase):
         inspector = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
         self.assertIn("initializeStoryLogInspector", inspector)
 
+    def test_story_log_is_chronological_and_keeps_the_latest_action_visible(self):
+        inspector = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
+
+        self.assertIn("return turns;", inspector)
+        self.assertIn("function positionLatestAction(inspector, content)", inspector)
+        self.assertIn("inspector.scrollTop = bottom;", inspector)
+        self.assertIn("requestAnimationFrame(() => positionLatestAction(inspector, content))", inspector)
+
     def test_image_history_is_capped_at_100_entries(self):
         manager = self.make_canvas_state("history_cap")
 

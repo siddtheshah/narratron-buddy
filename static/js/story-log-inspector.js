@@ -77,7 +77,31 @@ function groupTurns(entries) {
         if (turn) turn.plan = entry;
         else turns.push({ action: null, plan: entry });
     });
-    return turns.reverse();
+    // JSONL is append-only, so its natural order is oldest to newest.  Keep
+    // that order in the inspector: reading down should move forward in time.
+    return turns;
+}
+
+function positionLatestAction(inspector, content) {
+    if (!inspector) return;
+    const actions = content.querySelectorAll('.story-log-entry.action');
+    const latestAction = actions[actions.length - 1];
+    if (!latestAction) return;
+
+    const bottom = Math.max(0, inspector.scrollHeight - inspector.clientHeight);
+    inspector.scrollTop = bottom;
+
+    // Prefer the natural "at the bottom" position.  When a long scene
+    // response has pushed the latest action out of view, move only far enough
+    // to show that action completely (when it fits in the viewport).
+    const actionBox = latestAction.getBoundingClientRect();
+    const viewportBox = inspector.getBoundingClientRect();
+    if (actionBox.top < viewportBox.top || actionBox.bottom > viewportBox.bottom) {
+        const target = latestAction.offsetHeight <= inspector.clientHeight
+            ? inspector.scrollTop + actionBox.bottom - viewportBox.bottom
+            : inspector.scrollTop + actionBox.top - viewportBox.top;
+        inspector.scrollTop = Math.max(0, Math.min(bottom, target));
+    }
 }
 
 export function initializeStoryLogInspector(theaterId) {
@@ -112,6 +136,9 @@ export function initializeStoryLogInspector(theaterId) {
                 if (planCard) turnElement.appendChild(planCard);
                 if (turnElement.childElementCount) content.appendChild(turnElement);
             });
+            // Wait for the appended cards to participate in layout before
+            // calculating the scroll position.
+            requestAnimationFrame(() => positionLatestAction(inspector, content));
         } catch (error) {
             console.error('Failed to load story log:', error);
             content.textContent = 'The story log could not be loaded.';
