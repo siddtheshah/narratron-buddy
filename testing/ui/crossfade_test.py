@@ -69,3 +69,14 @@ class TestCrossfade(UITestCase):
         self.assertIn(".scene-narration", content)
         self.assertIn("font-style: italic", content)
         self.assertIn("data.narration", content)
+
+    def test_canvas_ignores_superseded_latest_state_snapshots(self):
+        template_path = PROJECT_ROOT / "templates" / "canvas.html"
+        content = template_path.read_text(encoding="utf-8")
+
+        self.assertIn("let latestStateRequestSequence = 0;", content)
+        self.assertIn("const requestSequence = ++latestStateRequestSequence;", content)
+        self.assertIn(
+            "if (requestSequence !== latestStateRequestSequence) return;",
+            content,
+        )

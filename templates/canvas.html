@@ -50,6 +50,29 @@
             transition: background-image 1s ease-in-out;
         }
 
+        /* Minimal Mode keeps the scene and doodles, but removes the full-page
+           filter/compositor work used by the cinematic chrome. */
+        html.minimal-mode #bg-layer {
+            display: none !important;
+        }
+
+        html.minimal-mode #image-container {
+            background: #000 !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            box-shadow: none !important;
+        }
+
+        html.minimal-mode body * {
+            animation: none !important;
+            transition: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            box-shadow: none !important;
+            will-change: auto !important;
+        }
+
         #main-container {
             position: relative;
             z-index: 1;
@@ -2824,15 +2847,25 @@
         let lastTime = -1;
         let lastImageRawUrl = null;
         let lastImageEffect = null;
-        const PERFORMANCE_STORAGE_KEY = 'narratron.canvas.performance.disableImageEffects';
-        let imageEffectsDisabled = (() => {
+        const MINIMAL_MODE_STORAGE_KEY = 'narratron.canvas.performance.minimalMode';
+        const LEGACY_IMAGE_EFFECTS_STORAGE_KEY = 'narratron.canvas.performance.disableImageEffects';
+        let minimalMode = (() => {
             try {
-                return localStorage.getItem(PERFORMANCE_STORAGE_KEY) === 'true';
+                // Preserve the old performance preference when upgrading to
+                // Minimal Mode, which includes disabling image effects.
+                return localStorage.getItem(MINIMAL_MODE_STORAGE_KEY) === 'true'
+                    || localStorage.getItem(LEGACY_IMAGE_EFFECTS_STORAGE_KEY) === 'true';
             } catch (_) {
                 return false;
             }
         })();
+        document.documentElement.classList.toggle('minimal-mode', minimalMode);
         let isFirstCanvasLoad = true;
+        // A state notification can arrive while the initial snapshot is still
+        // in flight.  Only the most recently requested snapshot may update the
+        // canvas, otherwise a late empty startup response can erase the first
+        // story-planner scene.
+        let latestStateRequestSequence = 0;
         const currentImage = document.getElementById('current-image');
         const bgLayer = document.getElementById('bg-layer');
         const promptTextSpan = document.getElementById('prompt-text');
@@ -3692,7 +3725,7 @@
             image: currentImage,
             backgroundLayer: bgLayer,
             loadedClassNames: ['t-crossfade', 'loaded'],
-            imageEffectsEnabled: () => !imageEffectsDisabled,
+            imageEffectsEnabled: () => !minimalMode,
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
@@ -3701,14 +3734,17 @@
         const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
         const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
 
-        function setImageEffectsDisabled(disabled) {
-            imageEffectsDisabled = Boolean(disabled);
+        function setMinimalMode(enabled) {
+            minimalMode = Boolean(enabled);
+            document.documentElement.classList.toggle('minimal-mode', minimalMode);
             try {
-                localStorage.setItem(PERFORMANCE_STORAGE_KEY, String(imageEffectsDisabled));
+                localStorage.setItem(MINIMAL_MODE_STORAGE_KEY, String(minimalMode));
+                localStorage.removeItem(LEGACY_IMAGE_EFFECTS_STORAGE_KEY);
             } catch (_) {
                 // Storage can be unavailable in private or restricted browser contexts.
             }
-            imageRenderer.setImageEffectsEnabled?.(!imageEffectsDisabled);
+            if (minimalMode) stopImageAnimation?.();
+            imageRenderer.setImageEffectsEnabled?.(!minimalMode);
         }
 
         window.addEventListener('resize', resizeRendererCanvas);
@@ -3738,6 +3774,20 @@
         }
 
         function playAnimation(animation) {
+            if (minimalMode) {
+                // Animated media defeats the point of Minimal Mode. Present a
+                // still source where one exists, without starting a decoder or
+                // a requestAnimationFrame loop.
+                const stillUrl = animation.type === 'triframe'
+                    ? animation.frames?.[0]
+                    : animation.type === 'layered'
+                        ? animation.layers?.[0]?.url
+                        : animation.poster_url;
+                if (stillUrl) {
+                    applyImageTransition(stillUrl, 'none', 'none');
+                }
+                return;
+            }
             if (animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
                 playLayeredAnimation(animation.layers);
             } else if (animation.type === 'video' && typeof playVideoAnimation === 'function') {
@@ -3824,10 +3874,12 @@
         }
 
         async function fetchLatestImage() {
+            const requestSequence = ++latestStateRequestSequence;
             try {
                 const apiUrl = currenttheaterId ? `/api/latest?theater_id=${encodeURIComponent(currenttheaterId)}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
+                if (requestSequence !== latestStateRequestSequence) return;
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
                 updateSceneDialogue(data.scene_dialogue, data.narration, data.narration_spans);
@@ -5989,12 +6041,12 @@
         const menuItemHowto = document.getElementById('menu-item-howto');
         const menuItemShare = document.getElementById('menu-item-share');
         const menuItemObs = document.getElementById('menu-item-obs');
-        const disableImageEffectsInput = document.getElementById('disable-image-effects-input');
+        const minimalModeInput = document.getElementById('minimal-mode-input');
 
-        if (disableImageEffectsInput) {
-            disableImageEffectsInput.checked = imageEffectsDisabled;
-            disableImageEffectsInput.addEventListener('change', () => {
-                setImageEffectsDisabled(disableImageEffectsInput.checked);
+        if (minimalModeInput) {
+            minimalModeInput.checked = minimalMode;
+            minimalModeInput.addEventListener('change', () => {
+                setMinimalMode(minimalModeInput.checked);
             });
         }
 
@@ -6683,15 +6735,15 @@
                 <div>
                     <div class="pullout-section-title">Performance</div>
                     <div class="pullout-menu-list">
-                        <label class="pullout-menu-item" for="disable-image-effects-input">
+                        <label class="pullout-menu-item" for="minimal-mode-input">
                             <span class="pullout-item-icon">⚡</span>
-                            <span style="flex: 1;">Disable image effects</span>
-                            <input id="disable-image-effects-input" type="checkbox"
-                                aria-describedby="disable-image-effects-hint">
+                            <span style="flex: 1;">Minimal Mode</span>
+                            <input id="minimal-mode-input" type="checkbox"
+                                aria-describedby="minimal-mode-hint">
                         </label>
-                        <div id="disable-image-effects-hint"
+                        <div id="minimal-mode-hint"
                             style="padding: 0 0.75rem; color: #94a3b8; font-size: 0.75rem; line-height: 1.35;">
-                            Shows plain images and skips image-effect processing.
+                            Keeps only the image and doodles. Disables image effects, blur/glass layers, shadows, and UI animation.
                         </div>
                     </div>
                 </div>

@@ -24,8 +24,6 @@ def speaker_key(speaker: str) -> str:
 
 
 class StoryState:
-    """Owns story planning, scene dialogue, narration, and scene speech dispatch."""
-
     def __init__(
         self,
         persist: Callable[[], None] | None = None,
@@ -36,7 +34,7 @@ class StoryState:
         self._notify_changed = notify_changed
         self.publish_audio_fn = publish_audio_fn
         self.named_elements: list[dict[str, str]] = []
-        self.story_planning_state: dict[str, object] = {}
+        self.story_planning_state: dict[str, str] = {}
         self.scene_dialogue: list[dict[str, Any]] = []
         self.narration = ""
         self.narration_spans: list[dict[str, Any]] = []
@@ -48,7 +46,6 @@ class StoryState:
         self._speech_executor: ThreadPoolExecutor | None = None
         self._speech_lock = threading.Lock()
         self._speech_generation = 0
-
     @property
     def text_beautifier(self) -> Any:
         if self._text_beautifier is not None:
@@ -58,15 +55,12 @@ class StoryState:
             return getattr(object_registry, "text_beautifier", None)
         except Exception:
             return None
-
     @text_beautifier.setter
     def text_beautifier(self, value: Any) -> None:
         self._text_beautifier = value
-
     def sticky_notes(self) -> list[dict[str, str]]:
         notes = self.story_planning_state.get("sticky_notes", self.named_elements)
         return [note for note in notes if isinstance(note, dict)] if isinstance(notes, list) else []
-
     def load(
         self,
         data: dict[str, object] | None = None,
@@ -114,7 +108,6 @@ class StoryState:
         assignments = data.get("character_voice_assignments")
         if isinstance(assignments, dict):
             self.character_voice_assignments = {str(k): str(v) for k, v in assignments.items()}
-
     def serialize(self) -> dict[str, object]:
         return {
             "named_elements": self.named_elements,
@@ -124,9 +117,7 @@ class StoryState:
             "narration_spans": self.narration_spans,
             "character_voice_assignments": self.character_voice_assignments,
         }
-
     payload = serialize
-
     def set_scene(self, narration: str, dialogue: list[dict[str, Any]]) -> None:
         """Commit a fully beautified scene and notify canvas clients once.
 
@@ -138,9 +129,12 @@ class StoryState:
         narration_spans: list[dict[str, Any]] = []
         beautifier = self.text_beautifier
 
+        logger.info("[StoryState] New scene: %s", scene_narration)
+        logger.info("[StoryState] New dialogue: %s", scene_dialogue)
+
         if beautifier and (scene_narration or scene_dialogue):
             logger.info(
-                "Requesting scene text beautification (narration=%d chars, dialogue=%d line(s))",
+                "[StoryState] Requesting scene text beautification (narration=%d chars, dialogue=%d line(s))",
                 len(scene_narration),
                 len(scene_dialogue),
             )
@@ -176,7 +170,6 @@ class StoryState:
             self._notify_changed("latest")
         if self._scene_speech_enabled and self._speech_provider:
             self.dispatch(self.scene_dialogue)
-
     def set_scene_dialogue(self, dialogue: list[dict[str, str]]) -> None:
         """Set up to three planner-authored speech or thought bubbles."""
         self.scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
@@ -200,7 +193,6 @@ class StoryState:
             self._notify_changed("latest")
         if self._scene_speech_enabled and self._speech_provider:
             self.dispatch(self.scene_dialogue)
-
     def set_narration(self, narration: str, spans: Optional[list[dict[str, Any]]] = None) -> None:
         """Set the planner-authored narration shown on the canvas."""
         self.narration = " ".join(str(narration or "").strip().split()[:45])[:500]
@@ -221,11 +213,9 @@ class StoryState:
             self._persist()
         if self._notify_changed:
             self._notify_changed("latest")
-
     def get_sticky_notes(self) -> list[dict[str, str]]:
         """Return active sticky notes."""
         return self.sticky_notes()
-
     def set_sticky_notes(self, notes: list[dict[str, str]]) -> None:
         """Persist sticky notes to story state and notify canvas clients."""
         self.named_elements = [dict(n) for n in (notes or []) if isinstance(n, dict)]
@@ -236,11 +226,9 @@ class StoryState:
             self._persist()
         if self._notify_changed:
             self._notify_changed("latest")
-
     def get_story_planning_state(self) -> dict[str, Any]:
         """Return a snapshot of full story planning state."""
         return dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
-
     def set_story_planning_state(self, state: dict[str, Any]) -> None:
         """Persist full story planning state, synchronize sticky notes, and notify canvas clients."""
         self.story_planning_state = dict(state) if isinstance(state, dict) else {}
@@ -250,22 +238,18 @@ class StoryState:
             self._persist()
         if self._notify_changed:
             self._notify_changed("latest")
-
     def get_character_voice(self, speaker: str) -> str | None:
         return self.character_voice_assignments.get(speaker_key(speaker))
-
     def assign_character_voice(self, speaker: str, voice: str) -> None:
         self.character_voice_assignments[speaker_key(speaker)] = str(voice)
         if self._persist:
             self._persist()
-
     def get_character_voice_tags(self, speaker: str) -> list[str]:
         character = self._character(speaker)
         tags = character.get("voice_tags", []) if character else []
         if isinstance(tags, (list, tuple, set)):
             return [str(tag).strip().lower() for tag in tags if str(tag).strip().lower() in {"male", "female"}]
         return [tags.strip().lower()] if isinstance(tags, str) and tags.strip().lower() in {"male", "female"} else []
-
     def get_character_description(self, speaker: str) -> str:
         character = self._character(speaker)
         if character:
@@ -275,14 +259,12 @@ class StoryState:
             if str(note.get("topic") or note.get("name") or "").strip().lower() == normalized:
                 return f"{note.get('topic') or note.get('name', '')} {note.get('info') or note.get('content') or note.get('description') or ''}".strip()
         return speaker
-
     def _character(self, speaker: str) -> dict[str, object] | None:
         characters = self.story_planning_state.get("characters", [])
         normalized = speaker.strip().lower()
         if isinstance(characters, list):
             return next((character for character in characters if isinstance(character, dict) and str(character.get("name") or "").strip().lower() == normalized), None)
         return None
-
     def enable_scene_speech(self, provider: SpeechProvider | None = None) -> None:
         if self._scene_speech_enabled and self._speech_provider is not None:
             return
@@ -295,12 +277,10 @@ class StoryState:
                 provider = FalSeedSpeechProvider()
         self._speech_provider = provider
         self._scene_speech_enabled = True
-
     def cancel(self) -> None:
         """Invalidates any pending or in-flight scene synthesis."""
         with self._speech_lock:
             self._speech_generation += 1
-
     def dispatch(self, dialogue: list[dict[str, str]]) -> None:
         with self._speech_lock:
             self._speech_generation += 1
@@ -313,7 +293,6 @@ class StoryState:
         ]
         if spoken:
             self._get_executor().submit(self._synthesize_scene, spoken, generation)
-
     def _voice_for(self, speaker: str) -> str:
         key = speaker_key(speaker)
         existing = self.character_voice_assignments.get(key)
@@ -332,7 +311,6 @@ class StoryState:
             self._persist()
         logger.info("[SceneSpeech] Assigned %s to %s", voice, speaker)
         return voice
-
     def _synthesize_scene(self, dialogue: list[dict[str, str]], generation: int) -> None:
         for line in dialogue:
             with self._speech_lock:
@@ -373,36 +351,28 @@ class StoryState:
                     })
             except (SpeechProviderError, OSError, ValueError) as exc:
                 logger.warning("[SceneSpeech] Failed to synthesize dialogue for %s: %s", speaker, exc)
-
     @property
     def _scene_speech(self) -> Any:
         return self if self._scene_speech_enabled and self._speech_provider else None
-
     def _get_executor(self) -> ThreadPoolExecutor:
         if self._speech_executor is None:
             self._speech_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scene-speech")
         return self._speech_executor
-
     @property
     def _executor(self) -> ThreadPoolExecutor:
         return self._get_executor()
-
     @property
     def _lock(self) -> threading.Lock:
         return self._speech_lock
-
     @property
     def _generation(self) -> int:
         return self._speech_generation
-
     @_generation.setter
     def _generation(self, value: int) -> None:
         self._speech_generation = value
-
     @property
     def assignments(self) -> dict[str, str]:
         return self.character_voice_assignments
-
     @assignments.setter
     def assignments(self, value: dict[str, str]) -> None:
         self.character_voice_assignments = value
