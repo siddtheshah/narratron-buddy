@@ -48,7 +48,12 @@ class StoryState:
         self._scene_speech_enabled = False
         self._speech_executor: ThreadPoolExecutor | None = None
         self._speech_lock = threading.Lock()
-        self._speech_generation = 0
+        # Incremented immediately to invalidate in-flight synthesis work.
+        # It is never sent to clients until the corresponding scene commits.
+        self._active_speech_generation = 0
+        # The active generation whose narration/dialogue is in the latest
+        # canvas payload. Clients may play audio only for this generation.
+        self.committed_scene_speech_generation = 0
     @property
     def text_beautifier(self) -> Any:
         if self._text_beautifier is not None:
@@ -111,6 +116,14 @@ class StoryState:
         assignments = data.get("character_voice_assignments")
         if isinstance(assignments, dict):
             self.character_voice_assignments = {str(k): str(v) for k, v in assignments.items()}
+
+        # Accept the short-lived original field while restoring older local
+        # theater state, but persist the explicit name below.
+        generation = data.get("committed_scene_speech_generation", data.get("scene_speech_generation"))
+        if isinstance(generation, int) and generation >= 0:
+            self.committed_scene_speech_generation = generation
+            with self._speech_lock:
+                self._active_speech_generation = max(self._active_speech_generation, generation)
     def serialize(self) -> dict[str, object]:
         return {
             "named_elements": self.named_elements,
@@ -119,6 +132,7 @@ class StoryState:
             "narration": self.narration,
             "narration_spans": self.narration_spans,
             "character_voice_assignments": self.character_voice_assignments,
+            "committed_scene_speech_generation": self.committed_scene_speech_generation,
         }
     payload = serialize
     def set_scene(self, narration: str, dialogue: list[dict[str, Any]]) -> None:
@@ -137,7 +151,11 @@ class StoryState:
 
         speech_enabled = bool(self._scene_speech_enabled and self._speech_provider)
         if speech_enabled:
-            self.dispatch(scene_dialogue)
+            generation = self.dispatch(scene_dialogue)
+        else:
+            # A silent scene must still invalidate audio being synthesized for
+            # its predecessor and give canvas a newer generation to render.
+            generation = self.cancel()
 
         if beautifier and (scene_narration or scene_dialogue):
             logger.info(
@@ -171,6 +189,7 @@ class StoryState:
         self.narration = scene_narration
         self.narration_spans = narration_spans
         self.scene_dialogue = scene_dialogue
+        self.committed_scene_speech_generation = generation
         if self._persist:
             self._persist()
         if self._notify_changed:
@@ -239,15 +258,17 @@ class StoryState:
                 provider = FalSeedSpeechProvider()
         self._speech_provider = provider
         self._scene_speech_enabled = True
-    def cancel(self) -> None:
+    def cancel(self) -> int:
         """Invalidates any pending or in-flight scene synthesis."""
         with self._speech_lock:
-            self._speech_generation += 1
-    def dispatch(self, dialogue: list[dict[str, str]]) -> None:
-        logger.debug("[StoryState] Dispatching scene speech for generation %d", self._speech_generation)
+            self._active_speech_generation += 1
+            return self._active_speech_generation
+
+    def dispatch(self, dialogue: list[dict[str, str]]) -> int:
+        logger.debug("[StoryState] Dispatching scene speech for generation %d", self._active_speech_generation)
         with self._speech_lock:
-            self._speech_generation += 1
-            generation = self._speech_generation
+            self._active_speech_generation += 1
+            generation = self._active_speech_generation
 
         spoken = [
             {**line, "voice": self._voice_for(str(line.get("speaker") or "Narrator"))}
@@ -256,6 +277,7 @@ class StoryState:
         ]
         if spoken:
             self._get_executor().submit(self._synthesize_scene_speech, spoken, generation)
+        return generation
     def _voice_for(self, speaker: str) -> str:
         key = speaker_key(speaker)
         existing = self.character_voice_assignments.get(key)
@@ -280,7 +302,7 @@ class StoryState:
         generation: int,
     ) -> tuple[dict[str, str], SpeechSynthesisResult | None]:
         with self._speech_lock:
-            if generation != self._speech_generation:
+            if generation != self._active_speech_generation:
                 return line, None
         speaker = str(line.get("speaker") or "Narrator").strip()[:80] or "Narrator"
         try:
@@ -289,11 +311,11 @@ class StoryState:
                 return line, None
             result = self._speech_provider.synthesize(SpeechSynthesisRequest(text=str(line["text"]), voice=voice))
             with self._speech_lock:
-                if generation != self._speech_generation:
+                if generation != self._active_speech_generation:
                     logger.debug(
                         "[StoryState] Discarding stale audio (gen %d != current %d)",
                         generation,
-                        self._speech_generation,
+                        self._active_speech_generation,
                     )
                     return line, None
             return line, result
@@ -309,11 +331,11 @@ class StoryState:
     ) -> None:
         logger.debug("[StoryState] Publishing line audio for line %s", line)
         with self._speech_lock:
-            if generation != self._speech_generation:
+            if generation != self._active_speech_generation:
                 logger.debug(
                     "[StoryState] Discarding stale audio (gen %d != current %d)",
                     generation,
-                    self._speech_generation,
+                    self._active_speech_generation,
                 )
                 return
         speaker = str(line.get("speaker") or "Narrator").strip()[:80] or "Narrator"
@@ -329,17 +351,17 @@ class StoryState:
                 "voice": voice,
                 "audio_url": audio_url,
                 "mime_type": result.mime_type,
-                "generation": generation,
+                "speech_generation": generation,
             })
 
     def _synthesize_scene_speech(self, dialogue: list[dict[str, str]], generation: int) -> None:
         logger.debug("[StoryState] Dispatching scene speech for generation %d", generation)
         with self._speech_lock:
-            if generation != self._speech_generation:
+            if generation != self._active_speech_generation:
                 logger.debug(
                     "[StoryState] Aborting stale synthesis (gen %d != current %d)",
                     generation,
-                    self._speech_generation,
+                    self._active_speech_generation,
                 )
                 return
 
@@ -348,20 +370,29 @@ class StoryState:
 
         if len(dialogue) == 1:
             line, result = self._synthesize_line(dialogue[0], generation)
+            with self._speech_lock:
+                if generation != self._active_speech_generation:
+                    logger.debug(
+                        "[StoryState] Aborting stale synthesis (gen %d != current %d)",
+                        generation,
+                        self._active_speech_generation,
+                    )
+                    return
             if result is not None:
                 self._publish_line_audio(line, result, generation)
             return
 
         worker_count = min(len(dialogue), MAX_PARALLEL_SCENE_SPEECH)
+        gathered: list[tuple[dict[str, str], SpeechSynthesisResult]] = []
         with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="scene-speech-line") as pool:
             futures = [pool.submit(self._synthesize_line, line, generation) for line in dialogue]
             for future in futures:
                 with self._speech_lock:
-                    if generation != self._speech_generation:
+                    if generation != self._active_speech_generation:
                         logger.debug(
                             "[StoryState] Aborting stale synthesis (gen %d != current %d)",
                             generation,
-                            self._speech_generation,
+                            self._active_speech_generation,
                         )
                         return
                 try:
@@ -371,7 +402,19 @@ class StoryState:
                     continue
 
                 if result is not None:
-                    self._publish_line_audio(line, result, generation)
+                    gathered.append((line, result))
+
+        with self._speech_lock:
+            if generation != self._active_speech_generation:
+                logger.debug(
+                    "[StoryState] Aborting stale synthesis (gen %d != current %d)",
+                    generation,
+                    self._active_speech_generation,
+                )
+                return
+
+        for line, result in gathered:
+            self._publish_line_audio(line, result, generation)
     @property
     def _scene_speech(self) -> Any:
         return self if self._scene_speech_enabled and self._speech_provider else None
@@ -387,10 +430,10 @@ class StoryState:
         return self._speech_lock
     @property
     def _generation(self) -> int:
-        return self._speech_generation
+        return self._active_speech_generation
     @_generation.setter
     def _generation(self, value: int) -> None:
-        self._speech_generation = value
+        self._active_speech_generation = value
     @property
     def assignments(self) -> dict[str, str]:
         return self.character_voice_assignments

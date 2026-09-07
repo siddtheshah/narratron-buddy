@@ -145,6 +145,7 @@ def test_dispatch_synthesizes_and_publishes_audio_as_data_uri() -> None:
     assert published[0]["speaker"] == "Mara"
     assert published[0]["voice"] == "voice_alpha"
     assert published[0]["audio_url"].startswith("data:audio/mpeg;base64,")
+    assert published[0]["speech_generation"] == 1
 
 
 def test_dispatch_newer_scene_aborts_previous_scene_synthesis() -> None:
@@ -247,6 +248,7 @@ def test_load_and_serialize_round_trip() -> None:
         "narration": "The sun rises over the citadel.",
         "narration_spans": [{"text": "rises", "effect": "glow"}],
         "character_voice_assignments": {"hero": "voice_1"},
+        "committed_scene_speech_generation": 4,
     }
 
     state.load(data)
@@ -258,6 +260,7 @@ def test_load_and_serialize_round_trip() -> None:
     assert serialized["narration"] == "The sun rises over the citadel."
     assert serialized["narration_spans"] == [{"text": "rises", "effect": "glow"}]
     assert serialized["character_voice_assignments"] == {"hero": "voice_1"}
+    assert serialized["committed_scene_speech_generation"] == 4
     assert state.payload() == serialized
 
 
@@ -515,6 +518,7 @@ def test_set_scene_parallelizes_text_beautification_with_speech_generation() -> 
     assert len(published) == 1
     assert published[0]["speaker"] == "Mara"
     assert published[0]["voice"] == "voice_alpha"
+    assert published[0]["speech_generation"] == state.committed_scene_speech_generation
 
 
 def test_set_scene_does_not_dispatch_speech_when_speech_disabled() -> None:
@@ -531,5 +535,91 @@ def test_set_scene_does_not_dispatch_speech_when_speech_disabled() -> None:
 
     assert state.narration == "The story starts."
     assert len(published) == 0
-    assert state._speech_generation == 0
+    assert state._active_speech_generation == 1
+    assert state.committed_scene_speech_generation == 1
 
+
+def test_dispatch_gathers_all_lines_before_publishing_all_at_once() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    line1_done = threading.Event()
+    release_line2 = threading.Event()
+
+    def staggered_synthesize(req):
+        if req.text == "Line 1":
+            line1_done.set()
+        elif req.text == "Line 2":
+            assert line1_done.wait(timeout=2.0)
+            assert release_line2.wait(timeout=2.0)
+        return SpeechSynthesisResult(
+            audio_bytes=b"audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = staggered_synthesize
+
+    published = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([
+        {"speaker": "Alice", "text": "Line 1", "kind": "speech"},
+        {"speaker": "Bob", "text": "Line 2", "kind": "speech"},
+    ])
+
+    assert line1_done.wait(timeout=2.0)
+    # Line 1 is done synthesizing, but Line 2 is still in flight.
+    # Lines must be gathered first: Line 1 must NOT be published yet!
+    assert len(published) == 0
+
+    release_line2.set()
+    state._executor.shutdown(wait=True)
+
+    assert len(published) == 2
+    assert [p["speaker"] for p in published] == ["Alice", "Bob"]
+
+
+def test_dispatch_cancellation_while_gathering_publishes_no_lines() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    line1_done = threading.Event()
+    release_line2 = threading.Event()
+
+    def staggered_synthesize(req):
+        if req.text == "Line 1":
+            line1_done.set()
+        elif req.text == "Line 2":
+            assert line1_done.wait(timeout=2.0)
+            assert release_line2.wait(timeout=2.0)
+        return SpeechSynthesisResult(
+            audio_bytes=b"audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = staggered_synthesize
+
+    published = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([
+        {"speaker": "Alice", "text": "Line 1", "kind": "speech"},
+        {"speaker": "Bob", "text": "Line 2", "kind": "speech"},
+    ])
+
+    assert line1_done.wait(timeout=2.0)
+    assert len(published) == 0
+
+    # Cancel while Line 2 is still in flight
+    state.cancel()
+    release_line2.set()
+    state._executor.shutdown(wait=True)
+
+    # Neither line should have been published
+    assert len(published) == 0

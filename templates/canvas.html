@@ -2888,6 +2888,7 @@
         const sceneSpeechQueue = [];
         let sceneSpeechPlaying = false;
         let currentSceneAudio = null;
+        let committedSceneSpeechGeneration = null;
 
         function stopSceneSpeech() {
             sceneSpeechQueue.length = 0;
@@ -2904,19 +2905,28 @@
             }
         }
 
-        function enqueueSceneSpeech(audioUrl) {
-            if (!audioUrl) return;
-            sceneSpeechQueue.push(audioUrl);
+        function playQueuedSceneSpeech() {
             if (sceneSpeechPlaying) return;
             const playNext = () => {
-                const next = sceneSpeechQueue.shift();
-                if (!next) {
+                // Keep audio from a future generation queued: synthesis can
+                // finish before its scene state is committed and rendered.
+                while (
+                    sceneSpeechQueue.length > 0
+                    && sceneSpeechQueue[0].speechGeneration < committedSceneSpeechGeneration
+                ) {
+                    sceneSpeechQueue.shift();
+                }
+                const nextIndex = sceneSpeechQueue.findIndex(
+                    item => item.speechGeneration === committedSceneSpeechGeneration,
+                );
+                if (nextIndex < 0) {
                     sceneSpeechPlaying = false;
                     currentSceneAudio = null;
                     return;
                 }
+                const [next] = sceneSpeechQueue.splice(nextIndex, 1);
                 sceneSpeechPlaying = true;
-                const audio = new Audio(next);
+                const audio = new Audio(next.audioUrl);
                 currentSceneAudio = audio;
                 audio.onended = audio.onerror = () => {
                     if (currentSceneAudio === audio) {
@@ -2932,6 +2942,30 @@
                 });
             };
             playNext();
+        }
+
+        function enqueueSceneSpeech(audioUrl, speechGeneration) {
+            if (!audioUrl || !Number.isInteger(speechGeneration)) return;
+            if (committedSceneSpeechGeneration !== null && speechGeneration < committedSceneSpeechGeneration) return;
+            sceneSpeechQueue.push({ audioUrl, speechGeneration });
+            playQueuedSceneSpeech();
+        }
+
+        function setCommittedSceneSpeechGeneration(speechGeneration) {
+            if (!Number.isInteger(speechGeneration)) return;
+            if (speechGeneration === committedSceneSpeechGeneration) {
+                playQueuedSceneSpeech();
+                return;
+            }
+            if (committedSceneSpeechGeneration !== null && speechGeneration < committedSceneSpeechGeneration) return;
+
+            committedSceneSpeechGeneration = speechGeneration;
+            // A new rendered scene deliberately interrupts only speech from an
+            // older scene. Matching speech may have arrived before state did.
+            const matchingAudio = sceneSpeechQueue.filter(item => item.speechGeneration === speechGeneration);
+            stopSceneSpeech();
+            sceneSpeechQueue.push(...matchingAudio);
+            playQueuedSceneSpeech();
         }
 
         function getDialogueSpeakerColor(speaker) {
@@ -3879,7 +3913,12 @@
                 if (requestSequence !== latestStateRequestSequence) return;
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
-                updateSceneDialogue(data.scene_dialogue, data.narration, data.narration_spans);
+                updateSceneDialogue(
+                    data.scene_dialogue,
+                    data.narration,
+                    data.narration_spans,
+                    data.committed_scene_speech_generation,
+                );
                 a2uiCanvasRenderer.render(data.interactive_surfaces);
                 if (data.sticky_notes !== undefined && typeof window.updateCanvasStickyNotes === 'function') {
                     window.updateCanvasStickyNotes(data.sticky_notes);
@@ -4190,8 +4229,9 @@
             }
         }
 
-        function updateSceneDialogue(dialogue, narration, narration_spans) {
+        function updateSceneDialogue(dialogue, narration, narration_spans, sceneSpeechGeneration) {
             if (!sceneDialogueOverlay) return;
+            setCommittedSceneSpeechGeneration(sceneSpeechGeneration);
             const lines = (Array.isArray(dialogue) ? dialogue : [])
                 .filter(item => item && item.text)
                 .map(item => ({
@@ -4205,7 +4245,6 @@
             const signature = JSON.stringify({ lines, description, nSpans });
             if (signature === sceneDialogueSignature) return;
             sceneDialogueSignature = signature;
-            stopSceneSpeech();
             const renderId = ++sceneDialogueRenderId;
             sceneDialogueOverlay.replaceChildren();
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -4668,7 +4707,7 @@
                 if (message.type === 'state_ready') {
                     refreshCanvasState();
                 } else if (message.type === 'scene_speech_ready') {
-                    enqueueSceneSpeech(message.audio_url);
+                    enqueueSceneSpeech(message.audio_url, message.speech_generation);
                 } else if (message.type === 'state_changed' && Array.isArray(message.domains)) {
                     refreshCanvasState(message.domains);
                 }
