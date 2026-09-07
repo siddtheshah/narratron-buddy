@@ -53,6 +53,7 @@ DEFAULT_MAX_ACTIVE_CHARACTERS = 3
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 DEFAULT_THINKING_BUDGET = 1024
 USER_ACTION_TIMEOUT_SECONDS = 20.0
+VOICE_INPUT_LOG_THROTTLE_SECONDS = 5.0
 MAX_STORY_PLANNING_STYLE_CHARS = 500
 MAX_PLAYER_ACTION_CHARS = 2_000
 MAX_NUDGE_CHARS = 1_000
@@ -469,9 +470,10 @@ class StoryPlanningTools(BaseTools):
             float(self.config.get("action_cooldown_max_seconds", 30.0)),
         )
         self.user_action_timeout_seconds: float = USER_ACTION_TIMEOUT_SECONDS
-        self.require_voice_input: bool = bool(self.config.get("require_voice_input", False))
-        self._voice_input_detected: bool = not self.require_voice_input
-        self._voice_input_lock: Lock = Lock()
+        self.require_user_input: bool = bool(self.config.get("require_user_input", False))
+        self._user_input_detected: bool = not self.require_user_input
+        self._user_input_lock: Lock = Lock()
+        self._last_voice_input_log_time: float = -float("inf")
         self._last_action_response_word_count: int = 0
         self._read_lore_calls_this_turn: int = 0
         self._read_lore_lock: Lock = Lock()
@@ -797,16 +799,19 @@ class StoryPlanningTools(BaseTools):
 
 
     @property
-    def is_voice_input_detected(self) -> bool:
-        """Return True if voice input has been detected since the last processed action."""
-        with self._voice_input_lock:
-            return self._voice_input_detected
+    def is_user_input_detected(self) -> bool:
+        """Return True if text or voice input has been detected since the last action."""
+        with self._user_input_lock:
+            return self._user_input_detected
 
-    def record_voice_input(self) -> None:
-        """Mark that user voice input was detected, re-enabling process_user_action."""
-        with self._voice_input_lock:
-            self._voice_input_detected = True
-            logger.debug("[StoryPlanningTools] Voice input detected; process_user_action is re-enabled.")
+    def record_user_input(self) -> None:
+        """Mark text or voice input as available for process_user_action."""
+        with self._user_input_lock:
+            self._user_input_detected = True
+            now = time.monotonic()
+            if now - self._last_voice_input_log_time >= VOICE_INPUT_LOG_THROTTLE_SECONDS:
+                self._last_voice_input_log_time = now
+                logger.debug("[StoryPlanningTools] User input detected; process_user_action is re-enabled.")
 
     def reset_lore_call_counts(self) -> None:
         """Reset per-turn read_lore and search_lore invocation counters, lore activity, and die rolls."""
@@ -1847,12 +1852,12 @@ class StoryPlanningTools(BaseTools):
         receive immediately so a slow planner cannot stall the Live session.
         Only one user action resolution call may be in flight at a time.
         """
-        with self._voice_input_lock:
-            if self.require_voice_input and not self._voice_input_detected:
+        with self._user_input_lock:
+            if self.require_user_input and not self._user_input_detected:
                 return {
                     "error": (
-                        "Cannot process user action: No voice input from the orator was detected. "
-                        "Please wait for the orator to speak before submitting an action."
+                        "Cannot process user action: No input from the orator was detected. "
+                        "Please wait for the orator to speak or submit a text command."
                     )
                 }
 
@@ -1876,9 +1881,10 @@ class StoryPlanningTools(BaseTools):
         log_action = f"<{str(message_type).strip()}>" if str(message_type).strip() else action
         self._append_story_log_entry(StoryLogEntry(type="user_action", action=log_action))
 
-        with self._voice_input_lock:
-            if self.require_voice_input:
-                self._voice_input_detected = False
+        with self._user_input_lock:
+            if self.require_user_input:
+                self._user_input_detected = False
+                self._last_voice_input_log_time = -float("inf")
 
         def resolve_and_notify() -> None:
             result = None

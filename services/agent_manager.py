@@ -176,6 +176,7 @@ class AgentSession:
         self._doodle_snapshot_task: Optional[asyncio.Task] = None
         self._auto_begin_started = False
         self._has_connected = False
+        self._summoned = False
 
     @staticmethod
     def _get_nonnegative_config_seconds(value: Any, setting_name: str) -> float:
@@ -188,7 +189,7 @@ class AgentSession:
 
     @staticmethod
     def _get_live_tool_budget(value: Any) -> int:
-        """Read the number of post-VAD model tool calls to allow."""
+        """Read the number of post-user-input model tool calls to allow."""
         if value is None:
             return DEFAULT_LIVE_TOOL_BUDGET
         try:
@@ -215,12 +216,36 @@ class AgentSession:
         return len(self.websockets) > 0
 
     def send_content(self, content: types.Content) -> bool:
-        """Send content to live_request_queue if user is connected; suppress otherwise."""
-        if not self.websocket_connected:
-            logger.debug(f"[AgentSession] User disconnected; suppressing content input for session {self.theater_id}.")
+        """Send a system or canvas notification to an active Live session."""
+        if not self.is_alive:
+            logger.debug(f"[AgentSession] Stopped; suppressing content input for session {self.theater_id}.")
             return False
         self.live_request_queue.send_content(content)
         return True
+
+    def send_user_content(self, content: types.Content) -> bool:
+        """Send typed input as a complete Live user-input turn."""
+        if not self.is_alive:
+            logger.debug(f"[AgentSession] Stopped; suppressing user input for session {self.theater_id}.")
+            return False
+        self.record_user_input()
+        if hasattr(self.live_request_queue, "send_user_input"):
+            self.live_request_queue.send_user_input(content)
+        else:
+            self.live_request_queue.send_content(content)
+        return True
+
+    def summon(self) -> bool:
+        """Initialize a session so it can accept text before microphone connection."""
+        if not self.is_alive or self._summoned:
+            return False
+        self._summoned = True
+        self.status = "active"
+        self.last_active_at = time.time()
+        self._auto_begin_adventure()
+        return self.send_user_content(types.Content(parts=[types.Part(text=(
+            "You have just been summoned. Say hello by sending a chat message."
+        ))]))
 
     def send_realtime(self, blob: types.Blob) -> bool:
         """Send realtime audio/image blob to live_request_queue if user is connected; suppress otherwise."""
@@ -234,8 +259,7 @@ class AgentSession:
         """Send activity_start to live_request_queue if user is connected."""
         if not self.websocket_connected:
             return False
-        if self.story_planning_tools and hasattr(self.story_planning_tools, "record_voice_input"):
-            self.story_planning_tools.record_voice_input()
+        self.record_user_input()
         if hasattr(self.live_request_queue, "send_activity_start"):
             self.live_request_queue.send_activity_start()
         return True
@@ -248,10 +272,17 @@ class AgentSession:
             self.live_request_queue.send_activity_end()
         return True
 
+    def record_user_input(self) -> None:
+        """Mark text or voice input as available to the story planner."""
+        if not self.story_planning_tools:
+            return
+        record_input = getattr(self.story_planning_tools, "record_user_input", None)
+        if callable(record_input):
+            record_input()
+
     def record_voice_activity(self, source: str = ""):
-        """Record voice activity detection event and re-enable story planning user action."""
-        if self.story_planning_tools and hasattr(self.story_planning_tools, "record_voice_input"):
-            self.story_planning_tools.record_voice_input()
+        """Compatibility hook for voice activity detection."""
+        self.record_user_input()
 
     def _setup_tool_callbacks(self):
         def handle_cooldown_expired(tool_name: str):
@@ -621,7 +652,7 @@ class AgentSession:
             logger.error(f"[AgentSession] Exception in downstream_task for theater_id={self.theater_id}: {e}", exc_info=True)
             if self.canvas_state_manager:
                 try:
-                    self.canvas_state_manager.set_agent_thought("wandering")
+                    self.canvas_state_manager.tool_response.set_agent_thought("wandering")
                 except Exception:
                     logger.exception("[AgentSession] Could not update failed agent thought for theater_id=%s", self.theater_id)
             try:
@@ -681,8 +712,8 @@ class AgentSession:
             return
 
     def send_live_tool_reminder(self) -> bool:
-        """Remind the model to use tools while its post-speech budget remains."""
-        if not self.websocket_connected or not self.live_request_queue.live_tool_window_active:
+        """Remind the model to use tools while its post-user-input budget remains."""
+        if not self.is_alive or not self.live_request_queue.live_tool_window_active:
             return False
         content = types.Content(parts=[types.Part(
             text="[System Notification] The speaker is silent and you still have tool-call budget. You may use your available tools now."
@@ -690,7 +721,7 @@ class AgentSession:
         return self.send_content(content)
 
     async def _run_live_tool_reminder_loop(self):
-        """Inject a tool reminder every three seconds during a post-VAD tool window."""
+        """Inject a tool reminder every three seconds during a post-user-input tool window."""
         try:
             while True:
                 await asyncio.sleep(LIVE_TOOL_REMINDER_INTERVAL_SECONDS)
@@ -716,8 +747,7 @@ class AgentSession:
         if was_disconnected:
             logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state()
-            last_connected_at, last_disconnected_at = self._record_theater_connection()
-            self._auto_begin_adventure(last_connected_at, last_disconnected_at)
+            self._record_theater_connection()
 
     def _record_theater_connection(self) -> Tuple[Optional[str], Optional[str]]:
         """Record this connection and return the previous lifecycle timestamps."""
@@ -783,8 +813,7 @@ class AgentSession:
 
         # The opening is system-initiated, so it must not wait for a spoken
         # player action even when subsequent actions require voice input.
-        if hasattr(self.story_planning_tools, "record_voice_input"):
-            self.story_planning_tools.record_voice_input()
+        self.record_user_input()
         self._auto_begin_started = True
         try:
             result = self.story_planning_tools.process_system_action(
@@ -890,8 +919,7 @@ class AgentSession:
         """Record incoming PCM audio input stream bytes as time counter proxy and flush usage periodically."""
         if byte_count <= 0:
             return
-        if self.story_planning_tools and hasattr(self.story_planning_tools, "record_voice_input"):
-            self.story_planning_tools.record_voice_input()
+        self.record_user_input()
         self.audio_bytes_received += byte_count
         self.unbilled_audio_bytes += byte_count
         # Flush unbilled usage whenever unbilled audio reaches >= 96,000 bytes (~3 seconds of audio)

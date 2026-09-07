@@ -86,6 +86,21 @@ def test_start_agent_stops_registry_session_when_owner_has_no_credits():
     manager.stop_session.assert_called_once_with(theater_id="stage")
 
 
+def test_start_agent_summons_the_live_session_without_a_microphone_connection():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11}
+    registry_db.get_user_by_id.return_value = {"id": 11, "credits": 3.5}
+    session = MagicMock(status="active")
+    manager = MagicMock()
+    manager.get_or_create_session.return_value = session
+
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "agent_manager", manager):
+        result = asyncio.run(app_module.start_agent_endpoint("stage"))
+
+    assert result["agent_running"] is True
+    session.summon.assert_called_once_with()
+
+
 def test_agent_status_reads_active_session_from_registry_manager():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 11}

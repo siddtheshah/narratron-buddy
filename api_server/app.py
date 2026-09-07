@@ -115,6 +115,7 @@ async def start_agent_endpoint(theater_id: str):
         canvas_state_service=canvas_states,
         use_in_memory_artifacts=use_in_memory_artifacts,
     )
+    agent_session.summon()
     return {
         "status": agent_session.status,
         "theater_id": theater_id,

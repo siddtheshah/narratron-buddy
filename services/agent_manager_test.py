@@ -18,9 +18,9 @@ from tools.observability_tool import ObservabilityTools
 
 
 class TestAgentSessionManager(unittest.TestCase):
-    def test_auto_begin_adventure_starts_planner_once_on_connect(self):
+    def test_summon_starts_planner_and_greeting_once(self):
         class PlannerTools:
-            def record_voice_input(self):
+            def record_user_input(self):
                 pass
 
             def process_user_action(self, user_action):
@@ -45,19 +45,40 @@ class TestAgentSessionManager(unittest.TestCase):
             tool_bundle=MagicMock(),
             config={"story_planning": {"adventure_mode": True, "auto_begin": True}},
         )
-        session.story_planning_tools.record_voice_input = MagicMock()
+        session.story_planning_tools.record_user_input = MagicMock()
         session.story_planning_tools.process_system_action = MagicMock(
             return_value={"status": "processing"}
         )
+        session.send_user_content = MagicMock(return_value=True)
 
-        asyncio.run(session.add_websocket(MagicMock()))
-        asyncio.run(session.remove_websocket(next(iter(session.websockets))))
-        asyncio.run(session.add_websocket(MagicMock()))
+        session.summon()
+        session.summon()
 
-        session.story_planning_tools.record_voice_input.assert_called_once()
+        session.story_planning_tools.record_user_input.assert_called_once()
         session.story_planning_tools.process_system_action.assert_called_once_with(
             AUTO_BEGIN_ADVENTURE_ACTION, "Starting/Resuming Adventure"
         )
+        session.send_user_content.assert_called_once()
+        greeting = session.send_user_content.call_args.args[0].parts[0].text
+        self.assertEqual(greeting, "You have just been summoned. Say hello by sending a chat message.")
+
+    def test_summon_sends_its_greeting_without_audio_activity_boundaries(self):
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_runner = MagicMock()
+        mock_runner.agent = mock_agent
+        mock_runner.session_service = MagicMock()
+        session = AgentSession(theater_id="summon_turn", runner=mock_runner, tool_bundle=MagicMock())
+
+        self.assertTrue(session.summon())
+
+        async def read_summon_instruction():
+            return await session.live_request_queue.get()
+
+        greeting = asyncio.run(read_summon_instruction())
+        self.assertEqual(greeting.content.parts[0].text, "You have just been summoned. Say hello by sending a chat message.")
+        self.assertIsNone(greeting.activity_start)
+        self.assertIsNone(greeting.activity_end)
 
     def test_auto_begin_is_disabled_unless_both_adventure_flags_are_true(self):
         planner_tools = MagicMock()
@@ -249,7 +270,7 @@ class TestAgentSessionManager(unittest.TestCase):
         }))
         self.assertEqual(session.status, "stopped")
 
-    def test_suppress_inputs_when_disconnected(self):
+    def test_session_accepts_text_without_a_microphone_connection(self):
         import asyncio
         mock_agent = MagicMock()
         mock_agent.tools = []
@@ -286,10 +307,12 @@ class TestAgentSessionManager(unittest.TestCase):
         asyncio.run(session.remove_websocket(mock_ws))
         self.assertFalse(session.websocket_connected)
 
-        # Now inputs should be suppressed and discarded
-        self.assertFalse(session.send_content(dummy_content))
-        session.live_request_queue.send_content.assert_not_called()
+        # Text and system input remain available after Summon, without a mic.
+        self.assertTrue(session.send_content(dummy_content))
+        session.live_request_queue.send_content.assert_called_once_with(dummy_content)
+        session.live_request_queue.send_content.reset_mock()
 
+        # Realtime audio still requires the microphone WebSocket.
         self.assertFalse(session.send_realtime(dummy_blob))
         session.live_request_queue.send_realtime.assert_not_called()
 
@@ -360,7 +383,7 @@ class TestAgentSessionManager(unittest.TestCase):
         image_tools.record_story_plan_completed.assert_called_once()
         self.assertTrue(callable(image_tools.on_after_tool_call))
 
-    def test_voice_input_forwarded_to_story_planning_tools(self):
+    def test_user_input_forwarded_to_story_planning_tools(self):
         mock_story_planning = MagicMock()
         mock_agent = MagicMock()
         mock_agent.tools = [SimpleNamespace(name="process_user_action", func=mock_story_planning.process_user_action)]
@@ -372,15 +395,21 @@ class TestAgentSessionManager(unittest.TestCase):
         session.websockets.add(MagicMock())
 
         session.record_audio_input(1000)
-        mock_story_planning.record_voice_input.assert_called_once()
+        mock_story_planning.record_user_input.assert_called_once()
 
         mock_story_planning.reset_mock()
         session.send_activity_start()
-        mock_story_planning.record_voice_input.assert_called_once()
+        mock_story_planning.record_user_input.assert_called_once()
 
         mock_story_planning.reset_mock()
         session.record_voice_activity("mic_detect")
-        mock_story_planning.record_voice_input.assert_called_once()
+        mock_story_planning.record_user_input.assert_called_once()
+
+        mock_story_planning.reset_mock()
+        session.live_request_queue = MagicMock()
+        self.assertTrue(session.send_user_content(MagicMock()))
+        mock_story_planning.record_user_input.assert_called_once()
+        session.live_request_queue.send_user_input.assert_called_once()
 
     def test_cooldown_expired_skips_process_user_action(self):
         class MockPlannerTools:

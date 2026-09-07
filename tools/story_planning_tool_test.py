@@ -1346,45 +1346,91 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertIn("killed and restarted", results[0]["error"])
             self.assertFalse(tools.is_action_in_flight)
 
-    def test_process_user_action_requires_voice_input_when_configured(self):
+    def test_process_user_action_requires_user_input_when_configured(self):
         tools = self._make_tools(
             config={
                 "adventure_mode": True,
-                "require_voice_input": True,
+                "require_user_input": True,
                 "action_cooldown_base_seconds": 0.0,
             },
             theater_id="voice_req_test",
         )
-        self.assertTrue(tools.require_voice_input)
-        self.assertFalse(tools.is_voice_input_detected)
+        self.assertTrue(tools.require_user_input)
+        self.assertFalse(tools.is_user_input_detected)
 
         with patch.object(tools, "_resolve_user_action") as mock_resolve:
-            # First attempt without voice input is rejected
+            # First attempt without user input is rejected.
             res = tools.process_user_action("I inspect the doorway.")
             self.assertIn("error", res)
-            self.assertIn("No voice input", res["error"])
+            self.assertIn("No input", res["error"])
             mock_resolve.assert_not_called()
 
-            # Record voice input detection
-            tools.record_voice_input()
-            self.assertTrue(tools.is_voice_input_detected)
+            # A text command enables the action just like voice input.
+            tools.record_user_input()
+            self.assertTrue(tools.is_user_input_detected)
 
             # Processing is now allowed
             res = tools.process_user_action("I inspect the doorway.")
             self.assertEqual(res["status"], "processing")
             # Flag is consumed upon submission
-            self.assertFalse(tools.is_voice_input_detected)
+            self.assertFalse(tools.is_user_input_detected)
 
-            # Subsequent call without new voice input is rejected
+            # Subsequent call without new user input is rejected.
             res2 = tools.process_user_action("I walk through.")
             self.assertIn("error", res2)
-            self.assertIn("No voice input", res2["error"])
+            self.assertIn("No input", res2["error"])
 
-            # New voice input re-enables it
-            tools.record_voice_input()
-            self.assertTrue(tools.is_voice_input_detected)
+            # New user input re-enables it.
+            tools.record_user_input()
+            self.assertTrue(tools.is_user_input_detected)
             res3 = tools.process_user_action("I walk through.")
             self.assertEqual(res3["status"], "processing")
+
+    def test_record_user_input_log_throttling(self):
+        tools = self._make_tools(theater_id="voice_throttle_test")
+        with patch("tools.story_planning_tool.logger.debug") as mock_debug, \
+             patch("tools.story_planning_tool.time.monotonic", side_effect=[100.0, 101.0, 104.9, 105.0, 105.1]):
+            # 1st call at 100.0: logs message
+            tools.record_user_input()
+            # 2nd call at 101.0 (< 5.0s elapsed): throttled, no log
+            tools.record_user_input()
+            # 3rd call at 104.9 (< 5.0s elapsed): throttled, no log
+            tools.record_user_input()
+            # 4th call at 105.0 (>= 5.0s elapsed): logs message
+            tools.record_user_input()
+            # 5th call at 105.1 (< 5.0s elapsed): throttled, no log
+            tools.record_user_input()
+
+            debug_calls = [
+                call for call in mock_debug.call_args_list
+                if "[StoryPlanningTools] User input detected; process_user_action is re-enabled." in str(call)
+            ]
+            self.assertEqual(len(debug_calls), 2)
+
+    def test_record_user_input_log_resets_after_user_action(self):
+        tools = self._make_tools(
+            config={
+                "adventure_mode": True,
+                "require_user_input": True,
+                "action_cooldown_base_seconds": 0.0,
+            },
+            theater_id="voice_throttle_reset_test",
+        )
+        with patch.object(tools, "_resolve_user_action"), \
+             patch("tools.story_planning_tool.logger.debug") as mock_debug:
+            with patch("tools.story_planning_tool.time.monotonic", return_value=100.0):
+                tools.record_user_input()
+            res = tools.process_user_action("I look around.")
+            self.assertEqual(res["status"], "processing")
+            # 1.0s later (< 5s throttle window), user input re-enables the action and logs immediately.
+            with patch("tools.story_planning_tool.time.monotonic", return_value=101.0):
+                tools.record_user_input()
+
+            debug_calls = [
+                call for call in mock_debug.call_args_list
+                if "[StoryPlanningTools] User input detected; process_user_action is re-enabled." in str(call)
+            ]
+            self.assertEqual(len(debug_calls), 2)
 
     def test_search_lore_ranking_and_snippets(self):
         lore_files = [

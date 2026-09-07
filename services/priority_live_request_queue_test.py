@@ -7,6 +7,20 @@ from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 class TestPriorityLiveRequestQueue(unittest.TestCase):
+    def test_text_user_input_is_prioritized_without_audio_activity_boundaries(self):
+        async def run_test():
+            queue = PriorityLiveRequestQueue()
+            command = types.Content(parts=[types.Part(text="[Orator Command] Raise the curtain.")])
+
+            queue.send_user_input(command)
+
+            request = await queue.get()
+            self.assertEqual(request.content.parts[0].text, "[Orator Command] Raise the curtain.")
+            self.assertIsNone(request.activity_start)
+            self.assertIsNone(request.activity_end)
+
+        asyncio.run(run_test())
+
     def test_post_vad_window_forwards_notifications_until_model_tool_budget_is_used(self):
         async def run_test():
             queue = PriorityLiveRequestQueue(live_tool_budget=2)

@@ -116,6 +116,52 @@
             min-height: 0;
         }
 
+        #orator-command-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            box-sizing: border-box;
+            background: rgba(2, 6, 23, 0.45);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+        }
+
+        #orator-command-overlay.active {
+            display: flex;
+        }
+
+        #orator-command-form {
+            width: min(680px, 100%);
+            padding: 1.25rem;
+            border: 1px solid rgba(129, 140, 248, 0.7);
+            border-radius: 16px;
+            background: rgba(15, 23, 42, 0.96);
+            box-shadow: 0 22px 65px rgba(0, 0, 0, 0.55), 0 0 35px rgba(99, 102, 241, 0.2);
+        }
+
+        #orator-command-input {
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 0.75rem;
+            padding: 0.9rem 1rem;
+            border: 1px solid rgba(148, 163, 184, 0.55);
+            border-radius: 10px;
+            outline: none;
+            background: rgba(2, 6, 23, 0.8);
+            color: #fff;
+            font: inherit;
+            font-size: 1rem;
+        }
+
+        #orator-command-input:focus {
+            border-color: #818cf8;
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+        }
+
         #current-image {
             max-width: 100%;
             max-height: 100%;
@@ -2129,7 +2175,7 @@
                 </svg>
             </button>
 
-            <!-- Orator Audio controls (Summon/Banish Agent, Connect) -->
+            <!-- Orator controls: summon for text commands; connect only for microphone input. -->
             <div id="orator-controls"
                 style="display: none; align-items: center; gap: 10px; margin-left: 1rem; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
                 <button id="agent-start-stop-btn"
@@ -2138,7 +2184,7 @@
                 </button>
                 <button id="agent-connect-btn"
                     style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                    🔌 Connect
+                    🎙️ Connect Mic
                 </button>
             </div>
 
@@ -2169,6 +2215,17 @@
             <canvas id="doodle-canvas"></canvas>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
             <div id="scene-dialogue-overlay" aria-live="polite"></div>
+            <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title" aria-hidden="true">
+                <form id="orator-command-form">
+                    <div id="orator-command-title" style="font-size: 1.05rem; font-weight: 600; color: #fff;">Command Narratron</div>
+                    <div style="margin-top: 0.3rem; color: #cbd5e1; font-size: 0.85rem;">Send a private instruction directly to the live agent.</div>
+                    <input id="orator-command-input" type="text" maxlength="2000" autocomplete="off" placeholder="Tell Narratron what to do…" aria-describedby="orator-command-hint">
+                    <div id="orator-command-hint" style="display: flex; justify-content: space-between; gap: 1rem; margin-top: 0.75rem; color: #94a3b8; font-size: 0.78rem;">
+                        <span>Enter to send · Esc to cancel</span>
+                        <span id="orator-command-status" aria-live="polite"></span>
+                    </div>
+                </form>
+            </div>
             <div id="agent-activity-tray" aria-label="Agent activity" aria-live="polite">
                 <div id="pcm-broadcast-indicator" class="agent-activity-icon live" role="status"
                     title="Voice activity is broadcasting to the agent" aria-hidden="true">
@@ -3064,6 +3121,65 @@
             }
             return initialRoleIsOrator;
         }
+
+        const oratorCommandOverlay = document.getElementById('orator-command-overlay');
+        const oratorCommandForm = document.getElementById('orator-command-form');
+        const oratorCommandInput = document.getElementById('orator-command-input');
+        const oratorCommandStatus = document.getElementById('orator-command-status');
+
+        function isOratorCommandOpen() {
+            return !!oratorCommandOverlay?.classList.contains('active');
+        }
+
+        function closeOratorCommand() {
+            if (!oratorCommandOverlay) return;
+            oratorCommandOverlay.classList.remove('active');
+            oratorCommandOverlay.setAttribute('aria-hidden', 'true');
+            oratorCommandInput.value = '';
+            oratorCommandStatus.textContent = '';
+        }
+
+        function openOratorCommand() {
+            if (!isCurrentOrator() || !oratorCommandOverlay) return;
+            oratorCommandOverlay.classList.add('active');
+            oratorCommandOverlay.setAttribute('aria-hidden', 'false');
+            oratorCommandStatus.textContent = '';
+            requestAnimationFrame(() => oratorCommandInput.focus());
+        }
+
+        oratorCommandInput?.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                closeOratorCommand();
+            }
+        });
+
+        oratorCommandForm?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const text = oratorCommandInput.value.trim();
+            if (!text) return;
+
+            oratorCommandInput.disabled = true;
+            oratorCommandStatus.textContent = 'Sending…';
+            try {
+                const response = await fetch(`/api/orator/command?theater_id=${encodeURIComponent(theaterId)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text }),
+                });
+                if (!response.ok) {
+                    const detail = await response.json().catch(() => ({}));
+                    throw new Error(detail.detail || 'Narratron could not receive the command.');
+                }
+                closeOratorCommand();
+            } catch (error) {
+                oratorCommandStatus.textContent = error.message;
+            } finally {
+                oratorCommandInput.disabled = false;
+                if (isOratorCommandOpen()) oratorCommandInput.focus();
+            }
+        });
         const suggestionsHiddenStorageKey = `narratron-suggestions-hidden:${theaterId || 'default'}`;
         let suggestionsHidden = false;
         if (!theaterId) {
@@ -5269,7 +5385,7 @@
             return new Promise((resolve, reject) => {
                 agentWs.onopen = () => {
                     console.log("Agent WebSocket connected.");
-                    agentConnectBtn.textContent = '🔌 Disconnect';
+                    agentConnectBtn.textContent = '🎙️ Disconnect Mic';
                     agentConnectBtn.style.background = '#ef4444'; // Red
                     statusIndicator.classList.remove('disconnected'); // Set back to green
                     resolve(agentWs);
@@ -5338,7 +5454,7 @@
             if (typeof updateAgentActivity === 'function') {
                 updateAgentActivity({ live_ready: false });
             }
-            agentConnectBtn.textContent = '🔌 Connect';
+            agentConnectBtn.textContent = '🎙️ Connect Mic';
             agentConnectBtn.style.background = '#3b82f6'; // Blue
             statusIndicator.classList.add('disconnected'); // Set back to red
         }
@@ -5512,6 +5628,8 @@
         window.addEventListener('keydown', (e) => {
             if (!isCurrentOrator()) return;
 
+            if (isOratorCommandOpen()) return;
+
             // Rebinding hotkey state
             if (isRebindingHotkey) {
                 e.preventDefault();
@@ -5582,6 +5700,12 @@
                 return;
             }
 
+            if (e.code === 'Space' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                e.preventDefault();
+                openOratorCommand();
+                return;
+            }
+
             // Match current hotkey
             const matchCode = e.code === currentHotkey.code;
             const matchAlt = !!e.altKey === !!currentHotkey.altKey;
@@ -5607,7 +5731,7 @@
         window.enableAudioInput = () => {
             isRecording = true;
             if (agentConnectBtn) {
-                agentConnectBtn.textContent = '🔌 Disconnect';
+                agentConnectBtn.textContent = '🎙️ Disconnect Mic';
                 agentConnectBtn.style.background = '#ef4444';
             }
         };
@@ -6214,7 +6338,9 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                if (pulloutOverlay && pulloutOverlay.classList.contains('active')) {
+                if (isOratorCommandOpen()) {
+                    closeOratorCommand();
+                } else if (pulloutOverlay && pulloutOverlay.classList.contains('active')) {
                     closePulloutMenu();
                 } else if (micConfigModal && micConfigModal.classList.contains('active')) {
                     closeMicConfigModal();
@@ -6595,6 +6721,7 @@
                         <div class="step-desc">
                             • Use headphones to prevent background audio echo.<br>
                             • Use the bottom toolbar to doodle live on canvas.<br>
+                            • Press <code style="color:#c7d2fe;">Shift+Space</code> to type a direct command to Narratron.<br>
                             • Open pullout menu ➔ <strong>Hotkey</strong> to customize your shortcut.
                         </div>
                     </div>

@@ -194,7 +194,7 @@ async def handle_live_websocket_connection(
                     user_text = json_message.get("text", "")
                     if user_text and user_text.strip():
                         content = types.Content(parts=[types.Part(text=user_text)])
-                        agent_session.send_content(content)
+                        agent_session.send_user_content(content)
 
                 elif msg_type == "mic_detect":
                     rms = json_message.get("rms")

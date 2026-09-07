@@ -134,7 +134,7 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     service = MagicMock()
     service.get.return_value = state
     session = MagicMock(websocket_connected=True)
-    session.send_content.return_value = True
+    session.send_user_content.return_value = True
     manager = MagicMock()
     manager.get_session.return_value = session
     payload = canvas.A2UIActionEnvelope(
@@ -154,7 +154,7 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
         result = canvas.post_a2ui_action(payload, request(), "stage")
 
     assert result == {"status": "accepted", "surface_id": "sword_card"}
-    sent_text = session.send_content.call_args.args[0].parts[0].text
+    sent_text = session.send_user_content.call_args.args[0].parts[0].text
     assert "I grab the sword." in sent_text
     assert "forged client text" not in sent_text
     state.ui.delete_surface.assert_called_once_with("sword_card")
@@ -173,6 +173,36 @@ def test_a2ui_action_rejects_non_orator():
     with patch.object(canvas, "db", registry_db), patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 9}), pytest.raises(HTTPException) as error:
         canvas.post_a2ui_action(payload, request(), "stage")
+    assert error.value.status_code == 403
+
+
+def test_orator_command_relays_direct_input_without_creating_chat_message():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
+    session = MagicMock(websocket_connected=True)
+    session.send_user_content.return_value = True
+    manager = MagicMock()
+    manager.get_session.return_value = session
+
+    with patch.object(canvas, "db", registry_db), patch.object(canvas, "agent_manager", manager), \
+            patch.object(canvas, "_require_canvas_access"), \
+            patch.object(canvas, "get_current_user", return_value={"id": 3}):
+        result = canvas.post_orator_command(
+            canvas.OratorCommand(text="  Bring   in   a storm.  "), request(), "stage"
+        )
+
+    assert result == {"status": "accepted"}
+    sent_text = session.send_user_content.call_args.args[0].parts[0].text
+    assert "Bring in a storm." in sent_text
+    assert "[Orator Command]" in sent_text
+
+
+def test_orator_command_rejects_non_orator():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
+    with patch.object(canvas, "db", registry_db), patch.object(canvas, "_require_canvas_access"), \
+            patch.object(canvas, "get_current_user", return_value={"id": 9}), pytest.raises(HTTPException) as error:
+        canvas.post_orator_command(canvas.OratorCommand(text="Bring in a storm."), request(), "stage")
     assert error.value.status_code == 403
 
 

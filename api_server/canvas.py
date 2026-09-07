@@ -28,6 +28,10 @@ class ChatMessage(BaseModel):
     text: str
 
 
+class OratorCommand(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
 class SuggestionVote(BaseModel):
     voter: str
     target_author: str
@@ -337,17 +341,44 @@ def post_a2ui_action(payload: A2UIActionEnvelope, request: Request, theater_id: 
     if not user_action:
         raise HTTPException(status_code=400, detail="Interactive control has no user action.")
     session = agent_manager.get_session(theater_id)
-    if not session or not session.websocket_connected:
+    if not session or not session.is_alive:
         raise HTTPException(status_code=409, detail="The live agent is not connected.")
     notification = (
         "[A2UI Canvas Action] The active user selected this immutable user input: "
         f"{user_action!r}. In Adventure Mode, submit in-world actions through process_user_action "
         "without rewriting them. Otherwise handle this selection directly as explicit user input."
     )
-    if not session.send_content(types.Content(parts=[types.Part(text=notification)])):
+    if not session.send_user_content(types.Content(parts=[types.Part(text=notification)])):
         raise HTTPException(status_code=409, detail="The live agent could not receive the action.")
     state.ui.delete_surface(payload.action.surfaceId)
     return {"status": "accepted", "surface_id": payload.action.surfaceId}
+
+
+@app.post("/api/orator/command")
+def post_orator_command(command: OratorCommand, request: Request, theater_id: str):
+    """Relay a direct typed instruction from the active orator to Live."""
+    _require_canvas_access(request, theater_id)
+    deployment = db.get_deployment(theater_id)
+    current_user = get_current_user(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can send commands to Narratron.")
+
+    text = " ".join(command.text.split())
+    if not text:
+        raise HTTPException(status_code=400, detail="A command cannot be empty.")
+
+    session = agent_manager.get_session(theater_id)
+    if not session or not session.is_alive:
+        raise HTTPException(status_code=409, detail="The live agent is not connected.")
+
+    notification = (
+        "[Orator Command] The active orator typed this direct instruction: "
+        f"{text!r}. Treat it as explicit user input. In Adventure Mode, submit an in-world "
+        "action through process_user_action exactly as written; otherwise handle it directly."
+    )
+    if not session.send_user_content(types.Content(parts=[types.Part(text=notification)])):
+        raise HTTPException(status_code=409, detail="The live agent could not receive the command.")
+    return {"status": "accepted"}
 
 
 @app.patch("/api/a2ui/surfaces/{surface_id}")
