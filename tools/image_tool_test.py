@@ -389,6 +389,26 @@ class TestImageTools(BaseTestCase):
         self.assertTrue(displayed_path.endswith(".webp"))
         self.assertEqual(displayed_path, webp_path)
 
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_preserves_theater_workspace_assets(self, mock_get_provider):
+        """A generated image must never replace or remove its theater workspace."""
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        theater_id = "preserve_workspace"
+        self.manager.create_theater(name="Preserve workspace", theater_id=theater_id)
+        theater_dir = self.manager.theater(theater_id).directory()
+        config_path = theater_dir / "theater.yaml"
+        reference_path = theater_dir / "references" / "narratron_avatar.jpg"
+
+        tools = self.make_image_tools(self.config, theater_id=theater_id, theater_manager=self.manager)
+        tools.create_image("a moonlit observatory", image_name="observatory", display=False)
+        tools.join_generation()
+
+        self.assertTrue(theater_dir.is_dir())
+        self.assertTrue(config_path.is_file())
+        self.assertTrue(reference_path.is_file())
+        self.assertTrue(any(Path(tools.output_dir).glob("observatory_*.jpg")))
+
     def test_show_image_sends_compressed_webp_to_canvas_state_service(self):
         mock_canvas_service = MagicMock()
         tools = self.make_image_tools(

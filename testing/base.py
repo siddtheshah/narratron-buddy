@@ -1,10 +1,8 @@
-import shutil
 import unittest
-from pathlib import Path
 
 
 class BaseTestCase(unittest.TestCase):
-    """Base test fixture that automatically cleans up leftover theater directories and cached states."""
+    """Base fixture for tests that use isolated, test-owned theater workspaces."""
 
     def setUp(self):
         super().setUp()
@@ -21,12 +19,3 @@ class BaseTestCase(unittest.TestCase):
             canvas_states.states.clear()
         except Exception:
             pass
-
-        # 2. Automatically clean up all subdirectories inside theaters/ and ephemeral/
-        project_root = Path(__file__).parent.parent.resolve()
-        for folder_name in ("theaters", "ephemeral"):
-            dir_path = project_root / folder_name
-            if dir_path.exists():
-                for item in dir_path.iterdir():
-                    if item.is_dir():
-                        shutil.rmtree(item, ignore_errors=True)
