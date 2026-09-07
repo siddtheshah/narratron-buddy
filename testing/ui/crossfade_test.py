@@ -18,7 +18,10 @@ class TestCrossfade(UITestCase):
         theater_id = "image_tool_transition"
         theater_manager = TheaterManager(base_theaters_dir=self.theaters_dir)
         theater = theater_manager.theater(theater_id)
-        theater_manager.get_theater_config = MagicMock(return_value={"image_generation": {"cooldown_duration": 0, "provider": "hybrid-flux-gemini"}})
+        theater_manager.get_theater_config = MagicMock(return_value={
+            "visuals": {"model": "hybrid-flux-gemini", "cycle_length": 0},
+            "image_generation": {"cooldown_duration": 0},
+        })
         tool = ImageTools(
             theater,
             canvas_manager=CanvasStateService(theater_manager).get(theater_id),
@@ -26,7 +29,7 @@ class TestCrossfade(UITestCase):
 
         image = Path(tool.output_dir) / "test_image.jpg"
         Image.new("RGB", (10, 10), color="blue").save(image)
-        tool.image_aliases["test_image"] = str(image)
+        tool.visual.register_image(str(image), "test_image")
         tool.visual.on_show_image = MagicMock()
         tool._schedule_cooldown_timer = MagicMock()
 

@@ -333,7 +333,7 @@ def load_adventure_config(adventure_id_or_path: str) -> Tuple[Dict[str, Any], Pa
             logger.warning("Failed to load %s: %s", yaml_path, e)
 
     app_config = get_app_config()
-    for key in ("agent_internal", "image_generation", "story_planning", "interactive_canvas", "music"):
+    for key in ("agent_internal", "visuals", "image_generation", "story_planning", "interactive_canvas", "music"):
         if key in app_config:
             deep_merge(config.setdefault(key, {}), app_config[key])
 

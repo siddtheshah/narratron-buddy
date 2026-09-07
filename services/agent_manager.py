@@ -345,6 +345,8 @@ class AgentSession:
         if self.animation_tools:
             self.animation_tools.on_animation_ready = handle_animation_ready
             self.animation_tools.on_layered_animation_created = self.record_layered_animation_created
+            self.animation_tools.on_after_tool_call = handle_after_image_tool
+            self.animation_tools.on_image_created = self.record_image_created
 
         if self.story_planning_tools:
             self.story_planning_tools.on_scene_reaction = handle_scene_reaction

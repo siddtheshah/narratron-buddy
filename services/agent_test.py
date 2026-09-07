@@ -141,8 +141,6 @@ class TestCreateAgent(unittest.TestCase):
         mock_animation_cls.assert_called_once_with(
             ANY,
             ANY,
-            mock_image_cls.return_value,
-            mock_image_cls.return_value._get_image_provider.return_value,
             mock_get_text_provider.return_value,
             ANY,
             video_provider=ANY,
@@ -234,7 +232,8 @@ class TestCreateAgent(unittest.TestCase):
         bundle = create_tool_bundle_for_session(
             "assets_only_theater",
             config={
-                "image_generation": {"enabled": False, "provider": "hybrid-flux-gemini"},
+                "visuals": {"model": "hybrid-flux-gemini"},
+                "image_generation": {"enabled": False},
                 "music": {"provider": "lyria"},
                 "animation": {"enabled": True},
             },
@@ -249,7 +248,7 @@ class TestCreateAgent(unittest.TestCase):
         from services.agent import create_tool_bundle_for_session
 
         base_config = {
-            "image_generation": {"provider": "hybrid-flux-gemini"},
+            "visuals": {"model": "hybrid-flux-gemini"},
             "music": {"provider": "lyria"},
         }
         disabled = create_tool_bundle_for_session(
@@ -274,7 +273,7 @@ class TestCreateAgent(unittest.TestCase):
 
         base_config = {
             "story_planning": {"adventure_mode": False},
-            "image_generation": {"provider": "hybrid-flux-gemini"},
+            "visuals": {"model": "hybrid-flux-gemini"},
             "music": {"provider": "lyria"},
         }
         absent = create_tool_bundle_for_session("a2ui_absent", config=base_config)

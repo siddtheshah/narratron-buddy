@@ -26,6 +26,7 @@ from providers import (
     VideoGenerationRequest,
     VideoProvider,
     VideoProviderError,
+    get_image_provider,
 )
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
 from tools.base_tool import BaseTools, logged_tool_call, single_flight, with_cooldown
@@ -80,33 +81,41 @@ class AnimationTechniquePlanResponse(BaseModel):
 
 
 class AnimationTools(BaseTools):
-    """Create image sequences using the same provider as regular canvas images."""
+    """Create animated visual assets using the theater's shared visuals configuration."""
 
     def __init__(
         self,
         theater: Theater,
         canvas_manager: CanvasStateManager,
-        image_tools,
-        image_provider: ImageProvider,
         text_response_provider: TextResponseProvider,
         layered_provider: FalQwenLayeredProvider,
+        image_provider: Optional[ImageProvider] = None,
         video_provider: Optional[VideoProvider] = None,
     ):
-        # ImageTools owns the theater-specific output directory, aliases, canvas
-        # hooks, and configured image-generation cooldown.
         super().__init__(
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        subconfig = self.config.get("animation", self.config) if "animation" in self.config else self.config
-        self.config = subconfig if isinstance(subconfig, dict) else {}
-        self.cooldown_duration = float(self.config.get("cooldown_duration", image_tools.cooldown_duration))
-        self.image_tools = image_tools
-        self.image_provider = image_provider
-        self.output_dir = image_tools.output_dir
-        self.animations_dir = os.path.join(str(image_tools.theater.output_dir()), "animations")
+        animation_config = self.config.get("animation", {})
+        visuals_config = self.config.get("visuals", {})
+        self.animation_config = animation_config if isinstance(animation_config, dict) else {}
+        self.visuals_config = visuals_config if isinstance(visuals_config, dict) else {}
+        self.cooldown_duration = float(self.animation_config.get("cooldown_duration", 0.0))
+        self.image_model = str(self.visuals_config.get("model") or "").strip()
+        if not self.image_model:
+            raise ValueError("visuals.model must name a provider from providers/.")
+        model_options = self.visuals_config.get("model_options") or {}
+        if not isinstance(model_options, dict):
+            raise ValueError("visuals.model_options must be a mapping.")
+        self.image_provider_options = dict(model_options)
+        self.image_provider = image_provider or get_image_provider(
+            self.image_model,
+            self.image_provider_options,
+        )
+        self.output_dir = str(theater.image_artifacts_dir())
+        self.animations_dir = os.path.join(str(theater.output_dir()), "animations")
         os.makedirs(self.animations_dir, exist_ok=True)
-        self.default_style = image_tools.default_style
+        self.default_style = str(self.visuals_config.get("style", "")).strip()
         self._animations: dict[str, list[str]] = {}
         self._layered_animations: dict[str, dict] = {}
         self._video_animations: dict[str, dict] = {}
@@ -114,7 +123,7 @@ class AnimationTools(BaseTools):
         self.text_response_provider = text_response_provider
         self.video_provider = video_provider
         if self.video_provider is None:
-            v_provider_id = self.config.get("video_provider", "fal-minimax-h3-turbo")
+            v_provider_id = self.animation_config.get("video_provider", "fal-minimax-h3-turbo")
             try:
                 from providers.registry import get_video_provider
                 self.video_provider = get_video_provider(v_provider_id)
@@ -122,7 +131,25 @@ class AnimationTools(BaseTools):
                 self.video_provider = None
         self.on_animation_ready: Optional[Any] = None
         self.on_layered_animation_created: Optional[Any] = None
+        self.on_image_created: Optional[Any] = None
         self.is_generating: bool = False
+
+    @property
+    def visual(self):
+        return getattr(self.canvas_manager, "visual", None)
+
+    def _apply_default_style(self, prompt: str) -> str:
+        if self.default_style and not re.search(r"\bstyle\b", prompt, flags=re.IGNORECASE):
+            return f"{prompt}\n\nStyle: {self.default_style}"
+        return prompt
+
+    def _trigger_after_tool_call(self, tool_name: str) -> None:
+        callback = self.on_after_tool_call
+        if callback:
+            try:
+                callback(tool_name, {})
+            except Exception:
+                logger.exception("[AnimationTools] After-tool callback failed for %s", tool_name)
 
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that animation generation has started or finished."""
@@ -182,16 +209,7 @@ class AnimationTools(BaseTools):
         def _worker() -> None:
             self._set_canvas_activity(True)
             try:
-                forced_override = (
-                    self.config.get("forced_technique")
-                    or self.config.get("force_technique")
-                    or self.config.get("technique")
-                )
-                if not forced_override and isinstance(self.config.get("animation"), dict):
-                    forced_override = (
-                        self.config["animation"].get("forced_technique")
-                        or self.config["animation"].get("technique")
-                    )
+                forced_override = self.animation_config.get("forced_technique")
 
                 forced_technique: Optional[str] = None
                 if isinstance(forced_override, str) and forced_override.strip():
@@ -252,7 +270,7 @@ class AnimationTools(BaseTools):
                 self.text_response_provider, scene_prompt
             )
             logger.debug("[AnimationTools] Triframe animation %s LLM plan=%s", animation_id, plan)
-            effective_base_frame = self.image_tools._apply_default_style(plan["base_frame"].strip())
+            effective_base_frame = self._apply_default_style(plan["base_frame"].strip())
 
             animation_dir = os.path.join(self.animations_dir, animation_id)
             os.makedirs(animation_dir, exist_ok=False)
@@ -320,7 +338,7 @@ class AnimationTools(BaseTools):
             logger.exception("[AnimationTools] Failed to generate tri-frame animation")
         finally:
             self._set_canvas_activity(False)
-            self.image_tools._trigger_after_tool_call("create_animation")
+            self._trigger_after_tool_call("create_animation")
 
     def _run_layered_animation(self, scene_prompt: str, animation_id: str) -> None:
         """Run the long-lived pipeline after its public single-flight lease is acquired."""
@@ -331,7 +349,7 @@ class AnimationTools(BaseTools):
             plan, planner_debug = self.plan_layers_with_provider(self.text_response_provider, scene_prompt.strip())
             logger.debug("[AnimationTools] Layered animation %s LLM plan=%s", animation_id, plan)
             flattened_prompt = self._flatten_layer_plan(scene_prompt.strip(), plan)
-            base_result = self.image_provider.generate(ImageGenerationRequest(prompt=self.image_tools._apply_default_style(flattened_prompt), aspect_ratio="16:9"))
+            base_result = self.image_provider.generate(ImageGenerationRequest(prompt=self._apply_default_style(flattened_prompt), aspect_ratio="16:9"))
             base_path = self._save_named_image(base_result.image_bytes, animation_dir / "base.jpg", flattened_prompt)
             decomposition_prompt = self._decomposition_prompt(scene_prompt.strip(), plan)
             provider = self.layered_provider
@@ -372,16 +390,12 @@ class AnimationTools(BaseTools):
             logger.exception("[AnimationTools] Layered animation failed for %s", animation_id)
         finally:
             self._set_canvas_activity(False)
-            self.image_tools._trigger_after_tool_call("create_animation")
+            self._trigger_after_tool_call("create_animation")
 
     def _apply_video_style(self, prompt: str) -> str:
         """Apply the theater's image style with a loopable constraint to the video prompt."""
         prompt = prompt.strip()
-        base_style = (
-            getattr(self.image_tools, "default_style", "")
-            or getattr(self, "default_style", "")
-            or ""
-        ).strip()
+        base_style = self.default_style.strip()
 
         if base_style:
             if re.search(r"\bloopable\b", base_style, flags=re.IGNORECASE):
@@ -410,11 +424,8 @@ class AnimationTools(BaseTools):
             animation_dir = Path(self.animations_dir) / animation_id
             animation_dir.mkdir(parents=True, exist_ok=False)
 
-            anim_cfg = self.config or {}
-            if isinstance(anim_cfg.get("animation"), dict):
-                anim_cfg = anim_cfg["animation"]
             video_duration_seconds = int(
-                anim_cfg.get("video_duration_seconds")
+                self.animation_config.get("video_duration_seconds")
                 or 5
             )
             result = self.video_provider.generate(
@@ -451,8 +462,8 @@ class AnimationTools(BaseTools):
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
             self._video_animations[animation_id] = manifest
-            self.image_tools.image_aliases[f"{animation_id}_video"] = str(video_path)
-            self.image_tools.image_aliases[animation_id] = str(video_path)
+            if self.visual:
+                self.visual.register_image(str(video_path), f"{animation_id}_video", animation_id)
 
             logger.debug("[AnimationTools] Video animation '%s' is ready to play at %s.", animation_id, video_path)
             self._notify_animation_ready(animation_id, "video")
@@ -462,7 +473,7 @@ class AnimationTools(BaseTools):
             logger.exception("[AnimationTools] Video animation failed for %s", animation_id)
         finally:
             self._set_canvas_activity(False)
-            self.image_tools._trigger_after_tool_call("create_animation")
+            self._trigger_after_tool_call("create_animation")
 
     @staticmethod
     def plan_animation_technique_with_provider(
@@ -613,9 +624,11 @@ class AnimationTools(BaseTools):
         return str(path)
 
     def _register_layered_aliases(self, animation_id: str, base_path: str, layer_paths: list[str]) -> None:
-        self.image_tools.image_aliases[f"{animation_id}_base"] = base_path
+        if not self.visual:
+            return
+        self.visual.register_image(base_path, f"{animation_id}_base")
         for index, path in enumerate(layer_paths, start=1):
-            self.image_tools.image_aliases[f"{animation_id}_layer_{index}"] = path
+            self.visual.register_image(path, f"{animation_id}_layer_{index}")
 
     def _to_relative_path(self, path: str | Path) -> str:
         output_dir_path = Path(self.output_dir)
@@ -725,7 +738,7 @@ class AnimationTools(BaseTools):
         )
         resolved_references = []
         for reference_name in reference_names:
-            reference_path = self.image_tools._find_image_path(reference_name)
+            reference_path = self.visual.resolve_image_path(reference_name) if self.visual else None
             if not reference_path:
                 return [], f"Error: Reference image '{reference_name}' not found."
             try:
@@ -746,7 +759,7 @@ class AnimationTools(BaseTools):
         Args:
             animation_id: The ID returned by create_animation.
         """
-        url_resolver = self.image_tools.theater.get_url_for_path
+        url_resolver = self.theater.get_url_for_path
         manifest = self._find_video_animation(animation_id)
         if manifest:
             res = self.canvas_manager.visual.update_animation(
@@ -757,7 +770,7 @@ class AnimationTools(BaseTools):
                 source="play_animation",
                 url_for_path=url_resolver,
             )
-            self.image_tools._trigger_after_tool_call("play_animation")
+            self._trigger_after_tool_call("play_animation")
             status = res.get("status")
             if status == "queued":
                 return f"Video animation '{animation_id}' queued for the next visual cycle."
@@ -775,7 +788,7 @@ class AnimationTools(BaseTools):
                 source="play_animation",
                 url_for_path=url_resolver,
             )
-            self.image_tools._trigger_after_tool_call("play_animation")
+            self._trigger_after_tool_call("play_animation")
             status = res.get("status")
             if status == "queued":
                 return f"Layered animation '{animation_id}' queued for the next visual cycle."
@@ -793,7 +806,7 @@ class AnimationTools(BaseTools):
                 source="play_animation",
                 url_for_path=url_resolver,
             )
-            self.image_tools._trigger_after_tool_call("play_animation")
+            self._trigger_after_tool_call("play_animation")
             status = res.get("status")
             if status == "queued":
                 return f"Animation '{animation_id}' queued for the next visual cycle."
@@ -829,9 +842,8 @@ class AnimationTools(BaseTools):
         frame_number: int,
         filepath: str,
     ) -> None:
-        alias = f"{animation_id}_frame_{frame_number}"
-        self.image_tools.image_aliases[alias] = filepath
-        self.image_tools.image_aliases[alias.lower()] = filepath
+        if self.visual:
+            self.visual.register_image(filepath, f"{animation_id}_frame_{frame_number}")
 
     def _find_triframe_animation(self, animation_id: str) -> list[str]:
         if animation_id in self._animations:
@@ -913,11 +925,11 @@ class AnimationTools(BaseTools):
                         "frames": [self._to_relative_path(p) for p in frames],
                     })
 
-            self.image_tools._trigger_after_tool_call("browse_animations")
+            self._trigger_after_tool_call("browse_animations")
             return results
         except Exception as exc:
             logger.exception("[AnimationTools] Failed to browse animations: %s", exc)
-            self.image_tools._trigger_after_tool_call("browse_animations")
+            self._trigger_after_tool_call("browse_animations")
             return []
 
     def _load_animation_info(self, subfolder: Path) -> Optional[dict[str, Any]]:
@@ -989,7 +1001,7 @@ class AnimationTools(BaseTools):
         return None
 
     def _notify_image_created(self, filepath: str) -> None:
-        callback = self.image_tools.on_image_created
+        callback = self.on_image_created
         if callback:
             try:
                 callback(filepath)
@@ -1026,4 +1038,3 @@ class AnimationTools(BaseTools):
                     logger.exception("[AnimationTools] Animation-ready callback failed")
             except Exception:
                 logger.exception("[AnimationTools] Animation-ready callback failed")
-

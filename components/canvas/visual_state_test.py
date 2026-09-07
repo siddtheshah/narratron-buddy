@@ -43,6 +43,17 @@ def test_visual_state_starts_with_a_crossfade_presentation() -> None:
     assert state.image_revision == 0
 
 
+def test_visual_state_resolves_registered_image_aliases(tmp_path: Path) -> None:
+    image_path = tmp_path / "hero portrait.png"
+    image_path.write_bytes(b"image")
+    state = VisualState(make_theater())
+
+    state.register_image(str(image_path), "hero")
+
+    assert state.resolve_image_path("hero") == str(image_path)
+    assert state.resolve_image_path("hero_portrait") == str(image_path)
+
+
 # ---------------------------------------------------------------------------
 # 2. show_image Transitions, Revision & History
 # ---------------------------------------------------------------------------
@@ -1055,7 +1066,7 @@ def test_resolve_reference_fallback(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_update_image_cold_start_displays_immediately(tmp_path: Path) -> None:
-    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
 
     img1 = str(tmp_path / "scene1.png")
@@ -1071,7 +1082,7 @@ def test_update_image_cold_start_displays_immediately(tmp_path: Path) -> None:
 
 
 def test_update_image_subsequent_call_queues_for_next_cycle(tmp_path: Path) -> None:
-    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
 
     img1 = str(tmp_path / "scene1.png")
@@ -1089,7 +1100,7 @@ def test_update_image_subsequent_call_queues_for_next_cycle(tmp_path: Path) -> N
 
 
 def test_advance_cycle_promotes_next_and_resets(tmp_path: Path) -> None:
-    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
 
     img1 = str(tmp_path / "scene1.png")
@@ -1113,7 +1124,7 @@ def test_advance_cycle_promotes_next_and_resets(tmp_path: Path) -> None:
 
 
 def test_priority_create_overrides_priority_show(tmp_path: Path) -> None:
-    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
 
     img1 = str(tmp_path / "scene1.png")
@@ -1140,7 +1151,7 @@ def test_priority_create_overrides_priority_show(tmp_path: Path) -> None:
 
 
 def test_update_animation_and_active_animation_overrides(tmp_path: Path) -> None:
-    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
 
     manifest = {
@@ -1199,7 +1210,7 @@ def test_update_animation_and_active_animation_overrides(tmp_path: Path) -> None
 
 
 def test_update_visual_dispatch(tmp_path: Path) -> None:
-    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
 
     img = str(tmp_path / "dispatch.png")
@@ -1231,7 +1242,7 @@ def test_update_visual_dispatch(tmp_path: Path) -> None:
 
 
 def test_callbacks_invoked_on_apply_visual(tmp_path: Path) -> None:
-    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     on_visual_changed = Mock()
     notify_changed = Mock()
     state = VisualState(
@@ -1251,10 +1262,8 @@ def test_callbacks_invoked_on_apply_visual(tmp_path: Path) -> None:
 def test_visual_state_uses_theater_config_directly() -> None:
     theater = Mock(spec=Theater)
     theater.theater_id = "th_custom"
-    theater.config.return_value = {"image_generation": {"cooldown_duration": 42.0}}
+    theater.config.return_value = {"visuals": {"cycle_length": 42.0}}
     state = VisualState(theater)
-    assert state.theater_config == {"image_generation": {"cooldown_duration": 42.0}}
-    assert state.cooldown_duration == 42.0
+    assert state.theater_config == {"visuals": {"cycle_length": 42.0}}
+    assert state.cycle_length == 42.0
     theater.config.assert_called_once()
-
-

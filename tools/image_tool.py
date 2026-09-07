@@ -30,9 +30,6 @@ from components.theater_manager import Theater
 logger = logging.getLogger(__name__)
 
 class ImageTools(BaseTools):
-    _references_cache: Dict[str, dict] = {}
-    _reference_dir_cached: Optional[str] = None
-
     def __init__(
         self,
         theater: Theater,
@@ -44,44 +41,43 @@ class ImageTools(BaseTools):
             canvas_manager=canvas_manager,
         )
 
-        subconfig = self.config.get("image_generation", self.config) if "image_generation" in self.config else self.config
-        self.config = subconfig if isinstance(subconfig, dict) else {}
+        image_config = self.config.get("image_generation", {})
+        visuals_config = self.config.get("visuals", {})
+        self.image_config = image_config if isinstance(image_config, dict) else {}
+        self.visuals_config = visuals_config if isinstance(visuals_config, dict) else {}
         self.theater = theater
-        self.cooldown_duration = float(self.config.get("cooldown_duration", 0.0))
+        self.cooldown_duration = float(self.image_config.get("cooldown_duration", 0.0))
         self.adventure_mode = bool(adventure_mode)
 
-        self.default_style = str(self.config.get("style", "")).strip()
+        self.default_style = str(self.visuals_config.get("style", "")).strip()
         self.output_dir = str(self.theater.image_artifacts_dir())
         os.makedirs(self.output_dir, exist_ok=True)
         
         self.reference_dir = str(self.theater.references_dir())
         os.makedirs(self.reference_dir, exist_ok=True)
 
-        self.image_provider_id = str(self.config.get("provider") or "").strip()
-        if not self.image_provider_id:
-            raise ValueError("image_generation.provider must name a provider from providers/.")
-        provider_options = self.config.get("provider_options") or {}
+        self.image_model = str(self.visuals_config.get("model") or "").strip()
+        if not self.image_model:
+            raise ValueError("visuals.model must name a provider from providers/.")
+        provider_options = self.visuals_config.get("model_options") or {}
         if not isinstance(provider_options, dict):
-            raise ValueError("image_generation.provider_options must be a mapping.")
+            raise ValueError("visuals.model_options must be a mapping.")
         self.image_provider_options = dict(provider_options)
         self._image_provider = None
         self.on_image_created: Optional[Callable] = None
-
-        # In-memory mapping of custom image names/aliases to file paths
-        self.image_aliases: Dict[str, str] = {}
 
         self.adventure_mode = bool(adventure_mode)
         self._story_plan_completed: bool = not self.adventure_mode
         self._story_plan_lock: threading.Lock = threading.Lock()
         self.is_generating: bool = False
         
-        # Reuse cached references manifest if directory hasn't changed
-        if ImageTools._reference_dir_cached == self.reference_dir and ImageTools._references_cache:
-            self.references_manifest = ImageTools._references_cache
-        else:
-            self.references_manifest = {}
-            self._load_references()
-            ImageTools._references_cache = self.references_manifest
+        self.references_manifest: Dict[str, dict] = {}
+        self._load_references()
+        if self.visual:
+            for entry in self.references_manifest.values():
+                path = entry.get("path")
+                if isinstance(path, str):
+                    self.visual.register_image(path, str(entry.get("name", "")), str(entry.get("alias", "")))
         self._currently_displayed_image_path: Optional[str] = None
         self._currently_displayed_image_transition: Optional[str] = None
         self._currently_displayed_image_effect: Optional[str] = None
@@ -177,31 +173,13 @@ class ImageTools(BaseTools):
                                 "title": metadata_title,
                                 "description": metadata_desc or f"Reference image {filename}"
                             }
-                            self.references_manifest[stem] = entry
-                            self.references_manifest[clean_stem] = entry
-                            self.references_manifest[stem.lower()] = entry
-                            self.references_manifest[clean_stem.lower()] = entry
+                            self.references_manifest[filepath] = entry
+                            if self.visual:
+                                self.visual.register_image(filepath, stem, clean_stem)
             unique_count = len(set(item['path'] for item in self.references_manifest.values())) if self.references_manifest else 0
             logger.debug(f"[ImageTools] Loaded {unique_count} reference images into references manifest.")
         except Exception as e:
             logger.warning(f"[ImageTools] Failed to load references: {e}")
-
-    def _refresh_references_manifest(self) -> None:
-        """Rebuild the reference manifest after assets are mounted or restored."""
-        self.references_manifest = {}
-        self._load_references()
-        ImageTools._references_cache = self.references_manifest
-        ImageTools._reference_dir_cached = self.reference_dir
-
-    def _find_manifest_image_path(self, path_str: str, clean_input: str) -> Optional[str]:
-        """Resolve an existing reference from its name or normalized alias."""
-        for key in (path_str, path_str.lower(), clean_input, clean_input.lower()):
-            entry = self.references_manifest.get(key)
-            if entry:
-                manifest_path = entry.get("path")
-                if manifest_path and os.path.exists(manifest_path):
-                    return manifest_path
-        return None
 
     def list_references(self) -> list[dict]:
         """List all available pre-loaded reference images in the references directory.
@@ -223,51 +201,6 @@ class ImageTools(BaseTools):
                 })
         self._trigger_after_tool_call("list_references")
         return results
-
-    def _find_image_path(self, path_str: str) -> Optional[str]:
-        if not path_str:
-            return None
-        
-        # Check in-memory alias dictionary
-        if path_str in self.image_aliases:
-            return self.image_aliases[path_str]
-        clean_input = re.sub(r'[^a-zA-Z0-9_-]', '_', path_str)
-        if clean_input in self.image_aliases:
-            return self.image_aliases[clean_input]
-
-        manifest_path = self._find_manifest_image_path(path_str, clean_input)
-        if manifest_path:
-            return manifest_path
-
-        # Theater assets can be mounted or reconstructed after the live agent
-        # session (and its initial manifest) has already been created. Refresh
-        # once so normalized aliases such as ``the_monk`` resolve to a newly
-        # available ``the monk.png`` reference.
-        self._refresh_references_manifest()
-        manifest_path = self._find_manifest_image_path(path_str, clean_input)
-        if manifest_path:
-            return manifest_path
-
-
-        base_name = os.path.basename(path_str)
-        search_dirs = [
-            self.reference_dir,
-            self.output_dir,
-        ]
-
-        for directory in search_dirs:
-            candidates = [
-                os.path.join(directory, path_str),
-                os.path.join(directory, base_name),
-                os.path.join(directory, f"{path_str}.jpg"),
-                os.path.join(directory, f"{path_str}.png"),
-                os.path.join(directory, f"{path_str}.webp"),
-            ]
-            for candidate in candidates:
-                if os.path.exists(candidate):
-                    return candidate
-
-        return None
 
     def _ensure_webp_for_display(self, file_path: str) -> str:
         """Ensures a compressed WebP version of the image exists in output_dir for frontend display."""
@@ -349,7 +282,7 @@ class ImageTools(BaseTools):
                 ref_list = reference_images
             
             for ref in ref_list:
-                ref_path = self._find_image_path(ref)
+                ref_path = self.visual.resolve_image_path(ref) if self.visual else None
                 if ref_path:
                     resolved_refs.append((ref, ref_path))
                 else:
@@ -387,7 +320,7 @@ class ImageTools(BaseTools):
                 provider = self._get_image_provider()
                 logger.debug(
                     "[ImageTools] Generating image using provider '%s' from prompt: %s...",
-                    self.image_provider_id,
+                    self.image_model,
                     effective_prompt[:100],
                 )
                 result = provider.generate(
@@ -427,11 +360,8 @@ class ImageTools(BaseTools):
 
                     saved_paths.append(filepath)
                     
-                    # Register alias
-                    self.image_aliases[image_name] = filepath
-                    self.image_aliases[clean_image_name] = filepath
-                    self.image_aliases[image_name.lower()] = filepath
-                    self.image_aliases[clean_image_name.lower()] = filepath
+                    if self.visual:
+                        self.visual.register_image(filepath, image_name, clean_image_name)
                     
                     logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} and WebP to {webp_filepath} (Name alias: {image_name})")
                     if self.on_image_created:
@@ -470,7 +400,7 @@ class ImageTools(BaseTools):
                 else:
                     logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
             except ImageProviderError as e:
-                logger.error("[ImageTools] Image provider '%s' failed: %s", self.image_provider_id, e)
+                logger.error("[ImageTools] Image provider '%s' failed: %s", self.image_model, e)
             except Exception as e:
                 logger.error(f"[ImageTools] Error generating image in background: {e}")
             finally:
@@ -486,7 +416,7 @@ class ImageTools(BaseTools):
     def _get_image_provider(self):
         """Build the configured provider once per session-scoped tool instance."""
         if self._image_provider is None:
-            self._image_provider = get_image_provider(self.image_provider_id, self.image_provider_options)
+            self._image_provider = get_image_provider(self.image_model, self.image_provider_options)
         return self._image_provider
 
     @with_cooldown(action_desc="showing another image")
@@ -522,7 +452,7 @@ class ImageTools(BaseTools):
                 self._trigger_after_tool_call("show_image")
                 return res
 
-        resolved_path = self._find_image_path(file_path)
+        resolved_path = self.visual.resolve_image_path(file_path) if self.visual else None
         if not resolved_path:
             logger.warning(f"[ImageTools] Image path or alias '{file_path}' could not be resolved.")
             res = f"Error: Image '{file_path}' not found."
@@ -588,7 +518,7 @@ class ImageTools(BaseTools):
             effect = str(effect or "gleam3").lower().strip()
             if effect not in supported_effects:
                 return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
-            resolved_path = self._find_image_path(file_path)
+            resolved_path = self.visual.resolve_image_path(file_path) if self.visual else None
             if not resolved_path:
                 res = f"Error: Image '{file_path}' not found."
                 self._trigger_after_tool_call("show_image")

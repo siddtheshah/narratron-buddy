@@ -2,6 +2,7 @@ import io
 import os
 import shutil
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from PIL import Image, PngImagePlugin
@@ -23,16 +24,16 @@ def create_fake_image_bytes() -> bytes:
 class TestImageTools(BaseTestCase):
     def setUp(self):
         super().setUp()
-        ImageTools._references_cache = {}
-        ImageTools._reference_dir_cached = None
         self.temp_dir = tempfile.mkdtemp()
         self.manager = TheaterManager(base_theaters_dir=self.temp_dir)
         self.config = {
+            "visuals": {
+                "cycle_length": 0,
+                "model": "hybrid-flux-gemini",
+                "model_options": {"classifier_model": "gemini-2.5-flash-lite"},
+            },
             "image_generation": {
                 "cooldown_duration": 0,
-                "cycle_length": 0,
-                "provider": "hybrid-flux-gemini",
-                "provider_options": {"classifier_model": "gemini-2.5-flash-lite"},
             }
         }
 
@@ -103,11 +104,13 @@ class TestImageTools(BaseTestCase):
         tools.create_image("sunset scene", image_name="sunset_01", display=False)
         tools.join_generation()
 
-        self.assertTrue(os.path.exists(tools.image_aliases["sunset_01"]))
-        created.assert_called_once_with(tools.image_aliases["sunset_01"])
+        alias_path = tools.visual.resolve_image_path("sunset_01")
+        self.assertIsNotNone(alias_path)
+        self.assertTrue(os.path.exists(alias_path))
+        created.assert_called_once_with(alias_path)
 
     def test_create_image_requires_a_provider(self):
-        with self.assertRaisesRegex(ValueError, "image_generation.provider"):
+        with self.assertRaisesRegex(ValueError, "visuals.model"):
             self.make_image_tools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
 
     @patch("tools.image_tool.get_image_provider")
@@ -236,9 +239,12 @@ class TestImageTools(BaseTestCase):
 
     def _make_tools_with_style(self, style: str) -> ImageTools:
         config = {
+            "visuals": {
+                **self.config["visuals"],
+                "style": style,
+            },
             "image_generation": {
                 **self.config["image_generation"],
-                "style": style,
             },
         }
         tools = self.make_image_tools(config, theater_id="style_test", theater_manager=self.manager)
@@ -368,7 +374,7 @@ class TestImageTools(BaseTestCase):
         tools.join_generation()
 
         # Full quality JPEG exists on disk
-        full_quality_path = tools.image_aliases["forest_01"]
+        full_quality_path = str(next(Path(tools.output_dir).glob("forest_01_*.jpg")))
         self.assertTrue(os.path.exists(full_quality_path))
         self.assertTrue(full_quality_path.endswith(".jpg"))
 

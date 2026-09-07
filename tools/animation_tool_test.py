@@ -39,7 +39,10 @@ class TestAnimationTools(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.mkdtemp()
         self.manager = TheaterManager(base_theaters_dir=self.temp_dir)
-        self.config = {"image_generation": {"cooldown_duration": 0, "provider": "gemini"}}
+        self.config = {
+            "visuals": {"model": "gemini", "cycle_length": 0},
+            "image_generation": {"cooldown_duration": 0},
+        }
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -54,12 +57,43 @@ class TestAnimationTools(BaseTestCase):
 
     def make_animation_tools(self, image_tools, image_provider, text_provider, layered_provider, animation_config=None, **kwargs):
         theater = image_tools.theater
-        if animation_config:
-            if hasattr(theater, "manager"):
-                theater.manager.get_theater_config = MagicMock(return_value={"animation": animation_config})
-            elif hasattr(theater, "config"):
-                theater.config = MagicMock(return_value={"animation": animation_config})
-        return AnimationTools(theater, image_tools.canvas_manager, image_tools, image_provider, text_provider, layered_provider, **kwargs)
+        theater.manager.get_theater_config = MagicMock(return_value={
+            "visuals": dict(image_tools.visuals_config),
+            "animation": dict(animation_config or {}),
+        })
+        return AnimationTools(
+            theater,
+            image_tools.canvas_manager,
+            text_provider,
+            layered_provider,
+            image_provider=image_provider,
+            **kwargs,
+        )
+
+    @patch("tools.animation_tool.get_image_provider")
+    def test_uses_image_provider_configured_by_visuals(self, mock_get_provider):
+        theater = self.manager.theater("visual_provider")
+        theater.manager.get_theater_config = MagicMock(return_value={
+            "visuals": {
+                "model": "hybrid-flux-gemini",
+                "model_options": {"classifier_model": "gemini-2.5-flash-lite"},
+                "style": "ink wash",
+            },
+            "animation": {"cooldown_duration": 0},
+        })
+
+        tools = AnimationTools(
+            theater,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            video_provider=MagicMock(),
+        )
+
+        mock_get_provider.assert_called_once_with(
+            "hybrid-flux-gemini", {"classifier_model": "gemini-2.5-flash-lite"}
+        )
+        self.assertEqual(tools.default_style, "ink wash")
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_uses_triframe_technique(self, mock_get_provider):
@@ -98,9 +132,10 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
         self.assertEqual(image_provider.generate.call_count, 3)
         self.assertEqual(text_provider.generate.call_count, 2)
-        self.assertTrue(os.path.exists(image_tools.image_aliases[f"{animation_id}_frame_1"]))
-        self.assertTrue(os.path.exists(image_tools.image_aliases[f"{animation_id}_frame_2"]))
-        self.assertTrue(os.path.exists(image_tools.image_aliases[f"{animation_id}_frame_3"]))
+        for frame_number in range(1, 4):
+            frame_path = animation_tools.visual.resolve_image_path(f"{animation_id}_frame_{frame_number}")
+            self.assertIsNotNone(frame_path)
+            self.assertTrue(os.path.exists(frame_path))
 
     @patch("tools.image_tool.get_image_provider")
     def test_play_animation_publishes_saved_triframe_to_canvas_state(self, mock_get_provider):
@@ -642,7 +677,9 @@ class TestAnimationTools(BaseTestCase):
         self.assertNotIn("duration_seconds", manifest)
         self.assertTrue(manifest["loop"])
         self.assertTrue(manifest["muted"])
-        self.assertTrue(os.path.exists(image_tools.image_aliases[f"{animation_id}_video"]))
+        video_path = tools.visual.resolve_image_path(f"{animation_id}_video")
+        self.assertIsNotNone(video_path)
+        self.assertTrue(os.path.exists(video_path))
 
     @patch("tools.image_tool.get_image_provider")
     def test_play_video_animation_publishes_to_canvas_state(self, mock_get_provider):
@@ -827,7 +864,7 @@ class TestAnimationTools(BaseTestCase):
         video_provider.generate.assert_not_called()
 
     @patch("tools.image_tool.get_image_provider")
-    def test_create_animation_nested_animation_forced_technique_config(self, mock_get_provider):
+    def test_create_animation_forced_technique_config(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
         video_provider.generate.return_value = VideoGenerationResult(
@@ -847,7 +884,7 @@ class TestAnimationTools(BaseTestCase):
             image_provider,
             planning_provider,
             MagicMock(),
-            {"animation": {"forced_technique": "video"}, "cooldown_duration": 0},
+            {"forced_technique": "video", "cooldown_duration": 0},
             video_provider=video_provider,
         )
 
@@ -858,12 +895,14 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.assert_not_called()
         video_provider.generate.assert_called_once()
 
-    def test_apply_video_style_with_image_tool_config_style(self):
+    def test_apply_video_style_with_shared_visual_style(self):
         config = {
+            "visuals": {
+                "model": "gemini",
+                "style": "watercolor impressionist",
+            },
             "image_generation": {
                 "cooldown_duration": 0,
-                "provider": "gemini",
-                "style": "watercolor impressionist",
             }
         }
         image_tools = self.make_image_tools(config, "video_style_test", self.manager)
@@ -873,9 +912,9 @@ class TestAnimationTools(BaseTestCase):
 
     def test_apply_video_style_without_style(self):
         config = {
+            "visuals": {"model": "gemini"},
             "image_generation": {
                 "cooldown_duration": 0,
-                "provider": "gemini",
             }
         }
         image_tools = self.make_image_tools(config, "video_style_none_test", self.manager)
@@ -885,10 +924,12 @@ class TestAnimationTools(BaseTestCase):
 
     def test_apply_video_style_when_config_style_already_contains_loopable(self):
         config = {
+            "visuals": {
+                "model": "gemini",
+                "style": "watercolor impressionist, loopable",
+            },
             "image_generation": {
                 "cooldown_duration": 0,
-                "provider": "gemini",
-                "style": "watercolor impressionist, loopable",
             }
         }
         image_tools = self.make_image_tools(config, "video_style_loopable_test", self.manager)
@@ -898,10 +939,12 @@ class TestAnimationTools(BaseTestCase):
 
     def test_apply_video_style_when_prompt_already_has_style(self):
         config = {
+            "visuals": {
+                "model": "gemini",
+                "style": "watercolor impressionist",
+            },
             "image_generation": {
                 "cooldown_duration": 0,
-                "provider": "gemini",
-                "style": "watercolor impressionist",
             }
         }
         image_tools = self.make_image_tools(config, "video_style_override_test", self.manager)
@@ -911,10 +954,12 @@ class TestAnimationTools(BaseTestCase):
 
     def test_apply_video_style_when_prompt_already_has_style_and_loopable(self):
         config = {
+            "visuals": {
+                "model": "gemini",
+                "style": "watercolor impressionist",
+            },
             "image_generation": {
                 "cooldown_duration": 0,
-                "provider": "gemini",
-                "style": "watercolor impressionist",
             }
         }
         image_tools = self.make_image_tools(config, "video_style_dup_test", self.manager)
@@ -923,7 +968,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(prompt, "A lone castle on a cliff. Style: oil painting, loopable")
 
     @patch("tools.image_tool.get_image_provider")
-    def test_create_animation_video_passes_image_tool_style_and_loopable(self, mock_get_provider):
+    def test_create_animation_video_passes_shared_visual_style_and_loopable(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
         video_provider.generate.return_value = VideoGenerationResult(
@@ -938,10 +983,12 @@ class TestAnimationTools(BaseTestCase):
         planning_provider = MagicMock()
 
         config = {
+            "visuals": {
+                "model": "gemini",
+                "style": "wistful and bygone glories",
+            },
             "image_generation": {
                 "cooldown_duration": 0,
-                "provider": "gemini",
-                "style": "wistful and bygone glories",
             }
         }
         image_tools = self.make_image_tools(config, "video_style_flow_theater", self.manager)
@@ -965,7 +1012,7 @@ class TestAnimationTools(BaseTestCase):
             "Ancient ruins under twin moons.\n\nStyle: wistful and bygone glories, loopable",
         )
 
-    def test_create_animation_toggles_animation_activity_without_reaching_into_image_tools(self):
+    def test_create_animation_toggles_activity_without_an_image_tool(self):
         video_provider = MagicMock()
         video_provider.generate.return_value = VideoGenerationResult(
             video_bytes=b"fake-video-bytes",
@@ -977,20 +1024,17 @@ class TestAnimationTools(BaseTestCase):
             video_url="https://fal.media/act.mp4",
         )
         canvas_state_service = MagicMock()
-        image_tools = MagicMock()
-        image_tools.canvas_manager = canvas_state_service
-        image_tools.cooldown_duration = 0
-        image_tools.output_dir = str(self.manager.theater("test_theater").output_dir())
-        image_tools.theater = self.manager.theater("test_theater")
-        image_tools.default_style = ""
-        image_tools.image_aliases = {}
-
-        tools = self.make_animation_tools(
-            image_tools,
+        theater = self.manager.theater("test_theater")
+        theater.manager.get_theater_config = MagicMock(return_value={
+            "visuals": {"model": "gemini"},
+            "animation": {"forced_technique": "video", "cooldown_duration": 0},
+        })
+        tools = AnimationTools(
+            theater,
+            canvas_state_service,
             MagicMock(),
             MagicMock(),
-            MagicMock(),
-            {"forced_technique": "video", "cooldown_duration": 0},
+            image_provider=MagicMock(),
             video_provider=video_provider,
         )
 
@@ -1013,8 +1057,6 @@ class TestAnimationTools(BaseTestCase):
         # Verify canvas_state_service received "animation" tool activity
         canvas_state_service.tool_response.set_activity.assert_any_call("animation", active=True)
         canvas_state_service.tool_response.set_activity.assert_any_call("animation", active=False)
-        # Ensure image_tools internal _set_canvas_activity was NOT called
-        self.assertFalse(getattr(image_tools, "_set_canvas_activity").called)
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_video_duration_defaults_to_5s(self, mock_get_provider):
@@ -1116,7 +1158,7 @@ class TestAnimationTools(BaseTestCase):
             image_provider,
             MagicMock(),
             MagicMock(),
-            {"animation": {"forced_technique": "video", "video_duration_seconds": 7}, "cooldown_duration": 0},
+            {"forced_technique": "video", "video_duration_seconds": 7, "cooldown_duration": 0},
             video_provider=video_provider,
         )
 

@@ -339,8 +339,6 @@ def create_tool_bundle_for_session(
         AnimationTools(
             theater,
             canvas_manager,
-            image_tools,
-            image_tools._get_image_provider(),
             animation_text_provider,
             FalQwenLayeredProvider(),
             video_provider=video_provider,

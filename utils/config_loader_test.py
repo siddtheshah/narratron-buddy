@@ -21,7 +21,10 @@ class TestConfigLoader(BaseTestCase):
     def test_theater_default_config_loader(self):
         config = get_theater_default_config()
         self.assertIsInstance(config, dict)
+        self.assertIn("visuals", config)
         self.assertIn("image_generation", config)
+        self.assertNotIn("style", config["image_generation"])
+        self.assertNotIn("cycle_length", config["image_generation"])
         self.assertNotIn("model", config.get("interactive_canvas", {}))
         self.assertIn("model", get_app_config().get("interactive_canvas", {}))
 
@@ -32,8 +35,8 @@ class TestConfigLoader(BaseTestCase):
             tm = TheaterManager(base_theaters_dir=temp_dir)
             config = get_theater_config(theater_id, theater_manager=tm)
             self.assertIsInstance(config, dict)
-            self.assertIn("image_generation", config)
-            self.assertEqual(config["image_generation"]["provider"], get_app_config()["image_generation"]["provider"])
+            self.assertIn("visuals", config)
+            self.assertEqual(config["visuals"]["model"], get_app_config()["visuals"]["model"])
 
             created_yaml = temp_dir / theater_id / "theater.yaml"
             self.assertTrue(created_yaml.exists())
@@ -46,12 +49,16 @@ class TestConfigLoader(BaseTestCase):
             theater_id = "custom_theater_cfg"
             tm = TheaterManager(base_theaters_dir=temp_dir)
             custom_data = {
+                "visuals": {
+                    "cycle_length": 42,
+                },
                 "image_generation": {
                     "cooldown_duration": 42
                 }
             }
             save_theater_config(theater_id, custom_data, theater_manager=tm)
             loaded = get_theater_config(theater_id, theater_manager=tm)
+            self.assertEqual(loaded.get("visuals", {}).get("cycle_length"), 42)
             self.assertEqual(loaded.get("image_generation", {}).get("cooldown_duration"), 42)
             # Default keys are also preserved via deep merge
             self.assertIn("music", loaded)
@@ -90,8 +97,8 @@ class TestConfigLoader(BaseTestCase):
                 "music": {
                     "provider": "user-music-provider",
                 },
-                "image_generation": {
-                    "provider": "user-image-provider",
+                "visuals": {
+                    "model": "user-image-model",
                 },
                 "interactive_canvas": {
                     "enabled": True,
@@ -106,7 +113,7 @@ class TestConfigLoader(BaseTestCase):
             # App.yaml model selections should override theater settings
             self.assertEqual(loaded["story_planning"]["planner_model"], app_cfg["story_planning"]["planner_model"])
             self.assertEqual(loaded["music"]["provider"], app_cfg["music"]["provider"])
-            self.assertEqual(loaded["image_generation"]["provider"], app_cfg["image_generation"]["provider"])
+            self.assertEqual(loaded["visuals"]["model"], app_cfg["visuals"]["model"])
             self.assertEqual(loaded["interactive_canvas"]["model"], app_cfg["interactive_canvas"]["model"])
 
             # Theater specific options are preserved

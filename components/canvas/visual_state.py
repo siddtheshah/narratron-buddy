@@ -41,15 +41,22 @@ class VisualState:
         self.on_visual_changed_fn = on_visual_changed_fn
         self.on_show_image: Optional[Callable[..., None]] = None
 
-        # Cycle configuration and state
-        img_cfg = self.theater_config.get("image_generation", self.theater_config) if isinstance(self.theater_config, dict) else {}
-        self.cooldown_duration: float = float(img_cfg.get("cooldown_duration", 60.0))
-        self.cycle_length: float = float(img_cfg.get("cycle_length", self.cooldown_duration))
+        # Shared visual configuration and state. Image and animation tools both
+        # consume this section, while each keeps its own operational settings.
+        visuals_config = self.theater_config.get("visuals", {}) if isinstance(self.theater_config, dict) else {}
+        if not isinstance(visuals_config, dict):
+            visuals_config = {}
+        self.visuals_config = visuals_config
+        self.cycle_length: float = float(self.visuals_config.get("cycle_length", 60.0))
         self._cycle_lock = threading.RLock()
         self._cycle_timer: Optional[threading.Timer] = None
         self._cycle_active: bool = False
         self.current_cycle_visual: Optional[dict] = None
         self.next_cycle_image: Optional[dict] = None
+
+        # Visual assets are shared by all visual tools.  Keeping aliases on the
+        # canvas makes lookup independent of whichever tool produced an asset.
+        self._image_aliases: dict[str, str] = {}
 
         self.current_image_basename: str | None = None
         self.shown_image_path: str | None = None
@@ -71,6 +78,75 @@ class VisualState:
             return file_path
         th = theater or self.theater
         return th.get_url_for_path(file_path)
+
+    @staticmethod
+    def _normalize_image_alias(value: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_-]", "_", value).strip("_").lower()
+
+    def register_image_alias(self, alias: str, file_path: str) -> None:
+        """Register a visual asset under a stable, case-insensitive alias."""
+        if not isinstance(alias, str) or not alias.strip() or not isinstance(file_path, str) or not file_path:
+            return
+        normalized = self._normalize_image_alias(alias)
+        if normalized:
+            self._image_aliases[normalized] = file_path
+
+    def register_image(self, file_path: str, *aliases: str) -> None:
+        """Register a path and its explicit aliases for later visual lookup."""
+        if not isinstance(file_path, str) or not file_path:
+            return
+        image_path = Path(file_path)
+        self.register_image_alias(image_path.stem, file_path)
+        for alias in aliases:
+            self.register_image_alias(alias, file_path)
+
+    def _index_visual_assets(self) -> None:
+        """Index theater reference and generated image files for alias lookup."""
+        for directory in (self.theater.references_dir(), self.theater.output_dir()):
+            if not isinstance(directory, (str, Path)):
+                continue
+            root = Path(directory)
+            if not root.exists():
+                continue
+            for image_path in root.rglob("*"):
+                if image_path.is_file() and image_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                    self.register_image(str(image_path), image_path.name)
+
+    def resolve_image_path(self, value: str) -> str | None:
+        """Resolve a visual path or alias owned by this canvas state."""
+        if not isinstance(value, str) or not value.strip():
+            return None
+        requested = value.strip()
+        direct_path = Path(requested)
+        if direct_path.is_file():
+            return str(direct_path)
+
+        normalized = self._normalize_image_alias(requested)
+        resolved = self._image_aliases.get(normalized)
+        if resolved and Path(resolved).is_file():
+            return resolved
+
+        # References may be mounted after the canvas initializes, so refresh
+        # the shared index once before treating an alias as missing.
+        self._index_visual_assets()
+        resolved = self._image_aliases.get(normalized)
+        if resolved and Path(resolved).is_file():
+            return resolved
+
+        base_name = Path(requested).name
+        for directory in (self.theater.references_dir(), self.theater.output_dir()):
+            root = Path(directory)
+            for candidate in (
+                root / requested,
+                root / base_name,
+                root / f"{requested}.jpg",
+                root / f"{requested}.png",
+                root / f"{requested}.webp",
+            ):
+                if candidate.is_file():
+                    self.register_image(str(candidate), requested)
+                    return str(candidate)
+        return None
 
     def has_active_animation(self) -> bool:
         """Check if an animation is currently active on the canvas."""

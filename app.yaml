@@ -1,10 +1,10 @@
 gcloud:
     project_id: "narratron"
 
-# This is an application-wide choice so all theaters use the same image
-# generation policy. Provider-specific settings are passed to providers.registry.
-image_generation:
-    provider: "hybrid-flux-gemini"
+# Shared visual-generation settings. The model selection is application-wide so
+# every theater renders still and animated scenes with the same provider policy.
+visuals:
+    model: "hybrid-flux-gemini"
 
 story_planning:
     planner_model: "gemini-3.7-flash"
