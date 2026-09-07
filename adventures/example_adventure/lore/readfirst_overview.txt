@@ -1,0 +1,25 @@
+# The Clockwork Archive: Narrative Overview & Guide
+
+## Premise
+Deep beneath the Crags of Oakhaven lies the Clockwork Archive—a subterranean vault constructed centuries ago by an order of chronomancers and scholars known as the Horologists. The Archive was designed to record, categorize, and preserve all known history within interlocking brass cylinders, gear-driven scrolls, and celestial orreries.
+
+Three centuries ago, the Archive went silent. The brass gates sealed, and the subterranean mechanisms began running autonomously.
+
+## Core Conflict & Narrative Arc
+The player has breached the Grand Vestibule in search of the "Heart of Gears"—a legendary perpetual chronometer rumored to restore broken timelines or unlock forbidden knowledge.
+- **Phase 1 (Arrival & Discovery)**: Infiltrate the Grand Vestibule and establish communication with Keeper Orun without triggering sentinels.
+- **Phase 2 (Cipher Hunt)**: Locate the three harmonic brass cipher keys hidden across the archive stacks.
+- **Phase 3 (Climax & Alignment)**: Insert the keys into the Grand Orrery and confront the Archive's final defensive paradox to retrieve the Heart of Gears.
+
+## Lore Directory Roadmap
+- `factions/the_archivists.txt`: Keeper Orun (caretaker automaton) and Gearwork Sentinels (`references/keeper_orun.png`).
+- `locations/great_library.txt`: Multi-tiered stacks, cipher podiums, and the Grand Orrery chamber.
+
+## Victory & Resolution Conditions
+- **Scholarly Victory**: Decode the celestial coordinates, harmonize the brass ciphers, and peacefully persuade Keeper Orun to grant the Heart of Gears as an authorized historical loan.
+- **Saboteur Victory**: Override the main dynamo and trigger an emergency core eject to escape with the chronometer before the vault collapses.
+
+## Themes & DM Guidelines
+- Atmospheric exploration, tactile mechanical puzzles, ancient curiosity, and gentle melancholy.
+- Clockwork ticks, shifting stone corridors, and the hum of perpetual dynamos.
+- Reward players who inspect mechanisms, decode symbols, and engage Orun with respect rather than brute force.

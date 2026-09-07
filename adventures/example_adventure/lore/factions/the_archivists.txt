@@ -5,6 +5,7 @@
 - **Personality**: Courteous, pedantic, mildly confused by modern idioms, and obsessively devoted to keeping the library quiet.
 - **Motivation**: To catalog every event accurately. He believes the player is an unfiled footnote that must either be properly cataloged or filed away into cold storage.
 - **Roleplay Cue**: Speaks with rhythmic, deliberate cadence, often punctuated by the soft clicking of a miniature metronome in his chest.
+- **image_reference**: references/keeper_orun.png
 
 ## The Gearwork Sentinels
 - Quadrupedal brass hounds and bipedal bronze wardens that patrol the catwalks.

@@ -83,7 +83,7 @@ adventures/my-custom-adventure/
 ├── theater.yaml            # Story planning rules, agent persona & tool config
 ├── README.md               # (Optional) Notes for players/developers
 ├── lore/                   # Lore text files read by the agent
-│   ├── overview.txt
+│   ├── readfirst_overview.txt # High-level guide always persisted in story context
 │   ├── factions/
 │   │   └── rebels.txt
 │   └── locations/
@@ -131,91 +131,100 @@ adventures/my-custom-adventure/
 
 ### 4.2. `theater.yaml` Specification
 
-`theater.yaml` defines how the Gemini storytelling agent behaves, what tools it can call, and how state is preserved across turns.
+Adventures use Narratron's standard theater configuration schema to define agent persona, art direction, audio pacing, and state preservation.
 
-Here is an example with detailed annotations:
+> [!NOTE]
+> **Canonical Configuration Reference**:
+> Rather than maintaining a separate explanation here, please refer to the **[theater.yaml Reference](/docs/theater-yaml)** for comprehensive documentation on all available sections and options—including `agent`, `visuals`, `image_generation`, `animation`, `interactive_canvas`, `music`, `story_planning`, and `chat`.
+
+Adventures specifically rely on the **`story_planning`** section to govern the interactive adventure loop. Here is an adventure-focused configuration example:
 
 ```yaml
-# ==============================================================================
-# Agent Persona & Pacing
-# ==============================================================================
-agent:
-    proactivity: false               # Keep false to let user lead interactions
-    affective_dialog: false          # Keep false for consistent DM narration
-    special_instructions: "Act as an evocative, impartial dungeon master. React dynamically to player actions, maintain mystery, and present consequences for failure."
+# Starting visual displayed on the canvas when the adventure starts
+starting_image: "references/cover.png"
 
-# Starting visual displayed when the canvas loads
-starting_image: "cover.png"
-
-# ==============================================================================
-# Visuals & Generative Art Direction
-# ==============================================================================
+# Pacing and style direction for generative canvas visuals
 visuals:
-    cycle_length: 6                  # Beat frequency for proposing visual shifts
-    style: "dark fantasy matte painting, glowing runes, cinematic lighting, artstation trending, moody atmospheric volumetric fog, high detail"
+    cycle_length: 6
+    style: "dark fantasy matte painting, glowing runes, cinematic lighting, moody atmospheric fog, high detail"
 
 image_generation:
-    enabled: true                    # Enable AI image generation on the canvas
-    cooldown_duration: 6             # Cooldown in seconds between image generations
+    enabled: true
+    cooldown_duration: 6
 
-# ==============================================================================
-# Dynamic Music & Playlists
-# ==============================================================================
 music:
-    use_generated_music: true        # Enable music generation/selection tools
-    playlists_folder: "playlists"    # Relative path to playlists directory
-    generation_cooldown: 90          # Seconds between music generation requests
-    switch_cooldown: 15              # Seconds between track switching
+    playlists_folder: "playlists"
     style: "orchestral fantasy ambiance, haunting cello melodies, distant percussion, loopable background"
 
-# ==============================================================================
-# Story Planning & Sticky Note State Management
-# ==============================================================================
+# Adventure Mode & Persistent State
 story_planning:
-    adventure_mode: true             # Must be true to enable full narrative tracking
-    auto_begin: true                 # Automatically initiate the opening scene
-    character_voicing: false         # Toggle agent voicing of specific NPCs
-    text_beautification: true        # Format output cleanly with markdown
-    nodes_ahead: 3                   # Number of plot beats the planner anticipates
-    style: "engaging mystery with emergent player choices, dramatic tension, and clue discovery"
-    cooldown_duration: 8             # Minimum cooldown between background consolidations
-    require_user_input: true         # Pause progression until user submits an action
-    action_cooldown_words_per_second: 20
-    action_cooldown_max_seconds: 25
+    adventure_mode: true             # Required: Enables player action resolution & turn tracking
+    auto_begin: true                 # Automatically initiates the opening narrative scene
+    nodes_ahead: 3                   # Number of prospective plot beats the planner anticipates
+    style: "engaging mystery with player agency, dramatic tension, and fair consequences"
 
     # Maximum number of persistent state stickies kept on the canvas board
     max_named_elements: 6
 
     # Initial sticky notes pinned at the beginning of the adventure
     initial_elements:
-        "Player Character": "Name: Unnamed Explorer | Objective: Reach the Spire's apex | Inventory: Crystal lodestone, grappling hook | Condition: Healthy"
-        "Spire Security Level": "Alert: Green (Unnoticed) | Defense automatons dormant | Barriers active on level 3"
-        "Known Lore & Clues": "The Spire activates only when three harmonic keys are aligned."
+        "Player Character": "Name: Unnamed Explorer | Objective: Reach the Spire's apex | Inventory: Crystal lodestone | Condition: Healthy"
+        "Spire Security Level": "Alert: Green (Unnoticed) | Defense automatons dormant"
+        "Known Clues": "The Spire activates only when three harmonic keys are aligned."
 
-    # Stickies that the planner must NEVER discard during memory consolidation
+    # Sticky note topics that the planner must NEVER discard during memory consolidation
     required_stickies:
         - "Player Character"
         - "Spire Security Level"
 
-# Chat cooldown in seconds
 chat:
     cooldown_duration: 20
 ```
+
+For full details on every field, default values, and advanced features (such as `character_voicing`, `require_voice_input`, interactive canvas surfaces, and video animation techniques), see the **[canonical theater.yaml reference](/docs/theater-yaml)**.
 
 ---
 
 ### 4.3. Authoring Lore (`lore/`)
 
-Files in `lore/` are indexed and injected into the Gemini story planner's context window. 
+Files in `lore/` are indexed and made available to the Gemini story planner to ground storytelling in your world's backstory, characters, and rules.
 
-**Best Practices for Writing Lore:**
-1. **Organize by Domain**: Split lore into subdirectories or discrete files:
-   - `lore/overview.txt`: The premise, global rules, and win/loss conditions.
-   - `lore/locations/*.txt`: Sensory descriptions, secrets, and interactable elements of specific zones.
-   - `lore/factions/*.txt`: Groups, their goals, relationships, and rivalries.
-   - `lore/characters/*.txt`: Key NPCs, personalities, secrets, dialogue habits, and desires.
-2. **Keep Text Punchy**: Use bullet points, clear headings, and concise summaries. Large walls of unstructured text dilute prompt context.
-3. **Separate Public Knowledge from Secrets**:
+#### Persistent Story Guide: `readfirst_<document>.txt`
+
+Any file starting with `readfirst_` (or `read_`, such as `lore/readfirst_overview.txt` or `lore/readfirst.txt`) is **always preloaded and permanently persisted in the active story context** across every turn of the adventure! (In contrast, other lore files are presented as an index and fetched dynamically on demand).
+
+Because it is always persisted in story context, **it is best practice to use `readfirst_<document>.txt` as a high-level guide to quickly navigate and perform the adventure**. Think of this document as your Dungeon Master's Screen:
+- **Story Structure & Narrative Timeline**: Outline the narrative arc into milestones, acts, or in-game days (e.g., *Day 1: Arrival & Introductions*; *Day 2: Sabotage & Clue Gathering*; *Day 3: Escalation & Climax*).
+- **Directory & Asset Roadmap**: Provide a clear map of what content lives in each `lore/` subfolder (e.g., `characters/`, `locations/`, `factions/`).
+- **Victory & Resolution Conditions**: Clearly state the win, loss, and escape conditions so the DM agent can steer toward satisfying conclusions.
+- **Themes & DM Guidelines**: Set pacing cues, tone instructions, and boundaries on how quickly to reveal secrets.
+
+#### Best Practices for Authoring Lore
+
+1. **Annotate Visual Reference Paths in Lore**:
+   When writing lore for characters, locations, artifacts, or factions that have corresponding visual assets in `references/`, annotate the reference path directly in the lore document itself:
+   ```text
+   # Character Info: Keeper Orun
+   Orun is a seven-foot-tall brass automaton with an etched porcelain face mask and glowing amber optic lenses.
+   Speaks with a rhythmic, deliberate cadence, often punctuated by a soft clicking in his chest.
+   
+   image_reference: references/keeper_orun.png
+   ```
+   *(Or simply `image_reference: keeper_orun.png`)*
+
+   **Why this is a best practice**: When the story planner reads the lore file during play, having the reference path annotated directly in the lore allows the agent to immediately know the exact asset name to call with `show_image` or anchor visual prompts without guesswork or hallucinating file paths.
+
+2. **Organize by Domain**: Split detailed worldbuilding into clear subdirectories:
+   - `lore/readfirst_overview.txt`: High-level guide, timeline, and DM roadmap (persisted).
+   - `lore/characters/*.txt`: Key NPCs, personalities, secrets, dialogue habits, and their annotated `image_reference`.
+   - `lore/locations/*.txt`: Sensory descriptions, secrets, hazard triggers, and interactable elements.
+   - `lore/factions/*.txt`: Groups, motives, rivalries, and allegiances.
+
+3. **Keep Text Punchy & Structured**:
+   Use bullet points, clear headings, and concise summaries. Dense blocks of prose dilute prompt attention and consume unnecessary context.
+
+4. **Separate Public Knowledge from Secrets**:
+   Clearly distinguish between common world knowledge and DM-only secrets:
    ```text
    # Public Knowledge
    Lord Vane is known as a benevolent benefactor to the town.
@@ -231,7 +240,7 @@ Files in `lore/` are indexed and injected into the Gemini story planner's contex
 The `references/` folder contains images that represent characters, environments, maps, or artifacts.
 - Images can be in `.png`, `.jpg`, `.jpeg`, or `.webp` format.
 - **Cover Image**: Every adventure should have a cover image (e.g. `references/cover.png`). Reference this filename in `metadata.json` and `starting_image` in `theater.yaml`.
-- During play, the agent can call `list_references` or `show_image` to present these pre-made visual assets to players.
+- During play, the agent can call `list_references` or `show_image` to present these pre-made visual assets to players. Annotating `image_reference: references/<filename>` in your lore documents ensures the agent automatically and reliably binds visual assets to specific characters and scenes.
 
 ---
 
@@ -291,18 +300,18 @@ uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 ```
 Open **`http://127.0.0.1:8015/adventure-runner`** in your browser to interact with the visual test harness.
 
----
+### 5.3. Final Testing Step: Upload & Deploy via `/deploy`
 
-### 5.3. Full App Testing (Local Mode)
+As the final, definitive step of testing before public distribution or submitting to narratron.app, upload your package folder directly via **[/deploy](https://narratron.app/deploy)** to test it in the full Narratron application without needing to configure backend API keys locally:
 
-To experience the adventure exactly as a player would with live speech, canvas doodling, and real-time audio:
-
-```powershell
-uv run main.py --testing_use_local
-```
-- Open `http://localhost:8000` in your browser.
-- Select your adventure from the adventure selection drawer.
-- Play through opening turns and test multimodal interactions!
+1. Navigate to **[narratron.app/deploy](https://narratron.app/deploy)**.
+2. In the theater creation dashboard, locate the **"Drop Asset Folder or .ZIP here"** dropzone.
+3. Click **Select** or drag-and-drop your custom adventure package folder (or compressed `.zip` archive). The system will mount your package, validate `theater.yaml`, and bundle `lore/`, `references/`, and `playlists/`.
+4. Click **🚀 Deploy Theater** to launch the live theater instance.
+5. Join the deployed room as host and test:
+   - Verify that your `starting_image` displays immediately on the canvas.
+   - Speak into your microphone or submit actions via chat to ensure turns resolve, sticky notes update, and narration flows smoothly.
+   - Check that visual reference images, generative art, and atmospheric music playlists trigger properly in live play.
 
 ---
 
@@ -314,11 +323,12 @@ When your adventure is ready to be featured for everyone on **narratron.app**:
 - [ ] `metadata.json` exists, has a valid `id`, `title`, `author`, `genre`, and references a valid `cover_image`.
 - [ ] `theater.yaml` is valid YAML and includes `story_planning` with `adventure_mode: true`.
 - [ ] `required_stickies` match keys defined in `initial_elements`.
-- [ ] `lore/` contains clear background context.
+- [ ] `lore/` contains a `readfirst_<document>.txt` high-level guide with campaign roadmap and annotated visual reference paths.
 - [ ] The adventure passes the smoke test:
   ```powershell
   uv run python testlab/adventure_runner.py --adventure <your-adventure-folder> --smoke
   ```
+- [ ] Final verification: Uploaded the folder via [/deploy](https://narratron.app/deploy) and successfully complete an interactive play session in the full Narratron app.
 
 ### How to Submit
 1. Push your adventure to a public Git repository (or prepare a `.zip` archive of your adventure folder).
