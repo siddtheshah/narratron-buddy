@@ -22,7 +22,9 @@ from tools.story_planning_tool import (
     MAX_STICKY_NOTE_TOPIC_CHARS,
     MAX_STICKY_NOTE_INFO_CHARS,
     MAX_STORY_PLANNING_STYLE_CHARS,
+    ConsolidatedStickyNote,
     SceneReaction,
+    StickyNotesConsolidation,
     StoryLogDieRoll,
     StoryLogEntry,
     StoryPlanOutput,
@@ -933,11 +935,16 @@ class TestStoryPlanningTools(unittest.TestCase):
             "HP: 90 | ATK: 25 | DEF: 10",
         )
 
-    def test_story_planning_agent_has_update_sticky_note_tool(self):
+    def test_story_planning_agent_does_not_have_update_sticky_note_tool(self):
         tools = self._make_tools(theater_id="planner_tools_check")
         agent = tools._planner_agent
         tool_callables = [t for t in agent.tools]
-        self.assertIn(tools.update_sticky_note, tool_callables)
+        self.assertNotIn(tools.update_sticky_note, tool_callables)
+
+    def test_planner_instruction_does_not_contain_update_sticky_note(self):
+        tools = self._make_tools(theater_id="planner_prompt_check")
+        instruction = tools._build_planner_instruction()
+        self.assertNotIn("update_sticky_note", instruction)
 
     def test_sticky_notes_automatically_added_to_story_context(self):
         tools = self._make_tools(theater_id="context_check")
@@ -1623,6 +1630,177 @@ class TestStoryPlanningTools(unittest.TestCase):
             self.assertEqual(len(latest["sticky_notes"]), 1)
             self.assertEqual(latest["sticky_notes"][0]["topic"], "Golden Key")
             self.assertEqual(latest["sticky_notes"][0]["info"], "Opens the inner chamber")
+
+
+
+    def test_consolidate_sticky_notes_updates_and_prunes(self):
+        mock_provider = MagicMock()
+        tools = self._make_tools(
+            config={"adventure_mode": True, "max_sticky_notes": 4},
+            theater_id="consolidate_test",
+            text_response_provider=mock_provider,
+        )
+        tools.update_sticky_note("setting", "Dark forest")
+        tools.update_sticky_note("inventory", "Torch | Map")
+        tools.update_sticky_note("temporary_clue", "Footprint in mud")
+
+        consolidation_result = StickyNotesConsolidation(
+            sticky_notes=[
+                ConsolidatedStickyNote(topic="setting", info="Moonlit clearing"),
+                ConsolidatedStickyNote(topic="inventory", info="Torch | Map | Key"),
+                ConsolidatedStickyNote(topic="quest_goal", info="Find the silver shrine"),
+            ]
+        )
+        mock_provider.generate.return_value = TextResponseResult(
+            text=consolidation_result.model_dump_json(),
+            provider="mock",
+            model="mock",
+            parsed=consolidation_result,
+        )
+
+        reaction = {
+            "narration": "You emerge from the trees into a clearing.",
+            "dialogue": [],
+            "plot_beats": [{"plot_beat": "The silver shrine looms ahead."}],
+            "manifested_characters": [],
+        }
+
+        updated = tools.consolidate_sticky_notes("I walk into the clearing", reaction)
+        topics = [n["topic"] for n in updated]
+
+        self.assertIn("setting", topics)
+        self.assertIn("inventory", topics)
+        self.assertIn("quest_goal", topics)
+        self.assertNotIn("temporary_clue", topics)
+
+        setting_info = next(n["info"] for n in updated if n["topic"] == "setting")
+        self.assertEqual(setting_info, "Moonlit clearing")
+
+        # Verify request schema sent to provider
+        call_args = mock_provider.generate.call_args[0][0]
+        self.assertEqual(call_args.response_schema, StickyNotesConsolidation)
+        self.assertIn("Moonlit clearing", setting_info)
+
+    def test_consolidate_sticky_notes_preserves_required_and_divider_count(self):
+        mock_provider = MagicMock()
+        tools = self._make_tools(
+            config={
+                "adventure_mode": True,
+                "required_stickies": ["HUD"],
+                "initial_elements": {"HUD": "HP: 100 | ATK: 20 | DEF: 10"},
+                "max_sticky_notes": 3,
+            },
+            theater_id="req_divider_test",
+            text_response_provider=mock_provider,
+        )
+        tools.update_sticky_note("clue", "A carved rune")
+
+        # Model output omits required 'HUD' and returns a mismatch divider for another note
+        consolidation_result = StickyNotesConsolidation(
+            sticky_notes=[
+                ConsolidatedStickyNote(topic="clue", info="Rune glows blue"),
+                ConsolidatedStickyNote(topic="new_item", info="Crystal shard"),
+            ]
+        )
+        mock_provider.generate.return_value = TextResponseResult(
+            text=consolidation_result.model_dump_json(),
+            provider="mock",
+            model="mock",
+            parsed=consolidation_result,
+        )
+
+        reaction = {
+            "narration": "The rune pulses with light.",
+            "dialogue": [],
+            "plot_beats": [{"plot_beat": "A secret door unlocks."}],
+        }
+
+        updated = tools.consolidate_sticky_notes("I touch the rune", reaction)
+        topics = [n["topic"] for n in updated]
+
+        # Required 'HUD' must have been automatically restored
+        self.assertIn("HUD", topics)
+        hud_info = next(n["info"] for n in updated if n["topic"] == "HUD")
+        self.assertEqual(hud_info, "HP: 100 | ATK: 20 | DEF: 10")
+
+        # If model attempts to update HUD with mismatched dividers, previous info is preserved
+        bad_hud_result = StickyNotesConsolidation(
+            sticky_notes=[
+                ConsolidatedStickyNote(topic="HUD", info="HP: 80 | ATK: 20"),  # Only 1 divider instead of 2
+                ConsolidatedStickyNote(topic="clue", info="Rune fades"),
+            ]
+        )
+        mock_provider.generate.return_value = TextResponseResult(
+            text=bad_hud_result.model_dump_json(),
+            provider="mock",
+            model="mock",
+            parsed=bad_hud_result,
+        )
+
+        updated2 = tools.consolidate_sticky_notes("I take damage", reaction)
+        hud_info2 = next(n["info"] for n in updated2 if n["topic"] == "HUD")
+        self.assertEqual(hud_info2, "HP: 100 | ATK: 20 | DEF: 10")
+
+    def test_consolidate_sticky_notes_handles_provider_failure_gracefully(self):
+        mock_provider = MagicMock()
+        mock_provider.generate.side_effect = RuntimeError("API quota exceeded")
+        tools = self._make_tools(
+            config={"adventure_mode": True},
+            theater_id="failure_test",
+            text_response_provider=mock_provider,
+        )
+        tools.update_sticky_note("key", "Iron key")
+
+        reaction = {
+            "narration": "You turn the key.",
+            "dialogue": [],
+            "plot_beats": [{"plot_beat": "Door opens."}],
+        }
+
+        # Should not raise exception and should keep existing notes
+        notes = tools.consolidate_sticky_notes("Turn key", reaction)
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0]["topic"], "key")
+        self.assertEqual(notes[0]["info"], "Iron key")
+
+    def test_resolve_user_action_triggers_background_sticky_notes_consolidation(self):
+        mock_provider = MagicMock()
+        consolidation_result = StickyNotesConsolidation(
+            sticky_notes=[
+                ConsolidatedStickyNote(topic="objective", info="Cross the bridge safely"),
+            ]
+        )
+        mock_provider.generate.return_value = TextResponseResult(
+            text=consolidation_result.model_dump_json(),
+            provider="mock",
+            model="mock",
+            parsed=consolidation_result,
+        )
+
+        tools = self._make_tools(
+            config={"adventure_mode": True, "nodes_ahead": 1},
+            theater_id="bg_test",
+            text_response_provider=mock_provider,
+        )
+
+        mock_reaction = {
+            "narration": "The bridge sways in the wind.",
+            "dialogue": [],
+            "plot_beats": ["The far bank comes into view."],
+        }
+
+        with patch.object(tools, "_run_planner_agent", return_value=mock_reaction):
+            result = tools._resolve_user_action("I step onto the bridge")
+            self.assertEqual(result["narration"], "The bridge sways in the wind.")
+
+            # Wait for background consolidation thread to finish
+            finished = tools.wait_for_sticky_notes_consolidation(timeout=3.0)
+            self.assertTrue(finished)
+
+            present = tools.get_present_sticky_notes()
+            self.assertEqual(len(present), 1)
+            self.assertEqual(present[0]["topic"], "objective")
+            self.assertEqual(present[0]["info"], "Cross the bridge safely")
 
 
 if __name__ == "__main__":

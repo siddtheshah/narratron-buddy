@@ -24,7 +24,7 @@
 ## Quality
 - [ ] In animation technique selection, avoid video if there is any reference attached.
 - [ ] Improve sticky note handling
-   - [ ] Idea 1: Sticky note updates be a secondary model call after scene reaction is returned. Reduces load on primary scene reaction, improves consolidation.
+   - [x] Idea 1: Sticky note updates be a secondary model call after scene reaction is returned. Reduces load on primary scene reaction, improves consolidation.
    - [ ] Idea 2: Hidden sticky notes. Add an option in canvas to view hidden sticky notes. Set configuration option to hide them.
 
 ## Performance

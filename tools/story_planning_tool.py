@@ -20,6 +20,7 @@ import os
 import re
 import secrets
 import math
+import threading
 from threading import Lock
 import time
 import asyncio
@@ -148,7 +149,7 @@ _SCENE_REACTION_PROMPT_TEMPLATE = Template(
 """# Role & Mission
 You are the authoritative narrative script engine for an interactive story.
 Resolve the consequences of the player's submitted action, decide when NPCs should manifest or change, and update future beats.
-Use the sticky notes, active characters, and established theater lore to inform your decisions. 
+Use the sticky notes, active characters, and established theater lore to inform your decisions. Sticky notes provide durable context from prior turns and are maintained and consolidated separately after your turn completes. Do not attempt to modify sticky notes during this turn.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Story-Planning Style (User Specified)
@@ -178,8 +179,6 @@ No lore documents are available for this theater. Invent the lore, world details
 {% endif -%}
 
 # Tool Usage Guidelines
-- **Sticky Notes (`update_sticky_note`)**: Use sticky notes to track major plot developments, story milestones, key discoveries, active goals, and persistent scene state (characters, locations, objects). Call `update_sticky_note` with a concise `topic` and informative `info` whenever a major plot event or status shift occurs to maintain narrative continuity across turns. The scene holds at most {{ max_sticky_notes or 5 }} sticky notes; when full, adding a new topic will drop the oldest non-required sticky note. Required sticky notes are persistent and will never be dropped.
-   - Sticky note style MUST be preserved over time if it's a structured sticky (using '|'). 
 - **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
@@ -203,6 +202,61 @@ Ensure the scene has a label. The location name is generally a good choice. Keep
 If the lore documents mention reference images for characters and images, communicate them via the reference_images field.
 """
 )
+
+_STICKY_NOTES_CONSOLIDATION_PROMPT_TEMPLATE = Template(
+"""# Role & Mission
+You are the authoritative scene state and sticky-note maintainer for an interactive adventure story.
+Review the previous sticky notes and what occurred during the resolved turn, then produce the updated, consolidated set of active sticky notes in their entirety.
+
+# Previous Sticky Notes
+{% if not current_notes -%}
+(No active sticky notes)
+{% else -%}
+{% for note in current_notes -%}
+- {{ note.topic }}: {{ note.info }}
+{% endfor -%}
+{% endif -%}
+
+{% if required_stickies -%}
+# Required Sticky Notes (MUST be preserved)
+The following sticky notes are required and must remain present in your output:
+{% for req in required_stickies -%}
+- {{ req }}
+{% endfor -%}
+{% endif -%}
+
+# Resolved Turn Events
+- **Player Action**: {{ user_action }}
+- **Narration**: {{ narration }}
+{% if dialogue -%}
+- **Dialogue**:
+{% for dlg in dialogue -%}
+  - {{ dlg.speaker }}: {{ dlg.text }}
+{% endfor -%}
+{% endif -%}
+{% if plot_beats -%}
+- **Upcoming Plot Beats**:
+{% for beat in plot_beats -%}
+  - {{ beat }}
+{% endfor -%}
+{% endif -%}
+{% if characters -%}
+- **Manifested / Active Characters**:
+{% for char in characters -%}
+  - {{ char.name }}: {{ char.description or char.personality or 'Active' }}
+{% endfor -%}
+{% endif -%}
+
+# Guidelines for Consolidating Sticky Notes
+1. **Modify Existing Notes**: Update any notes whose facts, statuses, locations, objectives, or values have changed as a consequence of this turn.
+2. **Add New Notes**: Introduce new sticky notes for newly discovered vital lore, key items obtained, major quests/objectives started, or important scene conditions.
+3. **Consolidate & Remove Stale Notes**: Drop temporary or completed notes that are no longer relevant to free space. Prefer consolidation as much as possible.
+4. **Preserve Required Sticky Notes**: All required sticky notes must appear in your output. If a note is structured with '|' dividers (such as stats or HUD, e.g. "HP: 100 | ATK: 20 | DEF: 10"), preserve that exact structure and same number of '|' dividers.
+5. **Capacity Limit**: Provide at most {{ max_sticky_notes }} total sticky notes. If more items compete for space, keep the most crucial elements for immediate scene context and continuity.
+6. **Conciseness**: Keep topic concise (under 100 chars) and info clear and descriptive (under 500 chars).
+"""
+)
+
 
 
 class PlannerDialogue(BaseModel):
@@ -251,6 +305,24 @@ class SceneReaction(BaseModel):
     )
     plot_beats: List[str] = Field(default_factory=list)
     character_updates: List[PlannerCharacter] = Field(default_factory=list)
+
+
+class ConsolidatedStickyNote(BaseModel):
+    topic: str = Field(
+        description="Unique topic or title of the sticky note (max 100 characters)."
+    )
+    info: str = Field(
+        description="Current state, content, or description for this sticky note (max 500 characters)."
+    )
+
+
+class StickyNotesConsolidation(BaseModel):
+    """Complete, consolidated set of active sticky notes emitted by the post-resolution model."""
+    sticky_notes: List[ConsolidatedStickyNote] = Field(
+        default_factory=list,
+        description="The complete list of active, consolidated sticky notes for the current scene state.",
+    )
+
 
 
 class StoryLogDieRoll(BaseModel):
@@ -402,6 +474,8 @@ class StoryPlanningTools(BaseTools):
         self._elements = self._sticky_notes
         self._sticky_notes_lock = Lock()
         self._elements_lock = self._sticky_notes_lock
+        self._sticky_consolidation_lock = Lock()
+        self._last_sticky_consolidation_thread: Optional[threading.Thread] = None
         self._characters: OrderedDict[str, Dict[str, str]] = OrderedDict()
         self._characters_lock = Lock()
         self._plot_beats: List[Dict[str, str]] = []
@@ -1528,6 +1602,161 @@ class StoryPlanningTools(BaseTools):
         """Return the list of required sticky note keys that cannot be dropped."""
         return list(self._required_stickies.keys())
 
+    def consolidate_sticky_notes(
+        self, action: str, scene_reaction: Dict[str, Any]
+    ) -> List[Dict[str, str]]:
+        """Consolidate and publish sticky notes in their entirety after turn resolution.
+
+        Invokes a secondary model call with `StickyNotesConsolidation` schema to consolidate,
+        update, add, and prune sticky notes based on the resolved scene delta.
+        """
+        if not self.adventure_mode:
+            return self.get_present_sticky_notes()
+
+        current_notes = self.get_present_sticky_notes()
+        required_keys = self.get_required_sticky_notes()
+
+        prompt = _STICKY_NOTES_CONSOLIDATION_PROMPT_TEMPLATE.render(
+            current_notes=current_notes,
+            required_stickies=required_keys,
+            user_action=action,
+            narration=str(scene_reaction.get("narration") or "").strip(),
+            dialogue=scene_reaction.get("dialogue") or [],
+            plot_beats=[
+                b.get("plot_beat", "") if isinstance(b, dict) else str(b)
+                for b in scene_reaction.get("plot_beats", [])
+            ],
+            characters=scene_reaction.get("manifested_characters") or [],
+            max_sticky_notes=self.max_sticky_notes,
+            style=self.style,
+        ).strip()
+
+        request = TextResponseRequest(
+            prompt=prompt,
+            system_instruction=(
+                "You are the sticky notes maintainer for an interactive adventure story. "
+                "Output the complete set of consolidated sticky notes in their entirety. "
+                "Respond ONLY with valid JSON matching the schema."
+            ),
+            response_schema=StickyNotesConsolidation,
+            temperature=0.3,
+        )
+
+        try:
+            response = self.text_response_provider.generate(request)
+        except Exception as exc:
+            logger.exception("[StoryPlanningTools] Sticky notes consolidation model call failed: %s", exc)
+            return self.get_present_sticky_notes()
+
+        parsed_data = None
+        if hasattr(response, "parsed") and response.parsed is not None:
+            parsed_data = response.parsed
+        elif hasattr(response, "text") and response.text:
+            resp_text = str(response.text).strip()
+            if resp_text.startswith("```"):
+                resp_text = re.sub(r"^```(?:json)?\s*", "", resp_text)
+                resp_text = re.sub(r"\s*```$", "", resp_text)
+            try:
+                parsed_data = json.loads(resp_text)
+            except Exception:
+                parsed_data = None
+
+        raw_notes = []
+        if isinstance(parsed_data, StickyNotesConsolidation):
+            raw_notes = parsed_data.sticky_notes
+        elif isinstance(parsed_data, dict):
+            raw_notes = parsed_data.get("sticky_notes", [])
+        elif isinstance(parsed_data, list):
+            raw_notes = parsed_data
+
+        if not raw_notes:
+            logger.debug(
+                "[StoryPlanningTools] No valid consolidated sticky notes returned; preserving existing notes."
+            )
+            return self.get_present_sticky_notes()
+
+        with self._sticky_notes_lock:
+            existing_snapshot = dict(self._sticky_notes)
+            new_notes: OrderedDict[str, str] = OrderedDict()
+
+            for item in raw_notes:
+                if isinstance(item, BaseModel):
+                    topic = str(getattr(item, "topic", "") or "").strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                    info = str(getattr(item, "info", "") or "").strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+                elif isinstance(item, dict):
+                    topic = str(item.get("topic", item.get("name", "")) or "").strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+                    info = str(item.get("info", item.get("content", "")) or "").strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+                else:
+                    continue
+
+                if not topic or not info:
+                    continue
+
+                # Divider count validation for structured stickies
+                if topic in existing_snapshot:
+                    existing_info = existing_snapshot[topic]
+                    if info.count("|") != existing_info.count("|"):
+                        logger.warning(
+                            "[StoryPlanningTools] Divider mismatch for '%s' in consolidation (expected %d, got %d). Preserving existing info.",
+                            topic,
+                            existing_info.count("|"),
+                            info.count("|"),
+                        )
+                        info = existing_info
+
+                new_notes[topic] = info
+
+            # Ensure all required stickies are preserved
+            for req_key in required_keys:
+                if req_key not in new_notes:
+                    default_info = self._required_stickies.get(req_key, "")
+                    new_notes[req_key] = existing_snapshot.get(req_key, default_info)
+
+            # Enforce max_sticky_notes capacity, keeping required notes
+            if len(new_notes) > self.max_sticky_notes:
+                excess = len(new_notes) - self.max_sticky_notes
+                non_req_keys = [k for k in new_notes if k not in self._required_stickies]
+                keys_to_drop = set(non_req_keys[:excess])
+                new_notes = OrderedDict((k, v) for k, v in new_notes.items() if k not in keys_to_drop)
+
+            self._sticky_notes = new_notes
+
+        self.save_to_session_state()
+        logger.debug(
+            "[StoryPlanningTools] Consolidated %d sticky notes (theater=%s). Active: %s",
+            len(self._sticky_notes),
+            self.theater_id or "default",
+            list(self._sticky_notes.keys()),
+        )
+        return self.get_present_sticky_notes()
+
+    def _start_post_resolution_sticky_notes(
+        self, action: str, result: Dict[str, Any]
+    ) -> threading.Thread:
+        """Spawn background consolidation of sticky notes after turn resolution."""
+        def _worker() -> None:
+            with self._sticky_consolidation_lock:
+                try:
+                    self.consolidate_sticky_notes(action, result)
+                except Exception as exc:
+                    logger.exception(
+                        "[StoryPlanningTools] Background sticky notes consolidation failed: %s", exc
+                    )
+
+        t = threading.Thread(target=_worker, daemon=True)
+        self._last_sticky_consolidation_thread = t
+        t.start()
+        return t
+
+    def wait_for_sticky_notes_consolidation(self, timeout: float = 5.0) -> bool:
+        """Wait for the in-flight background sticky notes consolidation thread to finish."""
+        t = self._last_sticky_consolidation_thread
+        if t and t.is_alive():
+            t.join(timeout=timeout)
+            return not t.is_alive()
+        return True
+
+
     def get_present_characters(self) -> list[dict[str, Any]]:
         """Return a stable snapshot of active characters with personalities and motivations."""
         with self._characters_lock:
@@ -1693,7 +1922,6 @@ class StoryPlanningTools(BaseTools):
                 self.lookup_character,
                 self.generate_character_profile,
                 self.roll_dice,
-                self.update_sticky_note,
             ],
             output_schema=SceneReaction,
             output_key="scene_reaction",
@@ -1998,6 +2226,7 @@ class StoryPlanningTools(BaseTools):
                 callback()
             except Exception:
                 logger.exception("[StoryPlanningTools] Story-planning usage callback failed")
+        self._start_post_resolution_sticky_notes(action, result)
         return result
 
     @staticmethod
