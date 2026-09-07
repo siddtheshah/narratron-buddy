@@ -4,6 +4,9 @@ import asyncio
 from fastapi import WebSocket
 from typing import Any
 from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionState:
@@ -91,6 +94,7 @@ class ConnectionState:
                 self.unregister_websocket(connection)
 
     def broadcast(self, message: dict[str, Any]) -> None:
+        logger.info("[ConnectionState] Broadcasting message")
         loop = self.state_ws_loop
         if not self.active_state_ws_connections or not loop or loop.is_closed():
             return

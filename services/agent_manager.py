@@ -1162,9 +1162,8 @@ class AgentSessionManager:
             and isinstance(story_planning_config, dict)
             and bool(story_planning_config.get("adventure_mode", False))
             and bool(story_planning_config.get("character_voicing", False))
-            and hasattr(canvas_mgr, "enable_scene_speech")
         ):
-            canvas_mgr.enable_scene_speech()
+            canvas_mgr.story.enable_scene_speech()
         tool_bundle = create_tool_bundle_for_session(
             theater_id=theater_id,
             config=theater_config,

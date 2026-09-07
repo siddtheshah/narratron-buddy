@@ -242,6 +242,7 @@ class StoryState:
         with self._speech_lock:
             self._speech_generation += 1
     def dispatch(self, dialogue: list[dict[str, str]]) -> None:
+        logger.debug("[StoryState] Dispatching scene speech for generation %d", self._speech_generation)
         with self._speech_lock:
             self._speech_generation += 1
             generation = self._speech_generation
@@ -252,7 +253,7 @@ class StoryState:
             if line.get("kind") != "thought" and str(line.get("text") or "").strip()
         ]
         if spoken:
-            self._get_executor().submit(self._synthesize_scene, spoken, generation)
+            self._get_executor().submit(self._synthesize_scene_speech, spoken, generation)
     def _voice_for(self, speaker: str) -> str:
         key = speaker_key(speaker)
         existing = self.character_voice_assignments.get(key)
@@ -269,7 +270,7 @@ class StoryState:
         self.character_voice_assignments[key] = voice
         if self._persist:
             self._persist()
-        logger.info("[SceneSpeech] Assigned %s to %s", voice, speaker)
+        logger.info("[StoryState] Assigned %s to %s", voice, speaker)
         return voice
     def _synthesize_line(
         self,
@@ -288,14 +289,14 @@ class StoryState:
             with self._speech_lock:
                 if generation != self._speech_generation:
                     logger.debug(
-                        "[SceneSpeech] Discarding stale audio (gen %d != current %d)",
+                        "[StoryState] Discarding stale audio (gen %d != current %d)",
                         generation,
                         self._speech_generation,
                     )
                     return line, None
             return line, result
         except (SpeechProviderError, OSError, ValueError) as exc:
-            logger.warning("[SceneSpeech] Failed to synthesize dialogue for %s: %s", speaker, exc)
+            logger.warning("[StoryState] Failed to synthesize dialogue for %s: %s", speaker, exc)
             return line, None
 
     def _publish_line_audio(
@@ -304,10 +305,11 @@ class StoryState:
         result: SpeechSynthesisResult,
         generation: int,
     ) -> None:
+        logger.debug("[StoryState] Publishing line audio for line %s", line)
         with self._speech_lock:
             if generation != self._speech_generation:
                 logger.debug(
-                    "[SceneSpeech] Discarding stale audio (gen %d != current %d)",
+                    "[StoryState] Discarding stale audio (gen %d != current %d)",
                     generation,
                     self._speech_generation,
                 )
@@ -328,11 +330,12 @@ class StoryState:
                 "generation": generation,
             })
 
-    def _synthesize_scene(self, dialogue: list[dict[str, str]], generation: int) -> None:
+    def _synthesize_scene_speech(self, dialogue: list[dict[str, str]], generation: int) -> None:
+        logger.debug("[StoryState] Dispatching scene speech for generation %d", generation)
         with self._speech_lock:
             if generation != self._speech_generation:
                 logger.debug(
-                    "[SceneSpeech] Aborting stale synthesis (gen %d != current %d)",
+                    "[StoryState] Aborting stale synthesis (gen %d != current %d)",
                     generation,
                     self._speech_generation,
                 )
@@ -354,7 +357,7 @@ class StoryState:
                 with self._speech_lock:
                     if generation != self._speech_generation:
                         logger.debug(
-                            "[SceneSpeech] Aborting stale synthesis (gen %d != current %d)",
+                            "[StoryState] Aborting stale synthesis (gen %d != current %d)",
                             generation,
                             self._speech_generation,
                         )
@@ -362,7 +365,7 @@ class StoryState:
                 try:
                     line, result = future.result()
                 except Exception as exc:
-                    logger.warning("[SceneSpeech] Line synthesis future failed: %s", exc)
+                    logger.warning("[StoryState] Line synthesis future failed: %s", exc)
                     continue
 
                 if result is not None:
