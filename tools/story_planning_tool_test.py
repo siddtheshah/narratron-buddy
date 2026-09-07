@@ -773,42 +773,6 @@ class TestStoryPlanningTools(unittest.TestCase):
         self.assertNotIn("scene_reaction", state_seen_by_runner[0])
         self.assertEqual(result["narration"], "Fresh result")
 
-    def test_run_planner_agent_repairs_missing_scene_reaction_in_same_session(self):
-        tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
-        session = SimpleNamespace(state={})
-        prompts = []
-
-        async def get_session(**_kwargs):
-            return session
-
-        async def fake_run_async(*, new_message, **_kwargs):
-            prompts.append(new_message.parts[0].text)
-            if len(prompts) == 1:
-                # The original invocation emits text but does not persist an
-                # output_key value, which is the condition under repair.
-                event = MagicMock()
-                event.is_final_response.return_value = True
-                event.content = types.Content(role="model", parts=[types.Part(text="not persisted")])
-                yield event
-                return
-
-            reaction = SceneReaction(narration="Recovered result", plot_beats=["Recovery beat"])
-            session.state["scene_reaction"] = reaction.model_dump()
-            event = MagicMock()
-            event.is_final_response.return_value = True
-            event.content = types.Content(role="model", parts=[types.Part(text=reaction.model_dump_json())])
-            yield event
-
-        with (
-            patch.object(tools.session_service, "get_session", side_effect=get_session),
-            patch.object(tools._planner_runner, "run_async", side_effect=fake_run_async),
-        ):
-            result = tools._run_planner_agent("I take the new path.")
-
-        self.assertEqual(result["narration"], "Recovered result")
-        self.assertEqual(prompts[0], "I take the new path.")
-        self.assertIn("[Schema Recovery Instruction]", prompts[1])
-
     def test_run_planner_agent_rejects_turn_without_fresh_scene_reaction(self):
         tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
         session = SimpleNamespace(state={

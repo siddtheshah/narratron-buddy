@@ -26,7 +26,7 @@ import asyncio
 from typing import Any, Callable, List, Dict, Optional, Tuple
 
 from jinja2 import Template
-from pydantic import BaseModel, Field, PrivateAttr, ValidationError
+from pydantic import BaseModel, Field, PrivateAttr
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.models.google_llm import Gemini
@@ -1769,60 +1769,21 @@ class StoryPlanningTools(BaseTools):
             if previous_session and previous_session.state:
                 previous_session.state.pop("scene_reaction", None)
 
-            async def run_attempt(message: str) -> tuple[str, Optional[Exception]]:
-                """Run one planner invocation, preserving validation failures for recovery."""
-                final_text = ""
-                try:
-                    async for event in runner.run_async(
-                        user_id="story_planner",
-                        session_id=session_id,
-                        new_message=types.Content(role="user", parts=[types.Part(text=message)]),
-                        run_config=run_config,
-                    ):
-                        if event.is_final_response() and event.content and event.content.parts:
-                            final_text = "".join(part.text or "" for part in event.content.parts)
-                except (json.JSONDecodeError, ValidationError) as exc:
-                    return final_text, exc
-                return final_text, None
-
-            final_text, formatting_error = await run_attempt(prompt_input)
+            final_text = ""
+            async for event in runner.run_async(
+                user_id="story_planner",
+                session_id=session_id,
+                new_message=types.Content(role="user", parts=[types.Part(text=prompt_input)]),
+                run_config=run_config,
+            ):
+                if event.is_final_response() and event.content and event.content.parts:
+                    final_text = "".join(part.text or "" for part in event.content.parts)
             session = await self.session_service.get_session(
                 app_name="narratron_story_planner",
                 user_id="story_planner",
                 session_id=session_id,
             )
             stored_reaction = (session.state or {}).get("scene_reaction") if session else None
-
-            # A missing or schema-invalid final response needs only a short,
-            # context-preserving formatting repair, not a new story turn. It
-            # shares the outer process_user_action timeout with the original
-            # request, so this can never extend the player's wait budget.
-            if not stored_reaction:
-                if formatting_error:
-                    logger.warning(
-                        "[StoryPlanningTools] Planner response failed schema validation; "
-                        "attempting one in-session format recovery: %s",
-                        formatting_error,
-                    )
-                else:
-                    logger.warning(
-                        "[StoryPlanningTools] Planner produced no scene reaction; "
-                        "attempting one in-session format recovery."
-                    )
-                recovery_prompt = (
-                    "[Schema Recovery Instruction] Your immediately preceding response did not "
-                    "produce the required SceneReaction. The player's action has already been "
-                    "provided and any needed story reasoning is complete. Do not call tools, "
-                    "change story state, or add narration outside the required response. Return "
-                    "one valid SceneReaction for that same action now."
-                )
-                final_text, formatting_error = await run_attempt(recovery_prompt)
-                session = await self.session_service.get_session(
-                    app_name="narratron_story_planner",
-                    user_id="story_planner",
-                    session_id=session_id,
-                )
-                stored_reaction = (session.state or {}).get("scene_reaction") if session else None
 
             try:
                 if isinstance(stored_reaction, BaseModel):
