@@ -26,7 +26,7 @@ import asyncio
 from typing import Any, Callable, List, Dict, Optional, Tuple
 
 from jinja2 import Template
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, ValidationError
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.models.google_llm import Gemini
@@ -52,7 +52,7 @@ DEFAULT_MAX_STICKY_NOTES = 5
 DEFAULT_MAX_ACTIVE_CHARACTERS = 3
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 DEFAULT_THINKING_BUDGET = 1024
-USER_ACTION_TIMEOUT_SECONDS = 20.0
+USER_ACTION_TIMEOUT_SECONDS = 25.0
 VOICE_INPUT_LOG_THROTTLE_SECONDS = 5.0
 MAX_STORY_PLANNING_STYLE_CHARS = 500
 MAX_PLAYER_ACTION_CHARS = 2_000
@@ -1749,7 +1749,6 @@ class StoryPlanningTools(BaseTools):
         )
 
         async def run_turn() -> Dict[str, Any]:
-            final_text = ""
             run_config = (
                 RunConfig(context_window_compression=self._run_compression_config)
                 if self._run_compression_config
@@ -1758,20 +1757,73 @@ class StoryPlanningTools(BaseTools):
             prompt_input = user_action
             if nudge:
                 prompt_input = f"{user_action}\n\n[Live Agent Nudge to Accommodate]: {nudge}"
-            async for event in runner.run_async(
+
+            # ``output_key`` state survives across ADK invocations.  A failed
+            # invocation must never be allowed to reuse its predecessor's
+            # scene delta as though it resolved this player action.
+            previous_session = await self.session_service.get_session(
+                app_name="narratron_story_planner",
                 user_id="story_planner",
                 session_id=session_id,
-                new_message=types.Content(role="user", parts=[types.Part(text=prompt_input)]),
-                run_config=run_config,
-            ):
-                if event.is_final_response() and event.content and event.content.parts:
-                    final_text = "".join(part.text or "" for part in event.content.parts)
+            )
+            if previous_session and previous_session.state:
+                previous_session.state.pop("scene_reaction", None)
+
+            async def run_attempt(message: str) -> tuple[str, Optional[Exception]]:
+                """Run one planner invocation, preserving validation failures for recovery."""
+                final_text = ""
+                try:
+                    async for event in runner.run_async(
+                        user_id="story_planner",
+                        session_id=session_id,
+                        new_message=types.Content(role="user", parts=[types.Part(text=message)]),
+                        run_config=run_config,
+                    ):
+                        if event.is_final_response() and event.content and event.content.parts:
+                            final_text = "".join(part.text or "" for part in event.content.parts)
+                except (json.JSONDecodeError, ValidationError) as exc:
+                    return final_text, exc
+                return final_text, None
+
+            final_text, formatting_error = await run_attempt(prompt_input)
             session = await self.session_service.get_session(
                 app_name="narratron_story_planner",
                 user_id="story_planner",
                 session_id=session_id,
             )
             stored_reaction = (session.state or {}).get("scene_reaction") if session else None
+
+            # A missing or schema-invalid final response needs only a short,
+            # context-preserving formatting repair, not a new story turn. It
+            # shares the outer process_user_action timeout with the original
+            # request, so this can never extend the player's wait budget.
+            if not stored_reaction:
+                if formatting_error:
+                    logger.warning(
+                        "[StoryPlanningTools] Planner response failed schema validation; "
+                        "attempting one in-session format recovery: %s",
+                        formatting_error,
+                    )
+                else:
+                    logger.warning(
+                        "[StoryPlanningTools] Planner produced no scene reaction; "
+                        "attempting one in-session format recovery."
+                    )
+                recovery_prompt = (
+                    "[Schema Recovery Instruction] Your immediately preceding response did not "
+                    "produce the required SceneReaction. The player's action has already been "
+                    "provided and any needed story reasoning is complete. Do not call tools, "
+                    "change story state, or add narration outside the required response. Return "
+                    "one valid SceneReaction for that same action now."
+                )
+                final_text, formatting_error = await run_attempt(recovery_prompt)
+                session = await self.session_service.get_session(
+                    app_name="narratron_story_planner",
+                    user_id="story_planner",
+                    session_id=session_id,
+                )
+                stored_reaction = (session.state or {}).get("scene_reaction") if session else None
+
             try:
                 if isinstance(stored_reaction, BaseModel):
                     reaction = stored_reaction.model_dump()
@@ -1780,7 +1832,7 @@ class StoryPlanningTools(BaseTools):
                 elif isinstance(stored_reaction, str):
                     reaction = json.loads(stored_reaction)
                 else:
-                    reaction = json.loads(final_text) if final_text else {}
+                    reaction = {}
             except json.JSONDecodeError as exc:
                 raise ValueError("Story planner returned invalid structured output.") from exc
             if not isinstance(reaction, dict):
@@ -1788,7 +1840,7 @@ class StoryPlanningTools(BaseTools):
             if not reaction:
                 state_keys = sorted((session.state or {}).keys()) if session else []
                 raise ValueError(
-                    "Story planner returned no scene delta "
+                    "Story planner returned no fresh scene delta for this action "
                     f"(final_response_chars={len(final_text)}, state_keys={state_keys})."
                 )
             try:

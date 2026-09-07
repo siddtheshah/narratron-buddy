@@ -5,6 +5,7 @@ import threading
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from google.adk.models.google_llm import Gemini
@@ -712,8 +713,12 @@ class TestStoryPlanningTools(unittest.TestCase):
 
     def test_run_planner_agent_includes_nudge_in_user_message(self):
         tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
+        session = SimpleNamespace(state={})
 
         passed_messages = []
+
+        async def get_session(**_kwargs):
+            return session
 
         async def fake_run_async(user_id, session_id, new_message, run_config=None):
             passed_messages.append(new_message.parts[0].text)
@@ -721,12 +726,16 @@ class TestStoryPlanningTools(unittest.TestCase):
                 narration="You find a key.",
                 plot_beats=["Beat 1"],
             )
+            session.state["scene_reaction"] = reaction.model_dump()
             event = MagicMock()
             event.is_final_response.return_value = True
             event.content = types.Content(role="model", parts=[types.Part(text=reaction.model_dump_json())])
             yield event
 
-        with patch.object(tools._planner_runner, "run_async", side_effect=fake_run_async):
+        with (
+            patch.object(tools.session_service, "get_session", side_effect=get_session),
+            patch.object(tools._planner_runner, "run_async", side_effect=fake_run_async),
+        ):
             # Without nudge
             tools._run_planner_agent("I search the wall")
             self.assertEqual(passed_messages[-1], "I search the wall")
@@ -735,6 +744,92 @@ class TestStoryPlanningTools(unittest.TestCase):
             tools._run_planner_agent("I search the wall", nudge="A shadow looms behind them")
             self.assertIn("I search the wall", passed_messages[-1])
             self.assertIn("[Live Agent Nudge to Accommodate]: A shadow looms behind them", passed_messages[-1])
+
+    def test_run_planner_agent_clears_prior_scene_reaction_before_each_turn(self):
+        tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
+        session = SimpleNamespace(state={
+            "scene_reaction": {"narration": "Old result", "plot_beats": ["Old beat"]},
+        })
+        state_seen_by_runner = []
+
+        async def get_session(**_kwargs):
+            return session
+
+        async def fake_run_async(**_kwargs):
+            state_seen_by_runner.append(dict(session.state))
+            reaction = SceneReaction(narration="Fresh result", plot_beats=["Fresh beat"])
+            session.state["scene_reaction"] = reaction.model_dump()
+            event = MagicMock()
+            event.is_final_response.return_value = True
+            event.content = types.Content(role="model", parts=[types.Part(text=reaction.model_dump_json())])
+            yield event
+
+        with (
+            patch.object(tools.session_service, "get_session", side_effect=get_session),
+            patch.object(tools._planner_runner, "run_async", side_effect=fake_run_async),
+        ):
+            result = tools._run_planner_agent("I take the new path.")
+
+        self.assertNotIn("scene_reaction", state_seen_by_runner[0])
+        self.assertEqual(result["narration"], "Fresh result")
+
+    def test_run_planner_agent_repairs_missing_scene_reaction_in_same_session(self):
+        tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
+        session = SimpleNamespace(state={})
+        prompts = []
+
+        async def get_session(**_kwargs):
+            return session
+
+        async def fake_run_async(*, new_message, **_kwargs):
+            prompts.append(new_message.parts[0].text)
+            if len(prompts) == 1:
+                # The original invocation emits text but does not persist an
+                # output_key value, which is the condition under repair.
+                event = MagicMock()
+                event.is_final_response.return_value = True
+                event.content = types.Content(role="model", parts=[types.Part(text="not persisted")])
+                yield event
+                return
+
+            reaction = SceneReaction(narration="Recovered result", plot_beats=["Recovery beat"])
+            session.state["scene_reaction"] = reaction.model_dump()
+            event = MagicMock()
+            event.is_final_response.return_value = True
+            event.content = types.Content(role="model", parts=[types.Part(text=reaction.model_dump_json())])
+            yield event
+
+        with (
+            patch.object(tools.session_service, "get_session", side_effect=get_session),
+            patch.object(tools._planner_runner, "run_async", side_effect=fake_run_async),
+        ):
+            result = tools._run_planner_agent("I take the new path.")
+
+        self.assertEqual(result["narration"], "Recovered result")
+        self.assertEqual(prompts[0], "I take the new path.")
+        self.assertIn("[Schema Recovery Instruction]", prompts[1])
+
+    def test_run_planner_agent_rejects_turn_without_fresh_scene_reaction(self):
+        tools = self._make_tools(config={"nodes_ahead": 1, "adventure_mode": True})
+        session = SimpleNamespace(state={
+            "scene_reaction": {"narration": "Old result", "plot_beats": ["Old beat"]},
+        })
+
+        async def get_session(**_kwargs):
+            return session
+
+        async def fake_run_async(**_kwargs):
+            if False:
+                yield None
+
+        with (
+            patch.object(tools.session_service, "get_session", side_effect=get_session),
+            patch.object(tools._planner_runner, "run_async", side_effect=fake_run_async),
+            self.assertRaisesRegex(ValueError, "no fresh scene delta"),
+        ):
+            tools._run_planner_agent("I take the new path.")
+
+        self.assertNotIn("scene_reaction", session.state)
 
     def test_character_profile_uses_explicit_text_response_provider(self):
         mock_provider = MagicMock(spec=TextResponseProvider)
@@ -1309,7 +1404,7 @@ class TestStoryPlanningTools(unittest.TestCase):
             theater_id="timeout_test",
             canvas_state_service=canvas_state_service,
         )
-        self.assertEqual(tools.user_action_timeout_seconds, 20.0)
+        self.assertEqual(tools.user_action_timeout_seconds, 25.0)
         tools.user_action_timeout_seconds = 0.05
         old_runner = tools._planner_runner
         old_agent = tools._planner_agent
