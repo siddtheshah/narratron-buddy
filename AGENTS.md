@@ -44,3 +44,4 @@ If `uv` is not installed on the system, follow the official installation guide f
 Project-specific agent skills and procedural runbooks are located in the [`skills/`](skills/) directory:
 
 - [`skills/narratron-testing/SKILL.md`](skills/narratron-testing/SKILL.md): Testing guidelines, naming conventions, mock patterns, and automated end-to-end narration evaluation.
+- [`skills/writing-adventures/SKILL.md`](skills/writing-adventures/SKILL.md): Authoring guide, lore structuring patterns, theater.yaml configuration, testing runbooks, and validation checklist for interactive adventures.
