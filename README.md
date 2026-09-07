@@ -10,23 +10,31 @@ This project uses the Google Agent Development Kit (ADK) and Gemini Live API to 
 
 ## Prerequisites
 - Python 3.10+
+- [`uv`](https://github.com/astral-sh/uv) (fast Python package and project manager)
 - Windows (PowerShell examples below)
+
+## Installing `uv`
+
+If you do not have `uv` installed, follow the official installation guide from Astral:
+- [Astral `uv` Installation Documentation](https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Install
 
+Create a virtual environment and install dependencies using `uv`:
+
 ```powershell
-python -m venv .venv
+uv venv
 . .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 ### Development checks
 
-Install development dependencies and run the linter:
+Install development dependencies and run the linter with `uv`:
 
 ```powershell
-pip install -r requirements-dev.txt
-ruff check .
+uv pip install -r requirements-dev.txt
+uv run ruff check .
 ```
 
 ### Gcloud Setup

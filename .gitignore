@@ -3,6 +3,9 @@ ngrok_policy.yaml
 *.wav
 __pycache__/
 .venv/
+.pytest_cache/
+.ruff_cache/
+.vscode/
 .corpus-venv/
 .agent/
 .agents/
