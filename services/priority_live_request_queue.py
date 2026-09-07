@@ -88,6 +88,15 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
             deferred.put_nowait(self._future_non_audio_queue.get_nowait())
         self._future_non_audio_queue = deferred
 
+    def _arm_post_user_input_window(self) -> None:
+        """Allow the bounded follow-up tool/result exchange for one user turn."""
+        self._remaining_live_tool_budget = self._live_tool_budget
+        self._post_user_input_window_active = True
+        self._defer_non_audio_until_next_input = False
+        self._promote_future_non_audio()
+        if self._remaining_live_tool_budget == 0:
+            self.record_model_tool_calls(0)
+
     def _get_current_user_input_nowait(self) -> LiveRequest:
         """Return the next user-input request and arm post-input notifications."""
         req = self._current_user_input_queue.get_nowait()
@@ -98,17 +107,13 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
             # bounded tool-call allowance.  During that window it can keep
             # receiving tool/result notifications before ordinary non-audio
             # scheduling resumes.
-            self._remaining_live_tool_budget = self._live_tool_budget
-            self._post_user_input_window_active = True
-            self._defer_non_audio_until_next_input = False
-            self._promote_future_non_audio()
-            if self._remaining_live_tool_budget == 0:
-                self.record_model_tool_calls(0)
+            self._arm_post_user_input_window()
         elif req.content is not None:
             # The Live API reserves activity boundaries for audio. A typed
             # command is therefore a standalone, prioritized content request.
-            self._state = self._NON_AUDIO
-            self._promote_future_non_audio()
+            # It is still a user turn, so it gets the same bounded follow-up
+            # tool/result exchange as a completed voice turn.
+            self._arm_post_user_input_window()
         return req
 
     def _queue_activity_start(self, req: LiveRequest) -> None:

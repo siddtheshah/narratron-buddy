@@ -31,7 +31,7 @@ UI integration tests are the exception: place them in `testing/ui/`, also using 
 To run all unit tests across the repository:
 
 ```bash
-pytest --ignore=scratch
+uv pytest --ignore=scratch
 ```
 
 

@@ -21,6 +21,32 @@ class TestPriorityLiveRequestQueue(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_text_user_input_arms_and_exhausts_the_tool_window(self):
+        async def run_test():
+            queue = PriorityLiveRequestQueue(live_tool_budget=1)
+            command = types.Content(parts=[types.Part(text="[Orator Command] Begin.")])
+            tool_response = types.Content(parts=[types.Part(text="Tool response")])
+            deferred_response = types.Content(parts=[types.Part(text="Deferred response")])
+
+            queue.send_user_input(command)
+            self.assertEqual(
+                (await queue.get()).content.parts[0].text,
+                "[Orator Command] Begin.",
+            )
+            self.assertTrue(queue.live_tool_window_active)
+            self.assertEqual(queue.remaining_live_tool_budget, 1)
+
+            queue.send_content(tool_response)
+            self.assertEqual((await queue.get()).content.parts[0].text, "Tool response")
+            queue.record_model_tool_calls()
+            self.assertFalse(queue.live_tool_window_active)
+
+            queue.send_content(deferred_response)
+            self.assertTrue(queue._current_non_audio_queue.empty())
+            self.assertFalse(queue._future_non_audio_queue.empty())
+
+        asyncio.run(run_test())
+
     def test_post_vad_window_forwards_notifications_until_model_tool_budget_is_used(self):
         async def run_test():
             queue = PriorityLiveRequestQueue(live_tool_budget=2)
