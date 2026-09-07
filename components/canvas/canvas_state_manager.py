@@ -13,26 +13,40 @@ from pathlib import Path
 from typing import Any, Optional
 
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
-from components.theater_manager import TheaterManager
+from components.theater_manager import Theater
 
 logger = logging.getLogger("components.canvas_state")
 MAX_AGENT_THOUGHT_LENGTH = 360
 
 
 class CanvasStateManager:
-    def __init__(self, theater_id: str, theater_manager: TheaterManager) -> None:
-        self.theater_id, self.theater_manager = theater_id, theater_manager
-        self.theater = theater_manager.theater(theater_id)
+    def __init__(self, theater: Theater) -> None:
+        self.theater = theater
+        self.theater_id = theater.theater_id
+        self.theater_manager = getattr(theater, "manager", None)
         self.connections = ConnectionState()
-        self.visual = VisualState(self.theater)
+        self.visual = VisualState(
+            self.theater,
+            notify_changed_fn=self.notify_changed,
+            on_visual_changed_fn=self._on_visual_changed,
+        )
         self.audio = AudioState(self.notify_changed)
         self.doodles = DoodleState(self.persist)
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
         self.story = StoryState(self.persist, self.notify_changed, publish_audio_fn=self.connections.broadcast)
-        self.chat = ChatManager(output_dir=str(self.theater.output_dir() / "chats"))
+        self.chat = ChatManager(self.theater)
         self.load_state_from_disk()
-        self.visual.initialize_starting_image(self.theater_id, self.theater_manager, self.theater)
+        self.visual.initialize_starting_image()
+
+    def _on_visual_changed(self, changed: bool = True) -> None:
+        if changed:
+            self.doodles.doodles.clear()
+            self.ui.interactive_surfaces = {
+                surface_id: surface for surface_id, surface in self.ui.interactive_surfaces.items()
+                if bool(surface.get("persistent", False))
+            }
+        self.notify_changed("latest")
 
     def notify_changed(self, *domains: str) -> None:
         self.connections.notify(*domains)
@@ -70,7 +84,7 @@ class CanvasStateManager:
         return document, []
 
     def get_latest_state(self) -> dict[str, object]:
-        visual = self.visual.payload(self.theater)
+        visual = self.visual.payload()
         return {**visual, "music": self.audio.payload(), "doodles_enabled": self.doodles.enabled,
                 "viewer_collab_enabled": self.ui.viewer_collab_enabled,
                 "tool_activity": self.tool_response.activity_payload(),

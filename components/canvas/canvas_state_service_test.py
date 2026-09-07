@@ -10,6 +10,10 @@ class FakeTheater:
 
     def directory(self) -> Path: return self.root
     def output_dir(self) -> Path: return self.root / "output"
+    def chats_dir(self) -> Path: return self.root / "chats"
+    def image_artifacts_dir(self) -> Path: return self.root / "images"
+    def references_dir(self) -> Path: return self.root / "references"
+    def config(self) -> dict: return {}
     def get_url_for_path(self, path: str) -> str: return path
 
 

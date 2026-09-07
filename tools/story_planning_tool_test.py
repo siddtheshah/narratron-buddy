@@ -1529,7 +1529,7 @@ class TestStoryPlanningTools(unittest.TestCase):
     def test_story_planning_output_reaches_real_canvas_state_manager(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             theater_manager = TheaterManager(base_theaters_dir=temp_dir)
-            canvas_manager = CanvasStateManager("integration_test", theater_manager)
+            canvas_manager = CanvasStateManager(theater_manager.theater("integration_test"))
             tools = StoryPlanningTools(
                 config={"adventure_mode": True, "nodes_ahead": 2},
                 theater_manager=theater_manager.theater("integration_test"),

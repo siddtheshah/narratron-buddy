@@ -1,14 +1,24 @@
+from pathlib import Path
 import time
 import unittest
+from unittest.mock import Mock
 
 from components.canvas.chat_manager import ChatManager
+
+
+class FakeTheater:
+    def __init__(self, chats_dir: str | Path = "/tmp/test_chat") -> None:
+        self._chats_dir = Path(chats_dir)
+
+    def chats_dir(self) -> Path:
+        return self._chats_dir
 
 
 class TestChatManagerSuggestions(unittest.TestCase):
     """Tests for the ChatManager suggestion engine."""
 
     def setUp(self):
-        self.cm = ChatManager(output_dir="/tmp/test_chat")
+        self.cm = ChatManager(FakeTheater("/tmp/test_chat"))
 
     # --- add_suggestion ---
 
@@ -150,7 +160,7 @@ class TestChatManagerSuggestions(unittest.TestCase):
         self.cm.add_suggestion("alice", "idea")
         self.cm.upvote_suggestion("bob", "alice")
         exported = self.cm.export_suggestions()
-        restored = ChatManager(output_dir="/tmp/test_chat")
+        restored = ChatManager(FakeTheater("/tmp/test_chat"))
         restored.load_suggestions(exported)
         self.assertEqual(restored.get_suggestions()[0]["upvote_count"], 1)
 
@@ -175,7 +185,7 @@ class TestChatManagerSuggestions(unittest.TestCase):
         import os
         import tempfile
         with tempfile.TemporaryDirectory() as temp_dir:
-            cm = ChatManager(output_dir=temp_dir)
+            cm = ChatManager(FakeTheater(temp_dir))
             cm.export_and_reset("scene_1")
             self.assertEqual(os.listdir(temp_dir), [])
 
@@ -184,7 +194,7 @@ class TestChatManagerSuggestions(unittest.TestCase):
         import os
         import tempfile
         with tempfile.TemporaryDirectory() as temp_dir:
-            cm = ChatManager(output_dir=temp_dir)
+            cm = ChatManager(FakeTheater(temp_dir))
             cm.add_message({"author": "hero", "text": "charge!"})
             cm.add_message({"author": "mage", "text": "fireball!"})
             self.assertEqual(len(cm.get_messages()), 2)
@@ -228,6 +238,13 @@ class TestChatManagerSuggestions(unittest.TestCase):
         self.assertEqual(len(suggestions), 1)
         self.assertEqual(suggestions[0]["author"], "dave")
         self.assertEqual(suggestions[0]["text"], "explore cave")
+
+    def test_init_with_theater_chats_dir(self):
+        fake_theater = Mock()
+        fake_theater.chats_dir.return_value = Path("/theater/test/chats")
+        cm = ChatManager(fake_theater)
+        self.assertEqual(cm.theater, fake_theater)
+        self.assertEqual(Path(cm.output_dir), Path("/theater/test/chats"))
 
 
 if __name__ == "__main__":

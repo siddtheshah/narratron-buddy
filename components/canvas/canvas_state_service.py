@@ -18,7 +18,7 @@ class CanvasStateService:
     def get(self, theater_id: Optional[str] = None) -> CanvasStateManager:
         resolved_id = theater_id or self._default_theater_id()
         if resolved_id not in self.states:
-            self.states[resolved_id] = CanvasStateManager(resolved_id, self.theater_manager)
+            self.states[resolved_id] = CanvasStateManager(self.theater_manager.theater(resolved_id))
         return self.states[resolved_id]
 
     def _default_theater_id(self) -> str:

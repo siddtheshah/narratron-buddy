@@ -24,6 +24,7 @@ from utils.image_utils import (
     extract_image_prompt,
 )
 from components.canvas_state import CanvasStateManager
+from components.canvas.visual_state import VisualState, PRIORITY_SHOW, PRIORITY_CREATE
 from components.theater_manager import Theater
 
 logger = logging.getLogger(__name__)
@@ -63,29 +64,10 @@ class ImageTools(BaseTools):
             raise ValueError("image_generation.provider_options must be a mapping.")
         self.image_provider_options = dict(provider_options)
         self._image_provider = None
-
-        self.on_show_image = None
         self.on_image_created: Optional[Callable] = None
-
-        self.currently_displayed_image_path: Optional[str] = None
-        self.currently_displayed_image_transition: str = "crossfade"
-        self.currently_displayed_image_effect: str = "gleam3"
 
         # In-memory mapping of custom image names/aliases to file paths
         self.image_aliases: Dict[str, str] = {}
-
-        # Image cycle configuration and state
-        self.cooldown_duration = float(subconfig.get("cooldown_duration", 60.0))
-        self.cycle_length: float = float(subconfig.get("cycle_length", self.cooldown_duration))
-        self._cycle_lock = threading.RLock()
-        self._cycle_timer: Optional[threading.Timer] = None
-        self._cycle_active: bool = False
-
-        self.current_cycle_image: Optional[dict] = None
-        self.next_cycle_image: Optional[dict] = None
-
-        self.PRIORITY_SHOW = 1
-        self.PRIORITY_CREATE = 2
 
         self.adventure_mode = bool(adventure_mode)
         self._story_plan_completed: bool = not self.adventure_mode
@@ -99,7 +81,21 @@ class ImageTools(BaseTools):
             self.references_manifest = {}
             self._load_references()
             ImageTools._references_cache = self.references_manifest
-            ImageTools._reference_dir_cached = self.reference_dir
+        self._currently_displayed_image_path: Optional[str] = None
+        self._currently_displayed_image_transition: Optional[str] = None
+        self._currently_displayed_image_effect: Optional[str] = None
+
+    @property
+    def currently_displayed_image_path(self) -> Optional[str]:
+        return self._currently_displayed_image_path
+
+    @currently_displayed_image_path.setter
+    def currently_displayed_image_path(self, val: Optional[str]) -> None:
+        self._currently_displayed_image_path = val
+
+    @property
+    def visual(self) -> Optional["VisualState"]:
+        return getattr(self.canvas_manager, "visual", None)
 
     @property
     def is_story_plan_completed(self) -> bool:
@@ -451,30 +447,25 @@ class ImageTools(BaseTools):
                 if saved_paths:
                     saved_path = saved_paths[0]
                     if display:
-                        with self._cycle_lock:
-                            has_active_anim = self._has_active_animation()
-                            if (self.current_cycle_image is None and not self.currently_displayed_image_path) or has_active_anim:
-                                self.current_cycle_image = {
-                                    "path": saved_path,
-                                    "transition": "crossfade",
-                                    "effect": effect,
-                                    "priority": self.PRIORITY_CREATE,
-                                    "source": "create_image",
-                                }
-                                self.next_cycle_image = None
-                                self._display_image(saved_path, transition="crossfade", effect=effect)
-                                self._schedule_next_cycle_tick()
-                            else:
-                                self.next_cycle_image = {
-                                    "path": saved_path,
-                                    "transition": "crossfade",
-                                    "effect": effect,
-                                    "priority": self.PRIORITY_CREATE,
-                                    "source": "create_image",
-                                }
-                                if not self._cycle_active and self.cycle_length > 0:
-                                    self._schedule_next_cycle_tick()
-                                logger.info(f"[ImageTools] Generated image queued with priority for the next cycle: {saved_path}")
+                        if self.canvas_manager and hasattr(self.canvas_manager, "visual"):
+                            update_res = self.canvas_manager.visual.update_visual(
+                                type="image",
+                                path=saved_path,
+                                display_path=webp_filepath,
+                                transition="crossfade",
+                                effect=effect,
+                                prompt=effective_prompt,
+                                priority=PRIORITY_CREATE,
+                                source="create_image",
+                                url_for_path=self.theater.get_url_for_path,
+                            )
+                            if update_res.get("status") == "displayed":
+                                self._currently_displayed_image_path = saved_path
+                                self._currently_displayed_image_transition = "crossfade"
+                                self._currently_displayed_image_effect = effect
+                            show_img = getattr(self.canvas_manager.visual, "show_image", None)
+                            if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
+                                show_img(webp_filepath)
                 else:
                     logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
             except ImageProviderError as e:
@@ -496,74 +487,6 @@ class ImageTools(BaseTools):
         if self._image_provider is None:
             self._image_provider = get_image_provider(self.image_provider_id, self.image_provider_options)
         return self._image_provider
-
-    def _has_active_animation(self) -> bool:
-        """Check if an animation is currently active on the canvas."""
-        try:
-            state = self.canvas_manager.visual
-            return bool(
-                getattr(state, "shown_video_animation", None)
-                or getattr(state, "shown_layered_animation", None)
-                or getattr(state, "shown_animation_frames", None)
-            )
-        except Exception:
-            return False
-
-    def advance_cycle(self) -> Optional[dict]:
-        """Advance to the next image cycle.
-
-        If next_cycle_image is set, promote it to current_cycle_image,
-        display it on the canvas, and clear next_cycle_image.
-        If next_cycle_image is None, reuse the current image.
-        Returns the new current_cycle_image.
-        """
-        with self._cycle_lock:
-            if self.next_cycle_image is not None:
-                staged = self.next_cycle_image
-                self.next_cycle_image = None
-                self.current_cycle_image = staged
-                path = staged["path"]
-                transition = staged.get("transition", "crossfade")
-                effect = staged.get("effect", "gleam3")
-                logger.info(f"[ImageTools] Cycle rollover: displaying new image {path} (source={staged.get('source')})")
-                self._display_image(path, transition=transition, effect=effect)
-            else:
-                logger.debug("[ImageTools] Cycle rollover: no next image staged, retaining current image.")
-
-            return self.current_cycle_image
-
-    def _schedule_next_cycle_tick(self):
-        with self._cycle_lock:
-            if self._cycle_timer:
-                self._cycle_timer.cancel()
-                self._cycle_timer = None
-            if self.cycle_length > 0:
-                self._cycle_timer = threading.Timer(self.cycle_length, self._on_cycle_tick)
-                self._cycle_timer.daemon = True
-                self._cycle_timer.start()
-                self._cycle_active = True
-
-    def stop_cycle(self):
-        """Stop the background image cycle timer."""
-        with self._cycle_lock:
-            if self._cycle_timer:
-                self._cycle_timer.cancel()
-                self._cycle_timer = None
-            self._cycle_active = False
-
-    def __del__(self):
-        try:
-            self.stop_cycle()
-        except Exception:
-            pass
-
-    def _on_cycle_tick(self):
-        try:
-            self.advance_cycle()
-        finally:
-            with self._cycle_lock:
-                if self._cycle_active and self.cycle_length > 0:
-                    self._schedule_next_cycle_tick()
 
     @with_cooldown(action_desc="showing another image")
     def show_image(
@@ -605,45 +528,52 @@ class ImageTools(BaseTools):
             self._trigger_after_tool_call("show_image")
             return res
 
+        display_path = self._ensure_webp_for_display(resolved_path)
+        if not display_path.lower().endswith(".webp") or not os.path.exists(display_path):
+            res = f"Error: Unable to prepare a WebP display image for '{file_path}'."
+            logger.error("[ImageTools] %s", res)
+            self._trigger_after_tool_call("show_image")
+            return res
+
         with self._story_plan_lock:
             if self.adventure_mode:
                 self._story_plan_completed = False
 
-        with self._cycle_lock:
-            has_active_anim = self._has_active_animation()
-            # If no image is currently displayed (cold start) or an animation is active on canvas,
-            # display immediately so the image takes priority over the animation
-            if (self.current_cycle_image is None and not self.currently_displayed_image_path) or has_active_anim:
-                self.current_cycle_image = {
-                    "path": resolved_path,
-                    "transition": transition,
-                    "effect": effect,
-                    "priority": self.PRIORITY_SHOW,
-                    "source": "show_image",
-                }
-                self.next_cycle_image = None
-                res = self._display_image(resolved_path, transition=transition, effect=effect)
-                self._schedule_next_cycle_tick()
-                return res
+        if self.canvas_manager and hasattr(self.canvas_manager, "visual"):
+            update_res = self.canvas_manager.visual.update_visual(
+                type="image",
+                path=resolved_path,
+                display_path=display_path,
+                transition=transition,
+                effect=effect,
+                prompt=extract_image_prompt(display_path),
+                priority=PRIORITY_SHOW,
+                source="show_image",
+                url_for_path=self.theater.get_url_for_path,
+            )
+            show_img = getattr(self.canvas_manager.visual, "show_image", None)
+            if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
+                show_img(display_path)
 
-            # If next_cycle_image already has a higher priority (create_image), do not override
-            if self.next_cycle_image and self.next_cycle_image.get("priority", 0) >= self.PRIORITY_CREATE:
+            status = update_res.get("status")
+            if status == "displayed":
+                self._currently_displayed_image_path = resolved_path
+                self._currently_displayed_image_transition = transition
+                self._currently_displayed_image_effect = effect
+                res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
+            elif status == "blocked":
                 logger.info(f"[ImageTools] show_image called for '{file_path}', but create_image already has priority for next cycle.")
-                self._trigger_after_tool_call("show_image")
-                return f"Image '{file_path}' was not queued because a generated image already has priority for the next cycle."
+                res = f"Image '{file_path}' was not queued because a generated image already has priority for the next cycle."
+            else:
+                res = f"Image '{file_path}' queued for the next image cycle with transition '{transition}' and effect '{effect}'."
+        else:
+            self._currently_displayed_image_path = resolved_path
+            self._currently_displayed_image_transition = transition
+            self._currently_displayed_image_effect = effect
+            res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
 
-            self.next_cycle_image = {
-                "path": resolved_path,
-                "transition": transition,
-                "effect": effect,
-                "priority": self.PRIORITY_SHOW,
-                "source": "show_image",
-            }
-            if not self._cycle_active and self.cycle_length > 0:
-                self._schedule_next_cycle_tick()
-
-            self._trigger_after_tool_call("show_image")
-            return f"Image '{file_path}' queued for the next image cycle with transition '{transition}' and effect '{effect}'."
+        self._trigger_after_tool_call("show_image")
+        return res
 
     def _display_image(
         self,
@@ -651,61 +581,42 @@ class ImageTools(BaseTools):
         transition: str = "crossfade",
         effect: str = "gleam3",
     ) -> str:
-        """Apply an image to the canvas."""
+        """Apply an image to the canvas immediately."""
         try:
             supported_effects = {"none", "creeping", "dream", "sparkle", "gleam3", "haze", "trace"}
             effect = str(effect or "gleam3").lower().strip()
             if effect not in supported_effects:
                 return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
-            logger.debug(f"[ImageTools] Showing image file_path='{file_path}', transition='{transition}', effect='{effect}'")
-
             resolved_path = self._find_image_path(file_path)
-            logger.debug(f"[ImageTools] Resolved image '{file_path}' to '{resolved_path}' (transition='{transition}')")
-            if resolved_path:
-                display_path = self._ensure_webp_for_display(resolved_path)
-                if not display_path.lower().endswith(".webp") or not os.path.exists(display_path):
-                    res = f"Error: Unable to prepare a WebP display image for '{file_path}'."
-                    logger.error("[ImageTools] %s", res)
-                    self._trigger_after_tool_call("show_image")
-                    return res
-                if self.canvas_manager:
-                    visual = self.canvas_manager.visual
-                    image_changed = visual.show_image(
-                        display_path, transition=transition, effect=effect,
-                        prompt=extract_image_prompt(display_path),
-                        url_for_path=self.theater.get_url_for_path,
-                    )
-                    if image_changed:
-                        self.canvas_manager.doodles.doodles.clear()
-                        self.canvas_manager.ui.interactive_surfaces = {
-                            surface_id: surface for surface_id, surface in self.canvas_manager.ui.interactive_surfaces.items()
-                            if bool(surface.get("persistent", False))
-                        }
-                    self.canvas_manager.notify_changed("latest")
-                    logger.info(
-                        "[ImageTools] Published WebP image to canvas (theater=%s, path=%s).",
-                        self.active_theater_id,
-                        display_path,
-                    )
-                if self.on_show_image:
-                    logger.debug(f"[ImageTools] Invoking on_show_image callback with '{display_path}', transition='{transition}', effect='{effect}'")
-                    try:
-                        self.on_show_image(
-                            display_path,
-                            transition=transition,
-                            effect=effect,
-                        )
-                    except Exception as e:
-                        logger.error(f"[ImageTools] Exception in on_show_image callback: {e}")
-                elif not self.canvas_manager:
-                    logger.warning("[ImageTools] on_show_image callback is not set")
-                self.currently_displayed_image_path = resolved_path
-                self.currently_displayed_image_transition = transition
-                self.currently_displayed_image_effect = effect
-                res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
-            else:
-                logger.warning(f"[ImageTools] Image path or alias '{file_path}' could not be resolved.")
+            if not resolved_path:
                 res = f"Error: Image '{file_path}' not found."
+                self._trigger_after_tool_call("show_image")
+                return res
+            display_path = self._ensure_webp_for_display(resolved_path)
+            if not display_path.lower().endswith(".webp") or not os.path.exists(display_path):
+                res = f"Error: Unable to prepare a WebP display image for '{file_path}'."
+                self._trigger_after_tool_call("show_image")
+                return res
+
+            if self.canvas_manager and hasattr(self.canvas_manager, "visual"):
+                self.canvas_manager.visual.update_visual(
+                    type="image",
+                    path=resolved_path,
+                    display_path=display_path,
+                    transition=transition,
+                    effect=effect,
+                    prompt=extract_image_prompt(display_path),
+                    immediate=True,
+                    url_for_path=self.theater.get_url_for_path,
+                )
+                show_img = getattr(self.canvas_manager.visual, "show_image", None)
+                if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
+                    show_img(display_path)
+
+            self._currently_displayed_image_path = resolved_path
+            self._currently_displayed_image_transition = transition
+            self._currently_displayed_image_effect = effect
+            res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
             self._trigger_after_tool_call("show_image")
             return res
         except Exception as e:

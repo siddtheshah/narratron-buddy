@@ -1,13 +1,20 @@
+from __future__ import annotations
+
 import os
 import json
+from pathlib import Path
 import time
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from components.theater_manager import Theater
 
 
 class ChatManager:
-    def __init__(self, output_dir: str):
-        self.output_dir = output_dir
+    def __init__(self, theater: Theater):
+        self.theater = theater
+        self.output_dir = str(theater.chats_dir())
         self.messages = []
 
         # Suggestion system: keyed by author username, one suggestion per user.

@@ -22,10 +22,8 @@ class UITestCase(unittest.TestCase):
         self.addCleanup(self._temporary_directory.cleanup)
 
     def make_canvas_state(self, theater_id: str) -> CanvasStateManager:
-        return CanvasStateManager(
-            theater_id=theater_id,
-            theater_manager=TheaterManager(base_theaters_dir=self.theaters_dir),
-        )
+        mgr = TheaterManager(base_theaters_dir=self.theaters_dir)
+        return CanvasStateManager(mgr.theater(theater_id))
 
     def isolate_canvas_state_service(self) -> CanvasStateService:
         """Replace the registry's shared state service with a temporary one."""

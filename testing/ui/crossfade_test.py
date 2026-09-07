@@ -26,19 +26,20 @@ class TestCrossfade(UITestCase):
         image = Path(tool.output_dir) / "test_image.jpg"
         Image.new("RGB", (10, 10), color="blue").save(image)
         tool.image_aliases["test_image"] = str(image)
-        tool.on_show_image = MagicMock()
+        tool.visual.on_show_image = MagicMock()
         tool._schedule_cooldown_timer = MagicMock()
 
         for transition, effect in (("crossfade", "gleam3"), ("fade", "sparkle"), ("none", "none")):
             tool.last_show_time = 0
-            tool.current_cycle_image = None
+            tool.visual.current_cycle_visual = None
+            tool.visual.shown_image_path = None
             tool.currently_displayed_image_path = None
             result = tool.show_image("test_image", transition=transition, effect=effect)
             self.assertIn("Successfully", result)
-            tool.on_show_image.assert_called_once_with(
+            tool.visual.on_show_image.assert_called_once_with(
                 str(image.with_suffix(".webp")), transition=transition, effect=effect
             )
-            tool.on_show_image.reset_mock()
+            tool.visual.on_show_image.reset_mock()
 
     def test_canvas_template_supports_crossfade(self):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"

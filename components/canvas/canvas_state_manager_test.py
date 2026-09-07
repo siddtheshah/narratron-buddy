@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
@@ -5,14 +7,27 @@ from components.canvas.canvas_state_manager import CanvasStateManager
 
 
 class FakeTheater:
-    def __init__(self, theater_id: str, root: Path) -> None:
+    def __init__(self, theater_id: str, root: Path, manager: FakeTheaterManager | None = None) -> None:
         self.theater_id, self.root = theater_id, root / theater_id
+        self.manager = manager
 
     def directory(self) -> Path:
         return self.root
 
     def output_dir(self) -> Path:
         return self.root / "output"
+
+    def chats_dir(self) -> Path:
+        return self.root / "chats"
+
+    def image_artifacts_dir(self) -> Path:
+        return self.root / "images"
+
+    def references_dir(self) -> Path:
+        return self.root / "references"
+
+    def config(self) -> dict:
+        return {}
 
     def get_url_for_path(self, file_path: str) -> str:
         return f"/theaters/{self.theater_id}/{Path(file_path).name}"
@@ -23,11 +38,12 @@ class FakeTheaterManager:
         self.root = root
 
     def theater(self, theater_id: str) -> FakeTheater:
-        return FakeTheater(theater_id, self.root)
+        return FakeTheater(theater_id, self.root, manager=self)
 
 
 def test_manager_serializes_components_and_bundles_their_canvas_payload(tmp_path: Path) -> None:
-    manager = CanvasStateManager("moon", FakeTheaterManager(tmp_path))
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("moon"))
     manager.visual.shown_image_path = "C:/art/moon.png"
     manager.visual.shown_image_prompt = "Moonlit harbor"
     manager.audio.update_music("night", ["night.mp3"])
@@ -54,7 +70,8 @@ def test_manager_hydrates_each_persisted_component(tmp_path: Path) -> None:
         "narration": "Previously.", "chat_messages": [{"author": "a", "text": "hi"}],
     }}), encoding="utf-8")
 
-    manager = CanvasStateManager("restored", FakeTheaterManager(tmp_path))
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("restored"))
 
     assert manager.visual.shown_image_path == "saved.png"
     assert manager.audio.current_playlist == "score"
@@ -71,7 +88,8 @@ def test_manager_hydrates_from_legacy_theater_state_json(tmp_path: Path) -> None
         "narration": "From legacy file.",
     }}), encoding="utf-8")
 
-    manager = CanvasStateManager("legacy", FakeTheaterManager(tmp_path))
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("legacy"))
     assert manager.visual.shown_image_path == "legacy.png"
     assert manager.story.narration == "From legacy file."
 
@@ -81,13 +99,15 @@ def test_manager_handles_corrupt_json_gracefully(tmp_path: Path) -> None:
     (directory / "theater.json").write_text("{invalid json corrupt content...", encoding="utf-8")
 
     # Should not raise exception
-    manager = CanvasStateManager("corrupted", FakeTheaterManager(tmp_path))
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("corrupted"))
     assert manager.visual.shown_image_path is None
     assert manager.story.narration == ""
 
 
 def test_manager_notify_changed_delegates_to_connections(tmp_path: Path) -> None:
-    manager = CanvasStateManager("notify_test", FakeTheaterManager(tmp_path))
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("notify_test"))
     initial_rev = manager.connections.state_revision
 
     manager.notify_changed("visual", "story")
@@ -95,7 +115,8 @@ def test_manager_notify_changed_delegates_to_connections(tmp_path: Path) -> None
 
 
 def test_manager_persist_writes_theater_json(tmp_path: Path) -> None:
-    manager = CanvasStateManager("persist_test", FakeTheaterManager(tmp_path))
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("persist_test"))
     manager.story.narration = "Persisted narration"
     manager.persist()
 

@@ -364,10 +364,6 @@ class AnimationTools(BaseTools):
             self._layered_animations[animation_id] = manifest
             self._register_layered_aliases(animation_id, base_path, layer_paths)
             self._notify_layered_animation_created(animation_id)
-            self.canvas_manager.visual.show_layered_animation(
-                manifest, url_for_path=self.image_tools.theater.get_url_for_path
-            )
-            self.canvas_manager.notify_changed("latest")
             logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
             self._notify_animation_ready(animation_id, "layered")
         except ImageProviderError as exc:
@@ -750,31 +746,59 @@ class AnimationTools(BaseTools):
         Args:
             animation_id: The ID returned by create_animation.
         """
+        url_resolver = self.image_tools.theater.get_url_for_path
         manifest = self._find_video_animation(animation_id)
         if manifest:
-            self.canvas_manager.visual.show_video_animation(
-                manifest, url_for_path=self.image_tools.theater.get_url_for_path
+            res = self.canvas_manager.visual.update_animation(
+                "video",
+                manifest,
+                id=animation_id,
+                priority=self.canvas_manager.visual.PRIORITY_SHOW,
+                source="play_animation",
+                url_for_path=url_resolver,
             )
-            self.canvas_manager.notify_changed("latest")
             self.image_tools._trigger_after_tool_call("play_animation")
+            status = res.get("status")
+            if status == "queued":
+                return f"Video animation '{animation_id}' queued for the next visual cycle."
+            elif status == "blocked":
+                return f"Animation '{animation_id}' was not queued because a higher-priority resource already has priority for the next cycle."
             return f"Playing video animation '{animation_id}'."
 
         manifest = self._find_layered_animation(animation_id)
         if manifest:
-            self.canvas_manager.visual.show_layered_animation(
-                manifest, url_for_path=self.image_tools.theater.get_url_for_path
+            res = self.canvas_manager.visual.update_animation(
+                "layered",
+                manifest,
+                id=animation_id,
+                priority=self.canvas_manager.visual.PRIORITY_SHOW,
+                source="play_animation",
+                url_for_path=url_resolver,
             )
-            self.canvas_manager.notify_changed("latest")
             self.image_tools._trigger_after_tool_call("play_animation")
+            status = res.get("status")
+            if status == "queued":
+                return f"Layered animation '{animation_id}' queued for the next visual cycle."
+            elif status == "blocked":
+                return f"Animation '{animation_id}' was not queued because a higher-priority resource already has priority for the next cycle."
             return f"Playing layered animation '{animation_id}'."
 
         frame_paths = self._find_triframe_animation(animation_id)
         if frame_paths:
-            self.canvas_manager.visual.show_triframe(
-                frame_paths, url_for_path=self.image_tools.theater.get_url_for_path
+            res = self.canvas_manager.visual.update_animation(
+                "triframe",
+                frame_paths,
+                id=animation_id,
+                priority=self.canvas_manager.visual.PRIORITY_SHOW,
+                source="play_animation",
+                url_for_path=url_resolver,
             )
-            self.canvas_manager.notify_changed("latest")
             self.image_tools._trigger_after_tool_call("play_animation")
+            status = res.get("status")
+            if status == "queued":
+                return f"Animation '{animation_id}' queued for the next visual cycle."
+            elif status == "blocked":
+                return f"Animation '{animation_id}' was not queued because a higher-priority resource already has priority for the next cycle."
             return f"Playing animation '{animation_id}'."
 
         return f"Error: Animation '{animation_id}' was not found."

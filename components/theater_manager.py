@@ -22,6 +22,12 @@ LORE_TEXT_EXTENSION = ".txt"
 MAX_LORE_DOCUMENT_BYTES = 256 * 1024
 
 FLAGS = flags.FLAGS
+if "testing_use_local" not in flags.FLAGS:
+    flags.DEFINE_boolean(
+        "testing_use_local",
+        False,
+        "Use local ephemeral storage for testing.",
+    )
 
 
 def get_ephemeral_root() -> Path:
@@ -62,7 +68,7 @@ class Theater:
     """A theater-bound filesystem and lifecycle interface."""
 
     manager: "TheaterManager"
-    theater_id: str
+    theater_id: str = ""
 
     def directory(self) -> Path:
         return self.manager._get_theater_dir(self.theater_id)
@@ -88,6 +94,18 @@ class Theater:
 
     def music_artifacts_dir(self) -> Path:
         return self.manager._get_theater_music_artifacts_dir(self.theater_id)
+
+    def chats_dir(self) -> Path:
+        """Directory containing exported chat session logs."""
+        return self.manager._get_theater_chats_dir(self.theater_id)
+
+    def config(self) -> Dict[str, Any]:
+        """Retrieve and merge configuration for this theater."""
+        return self.manager.get_theater_config(self.theater_id)
+
+    def get_config(self) -> Dict[str, Any]:
+        """Alias for config()."""
+        return self.config()
 
     def get_url_for_path(self, file_path: str) -> str:
         return self.manager.get_url_for_path(self.theater_id, file_path)
@@ -205,6 +223,15 @@ class TheaterManager:
 
     def _get_theater_music_artifacts_dir(self, theater_id: str) -> Path:
         return self._get_theater_output_dir(theater_id) / "music"
+
+    def _get_theater_chats_dir(self, theater_id: str) -> Path:
+        return self._get_theater_output_dir(theater_id) / "chats"
+
+    def get_theater_config(self, theater_id: str) -> Dict[str, Any]:
+        """Retrieve and merge configuration for a specific theater."""
+        from utils.config_loader import get_theater_config
+
+        return get_theater_config(theater_id, theater_manager=self)
 
     def get_url_for_path(self, theater_id: str, file_path: str) -> str:
         if not file_path:

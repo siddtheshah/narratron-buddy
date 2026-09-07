@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import time
+from typing import Any
 from unittest.mock import Mock, patch
 import pytest
 
@@ -8,10 +9,11 @@ from components.canvas.visual_state import VisualState
 from components.theater_manager import Theater
 
 
-def make_theater(theater_id: str = "th_test") -> Mock:
+def make_theater(theater_id: Any = "th_test", config: dict | None = None) -> Mock:
     theater = Mock(spec=Theater)
-    theater.theater_id = theater_id
+    theater.theater_id = str(theater_id)
     theater.get_url_for_path.side_effect = lambda p: p
+    theater.config.return_value = config if config is not None else {}
     return theater
 
 
@@ -117,7 +119,7 @@ def test_payload_contains_transition_and_effect() -> None:
         (("crossfade", "gleam3"), ("fade", "sparkle"), ("none", "none"))
     ):
         state.show_image(f"shown-{index}.jpg", transition=transition, effect=effect)
-        payload = state.payload(theater)
+        payload = state.payload()
         assert payload["transition"] == transition
         assert payload["effect"] == effect
 
@@ -182,7 +184,7 @@ def test_show_image_same_image_with_effect_applied_does_not_apply_transition() -
     assert state.shown_images_history[-1]["transition"] == "none"
     assert state.shown_images_history[-1]["effect"] == "haze"
 
-    payload = state.payload(theater)
+    payload = state.payload()
     assert payload["transition"] == "none"
     assert payload["effect"] == "haze"
 
@@ -685,7 +687,7 @@ def test_payload_empty_state() -> None:
     theater.theater_id = "th_1"
     theater.get_url_for_path.side_effect = lambda p: p
     state = VisualState(theater)
-    p = state.payload(theater)
+    p = state.payload()
 
     assert p["latest"] is None
     assert p["time"] == 0.0
@@ -705,7 +707,7 @@ def test_payload_resolves_local_path_via_theater() -> None:
     theater.get_url_for_path.return_value = "/theaters/1/images/hero.png"
 
     state.show_image("local/hero.png", prompt="Hero")
-    p = state.payload(theater)
+    p = state.payload()
 
     assert p["latest"] == "/theaters/1/images/hero.png"
     theater.get_url_for_path.assert_called_once_with("local/hero.png")
@@ -724,7 +726,7 @@ def test_payload_bypasses_theater_lookup_for_external_or_theater_urls(url_path: 
     state = VisualState(theater)
     state.show_image(url_path)
 
-    p = state.payload(theater)
+    p = state.payload()
     assert p["latest"] == url_path
     theater.get_url_for_path.assert_not_called()
 
@@ -738,7 +740,7 @@ def test_payload_includes_triframe_animation() -> None:
 
     frames = ["f1.png", "https://remote.com/f2.png", "/theaters/f3.png"]
     state.show_triframe(frames, prompt="Three frames")
-    p = state.payload(theater)
+    p = state.payload()
 
     anim = p["animation"]
     assert anim["type"] == "triframe"
@@ -759,7 +761,7 @@ def test_payload_includes_layered_animation() -> None:
         "scene_prompt": "Layered Forest",
         "layers": [{"path": "l1.png"}, {"path": "l2.png"}],
     })
-    p = state.payload(theater)
+    p = state.payload()
     assert p["animation"]["type"] == "layered"
     assert p["animation"]["id"] == "layered_scene"
 
@@ -774,7 +776,7 @@ def test_payload_includes_video_animation() -> None:
         "video_path": "clip.mp4",
         "video_duration_seconds": 10,
     })
-    p = state.payload(theater)
+    p = state.payload()
     assert p["animation"]["type"] == "video"
     assert p["animation"]["id"] == "video_scene"
     assert p["animation"]["video_duration_seconds"] == 10
@@ -786,10 +788,6 @@ def test_payload_includes_video_animation() -> None:
 
 def test_has_generated_image(tmp_path: Path) -> None:
     theater = Mock()
-
-    # Theater without image_artifacts_dir
-    theater_no_dir = Mock(spec=[])
-    assert VisualState._has_generated_image(theater_no_dir) is False
 
     # Directory does not exist
     theater.image_artifacts_dir.return_value = tmp_path / "non_existent"
@@ -811,10 +809,6 @@ def test_has_generated_image(tmp_path: Path) -> None:
 
 def test_find_starting_reference(tmp_path: Path) -> None:
     theater = Mock()
-
-    # Theater without references_dir
-    theater_no_ref = Mock(spec=[])
-    assert VisualState._find_starting_reference(theater_no_ref, "cover") is None
 
     # Directory does not exist
     theater.references_dir.return_value = tmp_path / "non_existent"
@@ -848,53 +842,49 @@ def test_find_starting_reference(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_initialize_starting_image_skips_when_image_already_shown() -> None:
-    state = VisualState(make_theater())
+    theater = make_theater()
+    state = VisualState(theater)
     state.shown_image_path = "already_set.png"
-    theater_mgr, theater = Mock(), Mock()
 
-    state.initialize_starting_image("th_1", theater_mgr, theater)
-    theater_mgr.assert_not_called()
+    state.initialize_starting_image()
     theater.references_dir.assert_not_called()
 
 
 def test_initialize_starting_image_skips_when_generated_image_exists(tmp_path: Path) -> None:
-    theater_mgr, theater = Mock(), Mock(spec=Theater)
+    theater = Mock(spec=Theater)
     theater.theater_id = "th_1"
-    state = VisualState(theater)
-
+    theater.config.return_value = {}
     img_dir = tmp_path / "artifacts"
     img_dir.mkdir()
     (img_dir / "gen.jpg").write_text("fake_jpg", encoding="utf-8")
     theater.image_artifacts_dir.return_value = img_dir
 
-    state.initialize_starting_image("th_1", theater_mgr, theater)
+    state = VisualState(theater)
+    state.initialize_starting_image()
     assert state.shown_image_path is None
 
 
-@patch("utils.config_loader.get_theater_config")
-def test_initialize_starting_image_skips_when_config_raises_or_missing(mock_config: Mock) -> None:
-    theater_mgr, theater = Mock(), Mock(spec=Theater)
+def test_initialize_starting_image_skips_when_config_empty_or_whitespace() -> None:
+    theater = Mock(spec=Theater)
     theater.theater_id = "th_1"
-    state = VisualState(theater)
+    theater.config.return_value = {}
     theater.image_artifacts_dir.return_value = Path("/nonexistent")
-
-    # Exception raised by get_theater_config
-    mock_config.side_effect = RuntimeError("config error")
-    state.initialize_starting_image("th_1", theater_mgr, theater)
-    assert state.shown_image_path is None
-
-    # Config has no starting_image or empty string
-    mock_config.side_effect = None
-    mock_config.return_value = {"starting_image": "   "}
-    state.initialize_starting_image("th_1", theater_mgr, theater)
-    assert state.shown_image_path is None
-
-
-@patch("utils.config_loader.get_theater_config")
-def test_initialize_starting_image_success(mock_config: Mock, tmp_path: Path) -> None:
-    theater_mgr, theater = Mock(), Mock(spec=Theater)
-    theater.theater_id = "th_1"
     state = VisualState(theater)
+
+    # Empty config dictionary
+    state.initialize_starting_image()
+    assert state.shown_image_path is None
+
+    # Config has whitespace starting_image
+    theater.config.return_value = {"starting_image": "   "}
+    state.initialize_starting_image()
+    assert state.shown_image_path is None
+
+
+def test_initialize_starting_image_success(tmp_path: Path) -> None:
+    theater = Mock(spec=Theater)
+    theater.theater_id = "th_1"
+    theater.config.return_value = {"starting_image": "prologue"}
     theater.image_artifacts_dir.return_value = tmp_path / "artifacts"
 
     ref_dir = tmp_path / "references"
@@ -904,9 +894,8 @@ def test_initialize_starting_image_success(mock_config: Mock, tmp_path: Path) ->
     theater.references_dir.return_value = ref_dir
     theater.get_url_for_path.return_value = "/theaters/th_1/references/prologue.png"
 
-    mock_config.return_value = {"starting_image": "prologue"}
-
-    state.initialize_starting_image("th_1", theater_mgr, theater)
+    state = VisualState(theater)
+    state.initialize_starting_image()
     assert state.shown_image_path == str(start_img)
     assert state.shown_images_history[-1]["url"] == "/theaters/th_1/references/prologue.png"
 
@@ -1059,3 +1048,213 @@ def test_resolve_reference_fallback(tmp_path: Path) -> None:
     chosen, prompt = state._resolve_reference_fallback()
     assert chosen == cover_img
     assert "village_cover" in prompt
+
+
+# ---------------------------------------------------------------------------
+# 11. Visual cycle and pacing
+# ---------------------------------------------------------------------------
+
+def test_update_image_cold_start_displays_immediately(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    state = VisualState(theater)
+
+    img1 = str(tmp_path / "scene1.png")
+    (tmp_path / "scene1.png").write_text("fake_png", encoding="utf-8")
+
+    res = state.update_image(img1, prompt="A snowy peak")
+    assert res["status"] == "displayed"
+    assert state.current_cycle_visual is not None
+    assert state.current_cycle_visual["path"] == img1
+    assert state.next_cycle_image is None
+    assert state.shown_image_path is not None
+    assert state.shown_image_prompt == "A snowy peak"
+
+
+def test_update_image_subsequent_call_queues_for_next_cycle(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    state = VisualState(theater)
+
+    img1 = str(tmp_path / "scene1.png")
+    img2 = str(tmp_path / "scene2.png")
+    (tmp_path / "scene1.png").write_text("fake_png", encoding="utf-8")
+    (tmp_path / "scene2.png").write_text("fake_png", encoding="utf-8")
+
+    res1 = state.update_image(img1)
+    assert res1["status"] == "displayed"
+
+    res2 = state.update_image(img2)
+    assert res2["status"] == "queued"
+    assert state.current_cycle_visual["path"] == img1
+    assert state.next_cycle_image["path"] == img2
+
+
+def test_advance_cycle_promotes_next_and_resets(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    state = VisualState(theater)
+
+    img1 = str(tmp_path / "scene1.png")
+    img2 = str(tmp_path / "scene2.png")
+    (tmp_path / "scene1.png").write_text("fake_png", encoding="utf-8")
+    (tmp_path / "scene2.png").write_text("fake_png", encoding="utf-8")
+
+    state.update_image(img1)
+    state.update_image(img2)
+
+    promoted = state.advance_cycle()
+    assert promoted is not None
+    assert promoted["path"] == img2
+    assert state.current_cycle_visual["path"] == img2
+    assert state.next_cycle_image is None
+
+    # Advance again with empty next retains current
+    promoted2 = state.advance_cycle()
+    assert promoted2["path"] == img2
+    assert state.current_cycle_visual["path"] == img2
+
+
+def test_priority_create_overrides_priority_show(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    state = VisualState(theater)
+
+    img1 = str(tmp_path / "scene1.png")
+    img2 = str(tmp_path / "scene2.png")
+    img3 = str(tmp_path / "scene3.png")
+    img4 = str(tmp_path / "scene4.png")
+    for path_str in (img1, img2, img3, img4):
+        Path(path_str).write_text("fake_png", encoding="utf-8")
+
+    state.update_image(img1)
+    res_show = state.update_image(img2, priority=VisualState.PRIORITY_SHOW, source="show_image")
+    assert res_show["status"] == "queued"
+    assert state.next_cycle_image["path"] == img2
+
+    # PRIORITY_CREATE overrides PRIORITY_SHOW
+    res_create = state.update_image(img3, priority=VisualState.PRIORITY_CREATE, source="create_image")
+    assert res_create["status"] == "queued"
+    assert state.next_cycle_image["path"] == img3
+
+    # Subsequent PRIORITY_SHOW is blocked
+    res_blocked = state.update_image(img4, priority=VisualState.PRIORITY_SHOW, source="show_image")
+    assert res_blocked["status"] == "blocked"
+    assert state.next_cycle_image["path"] == img3
+
+
+def test_update_animation_and_active_animation_overrides(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    state = VisualState(theater)
+
+    manifest = {
+        "id": "vid_test",
+        "video_path": "clip.mp4",
+        "scene_prompt": "Fast motion river",
+    }
+    res_anim = state.update_animation("video", manifest, id="vid_test")
+    assert res_anim["status"] == "displayed"
+    assert state.has_active_animation() is True
+    assert state.shown_video_animation is not None
+    assert state.current_cycle_visual["type"] == "video"
+    assert state.current_cycle_visual["id"] == "vid_test"
+
+    # Animations and images both occupy the visual cycle and CANNOT evict each other.
+    # While animation is currently displayed, an incoming image is queued for next cycle.
+    img1 = str(tmp_path / "still.png")
+    Path(img1).write_text("fake_png", encoding="utf-8")
+    res_img = state.update_image(img1)
+    assert res_img["status"] == "queued"
+    assert state.has_active_animation() is True
+    assert state.shown_video_animation is not None
+    assert state.current_cycle_visual["type"] == "video"
+    assert state.next_cycle_image["path"] == img1
+
+    # Cycle advancement promotes queued image and clears animation
+    assert state.advance_cycle() is not None
+    assert state.has_active_animation() is False
+    assert state.shown_video_animation is None
+    assert state.shown_image_path == img1
+    assert state.current_cycle_visual["type"] == "image"
+    assert state.current_cycle_visual["path"] == img1
+    assert state.next_cycle_image is None
+
+    # Reverse: while image is displayed, incoming animation is queued for next cycle
+    manifest2 = {
+        "id": "vid_test_2",
+        "video_path": "clip2.mp4",
+        "scene_prompt": "Mountain waterfall",
+    }
+    res_anim2 = state.update_animation("video", manifest2, id="vid_test_2")
+    assert res_anim2["status"] == "queued"
+    assert state.has_active_animation() is False
+    assert state.shown_image_path == img1
+    assert state.current_cycle_visual["path"] == img1
+    assert state.next_cycle_image["type"] == "video"
+    assert state.next_cycle_image["id"] == "vid_test_2"
+
+    # Cycle advancement promotes queued animation and clears image
+    assert state.advance_cycle() is not None
+    assert state.has_active_animation() is True
+    assert state.shown_video_animation is not None
+    assert state.current_cycle_visual["type"] == "video"
+    assert state.current_cycle_visual["id"] == "vid_test_2"
+    assert state.next_cycle_image is None
+
+
+def test_update_visual_dispatch(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    state = VisualState(theater)
+
+    img = str(tmp_path / "dispatch.png")
+    Path(img).write_text("fake_png", encoding="utf-8")
+
+    res = state.update_visual(type="image", path=img, prompt="Dispatched image")
+    assert res["status"] == "displayed"
+    assert state.shown_image_prompt == "Dispatched image"
+    assert state.current_cycle_visual["path"] == img
+
+    res_anim = state.update_visual(
+        type="layered",
+        manifest={
+            "id": "layered_1",
+            "base_image": "base.png",
+            "layers": [{"path": "layer1.png"}, {"path": "layer2.png"}],
+        },
+    )
+    assert res_anim["status"] == "queued"
+    assert state.shown_layered_animation is None
+    assert state.shown_image_path == img
+    assert state.next_cycle_image["type"] == "layered"
+
+    assert state.advance_cycle() is not None
+    assert state.has_active_animation() is True
+    assert state.shown_layered_animation is not None
+    assert state.current_cycle_visual["type"] == "layered"
+    assert state.next_cycle_image is None
+
+
+def test_callbacks_invoked_on_apply_visual(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"cycle_length": 0})
+    on_visual_changed = Mock()
+    notify_changed = Mock()
+    state = VisualState(
+        theater,
+        notify_changed_fn=notify_changed,
+        on_visual_changed_fn=on_visual_changed,
+    )
+
+    img = str(tmp_path / "cb.png")
+    Path(img).write_text("fake_png", encoding="utf-8")
+    state.update_image(img)
+
+    on_visual_changed.assert_called_once()
+    notify_changed.assert_not_called()  # on_visual_changed_fn takes precedence
+
+
+def test_visual_state_uses_theater_config_directly() -> None:
+    theater = Mock(spec=Theater)
+    theater.theater_id = "th_custom"
+    theater.config.return_value = {"image_generation": {"cooldown_duration": 42.0}}
+    state = VisualState(theater)
+    assert state.theater_config == {"image_generation": {"cooldown_duration": 42.0}}
+    assert state.cooldown_duration == 42.0
+    theater.config.assert_called_once()
+
+
