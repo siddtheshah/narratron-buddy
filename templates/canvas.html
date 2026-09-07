@@ -2207,7 +2207,7 @@
                 </button>
                 <button id="agent-connect-btn"
                     style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                    🎙️ Connect Mic
+                    🎙️ Enable Mic
                 </button>
             </div>
 
@@ -3615,10 +3615,7 @@
 
         if (disconnectedIndicator) {
             disconnectedIndicator.addEventListener('click', () => {
-                const btn = document.getElementById('agent-connect-btn');
-                if (btn && !btn.disabled) {
-                    btn.click();
-                }
+                checkAgentStatus().then(() => ensureAgentConnectionWhenActive());
             });
         }
 
@@ -4754,6 +4751,7 @@
         let micStream = null;
         let isRecording = false;
         let isAgentStarted = false;
+        let agentReconnectTimer = null;
 
         // Initialize UI based on role
         const backBtn = document.getElementById('back-btn');
@@ -5346,6 +5344,28 @@
                 agentStartStopBtn.textContent = '🚀 Summon';
                 agentStartStopBtn.style.background = '#10b981'; // Emerald
             }
+            if (started) ensureAgentConnectionWhenActive();
+        }
+
+        function updateMicToggleUI() {
+            if (!agentConnectBtn) return;
+            agentConnectBtn.textContent = isRecording ? '🎙️ Mute Mic' : '🎙️ Enable Mic';
+            agentConnectBtn.style.background = isRecording ? '#ef4444' : '#3b82f6';
+            agentConnectBtn.setAttribute('aria-pressed', String(isRecording));
+        }
+
+        function ensureAgentConnectionWhenActive() {
+            if (!isCurrentOrator() || !isAgentStarted || !isActiveCanvasWindow()) return;
+            if (agentWs && (agentWs.readyState === WebSocket.OPEN || agentWs.readyState === WebSocket.CONNECTING)) return;
+            connectAgent().catch((err) => {
+                console.warn('Automatic agent connection failed:', err);
+                if (!agentReconnectTimer && isAgentStarted && isActiveCanvasWindow()) {
+                    agentReconnectTimer = window.setTimeout(() => {
+                        agentReconnectTimer = null;
+                        ensureAgentConnectionWhenActive();
+                    }, 3000);
+                }
+            });
         }
 
         window.startAgentTheater = startAgentTheater;
@@ -5363,6 +5383,7 @@
                     } else {
                         setAgentStartedUI(!!data.agent_running);
                     }
+                    ensureAgentConnectionWhenActive();
                     return data;
                 }
             } catch (e) {
@@ -5394,6 +5415,9 @@
         }
 
         async function stopAgentTheater() {
+            // Prevent the socket close handler from reconnecting while a stop is in flight.
+            isAgentStarted = false;
+            window.isAgentStarted = false;
             cleanupAgentConnection();
             if (agentStartStopBtn) {
                 agentStartStopBtn.textContent = 'Stopping...';
@@ -5421,6 +5445,10 @@
         // Check agent status on page load for Orators
         if (isCurrentOrator()) {
             checkAgentStatus();
+            document.addEventListener('visibilitychange', () => {
+                if (isActiveCanvasWindow()) checkAgentStatus();
+            });
+            window.addEventListener('focus', () => checkAgentStatus());
         }
 
         // Connect Agent WebSocket
@@ -5447,24 +5475,21 @@
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${theaterId}`;
 
-            agentConnectBtn.textContent = 'Connecting...';
-            agentConnectBtn.style.background = '#eab308'; // Amber
-
             agentWs = new WebSocket(agentWsUrl);
             window.agentWs = agentWs; // Expose globally for testing/automation
 
             return new Promise((resolve, reject) => {
                 agentWs.onopen = () => {
                     console.log("Agent WebSocket connected.");
-                    agentConnectBtn.textContent = '🎙️ Disconnect Mic';
-                    agentConnectBtn.style.background = '#ef4444'; // Red
                     statusIndicator.classList.remove('disconnected'); // Set back to green
+                    updateMicToggleUI();
                     resolve(agentWs);
                 };
 
                 agentWs.onclose = () => {
                     console.log("Agent WebSocket disconnected.");
                     cleanupAgentConnection();
+                    ensureAgentConnectionWhenActive();
                 };
 
                 agentWs.onerror = (err) => {
@@ -5516,6 +5541,10 @@
                 clearInterval(window.agentPingInterval);
                 window.agentPingInterval = null;
             }
+            if (agentReconnectTimer) {
+                clearTimeout(agentReconnectTimer);
+                agentReconnectTimer = null;
+            }
             if (agentWs) {
                 try { agentWs.close(); } catch (e) { }
                 agentWs = null;
@@ -5525,8 +5554,7 @@
             if (typeof updateAgentActivity === 'function') {
                 updateAgentActivity({ live_ready: false });
             }
-            agentConnectBtn.textContent = '🎙️ Connect Mic';
-            agentConnectBtn.style.background = '#3b82f6'; // Blue
+            updateMicToggleUI();
             statusIndicator.classList.add('disconnected'); // Set back to red
         }
 
@@ -5548,6 +5576,7 @@
                 audioRecorderContext = context;
                 micStream = stream;
                 isRecording = true;
+                updateMicToggleUI();
             } catch (err) {
                 console.error("Failed to start mic recording:", err);
                 alert("Could not access microphone: " + err.message);
@@ -5568,24 +5597,23 @@
             audioRecorderNode = null;
             isRecording = false;
             setPcmBroadcasting(false);
+            updateMicToggleUI();
         }
 
-        // Connect button handler (connects socket & starts mic stream automatically)
+        // The agent socket follows agent lifecycle and tab focus. This control only
+        // decides whether microphone audio is forwarded through that socket.
         agentConnectBtn.addEventListener('click', async () => {
-            if (agentWs && (agentWs.readyState === WebSocket.OPEN || agentWs.readyState === WebSocket.CONNECTING)) {
-                cleanupAgentConnection();
+            if (isRecording) {
+                stopMicStream();
             } else {
                 try {
-                    agentConnectBtn.textContent = 'Connecting...';
-                    agentConnectBtn.style.background = '#eab308';
-                    if (!isAgentStarted) {
-                        await startAgentTheater();
-                    }
+                    if (!isAgentStarted) throw new Error('Start the agent before enabling microphone audio.');
                     await connectAgent();
                     await startMicStream();
                 } catch (err) {
-                    console.error("Failed to connect stream:", err);
-                    cleanupAgentConnection();
+                    console.error("Failed to enable microphone audio:", err);
+                    alert(err.message || 'Could not enable microphone audio.');
+                    updateMicToggleUI();
                 }
             }
         });
@@ -5802,7 +5830,7 @@
         window.enableAudioInput = () => {
             isRecording = true;
             if (agentConnectBtn) {
-                agentConnectBtn.textContent = '🎙️ Disconnect Mic';
+                agentConnectBtn.textContent = '🎙️ Mute Mic';
                 agentConnectBtn.style.background = '#ef4444';
             }
         };
@@ -6783,14 +6811,14 @@
                     <div class="step-num">1</div>
                     <div class="step-content">
                         <div class="step-title">
-                            Connect & Stream Microphone
-                            <span class="step-badge">🔌 Connect Agent</span>
+                            Enable Microphone Input
+                            <span class="step-badge">🎙️ Mic Control</span>
                         </div>
                         <div class="step-desc">
-                            Click <strong>Connect Agent</strong> (or press hotkey <code
+                            When the agent is running and this tab is active, the canvas connects automatically. Click
+                            <strong>Enable Mic</strong> (or press hotkey <code
                                 style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;">Ctrl+Shift+[</code>)
-                            to connect your canvas theater to the Narratron AI agent and start real-time microphone
-                            streaming.
+                            to begin real-time microphone streaming, then click <strong>Mute Mic</strong> to stop it.
                         </div>
                     </div>
                 </div>
@@ -7017,8 +7045,8 @@
             <!-- Unmute Reminder Badge -->
             <div
                 style="font-size: 0.85rem; color: #fbbf24; background: rgba(251, 191, 36, 0.1); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3); margin-bottom: 1rem; text-align: center;">
-                💡 <strong>Tip:</strong> Click <strong>🔌 Connect</strong> in top bar to connect to the agent when
-                ready!
+                💡 <strong>Tip:</strong> The canvas connects automatically while the agent is running and this tab is
+                active. Use <strong>🎙️ Enable Mic</strong> in the top bar when you want to speak.
             </div>
 
 
