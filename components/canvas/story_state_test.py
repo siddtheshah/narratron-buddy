@@ -462,3 +462,74 @@ def test_dispatch_cancel_aborts_multi_line_synthesis() -> None:
     state._executor.shutdown(wait=True)
 
     assert len(published) == 0
+
+
+def test_set_scene_parallelizes_text_beautification_with_speech_generation() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    speech_started = threading.Event()
+    beautify_started = threading.Event()
+
+    def concurrent_synthesize(req):
+        speech_started.set()
+        assert beautify_started.wait(timeout=2.0), "Beautification did not start"
+        return SpeechSynthesisResult(
+            audio_bytes=b"synth_audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = concurrent_synthesize
+
+    beautifier = Mock()
+
+    def concurrent_beautify(narration, dialogue):
+        beautify_started.set()
+        assert speech_started.wait(timeout=2.0), "Speech synthesis was not dispatched concurrently with beautification"
+        return {
+            "narration_spans": [{"text": narration, "effect": "glow"}],
+            "dialogue": [{**line, "spans": [{"text": line.get("text", ""), "effect": "vibrate"}]} for line in dialogue],
+        }
+
+    beautifier.beautify_scene.side_effect = concurrent_beautify
+
+    published = []
+    persist = Mock()
+    notify = Mock()
+    state = StoryState(persist=persist, notify_changed=notify, publish_audio_fn=published.append)
+    state.text_beautifier = beautifier
+    state.enable_scene_speech(mock_provider)
+
+    state.set_scene("The hero steps forward.", [{"speaker": "Mara", "text": "Look ahead!", "kind": "speech"}])
+    state._executor.shutdown(wait=True)
+
+    assert state.narration == "The hero steps forward."
+    assert state.narration_spans == [{"text": "The hero steps forward.", "effect": "glow"}]
+    assert state.scene_dialogue == [
+        {"speaker": "Mara", "text": "Look ahead!", "kind": "speech", "spans": [{"text": "Look ahead!", "effect": "vibrate"}]}
+    ]
+    assert persist.call_count >= 1
+    notify.assert_called_once_with("latest")
+    assert len(published) == 1
+    assert published[0]["speaker"] == "Mara"
+    assert published[0]["voice"] == "voice_alpha"
+
+
+def test_set_scene_does_not_dispatch_speech_when_speech_disabled() -> None:
+    beautifier = Mock()
+    beautifier.beautify_scene.return_value = {
+        "narration_spans": [],
+        "dialogue": [{"speaker": "Mara", "text": "Hello", "spans": []}],
+    }
+    published = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.text_beautifier = beautifier
+
+    state.set_scene("The story starts.", [{"speaker": "Mara", "text": "Hello"}])
+
+    assert state.narration == "The story starts."
+    assert len(published) == 0
+    assert state._speech_generation == 0
+

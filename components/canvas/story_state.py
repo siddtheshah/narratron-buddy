@@ -135,6 +135,10 @@ class StoryState:
         logger.info("[StoryState] New scene: %s", scene_narration)
         logger.info("[StoryState] New dialogue: %s", scene_dialogue)
 
+        speech_enabled = bool(self._scene_speech_enabled and self._speech_provider)
+        if speech_enabled:
+            self.dispatch(scene_dialogue)
+
         if beautifier and (scene_narration or scene_dialogue):
             logger.info(
                 "[StoryState] Requesting scene text beautification (narration=%d chars, dialogue=%d line(s))",
@@ -171,8 +175,6 @@ class StoryState:
             self._persist()
         if self._notify_changed:
             self._notify_changed("latest")
-        if self._scene_speech_enabled and self._speech_provider:
-            self.dispatch(self.scene_dialogue)
     def get_sticky_notes(self) -> list[dict[str, str]]:
         """Return active sticky notes."""
         return self.sticky_notes()
