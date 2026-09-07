@@ -1888,9 +1888,25 @@ class LocalDatabaseManager(_DatabaseManagerBase):
                 self.close()
             if self._conn is None:
                 from storage.postgresql import Postgresql
+                # ``Postgresql`` accepts a directory plus database name.  A
+                # LocalDatabaseManager caller, however, supplies a database
+                # *file* (for example ``deployer.db``).  Passing that file as
+                # no directory previously created a temporary database, which
+                # was deleted at shutdown instead of being reused next run.
+                database_dir = None
+                database_name = "test"
+                if db_path and db_path != ":memory:":
+                    requested_path = Path(db_path).resolve()
+                    if requested_path.is_dir():
+                        database_dir = str(requested_path)
+                        database_name = requested_path.name
+                    else:
+                        requested_path.parent.mkdir(parents=True, exist_ok=True)
+                        database_dir = str(requested_path.parent)
+                        database_name = requested_path.stem
                 self._pg = Postgresql(
-                    base_dir=db_path if db_path and os.path.isdir(db_path) else None,
-                    database=Path(db_path).stem if db_path and db_path != ":memory:" else "test",
+                    base_dir=database_dir,
+                    database=database_name,
                 )
                 raw_conn = self._pg.get_connection()
                 self._conn = _ReusableConnection(

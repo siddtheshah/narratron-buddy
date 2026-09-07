@@ -48,11 +48,15 @@ uv run main.py
 - Open http://localhost:8000 to open the app.
 
 For local testing, run `uv run main.py --testing_use_local`. This uses local
-resources and automatically signs unauthenticated browsers in as the seeded
-`localtest` user (password `narratron`) on the initial page visit for each unique
-server run. A unique server run UUID is tracked in frontend browser storage;
-subsequent visits and other browser tabs retain their logged-out or chosen
-account session so you can test multi-party behavior with different accounts.
+resources, preserves the existing `deployer.db` and `theaters/` directory, and
+automatically signs unauthenticated browsers in as the seeded `localtest` user
+(password `narratron`) on the initial page visit for each unique server run. A
+unique server run UUID is tracked in frontend browser storage; subsequent visits
+and other browser tabs retain their logged-out or chosen account session so you
+can test multi-party behavior with different accounts.
+
+To discard local database state and start with a new database, add
+`--with_empty_db`. This does not delete theater files.
 
 To load test a disposable local canvas, run:
 

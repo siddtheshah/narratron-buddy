@@ -265,6 +265,14 @@ class TestDatabaseManagerConnectionAndMigration(BaseTestCase):
         conn3 = self.db._get_connection()
         self.assertIsNot(conn1, conn3)
 
+    def test_file_database_is_reused_by_a_new_manager(self):
+        self.db.register_user("persistent-user", "persistent@example.test", "password")
+        self.db.close()
+
+        reopened = LocalDatabaseManager(str(self.db_file))
+        self.addCleanup(reopened.close)
+        self.assertIsNotNone(reopened.authenticate_user("persistent-user", "password"))
+
     def test_localtest_user_setup(self):
         user = self.db.authenticate_user("localtest", "narratron")
         self.assertIsNotNone(user)

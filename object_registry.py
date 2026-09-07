@@ -47,6 +47,11 @@ if "testing_use_local" not in flags.FLAGS:
         "Use local resources (database, adventures, theater repository) for testing and development.",
     )
 flags.DEFINE_boolean(
+    "with_empty_db",
+    False,
+    "Replace the local development database before starting (requires --testing_use_local).",
+)
+flags.DEFINE_boolean(
     "allow_mock_payments",
     False,
     "Allow mock/simulated credit purchases when the live gateway is unconfigured.",
@@ -92,8 +97,18 @@ app = FastAPI(lifespan=lifespan, docs_url="/fastapi-docs")
 theater_manager = TheaterManager()
 theater_repository = TheaterRepository()
 pricing_controller = PricingController.from_env()
+local_database_path = PROJECT_ROOT / "deployer.db"
+if FLAGS.testing_use_local and FLAGS.with_empty_db:
+    # This is deliberately opt-in: local mode is also used to resume a canvas
+    # after restarting the server, so its database must survive by default.
+    for database_file in (
+        local_database_path,
+        local_database_path.with_name(f"{local_database_path.name}-wal"),
+        local_database_path.with_name(f"{local_database_path.name}-shm"),
+    ):
+        database_file.unlink(missing_ok=True)
 db = (
-    LocalDatabaseManager("deployer.db", pricing_controller=pricing_controller)
+    LocalDatabaseManager(local_database_path, pricing_controller=pricing_controller)
     if FLAGS.testing_use_local or "pytest" in sys.modules
     else CloudPostgresDatabaseManager(
         pricing_controller=pricing_controller,
