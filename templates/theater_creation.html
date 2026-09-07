@@ -1638,9 +1638,9 @@
                     <div style="font-size: 0.8rem; color: var(--text-secondary);">Lyria background tracks (~<span id="rateMusicUsd">$0.10</span> / track)</div>
                 </div>
                 <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">🎬 Layered animation</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateLayeredAnimation">5.0</span> Cr / animation</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">FAL Qwen depth decomposition (~<span id="rateLayeredAnimationUsd">$0.25</span> / animation)</div>
+                    <div style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">🎬 Animation</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateLayeredAnimation">6.5</span> Cr / successful animation</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">All animation techniques (~<span id="rateLayeredAnimationUsd">$0.33</span> / animation)</div>
                 </div>
                 <div style="padding: 0.5rem 1rem; background: rgba(5, 150, 105, 0.12); border-bottom: 1px solid rgba(52, 211, 153, 0.25); color: #6ee7b7; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
                     💾 Storage
@@ -2828,7 +2828,7 @@
                 if (document.getElementById('rateMusicUsd')) {
                     document.getElementById('rateMusicUsd').innerText = `$${((data.music_credit_rate || 2.0) * data.usd_per_credit).toFixed(2)}`;
                 }
-                const layeredAnimationRate = data.layered_animation_credit_rate ?? 5.0;
+                const layeredAnimationRate = data.layered_animation_credit_rate ?? 6.5;
                 if (document.getElementById('rateLayeredAnimation')) {
                     document.getElementById('rateLayeredAnimation').innerText = layeredAnimationRate.toFixed(1);
                 }

@@ -576,6 +576,8 @@ class TestAnimationTools(BaseTestCase):
 
         ready_notifications = []
         animation_tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
+        completed_animations = []
+        animation_tools.on_animation_created = completed_animations.append
 
         result = animation_tools.create_animation("A hero running across a bridge.", "hero_run")
         animation_tools.join_generation()
@@ -583,6 +585,7 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
         self.assertEqual(len(ready_notifications), 1)
         self.assertEqual(ready_notifications[0], (animation_id, "triframe"))
+        self.assertEqual(completed_animations, [animation_id])
 
     @patch("tools.image_tool.get_image_provider")
     def test_on_animation_ready_notifies_callback_for_layered(self, mock_get_provider):
@@ -612,6 +615,8 @@ class TestAnimationTools(BaseTestCase):
 
         ready_notifications = []
         tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
+        completed_animations = []
+        tools.on_animation_created = completed_animations.append
 
         result = tools.create_animation("A hero on a scenic cliff.", "cliff")
         tools.join_generation()
@@ -619,6 +624,7 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
         self.assertEqual(len(ready_notifications), 1)
         self.assertEqual(ready_notifications[0], (animation_id, "layered"))
+        self.assertEqual(completed_animations, [animation_id])
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_uses_video_technique(self, mock_get_provider):
@@ -747,6 +753,8 @@ class TestAnimationTools(BaseTestCase):
 
         ready_notifications = []
         tools.on_animation_ready = lambda anim_id, technique: ready_notifications.append((anim_id, technique))
+        completed_animations = []
+        tools.on_animation_created = completed_animations.append
 
         result = tools.create_animation("Fast sports car racing.", "race_car")
         tools.join_generation()
@@ -754,6 +762,28 @@ class TestAnimationTools(BaseTestCase):
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
         self.assertEqual(len(ready_notifications), 1)
         self.assertEqual(ready_notifications[0], (animation_id, "video"))
+        self.assertEqual(completed_animations, [animation_id])
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_failed_animation_does_not_notify_completion_callback(self, mock_get_provider):
+        image_tools = self.make_image_tools(self.config, "failed_video_callback", self.manager)
+        video_provider = MagicMock()
+        video_provider.generate.side_effect = RuntimeError("provider unavailable")
+        tools = self.make_animation_tools(
+            image_tools,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+        completed_animations = MagicMock()
+        tools.on_animation_created = completed_animations
+
+        tools.create_animation("A storm over the sea.", "storm")
+        tools.join_generation()
+
+        completed_animations.assert_not_called()
 
     @patch("tools.image_tool.get_image_provider")
     def test_browse_animations_returns_video_animations(self, mock_get_provider):

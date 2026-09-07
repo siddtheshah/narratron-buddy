@@ -1032,6 +1032,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
             # Verify on_animation_ready callback was registered
             self.assertIsNotNone(mock_animation_tools.on_animation_ready)
+            self.assertIsNotNone(mock_animation_tools.on_animation_created)
 
             # Trigger callback
             mock_animation_tools.on_animation_ready("anim_123", "layered")

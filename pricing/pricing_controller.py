@@ -7,7 +7,10 @@ DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL = 4000
 DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE = 5.0
 DEFAULT_CHARACTER_VOICING_TURN_CREDIT_RATE = 0.25
 DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE = 0.25
-DEFAULT_LAYERED_ANIMATION_CREDIT_RATE = 5.0
+# AnimationTools emits its completion event only after a playable animation
+# manifest has been written.  This rate therefore applies once per successful
+# animation, regardless of the selected rendering technique.
+DEFAULT_LAYERED_ANIMATION_CREDIT_RATE = 6.5
 
 
 class PricingController:

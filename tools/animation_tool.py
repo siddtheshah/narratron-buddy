@@ -130,6 +130,7 @@ class AnimationTools(BaseTools):
             except Exception:
                 self.video_provider = None
         self.on_animation_ready: Optional[Any] = None
+        self.on_animation_created: Optional[Any] = None
         self.on_layered_animation_created: Optional[Any] = None
         self.on_image_created: Optional[Any] = None
         self.is_generating: bool = False
@@ -308,7 +309,6 @@ class AnimationTools(BaseTools):
                     mime_type=result.mime_type or "image/jpeg",
                 )
                 self._register_frame_aliases(animation_id, frame_number, filepath)
-                self._notify_image_created(filepath)
                 logger.debug(
                     "[AnimationTools] Saved frame %s using provider '%s' model '%s' to %s",
                     frame_number,
@@ -331,6 +331,7 @@ class AnimationTools(BaseTools):
             manifest_path = Path(animation_dir) / "triframe.json"
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             logger.debug("[AnimationTools] Animation '%s' is ready to play.", animation_id)
+            self._notify_animation_created(animation_id)
             self._notify_animation_ready(animation_id, "triframe")
         except (ImageProviderError, TextResponseProviderError) as exc:
             logger.error("[AnimationTools] Image or text provider failed: %s", exc)
@@ -381,6 +382,10 @@ class AnimationTools(BaseTools):
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             self._layered_animations[animation_id] = manifest
             self._register_layered_aliases(animation_id, base_path, layer_paths)
+            self._notify_animation_created(animation_id)
+            # Retain the technique-specific callback for integrations that
+            # use it for non-billing behavior. Billing uses the generic
+            # completion callback above so all techniques cost the same.
             self._notify_layered_animation_created(animation_id)
             logger.debug("[AnimationTools] Layered animation ready id=%s base=%s layers=%s manifest=%s", animation_id, base_path, len(layer_paths), manifest_path)
             self._notify_animation_ready(animation_id, "layered")
@@ -466,6 +471,7 @@ class AnimationTools(BaseTools):
                 self.visual.register_image(str(video_path), f"{animation_id}_video", animation_id)
 
             logger.debug("[AnimationTools] Video animation '%s' is ready to play at %s.", animation_id, video_path)
+            self._notify_animation_created(animation_id)
             self._notify_animation_ready(animation_id, "video")
         except VideoProviderError as exc:
             logger.error("[AnimationTools] Video provider failed for %s: %s", animation_id, exc)
@@ -1025,6 +1031,20 @@ class AnimationTools(BaseTools):
                     logger.exception("[AnimationTools] Layered-animation-created callback failed")
             except Exception:
                 logger.exception("[AnimationTools] Layered-animation-created callback failed")
+
+    def _notify_animation_created(self, animation_id: str) -> None:
+        """Notify billing only after a complete, playable animation exists."""
+        callback = self.on_animation_created
+        if callback:
+            try:
+                callback(animation_id)
+            except TypeError:
+                try:
+                    callback()
+                except Exception:
+                    logger.exception("[AnimationTools] Animation-created callback failed")
+            except Exception:
+                logger.exception("[AnimationTools] Animation-created callback failed")
 
     def _notify_animation_ready(self, animation_id: str, technique: str) -> None:
         callback = self.on_animation_ready
