@@ -2,7 +2,7 @@ import threading
 from unittest.mock import MagicMock, Mock
 
 from components.canvas.story_state import StoryState, speaker_key
-from providers.speech_provider import SpeechProvider, SpeechSynthesisResult
+from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisResult
 
 
 def test_story_state_isolated_from_other_theaters() -> None:
@@ -14,21 +14,6 @@ def test_story_state_isolated_from_other_theaters() -> None:
 def test_speaker_key_normalizes_equivalent_display_names() -> None:
     assert speaker_key("  Mara   Venn ") == "mara venn"
     assert speaker_key("") == "narrator"
-
-
-def test_dialogue_persists_beautified_lines_and_notifies() -> None:
-    persist, notify = Mock(), Mock()
-    beautifier = Mock()
-    beautifier.beautify_text.return_value = [{"text": "Hello", "effect": "vibrate"}]
-
-    state = StoryState(persist=persist, notify_changed=notify)
-    state.text_beautifier = beautifier
-
-    state.set_scene_dialogue([{"speaker": "Mara", "text": "Hello"}])
-
-    assert state.scene_dialogue == [{"speaker": "Mara", "text": "Hello", "spans": [{"text": "Hello", "effect": "vibrate"}]}]
-    persist.assert_called_once_with()
-    notify.assert_called_once_with("latest")
 
 
 def test_scene_waits_for_beautification_then_commits_once() -> None:
@@ -56,22 +41,6 @@ def test_scene_waits_for_beautification_then_commits_once() -> None:
     assert state.narration == "A new scene begins."
     assert state.narration_spans == [{"text": "A new scene begins.", "effect": "glow"}]
     assert state.scene_dialogue == [{"speaker": "Mara", "text": "Look!", "spans": [{"text": "Look!", "effect": "vibrate"}]}]
-    persist.assert_called_once_with()
-    notify.assert_called_once_with("latest")
-
-
-def test_narration_uses_supplied_spans_without_beautifying() -> None:
-    persist, notify = Mock(), Mock()
-    beautifier = Mock()
-
-    state = StoryState(persist=persist, notify_changed=notify)
-    state.text_beautifier = beautifier
-
-    state.set_narration("The ground trembles!", spans=[{"text": "TREMBLES", "effect": "vibrate"}])
-
-    assert state.narration == "The ground trembles!"
-    assert state.narration_spans == [{"text": "TREMBLES", "effect": "vibrate"}]
-    beautifier.beautify_text.assert_not_called()
     persist.assert_called_once_with()
     notify.assert_called_once_with("latest")
 
@@ -292,28 +261,6 @@ def test_load_and_serialize_round_trip() -> None:
     assert state.payload() == serialized
 
 
-def test_set_narration_truncates_at_45_words_and_500_chars() -> None:
-    state = StoryState()
-    state.text_beautifier = False
-    long_text = " ".join([f"word{i}" for i in range(60)])
-    state.set_narration(long_text)
-
-    words = state.narration.split()
-    assert len(words) == 45
-    assert len(state.narration) <= 500
-
-
-def test_set_scene_dialogue_caps_at_three_entries() -> None:
-    state = StoryState()
-    state.text_beautifier = False
-    five_lines = [{"speaker": f"Char_{i}", "text": f"Line {i}"} for i in range(5)]
-    state.set_scene_dialogue(five_lines)
-
-    assert len(state.scene_dialogue) == 3
-    assert state.scene_dialogue[0]["speaker"] == "Char_0"
-    assert state.scene_dialogue[2]["speaker"] == "Char_2"
-
-
 def test_sticky_notes_falls_back_to_named_elements() -> None:
     state = StoryState()
     state.named_elements = [{"name": "Relic", "type": "artifact"}]
@@ -384,3 +331,134 @@ def test_get_and_set_sticky_notes_persists_and_notifies() -> None:
     persist.assert_called_once_with()
     notify.assert_called_once_with("latest")
 
+
+def test_dispatch_parallelizes_dialogue_line_synthesis() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    line1_started = threading.Event()
+    line2_started = threading.Event()
+
+    def concurrent_synthesize(req):
+        if req.text == "Line 1":
+            line1_started.set()
+            assert line2_started.wait(timeout=2.0), "Line 2 did not start concurrently with Line 1"
+        elif req.text == "Line 2":
+            line2_started.set()
+            assert line1_started.wait(timeout=2.0), "Line 1 did not start concurrently with Line 2"
+        return SpeechSynthesisResult(
+            audio_bytes=b"audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = concurrent_synthesize
+
+    published = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([
+        {"speaker": "Alice", "text": "Line 1", "kind": "speech"},
+        {"speaker": "Bob", "text": "Line 2", "kind": "speech"},
+    ])
+    state._executor.shutdown(wait=True)
+
+    assert len(published) == 2
+    assert [p["speaker"] for p in published] == ["Alice", "Bob"]
+
+
+def test_dispatch_preserves_dialogue_order_when_lines_complete_out_of_order() -> None:
+    import time
+
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    def out_of_order_synthesize(req):
+        if req.text == "First line":
+            time.sleep(0.08)
+        elif req.text == "Second line":
+            time.sleep(0.01)
+        return SpeechSynthesisResult(
+            audio_bytes=f"audio_{req.text}".encode(),
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = out_of_order_synthesize
+
+    published = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([
+        {"speaker": "Alice", "text": "First line", "kind": "speech"},
+        {"speaker": "Bob", "text": "Second line", "kind": "speech"},
+    ])
+    state._executor.shutdown(wait=True)
+
+    assert len(published) == 2
+    assert [p["speaker"] for p in published] == ["Alice", "Bob"]
+
+
+def test_dispatch_handles_individual_line_synthesis_failure_gracefully() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    def fail_one_line(req):
+        if req.text == "Failing line":
+            raise SpeechProviderError("Provider unavailable")
+        return SpeechSynthesisResult(
+            audio_bytes=b"ok_audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = fail_one_line
+
+    published = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([
+        {"speaker": "Alice", "text": "Failing line", "kind": "speech"},
+        {"speaker": "Bob", "text": "Succeeding line", "kind": "speech"},
+    ])
+    state._executor.shutdown(wait=True)
+
+    assert len(published) == 1
+    assert published[0]["speaker"] == "Bob"
+
+
+def test_dispatch_cancel_aborts_multi_line_synthesis() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+
+    synthesis_started = threading.Event()
+
+    def cancelling_synthesize(req):
+        synthesis_started.set()
+        state.cancel()
+        return SpeechSynthesisResult(
+            audio_bytes=b"audio",
+            mime_type="audio/mpeg",
+            provider="mock",
+            model="mock",
+        )
+
+    mock_provider.synthesize.side_effect = cancelling_synthesize
+
+    published = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([
+        {"speaker": "Alice", "text": "Line 1", "kind": "speech"},
+        {"speaker": "Bob", "text": "Line 2", "kind": "speech"},
+    ])
+    state._executor.shutdown(wait=True)
+
+    assert len(published) == 0

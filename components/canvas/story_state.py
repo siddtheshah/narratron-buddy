@@ -8,15 +8,18 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import re
 import threading
-from typing import Any, Optional
+from typing import Any
 
 from providers import (
     SpeechProvider,
     SpeechProviderError,
     SpeechSynthesisRequest,
+    SpeechSynthesisResult,
 )
 
 logger = logging.getLogger("components.canvas_state")
+
+MAX_PARALLEL_SCENE_SPEECH = 4
 
 
 def speaker_key(speaker: str) -> str:
@@ -170,49 +173,6 @@ class StoryState:
             self._notify_changed("latest")
         if self._scene_speech_enabled and self._speech_provider:
             self.dispatch(self.scene_dialogue)
-    def set_scene_dialogue(self, dialogue: list[dict[str, str]]) -> None:
-        """Set up to three planner-authored speech or thought bubbles."""
-        self.scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
-        beautifier = self.text_beautifier
-        if beautifier and self.scene_dialogue:
-            logger.info("Requesting text beautification for %d dialogue line(s)", len(self.scene_dialogue))
-            for index, line in enumerate(self.scene_dialogue):
-                if line.get("spans"):
-                    continue
-                text = str(line.get("text") or "").strip()
-                if not text:
-                    continue
-                try:
-                    line["spans"] = beautifier.beautify_text(text)
-                    logger.info("Dialogue line %d (%s) beautified into %d span(s)", index, line.get("speaker", "unknown"), len(line["spans"]))
-                except Exception as exc:
-                    logger.warning("Text beautification failed for dialogue line %d: %s", index, exc)
-        if self._persist:
-            self._persist()
-        if self._notify_changed:
-            self._notify_changed("latest")
-        if self._scene_speech_enabled and self._speech_provider:
-            self.dispatch(self.scene_dialogue)
-    def set_narration(self, narration: str, spans: Optional[list[dict[str, Any]]] = None) -> None:
-        """Set the planner-authored narration shown on the canvas."""
-        self.narration = " ".join(str(narration or "").strip().split()[:45])[:500]
-        beautifier = self.text_beautifier
-        if spans is not None:
-            self.narration_spans = [dict(span) for span in spans if isinstance(span, dict)]
-        elif beautifier and self.narration:
-            logger.info("Requesting text beautification for narration (%d chars): '%.50s'", len(self.narration), self.narration)
-            try:
-                self.narration_spans = beautifier.beautify_text(self.narration)
-                logger.info("Narration beautification produced %d span(s)", len(self.narration_spans))
-            except Exception as exc:
-                logger.warning("Text beautification failed for narration: %s", exc)
-                self.narration_spans = []
-        else:
-            self.narration_spans = []
-        if self._persist:
-            self._persist()
-        if self._notify_changed:
-            self._notify_changed("latest")
     def get_sticky_notes(self) -> list[dict[str, str]]:
         """Return active sticky notes."""
         return self.sticky_notes()
@@ -311,46 +271,102 @@ class StoryState:
             self._persist()
         logger.info("[SceneSpeech] Assigned %s to %s", voice, speaker)
         return voice
-    def _synthesize_scene(self, dialogue: list[dict[str, str]], generation: int) -> None:
-        for line in dialogue:
+    def _synthesize_line(
+        self,
+        line: dict[str, str],
+        generation: int,
+    ) -> tuple[dict[str, str], SpeechSynthesisResult | None]:
+        with self._speech_lock:
+            if generation != self._speech_generation:
+                return line, None
+        speaker = str(line.get("speaker") or "Narrator").strip()[:80] or "Narrator"
+        try:
+            voice = str(line["voice"])
+            if self._speech_provider is None:
+                return line, None
+            result = self._speech_provider.synthesize(SpeechSynthesisRequest(text=str(line["text"]), voice=voice))
             with self._speech_lock:
                 if generation != self._speech_generation:
                     logger.debug(
-                        "[SceneSpeech] Aborting stale synthesis (gen %d != current %d)",
+                        "[SceneSpeech] Discarding stale audio (gen %d != current %d)",
                         generation,
                         self._speech_generation,
                     )
-                    return
-            speaker = str(line.get("speaker") or "Narrator").strip()[:80] or "Narrator"
-            try:
-                voice = str(line["voice"])
-                if self._speech_provider is None:
-                    continue
-                result = self._speech_provider.synthesize(SpeechSynthesisRequest(text=str(line["text"]), voice=voice))
+                    return line, None
+            return line, result
+        except (SpeechProviderError, OSError, ValueError) as exc:
+            logger.warning("[SceneSpeech] Failed to synthesize dialogue for %s: %s", speaker, exc)
+            return line, None
+
+    def _publish_line_audio(
+        self,
+        line: dict[str, str],
+        result: SpeechSynthesisResult,
+        generation: int,
+    ) -> None:
+        with self._speech_lock:
+            if generation != self._speech_generation:
+                logger.debug(
+                    "[SceneSpeech] Discarding stale audio (gen %d != current %d)",
+                    generation,
+                    self._speech_generation,
+                )
+                return
+        speaker = str(line.get("speaker") or "Narrator").strip()[:80] or "Narrator"
+        voice = str(line["voice"])
+        audio_b64 = base64.b64encode(result.audio_bytes).decode("ascii")
+        mime = result.mime_type or "audio/mpeg"
+        audio_url = f"data:{mime};base64,{audio_b64}"
+
+        if callable(self.publish_audio_fn):
+            self.publish_audio_fn({
+                "type": "scene_speech_ready",
+                "speaker": speaker,
+                "voice": voice,
+                "audio_url": audio_url,
+                "mime_type": result.mime_type,
+                "generation": generation,
+            })
+
+    def _synthesize_scene(self, dialogue: list[dict[str, str]], generation: int) -> None:
+        with self._speech_lock:
+            if generation != self._speech_generation:
+                logger.debug(
+                    "[SceneSpeech] Aborting stale synthesis (gen %d != current %d)",
+                    generation,
+                    self._speech_generation,
+                )
+                return
+
+        if not dialogue or self._speech_provider is None:
+            return
+
+        if len(dialogue) == 1:
+            line, result = self._synthesize_line(dialogue[0], generation)
+            if result is not None:
+                self._publish_line_audio(line, result, generation)
+            return
+
+        worker_count = min(len(dialogue), MAX_PARALLEL_SCENE_SPEECH)
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="scene-speech-line") as pool:
+            futures = [pool.submit(self._synthesize_line, line, generation) for line in dialogue]
+            for future in futures:
                 with self._speech_lock:
                     if generation != self._speech_generation:
                         logger.debug(
-                            "[SceneSpeech] Discarding stale audio (gen %d != current %d)",
+                            "[SceneSpeech] Aborting stale synthesis (gen %d != current %d)",
                             generation,
                             self._speech_generation,
                         )
                         return
+                try:
+                    line, result = future.result()
+                except Exception as exc:
+                    logger.warning("[SceneSpeech] Line synthesis future failed: %s", exc)
+                    continue
 
-                audio_b64 = base64.b64encode(result.audio_bytes).decode("ascii")
-                mime = result.mime_type or "audio/mpeg"
-                audio_url = f"data:{mime};base64,{audio_b64}"
-
-                if callable(self.publish_audio_fn):
-                    self.publish_audio_fn({
-                        "type": "scene_speech_ready",
-                        "speaker": speaker,
-                        "voice": voice,
-                        "audio_url": audio_url,
-                        "mime_type": result.mime_type,
-                        "generation": generation,
-                    })
-            except (SpeechProviderError, OSError, ValueError) as exc:
-                logger.warning("[SceneSpeech] Failed to synthesize dialogue for %s: %s", speaker, exc)
+                if result is not None:
+                    self._publish_line_audio(line, result, generation)
     @property
     def _scene_speech(self) -> Any:
         return self if self._scene_speech_enabled and self._speech_provider else None
