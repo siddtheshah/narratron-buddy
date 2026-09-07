@@ -1809,6 +1809,10 @@ class StoryPlanningTools(BaseTools):
                 self.user_action_timeout_seconds,
                 user_action,
             )
+            # Publish the timeout immediately so the canvas removes its
+            # story-planner (writing) indicator even when this method is
+            # invoked outside the normal background-worker cleanup path.
+            self.canvas_manager.tool_response.set_activity("user_action", active=False)
             self.restart_planner_agent()
             return {
                 "error": (

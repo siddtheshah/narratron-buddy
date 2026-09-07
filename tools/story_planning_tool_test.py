@@ -1285,12 +1285,14 @@ class TestStoryPlanningTools(unittest.TestCase):
             )
 
     def test_run_planner_agent_timeout_restarts_agent(self):
+        canvas_state_service = MagicMock()
         tools = self._make_tools(
             config={
                 "nodes_ahead": 1,
                 "adventure_mode": True,
             },
             theater_id="timeout_test",
+            canvas_state_service=canvas_state_service,
         )
         self.assertEqual(tools.user_action_timeout_seconds, 20.0)
         tools.user_action_timeout_seconds = 0.05
@@ -1312,6 +1314,9 @@ class TestStoryPlanningTools(unittest.TestCase):
             # Agent and runner should have been restarted (new instances)
             self.assertIsNot(tools._planner_runner, old_runner)
             self.assertIsNot(tools._planner_agent, old_agent)
+            canvas_state_service.tool_response.set_activity.assert_called_with(
+                "user_action", active=False
+            )
 
     def test_process_user_action_timeout_delivers_error_and_clears_in_flight(self):
         results = []
