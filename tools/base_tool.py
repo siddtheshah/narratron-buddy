@@ -203,13 +203,12 @@ class BaseTools:
 
     def __init__(
         self,
-        config: dict,
-        theater_manager: Theater,
+        theater: Theater,
         canvas_manager: CanvasStateManager,
     ) -> None:
-        self.config = config
-        self.theater_manager = theater_manager
+        self.theater = theater
         self.canvas_manager = canvas_manager
+        self.config = theater.config() or {}
 
         # Callback hooks
         self.on_cooldown_expired: Optional[Callable[[str], None]] = None
@@ -226,7 +225,7 @@ class BaseTools:
 
     @property
     def theater_id(self) -> str:
-        return self.theater_manager.theater_id
+        return self.theater.theater_id
 
     @property
     def active_theater_id(self) -> str:

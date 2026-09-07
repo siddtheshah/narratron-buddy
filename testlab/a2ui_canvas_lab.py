@@ -68,8 +68,7 @@ def build_canvas_tool(
         canvas_state_service.show_image(str(image_path), theater_id=theater_id)
     return (
         InteractiveCanvasTools(
-            {"max_surfaces": 8},
-            theater_manager=theater_manager.theater(theater_id),
+            theater_manager.theater(theater_id),
             canvas_manager=canvas_state_service.get(theater_id),
             text_response_provider=provider,
             model=model,

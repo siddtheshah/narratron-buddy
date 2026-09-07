@@ -67,9 +67,10 @@ class TestMusicTools(BaseTestCase):
 
     def make_tools(self, config):
         canvas_manager = CanvasStateService(self.theater_manager).get("test_theater")
+        theater = self.theater_manager.theater("test_theater")
+        theater.manager.get_theater_config = MagicMock(return_value=config)
         return MusicTools(
-            config,
-            theater_manager=self.theater_manager.theater("test_theater"),
+            theater,
             canvas_manager=canvas_manager,
             music_catalog=MusicCatalog(
                 directory=self.catalog_dir,

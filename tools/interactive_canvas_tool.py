@@ -288,26 +288,26 @@ class InteractiveCanvasTools(BaseTools):
 
     def __init__(
         self,
-        config: dict,
-        theater_manager: Theater,
+        theater: Theater,
         canvas_manager: CanvasStateManager,
         text_response_provider: Optional[TextResponseProvider] = None,
         model: Optional[str] = None,
         adventure_mode: bool = False,
     ) -> None:
         super().__init__(
-            config=config,
-            theater_manager=theater_manager,
+            theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.cooldown_duration = float(config.get("cooldown_duration", 10.0))
+        subconfig = self.config.get("interactive_canvas", self.config) if "interactive_canvas" in self.config else self.config
+        self.config = subconfig if isinstance(subconfig, dict) else {}
+        self.cooldown_duration = float(self.config.get("cooldown_duration", 10.0))
         self.text_response_provider = text_response_provider
         # Model selection is application-owned. Theater YAML controls behavior
         # and enablement, and any theater-level model value is ignored.
         self.model = str(model or "gemini-3.7-flash")
         self.catalog = CANVAS_CATALOG
         self.response_schema = CANVAS_DRAFT_SCHEMA
-        self.max_surfaces = max(1, min(MAX_SURFACES, int((config or {}).get("max_surfaces", 5))))
+        self.max_surfaces = max(1, min(MAX_SURFACES, int(self.config.get("max_surfaces", 5))))
         self.adventure_mode = bool(adventure_mode)
         # Adventure Mode authorizes one canvas mutation for each completed
         # planner turn, matching ImageTools' story-plan completion gate.

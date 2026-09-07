@@ -44,12 +44,15 @@ class TestBaseTools(BaseTestCase):
         self.config = {
             "cooldown_duration": 10.0
         }
-        self.theater_manager = MagicMock(theater_id="test_theater")
+        self.theater = MagicMock(theater_id="test_theater")
+        self.theater.config = MagicMock(return_value=self.config)
         self.canvas_manager = MagicMock()
-        self.base_tools = BaseTools(self.config, self.theater_manager, self.canvas_manager)
+        self.base_tools = BaseTools(self.theater, self.canvas_manager)
 
     def make_sample(self, config: dict) -> SampleTools:
-        return SampleTools(config, self.theater_manager, self.canvas_manager)
+        theater = MagicMock(theater_id="test_theater")
+        theater.config = MagicMock(return_value=config)
+        return SampleTools(theater, self.canvas_manager)
 
     def test_cooldown_checking_and_recording(self):
         self.assertIsNone(self.base_tools.check_cooldown("sample_tool", "running sample tool"))

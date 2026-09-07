@@ -84,8 +84,7 @@ class AnimationTools(BaseTools):
 
     def __init__(
         self,
-        config: dict,
-        theater_manager: Theater,
+        theater: Theater,
         canvas_manager: CanvasStateManager,
         image_tools,
         image_provider: ImageProvider,
@@ -96,11 +95,12 @@ class AnimationTools(BaseTools):
         # ImageTools owns the theater-specific output directory, aliases, canvas
         # hooks, and configured image-generation cooldown.
         super().__init__(
-            config=config,
-            theater_manager=theater_manager,
+            theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.cooldown_duration = float(config.get("cooldown_duration", image_tools.cooldown_duration))
+        subconfig = self.config.get("animation", self.config) if "animation" in self.config else self.config
+        self.config = subconfig if isinstance(subconfig, dict) else {}
+        self.cooldown_duration = float(self.config.get("cooldown_duration", image_tools.cooldown_duration))
         self.image_tools = image_tools
         self.image_provider = image_provider
         self.output_dir = image_tools.output_dir
@@ -114,7 +114,7 @@ class AnimationTools(BaseTools):
         self.text_response_provider = text_response_provider
         self.video_provider = video_provider
         if self.video_provider is None:
-            v_provider_id = config.get("video_provider", "fal-minimax-h3-turbo")
+            v_provider_id = self.config.get("video_provider", "fal-minimax-h3-turbo")
             try:
                 from providers.registry import get_video_provider
                 self.video_provider = get_video_provider(v_provider_id)

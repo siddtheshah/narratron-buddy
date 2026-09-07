@@ -6,14 +6,14 @@ from tools.base_tool import BaseTools, with_cooldown
 logger = logging.getLogger(__name__)
 
 class ChatTools(BaseTools):
-    def __init__(self, config: dict, theater_manager: Theater, canvas_manager: CanvasStateManager):
-        raw_config = config or {}
-        subconfig = raw_config.get("chat", raw_config) if "chat" in raw_config else raw_config
+    def __init__(self, theater: Theater, canvas_manager: CanvasStateManager):
         super().__init__(
-            config=subconfig,
-            theater_manager=theater_manager,
+            theater=theater,
             canvas_manager=canvas_manager,
         )
+        subconfig = self.config.get("chat", self.config) if "chat" in self.config else self.config
+        self.config = subconfig if isinstance(subconfig, dict) else {}
+        self.cooldown_duration = float(self.config.get("cooldown_duration", 0.0))
         self.on_send_chat_message = None
 
     @with_cooldown(action_desc="sending chat message")

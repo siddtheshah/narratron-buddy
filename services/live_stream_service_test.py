@@ -35,9 +35,10 @@ class CanvasFixture:
 
 
 def test_format_canvas_state_includes_present_scene_elements():
+    theater = MagicMock(theater_id="stage")
+    theater.config = MagicMock(return_value={})
     elements = StoryPlanningTools(
-        config={},
-        theater_manager=MagicMock(theater_id="stage"),
+        theater,
         canvas_manager=MagicMock(),
         text_response_provider=MagicMock(),
     )
@@ -53,9 +54,10 @@ def test_format_canvas_state_includes_present_scene_elements():
 
 
 def test_format_canvas_state_includes_active_characters():
+    theater = MagicMock(theater_id="stage_chars")
+    theater.config = MagicMock(return_value={"adventure_mode": True})
     elements = StoryPlanningTools(
-        config={"adventure_mode": True},
-        theater_manager=MagicMock(theater_id="stage_chars"),
+        theater,
         canvas_manager=MagicMock(),
         text_response_provider=MagicMock(),
     )

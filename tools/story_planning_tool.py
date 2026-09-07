@@ -384,8 +384,7 @@ class StoryPlanningTools(BaseTools):
 
     def __init__(
         self,
-        config: dict,
-        theater_manager: Theater,
+        theater: Theater,
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
     ):
@@ -393,10 +392,11 @@ class StoryPlanningTools(BaseTools):
             raise ValueError("text_response_provider is required.")
 
         super().__init__(
-            config=config,
-            theater_manager=theater_manager,
+            theater=theater,
             canvas_manager=canvas_manager,
         )
+        subconfig = self.config.get("story_planning", self.config) if "story_planning" in self.config else self.config
+        self.config = subconfig if isinstance(subconfig, dict) else {}
         self._sticky_notes: OrderedDict[str, str] = OrderedDict()
         self._required_stickies: OrderedDict[str, str] = OrderedDict()
         self._elements = self._sticky_notes
@@ -739,7 +739,7 @@ class StoryPlanningTools(BaseTools):
         """Append a structured, theater-local record that the canvas can inspect."""
         try:
             log_entry = entry if isinstance(entry, StoryLogEntry) else StoryLogEntry.model_validate(entry)
-            output_dir = self.theater_manager.output_dir()
+            output_dir = self.theater.output_dir()
             output_dir.mkdir(parents=True, exist_ok=True)
             with (output_dir / "story_log.jsonl").open("a", encoding="utf-8") as story_log:
                 story_log.write(log_entry.model_dump_json(exclude_none=True) + "\n")
@@ -752,7 +752,7 @@ class StoryPlanningTools(BaseTools):
     def _read_recent_story_log(self) -> List[StoryLogEntry]:
         """Load the last 200 durable story-log entries for planner continuity."""
         try:
-            log_path = self.theater_manager.output_dir() / "story_log.jsonl"
+            log_path = self.theater.output_dir() / "story_log.jsonl"
             if not log_path.exists():
                 return []
             with log_path.open(encoding="utf-8") as story_log:
@@ -907,7 +907,7 @@ class StoryPlanningTools(BaseTools):
             logger.warning("[StoryPlanningTools] Read lore called without active theater.")
             return "No theater is active, so no lore documents are available." + limit_note
         if not document:
-            documents = self.theater_manager.lore_documents()
+            documents = self.theater.lore_documents()
             listed_documents = documents[:MAX_LORE_DOCUMENTS_LISTED]
             omission = (
                 f"\n[+{len(documents) - len(listed_documents)} additional documents omitted.]"
@@ -931,7 +931,7 @@ class StoryPlanningTools(BaseTools):
         if not clean_doc.lower().endswith(".txt"):
             prefix = clean_doc.rstrip("/") + "/"
             matching = [
-                doc for doc in self.theater_manager.lore_documents()
+                doc for doc in self.theater.lore_documents()
                 if doc.startswith(prefix)
             ]
             if matching:
@@ -960,7 +960,7 @@ class StoryPlanningTools(BaseTools):
                     + limit_note
                 )
         try:
-            content = self.theater_manager.read_lore_document(clean_doc)
+            content = self.theater.read_lore_document(clean_doc)
         except ValueError as error:
             logger.warning(
                 "[StoryPlanningTools] Failed to read lore document '%s' for theater=%s: %s",
@@ -1017,11 +1017,11 @@ class StoryPlanningTools(BaseTools):
             if not self.theater_id:
                 return {}
 
-            documents = self.theater_manager.lore_documents()
+            documents = self.theater.lore_documents()
             corpus_index: Dict[str, Dict[str, Any]] = {}
             for doc_path in documents:
                 try:
-                    content = self.theater_manager.read_lore_document(doc_path)
+                    content = self.theater.read_lore_document(doc_path)
                 except Exception:
                     continue
                 tokens = re.findall(r"\w+", content.lower())
@@ -1221,7 +1221,7 @@ class StoryPlanningTools(BaseTools):
 
     def _get_lore_context(self) -> str:
         """List top-level lore documents and directories for the planner context, automatically expanding files prefixed with 'read'."""
-        documents = self.theater_manager.lore_documents()
+        documents = self.theater.lore_documents()
         if not documents:
             return ""
         top_level_files: list[str] = []
@@ -1231,7 +1231,7 @@ class StoryPlanningTools(BaseTools):
             parts = doc.split("/")
             filename = parts[-1]
             if filename.lower().startswith("read") or doc.lower().startswith("read"):
-                content = self.theater_manager.read_lore_document(doc)
+                content = self.theater.read_lore_document(doc)
                 self._record_lore_activity(
                     "preloaded",
                     doc,

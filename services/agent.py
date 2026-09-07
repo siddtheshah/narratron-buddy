@@ -320,8 +320,7 @@ def create_tool_bundle_for_session(
     image_config = config.get("image_generation", {})
     image_generation_enabled = bool(image_config.get("enabled", True))
     image_tools = ImageTools(
-        config,
-        theater_manager=theater,
+        theater,
         canvas_manager=canvas_manager,
         adventure_mode=adventure_mode,
     )
@@ -338,7 +337,6 @@ def create_tool_bundle_for_session(
 
     animation_tools = (
         AnimationTools(
-            animation_config,
             theater,
             canvas_manager,
             image_tools,
@@ -350,14 +348,13 @@ def create_tool_bundle_for_session(
         if animation_enabled
         else None
     )
-    chat_tools = ChatTools(config.get("chat", {}), theater, canvas_manager)
+    chat_tools = ChatTools(theater, canvas_manager)
     story_planning_text_provider = get_text_response_provider(
         str(story_planning_config.get("text_provider", "gemini-3")),
         {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
     )
     story_planning_tools = StoryPlanningTools(
-        story_planning_config,
-        theater_manager=theater,
+        theater,
         canvas_manager=canvas_manager,
         text_response_provider=story_planning_text_provider,
     )
@@ -366,8 +363,7 @@ def create_tool_bundle_for_session(
     if interactive_canvas_config.get("enabled", False):
         app_interactive_canvas_config = get_app_config().get("interactive_canvas", {})
         interactive_canvas_tools = InteractiveCanvasTools(
-            interactive_canvas_config,
-            theater_manager=theater,
+            theater,
             canvas_manager=canvas_manager,
             text_response_provider=story_planning_text_provider,
             model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
@@ -379,7 +375,7 @@ def create_tool_bundle_for_session(
             database_manager=database_manager,
         )
     music_tools = MusicTools(
-        config.get("music", {}), theater, canvas_manager,
+        theater, canvas_manager,
         music_catalog=music_catalog,
     )
 
@@ -412,7 +408,7 @@ def create_tool_bundle_for_session(
         ])
     observability_config = config.get("observability_tool", {})
     if isinstance(observability_config, dict) and observability_config.get("enabled", False):
-        observability_tools = ObservabilityTools(observability_config, theater, canvas_manager)
+        observability_tools = ObservabilityTools(theater, canvas_manager)
         tools.append(observability_tools.request_canvas_observability)
     return ToolBundle(tools)
 

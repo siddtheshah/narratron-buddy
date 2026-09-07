@@ -391,8 +391,7 @@ class AdventureSession:
             {"model": planner_model_name},
         )
         self.story_planning_tools = StoryPlanningTools(
-            config=sp_config,
-            theater_manager=self.theater_manager.theater(self.session_id),
+            self.theater_manager.theater(self.session_id),
             canvas_manager=self.canvas_state_service.get(self.session_id),
             text_response_provider=story_planning_text_provider,
         )

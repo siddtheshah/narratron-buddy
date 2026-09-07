@@ -13,13 +13,14 @@ logger = logging.getLogger(__name__)
 class ObservabilityTools(BaseTools):
     """Expose an agent-controlled, cooldown-protected observation request."""
 
-    def __init__(self, config: dict, theater_manager: Theater, canvas_manager: CanvasStateManager) -> None:
+    def __init__(self, theater: Theater, canvas_manager: CanvasStateManager) -> None:
         super().__init__(
-            config=config,
-            theater_manager=theater_manager,
+            theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.cooldown_duration = float(config.get("cooldown_duration", 30.0))
+        subconfig = self.config.get("observability_tool", self.config) if "observability_tool" in self.config else self.config
+        self.config = subconfig if isinstance(subconfig, dict) else {}
+        self.cooldown_duration = float(self.config.get("cooldown_duration", 30.0))
         self.on_observability_requested: Optional[Callable[[], bool]] = None
 
     @with_cooldown(action_desc="requesting another canvas observability update")

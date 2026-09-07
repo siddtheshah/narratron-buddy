@@ -48,7 +48,8 @@ def make_tools(response_factory, config=None, adventure_mode=False):
         "interactive_surfaces": [],
     }
     canvas.visual.shown_image_path = None
-    theater_manager = MagicMock(theater_id="stage")
+    theater = MagicMock(theater_id="stage")
+    theater.config = MagicMock(return_value=config or {"max_surfaces": 3})
     provider = MagicMock()
     # Keep this test double on the provider-neutral path. The concrete Gemini
     # provider exposes `client` for the optional multimodal fast path.
@@ -60,8 +61,7 @@ def make_tools(response_factory, config=None, adventure_mode=False):
         parsed=response_factory(request.prompt),
     )
     return InteractiveCanvasTools(
-        config or {"max_surfaces": 3},
-        theater_manager=theater_manager,
+        theater,
         canvas_manager=canvas,
         text_response_provider=provider,
         adventure_mode=adventure_mode,
@@ -389,12 +389,12 @@ def test_non_adventure_mode_does_not_lock_interactive_canvas_mutations():
 
 def test_interactive_canvas_ignores_theater_model_setting():
     canvas = MagicMock()
-    theater_manager = MagicMock(theater_id="stage")
+    theater = MagicMock(theater_id="stage")
+    theater.config = MagicMock(return_value={"model": "theater-controlled-model"})
     provider = MagicMock()
     provider.client = None
     tools = InteractiveCanvasTools(
-        {"model": "theater-controlled-model"},
-        theater_manager=theater_manager,
+        theater,
         canvas_manager=canvas,
         text_response_provider=provider,
         model="app-controlled-model",
@@ -425,4 +425,3 @@ def test_interactive_canvas_triggers_usage_callback():
     result = tools.update_interactive_canvas("Create a status card")
     assert result["status"] == "displayed"
     callback_mock.assert_called_once_with("stage")
-

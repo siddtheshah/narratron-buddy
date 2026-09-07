@@ -105,21 +105,19 @@ class TestCreateAgent(unittest.TestCase):
             canvas_state_service=canvas_state_service,
         )
 
-        expected_theater = mock_image_cls.call_args.kwargs["theater_manager"]
+        expected_theater = mock_image_cls.call_args.args[0]
         expected_canvas = mock_image_cls.call_args.kwargs["canvas_manager"]
         mock_image_cls.assert_called_once_with(
-            config, theater_manager=expected_theater, canvas_manager=expected_canvas, adventure_mode=False
+            expected_theater, canvas_manager=expected_canvas, adventure_mode=False
         )
         mock_animation_cls.assert_not_called()
-        mock_chat_cls.assert_called_once_with(config.get("chat", {}), expected_theater, expected_canvas)
+        mock_chat_cls.assert_called_once_with(expected_theater, expected_canvas)
         mock_story_planning_cls.assert_called_once_with(
-            config.get("story_planning", {}),
-            theater_manager=expected_theater,
+            expected_theater,
             canvas_manager=expected_canvas,
             text_response_provider=ANY,
         )
         mock_music_cls.assert_called_once_with(
-            config.get("music", {}),
             expected_theater,
             expected_canvas,
             music_catalog=ANY,
@@ -141,7 +139,6 @@ class TestCreateAgent(unittest.TestCase):
         create_agent(theater_id="animated_theater", config=config)
 
         mock_animation_cls.assert_called_once_with(
-            config["animation"],
             ANY,
             ANY,
             mock_image_cls.return_value,

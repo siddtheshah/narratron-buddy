@@ -35,31 +35,32 @@ class ImageTools(BaseTools):
 
     def __init__(
         self,
-        config: dict,
-        theater_manager: Theater,
+        theater: Theater,
         canvas_manager: CanvasStateManager,
         adventure_mode: bool = False,
     ):
-        raw_config = config or {}
-        subconfig = raw_config.get("image_generation", raw_config) if "image_generation" in raw_config else raw_config
         super().__init__(
-            config=subconfig,
-            theater_manager=theater_manager,
+            theater=theater,
             canvas_manager=canvas_manager,
         )
 
-        self.theater = theater_manager
-        self.default_style = str(subconfig.get("style", "")).strip()
+        subconfig = self.config.get("image_generation", self.config) if "image_generation" in self.config else self.config
+        self.config = subconfig if isinstance(subconfig, dict) else {}
+        self.theater = theater
+        self.cooldown_duration = float(self.config.get("cooldown_duration", 0.0))
+        self.adventure_mode = bool(adventure_mode)
+
+        self.default_style = str(self.config.get("style", "")).strip()
         self.output_dir = str(self.theater.image_artifacts_dir())
         os.makedirs(self.output_dir, exist_ok=True)
         
         self.reference_dir = str(self.theater.references_dir())
         os.makedirs(self.reference_dir, exist_ok=True)
 
-        self.image_provider_id = str(subconfig.get("provider") or "").strip()
+        self.image_provider_id = str(self.config.get("provider") or "").strip()
         if not self.image_provider_id:
             raise ValueError("image_generation.provider must name a provider from providers/.")
-        provider_options = subconfig.get("provider_options") or {}
+        provider_options = self.config.get("provider_options") or {}
         if not isinstance(provider_options, dict):
             raise ValueError("image_generation.provider_options must be a mapping.")
         self.image_provider_options = dict(provider_options)

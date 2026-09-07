@@ -23,19 +23,17 @@ logger = logging.getLogger(__name__)
 class MusicTools(BaseTools):
     def __init__(
         self,
-        config: dict,
-        theater_manager: Theater,
+        theater: Theater,
         canvas_manager: CanvasStateManager,
         music_catalog: MusicCatalog,
     ):
-        raw_config = config or {}
-        subconfig = raw_config.get("music", raw_config) if "music" in raw_config else raw_config
         super().__init__(
-            config=subconfig,
-            theater_manager=theater_manager,
+            theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.theater = theater_manager
+        subconfig = self.config.get("music", self.config) if "music" in self.config else self.config
+        self.config = subconfig if isinstance(subconfig, dict) else {}
+        self.theater = theater
         
         # User-provided playlists directory
         self.theater_playlists_dir = str(self.theater.playlists_dir())

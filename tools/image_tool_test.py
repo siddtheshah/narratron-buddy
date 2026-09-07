@@ -42,9 +42,11 @@ class TestImageTools(BaseTestCase):
     def make_image_tools(self, config, theater_id, theater_manager, canvas_state_service=None, **kwargs):
         canvas_service = canvas_state_service or CanvasStateService(theater_manager)
         canvas_manager = canvas_service if isinstance(canvas_service, MagicMock) else canvas_service.get(theater_id)
+        theater = theater_manager.theater(theater_id)
+        if config:
+            theater_manager.get_theater_config = MagicMock(return_value=config)
         return ImageTools(
-            config,
-            theater_manager=theater_manager.theater(theater_id),
+            theater,
             canvas_manager=canvas_manager,
             **kwargs,
         )

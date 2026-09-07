@@ -446,17 +446,18 @@ def create_story_planner_session(body: dict[str, Any]):
 
     theater_manager = TheaterManager()
     canvas_state_service = CanvasStateService(theater_manager)
+    canvas_manager = canvas_state_service.get(f"testlab_{run_id}")
+    canvas_manager.story.text_beautifier = False
     tools = StoryPlanningTools(
-        config={
-            "adventure_mode": True,
-            "nodes_ahead": nodes_ahead,
-            "planner_model": model,
-            "on_scene_reaction": on_scene_reaction,
-        },
-        theater_manager=theater_manager.theater(f"testlab_{run_id}"),
-        canvas_manager=canvas_state_service.get(f"testlab_{run_id}"),
+        theater_manager.theater(f"testlab_{run_id}"),
+        canvas_manager=canvas_manager,
         text_response_provider=get_text_response_provider("gemini-3", options={"model": model}),
     )
+    tools.adventure_mode = True
+    tools.nodes_ahead = nodes_ahead
+    tools.on_scene_reaction = on_scene_reaction
+    tools.require_user_input = False
+    tools._user_input_detected = True
     run["tools"] = tools
     with _runs_lock:
         _story_planner_runs[run_id] = run

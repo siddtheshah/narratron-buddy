@@ -7,9 +7,10 @@ from tools.chat_tool import ChatTools
 class TestChatTools(BaseTestCase):
     def setUp(self):
         super().setUp()
-        self.theater_manager = MagicMock(theater_id="test_theater")
+        self.theater = MagicMock(theater_id="test_theater")
+        self.theater.config = MagicMock(return_value={})
         self.canvas_manager = MagicMock()
-        self.chat_tools = ChatTools(config={}, theater_manager=self.theater_manager, canvas_manager=self.canvas_manager)
+        self.chat_tools = ChatTools(self.theater, self.canvas_manager)
 
     def test_send_chat_message_success(self):
         self.chat_tools.canvas_manager = MagicMock()

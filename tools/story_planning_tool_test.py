@@ -30,7 +30,7 @@ from tools.story_planning_tool import (
     build_scene_reaction_prompt,
     build_story_context_prompt,
 )
-from components.theater_manager import TheaterManager
+from components.theater_manager import Theater, TheaterManager
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.canvas_state_service import CanvasStateService
 from providers import TextResponseProvider, TextResponseRequest, TextResponseResult
@@ -42,38 +42,53 @@ class TestStoryPlanningTools(unittest.TestCase):
         config=None,
         theater_id="test-theater",
         canvas_state_service=None,
+        theater=None,
         theater_manager=None,
         text_response_provider=None,
     ):
-        manager = theater_manager or MagicMock(theater_id=theater_id)
-        theater = manager.theater(theater_id) if isinstance(manager, TheaterManager) else manager
+        manager = theater or theater_manager
+        if isinstance(manager, TheaterManager):
+            theater_obj = manager.theater(theater_id)
+            if config is not None:
+                manager.get_theater_config = MagicMock(return_value=config)
+        elif isinstance(manager, Theater):
+            theater_obj = manager
+            if config is not None:
+                manager.manager.get_theater_config = MagicMock(return_value=config)
+        elif manager is not None:
+            theater_obj = manager
+            if config is not None:
+                theater_obj.config = MagicMock(return_value=config)
+        else:
+            theater_obj = MagicMock(theater_id=theater_id)
+            theater_obj.config = MagicMock(return_value=config or {})
+
         canvas = canvas_state_service or MagicMock()
         canvas_manager = canvas.get(theater_id) if isinstance(canvas, CanvasStateService) else canvas
         return StoryPlanningTools(
-            config=config or {},
-            theater_manager=theater,
+            theater=theater_obj,
             canvas_manager=canvas_manager,
             text_response_provider=text_response_provider or MagicMock(),
         )
 
     def test_required_arguments_are_enforced(self):
         mock_canvas = MagicMock()
-        mock_theater_mgr = MagicMock()
+        mock_theater = MagicMock(theater_id="test")
+        mock_theater.config = MagicMock(return_value={})
         mock_provider = MagicMock()
 
         with self.assertRaises(TypeError):
             StoryPlanningTools()
 
         tools = StoryPlanningTools(
-            config={},
+            theater=mock_theater,
             canvas_manager=mock_canvas,
-            theater_manager=mock_theater_mgr,
             text_response_provider=mock_provider,
         )
         self.assertIsNotNone(tools)
 
         with self.assertRaises(ValueError):
-            StoryPlanningTools(config={}, canvas_manager=mock_canvas, theater_manager=mock_theater_mgr, text_response_provider=None)
+            StoryPlanningTools(theater=mock_theater, canvas_manager=mock_canvas, text_response_provider=None)
 
     def test_story_log_entries_are_written_to_theater_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1530,9 +1545,10 @@ class TestStoryPlanningTools(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             theater_manager = TheaterManager(base_theaters_dir=temp_dir)
             canvas_manager = CanvasStateManager(theater_manager.theater("integration_test"))
+            theater = theater_manager.theater("integration_test")
+            theater_manager.get_theater_config = MagicMock(return_value={"adventure_mode": True, "nodes_ahead": 2})
             tools = StoryPlanningTools(
-                config={"adventure_mode": True, "nodes_ahead": 2},
-                theater_manager=theater_manager.theater("integration_test"),
+                theater=theater,
                 canvas_manager=canvas_manager,
                 text_response_provider=MagicMock(),
             )

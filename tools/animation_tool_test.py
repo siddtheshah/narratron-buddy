@@ -47,10 +47,19 @@ class TestAnimationTools(BaseTestCase):
     def make_image_tools(self, config, theater_id, theater_manager, canvas_state_service=None, **kwargs):
         canvas_service = canvas_state_service or CanvasStateService(theater_manager)
         canvas_manager = canvas_service if isinstance(canvas_service, MagicMock) else canvas_service.get(theater_id)
-        return ImageTools(config, theater_manager.theater(theater_id), canvas_manager, **kwargs)
+        theater = theater_manager.theater(theater_id)
+        if config:
+            theater_manager.get_theater_config = MagicMock(return_value=config)
+        return ImageTools(theater, canvas_manager, **kwargs)
 
     def make_animation_tools(self, image_tools, image_provider, text_provider, layered_provider, animation_config=None, **kwargs):
-        return AnimationTools(animation_config or {}, image_tools.theater_manager, image_tools.canvas_manager, image_tools, image_provider, text_provider, layered_provider, **kwargs)
+        theater = image_tools.theater
+        if animation_config:
+            if hasattr(theater, "manager"):
+                theater.manager.get_theater_config = MagicMock(return_value={"animation": animation_config})
+            elif hasattr(theater, "config"):
+                theater.config = MagicMock(return_value={"animation": animation_config})
+        return AnimationTools(theater, image_tools.canvas_manager, image_tools, image_provider, text_provider, layered_provider, **kwargs)
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_animation_uses_triframe_technique(self, mock_get_provider):
@@ -969,7 +978,6 @@ class TestAnimationTools(BaseTestCase):
         )
         canvas_state_service = MagicMock()
         image_tools = MagicMock()
-        image_tools.theater_manager = self.manager.theater("test_theater")
         image_tools.canvas_manager = canvas_state_service
         image_tools.cooldown_duration = 0
         image_tools.output_dir = str(self.manager.theater("test_theater").output_dir())
