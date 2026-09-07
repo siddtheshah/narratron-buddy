@@ -17,6 +17,18 @@ from services.agent_manager import (
 from tools.observability_tool import ObservabilityTools
 
 
+def canvas_observability_fixture(image_path=None, collaboration_enabled=False, doodles=None):
+    canvas = MagicMock()
+    canvas.visual.shown_image_path = image_path
+    canvas.visual.shown_image_prompt = None
+    canvas.audio.current_playlist = None
+    canvas.ui.viewer_collab_enabled = collaboration_enabled
+    canvas.chat.consume_top_suggestion.return_value = None
+    canvas.doodles.snapshot_batches.return_value = doodles or []
+    canvas.doodles.snapshot_png.return_value = None
+    return canvas
+
+
 class TestAgentSessionManager(unittest.TestCase):
     def test_summon_starts_planner_and_greeting_once(self):
         class PlannerTools:
@@ -263,7 +275,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
         asyncio.run(session._run_downstream())
 
-        canvas_state_manager.set_agent_thought.assert_called_once_with("wandering")
+        canvas_state_manager.tool_response.set_agent_thought.assert_called_once_with("wandering")
         session.broadcast_text.assert_awaited_once_with(json.dumps({
             "type": "agent_failed",
             "detail": "Narratron lost its train of thought and stopped.",
@@ -494,11 +506,7 @@ class TestAgentSessionManager(unittest.TestCase):
         )
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
-        session.canvas_state_manager = SimpleNamespace(
-            shown_image_path=None,
-            shown_image_prompt=None,
-            current_playlist=None,
-        )
+        session.canvas_state_manager = canvas_observability_fixture()
 
         session.observability_available_at = 110.0
         with patch("services.agent_manager.time.monotonic", return_value=100.0):
@@ -534,11 +542,7 @@ class TestAgentSessionManager(unittest.TestCase):
         )
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
-        session.canvas_state_manager = SimpleNamespace(
-            shown_image_path=None,
-            shown_image_prompt=None,
-            current_playlist=None,
-        )
+        session.canvas_state_manager = canvas_observability_fixture()
         session.observability_available_at = 0.0
 
         with patch("services.agent_manager.time.monotonic", return_value=100.0):
@@ -576,11 +580,7 @@ class TestAgentSessionManager(unittest.TestCase):
             image_file.write(b"canvas-image")
             image_path = image_file.name
         try:
-            session.canvas_state_manager = SimpleNamespace(
-                shown_image_path=image_path,
-                shown_image_prompt=None,
-                current_playlist=None,
-            )
+            session.canvas_state_manager = canvas_observability_fixture(image_path=image_path)
             session.observability_available_at = 0.0
 
             with patch("services.agent_manager.time.monotonic", return_value=100.0):
@@ -609,13 +609,10 @@ class TestAgentSessionManager(unittest.TestCase):
         )
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
-        canvas = MagicMock()
-        canvas.viewer_collab_enabled = True
-        canvas.get_doodle_snapshot_data.return_value = [{"type": "draw"}]
-        canvas.get_doodle_snapshot_png.return_value = b"annotated-png"
-        canvas.shown_image_path = None
-        canvas.shown_image_prompt = None
-        canvas.current_playlist = None
+        canvas = canvas_observability_fixture(
+            collaboration_enabled=True, doodles=[{"type": "draw"}],
+        )
+        canvas.doodles.snapshot_png.return_value = b"annotated-png"
         session.canvas_state_manager = canvas
 
         self.assertTrue(session.send_agent_requested_observability())
@@ -625,7 +622,7 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertIn("audience annotations", content.parts[1].text)
         self.assertEqual(content.parts[2].inline_data.mime_type, "image/png")
         self.assertEqual(content.parts[2].inline_data.data, b"annotated-png")
-        canvas.get_doodle_snapshot_png.assert_called_once_with()
+        canvas.doodles.snapshot_png.assert_called_once_with(None)
 
     def test_doodle_snapshot_is_rendered_off_the_event_loop(self):
         async def run_test():
@@ -642,13 +639,10 @@ class TestAgentSessionManager(unittest.TestCase):
             )
             session.live_request_queue = MagicMock()
             session.websockets.add(MagicMock())
-            canvas = MagicMock()
-            canvas.viewer_collab_enabled = True
-            canvas.shown_image_path = None
-            canvas.shown_image_prompt = None
-            canvas.current_playlist = None
-            canvas.get_doodle_snapshot_data.return_value = [{"type": "draw"}]
-            canvas.get_doodle_snapshot_png.return_value = b"fake-png"
+            canvas = canvas_observability_fixture(
+                collaboration_enabled=True, doodles=[{"type": "draw"}],
+            )
+            canvas.doodles.snapshot_png.return_value = b"fake-png"
             session.canvas_state_manager = canvas
             session._event_loop = asyncio.get_running_loop()
 
@@ -657,7 +651,7 @@ class TestAgentSessionManager(unittest.TestCase):
             # produced in a worker and delivered separately.
             self.assertEqual(session.live_request_queue.send_content.call_count, 1)
             await asyncio.sleep(0.05)
-            self.assertEqual(canvas.get_doodle_snapshot_png.call_count, 1)
+            self.assertEqual(canvas.doodles.snapshot_png.call_count, 1)
             self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
         asyncio.run(run_test())

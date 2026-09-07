@@ -476,9 +476,8 @@ class AgentSession:
             image_part = self._get_current_canvas_image_part()
             if image_part:
                 if (
-                    getattr(self.canvas_state_manager, "viewer_collab_enabled", False)
-                    and hasattr(self.canvas_state_manager, "get_doodle_snapshot_data")
-                    and self.canvas_state_manager.get_doodle_snapshot_data()
+                    self.canvas_state_manager.ui.viewer_collab_enabled
+                    and self.canvas_state_manager.doodles.snapshot_batches()
                 ):
                     parts.append(types.Part(
                         text="[Viewer Doodles]: The attached image is the current canvas with the audience annotations applied."
@@ -512,13 +511,11 @@ class AgentSession:
         canvas = self.canvas_state_manager
         if (
             canvas
-            and getattr(canvas, "viewer_collab_enabled", False)
-            and hasattr(canvas, "get_doodle_snapshot_data")
-            and canvas.get_doodle_snapshot_data()
-            and hasattr(canvas, "get_doodle_snapshot_png")
+            and canvas.ui.viewer_collab_enabled
+            and canvas.doodles.snapshot_batches()
         ):
             try:
-                snapshot = canvas.get_doodle_snapshot_png()
+                snapshot = canvas.doodles.snapshot_png(canvas.visual.shown_image_path)
                 if snapshot:
                     return types.Part(
                         inline_data=types.Blob(mime_type="image/png", data=snapshot)
@@ -529,7 +526,7 @@ class AgentSession:
                     self.theater_id,
                 )
 
-        image_path = getattr(canvas, "shown_image_path", None)
+        image_path = canvas.visual.shown_image_path if canvas else None
         if not image_path:
             return None
         try:
@@ -556,8 +553,8 @@ class AgentSession:
         if not (
             self.websocket_connected
             and self.canvas_state_manager
-            and getattr(self.canvas_state_manager, "viewer_collab_enabled", False)
-            and self.canvas_state_manager.get_doodle_snapshot_data()
+            and self.canvas_state_manager.ui.viewer_collab_enabled
+            and self.canvas_state_manager.doodles.snapshot_batches()
         ):
             return
 
@@ -578,7 +575,10 @@ class AgentSession:
     async def _send_doodle_snapshot(self) -> None:
         """Render the composite PNG in a worker, then enqueue it for the agent."""
         try:
-            snapshot = await asyncio.to_thread(self.canvas_state_manager.get_doodle_snapshot_png)
+            snapshot = await asyncio.to_thread(
+                self.canvas_state_manager.doodles.snapshot_png,
+                self.canvas_state_manager.visual.shown_image_path,
+            )
             if snapshot and self.websocket_connected:
                 content = types.Content(parts=[
                     types.Part(text="[Viewer Doodles]: A composite canvas image with audience doodles is attached."),

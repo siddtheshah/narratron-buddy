@@ -5586,8 +5586,11 @@
         // Stop mic recording
         function stopMicStream() {
             try { flushClientAudioBuffer(); } catch (e) { }
+            // The VAD recorder owns the active speech segment and emits its
+            // activity_end when stopped. It currently returns no MediaStream,
+            // so this cannot be conditional on micStream being populated.
+            try { stopMicrophone(micStream); } catch (e) { }
             if (micStream) {
-                stopMicrophone(micStream);
                 micStream = null;
             }
             if (audioRecorderContext) {

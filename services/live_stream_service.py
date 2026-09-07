@@ -18,21 +18,24 @@ def format_canvas_state(
     story_planning_tools: Optional[Any] = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
-    image_path = getattr(canvas_state_manager, "shown_image_path", None)
+    visual = canvas_state_manager.visual if canvas_state_manager else None
+    audio = canvas_state_manager.audio if canvas_state_manager else None
+    ui = canvas_state_manager.ui if canvas_state_manager else None
+    chat = canvas_state_manager.chat if canvas_state_manager else None
+    image_path = visual.shown_image_path if visual else None
     image_name = Path(image_path).name if image_path else "none"
-    image_prompt = getattr(canvas_state_manager, "shown_image_prompt", None) or "none"
-    playlist = getattr(canvas_state_manager, "current_playlist", None) or "none"
+    image_prompt = visual.shown_image_prompt if visual and visual.shown_image_prompt else "none"
+    playlist = audio.current_playlist if audio and audio.current_playlist else "none"
     parts = [f"[Canvas Image]: {image_name}, {image_prompt}", f"[Canvas music]: {playlist}"]
 
     # Collaboration observability consumes the leading suggestion. When it is
     # disabled, a canvas pulse must be read-only so audience work is retained
     # until collaboration is enabled again.
     collaboration_enabled = bool(
-        canvas_state_manager
-        and getattr(canvas_state_manager, "viewer_collab_enabled", False)
+        ui and ui.viewer_collab_enabled
     )
     if collaboration_enabled:
-        suggestion = canvas_state_manager.consume_top_suggestion()
+        suggestion = chat.consume_top_suggestion() if chat else None
         if suggestion:
             parts.append(
                 f"[Viewer Suggestion]: {suggestion['text']} "
@@ -216,6 +219,11 @@ async def handle_live_websocket_connection(
                         theater_id,
                         json_message.get("reason", "unspecified"),
                     )
+                    # The final decoded frame can be smaller than the normal
+                    # 30ms forwarding chunk. It belongs to the just-ended
+                    # turn, so deliver it before closing the activity rather
+                    # than leaving it buffered until another frame arrives.
+                    flush_audio_buffer(force_all=True)
                     if hasattr(agent_session, "send_activity_end"):
                         agent_session.send_activity_end()
 

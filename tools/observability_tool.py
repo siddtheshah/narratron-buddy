@@ -1,14 +1,14 @@
 """Optional agent tool for requesting an immediate canvas observation."""
 
-from __future__ import annotations
+from typing import Optional, Callable
 
-from typing import Callable
-
+import logging
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 
 from tools.base_tool import BaseTools, with_cooldown
 
+logger = logging.getLogger(__name__)
 
 class ObservabilityTools(BaseTools):
     """Expose an agent-controlled, cooldown-protected observation request."""
@@ -30,6 +30,7 @@ class ObservabilityTools(BaseTools):
         subject to a cooldown.
         """
         callback = self.on_observability_requested
+        logger.info("[ObservabilityTools] Requesting canvas observability")
         if not callable(callback):
             return "Error: Canvas observability is not available for this session."
         if not callback():
