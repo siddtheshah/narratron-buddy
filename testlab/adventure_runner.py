@@ -20,11 +20,21 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sys
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 import uuid
 
 from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+ADVENTURES_DIR = ROOT_DIR / "adventures"
+THEATERS_DIR = ROOT_DIR / "theaters"
+load_dotenv(ROOT_DIR / ".env")
+
 from jinja2 import StrictUndefined, Template
 from google.adk.agents import Agent
 from google.adk.apps.app import App
@@ -46,11 +56,6 @@ from utils.config_loader import (
 )
 
 logger = logging.getLogger(__name__)
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-ADVENTURES_DIR = ROOT_DIR / "adventures"
-THEATERS_DIR = ROOT_DIR / "theaters"
-load_dotenv(ROOT_DIR / ".env")
 
 
 class MockCanvasState:
