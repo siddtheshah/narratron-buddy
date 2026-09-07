@@ -2818,12 +2818,20 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=video-loop-silent-20260906-1";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=video-loop-silent-performance-20260906-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20260821-3";
 
         let lastTime = -1;
         let lastImageRawUrl = null;
         let lastImageEffect = null;
+        const PERFORMANCE_STORAGE_KEY = 'narratron.canvas.performance.disableImageEffects';
+        let imageEffectsDisabled = (() => {
+            try {
+                return localStorage.getItem(PERFORMANCE_STORAGE_KEY) === 'true';
+            } catch (_) {
+                return false;
+            }
+        })();
         let isFirstCanvasLoad = true;
         const currentImage = document.getElementById('current-image');
         const bgLayer = document.getElementById('bg-layer');
@@ -3684,6 +3692,7 @@
             image: currentImage,
             backgroundLayer: bgLayer,
             loadedClassNames: ['t-crossfade', 'loaded'],
+            imageEffectsEnabled: () => !imageEffectsDisabled,
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
@@ -3691,6 +3700,16 @@
         const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
         const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
         const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
+
+        function setImageEffectsDisabled(disabled) {
+            imageEffectsDisabled = Boolean(disabled);
+            try {
+                localStorage.setItem(PERFORMANCE_STORAGE_KEY, String(imageEffectsDisabled));
+            } catch (_) {
+                // Storage can be unavailable in private or restricted browser contexts.
+            }
+            imageRenderer.setImageEffectsEnabled?.(!imageEffectsDisabled);
+        }
 
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
@@ -5970,6 +5989,14 @@
         const menuItemHowto = document.getElementById('menu-item-howto');
         const menuItemShare = document.getElementById('menu-item-share');
         const menuItemObs = document.getElementById('menu-item-obs');
+        const disableImageEffectsInput = document.getElementById('disable-image-effects-input');
+
+        if (disableImageEffectsInput) {
+            disableImageEffectsInput.checked = imageEffectsDisabled;
+            disableImageEffectsInput.addEventListener('change', () => {
+                setImageEffectsDisabled(disableImageEffectsInput.checked);
+            });
+        }
 
         function openPulloutMenu() {
             if (!pulloutOverlay) return;
@@ -6650,6 +6677,22 @@
                             <span class="pullout-item-icon">⚙️</span>
                             <span>Edit theater.yaml</span>
                         </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="pullout-section-title">Performance</div>
+                    <div class="pullout-menu-list">
+                        <label class="pullout-menu-item" for="disable-image-effects-input">
+                            <span class="pullout-item-icon">⚡</span>
+                            <span style="flex: 1;">Disable image effects</span>
+                            <input id="disable-image-effects-input" type="checkbox"
+                                aria-describedby="disable-image-effects-hint">
+                        </label>
+                        <div id="disable-image-effects-hint"
+                            style="padding: 0 0.75rem; color: #94a3b8; font-size: 0.75rem; line-height: 1.35;">
+                            Shows plain images and skips image-effect processing.
+                        </div>
                     </div>
                 </div>
 

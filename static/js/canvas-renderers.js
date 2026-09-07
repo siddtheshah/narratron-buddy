@@ -46,6 +46,7 @@ export function createImageRenderer({
     fadeDuration = 1500,
     loadedClassNames = ["loaded"],
     fitMode = "contain",
+    imageEffectsEnabled = () => true,
 }) {
     const context = canvas?.getContext("2d");
     let currentImage = null;
@@ -54,6 +55,30 @@ export function createImageRenderer({
     let sequenceTimer = null;
     let sequenceGeneration = 0;
     let imageEffectController = null;
+    let currentImageEffect = "none";
+    let layeredAnimationRequest = null;
+
+    function areImageEffectsEnabled() {
+        return typeof imageEffectsEnabled === "function"
+            ? imageEffectsEnabled()
+            : Boolean(imageEffectsEnabled);
+    }
+
+    function removeImageEffect() {
+        if (!imageEffectController || !image) return;
+        const frame = imageEffectController.element;
+        imageEffectController.destroy();
+        if (frame?.parentElement) {
+            frame.parentElement.insertBefore(image, frame);
+            frame.remove();
+        }
+        imageEffectController = null;
+        image.classList.remove("image-effect-source");
+        image.style.position = "absolute";
+        image.style.opacity = "0";
+        image.style.zIndex = "-1";
+        image.style.pointerEvents = "none";
+    }
 
     function drawScaledImage(sourceImage, width, height, opacity = 1) {
         if (!context || !sourceImage?.complete || sourceImage.naturalWidth === 0) return;
@@ -97,6 +122,13 @@ export function createImageRenderer({
 
     function applyImageEffect(sourceImage, effect, transition) {
         if (!image) return;
+
+        currentImageEffect = effect || "gleam3";
+        if (!areImageEffectsEnabled()) {
+            // Avoid creating or running effect layers when performance mode disables them.
+            removeImageEffect();
+            return;
+        }
 
         const candidate = String(effect || "gleam3").toLowerCase().trim();
         const resolvedEffect = IMAGE_EFFECTS[candidate] ? candidate : "gleam3";
@@ -196,6 +228,7 @@ export function createImageRenderer({
 
     async function applyTransition(imageUrl, transition = "crossfade", effect = "gleam3") {
         if (!canvas || !context) return;
+        layeredAnimationRequest = null;
         const oldSnapshot = captureCanvasSnapshot();
         stopSequence();
 
@@ -287,6 +320,7 @@ export function createImageRenderer({
         transitionDuration = fadeDuration,
     } = {}) {
         if (!canvas || !context || !Array.isArray(imageUrls) || imageUrls.length < 2) return;
+        layeredAnimationRequest = null;
         stopSequence();
         const generation = sequenceGeneration;
         const frames = await Promise.all(imageUrls.map(async (imageUrl) => {
@@ -394,6 +428,7 @@ export function createImageRenderer({
 
     async function playLayeredAnimation(layers, options = {}) {
         if (!canvas || !context || !Array.isArray(layers) || layers.length < 2) return;
+        layeredAnimationRequest = { layers, options };
         stopSequence();
         const generation = sequenceGeneration;
         const prepared = await Promise.all(layers.map(async (layer) => {
@@ -495,6 +530,13 @@ export function createImageRenderer({
             const source = layer.source;
             const scale = fitMode === "cover" ? Math.max(width / source.naturalWidth, height / source.naturalHeight) : Math.min(width / source.naturalWidth, height / source.naturalHeight);
             const drawWidth = source.naturalWidth * scale * (layer.scale || 1), drawHeight = source.naturalHeight * scale * (layer.scale || 1);
+            if (!areImageEffectsEnabled()) {
+                context.save();
+                context.globalAlpha = layer.opacity !== undefined ? layer.opacity : 1.0;
+                context.drawImage(source, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+                context.restore();
+                return;
+            }
             const cx = width / 2, cy = height / 2, phase = ((now - start) / 1000) * (layer.speed || 1.0);
             const transform = layerTransform(layer.effect, phase);
             const amp = layer.amplitude ?? 1.0;
@@ -532,6 +574,13 @@ export function createImageRenderer({
             context.clearRect(0, 0, rect.width, rect.height);
             prepared.slice().sort((a, b) => (a.order || 0) - (b.order || 0)).forEach(layer => drawLayer(layer, now, rect.width, rect.height));
 
+            // The plain composition is final; do not keep an animation loop alive
+            // once image effects have been disabled.
+            if (!areImageEffectsEnabled()) {
+                activeAnimation = null;
+                return;
+            }
+
             if (oldSnapshot && crossfadeDuration > 0) {
                 const elapsed = now - start;
                 const progress = Math.min(1, Math.max(0, elapsed / crossfadeDuration));
@@ -553,6 +602,7 @@ export function createImageRenderer({
 
     async function playVideoAnimation(videoUrl, options = {}) {
         if (!canvas || !context || !videoUrl) return;
+        layeredAnimationRequest = null;
         stopSequence();
         const generation = sequenceGeneration;
 
@@ -758,7 +808,23 @@ export function createImageRenderer({
         activeAnimation = requestAnimationFrame(frame);
     }
 
-    return { resize, applyTransition, playSequence, playLayeredAnimation, playVideoAnimation, stopSequence };
+    return {
+        resize,
+        applyTransition,
+        playSequence,
+        playLayeredAnimation,
+        playVideoAnimation,
+        stopSequence,
+        setImageEffectsEnabled(enabled) {
+            if (!enabled) {
+                removeImageEffect();
+            } else if (layeredAnimationRequest) {
+                playLayeredAnimation(layeredAnimationRequest.layers, layeredAnimationRequest.options);
+            } else if (currentImage && currentImageEffect !== "none") {
+                applyImageEffect(currentImage, currentImageEffect, "none");
+            }
+        },
+    };
 }
 
 /** Draws normalized doodle segments and replays them after canvas resizes. */
