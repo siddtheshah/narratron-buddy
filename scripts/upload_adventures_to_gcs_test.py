@@ -15,6 +15,7 @@ from scripts.upload_adventures_to_gcs import (
     compute_file_crc32c,
     is_file_changed,
     upload_adventure_to_gcs,
+    is_adventure_excluded,
 )
 
 
@@ -439,6 +440,31 @@ class TestUploadAdventuresToGCS(unittest.TestCase):
         self.assertEqual(result["files_count"], 3)
         self.assertEqual(result["skipped_count"], 0)
         self.assertEqual(mock_target_blob.upload_from_filename.call_count, 3)
+
+    def test_is_adventure_excluded(self):
+        self.assertTrue(is_adventure_excluded("example_adventure"))
+        self.assertTrue(is_adventure_excluded("example-adventure"))
+        self.assertTrue(is_adventure_excluded("Example Adventure"))
+        self.assertFalse(is_adventure_excluded("lesovik-station"))
+        self.assertFalse(is_adventure_excluded("the-witches"))
+
+    def test_upload_adventure_skips_excluded_example(self):
+        mock_bucket = MagicMock()
+        example_dir = Path(self.temp_dir.name) / "example_adventure"
+        example_dir.mkdir(parents=True)
+        (example_dir / "theater.yaml").write_text("agent:\n  style: example\n", encoding="utf-8")
+        (example_dir / "metadata.json").write_text(
+            json.dumps({"id": "example-adventure", "title": "Example Adventure"}),
+            encoding="utf-8",
+        )
+        res = upload_adventure_to_gcs(
+            adventure_dir=example_dir,
+            bucket=mock_bucket,
+            gcs_prefix="adventures",
+        )
+        self.assertTrue(res.get("excluded"))
+        self.assertEqual(res["files_count"], 0)
+        mock_bucket.blob.assert_not_called()
 
 
 if __name__ == "__main__":

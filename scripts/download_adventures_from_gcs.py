@@ -24,6 +24,14 @@ if hasattr(sys.stderr, "reconfigure"):
 DEFAULT_BUCKET = "narratron-buddy-app-storage"
 DEFAULT_PREFIX = "adventures"
 DEFAULT_TARGET_DIR = "adventures"
+EXCLUDED_ADVENTURES = {"example_adventure", "example-adventure"}
+
+
+def is_adventure_excluded(name_or_slug: str) -> bool:
+    """Check if an adventure name or slug should be excluded from GCS sync."""
+    target = (name_or_slug or "").strip().lower()
+    return target in EXCLUDED_ADVENTURES or slugify(target) in EXCLUDED_ADVENTURES
+
 
 
 def slugify(text: str) -> str:
@@ -58,6 +66,9 @@ def group_blobs_by_adventure(blobs: List[Any], gcs_prefix: str) -> Dict[str, Lis
             continue
 
         adv_slug = parts[0]
+        if is_adventure_excluded(adv_slug):
+            continue
+
         file_rel_path = "/".join(parts[1:])
         if adv_slug not in grouped:
             grouped[adv_slug] = []
@@ -87,6 +98,17 @@ def download_adventure_from_gcs(
     """
     adv_target_path = target_dir / adventure_slug
     title = adventure_slug.replace("-", " ").title()
+
+    if is_adventure_excluded(adventure_slug):
+        print(f"⚠️ Skipping '{adventure_slug}': example adventure is excluded from GCS download.")
+        return {
+            "id": adventure_slug,
+            "title": title,
+            "files_count": 0,
+            "total_bytes": 0,
+            "target_path": str(adv_target_path),
+            "excluded": True,
+        }
 
     # Peek at metadata.json if present in items to extract actual title
     meta_item = next((b for b, rel in items if rel == "metadata.json"), None)
@@ -153,7 +175,10 @@ def download_all_adventures(
     overwrite: bool = True,
     dry_run: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Fetch all blobs under gcs_prefix from bucket and download matching adventures."""
+    if adventure_filter and is_adventure_excluded(adventure_filter):
+        print(f"⚠️ Adventure '{adventure_filter}' is an example template and is excluded from GCS download.")
+        return []
+
     clean_prefix = gcs_prefix.strip("/")
     prefix_str = f"{clean_prefix}/" if clean_prefix else ""
 
@@ -171,10 +196,14 @@ def download_all_adventures(
 
     if adventure_filter:
         target = adventure_filter.lower().strip()
+        if is_adventure_excluded(target):
+            print(f"⚠️ Adventure '{adventure_filter}' is an example template and is excluded from GCS download.")
+            return []
         slugified_target = slugify(target)
         filtered_grouped = {
             slug: items for slug, items in grouped.items()
-            if slug.lower() == target or slug.lower() == slugified_target
+            if (slug.lower() == target or slug.lower() == slugified_target)
+            and not is_adventure_excluded(slug)
         }
         if not filtered_grouped:
             print(f"⚠️ Adventure filter '{adventure_filter}' did not match any available adventures: {list(grouped.keys())}")

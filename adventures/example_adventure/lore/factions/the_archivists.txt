@@ -1,0 +1,12 @@
+# Factions and NPCs: The Horologists & Caretakers
+
+## Keeper Orun (The Last Custodian)
+- **Nature**: A seven-foot-tall brass automaton with an etched porcelain face mask and glowing amber optic lenses. He carries a massive iron quill that doubles as a defense baton.
+- **Personality**: Courteous, pedantic, mildly confused by modern idioms, and obsessively devoted to keeping the library quiet.
+- **Motivation**: To catalog every event accurately. He believes the player is an unfiled footnote that must either be properly cataloged or filed away into cold storage.
+- **Roleplay Cue**: Speaks with rhythmic, deliberate cadence, often punctuated by the soft clicking of a miniature metronome in his chest.
+
+## The Gearwork Sentinels
+- Quadrupedal brass hounds and bipedal bronze wardens that patrol the catwalks.
+- Blind to organic life unless an intruder damages a codex, makes loud noises (exceeding Archive silence protocols), or tampers with the Grand Orrery without authorization.
+- Alert levels range from Green (dormant patrol) to Amber (investigating sound) to Crimson (active defense protocol).

@@ -41,6 +41,13 @@ mimetypes.add_type("image/webp", ".webp")
 DEFAULT_BUCKET = "narratron-buddy-app-storage"
 DEFAULT_PREFIX = "adventures"
 DEFAULT_SOURCE_DIR = "adventures"
+EXCLUDED_ADVENTURES = {"example_adventure", "example-adventure"}
+
+def is_adventure_excluded(name_or_slug: str) -> bool:
+    """Check if an adventure name, folder name, or slug should be excluded from GCS sync."""
+    target = (name_or_slug or "").strip().lower()
+    return target in EXCLUDED_ADVENTURES or slugify(target) in EXCLUDED_ADVENTURES
+
 
 def slugify(text: str) -> str:
     """Convert text into a safe URL slug."""
@@ -279,6 +286,24 @@ def upload_adventure_to_gcs(
     metadata = create_or_load_metadata(adventure_dir)
     adventure_slug = metadata.get("id") or slugify(adventure_dir.name)
     adventure_title = metadata.get("title", adventure_dir.name)
+
+    if is_adventure_excluded(adventure_dir.name) or is_adventure_excluded(adventure_slug):
+        print(f"⚠️ Skipping '{adventure_title}' ({adventure_dir.name}): excluded example adventure.")
+        return {
+            "id": adventure_slug,
+            "title": adventure_title,
+            "created_at": metadata.get("created_at"),
+            "files_count": 0,
+            "uploaded_files": [],
+            "skipped_count": 0,
+            "skipped_files": [],
+            "skipped_bytes": 0,
+            "pruned_count": 0,
+            "cleared_count": 0,
+            "total_bytes": 0,
+            "excluded": True,
+        }
+
     files = collect_adventure_files(adventure_dir)
 
     print(f"\n📂 Processing Adventure: '{adventure_title}' ({adventure_dir.name}) -> {gcs_prefix}/{adventure_slug}/")
@@ -433,16 +458,21 @@ def main():
     # Gather adventure folders from source_path
     adventure_folders: List[Path] = []
     if (source_path / "theater.yaml").exists() or (source_path / "metadata.json").exists():
-        adventure_folders = [source_path]
+        if not is_adventure_excluded(source_path.name):
+            adventure_folders = [source_path]
     else:
         adventure_folders = [
             p for p in source_path.iterdir()
             if p.is_dir() and not p.name.startswith(".")
+            and not is_adventure_excluded(p.name)
             and ((p / "theater.yaml").exists() or (p / "metadata.json").exists())
         ]
 
     if args.adventure:
         target = args.adventure.lower().strip()
+        if is_adventure_excluded(target):
+            print(f"⚠️ Adventure '{args.adventure}' is an example template and is excluded from GCS upload.")
+            sys.exit(0)
         adventure_folders = [
             p for p in adventure_folders
             if p.name.lower() == target or slugify(p.name) == target

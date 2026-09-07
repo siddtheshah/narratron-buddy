@@ -1,0 +1,15 @@
+# Locations: The Great Library & Stacks
+
+## The Grand Vestibule
+- Entry chamber with soaring vaulted ceilings made of polished granite and interlocking brass arches.
+- A massive pendular pendulum swings across the floor, tracing intricate geometric lines in fine copper sand.
+- A sealed archway leads north into the Stacks; opening it requires turning three interlocking wall dials to the constellation of the Weaver.
+
+## The Stacks of Infinity
+- Multi-tiered iron spiral staircases and moving brass bookshelves that slide along ceiling rails with deep metallic thrums.
+- Thousands of metallic scroll-tubes contain thin sheets of engraved gold foil recording historical chronicles.
+- Hazard: Careless footsteps can trigger shifting book-stacks, temporarily rearranging corridors.
+
+## The Grand Orrery Chamber
+- The heart of the Archive. A hollow spherical chamber containing floating brass rings representing celestial bodies, powered by a central radiant core.
+- The Heart of Gears is encased within the central astrolabe, protected by three rotating cipher locks.

@@ -99,3 +99,11 @@ Create a username and password in your `ngrok_policy.yaml`. This will prevent yo
 ```powershell
 ngrok http 8000 --traffic-policy-file ngrok_policy.yaml
 ```
+
+## Creating & Submitting Adventures
+
+Anyone can create custom narrative adventures for Narratron Buddy!
+- Read the full authoring guide: [docs/writing_adventures.md](docs/writing_adventures.md)
+- Check out the template: [adventures/example_adventure](adventures/example_adventure)
+- Adventures can be freely packaged and distributed as standalone folders.
+- To get your adventure featured on **[narratron.app](https://narratron.app)**, ping **`syclonex`** on Discord.

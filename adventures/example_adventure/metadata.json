@@ -1,0 +1,18 @@
+{
+  "id": "example-adventure",
+  "title": "The Clockwork Archive",
+  "description": "Explore the shifting clockwork halls of the ancient Archive, decipher forgotten codices, and bargain with mechanical sentinels.",
+  "author": "Narratron Adventurer",
+  "genre": "Fantasy / Mystery",
+  "tags": [
+    "Example",
+    "Fantasy",
+    "Mystery",
+    "Clockwork",
+    "Exploration"
+  ],
+  "created_at": "2026-09-07T18:00:00Z",
+  "cover_image": "references/clockwork_archive_cover.png",
+  "difficulty": "Medium",
+  "recommended_players": "1-4"
+}

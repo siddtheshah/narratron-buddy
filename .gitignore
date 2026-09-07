@@ -13,7 +13,10 @@ output/
 scratch/
 theaters/
 ephemeral/
-adventures/
+adventures/*
+!adventures/README.md
+!adventures/example_adventure/
+!adventures/example_adventure/**
 demos/
 music_catalog/
 evaluation_results/

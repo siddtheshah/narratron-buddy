@@ -51,6 +51,15 @@ def test_docs_index_links_to_each_documentation_page():
     assert 'href="/docs/about"' in response
     assert 'href="/docs/ideas"' in response
     assert 'href="/docs/theater-yaml"' in response
+    assert 'href="/docs/writing-adventures"' in response
+
+
+def test_docs_writing_adventures_page_renders():
+    response = pages.read_docs_writing_adventures()
+    assert "Writing Adventures for Narratron Buddy" in response
+    assert "syclonex" in response
+    assert "The Clockwork Archive" in response or "example_adventure" in response
+    assert "<pre><code" in response
 
 
 def test_docs_index_is_not_shadowed_by_the_openapi_docs():
@@ -138,6 +147,9 @@ def test_render_shared_topbar_active_highlighting():
 
     docs_topbar = pages.render_shared_topbar(active_page="docs-about")
     assert 'href="/docs" class="deploy-nav-btn active"' in docs_topbar
+
+    docs_adv_topbar = pages.render_shared_topbar(active_page="docs-writing-adventures")
+    assert 'href="/docs" class="deploy-nav-btn active"' in docs_adv_topbar
 
     pricing_topbar = pages.render_shared_topbar(active_page="deploy", show_pricing=True)
     assert 'onclick="openPricingModal()"' in pricing_topbar

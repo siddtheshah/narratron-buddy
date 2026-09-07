@@ -1,0 +1,61 @@
+# ==============================================================================
+# Narratron Adventure Theater Configuration: The Clockwork Archive
+# ==============================================================================
+
+# Agent instructions & behavioral flags
+agent:
+    proactivity: false
+    affective_dialog: false
+    special_instructions: "Guide the player through the labyrinthine Clockwork Archive. Present tactile mechanical puzzles, react dynamically to player choices, and maintain an air of ancient scholarly intrigue."
+
+# Default visual displayed on load (must match a file in references/)
+starting_image: "clockwork_archive_cover.png"
+
+# Visuals & generative prompt styling
+visuals:
+    cycle_length: 6
+    style: "steampunk fantasy art, brass gears, ancient glowing parchment scrolls, warm lantern light, volumetric dust motes, intricate clockwork machinery, detailed digital painting"
+
+# Canvas image generation controls
+image_generation:
+    enabled: true
+    cooldown_duration: 6
+
+# Audio & Playlist configuration
+music:
+    use_generated_music: true
+    playlists_folder: "playlists"
+    generation_cooldown: 90
+    switch_cooldown: 15
+    style: "subtle ticking clocks, atmospheric cello melodies, distant brass chimes, loopable ambient music"
+
+# Dynamic narrative & sticky note state management
+story_planning:
+    adventure_mode: true
+    auto_begin: true
+    character_voicing: false
+    text_beautification: true
+    nodes_ahead: 3
+    style: "thoughtful mystery emphasizing puzzle-solving, mechanical deductions, and emergent lore discovery"
+    cooldown_duration: 8
+    require_user_input: true
+    action_cooldown_words_per_second: 20
+    action_cooldown_max_seconds: 25
+
+    # Maximum number of persistent stickies tracked on the board
+    max_named_elements: 5
+
+    # Initial sticky notes populated when the adventure starts
+    initial_elements:
+        "Player Character": "Name: Unnamed Explorer | Role: Scholar-Lockbreaker | Goal: Uncover the Heart of Gears | Condition: Healthy"
+        "Archive Security & Alert Level": "Alert: Green (Undetected) | Sentinels: Patrolling Lower Gallery | Grand Orrery: Locked"
+        "Collected Codices & Clues": "Found: Brass Cipher Wheel (unsolved), Notes on Keeper Orun's exile."
+
+    # Stickies that the planner must preserve during board consolidation
+    required_stickies:
+        - "Player Character"
+        - "Archive Security & Alert Level"
+
+# Chat cooldown in seconds
+chat:
+    cooldown_duration: 20

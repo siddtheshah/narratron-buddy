@@ -25,7 +25,7 @@ from api_server.shared import (
 
 
 def _format_about_inline(text: str) -> str:
-    """Render the small, safe Markdown subset used by ABOUT.md."""
+    """Render the small, safe Markdown subset used by ABOUT.md and documentation."""
     escaped = html.escape(text, quote=False)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
@@ -33,7 +33,7 @@ def _format_about_inline(text: str) -> str:
 
     def link(match: re.Match) -> str:
         label, url = match.groups()
-        if re.match(r"^(https?://|mailto:)", url):
+        if re.match(r"^(https?://|mailto:|/|#)", url):
             return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
         return label
 
@@ -41,11 +41,14 @@ def _format_about_inline(text: str) -> str:
 
 
 def render_about_markdown(markdown_source: str) -> str:
-    """Convert the headings, lists, and paragraphs in ABOUT.md to page markup."""
+    """Convert headings, code blocks, lists, and paragraphs in Markdown to page markup."""
     blocks: List[str] = []
     list_items: List[str] = []
     list_tag: Optional[str] = None
     paragraph: List[str] = []
+    in_code_block: bool = False
+    code_block_lines: List[str] = []
+    code_block_lang: str = ""
 
     def flush_list() -> None:
         nonlocal list_items, list_tag
@@ -60,9 +63,37 @@ def render_about_markdown(markdown_source: str) -> str:
             blocks.append(f"<p>{_format_about_inline(' '.join(paragraph))}</p>")
         paragraph = []
 
+    def flush_code_block() -> None:
+        nonlocal code_block_lines, code_block_lang, in_code_block
+        if in_code_block:
+            escaped = html.escape("\n".join(code_block_lines))
+            lang_attr = f' class="language-{html.escape(code_block_lang)}"' if code_block_lang else ""
+            blocks.append(f"<pre><code{lang_attr}>{escaped}</code></pre>")
+        code_block_lines = []
+        code_block_lang = ""
+        in_code_block = False
+
     for raw_line in markdown_source.splitlines():
-        line = raw_line.strip()
-        heading = re.match(r"^(#{1,3})\s+(.+)$", line)
+        trimmed = raw_line.strip()
+
+        if trimmed.startswith("```"):
+            if in_code_block:
+                flush_code_block()
+            else:
+                flush_paragraph()
+                flush_list()
+                in_code_block = True
+                code_block_lang = trimmed[3:].strip()
+                code_block_lines = []
+            continue
+
+        if in_code_block:
+            code_block_lines.append(raw_line)
+            continue
+
+        line = trimmed
+        heading = re.match(r"^(#{1,4})\s+(.+)$", line)
+        task_item = re.match(r"^[-*]\s+\[([ xX])\]\s+(.+)$", line)
         unordered_item = re.match(r"^[-*]\s+(.+)$", line)
         ordered_item = re.match(r"^\d+\.\s+(.+)$", line)
 
@@ -70,7 +101,16 @@ def render_about_markdown(markdown_source: str) -> str:
             flush_paragraph()
             flush_list()
             level = len(heading.group(1))
-            blocks.append(f"<h{level}>{_format_about_inline(heading.group(2))}</h{level}>")
+            heading_text = heading.group(2)
+            blocks.append(f"<h{level}>{_format_about_inline(heading_text)}</h{level}>")
+        elif task_item:
+            flush_paragraph()
+            if list_tag and list_tag != "ul":
+                flush_list()
+            list_tag = "ul"
+            checked = " checked" if task_item.group(1).lower() == "x" else ""
+            item_text = task_item.group(2)
+            list_items.append(f'<li class="task-list-item"><input type="checkbox" disabled{checked}> {_format_about_inline(item_text)}</li>')
         elif unordered_item or ordered_item:
             flush_paragraph()
             item_tag = "ul" if unordered_item else "ol"
@@ -91,6 +131,7 @@ def render_about_markdown(markdown_source: str) -> str:
 
     flush_paragraph()
     flush_list()
+    flush_code_block()
     return "\n".join(blocks)
 
 
@@ -108,12 +149,12 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return template.render(active_page=active_page, show_pricing=show_pricing)
     except Exception:
         out = raw
-        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml"}
+        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-adventures"}
         out = out.replace(
-            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml'] %}active{% endif %}",
+            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures'] %}active{% endif %}",
             "active" if docs_active else "",
         )
-        for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-theater-yaml", "stats", "deploy"]:
+        for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "stats", "deploy"]:
             pattern = f"{{% if active_page == '{p}' %}}active{{% endif %}}"
             out = out.replace(pattern, "active" if active_page == p else "")
         if show_pricing:
@@ -227,6 +268,23 @@ def read_docs_ideas():
 def read_docs_theater_yaml():
     """Explain the configuration fields available in theater.yaml."""
     return render_page_template("theater_yaml_docs.html", active_page="docs-theater-yaml")
+
+
+@app.get("/docs/writing-adventures", response_class=HTMLResponse)
+@app.get("/docs/adventures", response_class=HTMLResponse)
+def read_docs_writing_adventures():
+    """Serve the Adventure Authoring Guide from docs/writing_adventures.md."""
+    doc_path = PROJECT_ROOT / "docs" / "writing_adventures.md"
+    raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
+    adventures_content = render_about_markdown(raw_content)
+    return render_page_template(
+        "about.html",
+        active_page="docs-writing-adventures",
+        extra_replacements={
+            "<!-- ABOUT_CONTENT -->": adventures_content,
+            "<title>About Narratron</title>": "<title>Writing Adventures · Docs · Narratron</title>",
+        },
+    )
 
 @app.get("/stats", response_class=HTMLResponse)
 def read_stats():

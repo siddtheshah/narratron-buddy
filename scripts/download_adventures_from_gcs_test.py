@@ -11,6 +11,7 @@ from scripts.download_adventures_from_gcs import (
     download_all_adventures,
     group_blobs_by_adventure,
     slugify,
+    is_adventure_excluded,
 )
 
 
@@ -126,6 +127,47 @@ class TestDownloadAdventuresFromGCS(unittest.TestCase):
         self.assertEqual(results[0]["id"], "the-trader")
         self.assertTrue((self.target_dir / "the-trader" / "metadata.json").exists())
         self.assertFalse((self.target_dir / "lesovik-station").exists())
+
+    def test_is_adventure_excluded(self):
+        self.assertTrue(is_adventure_excluded("example_adventure"))
+        self.assertTrue(is_adventure_excluded("example-adventure"))
+        self.assertTrue(is_adventure_excluded("Example Adventure"))
+        self.assertFalse(is_adventure_excluded("the-trader"))
+
+    def test_group_blobs_omits_example_adventure(self):
+        blob_ex = MagicMock()
+        blob_ex.name = "adventures/example_adventure/metadata.json"
+        blob_real = MagicMock()
+        blob_real.name = "adventures/the-trader/metadata.json"
+
+        grouped = group_blobs_by_adventure([blob_ex, blob_real], gcs_prefix="adventures")
+        self.assertNotIn("example_adventure", grouped)
+        self.assertNotIn("example-adventure", grouped)
+        self.assertIn("the-trader", grouped)
+
+    def test_download_adventure_skips_excluded_example(self):
+        mock_blob = MagicMock()
+        items = [(mock_blob, "metadata.json")]
+        res = download_adventure_from_gcs(
+            adventure_slug="example_adventure",
+            items=items,
+            target_dir=self.target_dir,
+        )
+        self.assertTrue(res.get("excluded"))
+        self.assertEqual(res["files_count"], 0)
+        mock_blob.download_to_filename.assert_not_called()
+        mock_blob.download_as_bytes.assert_not_called()
+
+    def test_download_all_adventures_filter_excluded_example(self):
+        mock_bucket = MagicMock()
+        results = download_all_adventures(
+            bucket=mock_bucket,
+            gcs_prefix="adventures",
+            target_dir=self.target_dir,
+            adventure_filter="example_adventure",
+        )
+        self.assertEqual(results, [])
+        mock_bucket.list_blobs.assert_not_called()
 
 
 if __name__ == "__main__":
