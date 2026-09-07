@@ -49,6 +49,9 @@ story_planning:
     (lore_dir / "01_synthetic_lore.txt").write_text("Synthetic lore content about testing rig.", encoding="utf-8")
 
     monkeypatch.setattr("testlab.adventure_runner.ADVENTURES_DIR", adventures_dir)
+    theaters_dir = tmp_path / "theaters"
+    theaters_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("testlab.adventure_runner.THEATERS_DIR", theaters_dir)
 
     return adv_dir
 

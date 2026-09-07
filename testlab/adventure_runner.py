@@ -38,7 +38,12 @@ from services.agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, ge
 from tools.story_planning_tool import StoryPlanningTools, VertexGemini
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider
-from utils.config_loader import deep_merge, get_app_config, get_theater_default_config
+from utils.config_loader import (
+    deep_merge,
+    get_app_config,
+    get_theater_default_config,
+    save_theater_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +454,8 @@ class AdventureSession:
         adv_playlists = self.adventure_path / "playlists"
         if adv_playlists.is_dir():
             shutil.copytree(adv_playlists, playlists_target, dirs_exist_ok=True)
+
+        save_theater_config(self.session_id, self.config, theater_manager=self.theater_manager)
 
     def _process_user_action_wrapper(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         """Wrapper for process_user_action that resolves synchronously and delivers the planner result."""
