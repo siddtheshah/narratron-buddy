@@ -5603,14 +5603,14 @@
             updateMicToggleUI();
         }
 
-        // The agent socket follows agent lifecycle and tab focus. This control only
-        // decides whether microphone audio is forwarded through that socket.
+        // The agent socket follows agent lifecycle and tab focus. Enabling the mic
+        // summons an inactive agent first, then only controls audio forwarding.
         agentConnectBtn.addEventListener('click', async () => {
             if (isRecording) {
                 stopMicStream();
             } else {
                 try {
-                    if (!isAgentStarted) throw new Error('Start the agent before enabling microphone audio.');
+                    if (!isAgentStarted) await startAgentTheater();
                     await connectAgent();
                     await startMicStream();
                 } catch (err) {

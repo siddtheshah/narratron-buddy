@@ -23,3 +23,13 @@ def test_first_time_orator_opens_microphone_configuration_after_tutorial():
 
     assert "openOratorHowtoModal({ openMicConfigOnClose: true })" in content
     assert "if (openMicConfigOnClose) openMicConfigModal();" in content
+
+
+def test_enabling_mic_summons_an_inactive_agent_before_recording():
+    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+
+    mic_handler = content.split("agentConnectBtn.addEventListener('click', async () => {", 1)[1].split(
+        "// ========================================\n        // Configurable Mic Hotkey Logic", 1
+    )[0]
+    assert "if (!isAgentStarted) await startAgentTheater();" in mic_handler
+    assert "await startMicStream();" in mic_handler
