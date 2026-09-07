@@ -595,6 +595,8 @@
             border-radius: 24px;
             max-width: 520px;
             width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
             box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 30px rgba(168, 85, 247, 0.15);
             padding: 2rem;
             position: relative;
@@ -4789,6 +4791,7 @@
         let audioRecorderContext = null;
         let micStream = null;
         let isRecording = false;
+        let isMicAwaiting = false;
         let isAgentStarted = false;
         let agentReconnectTimer = null;
 
@@ -5388,8 +5391,13 @@
 
         function updateMicToggleUI() {
             if (!agentConnectBtn) return;
-            agentConnectBtn.textContent = isRecording ? '🎙️ Mute Mic' : '🎙️ Enable Mic';
-            agentConnectBtn.style.background = isRecording ? '#ef4444' : '#3b82f6';
+            agentConnectBtn.textContent = isRecording
+                ? '🎙️ Mute Mic'
+                : isMicAwaiting
+                    ? '🎙️ Awaiting'
+                    : '🎙️ Enable Mic';
+            agentConnectBtn.style.background = isRecording ? '#ef4444' : isMicAwaiting ? '#eab308' : '#3b82f6';
+            agentConnectBtn.disabled = isMicAwaiting;
             agentConnectBtn.setAttribute('aria-pressed', String(isRecording));
         }
 
@@ -5615,8 +5623,11 @@
                 audioRecorderContext = context;
                 micStream = stream;
                 isRecording = true;
+                isMicAwaiting = false;
                 updateMicToggleUI();
             } catch (err) {
+                isMicAwaiting = false;
+                updateMicToggleUI();
                 console.error("Failed to start mic recording:", err);
                 alert("Could not access microphone: " + err.message);
             }
@@ -5638,6 +5649,7 @@
             }
             audioRecorderNode = null;
             isRecording = false;
+            isMicAwaiting = false;
             setPcmBroadcasting(false);
             updateMicToggleUI();
         }
@@ -5649,10 +5661,15 @@
                 stopMicStream();
             } else {
                 try {
-                    if (!isAgentStarted) await startAgentTheater();
+                    if (!isAgentStarted) {
+                        isMicAwaiting = true;
+                        updateMicToggleUI();
+                        await startAgentTheater();
+                    }
                     await connectAgent();
                     await startMicStream();
                 } catch (err) {
+                    isMicAwaiting = false;
                     console.error("Failed to enable microphone audio:", err);
                     alert(err.message || 'Could not enable microphone audio.');
                     updateMicToggleUI();
@@ -5684,7 +5701,31 @@
             }
         } catch (e) { }
 
+        // ========================================
+        // Configurable Text Input Hotkey Logic
+        // ========================================
+        const menuItemTextHotkey = document.getElementById('menu-item-text-hotkey');
+        let isRebindingTextHotkey = false;
+
+        // Default text input hotkey: Shift + Space
+        let currentTextHotkey = {
+            code: 'Space',
+            key: ' ',
+            altKey: false,
+            ctrlKey: false,
+            shiftKey: true
+        };
+
+        // Load the browser-specific text hotkey preference.
+        try {
+            const savedTextHotkey = localStorage.getItem('narratron_text_hotkey');
+            if (savedTextHotkey) {
+                currentTextHotkey = JSON.parse(savedTextHotkey);
+            }
+        } catch (e) { }
+
         function formatHotkeyLabel(hk) {
+            if (!hk) return '';
             let parts = [];
             if (hk.ctrlKey) parts.push('Ctrl');
             if (hk.altKey) parts.push('Alt');
@@ -5720,7 +5761,10 @@
             } else if (codeLabel === 'Space') {
                 codeLabel = 'Space';
             }
-            parts.push(codeLabel.toUpperCase());
+            if (codeLabel !== 'Space') {
+                codeLabel = codeLabel.toUpperCase();
+            }
+            parts.push(codeLabel);
             return parts.join(' + ');
         }
 
@@ -5733,15 +5777,64 @@
             if (menuHotkeyDisplay) {
                 menuHotkeyDisplay.textContent = label;
             }
+            const howtoMicDisplay = document.getElementById('howto-mic-hotkey-display');
+            if (howtoMicDisplay) {
+                howtoMicDisplay.textContent = formatHotkeyLabel(currentHotkey);
+            }
+        }
+
+        function updateTextHotkeyUI() {
+            const label = `Text Input Hotkey: ${formatHotkeyLabel(currentTextHotkey)}`;
+            const menuTextHotkeyDisplay = document.getElementById('menu-text-hotkey-display');
+            if (menuTextHotkeyDisplay) {
+                menuTextHotkeyDisplay.textContent = label;
+            }
+            const howtoTextDisplay = document.getElementById('howto-text-hotkey-display');
+            if (howtoTextDisplay) {
+                howtoTextDisplay.textContent = formatHotkeyLabel(currentTextHotkey);
+            }
+            const howtoTipTextDisplay = document.getElementById('howto-tip-text-hotkey');
+            if (howtoTipTextDisplay) {
+                howtoTipTextDisplay.textContent = formatHotkeyLabel(currentTextHotkey);
+            }
         }
 
         updateHotkeyUI();
+        updateTextHotkeyUI();
 
         // Rebind hotkey click handler
         const menuItemHotkey = document.getElementById('menu-item-hotkey');
         function startHotkeyRebind(btnElem, labelElem) {
             if (isRebindingHotkey) return;
+            if (isRebindingTextHotkey) {
+                isRebindingTextHotkey = false;
+                if (menuItemTextHotkey) {
+                    menuItemTextHotkey.style.background = '';
+                    menuItemTextHotkey.style.color = '';
+                }
+                updateTextHotkeyUI();
+            }
             isRebindingHotkey = true;
+            if (btnElem) {
+                btnElem.style.background = 'rgba(234, 179, 8, 0.25)';
+                btnElem.style.color = '#fef08a';
+            }
+            if (labelElem) {
+                labelElem.textContent = 'Press key combo to rebind...';
+            }
+        }
+
+        function startTextHotkeyRebind(btnElem, labelElem) {
+            if (isRebindingTextHotkey) return;
+            if (isRebindingHotkey) {
+                isRebindingHotkey = false;
+                if (menuItemHotkey) {
+                    menuItemHotkey.style.background = '';
+                    menuItemHotkey.style.color = '';
+                }
+                updateHotkeyUI();
+            }
+            isRebindingTextHotkey = true;
             if (btnElem) {
                 btnElem.style.background = 'rgba(234, 179, 8, 0.25)';
                 btnElem.style.color = '#fef08a';
@@ -5758,6 +5851,13 @@
                 startHotkeyRebind(menuItemHotkey, menuHotkeyDisplay);
             });
         }
+        if (menuItemTextHotkey) {
+            menuItemTextHotkey.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const menuTextHotkeyDisplay = document.getElementById('menu-text-hotkey-display');
+                startTextHotkeyRebind(menuItemTextHotkey, menuTextHotkeyDisplay);
+            });
+        }
         if (micHotkeyBtn) {
             micHotkeyBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -5770,6 +5870,55 @@
             if (!isCurrentOrator()) return;
 
             if (isOratorCommandOpen()) return;
+
+            // Rebinding text hotkey state
+            if (isRebindingTextHotkey) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // If user presses Escape, cancel rebinding
+                if (e.code === 'Escape') {
+                    isRebindingTextHotkey = false;
+                    if (menuItemTextHotkey) {
+                        menuItemTextHotkey.style.background = '';
+                        menuItemTextHotkey.style.color = '';
+                    }
+                    updateTextHotkeyUI();
+                    return;
+                }
+
+                // Ignore standalone modifier keypresses
+                if (['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight'].includes(e.code)) {
+                    return;
+                }
+
+                currentTextHotkey = {
+                    code: e.code,
+                    key: e.key,
+                    altKey: e.altKey,
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey
+                };
+
+                try {
+                    localStorage.setItem('narratron_text_hotkey', JSON.stringify(currentTextHotkey));
+                } catch (err) { }
+
+                isRebindingTextHotkey = false;
+                if (menuItemTextHotkey) {
+                    menuItemTextHotkey.style.background = 'rgba(16, 185, 129, 0.25)';
+                    menuItemTextHotkey.style.color = '#6ee7b7';
+                }
+                updateTextHotkeyUI();
+
+                setTimeout(() => {
+                    if (menuItemTextHotkey) {
+                        menuItemTextHotkey.style.background = '';
+                        menuItemTextHotkey.style.color = '';
+                    }
+                }, 600);
+                return;
+            }
 
             // Rebinding hotkey state
             if (isRebindingHotkey) {
@@ -5841,7 +5990,13 @@
                 return;
             }
 
-            if (e.code === 'Space' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            // Match configurable text input hotkey
+            const matchTextCode = e.code === currentTextHotkey.code;
+            const matchTextAlt = !!e.altKey === !!currentTextHotkey.altKey;
+            const matchTextCtrl = !!e.ctrlKey === !!currentTextHotkey.ctrlKey;
+            const matchTextShift = !!e.shiftKey === !!currentTextHotkey.shiftKey;
+
+            if (matchTextCode && matchTextAlt && matchTextCtrl && matchTextShift) {
                 e.preventDefault();
                 openOratorCommand();
                 return;
@@ -5867,6 +6022,23 @@
             try { localStorage.setItem('narratron_mic_hotkey', JSON.stringify(currentHotkey)); } catch (e) { }
             updateHotkeyUI();
         };
+
+        window.setTextHotkey = (hk) => {
+            if (typeof hk === 'string') {
+                currentTextHotkey = { code: hk, key: hk, altKey: false, ctrlKey: false, shiftKey: false };
+            } else if (hk && typeof hk === 'object') {
+                currentTextHotkey = {
+                    code: hk.code || 'Space',
+                    key: hk.key || ' ',
+                    altKey: !!hk.altKey,
+                    ctrlKey: !!hk.ctrlKey,
+                    shiftKey: !!hk.shiftKey
+                };
+            }
+            try { localStorage.setItem('narratron_text_hotkey', JSON.stringify(currentTextHotkey)); } catch (e) { }
+            updateTextHotkeyUI();
+        };
+        window.setTextCommandHotkey = window.setTextHotkey;
 
         // Expose helper functions on window for automated evaluation
         window.enableAudioInput = () => {
@@ -6393,6 +6565,22 @@
         function closeMicConfigModal() {
             if (!micConfigModal) return;
             if (stopMicTestCapture) stopMicTestRecording();
+            if (isRebindingHotkey) {
+                isRebindingHotkey = false;
+                if (menuItemHotkey) {
+                    menuItemHotkey.style.background = '';
+                    menuItemHotkey.style.color = '';
+                }
+                updateHotkeyUI();
+            }
+            if (isRebindingTextHotkey) {
+                isRebindingTextHotkey = false;
+                if (menuItemTextHotkey) {
+                    menuItemTextHotkey.style.background = '';
+                    menuItemTextHotkey.style.color = '';
+                }
+                updateTextHotkeyUI();
+            }
             micConfigModal.classList.remove('active');
             micConfigModal.setAttribute('aria-hidden', 'true');
         }
@@ -6859,7 +7047,7 @@
                         <div class="step-desc">
                             When the agent is running and this tab is active, the canvas connects automatically. Click
                             <strong>Enable Mic</strong> (or press hotkey <code
-                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;">Ctrl+Shift+[</code>)
+                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;" id="howto-mic-hotkey-display">Ctrl+Shift+[</code>)
                             to begin real-time microphone streaming, then click <strong>Mute Mic</strong> to stop it.
                         </div>
                     </div>
@@ -6880,14 +7068,29 @@
                 </div>
 
                 <div class="howto-step-card">
+                    <div class="step-num">3</div>
+                    <div class="step-content">
+                        <div class="step-title">
+                            Command Narratron via Text
+                            <span class="step-badge" style="background: rgba(99, 102, 241, 0.2); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.4);">💬 Text Input</span>
+                        </div>
+                        <div class="step-desc">
+                            Prefer typing or directing the agent quietly? Press hotkey <code
+                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #c7d2fe;" id="howto-text-hotkey-display">Shift+Space</code>
+                            to summon the command prompt and send instructions directly to Narratron.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="howto-step-card">
                     <div class="step-num">💡</div>
                     <div class="step-content">
                         <div class="step-title">Tips for Orators</div>
                         <div class="step-desc">
                             • Use headphones to prevent background audio echo.<br>
                             • Use the bottom toolbar to doodle live on canvas.<br>
-                            • Press <code style="color:#c7d2fe;">Shift+Space</code> to type a direct command to Narratron.<br>
-                            • Open pullout menu ➔ <strong>Hotkey</strong> to customize your shortcut.
+                            • Press <code id="howto-tip-text-hotkey" style="color:#c7d2fe;">Shift+Space</code> to type a direct command to Narratron without speaking.<br>
+                            • Open ✨ menu ➔ <strong>Microphone Configuration</strong> to customize your mic toggle and text input shortcuts.
                         </div>
                     </div>
                 </div>
@@ -7135,6 +7338,12 @@
                     title="Click to rebind Orator mic toggle hotkey">
                     <span class="pullout-item-icon">⌨️</span>
                     <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
+                </button>
+
+                <button id="menu-item-text-hotkey" class="pullout-menu-item"
+                    title="Click to rebind Orator text input hotkey">
+                    <span class="pullout-item-icon">💬</span>
+                    <span id="menu-text-hotkey-display">Text Input Hotkey: Shift + Space</span>
                 </button>
 
                 <div class="pullout-menu-item"
