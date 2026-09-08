@@ -286,6 +286,14 @@ it. The instructions to provide the hint should take that into account.
 
 ---
 
+### 5.6. Counter-Plotting & Adversarial Escalation Pattern
+- **Dynamic Opposition**: When players perform exceptionally well, amass powerful leverage, or bully key NPCs/factions, the opposition must not remain passive punching bags.
+- **Auditing Past Actions**: Instruct the story planner to have rival NPCs investigate the player's previous actions during the scenario (e.g., reviewing security scrying logs, checking forged signatures or seals, debriefing spies/guards, or inspecting physical crime scenes).
+- **Retroactive Dirt & Standoffs**: NPCs manufacture or discover counter-dirt on the player based on earlier sloppy steps, creating dramatic counter-blackmail standoffs, mutual assured destruction, or ambush hearings before authority figures.
+- **Sticky Note Tracking**: Track emerging counter-investigations on the relevant leverage or faction sticky note to keep the pressure tangible across turns.
+
+---
+
 ## 6. Visual & Audio Peripherals
 
 ### 6.1. Visual References (`references/`)
