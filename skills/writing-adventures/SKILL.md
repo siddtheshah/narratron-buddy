@@ -277,6 +277,15 @@ If your adventure features non-standard mechanics (such as trading economies, af
 
 ---
 
+### 5.5. Player Death, Lethal Consequences & Restarts
+- **Explicit Lethality**: When designing adventures with deadly hazards, hostile tyrants, assassinations, or lethal combat, explicitly permit player death in `theater.yaml` (`style` and `agent.special_instructions`) and `lore/readfirst_*.txt`.
+- **No Artificial Plot Armor**: Instruct the story planner that plot armor should not protect players who take deliberately suicidal actions, drink lethal poisons, or fail unescapable ultimatums.
+- **Restart on Continuation**: Clearly specify that if player death or a fatal loss condition occurs, any continued play represents a clean restart of the scenario from the beginning (as a new character, fresh incarnation, or timeline reset).
+- **Death Hint**: Add instructions for the story planner to give some possibly cryptic hint for why the player died, if it wasn't obvious. The player should feel like their death was a fair possibility, and learn from
+it. The instructions to provide the hint should take that into account.
+
+---
+
 ## 6. Visual & Audio Peripherals
 
 ### 6.1. Visual References (`references/`)

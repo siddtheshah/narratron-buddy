@@ -825,7 +825,8 @@ class AutoPlayer:
             f"(b) a concrete in-character 'action' (1-3 sentences).\n"
             f"5. Do NOT narrate the outcome of your own action. Only state what you say or attempt to do. "
             f"The Narratron game master will determine what happens.\n"
-            f"6. Do NOT prefix your action with 'Player:' or 'Action:'. Provide only the direct in-character action/speech."
+            f"6. Do NOT prefix your action with 'Player:' or 'Action:'. Provide only the direct in-character action/speech.\n"
+            f"7. If your character experiences death, disintegration, execution, or a definitive fatal loss, and play continues, acknowledge your demise and restart the adventure as a new character/candidate from the beginning (e.g. Assistant #16 or a new adventurer)."
         )
 
     def _build_prompt(
