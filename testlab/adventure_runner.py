@@ -637,18 +637,41 @@ class AdventureSession:
 
         lore_activity: List[Dict[str, Any]] = []
         lore_docs_browsed: List[str] = []
+        narration: str = ""
+        dialogue: List[Dict[str, Any]] = []
+
         for call in new_tool_calls:
             if call.get("tool") == "process_user_action" and isinstance(call.get("result"), dict):
-                lore_activity.extend(call["result"].get("lore_activity", []))
-                lore_docs_browsed.extend(call["result"].get("lore_docs_browsed", []))
+                call_res = call["result"]
+                lore_activity.extend(call_res.get("lore_activity", []))
+                lore_docs_browsed.extend(call_res.get("lore_docs_browsed", []))
+                if call_res.get("narration"):
+                    narration = str(call_res["narration"]).strip()
+                if isinstance(call_res.get("dialogue"), list):
+                    dialogue = call_res["dialogue"]
 
         lore_docs_browsed = list(dict.fromkeys(lore_docs_browsed))
+
+        # Fallback to last scene reaction if process_user_action wasn't in new_tool_calls
+        if not narration or not dialogue:
+            last_reaction = getattr(self.story_planning_tools, "_last_scene_reaction", {})
+            if isinstance(last_reaction, dict):
+                if not narration and last_reaction.get("narration"):
+                    narration = str(last_reaction["narration"]).strip()
+                if not dialogue and isinstance(last_reaction.get("dialogue"), list):
+                    dialogue = last_reaction["dialogue"]
+
+        agent_text = str(turn_result.get("text") or "").strip()
+        effective_narration = narration or agent_text
+        effective_agent_response = agent_text or narration
 
         history_item = {
             "turn_index": len(self.history) + 1,
             "timestamp": turn_start_time,
             "user_message": clean_input,
-            "agent_response": turn_result["text"],
+            "agent_response": effective_agent_response,
+            "narration": effective_narration,
+            "dialogue": dialogue,
             "tool_calls": new_tool_calls,
             "lore_activity": lore_activity,
             "lore_docs_browsed": lore_docs_browsed,
@@ -689,6 +712,36 @@ class AdventureSession:
                 shutil.rmtree(self.theaters_root)
             except Exception as e:
                 logger.warning("Failed to clean up %s: %s", self.theaters_root, e)
+
+
+def format_repl_turn(turn: Dict[str, Any]) -> str:
+    """Format an adventure turn for interactive REPL display including narration, dialogue, and staged peripherals."""
+    narration = str(turn.get("narration") or turn.get("agent_response") or "").strip()
+    dialogue = turn.get("dialogue") or []
+    tool_calls = turn.get("tool_calls") or []
+
+    lines: List[str] = [f"Narratron > {narration}"]
+
+    if dialogue:
+        lines.append("")
+        lines.append("  [Dialogue]:")
+        for d in dialogue:
+            speaker = str(d.get("speaker") or "NPC").strip()
+            text = str(d.get("text") or "").strip()
+            kind = str(d.get("kind") or "speech").lower()
+            if kind == "thought":
+                lines.append(f"    * {speaker} (thought): ({text})")
+            else:
+                lines.append(f"    * {speaker}: \"{text}\"")
+
+    peripherals = [tc for tc in tool_calls if tc.get("tool") != "process_user_action"]
+    if peripherals:
+        lines.append("")
+        lines.append("  [Peripherals Staged]:")
+        for tc in peripherals:
+            lines.append(f"    * {tc.get('tool')}: {tc.get('result')}")
+
+    return "\n".join(lines)
 
 
 # ==============================================================================
@@ -739,6 +792,19 @@ def main() -> int:
         turn = res["turn"]
         print("--- Agent Response ---")
         print(turn["agent_response"])
+        if turn.get("narration") and turn["narration"] != turn["agent_response"]:
+            print("\n--- Narration ---")
+            print(turn["narration"])
+        if turn.get("dialogue"):
+            print(f"\n--- Dialogue ({len(turn['dialogue'])}) ---")
+            for d in turn["dialogue"]:
+                speaker = str(d.get("speaker") or "NPC").strip()
+                text = str(d.get("text") or "").strip()
+                kind = str(d.get("kind") or "speech").lower()
+                if kind == "thought":
+                    print(f"  [{speaker} (thought)] ({text})")
+                else:
+                    print(f"  [{speaker}] \"{text}\"")
         print(f"\n--- Tool Calls ({len(turn['tool_calls'])}) ---")
         for tc in turn["tool_calls"]:
             print(f"  [{tc['tool']}] -> {tc['result']}")
@@ -772,13 +838,7 @@ def main() -> int:
                 continue
 
             turn = res["turn"]
-            print(f"\nNarratron > {turn['agent_response']}\n")
-            if turn["tool_calls"]:
-                print("  [Peripherals Staged]:")
-                for tc in turn["tool_calls"]:
-                    if tc["tool"] != "process_user_action":
-                        print(f"    * {tc['tool']}: {tc['result']}")
-            print()
+            print(f"\n{format_repl_turn(turn)}\n")
     finally:
         session.cleanup()
 

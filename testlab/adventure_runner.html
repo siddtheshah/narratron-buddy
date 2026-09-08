@@ -1397,9 +1397,22 @@
         toolChipsHtml = '<div class="tools-tray">' + chips.join('') + '</div>' + `<div class="tool-details-container" id="tool-details-${turnId}" style="display: none;"></div>`;
       }
 
+      let dialogueHtml = '';
+      if (turn.dialogue && turn.dialogue.length > 0) {
+        const lines = turn.dialogue.map(d => {
+          const spk = escapeHtml(d.speaker || 'NPC');
+          const txt = escapeHtml(d.text || '');
+          const isThought = (d.kind || '').toLowerCase() === 'thought';
+          return `<div style="margin-top: 0.35rem; padding: 0.4rem 0.6rem; border-left: 3px solid var(--accent); background: rgba(155, 135, 245, 0.08); border-radius: 4px; font-size: 0.9em;">
+            <strong style="color: var(--cyan);">${spk}${isThought ? ' <em>(thought)</em>' : ''}:</strong> "${txt}"
+          </div>`;
+        }).join('');
+        dialogueHtml = `<div class="dialogue-block" style="margin-top: 0.5rem;"><div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.2rem;">💬 Dialogue</div>${lines}</div>`;
+      }
+
       card.innerHTML = `
         <div class="message-header">🤖 Narratron Agent · Turn ${turn.turn_index || turnCounter}</div>
-        <div class="bubble">${escapeHtml(turn.agent_response || '(No response text emitted)')}</div>
+        <div class="bubble">${escapeHtml(turn.agent_response || '(No response text emitted)')}${dialogueHtml}</div>
         ${toolChipsHtml}
       `;
       stream.appendChild(card);

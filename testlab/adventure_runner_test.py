@@ -9,6 +9,7 @@ from testlab.adventure_runner import (
     AdventureSession,
     MockCanvasState,
     MockToolBundle,
+    format_repl_turn,
     load_adventure_config,
 )
 from testlab.server import app
@@ -179,6 +180,12 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
                 assert "turn" in res
                 turn = res["turn"]
                 assert "Captain Funk" in turn["agent_response"]
+                assert "narration" in turn
+                assert turn["narration"] != ""
+                assert "dialogue" in turn
+                assert len(turn["dialogue"]) == 1
+                assert turn["dialogue"][0]["speaker"] == "Captain Funk"
+                assert turn["dialogue"][0]["text"] == "Groove locked in!"
                 assert len(turn["tool_calls"]) == 3
                 tool_names = [tc["tool"] for tc in turn["tool_calls"]]
                 assert "process_user_action" in tool_names
@@ -333,3 +340,41 @@ def test_lore_browsing_tracked_in_turn(sample_adventure):
         assert any(a["type"] == "search" for a in activity)
     finally:
         session.cleanup()
+
+
+def test_format_repl_turn():
+    # 1. Turn with both narration and dialogue
+    turn_full = {
+        "agent_response": "The obsidian halls echo with heavy footsteps.",
+        "narration": "The obsidian halls echo with heavy footsteps.",
+        "dialogue": [
+            {"speaker": "Overlord Malakor", "text": "Who disturbs my throne?", "kind": "speech"},
+            {"speaker": "Vizier Vespera", "text": "He seems anxious.", "kind": "thought"},
+        ],
+        "tool_calls": [
+            {"tool": "process_user_action", "result": {}},
+            {"tool": "show_image", "result": "Displaying image 'throne_room'"},
+        ],
+    }
+    output = format_repl_turn(turn_full)
+    assert "Narratron > The obsidian halls echo with heavy footsteps." in output
+    assert "[Dialogue]:" in output
+    assert '* Overlord Malakor: "Who disturbs my throne?"' in output
+    assert "* Vizier Vespera (thought): (He seems anxious.)" in output
+    assert "[Peripherals Staged]:" in output
+    assert "* show_image: Displaying image 'throne_room'" in output
+    # process_user_action should not be printed under peripherals
+    assert "* process_user_action" not in output
+
+    # 2. Turn with narration only (no dialogue, no peripherals)
+    turn_narration_only = {
+        "agent_response": "You silently wait in the shadows.",
+        "narration": "You silently wait in the shadows.",
+        "dialogue": [],
+        "tool_calls": [],
+    }
+    output_simple = format_repl_turn(turn_narration_only)
+    assert output_simple == "Narratron > You silently wait in the shadows."
+    assert "[Dialogue]" not in output_simple
+    assert "[Peripherals Staged]" not in output_simple
+
