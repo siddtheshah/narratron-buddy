@@ -327,7 +327,30 @@ uv run python testlab/adventure_runner.py --adventure <adventure-folder-name>
 - Inspect real-time sticky note updates and peripheral tool calls (`show_image`, `play_playlist`).
 - Type `reset` to restart from turn 1, or `quit` to exit.
 
-### 7.3. Browser Diagnostic Harness (Test Lab)
+### 7.3. Autonomous Playtesting (`--autoplay` Mode)
+Stress-test pacing, edge cases, lore adherence, and sticky note stability without manual typing using the autonomous player agent:
+
+```bash
+# Basic 10-turn autonomous run:
+uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> --autoplay
+
+# Custom duration and persona:
+uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> \
+    --autoplay \
+    --turns 20 \
+    --autoplay-instructions "Play in a realistic style: act as a grounded, pragmatic mortal assistant prioritizing survival, diplomatic leverage, and careful protocol."
+```
+
+- **How it Works**: The `AutoPlayer` agent queries Gemini to evaluate recent scene narration and sticky notes, formulating an internal tactical **thought** and an in-character **action** each turn.
+- **Output Artifacts**: Automatically generates chronological Markdown and JSON logs in `evaluation_result/autoplay_<adventure>_<timestamp>.md`.
+- **Key Flags**:
+  - `--autoplay`: Flag to activate autonomous play.
+  - `--autoplay-instructions` / `--autoplay_instructions`: Custom persona, tactical directives, or behavioral constraints.
+  - `--turns` / `-n` / `--autoplay-turns`: Turn count limit (default: 10).
+  - `--autoplay-model`: Model driving player agent (default: `gemini-3.7-flash`).
+  - `--autoplay-delay`: Pause between turns in seconds to pace API requests.
+
+### 7.4. Browser Diagnostic Harness (Test Lab)
 Test the visual interface and canvas peripherals locally:
 
 ```bash
@@ -336,7 +359,7 @@ uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 
 Open `http://127.0.0.1:8015/adventure-runner` in your browser to interact with the visual test harness.
 
-### 7.4. Definitive End-to-End Test: Deploy via `/deploy`
+### 7.5. Definitive End-to-End Test: Deploy via `/deploy`
 The gold standard for validating an adventure before public release:
 
 1. Navigate to **[narratron.app/deploy](https://narratron.app/deploy)**.
@@ -378,6 +401,7 @@ Before packaging your adventure for players or deploying to a live session:
 - [ ] **Testing**:
   - [ ] CLI smoke test passes: `uv run python testlab/adventure_runner.py --adventure <slug> --smoke`.
   - [ ] Interactive multi-turn CLI test succeeds without unhandled errors.
+  - [ ] Autonomous multi-turn playtest passes: `uv run python testlab/adventure_runner.py --adventure <slug> --autoplay --turns 10`.
   - [ ] Live `/deploy` session verified on [narratron.app/deploy](https://narratron.app/deploy).
 
 ---

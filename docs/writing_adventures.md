@@ -291,7 +291,62 @@ This executes a single turn, checks that story beats generate properly, and exit
 
 ---
 
-### 5.2. Visual Browser Testing with Test Lab
+### 5.2. Autonomous Playtesting with Autoplay (`--autoplay`)
+
+When authoring complex narratives, manually typing 20 turns to test edge cases or plot resolution is slow. Narratron Buddy includes a built-in **Autonomous Player Agent (`AutoPlayer`)** that plays your adventure automatically via an LLM agent, simulating realistic human decision-making, strategic reasoning, and dialogue.
+
+#### How Autoplay Works
+1. **Per-Turn Decision Loop**: On each turn, the autonomous player inspects the adventure's premise, recent narrative chronicle, active dialogue, and current sticky notes.
+2. **Dual-Channel Output**: The player produces an internal strategic **thought** (its tactical intent or comedic reasoning) and a concrete in-character **action** (1–3 sentences).
+3. **Engine Execution**: The player's action is submitted to the Narratron adventure session, advancing the story planner, triggering lore lookups, updating sticky notes, and staging peripherals (music, images, canvas).
+4. **Session Logging**: Each turn is incrementally streamed to console and saved as a persistent Markdown chronicle and structured JSON summary under `evaluation_result/`.
+
+#### Basic Autoplay Run
+Run a default 10-turn autonomous session:
+```powershell
+uv run python testlab/adventure_runner.py --adventure my-custom-adventure --autoplay
+```
+
+#### Tailoring the Playstyle Persona (`--autoplay-instructions`)
+Direct the player's behavior, tactical focus, and personality using `--autoplay-instructions`:
+
+- **Realistic & Pragmatic** (Grounded survival and bureaucratic diplomacy):
+  ```powershell
+  uv run python testlab/adventure_runner.py --adventure the-overlords-assistant --autoplay --turns 20 --autoplay-instructions "Play in a realistic style: act as a grounded, pragmatic, and cautious mortal assistant in Overlord Malakor's court. Prioritize personal survival, use realistic bureaucratic diplomacy and workplace leverage, be observant and respectful of lethal power dynamics, and avoid absurd, reckless, or cartoonish actions."
+  ```
+
+- **Zany & Boundary-Testing** (Stress-testing story planner resilience against chaotic choices):
+  ```powershell
+  uv run python testlab/adventure_runner.py --adventure groove-space-odyssey --autoplay --turns 15 --autoplay-instructions "Be zany, audacious, and test edge cases. Attempt unexpected solutions, talk to inanimate objects, and bend the rules."
+  ```
+
+- **Methodical Investigator** (Deep lore probing and clue verification):
+  ```powershell
+  uv run python testlab/adventure_runner.py --adventure my-custom-adventure --autoplay --turns 12 --autoplay-instructions "Act as a meticulous, inquisitive detective. Prioritize examining clues, interrogating witnesses on contradictions, and recording evidence."
+  ```
+
+#### Command-Line Flags Reference
+
+| Flag | Shorthand | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--autoplay` | — | `False` | Enables autonomous player mode. |
+| `--autoplay-instructions` | `--autoplay_instructions` | Default explorer | Directives, persona, or behavioral constraints for the player agent. |
+| `--turns` | `-n`, `--autoplay-turns` | `10` | Maximum number of turns to execute in the session. |
+| `--autoplay-model` | `--autoplay_model` | `gemini-3.7-flash` | Gemini model ID driving the autonomous player agent. |
+| `--autoplay-log` | `--autoplay_log`, `--log-file` | `evaluation_result/autoplay_<id>_<timestamp>.md` | Destination path for the session log file (supports `.md` and `.json`). |
+| `--autoplay-delay` | `--autoplay_delay` | `0.0` | Pause in seconds between turns to pace API requests. |
+| `--action` | — | `""` | Optional custom starting action to override turn 1. |
+
+#### Evaluating Autoplay Artifacts
+Logs are saved automatically to `evaluation_result/autoplay_<adventure_id>_<timestamp>.md`. Review the generated log to verify:
+- **Plot Beat Progression**: Check whether beats transition logically and reach satisfying narrative milestones.
+- **Sticky Note Hygiene**: Confirm that existing sticky notes are updated cleanly rather than ballooning into dozens of redundant notes.
+- **Peripheral Staging**: Verify that character visual references (`references/`), background music tracks (`playlists/`), and interactive canvas components trigger when appropriate.
+- **Pacing & Tone**: Assess whether NPC dialogue and narrator responses match the adventure's desired genre and difficulty.
+
+---
+
+### 5.3. Visual Browser Testing with Test Lab
 
 You can test your adventure's UI and peripherals in a lightweight browser diagnostic without launching the full multi-user server:
 
@@ -300,7 +355,7 @@ uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 ```
 Open **`http://127.0.0.1:8015/adventure-runner`** in your browser to interact with the visual test harness.
 
-### 5.3. Final Testing Step: Upload & Deploy via `/deploy`
+### 5.4. Final Testing Step: Upload & Deploy via `/deploy`
 
 As the final, definitive step of testing before public distribution or submitting to narratron.app, upload your package folder directly via **[/deploy](https://narratron.app/deploy)** to test it in the full Narratron application without needing to configure backend API keys locally:
 
@@ -327,6 +382,10 @@ When your adventure is ready to be featured for everyone on **narratron.app**:
 - [ ] The adventure passes the smoke test:
   ```powershell
   uv run python testlab/adventure_runner.py --adventure <your-adventure-folder> --smoke
+  ```
+- [ ] The adventure passes an autonomous multi-turn playtest session (10+ turns) verifying narrative consistency and peripheral triggers:
+  ```powershell
+  uv run python testlab/adventure_runner.py --adventure <your-adventure-folder> --autoplay --turns 10
   ```
 - [ ] Final verification: Uploaded the folder via [/deploy](https://narratron.app/deploy) and successfully complete an interactive play session in the full Narratron app.
 

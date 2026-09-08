@@ -2,10 +2,17 @@
 
 Usage:
     # Interactive CLI mode:
-    python testlab/adventure_runner.py --adventure groove-space-odyssey
+    python testlab/adventure_runner.py --adventure example_adventure
 
     # Non-interactive smoke test:
-    python testlab/adventure_runner.py --adventure groove-space-odyssey --smoke
+    python testlab/adventure_runner.py --adventure example_adventure --smoke
+
+    # Autonomous player mode (Autoplay):
+    python testlab/adventure_runner.py --adventure example_adventure --autoplay --turns 10
+
+    # Autoplay with custom directives and persona:
+    python testlab/adventure_runner.py --adventure example_adventure --autoplay --turns 20 \
+        --autoplay-instructions "Play in a realistic style: cautious, pragmatic mortal assistant prioritizing survival."
 """
 
 from __future__ import annotations
@@ -31,6 +38,17 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ADVENTURES_DIR = ROOT_DIR / "adventures"
 THEATERS_DIR = ROOT_DIR / "theaters"
 load_dotenv(ROOT_DIR / ".env")
@@ -41,6 +59,7 @@ from google.adk.apps.app import App
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from pydantic import BaseModel, Field
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
@@ -48,6 +67,7 @@ from services.agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, ge
 from tools.story_planning_tool import StoryPlanningTools, VertexGemini
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider
+from providers.text_response_provider import TextResponseRequest
 from utils.config_loader import (
     deep_merge,
     get_app_config,
@@ -745,17 +765,601 @@ def format_repl_turn(turn: Dict[str, Any]) -> str:
 
 
 # ==============================================================================
+# Autonomous Player (Autoplay) Components
+# ==============================================================================
+
+class PlayerTurnDecision(BaseModel):
+    """Structured decision made by an autonomous player agent."""
+
+    thought: str = Field(
+        default="",
+        description="Internal strategic reasoning, tactical thought, or reflection based on player directives.",
+    )
+    action: str = Field(
+        ...,
+        description="The exact in-character action, statement, or dialogue the player performs (1-3 sentences).",
+    )
+
+
+class AutoPlayer:
+    """Autonomous LLM player agent that simulates human player actions in an adventure."""
+
+    DEFAULT_INSTRUCTIONS = (
+        "Explore the world dynamically: investigate suspicious elements, converse with key "
+        "characters, make creative choices, and advance the plot."
+    )
+
+    def __init__(
+        self,
+        adventure_title: str = "",
+        adventure_description: str = "",
+        instructions: str = "",
+        model: str = "gemini-3.7-flash",
+        provider_id: str = "gemini-3",
+        text_provider: Optional[Any] = None,
+    ) -> None:
+        self.adventure_title = adventure_title or "Interactive Adventure"
+        self.adventure_description = adventure_description or "An interactive text story."
+        self.instructions = (
+            instructions.strip() if instructions and instructions.strip() else self.DEFAULT_INSTRUCTIONS
+        )
+        self.model = model
+        self.provider_id = provider_id
+        self.text_provider = text_provider or get_text_response_provider(
+            self.provider_id,
+            options={"model": self.model},
+        )
+
+    def _build_system_instruction(self) -> str:
+        return (
+            f"You are an autonomous AI playing an interactive text adventure game titled '{self.adventure_title}'.\n"
+            f"Premise: {self.adventure_description}\n\n"
+            f"YOUR PLAYSTYLE DIRECTIVES & PERSONA:\n"
+            f"{self.instructions}\n\n"
+            f"GUIDELINES FOR PLAYING:\n"
+            f"1. You are acting as the HUMAN PLAYER in this story. Speak or act as the protagonist.\n"
+            f"2. Read the latest narration, scene changes, and dialogue from NPCs carefully.\n"
+            f"3. Strictly adhere to your playstyle directives (e.g. if instructed to be zany and break the game, "
+            f"take audacious, unexpected, rule-bending, or absurd actions; if cautious or heroic, act accordingly).\n"
+            f"4. Decide on: (a) an internal 'thought' explaining your tactical reasoning or comedic intent, and "
+            f"(b) a concrete in-character 'action' (1-3 sentences).\n"
+            f"5. Do NOT narrate the outcome of your own action. Only state what you say or attempt to do. "
+            f"The Narratron game master will determine what happens.\n"
+            f"6. Do NOT prefix your action with 'Player:' or 'Action:'. Provide only the direct in-character action/speech."
+        )
+
+    def _build_prompt(
+        self,
+        session_state: Dict[str, Any],
+        history: List[Dict[str, Any]],
+        turn_index: int,
+    ) -> str:
+        sticky_notes = session_state.get("sticky_notes") or []
+        sticky_summary = "\n".join(
+            f"- {s.get('topic')}: {s.get('info')}" for s in sticky_notes[:8]
+        ) or "None recorded yet."
+
+        if not history:
+            return (
+                f"The adventure is just beginning!\n\n"
+                f"Initial Clues & Setting Elements:\n"
+                f"{sticky_summary}\n\n"
+                f"This is Turn {turn_index}. Based on your playstyle directives, decide on your very first action "
+                f"or dialogue to kick off the adventure."
+            )
+
+        # Include last 3 turns of history for immediate context
+        recent_turns = history[-3:]
+        history_blocks: List[str] = []
+        for h in recent_turns:
+            h_turn = h.get("turn_index", "?")
+            h_user = h.get("user_message", "")
+            h_narr = h.get("narration") or h.get("agent_response") or ""
+            h_dial = h.get("dialogue") or []
+
+            dial_lines = []
+            for d in h_dial:
+                spk = d.get("speaker", "NPC")
+                txt = d.get("text", "")
+                dial_lines.append(f"    * {spk}: \"{txt}\"")
+            dial_str = "\n".join(dial_lines) if dial_lines else "    (No spoken dialogue)"
+
+            block = (
+                f"[Turn {h_turn}]\n"
+                f"  Player Action: {h_user}\n"
+                f"  Narratron: {h_narr}\n"
+                f"  Dialogue:\n{dial_str}"
+            )
+            history_blocks.append(block)
+
+        history_str = "\n\n".join(history_blocks)
+
+        return (
+            f"Recent Story Chronicle:\n"
+            f"{history_str}\n\n"
+            f"Current Known Clues & Environment State:\n"
+            f"{sticky_summary}\n\n"
+            f"This is Turn {turn_index}. Based on the latest narrative and your playstyle directives, "
+            f"what do you do or say next?"
+        )
+
+    def decide_action(
+        self,
+        session_state: Dict[str, Any],
+        history: List[Dict[str, Any]],
+        turn_index: int,
+    ) -> Tuple[str, str]:
+        """Query the LLM to decide the player's internal thought and action."""
+        system_instruction = self._build_system_instruction()
+        prompt = self._build_prompt(session_state, history, turn_index)
+
+        # Attempt structured response first
+        try:
+            req = TextResponseRequest(
+                prompt=prompt,
+                system_instruction=system_instruction,
+                temperature=0.85,
+                response_schema=PlayerTurnDecision,
+            )
+            result = self.text_provider.generate(req)
+            if hasattr(result, "parsed") and isinstance(result.parsed, PlayerTurnDecision):
+                thought = result.parsed.thought.strip()
+                action = result.parsed.action.strip()
+                action = self._clean_action(action)
+                if action:
+                    return thought, action
+            if hasattr(result, "parsed") and isinstance(result.parsed, dict):
+                thought = str(result.parsed.get("thought", "")).strip()
+                action = str(result.parsed.get("action", "")).strip()
+                action = self._clean_action(action)
+                if action:
+                    return thought, action
+            raw_text = getattr(result, "text", "") or ""
+            return self._parse_fallback(raw_text)
+        except Exception as e:
+            logger.warning("[AutoPlayer] Structured generation failed, trying raw text: %s", e)
+
+        # Fallback to plain text generation without schema
+        try:
+            req = TextResponseRequest(
+                prompt=prompt + "\n\nProvide your answer formatted as:\nThought: <internal thought>\nAction: <in-character action>",
+                system_instruction=system_instruction,
+                temperature=0.85,
+            )
+            result = self.text_provider.generate(req)
+            raw_text = getattr(result, "text", "") or ""
+            return self._parse_fallback(raw_text)
+        except Exception as e:
+            logger.error("[AutoPlayer] Action generation failed: %s", e)
+            return "Experiencing a moment of confusion.", "I take a cautious step forward and look around carefully."
+
+    @staticmethod
+    def _clean_action(action: str) -> str:
+        clean = re.sub(r"^(?:player|action)\s*[:>]\s*", "", action, flags=re.IGNORECASE).strip()
+        if len(clean) >= 2 and (clean[0] == clean[-1] and clean[0] in ('"', "'")):
+            clean = clean[1:-1].strip()
+        return clean
+
+    @classmethod
+    def _parse_fallback(cls, text: str) -> Tuple[str, str]:
+        clean = text.strip()
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, re.DOTALL)
+        candidate = json_match.group(1).strip() if json_match else clean
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict) and "action" in data:
+                return str(data.get("thought", "")).strip(), cls._clean_action(str(data["action"]))
+        except Exception:
+            pass
+
+        thought = ""
+        action_parts = []
+        for line in clean.splitlines():
+            line_str = line.strip()
+            if not line_str:
+                continue
+            if line_str.lower().startswith("thought:"):
+                thought = line_str[8:].strip()
+            elif line_str.lower().startswith("action:"):
+                action_parts.append(line_str[7:].strip())
+            else:
+                action_parts.append(line_str)
+
+        action = " ".join(action_parts).strip() if action_parts else clean
+        action = cls._clean_action(action)
+        if not action:
+            action = "I pause and assess my current surroundings."
+        return thought, action
+
+
+class AutoplayLogger:
+    """Manages incremental and final logging for autoplay sessions in evaluation_result/."""
+
+    def __init__(
+        self,
+        adventure_id: str,
+        adventure_title: str,
+        session_id: str,
+        instructions: str,
+        agent_model: str,
+        planner_model: str,
+        autoplay_model: str,
+        max_turns: int,
+        log_path: Optional[str | Path] = None,
+    ) -> None:
+        self.adventure_id = adventure_id
+        self.adventure_title = adventure_title
+        self.session_id = session_id
+        self.instructions = instructions
+        self.agent_model = agent_model
+        self.planner_model = planner_model
+        self.autoplay_model = autoplay_model
+        self.max_turns = max_turns
+
+        if log_path:
+            self.path = Path(log_path)
+        else:
+            log_dir = ROOT_DIR / "evaluation_result"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.path = log_dir / f"autoplay_{adventure_id}_{timestamp}.md"
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.is_json = self.path.suffix.lower() == ".json"
+        self.start_time = time.time()
+        self.turns_data: List[Dict[str, Any]] = []
+
+    def start_log(self, initial_state: Dict[str, Any]) -> None:
+        """Write the initial header to the log file."""
+        if self.is_json:
+            self._write_json()
+            return
+
+        sticky_notes = initial_state.get("sticky_notes") or []
+        sticky_lines = [f"- **{s.get('topic')}**: {s.get('info')}" for s in sticky_notes] or ["- None recorded."]
+        notes_str = "\n".join(sticky_lines)
+
+        content = [
+            f"# Autoplay Session Log: {self.adventure_title}",
+            "",
+            f"- **Adventure ID**: `{self.adventure_id}`",
+            f"- **Session ID**: `{self.session_id}`",
+            f"- **Start Time**: `{datetime.now(timezone.utc).isoformat()}`",
+            f"- **Autoplay Instructions**: \"{self.instructions}\"",
+            f"- **Agent Model**: `{self.agent_model}`",
+            f"- **Planner Model**: `{self.planner_model}`",
+            f"- **Autoplay Model**: `{self.autoplay_model}`",
+            f"- **Max Turns**: {self.max_turns}",
+            "",
+            "---",
+            "",
+            "## Initial Scene & Notes",
+            notes_str,
+            "",
+            "---",
+            "",
+            "## Turn-by-Turn Chronicle",
+            "",
+        ]
+        self.path.write_text("\n".join(content), encoding="utf-8")
+
+    def log_turn(
+        self,
+        turn_index: int,
+        thought: str,
+        action: str,
+        turn_result: Dict[str, Any],
+        state_after: Dict[str, Any],
+    ) -> None:
+        """Incrementally append a completed turn to the log file."""
+        turn_record = {
+            "turn_index": turn_index,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "thought": thought,
+            "action": action,
+            "turn": turn_result,
+            "plot_beats": state_after.get("plot_beats", []),
+        }
+        self.turns_data.append(turn_record)
+
+        if self.is_json:
+            self._write_json()
+            return
+
+        narration = turn_result.get("narration") or turn_result.get("agent_response") or ""
+        dialogue = turn_result.get("dialogue") or []
+        tool_calls = turn_result.get("tool_calls") or []
+
+        dial_lines = []
+        for d in dialogue:
+            spk = d.get("speaker", "NPC")
+            txt = d.get("text", "")
+            kind = d.get("kind", "speech")
+            if kind == "thought":
+                dial_lines.append(f"  - *{spk} (thought)*: ({txt})")
+            else:
+                dial_lines.append(f"  - **{spk}**: \"{txt}\"")
+        dial_str = "\n".join(dial_lines) if dial_lines else "  *(No spoken dialogue)*"
+
+        periph_lines = []
+        for tc in tool_calls:
+            if tc.get("tool") != "process_user_action":
+                periph_lines.append(f"  - `{tc.get('tool')}`: {tc.get('result')}")
+        periph_str = "\n".join(periph_lines) if periph_lines else "  *(None)*"
+
+        beats = state_after.get("plot_beats") or []
+        beat_lines = [f"  - {b.get('plot_beat')}" for b in beats] if beats else ["  *(None)*"]
+        beat_str = "\n".join(beat_lines)
+
+        turn_md = [
+            f"### Turn {turn_index}",
+            f"- **Timestamp**: `{turn_record['timestamp']}`",
+            f"- **Player Thought**: *{thought}*" if thought else "- **Player Thought**: *(None)*",
+            f"- **Player Action**: {action}",
+            "",
+            "**Narratron Narration**:",
+            f"> {narration}",
+            "",
+            "**Dialogue**:",
+            dial_str,
+            "",
+            "**Peripherals Staged**:",
+            periph_str,
+            "",
+            "**Active Plot Beats**:",
+            beat_str,
+            "",
+            "---",
+            "",
+        ]
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write("\n".join(turn_md))
+
+    def finalize(self, final_state: Dict[str, Any], interrupted: bool = False) -> None:
+        """Write summary section to the log file."""
+        if self.is_json:
+            self._write_json(final_state=final_state, interrupted=interrupted)
+            return
+
+        elapsed = time.time() - self.start_time
+        beats = final_state.get("plot_beats") or []
+        beat_lines = [f"{i+1}. {b.get('plot_beat')}" for i, b in enumerate(beats)] if beats else ["- None"]
+        beat_str = "\n".join(beat_lines)
+
+        status_str = "Interrupted by user" if interrupted else "Completed successfully"
+        summary_md = [
+            "## Autoplay Session Summary",
+            "",
+            f"- **Status**: {status_str}",
+            f"- **Completed Turns**: {len(self.turns_data)} / {self.max_turns}",
+            f"- **Elapsed Time**: {elapsed:.1f} seconds",
+            "",
+            "### Ending Plot Beats",
+            beat_str,
+            "",
+            "### Final Canvas State",
+            f"```json\n{json.dumps(final_state.get('mock_canvas', {}), indent=2)}\n```",
+            "",
+        ]
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write("\n".join(summary_md))
+
+    def _write_json(self, final_state: Optional[Dict[str, Any]] = None, interrupted: bool = False) -> None:
+        payload = {
+            "adventure_id": self.adventure_id,
+            "adventure_title": self.adventure_title,
+            "session_id": self.session_id,
+            "instructions": self.instructions,
+            "agent_model": self.agent_model,
+            "planner_model": self.planner_model,
+            "autoplay_model": self.autoplay_model,
+            "max_turns": self.max_turns,
+            "start_time": datetime.fromtimestamp(self.start_time, timezone.utc).isoformat(),
+            "interrupted": interrupted,
+            "turns": self.turns_data,
+            "final_state": final_state or {},
+        }
+        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def run_autoplay(
+    session: AdventureSession,
+    instructions: str = "",
+    max_turns: int = 10,
+    autoplay_model: str = "gemini-3.7-flash",
+    log_path: Optional[str | Path] = None,
+    delay: float = 0.0,
+    player: Optional[AutoPlayer] = None,
+    initial_action: str = "",
+) -> Dict[str, Any]:
+    """Execute an autonomous play session driven by an LLM player agent."""
+    adv_meta_file = session.adventure_path / "metadata.json"
+    title = session.adventure_id
+    description = ""
+    if adv_meta_file.is_file():
+        try:
+            m = json.loads(adv_meta_file.read_text(encoding="utf-8"))
+            title = m.get("title", title)
+            description = m.get("description", description)
+        except Exception:
+            pass
+
+    if player is None:
+        player = AutoPlayer(
+            adventure_title=title,
+            adventure_description=description,
+            instructions=instructions,
+            model=autoplay_model,
+        )
+
+    agent_model_name = str(
+        session.agent_model_override or session.config.get("agent", {}).get("model_id") or "gemini-3.7-flash"
+    )
+    planner_model_name = str(
+        session.planner_model_override
+        or session.config.get("story_planning", {}).get("planner_model")
+        or "gemini-3.7-flash"
+    )
+
+    logger_inst = AutoplayLogger(
+        adventure_id=session.adventure_id,
+        adventure_title=title,
+        session_id=session.session_id,
+        instructions=player.instructions,
+        agent_model=agent_model_name,
+        planner_model=planner_model_name,
+        autoplay_model=autoplay_model,
+        max_turns=max_turns,
+        log_path=log_path,
+    )
+
+    state = session.get_state()
+    logger_inst.start_log(state)
+
+    print("\n========================================================")
+    print("  AUTOPLAY MODE ACTIVE")
+    print(f"  Adventure: {session.adventure_id} ({title})")
+    print(f"  Instructions: \"{player.instructions}\"")
+    print(f"  Turns: {max_turns} | Autoplay Model: {autoplay_model}")
+    print(f"  Log File: {logger_inst.path}")
+    print("========================================================\n")
+
+    interrupted = False
+    try:
+        for turn_idx in range(1, max_turns + 1):
+            current_state = session.get_state()
+
+            # Determine player action
+            if turn_idx == 1 and initial_action:
+                thought = "Using initial action supplied via command line."
+                action = initial_action
+            else:
+                print(f"[Turn {turn_idx}/{max_turns}] AutoPlayer is deciding next action...")
+                thought, action = player.decide_action(
+                    session_state=current_state,
+                    history=session.history,
+                    turn_index=turn_idx,
+                )
+
+            print(f"\n>>> [Turn {turn_idx}/{max_turns}]")
+            if thought:
+                print(f"AutoPlayer [Thought]: {thought}")
+            print(f"AutoPlayer > {action}")
+            print("\n[Thinking & Planning...]")
+
+            # Attempt turn with retry logic for transient API or rate limit errors
+            max_turn_retries = 3
+            res: Dict[str, Any] = {}
+            for attempt in range(1, max_turn_retries + 1):
+                res = session.send_message(action)
+                if "error" not in res:
+                    break
+                err_msg = str(res.get("error", "Unknown error"))
+                logger.warning("[Autoplay] Turn %s attempt %s failed: %s", turn_idx, attempt, err_msg)
+                if attempt < max_turn_retries:
+                    backoff = attempt * 4.0
+                    print(f"\n[Turn {turn_idx}] Attempt {attempt} failed ({err_msg[:100]}...). Retrying in {backoff:.1f}s...")
+                    time.sleep(backoff)
+
+            if "error" in res:
+                print(f"\n[Error on Turn {turn_idx}]: {res['error']}")
+                logger_inst.log_turn(turn_idx, thought, action, {"error": res["error"]}, current_state)
+                break
+
+            turn = res["turn"]
+            state_after = res["state"]
+            print(f"\n{format_repl_turn(turn)}\n")
+
+            logger_inst.log_turn(
+                turn_index=turn_idx,
+                thought=thought,
+                action=action,
+                turn_result=turn,
+                state_after=state_after,
+            )
+
+            if delay > 0 and turn_idx < max_turns:
+                time.sleep(delay)
+
+    except (KeyboardInterrupt, EOFError):
+        print("\n\n[Autoplay interrupted by user]")
+        interrupted = True
+    finally:
+        final_state = session.get_state()
+        logger_inst.finalize(final_state, interrupted=interrupted)
+
+    print("\n========================================================")
+    print("  AUTOPLAY FINISHED")
+    print(f"  Completed Turns: {len(logger_inst.turns_data)} / {max_turns}")
+    print(f"  Log File Saved: {logger_inst.path}")
+    print("========================================================\n")
+
+    return {
+        "log_path": str(logger_inst.path),
+        "turns_completed": len(logger_inst.turns_data),
+        "max_turns": max_turns,
+        "interrupted": interrupted,
+        "final_state": final_state,
+    }
+
+
+# ==============================================================================
 # CLI Entry Point
 # ==============================================================================
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Local Adventure Runner for narrative consistency testing.")
-    parser.add_argument("--adventure", default="groove-space-odyssey", help="Adventure folder name or path.")
+    parser.add_argument("--adventure", default="example_adventure", help="Adventure folder name or path.")
     parser.add_argument("--agent-model", default="gemini-3.7-flash", help="Model ID for text agent.")
     parser.add_argument("--planner-model", default="gemini-3.7-flash", help="Model ID for story planner.")
     parser.add_argument("--nodes", type=int, default=3, help="Nodes ahead buffer.")
     parser.add_argument("--smoke", action="store_true", help="Run a single automated smoke action and exit.")
     parser.add_argument("--action", default="", help="Optional single action to execute.")
+
+    # Autoplay arguments
+    parser.add_argument("--autoplay", action="store_true", help="Run in autonomous player mode.")
+    parser.add_argument(
+        "--autoplay-instructions",
+        "--autoplay_instructions",
+        dest="autoplay_instructions",
+        default="",
+        help="Instructions or persona directing the autonomous player (e.g. 'Be zany and try to break the game').",
+    )
+    parser.add_argument(
+        "--turns",
+        "-n",
+        "--autoplay-turns",
+        "--autoplay_turns",
+        dest="autoplay_turns",
+        type=int,
+        default=10,
+        help="Number of turns to execute in autoplay mode (default: 10).",
+    )
+    parser.add_argument(
+        "--autoplay-model",
+        "--autoplay_model",
+        dest="autoplay_model",
+        default="gemini-3.7-flash",
+        help="Model ID for the autoplay player agent (default: gemini-3.7-flash).",
+    )
+    parser.add_argument(
+        "--autoplay-log",
+        "--autoplay_log",
+        "--log-file",
+        "--log_file",
+        dest="autoplay_log",
+        default="",
+        help="File path to save the autoplay session log (defaults to evaluation_result/autoplay_<adventure>_<timestamp>.md).",
+    )
+    parser.add_argument(
+        "--autoplay-delay",
+        "--autoplay_delay",
+        dest="autoplay_delay",
+        type=float,
+        default=0.0,
+        help="Pause in seconds between autoplay turns (default: 0.0).",
+    )
+
     args = parser.parse_args()
 
     print("\n========================================================")
@@ -781,6 +1385,7 @@ def main() -> int:
     for s in state["sticky_notes"]:
         print(f"  * {s.get('topic')}: {s.get('info')}")
 
+    # 1. Smoke test mode
     if args.smoke:
         action = args.action or "I power up the synthesizer console and check our navigation coordinates."
         print(f"\n[Smoke Test] Sending action: {action!r}\n")
@@ -814,6 +1419,24 @@ def main() -> int:
         session.cleanup()
         return 0
 
+    # 2. Autoplay mode
+    is_autoplay = args.autoplay or bool(args.autoplay_instructions)
+    if is_autoplay:
+        try:
+            run_autoplay(
+                session=session,
+                instructions=args.autoplay_instructions,
+                max_turns=args.autoplay_turns,
+                autoplay_model=args.autoplay_model,
+                log_path=args.autoplay_log or None,
+                delay=args.autoplay_delay,
+                initial_action=args.action,
+            )
+        finally:
+            session.cleanup()
+        return 0
+
+    # 3. Interactive REPL mode
     print("\nEnter player actions below. Type 'exit', 'quit', or 'reset'.\n")
     try:
         while True:
@@ -848,3 +1471,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

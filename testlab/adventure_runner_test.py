@@ -7,10 +7,15 @@ import pytest
 
 from testlab.adventure_runner import (
     AdventureSession,
+    AutoPlayer,
+    AutoplayLogger,
     MockCanvasState,
     MockToolBundle,
+    PlayerTurnDecision,
     format_repl_turn,
     load_adventure_config,
+    main,
+    run_autoplay,
 )
 from testlab.server import app
 
@@ -377,4 +382,258 @@ def test_format_repl_turn():
     assert output_simple == "Narratron > You silently wait in the shadows."
     assert "[Dialogue]" not in output_simple
     assert "[Peripherals Staged]" not in output_simple
+
+
+def test_player_turn_decision_and_cleaning():
+    decision = PlayerTurnDecision(
+        thought="Test if the doors can be kicked open",
+        action="I kick the ornate mahogany door with full force.",
+    )
+    assert decision.thought == "Test if the doors can be kicked open"
+    assert "mahogany door" in decision.action
+
+    # Cleaning prefixes and quotes
+    assert AutoPlayer._clean_action('Player: "I inspect the shelf."') == "I inspect the shelf."
+    assert AutoPlayer._clean_action("Action > I wave my hands.") == "I wave my hands."
+    assert AutoPlayer._clean_action("'I whisper to Morvath.'") == "I whisper to Morvath."
+
+    # Fallback JSON parsing
+    json_text = '```json\n{"thought": "Try comedic greeting", "action": "I bow dramatically and honk a horn."}\n```'
+    th, act = AutoPlayer._parse_fallback(json_text)
+    assert th == "Try comedic greeting"
+    assert act == "I bow dramatically and honk a horn."
+
+    # Fallback line-based parsing
+    line_text = "Thought: Assessing the room layout\nAction: I look around the room for any hidden levers."
+    th2, act2 = AutoPlayer._parse_fallback(line_text)
+    assert th2 == "Assessing the room layout"
+    assert act2 == "I look around the room for any hidden levers."
+
+
+def test_auto_player_prompt_and_decide_action():
+    mock_provider = MagicMock()
+    player = AutoPlayer(
+        adventure_title="Test Odyssey",
+        adventure_description="A test space adventure.",
+        instructions="Be zany and try to break the game",
+        text_provider=mock_provider,
+    )
+
+    # 1. Check prompt assembly on Turn 1 (no history)
+    p1 = player._build_prompt(
+        session_state={"sticky_notes": [{"topic": "Power Unit", "info": "Active"}]},
+        history=[],
+        turn_index=1,
+    )
+    assert "Turn 1" in p1
+    assert "Power Unit" in p1
+    assert "The adventure is just beginning" in p1
+
+    # 2. Check prompt assembly on Turn 2 (with history)
+    mock_history = [
+        {
+            "turn_index": 1,
+            "user_message": "I press the red switch.",
+            "narration": "Alarms blare in three octaves.",
+            "dialogue": [{"speaker": "Captain Funk", "text": "What did you touch?!"}],
+        }
+    ]
+    p2 = player._build_prompt(
+        session_state={"sticky_notes": []},
+        history=mock_history,
+        turn_index=2,
+    )
+    assert "Turn 2" in p2
+    assert "I press the red switch." in p2
+    assert "Captain Funk" in p2
+
+    # 3. Check decide_action when structured generation succeeds
+    mock_res = MagicMock()
+    mock_res.parsed = PlayerTurnDecision(
+        thought="I want to see if the alarm turns off if I press it again.",
+        action="I press the red switch a second time with enthusiasm.",
+    )
+    mock_provider.generate.return_value = mock_res
+
+    thought, action = player.decide_action(
+        session_state={},
+        history=mock_history,
+        turn_index=2,
+    )
+    assert "alarm turns off" in thought
+    assert "second time" in action
+
+    # 4. Check decide_action when structured generation fails and falls back
+    mock_provider.generate.side_effect = [
+        Exception("Schema generation not supported"),
+        MagicMock(text="Thought: Trying another button\nAction: I push the blue button instead."),
+    ]
+    thought_fb, action_fb = player.decide_action(
+        session_state={},
+        history=[],
+        turn_index=1,
+    )
+    assert thought_fb == "Trying another button"
+    assert action_fb == "I push the blue button instead."
+
+
+def test_autoplay_logger_incremental_markdown_and_summary(tmp_path):
+    log_file = tmp_path / "test_autoplay_log.md"
+    logger = AutoplayLogger(
+        adventure_id="test-adventure",
+        adventure_title="Test Adventure",
+        session_id="test_session_123",
+        instructions="Be zany and try to break the game",
+        agent_model="gemini-3.7-flash",
+        planner_model="gemini-3.7-flash",
+        autoplay_model="gemini-3.7-flash",
+        max_turns=2,
+        log_path=log_file,
+    )
+
+    # 1. Start log
+    initial_state = {
+        "sticky_notes": [{"topic": "Secret Map", "info": "Hidden behind the painting."}],
+    }
+    logger.start_log(initial_state)
+    assert log_file.is_file()
+    content_start = log_file.read_text(encoding="utf-8")
+    assert "# Autoplay Session Log: Test Adventure" in content_start
+    assert "Be zany and try to break the game" in content_start
+    assert "Secret Map" in content_start
+
+    # 2. Log Turn 1
+    turn_1 = {
+        "user_message": "I tap the painting three times.",
+        "narration": "A hollow click resonates from behind the frame.",
+        "dialogue": [{"speaker": "Butler Giles", "text": "Please refrain from touching the heirlooms.", "kind": "speech"}],
+        "tool_calls": [{"tool": "play_music", "result": "Playing eerie_notes"}],
+    }
+    state_after_1 = {
+        "plot_beats": [{"plot_beat": "The secret safe is revealed."}],
+    }
+    logger.log_turn(1, "Testing painting mechanism", "I tap the painting three times.", turn_1, state_after_1)
+    content_turn1 = log_file.read_text(encoding="utf-8")
+    assert "### Turn 1" in content_turn1
+    assert "Testing painting mechanism" in content_turn1
+    assert "A hollow click resonates" in content_turn1
+    assert "Butler Giles" in content_turn1
+    assert "play_music" in content_turn1
+    assert "The secret safe is revealed." in content_turn1
+
+    # 3. Finalize
+    final_state = {
+        "plot_beats": [{"plot_beat": "The secret safe is revealed."}],
+        "mock_canvas": {"current_music": "eerie_notes"},
+    }
+    logger.finalize(final_state, interrupted=False)
+    content_final = log_file.read_text(encoding="utf-8")
+    assert "## Autoplay Session Summary" in content_final
+    assert "Completed Turns**: 1 / 2" in content_final
+    assert "Completed successfully" in content_final
+
+
+def test_autoplay_logger_json(tmp_path):
+    json_log = tmp_path / "test_log.json"
+    logger = AutoplayLogger(
+        adventure_id="test-adv",
+        adventure_title="Test Adv",
+        session_id="session_json_1",
+        instructions="Sneak around",
+        agent_model="model_a",
+        planner_model="model_p",
+        autoplay_model="model_ap",
+        max_turns=1,
+        log_path=json_log,
+    )
+
+    logger.start_log({})
+    logger.log_turn(1, "Think sneak", "I creep into the kitchen", {"narration": "Floor creaks"}, {})
+    logger.finalize({}, interrupted=False)
+
+    assert json_log.is_file()
+    data = json.loads(json_log.read_text(encoding="utf-8"))
+    assert data["adventure_id"] == "test-adv"
+    assert data["instructions"] == "Sneak around"
+    assert len(data["turns"]) == 1
+    assert data["turns"][0]["action"] == "I creep into the kitchen"
+
+
+def test_run_autoplay_execution(sample_adventure, tmp_path):
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
+    try:
+        log_file = tmp_path / "autoplay_run.md"
+
+        mock_turn = {
+            "turn_index": 1,
+            "user_message": "I investigate the synthetic widget.",
+            "agent_response": "The widget spins with synthetic joy.",
+            "narration": "The widget spins with synthetic joy.",
+            "dialogue": [],
+            "tool_calls": [],
+        }
+
+        # Mock player decision
+        mock_player = MagicMock(spec=AutoPlayer)
+        mock_player.instructions = "Be zany and try to break the game"
+        mock_player.decide_action.return_value = (
+            "Trying to make the widget oscillate",
+            "I investigate the synthetic widget.",
+        )
+
+        with patch.object(session, "send_message", return_value={"turn": mock_turn, "state": session.get_state()}):
+            summary = run_autoplay(
+                session=session,
+                instructions="Be zany and try to break the game",
+                max_turns=2,
+                log_path=log_file,
+                player=mock_player,
+            )
+
+            assert summary["turns_completed"] == 2
+            assert summary["max_turns"] == 2
+            assert summary["interrupted"] is False
+            assert log_file.is_file()
+
+            content = log_file.read_text(encoding="utf-8")
+            assert "Autoplay Session Log: Synthetic Test Adventure" in content
+            assert "Adventure ID**: `synthetic-test-adventure`" in content
+            assert "I investigate the synthetic widget." in content
+            assert "The widget spins with synthetic joy." in content
+            assert "Completed Turns**: 2 / 2" in content
+    finally:
+        session.cleanup()
+
+
+def test_main_cli_autoplay_flags(monkeypatch):
+    import sys
+
+    test_args = [
+        "adventure_runner.py",
+        "--adventure",
+        "synthetic-test-adventure",
+        "--autoplay_instructions",
+        "Be zany and try to break the game",
+        "-n",
+        "3",
+        "--autoplay-delay",
+        "0.0",
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+
+    with patch("testlab.adventure_runner.AdventureSession") as mock_session_cls:
+        mock_session = MagicMock()
+        mock_session.get_state.return_value = {"sticky_notes": []}
+        mock_session_cls.return_value = mock_session
+
+        with patch("testlab.adventure_runner.run_autoplay") as mock_run_autoplay:
+            mock_run_autoplay.return_value = {"turns_completed": 3}
+            ret = main()
+
+            assert ret == 0
+            mock_run_autoplay.assert_called_once()
+            call_kwargs = mock_run_autoplay.call_args.kwargs
+            assert call_kwargs["instructions"] == "Be zany and try to break the game"
+            assert call_kwargs["max_turns"] == 3
+            mock_session.cleanup.assert_called_once()
 
