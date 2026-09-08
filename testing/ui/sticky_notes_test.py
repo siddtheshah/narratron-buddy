@@ -20,6 +20,12 @@ class TestStickyNotesUI(unittest.TestCase):
         self.assertIn('display: none;', content)
         self.assertIn('z-index: 24', content)
         self.assertIn('z-index: 30', content)
+        self.assertIn('sticky-notes-hidden-section', content)
+        self.assertIn('sticky-notes-hidden-toggle-btn', content)
+        self.assertIn('sticky-notes-hidden-container', content)
+        self.assertIn('is-hidden-sticky', content)
+        self.assertIn('sticky-note-hidden-badge', content)
+        self.assertIn('hiddenRevealed', content)
 
 
 if __name__ == "__main__":

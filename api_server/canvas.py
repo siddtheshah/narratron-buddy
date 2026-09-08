@@ -458,16 +458,33 @@ def get_suggestions(request: Request, theater_id: Optional[str] = None):
 def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
     if theater_id:
         _require_canvas_access(request, theater_id)
+
+    hidden_stickies = []
+    if theater_id:
+        try:
+            th_cfg = theater_manager.get_theater_config(theater_id)
+            sp_cfg = th_cfg.get("story_planning", {}) if isinstance(th_cfg.get("story_planning"), dict) else {}
+            raw_hidden = sp_cfg.get("hidden_stickies", th_cfg.get("hidden_stickies", []))
+            if isinstance(raw_hidden, (list, tuple, set)):
+                hidden_stickies = [str(x.get("topic", x.get("name", x)) if isinstance(x, dict) else x).strip() for x in raw_hidden if x]
+            elif isinstance(raw_hidden, str):
+                hidden_stickies = [s.strip() for s in raw_hidden.split(",") if s.strip()]
+            elif isinstance(raw_hidden, dict):
+                hidden_stickies = [str(k).strip() for k in raw_hidden.keys() if str(k).strip()]
+        except Exception:
+            hidden_stickies = []
+
     session = agent_manager.get_session(theater_id) if theater_id else None
     session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
     if session_tools and hasattr(session_tools, "get_present_sticky_notes"):
         notes = session_tools.get_present_sticky_notes()
-        return {"sticky_notes": notes, "count": len(notes)}
+        return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
     elif session_tools and hasattr(session_tools, "get_present_elements"):
         notes = session_tools.get_present_elements()
-        return {"sticky_notes": notes, "count": len(notes)}
+        return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
     notes = _state(theater_id).story.sticky_notes()
-    return {"sticky_notes": notes, "count": len(notes)}
+    return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
+
 
 
 @app.post("/api/suggestions/upvote")

@@ -44,6 +44,8 @@ story_planning:
     initial_elements: {}
     # List of sticky note keys/topics that the story planner must always retain and never drop
     required_stickies: []
+    # Names of sticky notes to hide in the canvas UI view by default until toggled
+    hidden_stickies: []
 
     adventure_mode: false
     # Immediately generate and publish an opening scene through the story

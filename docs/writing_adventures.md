@@ -177,6 +177,10 @@ story_planning:
         - "Player Character"
         - "Spire Security Level"
 
+    # Optional overlay: sticky note topics hidden in canvas UI view by default until toggled
+    hidden_stickies:
+        - "Known Clues"
+
 chat:
     cooldown_duration: 20
 ```

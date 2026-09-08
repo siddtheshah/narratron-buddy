@@ -874,8 +874,23 @@ async def get_theater_sticky_notes(theater_id: str, request: Request):
         except Exception:
             pass
 
+    hidden_stickies = []
+    try:
+        th_cfg = theater_manager.get_theater_config(theater_id)
+        sp_cfg = th_cfg.get("story_planning", {}) if isinstance(th_cfg.get("story_planning"), dict) else {}
+        raw_hidden = sp_cfg.get("hidden_stickies", th_cfg.get("hidden_stickies", []))
+        if isinstance(raw_hidden, (list, tuple, set)):
+            hidden_stickies = [str(x.get("topic", x.get("name", x)) if isinstance(x, dict) else x).strip() for x in raw_hidden if x]
+        elif isinstance(raw_hidden, str):
+            hidden_stickies = [s.strip() for s in raw_hidden.split(",") if s.strip()]
+        elif isinstance(raw_hidden, dict):
+            hidden_stickies = [str(k).strip() for k in raw_hidden.keys() if str(k).strip()]
+    except Exception:
+        hidden_stickies = []
+
     return {
         "sticky_notes": sticky_notes,
+        "hidden_stickies": hidden_stickies,
         "count": len(sticky_notes),
     }
 

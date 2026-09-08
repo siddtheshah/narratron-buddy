@@ -134,6 +134,10 @@ story_planning:
         - "Player Character"
         - "Spire Security Level"
 
+    # Optional overlay: sticky note topics hidden in canvas UI view by default until toggled
+    hidden_stickies:
+        - "Known Clues"
+
     cooldown_duration: 10
     require_user_input: true
     action_cooldown_words_per_second: 20
@@ -146,7 +150,8 @@ chat:
 ### Critical Rules for `theater.yaml`
 1. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
 2. **`required_stickies` must match keys in `initial_elements`**: Every topic listed in `required_stickies` must be declared in `initial_elements`. The story planner's memory consolidation mechanism will discard notes not listed in `required_stickies` when note limits are reached.
-3. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
+3. **`hidden_stickies` overlay**: Optional list of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget. A toggle inside the expandable reveals them if the player wishes to view them.
+4. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
 
 ---
 
@@ -278,7 +283,7 @@ If your adventure features non-standard mechanics (such as trading economies, af
 ---
 
 ### 5.5. Player Death, Lethal Consequences & Restarts
-- **Explicit Lethality**: When designing adventures with deadly hazards, hostile tyrants, assassinations, or lethal combat, explicitly permit player death in `theater.yaml` (`style` and `agent.special_instructions`) and `lore/readfirst_*.txt`.
+- **Explicit Lethality**: When designing adventures with deadly hazards, hostile tyrants, assassinations, or lethal combat, explicitly permit player death in `theater.yaml` (`style`) and `lore/readfirst_*.txt`.
 - **No Artificial Plot Armor**: Instruct the story planner that plot armor should not protect players who take deliberately suicidal actions, drink lethal poisons, or fail unescapable ultimatums.
 - **Restart on Continuation**: Clearly specify that if player death or a fatal loss condition occurs, any continued play represents a clean restart of the scenario from the beginning (as a new character, fresh incarnation, or timeline reset).
 - **Death Hint**: Add instructions for the story planner to give some possibly cryptic hint for why the player died, if it wasn't obvious. The player should feel like their death was a fair possibility, and learn from

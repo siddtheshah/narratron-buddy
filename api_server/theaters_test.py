@@ -864,6 +864,39 @@ async def test_get_theater_sticky_notes_endpoint():
         assert len(res["sticky_notes"]) == 1
         assert res["sticky_notes"][0]["topic"] == "Ancient Key"
         assert res["count"] == 1
+        assert "hidden_stickies" in res
+        assert res["hidden_stickies"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_theater_sticky_notes_with_hidden_stickies():
+    mock_agent_mgr = MagicMock()
+    mock_session = MagicMock()
+    mock_story_planning_tools = MagicMock()
+    mock_story_planning_tools.get_present_sticky_notes.return_value = [
+        {"topic": "Ancient Key", "info": "Rust-covered bronze key."},
+        {"topic": "Secret Letter", "info": "Treasonous correspondence."},
+    ]
+    mock_session.story_planning_tools = mock_story_planning_tools
+    mock_agent_mgr.get_session.return_value = mock_session
+
+    mock_tm = MagicMock()
+    mock_tm.get_theater_config.return_value = {
+        "story_planning": {
+            "hidden_stickies": ["Secret Letter"],
+        }
+    }
+
+    with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
+         patch.object(theaters, "_safe_path_param"), \
+         patch.object(object_registry, "agent_manager", mock_agent_mgr), \
+         patch.object(theaters, "theater_manager", mock_tm):
+
+        request = MagicMock()
+        res = await theaters.get_theater_sticky_notes("stage", request)
+
+        assert res["hidden_stickies"] == ["Secret Letter"]
+        assert len(res["sticky_notes"]) == 2
 
 
 def test_list_adventures_endpoint():
