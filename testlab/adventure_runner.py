@@ -973,7 +973,7 @@ class AutoPlayer:
 
 
 class AutoplayLogger:
-    """Manages incremental and final logging for autoplay sessions in evaluation_result/."""
+    """Manages incremental and final logging for autoplay sessions in evaluation_results/."""
 
     def __init__(
         self,
@@ -999,7 +999,7 @@ class AutoplayLogger:
         if log_path:
             self.path = Path(log_path)
         else:
-            log_dir = ROOT_DIR / "evaluation_result"
+            log_dir = ROOT_DIR / "evaluation_results"
             log_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.path = log_dir / f"autoplay_{adventure_id}_{timestamp}.md"
@@ -1349,7 +1349,7 @@ def main() -> int:
         "--log_file",
         dest="autoplay_log",
         default="",
-        help="File path to save the autoplay session log (defaults to evaluation_result/autoplay_<adventure>_<timestamp>.md).",
+        help="File path to save the autoplay session log (defaults to evaluation_results/autoplay_<adventure>_<timestamp>.md).",
     )
     parser.add_argument(
         "--autoplay-delay",
