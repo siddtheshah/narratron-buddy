@@ -9,6 +9,7 @@ from google.adk.sessions import InMemorySessionService
 from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
+from tools.story.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule, VertexGemini
 
 
@@ -48,14 +49,16 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             patch("tools.story.story_planning_module.App"),
             patch("tools.story.story_planning_module.Runner"),
         ):
+            canvas = MagicMock(spec=CanvasStateManager)
             return StoryPlanningModule(
                 theater=theater,
-                canvas_manager=MagicMock(spec=CanvasStateManager),
+                canvas_manager=canvas,
                 text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=MagicMock(spec=CharacterManager),
                 session_service=MagicMock(spec=InMemorySessionService),
                 session_id="planning-boundary-session",
+                notepad=Notepad(theater, canvas_manager=canvas),
             )
 
     def test_uses_injected_provider_and_lore_library(self) -> None:
@@ -82,6 +85,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=character_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
+                notepad=Notepad(theater, canvas_manager=canvas),
             )
 
         self.assertIs(module.text_response_provider, provider)
@@ -91,7 +95,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertIs(module.canvas_manager, canvas)
         self.assertIs(module.session_service, session_service)
         self.assertEqual(module.session_id, "planning-boundary-session")
-        self.assertEqual(module.max_sticky_notes, 7)
+        self.assertEqual(module.notepad.max_sticky_notes, 7)
         theater.config.assert_called_once_with()
         create_agent.assert_called_once_with()
 
@@ -135,6 +139,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         theater.read_planning_schema.return_value = None
         canvas = MagicMock(spec=CanvasStateManager)
         session_service = MagicMock(spec=InMemorySessionService)
+        notepad = Notepad(theater, canvas_manager=canvas)
 
         with self.assertRaisesRegex(ValueError, "theater is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -145,6 +150,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=character_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
+                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "canvas_manager is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -155,6 +161,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=character_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
+                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -165,6 +172,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=character_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
+                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "lore_library is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -175,6 +183,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=character_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
+                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "character_manager is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -185,6 +194,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=None,
                 session_service=session_service,
                 session_id="planning-boundary-session",
+                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "session_service is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -195,6 +205,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=character_manager,
                 session_service=None,
                 session_id="planning-boundary-session",
+                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "session_id is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -205,6 +216,18 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 character_manager=character_manager,
                 session_service=session_service,
                 session_id="",
+                notepad=notepad,
+            )
+        with self.assertRaisesRegex(ValueError, "notepad is required"):
+            StoryPlanningModule(  # type: ignore[arg-type]
+                theater=theater,
+                canvas_manager=canvas,
+                text_response_provider=provider,
+                lore_library=lore_library,
+                character_manager=character_manager,
+                session_service=session_service,
+                session_id="planning-boundary-session",
+                notepad=None,
             )
 
 
@@ -245,14 +268,15 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             character_manager=self.character_manager,
             session_service=self.session_service,
             session_id=session_id,
+            notepad=Notepad(theater or self.theater, canvas_manager=self.canvas),
         )
 
     def test_initial_sticky_notes_and_required(self) -> None:
-        notes = self.module.get_present_sticky_notes()
+        notes = self.module.notepad.get_present_sticky_notes()
 
         self.assertEqual(len(notes), 3)
         self.assertEqual(
-            self.module.get_required_sticky_notes(),
+            self.module.notepad.get_required_sticky_notes(),
             ["HUD", "Location"],
         )
         self.assertEqual(
@@ -261,26 +285,26 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         )
 
     def test_updates_structured_sticky_note_and_validates_dividers(self) -> None:
-        result = self.module.update_sticky_note("HUD", "HP: 80 | MP: 40")
+        result = self.module.notepad.update_sticky_note("HUD", "HP: 80 | MP: 40")
 
         self.assertIn("Updated sticky note 'HUD'", result)
         hud_note = next(
             note
-            for note in self.module.get_present_sticky_notes()
+            for note in self.module.notepad.get_present_sticky_notes()
             if note["topic"] == "HUD"
         )
         self.assertEqual(hud_note["info"], "HP: 80 | MP: 40")
         self.assertIn(
             "Error: Sticky note divider count mismatch",
-            self.module.update_sticky_note("HUD", "HP: 80"),
+            self.module.notepad.update_sticky_note("HUD", "HP: 80"),
         )
 
     def test_capacity_enforcement_drops_oldest_non_required_note(self) -> None:
-        self.module.update_sticky_note("Clue1", "Found a footprint")
-        self.module.update_sticky_note("Clue2", "Found a dagger")
+        self.module.notepad.update_sticky_note("Clue1", "Found a footprint")
+        self.module.notepad.update_sticky_note("Clue2", "Found a dagger")
 
         topics = [
-            note["topic"] for note in self.module.get_present_sticky_notes()
+            note["topic"] for note in self.module.notepad.get_present_sticky_notes()
         ]
         self.assertEqual(topics, ["HUD", "Location", "Clue1", "Clue2"])
 
@@ -306,7 +330,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         }
         module = self._make_module(session_id="structured-planning-session")
 
-        notes = module.get_present_sticky_notes()
+        notes = module.notepad.get_present_sticky_notes()
         stats_note = next(note for note in notes if note["topic"] == "Stats")
         inventory_note = next(
             note for note in notes if note["topic"] == "Inventory"
@@ -314,7 +338,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         self.assertEqual(stats_note["info"], "HP: 100 | LVL: 1")
         self.assertEqual(inventory_note["info"], "Sword, Shield")
         self.assertEqual(
-            module.get_present_structured_sticky_notes(),
+            module.notepad.get_present_structured_sticky_notes(),
             {
                 "Stats": {"hp": "100", "level": "1"},
                 "Inventory": "Sword, Shield",
@@ -352,9 +376,9 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             session_id="theater-schema-session",
         )
 
-        self.assertEqual(len(module.get_present_sticky_notes()), 3)
+        self.assertEqual(len(module.notepad.get_present_sticky_notes()), 3)
         self.assertEqual(
-            {note["topic"] for note in module.get_present_sticky_notes()},
+            {note["topic"] for note in module.notepad.get_present_sticky_notes()},
             {"Clock", "Contraband", "Secret Plot"},
         )
 
@@ -379,7 +403,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             },
         )
         self.assertTrue(committed)
-        updated_notes = module.get_present_sticky_notes()
+        updated_notes = module.notepad.get_present_sticky_notes()
         clock_note = next(
             note for note in updated_notes if note["topic"] == "Clock"
         )

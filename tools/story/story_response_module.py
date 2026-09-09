@@ -250,16 +250,18 @@ class StoryResponseModule(BaseTools):
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
         planning_module: StoryPlanningModule,
+        notepad: Notepad,
         lore_library: LoreLibrary,
         character_manager: CharacterManager,
         session_service: InMemorySessionService,
         session_id: str,
-        notepad: Optional[Notepad] = None,
     ):
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
         if planning_module is None:
             raise ValueError("planning_module is required.")
+        if notepad is None:
+            raise ValueError("notepad is required.")
         if lore_library is None:
             raise ValueError("lore_library is required.")
         if character_manager is None:
@@ -364,7 +366,7 @@ class StoryResponseModule(BaseTools):
         self._recent_story_log = self._read_recent_story_log()
 
         self.planning_module = planning_module
-        self.notepad = notepad or getattr(planning_module, "notepad", None) or Notepad(self.config)
+        self.notepad = notepad
 
         # Fast responder runner
         self._responder_agent: Agent = self._create_responder_agent()
@@ -381,35 +383,6 @@ class StoryResponseModule(BaseTools):
 
         self.reload_from_session_state()
 
-    # Sticky Notes & Deep Planning delegations to planning_module
-    @property
-    def max_sticky_notes(self) -> int:
-        return self.notepad.max_sticky_notes
-
-    @max_sticky_notes.setter
-    def max_sticky_notes(self, value: int) -> None:
-        self.notepad.max_sticky_notes = value
-
-    @property
-    def max_named_elements(self) -> int:
-        return self.notepad.max_named_elements
-
-    @property
-    def _sticky_notes(self) -> OrderedDict[str, str]:
-        return self.notepad._sticky_notes
-
-    @property
-    def _sticky_notes_lock(self) -> Lock:
-        return self.notepad._sticky_notes_lock
-
-    @property
-    def _elements(self) -> OrderedDict[str, str]:
-        return self.notepad._sticky_notes
-
-    @property
-    def _elements_lock(self) -> Lock:
-        return self.notepad._sticky_notes_lock
-
     @property
     def _deep_plan(self) -> Dict[str, Any]:
         return self.planning_module._deep_plan
@@ -421,25 +394,6 @@ class StoryResponseModule(BaseTools):
     @property
     def deep_planning_enabled(self) -> bool:
         return self.planning_module.deep_planning_enabled
-
-    @logged_tool_call
-    def update_sticky_note(self, topic: str, info: str) -> str:
-        return self.notepad.update_sticky_note(topic, info)
-
-    def update_or_insert_named_element(self, name: str, content: str) -> str:
-        return self.planning_module.update_or_insert_named_element(name, content)
-
-    def get_present_sticky_notes(self) -> list[dict[str, str]]:
-        return self.notepad.get_present_sticky_notes()
-
-    def get_present_elements(self) -> list[dict[str, str]]:
-        return self.notepad.get_present_elements()
-
-    def get_present_structured_sticky_notes(self) -> Dict[str, Dict[str, Any]]:
-        return self.notepad.get_present_structured_sticky_notes()
-
-    def get_required_sticky_notes(self) -> list[str]:
-        return self.notepad.get_required_sticky_notes()
 
     def get_deep_plan(self) -> Dict[str, Any]:
         return self.planning_module.get_deep_plan()
@@ -645,7 +599,7 @@ class StoryResponseModule(BaseTools):
     def get_tools(self) -> List[Any]:
         if self.adventure_mode:
             return [self.process_user_action]
-        return [self.update_sticky_note]
+        return [self.notepad.update_sticky_note]
 
     # Dice Rolling
     def reset_die_roll_counts(self) -> None:
@@ -878,7 +832,7 @@ class StoryResponseModule(BaseTools):
 
     def _build_responder_instruction(self, ctx: Any = None) -> str:
         snapshot = {
-            "elements": self.get_present_elements(),
+            "elements": self.notepad.get_present_elements(),
             "characters": self.get_present_characters(),
             "total_characters": self.character_manager.count(),
             "style": self.style,
@@ -899,7 +853,7 @@ class StoryResponseModule(BaseTools):
             context=responder_context,
             style=self.style,
             lore_context=lore_context,
-            max_sticky_notes=self.max_sticky_notes,
+            max_sticky_notes=self.notepad.max_sticky_notes,
         )
 
     def _create_responder_agent(self) -> Agent:
@@ -1285,7 +1239,7 @@ class StoryResponseModule(BaseTools):
                 return
 
             saved_notes = self.canvas_manager.story.get_sticky_notes()
-            if self.planning_module._sticky_definitions:
+            if self.notepad.sticky_definitions:
                 return
             if saved_notes:
                 self.planning_module.import_planning_state({"sticky_notes": saved_notes})

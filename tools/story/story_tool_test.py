@@ -73,7 +73,11 @@ class TestStoryToolComposition(unittest.TestCase):
             characters = character_type.return_value
             tool = StoryTool(self.theater, self.canvas, self.provider)
 
-        self.assertIs(characters.elements_provider, planning.get_present_elements)
+        self.assertIs(characters.elements_provider.__self__, tool)
+        self.assertIs(
+            characters.elements_provider.__func__,
+            StoryTool.get_present_elements,
+        )
         self.assertIs(characters.on_change, response.save_to_session_state)
         self.assertIs(planning.recent_story_log_fn, response._format_recent_story_log)
         self.assertIs(planning.on_save_state, response.save_to_session_state)

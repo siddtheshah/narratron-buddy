@@ -11,6 +11,7 @@ from components.theater_manager import Theater
 from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
+from tools.story.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule
 from tools.story.story_response_module import StoryLogEntry, StoryResponseModule
 
@@ -27,6 +28,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.character_manager = MagicMock(spec=CharacterManager)
         self.session_service = MagicMock(spec=InMemorySessionService)
         self.session_id = "response-boundary-session"
+        self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
 
     def test_uses_injected_dependencies(self) -> None:
         with (
@@ -41,6 +43,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 planning_module=self.planning_module,
+                notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
                 session_service=self.session_service,
@@ -49,6 +52,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
 
         self.assertIs(module.text_response_provider, self.provider)
         self.assertIs(module.planning_module, self.planning_module)
+        self.assertIs(module.notepad, self.notepad)
         self.assertIs(module.lore_library, self.lore_library)
         self.assertIs(module.character_manager, self.character_manager)
         self.assertIs(module.session_service, self.session_service)
@@ -61,6 +65,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=None,
                 planning_module=self.planning_module,
+                notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
                 session_service=self.session_service,
@@ -72,6 +77,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 planning_module=None,
+                notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
                 session_service=self.session_service,
@@ -83,6 +89,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 planning_module=self.planning_module,
+                notepad=self.notepad,
                 lore_library=None,
                 character_manager=self.character_manager,
                 session_service=self.session_service,
@@ -94,6 +101,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 planning_module=self.planning_module,
+                notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=None,
                 session_service=self.session_service,
@@ -105,6 +113,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 planning_module=self.planning_module,
+                notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
                 session_service=None,
@@ -116,10 +125,23 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 planning_module=self.planning_module,
+                notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
                 session_service=self.session_service,
                 session_id="",
+            )
+        with self.assertRaisesRegex(ValueError, "notepad is required"):
+            StoryResponseModule(  # type: ignore[arg-type]
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                text_response_provider=self.provider,
+                planning_module=self.planning_module,
+                notepad=None,
+                lore_library=self.lore_library,
+                character_manager=self.character_manager,
+                session_service=self.session_service,
+                session_id=self.session_id,
             )
 
 
@@ -147,6 +169,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             text_response_provider=self.provider,
             config=self.config,
         )
+        self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.planning_module = StoryPlanningModule(
             theater=self.theater,
             canvas_manager=self.canvas,
@@ -155,12 +178,14 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             character_manager=self.character_manager,
             session_service=InMemorySessionService(),
             session_id="response-test-planning-session",
+            notepad=self.notepad,
         )
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             text_response_provider=self.provider,
             planning_module=self.planning_module,
+            notepad=self.notepad,
             lore_library=self.lore_library,
             character_manager=self.character_manager,
             session_service=InMemorySessionService(),

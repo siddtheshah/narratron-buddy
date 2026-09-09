@@ -3,14 +3,140 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+import logging
+from pathlib import Path
+import re
 from threading import RLock
 from typing import Any, Callable, Dict, Optional
 
+from jinja2 import Template
+from pydantic import BaseModel, Field, create_model
+
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
+
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_STICKY_NOTES = 5
 MAX_STICKY_NOTE_TOPIC_CHARS = 100
 MAX_STICKY_NOTE_INFO_CHARS = 500
 MAX_STICKY_NOTES = 10
+
+
+class StickyNoteItem(BaseModel):
+    topic: str = Field(description="Unique topic or concept for this sticky note.")
+    info: str = Field(description="Clear, concise, up-to-date summary of the topic state.")
+
+
+class DeepPlanUpdate(BaseModel):
+    sticky_notes: list[StickyNoteItem] = Field(default_factory=list)
+
+
+def _safe_model_name(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", value).strip("_")
+    if not cleaned or not cleaned[0].isalpha():
+        cleaned = f"Field_{cleaned}"
+    return cleaned
+
+
+def build_deep_plan_update_model(definitions: Dict[str, Any]) -> type[BaseModel]:
+    if not definitions:
+        return DeepPlanUpdate
+
+    sticky_fields: Dict[str, Any] = {}
+    for topic, definition in definitions.items():
+        field_name = _safe_model_name(topic)
+        fields = definition.get("fields")
+        if fields:
+            submodel_fields: Dict[str, Any] = {}
+            for sub_key, sub_desc in fields.items():
+                submodel_fields[_safe_model_name(sub_key)] = (
+                    str,
+                    Field(default=..., description=str(sub_desc or sub_key), alias=sub_key),
+                )
+            annotation: Any = create_model(f"Sticky_{field_name}", **submodel_fields)
+        else:
+            annotation = str
+        sticky_fields[field_name] = (
+            annotation,
+            Field(
+                default=...,
+                alias=topic,
+                description=definition.get("description") or topic,
+            ),
+        )
+
+    structured_stickies = create_model("StructuredStickyNotes", **sticky_fields)
+    return create_model(
+        "StructuredDeepPlanUpdate",
+        sticky_notes=(structured_stickies, Field(default=...)),
+    )
+
+
+def parse_planning_schema(schema: Dict[str, Any]) -> OrderedDict[str, Dict[str, Any]]:
+    if not isinstance(schema, dict) or not schema:
+        return OrderedDict()
+    raw_definitions = (
+        schema.get("stickies")
+        if isinstance(schema.get("stickies"), dict)
+        else schema
+    )
+    parsed: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+    for raw_topic, raw_entry in raw_definitions.items():
+        topic = str(raw_topic).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+        if not topic:
+            continue
+        entry = raw_entry if isinstance(raw_entry, dict) else {"description": str(raw_entry)}
+        raw_fields = entry.get("fields")
+        fields: Optional[Dict[str, str]] = None
+        if isinstance(raw_fields, dict) and raw_fields:
+            fields = {str(key).strip(): str(value).strip() for key, value in raw_fields.items() if str(key).strip()}
+        elif isinstance(raw_fields, (list, tuple, set)):
+            fields = {str(key).strip(): str(key).strip() for key in raw_fields if str(key).strip()}
+        initial = entry.get("initial")
+        if isinstance(initial, dict):
+            initial = {str(key): str(value) for key, value in initial.items()}
+        elif initial is not None:
+            initial = str(initial)
+        elif fields:
+            initial = {key: "" for key in fields}
+        else:
+            initial = ""
+        parsed[topic] = {
+            "topic": topic,
+            "description": str(entry.get("description", "")).strip(),
+            "required": bool(entry.get("required", True)),
+            "render": str(entry.get("render", entry.get("display_template", entry.get("template", "")))).strip(),
+            "fields": fields,
+            "initial": initial,
+        }
+    return parsed
+
+
+parse_sticky_definitions = parse_planning_schema
+
+
+def render_structured_sticky(definition: Dict[str, Any], value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+    template = definition.get("render") or definition.get("display_template")
+    if isinstance(value, dict):
+        if template:
+            try:
+                try:
+                    rendered = template.format(**value) if "{" in template else Template(template).render(**value)
+                except (KeyError, IndexError, ValueError):
+                    rendered = Template(template).render(**value)
+                return rendered.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+            except Exception:
+                logger.warning("[Notepad] Failed to render template for '%s'", definition.get("topic"))
+        return " | ".join(
+            f"{key}: {item}" for key, item in value.items() if item is not None and str(item) != ""
+        ).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+    return str(value).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
 
 
 class Notepad:
@@ -24,18 +150,21 @@ class Notepad:
 
     def __init__(
         self,
-        config: Dict[str, Any],
+        theater: Theater,
         *,
-        sticky_definitions: Optional[OrderedDict[str, Dict[str, Any]]] = None,
-        update_model: Optional[Any] = None,
-        render_structured: Optional[Callable[[Dict[str, Any], Any], str]] = None,
+        canvas_manager: CanvasStateManager,
         on_change: Optional[Callable[[], None]] = None,
-        canvas_manager: Optional[Any] = None,
     ) -> None:
-        self.config = config if isinstance(config, dict) else {}
-        self._sticky_definitions = sticky_definitions or OrderedDict()
-        self._update_model = update_model
-        self._render_structured = render_structured
+        if theater is None:
+            raise ValueError("theater is required.")
+        if canvas_manager is None:
+            raise ValueError("canvas_manager is required.")
+        self.theater = theater
+        raw_config = theater.config() or {}
+        subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
+        self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
+        self._sticky_definitions: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self._deep_plan_update_model: type[BaseModel] = DeepPlanUpdate
         self.on_change = on_change
         self.canvas_manager = canvas_manager
         self._sticky_notes: OrderedDict[str, str] = OrderedDict()
@@ -43,31 +172,51 @@ class Notepad:
         self._required_stickies: OrderedDict[str, str] = OrderedDict()
         self._sticky_notes_lock = RLock()
 
-        self._configure_required_stickies()
-        self.max_sticky_notes = max(
-            len(self._required_stickies),
-            len(self._sticky_definitions),
-            max(
-                1,
-                min(
-                    int(self.config.get("max_sticky_notes", self.config.get("max_named_elements", DEFAULT_MAX_STICKY_NOTES))),
-                    MAX_STICKY_NOTES,
-                ),
-            ),
-        )
-        self._load_initial_stickies()
+        self.max_sticky_notes = DEFAULT_MAX_STICKY_NOTES
+        self.configure_schema(self._read_planning_schema())
 
-    def configure_schema(
-        self,
-        sticky_definitions: OrderedDict[str, Dict[str, Any]],
-        update_model: Any,
-        render_structured: Callable[[Dict[str, Any], Any], str],
-    ) -> None:
-        """Apply the adventure schema before either story module uses the pad."""
+    @property
+    def sticky_definitions(self) -> OrderedDict[str, Dict[str, Any]]:
+        return self._sticky_definitions
+
+    @property
+    def deep_plan_update_model(self) -> type[BaseModel]:
+        return self._deep_plan_update_model
+
+    def _read_planning_schema(self) -> Any:
+        schema_data = None
+        if hasattr(self.theater, "read_planning_schema"):
+            try:
+                schema_data = self.theater.read_planning_schema()
+            except Exception as exc:
+                logger.warning("[Notepad] Failed to read Theater planning schema: %s", exc)
+        if not schema_data and hasattr(self.theater, "directory"):
+            theater_dir = self.theater.directory()
+            if isinstance(theater_dir, Path):
+                for name in ("planning.yaml", "planning.yml"):
+                    path = theater_dir / name
+                    if path.is_file():
+                        try:
+                            import yaml
+
+                            loaded_schema = yaml.safe_load(path.read_text(encoding="utf-8"))
+                            if isinstance(loaded_schema, dict):
+                                schema_data = loaded_schema
+                                break
+                        except Exception as exc:
+                            logger.warning("[Notepad] Failed to load planning schema from %s: %s", path, exc)
+        if isinstance(schema_data, dict):
+            return schema_data
+        return self.config.get(
+            "planning_schema",
+            self.config.get("sticky_definitions", self.config.get("stickies")),
+        )
+
+    def configure_schema(self, schema: Any) -> None:
+        """Apply the Theater's planning schema before either story module uses the pad."""
         with self._sticky_notes_lock:
-            self._sticky_definitions = sticky_definitions
-            self._update_model = update_model
-            self._render_structured = render_structured
+            self._sticky_definitions = parse_planning_schema(schema)
+            self._deep_plan_update_model = build_deep_plan_update_model(self._sticky_definitions)
             self._sticky_notes.clear()
             self._structured_sticky_notes.clear()
             self._required_stickies.clear()
@@ -117,13 +266,13 @@ class Notepad:
                     self._required_stickies[clean_topic] = ""
 
     def _load_initial_stickies(self) -> None:
-        if self._sticky_definitions and self._update_model is not None:
+        if self._sticky_definitions:
             initial = {
                 topic: definition["initial"]
                 for topic, definition in self._sticky_definitions.items()
                 if definition.get("initial") is not None
             }
-            validated = self._update_model.model_validate({"sticky_notes": initial}).model_dump(mode="json", by_alias=True)["sticky_notes"]
+            validated = self._deep_plan_update_model.model_validate({"sticky_notes": initial}).model_dump(mode="json", by_alias=True)["sticky_notes"]
             for topic, value in validated.items():
                 self._structured_sticky_notes[topic] = value
                 self._sticky_notes[topic] = self._render(topic, value)
@@ -150,9 +299,7 @@ class Notepad:
         self._restore_required_and_enforce_limit()
 
     def _render(self, topic: str, value: Any) -> str:
-        if self._render_structured is None:
-            return str(value).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-        return self._render_structured(self._sticky_definitions[topic], value)
+        return render_structured_sticky(self._sticky_definitions[topic], value)
 
     def _restore_required_and_enforce_limit(self) -> None:
         for topic, info in self._required_stickies.items():
@@ -269,9 +416,9 @@ class Notepad:
                 structured = state.get("structured_sticky_notes")
                 if not isinstance(structured, dict) and isinstance(state.get("deep_plan"), dict):
                     structured = state["deep_plan"].get("sticky_notes")
-                if isinstance(structured, dict) and self._update_model is not None:
+                if isinstance(structured, dict):
                     try:
-                        structured = self._update_model.model_validate({"sticky_notes": structured}).model_dump(mode="json", by_alias=True)["sticky_notes"]
+                        structured = self._deep_plan_update_model.model_validate({"sticky_notes": structured}).model_dump(mode="json", by_alias=True)["sticky_notes"]
                         self._structured_sticky_notes = OrderedDict(structured)
                     except Exception:
                         structured = {}

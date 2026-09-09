@@ -2,21 +2,39 @@
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from pathlib import Path
+from unittest.mock import MagicMock, Mock
 
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 from tools.story.notepad import Notepad
-from tools.story.story_planning_module import (
-    build_deep_plan_update_model,
-    parse_planning_schema,
-    render_structured_sticky,
-)
 
 
 class TestNotepad(unittest.TestCase):
+    def setUp(self) -> None:
+        self.theater = MagicMock(spec=Theater)
+        self.theater.directory.return_value = Path.cwd()
+        self.canvas_manager = Mock(spec=CanvasStateManager)
+        self.canvas_manager.story = StoryState()
+
+    def _make_notepad(
+        self,
+        config: dict,
+        schema: dict | None = None,
+        canvas_manager: CanvasStateManager | None = None,
+        **kwargs: object,
+    ) -> Notepad:
+        self.theater.config.return_value = config
+        self.theater.read_planning_schema.return_value = schema
+        return Notepad(
+            self.theater,
+            canvas_manager=canvas_manager or self.canvas_manager,
+            **kwargs,
+        )
+
     def test_initializes_required_notes_and_exports_every_note(self) -> None:
-        pad = Notepad(
+        pad = self._make_notepad(
             {
                 "max_sticky_notes": 3,
                 "required_stickies": {"HUD": "HP: 10"},
@@ -37,9 +55,15 @@ class TestNotepad(unittest.TestCase):
         self.assertEqual([note["topic"] for note in exported["sticky_notes"]], ["HUD", "Secret", "Quest"])
         self.assertEqual([note["topic"] for note in exported["all_sticky_notes"]], ["HUD", "Secret", "Quest"])
 
+    def test_requires_theater_and_canvas_manager(self) -> None:
+        with self.assertRaisesRegex(ValueError, "theater is required"):
+            Notepad(None, canvas_manager=self.canvas_manager)  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "canvas_manager is required"):
+            Notepad(self.theater, canvas_manager=None)  # type: ignore[arg-type]
+
     def test_updates_validate_dividers_evict_oldest_optional_note_and_notify(self) -> None:
         changed = Mock()
-        pad = Notepad(
+        pad = self._make_notepad(
             {
                 "max_sticky_notes": 2,
                 "required_stickies": ["HUD"],
@@ -57,7 +81,7 @@ class TestNotepad(unittest.TestCase):
         self.assertEqual(changed.call_count, 2)
 
     def test_deep_replacement_preserves_required_notes_and_applies_limit(self) -> None:
-        pad = Notepad(
+        pad = self._make_notepad(
             {
                 "max_sticky_notes": 2,
                 "required_stickies": {"HUD": "HP: 10"},
@@ -80,8 +104,7 @@ class TestNotepad(unittest.TestCase):
         )
 
     def test_structured_notes_round_trip_through_export_and_import(self) -> None:
-        definitions = parse_planning_schema(
-            {
+        schema = {
                 "Stats": {
                     "required": True,
                     "fields": {"hp": "Hit points", "mp": "Magic points"},
@@ -89,11 +112,9 @@ class TestNotepad(unittest.TestCase):
                     "render": "HP: {hp} | MP: {mp}",
                 },
                 "Secret": {"required": False, "initial": "The gate is trapped"},
-            }
-        )
-        update_model = build_deep_plan_update_model(definitions)
-        pad = Notepad({})
-        pad.configure_schema(definitions, update_model, render_structured_sticky)
+        }
+        pad = self._make_notepad({}, schema)
+        update_model = pad.deep_plan_update_model
 
         update = update_model.model_validate(
             {"sticky_notes": {"Stats": {"hp": "8", "mp": "3"}, "Secret": "Disarmed"}}
@@ -107,8 +128,7 @@ class TestNotepad(unittest.TestCase):
             [{"topic": "Stats", "info": "HP: 8 | MP: 3"}, {"topic": "Secret", "info": "Disarmed"}],
         )
 
-        reloaded = Notepad({})
-        reloaded.configure_schema(definitions, update_model, render_structured_sticky)
+        reloaded = self._make_notepad({}, schema)
         reloaded.import_state(state)
         self.assertEqual(reloaded.get_present_sticky_notes()[0]["info"], "HP: 8 | MP: 3")
         self.assertEqual(reloaded.get_present_structured_sticky_notes()["Secret"], "Disarmed")
@@ -116,7 +136,7 @@ class TestNotepad(unittest.TestCase):
     def test_syncs_canvas_story_state_from_the_internal_pad(self) -> None:
         canvas_manager = Mock(spec=CanvasStateManager)
         canvas_manager.story = StoryState()
-        pad = Notepad(
+        pad = self._make_notepad(
             {
                 "initial_sticky_notes": {"Location": "Observatory", "Secret": "Hidden passage"},
             },

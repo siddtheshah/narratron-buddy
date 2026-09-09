@@ -15,11 +15,8 @@ class NotepadTool(BaseTools):
 
     def __init__(self, theater: Theater, canvas_manager: CanvasStateManager) -> None:
         super().__init__(theater=theater, canvas_manager=canvas_manager)
-        raw_config = theater.config() or {}
-        config = raw_config.get("story_planning", raw_config) if isinstance(raw_config, dict) else {}
-        self.config: Dict[str, Any] = config if isinstance(config, dict) else {}
         self.notepad = Notepad(
-            self.config,
+            theater,
             on_change=self.save_to_session_state,
             canvas_manager=canvas_manager,
         )

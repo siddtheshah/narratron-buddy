@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from collections import OrderedDict, deque
+from collections import deque
 import json
 import logging
 import os
-import re
 import threading
 from threading import Lock
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jinja2 import Template
-from pydantic import BaseModel, Field, PrivateAttr, create_model
+from pydantic import BaseModel, PrivateAttr
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.models.google_llm import Gemini
@@ -28,13 +27,14 @@ from components.theater_manager import Theater
 from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
-from tools.story.notepad import Notepad
+from tools.story.notepad import (
+    Notepad,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_COMPACTION_TRIGGER_TOKENS = 12_000
 DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
-DEFAULT_MAX_STICKY_NOTES = 5
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 DEFAULT_DEEP_THINKING_BUDGET = 2048
 DEFAULT_DEEP_MAX_OUTPUT_TOKENS = 6144
@@ -43,9 +43,6 @@ DEFAULT_DEEP_HEARTBEAT_SECONDS = 1.0
 DEFAULT_DEEP_MAX_EVENTS_PER_TURN = 4
 DEFAULT_DEEP_IDLE_REFINEMENT_TURNS = 0
 DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES = 2
-MAX_STICKY_NOTE_TOPIC_CHARS = 100
-MAX_STICKY_NOTE_INFO_CHARS = 500
-MAX_STICKY_NOTES = 10
 STORY_LOG_CONTEXT_LINES = 200
 MAX_DEEP_READ_LORE_CALLS_PER_RUN = 3
 MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN = 3
@@ -142,168 +139,6 @@ Use `deep_search_lore` and `deep_read_lore` only when the current queue batch ex
 )
 
 
-class StickyNoteItem(BaseModel):
-    topic: str = Field(description="Unique topic or concept for this sticky note (e.g. 'inventory', 'quest', 'location', 'threat').")
-    info: str = Field(description="Clear, concise, up-to-date summary of the topic state.")
-
-
-class DeepPlanUpdate(BaseModel):
-    sticky_notes: List[StickyNoteItem] = Field(default_factory=list)
-
-
-def _safe_model_name(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", value).strip("_")
-    if not cleaned or not cleaned[0].isalpha():
-        cleaned = f"Field_{cleaned}"
-    return cleaned
-
-
-def build_deep_plan_update_model(
-    definitions: Dict[str, Any],
-) -> type[BaseModel]:
-    if not definitions:
-        return DeepPlanUpdate
-
-    sticky_fields: Dict[str, Any] = {}
-    for topic, definition in definitions.items():
-        field_name = _safe_model_name(topic)
-        topic_desc = definition.get("description") or topic
-        fields = definition.get("fields")
-        if fields:
-            # Multi-field structured sticky: all subfields are strictly str
-            sub_model_fields: Dict[str, Any] = {}
-            for sub_key, sub_desc in fields.items():
-                safe_sub_name = _safe_model_name(sub_key)
-                sub_model_fields[safe_sub_name] = (
-                    str,
-                    Field(default=..., description=str(sub_desc or sub_key), alias=sub_key),
-                )
-            submodel = create_model(f"Sticky_{field_name}", **sub_model_fields)
-            annotation = submodel
-        else:
-            # Single-string sticky note: strictly str
-            annotation = str
-
-        field_kwargs: Dict[str, Any] = {
-            "alias": topic,
-            "description": topic_desc,
-        }
-        sticky_fields[field_name] = (
-            annotation,
-            Field(default=..., **field_kwargs),
-        )
-
-    StructuredStickyNotes = create_model(
-        "StructuredStickyNotes",
-        **sticky_fields,
-    )
-    return create_model(
-        "StructuredDeepPlanUpdate",
-        sticky_notes=(StructuredStickyNotes, Field(default=...)),
-    )
-
-
-def parse_planning_schema(
-    schema: Dict[str, Any],
-) -> OrderedDict[str, Dict[str, Any]]:
-    if not isinstance(schema, dict) or not schema:
-        return OrderedDict()
-
-    # Unwrap top-level "stickies" key if present
-    raw_definitions = (
-        schema.get("stickies")
-        if "stickies" in schema and isinstance(schema.get("stickies"), dict)
-        else schema
-    )
-
-    parsed: OrderedDict[str, Dict[str, Any]] = OrderedDict()
-    for raw_topic, raw_entry in raw_definitions.items():
-        topic = str(raw_topic).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
-        if not topic:
-            continue
-        if not isinstance(raw_entry, dict):
-            raw_entry = {"description": str(raw_entry)}
-
-        description = str(raw_entry.get("description", "")).strip()
-        required = bool(raw_entry.get("required", True))
-        render = str(
-            raw_entry.get(
-                "render",
-                raw_entry.get("display_template", raw_entry.get("template", "")),
-            )
-        ).strip()
-
-        raw_fields = raw_entry.get("fields")
-        fields: Optional[Dict[str, str]] = None
-        if isinstance(raw_fields, dict) and raw_fields:
-            fields = {
-                str(k).strip(): str(v).strip()
-                for k, v in raw_fields.items()
-                if str(k).strip()
-            }
-        elif isinstance(raw_fields, (list, tuple, set)):
-            fields = {
-                str(k).strip(): str(k).strip() for k in raw_fields if str(k).strip()
-            }
-
-        initial = raw_entry.get("initial")
-        if isinstance(initial, dict):
-            initial = {str(k): str(v) for k, v in initial.items()}
-        elif initial is not None:
-            initial = str(initial)
-        elif fields:
-            initial = {k: "" for k in fields}
-        else:
-            initial = ""
-
-        parsed[topic] = {
-            "topic": topic,
-            "description": description,
-            "required": required,
-            "render": render,
-            "fields": fields,
-            "initial": initial,
-        }
-    return parsed
-
-
-# Backward-compatibility alias
-parse_sticky_definitions = parse_planning_schema
-
-
-def render_structured_sticky(
-    definition: Dict[str, Any], value: Any
-) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-
-    template = definition.get("render") or definition.get("display_template")
-    if isinstance(value, dict):
-        if template:
-            try:
-                if "{" in template:
-                    try:
-                        rendered = template.format(**value)
-                    except (KeyError, IndexError, ValueError):
-                        rendered = Template(template).render(**value)
-                else:
-                    rendered = Template(template).render(**value)
-                return rendered.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-            except Exception:
-                logger.warning(
-                    "[StoryPlanningModule] Failed to render template for '%s'",
-                    definition.get("topic"),
-                )
-        rendered = " | ".join(
-            f"{k}: {v}" for k, v in value.items() if v is not None and str(v) != ""
-        )
-        return rendered.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-
-    return str(value).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-
-
 class VertexGemini(Gemini):
     project_id: Optional[str] = None
     location: Optional[str] = None
@@ -339,9 +174,9 @@ class StoryPlanningModule:
         character_manager: CharacterManager,
         session_service: InMemorySessionService,
         session_id: str,
+        notepad: Notepad,
         recent_story_log_fn: Optional[Callable[[], str]] = None,
         on_save_state: Optional[Callable[[], None]] = None,
-        notepad: Optional[Notepad] = None,
     ):
         if theater is None:
             raise ValueError("theater is required.")
@@ -357,6 +192,8 @@ class StoryPlanningModule:
             raise ValueError("session_service is required.")
         if not session_id:
             raise ValueError("session_id is required.")
+        if notepad is None:
+            raise ValueError("notepad is required.")
 
         self.theater = theater
         self.theater_id = getattr(theater, "theater_id", "")
@@ -372,51 +209,10 @@ class StoryPlanningModule:
         self.recent_story_log_fn = recent_story_log_fn
         self.on_save_state = on_save_state
 
-        raw_config = theater.config() or {}
-        subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
-        self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
-        # StoryTool supplies the shared pad.  The fallback keeps direct module
-        # construction compatible for focused module tests and integrations.
-        self.notepad = notepad or Notepad(self.config, canvas_manager=canvas_manager)
+        self.notepad = notepad
+        self.config = self.notepad.config
         if self.notepad.on_change is None:
             self.notepad.on_change = lambda: self.on_save_state() if self.on_save_state else None
-
-        # Load planning schema: check theater first, then config
-        schema_data = None
-        if self.theater and hasattr(self.theater, "read_planning_schema"):
-            schema_data = self.theater.read_planning_schema()
-        if not schema_data and self.theater and hasattr(self.theater, "directory"):
-            theater_dir = self.theater.directory()
-            for name in ("planning.yaml", "planning.yml"):
-                p = theater_dir / name
-                if p.is_file():
-                    try:
-                        import yaml
-
-                        with open(p, "r", encoding="utf-8") as f:
-                            data = yaml.safe_load(f)
-                            if isinstance(data, dict):
-                                schema_data = data
-                                break
-                    except Exception as e:
-                        logger.warning("Failed to load planning schema from %s: %s", p, e)
-        if not schema_data:
-            schema_data = self.config.get(
-                "planning_schema",
-                self.config.get("sticky_definitions", self.config.get("stickies")),
-            )
-
-        self._sticky_definitions = (
-            parse_planning_schema(schema_data)
-            if isinstance(schema_data, dict) and schema_data
-            else OrderedDict()
-        )
-        self._deep_plan_update_model = build_deep_plan_update_model(self._sticky_definitions)
-        self.notepad.configure_schema(
-            self._sticky_definitions,
-            self._deep_plan_update_model,
-            render_structured_sticky,
-        )
 
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
@@ -497,36 +293,6 @@ class StoryPlanningModule:
             session_service=self.session_service,
             auto_create_session=True,
         )
-
-    # Compatibility views keep older callers working while note state stays in
-    # the shared Notepad owned by StoryTool.
-    @property
-    def max_sticky_notes(self) -> int:
-        return self.notepad.max_sticky_notes
-
-    @max_sticky_notes.setter
-    def max_sticky_notes(self, value: int) -> None:
-        self.notepad.max_sticky_notes = max(1, int(value))
-
-    @property
-    def max_named_elements(self) -> int:
-        return self.notepad.max_named_elements
-
-    @property
-    def _sticky_notes(self) -> OrderedDict[str, str]:
-        return self.notepad._sticky_notes
-
-    @property
-    def _structured_sticky_notes(self) -> OrderedDict[str, Any]:
-        return self.notepad._structured_sticky_notes
-
-    @property
-    def _required_stickies(self) -> OrderedDict[str, str]:
-        return self.notepad._required_stickies
-
-    @property
-    def _sticky_notes_lock(self) -> Lock:
-        return self.notepad._sticky_notes_lock
 
     def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
         compaction = self.config.get("compaction")
@@ -629,7 +395,7 @@ class StoryPlanningModule:
                 self.deep_read_lore,
                 self._lookup_character,
             ],
-            output_schema=self._deep_plan_update_model,
+            output_schema=self.notepad.deep_plan_update_model,
             output_key="deep_plan_update",
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
@@ -658,25 +424,6 @@ class StoryPlanningModule:
             self.restart_deep_planner_agent()
         return self._deep_planner_runner
 
-    def update_sticky_note(self, topic: str, info: str) -> str:
-        """Insert or replace one sticky note in the current scene."""
-        return self.notepad.update_sticky_note(topic, info)
-
-    def update_or_insert_named_element(self, name: str, content: str) -> str:
-        return self.update_sticky_note(topic=name, info=content)
-
-    def get_present_sticky_notes(self) -> list[dict[str, str]]:
-        return self.notepad.get_present_sticky_notes()
-
-    def get_present_elements(self) -> list[dict[str, str]]:
-        return self.get_present_sticky_notes()
-
-    def get_present_structured_sticky_notes(self) -> Dict[str, Any]:
-        return self.notepad.get_present_structured_sticky_notes()
-
-    def get_required_sticky_notes(self) -> list[str]:
-        return self.notepad.get_required_sticky_notes()
-
     def get_deep_plan(self) -> Dict[str, Any]:
         with self._deep_plan_lock:
             return dict(self._deep_plan)
@@ -703,7 +450,7 @@ class StoryPlanningModule:
     ) -> bool:
         if not isinstance(raw_update, dict) or raw_update.get("error"):
             return False
-        update = self._deep_plan_update_model.model_validate(raw_update)
+        update = self.notepad.deep_plan_update_model.model_validate(raw_update)
         self.notepad.replace_from_deep_update(update)
 
         with self._deep_plan_lock:
@@ -714,10 +461,10 @@ class StoryPlanningModule:
             plan = update.model_dump(mode="json", by_alias=True)
             plan["revision"] = self._deep_plan_revision
             plan["through_turn_id"] = self._deep_plan_through_turn_id
-            if not self._sticky_definitions:
+            if not self.notepad.sticky_definitions:
                 plan["sticky_notes"] = [
                     {"topic": note["topic"], "info": note["info"]}
-                    for note in self.get_present_sticky_notes()
+                    for note in self.notepad.get_present_sticky_notes()
                 ]
             self._deep_plan = plan
 
@@ -833,9 +580,9 @@ class StoryPlanningModule:
         )
         prompt_input = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
             deep_plan_json=deep_plan_json if deep_plan_json != "{}" else "",
-            current_notes=self.get_present_sticky_notes(),
+            current_notes=self.notepad.get_present_sticky_notes(),
             structured_sticky_json=json.dumps(
-                self.get_present_structured_sticky_notes(),
+                self.notepad.get_present_structured_sticky_notes(),
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -846,16 +593,16 @@ class StoryPlanningModule:
                         for k, v in definition.items()
                         if k in ("description", "fields", "render", "required") and v is not None
                     }
-                    for topic, definition in self._sticky_definitions.items()
+                    for topic, definition in self.notepad.sticky_definitions.items()
                 },
                 ensure_ascii=False,
                 indent=2,
             )
-            if self._sticky_definitions
+            if self.notepad.sticky_definitions
             else "",
-            required_stickies=self.get_required_sticky_notes(),
+            required_stickies=self.notepad.get_required_sticky_notes(),
             turn_events=event_payloads,
-            max_sticky_notes=self.max_sticky_notes,
+            max_sticky_notes=self.notepad.max_sticky_notes,
         ).strip()
 
         async def run_turn() -> Dict[str, Any]:
@@ -901,7 +648,7 @@ class StoryPlanningModule:
                     "Deep planner returned no fresh plan update "
                     f"(final_response_chars={len(final_text)})."
                 )
-            return self._deep_plan_update_model.model_validate(raw_update).model_dump(
+            return self.notepad.deep_plan_update_model.model_validate(raw_update).model_dump(
                 mode="json", by_alias=True
             )
 

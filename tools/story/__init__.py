@@ -12,18 +12,23 @@ from tools.story.lore_library import (
     MAX_LORE_DOCUMENT_CONTEXT_CHARS,
     MAX_LORE_DOCUMENTS_LISTED,
 )
-from tools.story.notepad import Notepad
-from tools.story.story_planning_module import (
-    StoryPlanningModule,
-    StickyNoteItem,
+from tools.story.notepad import (
+    DEFAULT_MAX_STICKY_NOTES,
+    MAX_STICKY_NOTE_INFO_CHARS,
+    MAX_STICKY_NOTE_TOPIC_CHARS,
+    MAX_STICKY_NOTES,
     DeepPlanUpdate,
-    VertexGemini,
+    Notepad,
+    StickyNoteItem,
     build_deep_plan_update_model,
     parse_sticky_definitions,
     render_structured_sticky,
+)
+from tools.story.story_planning_module import (
+    StoryPlanningModule,
+    VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
     DEFAULT_COMPACTION_TARGET_TOKENS,
-    DEFAULT_MAX_STICKY_NOTES,
     DEFAULT_STORY_PLANNING_STYLE,
     DEFAULT_DEEP_THINKING_BUDGET,
     DEFAULT_DEEP_MAX_OUTPUT_TOKENS,
@@ -32,9 +37,6 @@ from tools.story.story_planning_module import (
     DEFAULT_DEEP_MAX_EVENTS_PER_TURN,
     DEFAULT_DEEP_IDLE_REFINEMENT_TURNS,
     DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES,
-    MAX_STICKY_NOTE_TOPIC_CHARS,
-    MAX_STICKY_NOTE_INFO_CHARS,
-    MAX_STICKY_NOTES,
     STORY_LOG_CONTEXT_LINES,
     MAX_DEEP_READ_LORE_CALLS_PER_RUN,
     MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN,

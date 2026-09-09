@@ -47,7 +47,7 @@ class StoryTool:
         )
         self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
         # This is the single note collection for both story modules.
-        self.notepad = Notepad(self.config, canvas_manager=canvas_manager)
+        self.notepad = Notepad(theater, canvas_manager=canvas_manager)
 
         self.lore_library = LoreLibrary(theater=theater)
         self.character_manager = CharacterManager(
@@ -93,7 +93,7 @@ class StoryTool:
 
         # Cross-module communication stays explicit and is wired only after
         # both modules have been initialized.
-        self.character_manager.elements_provider = self.planning_module.get_present_elements
+        self.character_manager.elements_provider = self.get_present_elements
         self.character_manager.on_change = self.response_module.save_to_session_state
         self.planning_module.recent_story_log_fn = self.response_module._format_recent_story_log
         self.planning_module.on_save_state = self.response_module.save_to_session_state
@@ -152,11 +152,34 @@ class StoryTool:
 
     @property
     def max_sticky_notes(self) -> int:
-        return self.planning_module.max_sticky_notes
+        return self.notepad.max_sticky_notes
 
     @max_sticky_notes.setter
     def max_sticky_notes(self, value: int) -> None:
-        self.planning_module.max_sticky_notes = value
+        self.notepad.max_sticky_notes = max(1, int(value))
+
+    @property
+    def max_named_elements(self) -> int:
+        return self.notepad.max_named_elements
+
+    def update_sticky_note(self, topic: str, info: str) -> str:
+        """Insert or replace one sticky note in the current scene."""
+        return self.notepad.update_sticky_note(topic, info)
+
+    def update_or_insert_named_element(self, name: str, content: str) -> str:
+        return self.update_sticky_note(topic=name, info=content)
+
+    def get_present_sticky_notes(self) -> list[dict[str, str]]:
+        return self.notepad.get_present_sticky_notes()
+
+    def get_present_elements(self) -> list[dict[str, str]]:
+        return self.notepad.get_present_elements()
+
+    def get_present_structured_sticky_notes(self) -> Dict[str, Any]:
+        return self.notepad.get_present_structured_sticky_notes()
+
+    def get_required_sticky_notes(self) -> list[str]:
+        return self.notepad.get_required_sticky_notes()
 
 # Compatibility names retained while callers migrate to ``StoryTool``.
 StoryPlanningTools = StoryTool
