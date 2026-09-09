@@ -1,4 +1,4 @@
-"""Story response module: fast turn responder and immediate scene state owner."""
+"""Story response tool: fast turn responder, character manager, and action coordinator."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import threading
 from threading import Lock
 import time
@@ -26,8 +27,8 @@ from google.genai import types
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
-from providers import TextResponseProvider
-from tools.story.character_manager import CharacterManager
+from services.quirk_service import get_quirk_generator_service
+from providers import TextResponseProvider, TextResponseRequest
 from tools.story.lore_library import LoreLibrary
 from tools.story.story_planning_module import (
     StoryPlanningModule,
@@ -35,11 +36,13 @@ from tools.story.story_planning_module import (
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
     DEFAULT_COMPACTION_TARGET_TOKENS,
     DEFAULT_STORY_PLANNING_STYLE,
+    MAX_PLOT_BEAT_CHARS,
     STORY_LOG_CONTEXT_LINES,
 )
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_ACTIVE_CHARACTERS = 3
 DEFAULT_THINKING_BUDGET = 1024
 USER_ACTION_TIMEOUT_SECONDS = 25.0
 VOICE_INPUT_LOG_THROTTLE_SECONDS = 5.0
@@ -47,10 +50,48 @@ MAX_STORY_PLANNING_STYLE_CHARS = 500
 MAX_PLAYER_ACTION_CHARS = 2_000
 MAX_NUDGE_CHARS = 1_000
 MAX_NARRATION_CHARS = 2_000
-MAX_PLANNING_SIGNAL_CHARS = 500
 MAX_NAMED_ELEMENTS = 10
-MAX_READ_LORE_CALLS_PER_TURN = 3
-MAX_SEARCH_LORE_CALLS_PER_TURN = 3
+MAX_ACTIVE_CHARACTERS = 10
+SUPPORTED_VOICE_TAGS = {"male", "female"}
+
+
+def normalize_voice_tags(tags: Any) -> List[str]:
+    """Normalize input into a list containing only supported voice tags ('male' or 'female')."""
+    if not tags:
+        return []
+    if isinstance(tags, str):
+        candidates = [t.strip().lower() for t in re.split(r"[,\s]+", tags) if t.strip()]
+    elif isinstance(tags, (list, tuple, set)):
+        candidates = [str(t).strip().lower() for t in tags if str(t).strip()]
+    else:
+        candidates = [str(tags).strip().lower()]
+    seen = set()
+    result = []
+    for c in candidates:
+        if c in SUPPORTED_VOICE_TAGS and c not in seen:
+            seen.add(c)
+            result.append(c)
+    return result
+
+
+_CHARACTER_GEN_PROMPT_TEMPLATE = Template(
+    """Character name: {{ name }}
+{% if description -%}
+Character concept/description: {{ description }}
+{% endif -%}
+Your sticky notes:
+{% if elements -%}
+{% for elem in elements -%}
+- {{ elem.topic or elem.name }}: {{ elem.info or elem.content }}
+{% endfor -%}
+{% else -%}
+(No active sticky notes)
+{% endif -%}
+
+Generate a compelling personality description, core motivation, and voice tags for this character in an adventure story experience.
+The only supported voice tags are 'male' or 'female'.
+Return ONLY a JSON object with keys 'personality' (string), 'motivation' (string), and 'voice_tags' (list of strings with 'male' or 'female')."""
+)
 
 _STORY_CONTEXT_PROMPT_TEMPLATE = Template(
     """Your sticky notes:
@@ -74,6 +115,12 @@ Active characters, personalities, motivations & distinct quirks:
 {% endif -%}
 {% endif -%}
 
+{% if reused_nodes -%}
+Current upcoming plot beats:
+{% for node in reused_nodes -%}
+Node {{ node.node_index }}: Plot beat: {{ node.plot_beat }}
+{% endfor -%}
+{% endif -%}
 """
 )
 
@@ -81,7 +128,7 @@ _SCENE_REACTION_PROMPT_TEMPLATE = Template(
 """# Role & Mission
 You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
-A separate deep-planning agent owns long-term continuity through sticky notes. Treat those notes as authoritative planning guidance, but never modify them or create a competing long-term plan during this turn.
+A separate deep-planning agent owns long-term plotting, world trajectories, upcoming plot beats, and sticky notes. The sticky notes below are its interface to you: treat them as authoritative planning and continuity guidance, but never modify them or create a competing long-term plan during this turn.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Story-Planning Style (User Specified)
@@ -93,7 +140,7 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 # Core Improv & Player Agency Principles
 - Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation.
 - Do not stonewall with a flat refusal or erase the action; when it conflicts with established facts, honor its intent through the nearest plausible consequence instead.
-- If a live agent nudge is provided, accommodate and incorporate that suggested direction, event, or element into the story resolution or NPC responses where appropriate, while still respecting player agency and established fiction.
+- If a live agent nudge is provided, accommodate and incorporate that suggested direction, event, or element into the story resolution, NPC responses, or plot beats where appropriate, while still respecting player agency and established fiction.
 - The player/orator and any character they control are outside your control: their submitted words are historical input, not dialogue to continue, revise, narrate as, or attribute to them.
 - Never invent the player's actions, speech, thoughts, feelings, decisions, or a response on their behalf.
 - The user action is immutable player input. Do not repeat it as dialogue or convert it into an authored turn for the player.
@@ -164,6 +211,7 @@ class SceneReaction(BaseModel):
     dialogue: List[ResponseDialogue] = Field(default_factory=list, description="At most three NPC lines; never for the player.")
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
     character_updates: List[ResponseCharacter] = Field(default_factory=list, description="NPCs added or updated.")
+    plot_beats: List[str] = Field(default_factory=list, description="Legacy plot beats.")
     planning_signals: List[str] = Field(default_factory=list, description="Factual story signals for deep planning.")
     scene_label: Optional[str] = Field(default=None, description="Current scene label/location.")
     reference_images: Optional[List[str]] = Field(default=None, description="Referenced lore images.")
@@ -217,11 +265,13 @@ class StoryLogEntry(BaseModel):
 def build_story_context_prompt(
     elements: list[dict[str, str]],
     characters: list[dict[str, Any]],
+    reused_nodes: list[dict[str, Any]],
     total_characters: Optional[int] = None,
 ) -> str:
     return _STORY_CONTEXT_PROMPT_TEMPLATE.render(
         elements=elements,
         characters=characters,
+        reused_nodes=reused_nodes,
         total_characters=total_characters,
     ).strip()
 
@@ -229,43 +279,32 @@ def build_story_context_prompt(
 def build_scene_reaction_prompt(
     context: str,
     style: str,
+    nodes_ahead: int,
     lore_context: str = "",
     max_sticky_notes: int = 5,
 ) -> str:
     return _SCENE_REACTION_PROMPT_TEMPLATE.render(
         context=context,
         style=style,
+        nodes_ahead=nodes_ahead,
         lore_context=lore_context,
         max_sticky_notes=max_sticky_notes,
     ).strip()
 
 
-class StoryResponseModule(BaseTools):
-    """Fast, authoritative turn responder with dependencies supplied by ``StoryTool``."""
+class StoryResponseTool(BaseTools):
+    """Fast, authoritative turn responder and story coordinator."""
 
     def __init__(
         self,
         theater: Theater,
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
-        planning_module: StoryPlanningModule,
-        lore_library: LoreLibrary,
-        character_manager: CharacterManager,
-        session_service: InMemorySessionService,
-        session_id: str,
+        planning_module: Optional[StoryPlanningModule] = None,
+        lore_library: Optional[LoreLibrary] = None,
     ):
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
-        if planning_module is None:
-            raise ValueError("planning_module is required.")
-        if lore_library is None:
-            raise ValueError("lore_library is required.")
-        if character_manager is None:
-            raise ValueError("character_manager is required.")
-        if session_service is None:
-            raise ValueError("session_service is required.")
-        if not session_id:
-            raise ValueError("session_id is required.")
 
         super().__init__(
             theater=theater,
@@ -276,16 +315,19 @@ class StoryResponseModule(BaseTools):
         self.config = subconfig if isinstance(subconfig, dict) else {}
         self.text_response_provider = text_response_provider
 
-        self.lore_library = lore_library
-        self.character_manager = character_manager
+        # Shared lore library
+        self.lore_library = lore_library or LoreLibrary(theater=theater)
 
-        # Lore budgets and activity belong to the immediate-response turn.
-        self._read_lore_calls_this_turn = 0
-        self._read_lore_lock = Lock()
-        self._search_lore_calls_this_turn = 0
-        self._search_lore_lock = Lock()
-        self._lore_activity_this_turn: List[Dict[str, Any]] = []
-        self._lore_activity_lock = Lock()
+        # Characters
+        self._characters: OrderedDict[str, Dict[str, str]] = OrderedDict()
+        self._characters_lock = Lock()
+        self.max_active_characters: int = max(
+            1,
+            min(
+                int(self.config.get("max_active_characters", DEFAULT_MAX_ACTIVE_CHARACTERS)),
+                MAX_ACTIVE_CHARACTERS,
+            ),
+        )
 
         # Dice rolls
         self._die_rolls_this_turn: List[Dict[str, Any]] = []
@@ -324,8 +366,12 @@ class StoryResponseModule(BaseTools):
             str(configured_style).strip()[:MAX_STORY_PLANNING_STYLE_CHARS]
             or DEFAULT_STORY_PLANNING_STYLE
         )
-        self.session_id = str(session_id)
-        self.session_service = session_service
+        self.session_id: str = str(
+            self.config.get("session_id") or f"responder_{self.theater_id}_{secrets.token_hex(8)}"
+        )
+        self.session_service: InMemorySessionService = (
+            self.config.get("session_service") or InMemorySessionService()
+        )
         self.compaction_config: Optional[EventsCompactionConfig] = self._build_compaction_config()
         self._run_compression_config: Optional[types.ContextWindowCompressionConfig] = (
             self._build_run_compression_config()
@@ -361,7 +407,19 @@ class StoryResponseModule(BaseTools):
         self._story_log_lock = Lock()
         self._recent_story_log = self._read_recent_story_log()
 
-        self.planning_module = planning_module
+        # Wire planning module
+        self.planning_module: StoryPlanningModule = planning_module or StoryPlanningModule(
+            theater=theater,
+            canvas_manager=canvas_manager,
+            lore_library=self.lore_library,
+            session_service=self.session_service,
+            session_id=self.session_id,
+            config=self.config,
+            character_lookup_fn=self.lookup_character,
+            recent_story_log_fn=self._format_recent_story_log,
+            on_plan_committed=self._log_story_update,
+            on_save_state=self.save_to_session_state,
+        )
 
         # Fast responder runner
         self._responder_agent: Agent = self._create_responder_agent()
@@ -375,6 +433,31 @@ class StoryResponseModule(BaseTools):
             session_service=self.session_service,
             auto_create_session=True,
         )
+
+        # Initial characters
+        initial_characters = self.config.get("initial_characters", {})
+        if isinstance(initial_characters, dict):
+            for k, v in initial_characters.items():
+                if isinstance(v, dict):
+                    self._characters[str(k)] = {
+                        "name": str(k),
+                        "description": str(v.get("description", "")),
+                        "personality": str(v.get("personality", "")),
+                        "motivation": str(v.get("motivation", "")),
+                        "quirk": str(v.get("quirk", "")),
+                        "voice_tags": normalize_voice_tags(v.get("voice_tags", v.get("voice_type"))),
+                    }
+        elif isinstance(initial_characters, list):
+            for char in initial_characters:
+                if isinstance(char, dict) and "name" in char:
+                    self._characters[str(char["name"])] = {
+                        "name": str(char["name"]),
+                        "description": str(char.get("description", "")),
+                        "personality": str(char.get("personality", "")),
+                        "motivation": str(char.get("motivation", "")),
+                        "quirk": str(char.get("quirk", "")),
+                        "voice_tags": normalize_voice_tags(char.get("voice_tags", char.get("voice_type"))),
+                    }
 
         self.reload_from_session_state()
 
@@ -392,6 +475,14 @@ class StoryResponseModule(BaseTools):
         return self.planning_module.max_named_elements
 
     @property
+    def nodes_ahead(self) -> int:
+        return self.planning_module.nodes_ahead
+
+    @nodes_ahead.setter
+    def nodes_ahead(self, value: int) -> None:
+        self.planning_module.nodes_ahead = value
+
+    @property
     def _sticky_notes(self) -> OrderedDict[str, str]:
         return self.planning_module._sticky_notes
 
@@ -406,6 +497,18 @@ class StoryResponseModule(BaseTools):
     @property
     def _elements_lock(self) -> Lock:
         return self.planning_module._sticky_notes_lock
+
+    @property
+    def _plot_beats(self) -> List[Dict[str, str]]:
+        return self.planning_module._plot_beats
+
+    @_plot_beats.setter
+    def _plot_beats(self, value: List[Dict[str, str]]) -> None:
+        self.planning_module._plot_beats = value
+
+    @property
+    def _plot_beats_lock(self) -> Lock:
+        return self.planning_module._plot_beats_lock
 
     @property
     def _deep_plan(self) -> Dict[str, Any]:
@@ -438,6 +541,9 @@ class StoryResponseModule(BaseTools):
     def get_required_sticky_notes(self) -> list[str]:
         return self.planning_module.get_required_sticky_notes()
 
+    def get_plot_beats(self) -> List[Dict[str, str]]:
+        return self.planning_module.get_plot_beats()
+
     def get_deep_plan(self) -> Dict[str, Any]:
         return self.planning_module.get_deep_plan()
 
@@ -451,73 +557,19 @@ class StoryResponseModule(BaseTools):
     ) -> threading.Thread:
         return self.planning_module.queue_deep_planning(turn_id, action, result)
 
+    @staticmethod
+    def _normalize_plot_beats(raw_beats: Any) -> List[Dict[str, str]]:
+        from tools.story.story_planning_module import _normalize_plot_beats as norm
+        return norm(raw_beats)
+
     # Shared Lore delegations to lore_library
     @logged_tool_call
     def read_lore(self, document: str = "") -> str:
-        with self._read_lore_lock:
-            if self._read_lore_calls_this_turn >= MAX_READ_LORE_CALLS_PER_TURN:
-                logger.warning(
-                    "[StoryResponseModule] read_lore call limit reached (%d/%d) for theater=%s",
-                    self._read_lore_calls_this_turn,
-                    MAX_READ_LORE_CALLS_PER_TURN,
-                    self.theater_id,
-                )
-                return (
-                    f"Error: Maximum read_lore call limit ({MAX_READ_LORE_CALLS_PER_TURN}) "
-                    "reached for this turn. You cannot read additional lore. "
-                    "Finalize and return the scene reaction now."
-                )
-            self._read_lore_calls_this_turn += 1
-            call_count = self._read_lore_calls_this_turn
-
-        result = self.lore_library.read_lore(document)
-        self._record_read_lore_activity(document, result)
-        if call_count == MAX_READ_LORE_CALLS_PER_TURN:
-            result += (
-                f"\n\n[Note: You have reached the maximum limit of "
-                f"{MAX_READ_LORE_CALLS_PER_TURN} read_lore calls for this turn. "
-                "Do not call read_lore again. Proceed immediately to finalize and "
-                "return the scene reaction JSON.]"
-            )
-        return result
+        return self.lore_library.read_lore(document)
 
     @logged_tool_call
     def search_lore(self, query: str) -> str:
-        with self._search_lore_lock:
-            if self._search_lore_calls_this_turn >= MAX_SEARCH_LORE_CALLS_PER_TURN:
-                logger.warning(
-                    "[StoryResponseModule] search_lore call limit reached (%d/%d) for theater=%s",
-                    self._search_lore_calls_this_turn,
-                    MAX_SEARCH_LORE_CALLS_PER_TURN,
-                    self.theater_id,
-                )
-                return (
-                    f"Error: Maximum search_lore call limit ({MAX_SEARCH_LORE_CALLS_PER_TURN}) "
-                    "reached for this turn. You cannot search additional lore. "
-                    "Finalize and return the scene reaction now."
-                )
-            self._search_lore_calls_this_turn += 1
-            call_count = self._search_lore_calls_this_turn
-
-        result = self.lore_library.search_lore(query)
-        matched_documents = re.findall(r"(?m)^- (.+?) \(score:", result)
-        self._record_lore_activity(
-            "search",
-            str(query or "").strip(),
-            summary=(
-                f"Searched lore for '{str(query or '').strip()}' "
-                f"({len(matched_documents)} matches)"
-            ),
-            matched_documents=matched_documents[:5],
-        )
-        if call_count == MAX_SEARCH_LORE_CALLS_PER_TURN:
-            result += (
-                f"\n\n[Note: You have reached the maximum limit of "
-                f"{MAX_SEARCH_LORE_CALLS_PER_TURN} search_lore calls for this turn. "
-                "Do not call search_lore again. Proceed immediately to finalize and "
-                "return the scene reaction JSON.]"
-            )
-        return result
+        return self.lore_library.search_lore(query)
 
     def deep_read_lore(self, document: str = "") -> str:
         return self.planning_module.deep_read_lore(document)
@@ -529,90 +581,21 @@ class StoryResponseModule(BaseTools):
         self.lore_library.clear_lore_cache()
 
     def reset_lore_call_counts(self) -> None:
-        with self._read_lore_lock:
-            self._read_lore_calls_this_turn = 0
-        with self._search_lore_lock:
-            self._search_lore_calls_this_turn = 0
-        with self._lore_activity_lock:
-            self._lore_activity_this_turn = []
+        self.lore_library.reset_lore_call_counts()
         with self._die_rolls_lock:
             self._die_rolls_this_turn = []
 
     def get_lore_docs_browsed_this_turn(self) -> List[str]:
-        with self._lore_activity_lock:
-            docs: List[str] = []
-            seen = set()
-            for item in self._lore_activity_this_turn:
-                candidates = [item.get("document")]
-                candidates.extend(item.get("matching_documents", []))
-                candidates.extend(item.get("matched_documents", []))
-                for document in candidates:
-                    if document and not document.startswith("(") and document not in seen:
-                        seen.add(document)
-                        docs.append(document)
-            return docs
+        return self.lore_library.get_lore_docs_browsed_this_turn()
 
     def get_lore_activity_this_turn(self) -> List[Dict[str, Any]]:
-        with self._lore_activity_lock:
-            return list(self._lore_activity_this_turn)
+        return self.lore_library.get_lore_activity_this_turn()
 
     def _get_lore_context(self, *, record_activity: bool = True) -> str:
-        context = self.lore_library.get_lore_context()
-        if record_activity:
-            for document in self.theater.lore_documents():
-                filename = document.rsplit("/", 1)[-1]
-                if filename.lower().startswith("read") or document.lower().startswith("read"):
-                    self._record_lore_activity(
-                        "preloaded",
-                        document,
-                        summary=f"Preloaded premise lore document '{document}'",
-                    )
-        return context
+        return self.lore_library.get_lore_context(record_activity=record_activity)
 
     def _record_lore_activity(self, activity_type: str, target: str, summary: str = "", **kwargs: Any) -> None:
-        with self._lore_activity_lock:
-            entry = {
-                "type": activity_type,
-                "document": target,
-                "summary": summary or target,
-                **kwargs,
-            }
-            if not any(
-                item.get("type") == activity_type and item.get("document") == target
-                for item in self._lore_activity_this_turn
-            ):
-                self._lore_activity_this_turn.append(entry)
-
-    def _record_read_lore_activity(self, document: str, result: str) -> None:
-        clean_document = str(document or "").strip().replace("\\", "/")
-        if not clean_document:
-            documents = self.theater.lore_documents()
-            self._record_lore_activity(
-                "list",
-                "(all lore documents)",
-                summary=f"Listed {len(documents)} lore files",
-            )
-        elif result.startswith("Lore documents in '"):
-            prefix = clean_document.rstrip("/") + "/"
-            matching = [
-                item for item in self.theater.lore_documents() if item.startswith(prefix)
-            ]
-            self._record_lore_activity(
-                "read_dir",
-                clean_document,
-                summary=(
-                    f"Browsed lore directory '{clean_document}' "
-                    f"({len(matching)} matching docs)"
-                ),
-                matching_documents=matching[:10],
-            )
-        elif result.startswith("Lore document:"):
-            self._record_lore_activity(
-                "read_file",
-                clean_document,
-                summary=f"Read lore document '{clean_document}'",
-                excerpt=result.partition("\n\n")[2][:300],
-            )
+        self.lore_library.record_lore_activity(activity_type, target, summary, **kwargs)
 
     # Input detection & Rate limiting
     @property
@@ -626,7 +609,7 @@ class StoryResponseModule(BaseTools):
             now = time.monotonic()
             if now - self._last_voice_input_log_time >= VOICE_INPUT_LOG_THROTTLE_SECONDS:
                 self._last_voice_input_log_time = now
-                logger.debug("[StoryResponseModule] User input detected; process_user_action is re-enabled.")
+                logger.debug("[StoryResponseTool] User input detected; process_user_action is re-enabled.")
 
     @property
     def is_action_in_flight(self) -> bool:
@@ -683,7 +666,7 @@ class StoryResponseModule(BaseTools):
             self._die_rolls_this_turn.append(result)
 
         logger.debug(
-            "[StoryResponseModule] Dice roll (theater=%s, reason=%s): %s",
+            "[StoryResponseTool] Dice roll (theater=%s, reason=%s): %s",
             self.theater_id or "default",
             clean_reason or "general",
             result,
@@ -691,28 +674,62 @@ class StoryResponseModule(BaseTools):
         return result
 
     # Character Management
-    @property
-    def _characters(self) -> OrderedDict[str, Dict[str, Any]]:
-        return self.character_manager._characters
-
-    @property
-    def _characters_lock(self) -> Lock:
-        return self.character_manager._characters_lock
-
-    @property
-    def max_active_characters(self) -> int:
-        return self.character_manager.max_active_characters
-
-    @max_active_characters.setter
-    def max_active_characters(self, value: int) -> None:
-        self.character_manager.max_active_characters = value
-
     def get_present_characters(self) -> list[dict[str, Any]]:
-        return self.character_manager.get_present_characters()
+        with self._characters_lock:
+            return [
+                dict(char)
+                for char in list(self._characters.values())[-self.max_active_characters:]
+            ]
 
     @logged_tool_call
     def lookup_character(self, query: str = "") -> str:
-        return self.character_manager.lookup_character(query)
+        """List all session characters or search for a character by name or trait."""
+        with self._characters_lock:
+            characters_snapshot = [dict(c) for c in self._characters.values()]
+
+        if not characters_snapshot:
+            return "No characters have been encountered or introduced in this story yet."
+
+        clean_query = str(query or "").strip().lower()
+        if not clean_query:
+            lines = [f"Characters encountered ({len(characters_snapshot)} total):"]
+            for c in characters_snapshot:
+                tags = f" [Voice: {', '.join(c['voice_tags'])}]" if c.get("voice_tags") else ""
+                desc = f" ({c['description']})" if c.get("description") else ""
+                lines.append(
+                    f"- {c['name']}{desc}: Personality: {c.get('personality', 'N/A')}, "
+                    f"Motivation: {c.get('motivation', 'N/A')}, "
+                    f"Quirk: {c.get('quirk', 'N/A')}{tags}"
+                )
+            return "\n".join(lines)
+
+        terms = re.findall(r"\w+", clean_query)
+        matches = []
+        for c in characters_snapshot:
+            searchable = " ".join([
+                c.get("name", ""),
+                c.get("description", ""),
+                c.get("personality", ""),
+                c.get("motivation", ""),
+                c.get("quirk", ""),
+                " ".join(c.get("voice_tags", [])),
+            ]).lower()
+            if any(term in searchable for term in terms):
+                matches.append(c)
+
+        if not matches:
+            return f"No characters matching '{query}' found in known session characters."
+
+        lines = [f"Characters matching '{query}':"]
+        for c in matches:
+            tags = f" [Voice: {', '.join(c['voice_tags'])}]" if c.get("voice_tags") else ""
+            desc = f" ({c['description']})" if c.get("description") else ""
+            lines.append(
+                f"- {c['name']}{desc}: Personality: {c.get('personality', 'N/A')}, "
+                f"Motivation: {c.get('motivation', 'N/A')}, "
+                f"Quirk: {c.get('quirk', 'N/A')}{tags}"
+            )
+        return "\n".join(lines)
 
     @logged_tool_call
     def generate_character_profile(
@@ -724,14 +741,68 @@ class StoryResponseModule(BaseTools):
         quirk: str = "",
         voice_tags: Any = None,
     ) -> Dict[str, Any]:
-        return self.character_manager.generate_character_profile(
-            name=name,
-            description=description,
-            personality=personality,
-            motivation=motivation,
-            quirk=quirk,
-            voice_tags=voice_tags,
-        )
+        """Generate a complete NPC profile enriched with distinct traits."""
+        clean_name = str(name or "").strip()[:80]
+        if not clean_name:
+            return {"error": "Character name cannot be empty."}
+
+        clean_desc = str(description or "").strip()[:500]
+        clean_pers = str(personality or "").strip()[:300]
+        clean_motiv = str(motivation or "").strip()[:300]
+        clean_quirk = str(quirk or "").strip()[:300]
+        clean_tags = normalize_voice_tags(voice_tags)
+
+        if not clean_pers or not clean_motiv or not clean_tags:
+            prompt = _CHARACTER_GEN_PROMPT_TEMPLATE.render(
+                name=clean_name,
+                description=clean_desc,
+                elements=self.get_present_elements(),
+            )
+            req = TextResponseRequest(
+                prompt=prompt,
+                system_instruction="You generate distinctive characters for interactive adventure stories.",
+                temperature=0.7,
+            )
+            try:
+                resp = self.text_response_provider.generate(req)
+                raw_text = resp.text.strip() if hasattr(resp, "text") and resp.text else "{}"
+                if raw_text.startswith("```"):
+                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                    raw_text = re.sub(r"\s*```$", "", raw_text)
+                gen_data = json.loads(raw_text)
+                if not clean_pers:
+                    clean_pers = str(gen_data.get("personality", "")).strip()[:300]
+                if not clean_motiv:
+                    clean_motiv = str(gen_data.get("motivation", "")).strip()[:300]
+                if not clean_tags:
+                    clean_tags = normalize_voice_tags(gen_data.get("voice_tags"))
+            except Exception as exc:
+                logger.warning("[StoryResponseTool] Character profile generation call failed: %s", exc)
+
+        if not clean_pers:
+            clean_pers = "Enigmatic and watchful."
+        if not clean_motiv:
+            clean_motiv = "Survive and prosper in the current scene."
+        if not clean_tags:
+            clean_tags = ["female"]
+
+        if not clean_quirk:
+            quirk_svc = get_quirk_generator_service()
+            clean_quirk = quirk_svc.generate_quirk(
+                name=clean_name,
+                personality=clean_pers,
+                motivation=clean_motiv,
+                description=clean_desc,
+            )
+
+        return {
+            "name": clean_name,
+            "description": clean_desc,
+            "personality": clean_pers,
+            "motivation": clean_motiv,
+            "quirk": clean_quirk,
+            "voice_tags": clean_tags,
+        }
 
     def generate_character(
         self,
@@ -742,7 +813,7 @@ class StoryResponseModule(BaseTools):
         quirk: str = "",
         voice_tags: Any = None,
     ) -> str:
-        return self.character_manager.generate_character(
+        profile = self.generate_character_profile(
             name=name,
             description=description,
             personality=personality,
@@ -750,13 +821,29 @@ class StoryResponseModule(BaseTools):
             quirk=quirk,
             voice_tags=voice_tags,
         )
+        if "error" in profile:
+            return profile["error"]
+
+        with self._characters_lock:
+            self._characters[profile["name"]] = profile
+
+        self.save_to_session_state()
+        tags_str = f" [Voice: {', '.join(profile['voice_tags'])}]" if profile.get("voice_tags") else ""
+        return (
+            f"Created character '{profile['name']}'. Personality: {profile['personality']}. "
+            f"Motivation: {profile['motivation']}. Quirk: {profile['quirk']}{tags_str}."
+        )
 
     @logged_tool_call
     def clear_scene(self) -> str:
         """Remove characters from the current scene while preserving durable story context."""
-        char_count = self.character_manager.clear_scene()
+        with self._characters_lock:
+            char_count = len(self._characters)
+            self._characters.clear()
+
+        self.save_to_session_state()
         logger.debug(
-            "[StoryResponseModule] Cleared %d character(s); preserved sticky notes and story context (theater=%s).",
+            "[StoryResponseTool] Cleared %d character(s); preserved sticky notes and story context (theater=%s).",
             char_count,
             self.theater_id or "default",
         )
@@ -776,10 +863,10 @@ class StoryResponseModule(BaseTools):
                 try:
                     entries.append(StoryLogEntry.model_validate_json(line))
                 except Exception as e:
-                    logger.warning("[StoryResponseModule] Failed to validate story log line: %s", e)
+                    logger.warning("[StoryResponseTool] Failed to validate story log line: %s", e)
             return entries
         except Exception as exc:
-            logger.warning("[StoryResponseModule] Failed to read theater story log: %s", exc)
+            logger.warning("[StoryResponseTool] Failed to read theater story log: %s", exc)
             return []
 
     def _append_story_log_entry(self, entry: StoryLogEntry | Dict[str, Any]) -> Optional[StoryLogEntry]:
@@ -787,7 +874,7 @@ class StoryResponseModule(BaseTools):
             try:
                 entry = StoryLogEntry.model_validate(entry)
             except Exception as exc:
-                logger.warning("[StoryResponseModule] Invalid StoryLogEntry: %s", exc)
+                logger.warning("[StoryResponseTool] Invalid StoryLogEntry: %s", exc)
                 return None
 
         with self._story_log_lock:
@@ -799,7 +886,7 @@ class StoryResponseModule(BaseTools):
             try:
                 self.theater.append_output_file("story_log.jsonl", entry.model_dump_json() + "\n")
             except Exception:
-                logger.exception("[StoryResponseModule] Failed to append theater story log")
+                logger.exception("[StoryResponseTool] Failed to append theater story log")
         return entry
 
     def _format_recent_story_log(self) -> str:
@@ -820,6 +907,16 @@ class StoryResponseModule(BaseTools):
                     if text:
                         lines.append(f"Dialogue — {speaker}: {text}")
         return "\n".join(lines)
+
+    def _log_story_update(self, plot_beats: List[Dict[str, Any]], source: str) -> None:
+        formatted = "\n".join(f"- {b.get('plot_beat', '')}" for b in plot_beats)
+        logger.debug(
+            "[StoryResponseTool] Plot beats active (source=%s, theater=%s, count=%d):\n%s",
+            source,
+            self.theater_id,
+            len(plot_beats),
+            formatted,
+        )
 
     # ADK Responder Agent
     def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
@@ -858,16 +955,19 @@ class StoryResponseModule(BaseTools):
         )
 
     def _build_responder_instruction(self, ctx: Any = None) -> str:
+        with self._characters_lock:
+            total_chars = len(self._characters)
         snapshot = {
             "elements": self.get_present_elements(),
             "characters": self.get_present_characters(),
-            "total_characters": self.character_manager.count(),
+            "total_characters": total_chars,
             "style": self.style,
         }
-        lore_context = self._get_lore_context()
+        lore_context = self.lore_library.get_lore_context()
         responder_context = build_story_context_prompt(
             elements=snapshot["elements"],
             characters=snapshot["characters"],
+            reused_nodes=[],
             total_characters=snapshot["total_characters"],
         )
         recent_story_log = self._format_recent_story_log()
@@ -879,6 +979,7 @@ class StoryResponseModule(BaseTools):
         return build_scene_reaction_prompt(
             context=responder_context,
             style=self.style,
+            nodes_ahead=self.nodes_ahead,
             lore_context=lore_context,
             max_sticky_notes=self.max_sticky_notes,
         )
@@ -916,7 +1017,7 @@ class StoryResponseModule(BaseTools):
 
     def restart_responder_agent(self) -> None:
         logger.info(
-            "[StoryResponseModule] Resetting and restarting story responder agent for theater=%s",
+            "[StoryResponseTool] Resetting and restarting story responder agent for theater=%s",
             self.theater_id,
         )
         self._responder_runner = None
@@ -946,7 +1047,7 @@ class StoryResponseModule(BaseTools):
         session_id = self.session_id
         theater = self.theater_id or "default"
         logger.debug(
-            "[StoryResponseModule] Running responder agent (theater=%s): user_action=%r, nudge=%r",
+            "[StoryResponseTool] Running responder agent (theater=%s): user_action=%r, nudge=%r",
             theater,
             user_action,
             nudge,
@@ -1018,7 +1119,7 @@ class StoryResponseModule(BaseTools):
             )
         except (asyncio.TimeoutError, TimeoutError):
             logger.error(
-                "[StoryResponseModule] Story responder timed out after %.1f seconds for user action: %r",
+                "[StoryResponseTool] Story responder timed out after %.1f seconds for user action: %r",
                 self.user_action_timeout_seconds,
                 user_action,
             )
@@ -1057,10 +1158,31 @@ class StoryResponseModule(BaseTools):
             if self.canvas_manager and hasattr(self.canvas_manager, "story"):
                 self.canvas_manager.story.set_scene(narration, dialogue)
         except Exception as exc:
-            logger.warning("[StoryResponseModule] Failed to publish scene: %s", exc)
+            logger.warning("[StoryResponseTool] Failed to publish scene: %s", exc)
 
     def _apply_character_updates(self, updates: Any) -> List[Dict[str, str]]:
-        return self.character_manager.apply_character_updates(updates)
+        if not isinstance(updates, list):
+            return []
+        manifested: List[Dict[str, str]] = []
+        for update in updates[:2]:
+            if not isinstance(update, dict):
+                continue
+            name = str(update.get("name") or "").strip()
+            if not name:
+                continue
+            self.generate_character(
+                name=name,
+                description=str(update.get("description") or "").strip(),
+                personality=str(update.get("personality") or "").strip(),
+                motivation=str(update.get("motivation") or "").strip(),
+                quirk=str(update.get("quirk") or "").strip(),
+                voice_tags=normalize_voice_tags(update.get("voice_tags", update.get("voice_type"))),
+            )
+            manifested.extend([
+                character for character in self.get_present_characters()
+                if character["name"] == name
+            ])
+        return manifested
 
     def process_user_action(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         return self._process_user_action(user_action, nudge=nudge)
@@ -1121,7 +1243,7 @@ class StoryResponseModule(BaseTools):
             try:
                 result = self._resolve_user_action(action, nudge=clean_nudge)
             except Exception as exc:
-                logger.exception("[StoryResponseModule] Scene reaction failed")
+                logger.exception("[StoryResponseTool] Scene reaction failed")
                 result = {"error": f"Story responder failed: {exc}"}
             finally:
                 self.release_in_flight("process_user_action")
@@ -1143,7 +1265,7 @@ class StoryResponseModule(BaseTools):
                 try:
                     callback(result)
                 except Exception:
-                    logger.exception("[StoryResponseModule] Scene reaction callback failed")
+                    logger.exception("[StoryResponseTool] Scene reaction callback failed")
 
         if self.canvas_manager and hasattr(self.canvas_manager, "tool_response"):
             self.canvas_manager.tool_response.set_activity("user_action", active=True)
@@ -1154,6 +1276,8 @@ class StoryResponseModule(BaseTools):
     def _resolve_user_action(self, action: str, nudge: str = "") -> Dict[str, Any]:
         if not self.adventure_mode:
             return {"error": "Adventure Mode is not enabled for this theater."}
+        if self.nodes_ahead <= 0:
+            raise ValueError("nodes_ahead must be positive.")
 
         parsed = self._run_responder_agent(action, nudge=nudge)
         if not isinstance(parsed, dict):
@@ -1166,8 +1290,9 @@ class StoryResponseModule(BaseTools):
             parsed.get("narration") or "The scene shifts in response to your action."
         ).strip()[:MAX_NARRATION_CHARS]
         dialogue = self._clean_dialogue(parsed.get("dialogue"))
+        plot_beats = self.get_plot_beats()
         planning_signals = [
-            str(signal).strip()[:MAX_PLANNING_SIGNAL_CHARS]
+            str(signal).strip()[:MAX_PLOT_BEAT_CHARS]
             for signal in parsed.get("planning_signals", [])
             if str(signal).strip()
         ][:10]
@@ -1185,6 +1310,7 @@ class StoryResponseModule(BaseTools):
             "narration": narration,
             "dialogue": dialogue,
             "manifested_characters": manifested_characters,
+            "plot_beats": list(plot_beats),
             "planning_signals": planning_signals,
             "scene_label": scene_name,
             "reference_images": reference_images,
@@ -1201,7 +1327,7 @@ class StoryResponseModule(BaseTools):
         self._publish_scene(narration, dialogue)
         self.save_to_session_state()
         logger.debug(
-            "[StoryResponseModule] Scene name: %s | Reference images: %s",
+            "[StoryResponseTool] Scene name: %s | Reference images: %s",
             scene_name or "(unspecified)",
             reference_images,
         )
@@ -1210,7 +1336,7 @@ class StoryResponseModule(BaseTools):
             try:
                 callback()
             except Exception:
-                logger.exception("[StoryResponseModule] Story response usage callback failed")
+                logger.exception("[StoryResponseTool] Story response usage callback failed")
 
         # Communicate resolved turn to the background planning module!
         self.planning_module.queue_deep_planning(turn_id, action, result)
@@ -1231,12 +1357,14 @@ class StoryResponseModule(BaseTools):
     # Session State
     def export_story_planning_state(self) -> Dict[str, Any]:
         planning_state = self.planning_module.export_planning_state()
+        with self._characters_lock:
+            chars_list = [dict(c) for c in self._characters.values()]
         with self._turn_id_lock:
             turn_id = self._turn_id
 
         result = dict(planning_state)
         result.update({
-            "characters": self.character_manager.export_characters(),
+            "characters": chars_list,
             "turn_id": turn_id,
             "last_scene_reaction": dict(self._last_scene_reaction),
         })
@@ -1247,7 +1375,21 @@ class StoryResponseModule(BaseTools):
             return
 
         self.planning_module.import_planning_state(state)
-        self.character_manager.import_characters(state.get("characters", []))
+
+        with self._characters_lock:
+            self._characters.clear()
+            chars = state.get("characters", [])
+            if isinstance(chars, list):
+                for char in chars:
+                    if isinstance(char, dict) and "name" in char:
+                        self._characters[str(char["name"])] = {
+                            "name": str(char["name"]),
+                            "description": str(char.get("description", "")),
+                            "personality": str(char.get("personality", "")),
+                            "motivation": str(char.get("motivation", "")),
+                            "quirk": str(char.get("quirk", "")),
+                            "voice_tags": normalize_voice_tags(char.get("voice_tags", char.get("voice_type"))),
+                        }
 
         with self._turn_id_lock:
             try:
@@ -1272,7 +1414,7 @@ class StoryResponseModule(BaseTools):
                 self.planning_module.import_planning_state({"sticky_notes": saved_notes})
         except Exception as e:
             logger.warning(
-                "[StoryResponseModule] Failed to reload story planning state from session state: %s",
+                "[StoryResponseTool] Failed to reload story planning state from session state: %s",
                 e,
             )
 
@@ -1282,9 +1424,10 @@ class StoryResponseModule(BaseTools):
                 self.canvas_manager.story.set_story_planning_state(self.export_story_planning_state())
         except Exception as e:
             logger.warning(
-                "[StoryResponseModule] Failed to save story planning state to session state: %s",
+                "[StoryResponseTool] Failed to save story planning state to session state: %s",
                 e,
             )
 
 
 # Backward-compatible alias
+StoryPlanningTools = StoryResponseTool

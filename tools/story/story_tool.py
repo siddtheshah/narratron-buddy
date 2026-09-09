@@ -118,12 +118,12 @@ class StoryTool:
         self.response_module.on_scene_reaction = callback
 
     @property
-    def on_story_plan_completed(self) -> Optional[Callable[[], None]]:
-        return self.response_module.on_story_plan_completed
+    def on_story_response_completed(self) -> Optional[Callable[[], None]]:
+        return self.response_module.on_story_response_completed
 
-    @on_story_plan_completed.setter
-    def on_story_plan_completed(self, callback: Optional[Callable[[], None]]) -> None:
-        self.response_module.on_story_plan_completed = callback
+    @on_story_response_completed.setter
+    def on_story_response_completed(self, callback: Optional[Callable[[], None]]) -> None:
+        self.response_module.on_story_response_completed = callback
 
     @property
     def on_cooldown_expired(self) -> Optional[Callable[[str], None]]:

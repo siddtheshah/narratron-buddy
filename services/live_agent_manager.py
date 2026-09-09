@@ -350,7 +350,7 @@ class LiveAgentSession:
 
         if self.story_planning_tools:
             self.story_planning_tools.on_scene_reaction = handle_scene_reaction
-            self.story_planning_tools.on_story_plan_completed = self.record_story_plan_completed
+            self.story_planning_tools.on_story_response_completed = self.record_story_plan_completed
 
         if self.image_tools:
             self.image_tools.on_after_tool_call = handle_after_image_tool
