@@ -44,17 +44,6 @@ story_planning:
     # Maximum number of persistent stickies tracked on the board
     max_named_elements: 5
 
-    # Initial sticky notes populated when the adventure starts
-    initial_elements:
-        "Player Character": "Name: Unnamed Explorer | Role: Scholar-Lockbreaker | Goal: Uncover the Heart of Gears | Condition: Healthy"
-        "Archive Security & Alert Level": "Alert: Green (Undetected) | Sentinels: Patrolling Lower Gallery | Grand Orrery: Locked"
-        "Collected Codices & Clues": "Found: Brass Cipher Wheel (unsolved), Notes on Keeper Orun's exile."
-
-    # Stickies that the planner must preserve during board consolidation
-    required_stickies:
-        - "Player Character"
-        - "Archive Security & Alert Level"
-
 # Chat cooldown in seconds
 chat:
     cooldown_duration: 20

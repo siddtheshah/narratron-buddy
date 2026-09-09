@@ -13,12 +13,13 @@ This skill provides comprehensive instructions, design patterns, architectural s
 
 A **Narratron Adventure** is a self-contained content package stored under `adventures/<adventure-id>/`. It turns Narratron Buddy into a multimodal interactive storytelling experience powered by Google Gemini, generative visuals, and atmospheric audio.
 
-Every adventure package contains five core components:
+Every adventure package contains six core components:
 
 ```text
 adventures/<adventure-slug>/
 ├── metadata.json           # Catalog metadata, genre tags, and browser display attributes
-├── theater.yaml            # Story planning rules, agent persona, sticky notes, and tool settings
+├── theater.yaml            # Story planning rules, agent persona, and tool settings
+├── planning.yaml           # Story planning schema, sticky definitions, fields, and initial values
 ├── README.md               # (Optional) Creator notes or developer documentation
 ├── lore/                   # Worldbuilding, DM screen, character dossiers, locations, and rules
 │   ├── readfirst_overview.txt # High-level DM guide permanently persisted in story context
@@ -43,7 +44,7 @@ When creating a new adventure, follow this sequence:
 
 1. **Scaffold the Package**: Create `adventures/<adventure-slug>/` with `lore/`, `references/`, and `playlists/` folders.
 2. **Author `metadata.json`**: Configure the display title, slug ID, genre, difficulty, player count, and cover image.
-3. **Configure `theater.yaml`**: Set `adventure_mode: true`, declare `initial_elements` and `required_stickies`, and define the art and music direction.
+3. **Configure `theater.yaml` & `planning.yaml`**: Set `adventure_mode: true` and define agent persona, art, and music direction in `theater.yaml`. Define structured sticky notes, initial values, and required stickies in `planning.yaml`.
 4. **Draft the DM Screen (`lore/readfirst_<name>.txt`)**: Define the high-level premise, timeline/acts, lore directory roadmap, win/loss conditions, and sticky note tracking rules.
 5. **Flesh Out Modular Lore**: Create character dossiers, location profiles, and faction files. Annotate every asset with `image_reference: references/<filename>`.
 6. **Add Assets**: Place cover artwork and character/location references in `references/`, and loopable tracks in `playlists/`.
@@ -84,11 +85,11 @@ The `metadata.json` file registers the adventure in the Narratron catalog and UI
 
 ---
 
-## 4. Theater Configuration: `theater.yaml`
+## 4. Theater & Planning Configuration
 
-Adventures use `theater.yaml` to govern agent persona, art direction, and persistent state. The most critical block for interactive adventures is **`story_planning`**.
+Adventures use `theater.yaml` to govern agent persona, art direction, and runtime flags, and `planning.yaml` to define sticky note contracts and deep planning schemas.
 
-### Standard Adventure Configuration Template
+### 4.1. Standard Adventure Theater Template (`theater.yaml`)
 
 ```yaml
 agent:
@@ -122,17 +123,6 @@ story_planning:
 
     max_named_elements: 8            # Maximum sticky notes maintained on the canvas board
 
-    # Initial sticky notes pinned at the start of the adventure
-    initial_elements:
-        "Player Character": "Name: Unnamed Explorer | Objective: Reach the Spire's apex | Inventory: Crystal lodestone | Condition: Healthy"
-        "Spire Security Level": "Alert: Green (Unnoticed) | Defense automatons dormant"
-        "Known Clues": "The Spire activates only when three harmonic keys are aligned."
-
-    # Sticky notes that the planner must NEVER discard during memory consolidation
-    required_stickies:
-        - "Player Character"
-        - "Spire Security Level"
-
     # Optional overlay: sticky note topics hidden in canvas UI view by default until toggled
     hidden_stickies:
         - "Known Clues"
@@ -146,10 +136,51 @@ chat:
     cooldown_duration: 20
 ```
 
-### Critical Rules for `theater.yaml`
+### 4.2. Deep Planning Schema Template (`planning.yaml`)
+
+Adventures use `planning.yaml` to define the persistent state that is
+handled by the deep story planner.
+
+```yaml
+# Deep Planner Schema: planning.yaml
+# All fields and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
+
+"Player Character":
+  description: "Established player identity, objective, and physical condition."
+  required: true
+  render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
+  fields:
+    name: "Character name"
+    objective: "Current primary goal"
+    inventory: "Key items carried"
+    condition: "Physical and mental status"
+  initial:
+    name: "Unnamed Explorer"
+    objective: "Reach the Spire's apex"
+    inventory: "Crystal lodestone"
+    condition: "Healthy"
+
+"Spire Security Level":
+  description: "Alert level and defense automaton activity."
+  required: true
+  render: "Alert: {alert} | Automatons: {automatons}"
+  fields:
+    alert: "Current alert level"
+    automatons: "Automaton patrol status"
+  initial:
+    alert: "Green (Unnoticed)"
+    automatons: "Dormant"
+
+"Known Clues":
+  description: "Discovered clues and historical hints."
+  required: false
+  initial: "The Spire activates only when three harmonic keys are aligned."
+```
+
+### Critical Rules for `theater.yaml` & `planning.yaml`
 1. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
-2. **`required_stickies` must match keys in `initial_elements`**: Every topic listed in `required_stickies` must be declared in `initial_elements`. The story planner's memory consolidation mechanism will discard notes not listed in `required_stickies` when note limits are reached.
-3. **`hidden_stickies` overlay**: Optional list of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget. A toggle inside the expandable reveals them if the player wishes to view them.
+2. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, rendering strings, and `required: true|false` in `planning.yaml` rather than declaring `initial_elements` in `theater.yaml`.
+3. **`hidden_stickies` overlay**: Optional list in `theater.yaml` of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget.
 4. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
 
 ---

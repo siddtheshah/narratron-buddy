@@ -484,6 +484,12 @@ class AdventureSession:
         if adv_playlists.is_dir():
             shutil.copytree(adv_playlists, playlists_target, dirs_exist_ok=True)
 
+        for name in ("planning.yaml", "planning.yml"):
+            adv_planning = self.adventure_path / name
+            if adv_planning.is_file():
+                shutil.copy2(adv_planning, theater.directory() / "planning.yaml")
+                break
+
         save_theater_config(self.session_id, self.config, theater_manager=self.theater_manager)
 
     def _process_user_action_wrapper(self, user_action: str, nudge: str = "") -> Dict[str, Any]:

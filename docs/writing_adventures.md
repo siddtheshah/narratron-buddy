@@ -165,23 +165,50 @@ story_planning:
     # Maximum number of persistent state stickies kept on the canvas board
     max_named_elements: 6
 
-    # Initial sticky notes pinned at the beginning of the adventure
-    initial_elements:
-        "Player Character": "Name: Unnamed Explorer | Objective: Reach the Spire's apex | Inventory: Crystal lodestone | Condition: Healthy"
-        "Spire Security Level": "Alert: Green (Unnoticed) | Defense automatons dormant"
-        "Known Clues": "The Spire activates only when three harmonic keys are aligned."
-
-    # Sticky note topics that the planner must NEVER discard during memory consolidation
-    required_stickies:
-        - "Player Character"
-        - "Spire Security Level"
-
     # Optional overlay: sticky note topics hidden in canvas UI view by default until toggled
     hidden_stickies:
         - "Known Clues"
 
 chat:
     cooldown_duration: 20
+```
+
+### 4.3. `planning.yaml` Specification
+
+Sticky notes and persistent story planning contracts are configured in `planning.yaml`. All field values are strictly strings:
+
+```yaml
+# Deep Planner Schema: planning.yaml
+"Player Character":
+  description: "Established player identity, objective, and condition."
+  required: true
+  render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
+  fields:
+    name: "Character name"
+    objective: "Current primary goal"
+    inventory: "Key items carried"
+    condition: "Physical and mental status"
+  initial:
+    name: "Unnamed Explorer"
+    objective: "Reach the Spire's apex"
+    inventory: "Crystal lodestone"
+    condition: "Healthy"
+
+"Spire Security Level":
+  description: "Alert tier and automaton activity."
+  required: true
+  render: "Alert: {alert} | Automatons: {automatons}"
+  fields:
+    alert: "Current alert level"
+    automatons: "Automaton activity"
+  initial:
+    alert: "Green (Unnoticed)"
+    automatons: "Dormant"
+
+"Known Clues":
+  description: "Discovered clues and hints."
+  required: false
+  initial: "The Spire activates only when three harmonic keys are aligned."
 ```
 
 For full details on every field, default values, and advanced features (such as `character_voicing`, `require_voice_input`, interactive canvas surfaces, and video animation techniques), see the **[canonical theater.yaml reference](/docs/theater-yaml)**.

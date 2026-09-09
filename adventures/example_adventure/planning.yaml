@@ -1,0 +1,35 @@
+# Deep Planner Schema: planning.yaml
+# All fields and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
+
+"Player Character":
+  description: "Established player identity, role, primary objective, and physical condition."
+  required: true
+  render: "Name: {name} | Role: {role} | Goal: {goal} | Condition: {condition}"
+  fields:
+    name: "Character name"
+    role: "Scholar-Lockbreaker or player specialization"
+    goal: "Primary objective in the archive"
+    condition: "Physical and mental status"
+  initial:
+    name: "Unnamed Explorer"
+    role: "Scholar-Lockbreaker"
+    goal: "Uncover the Heart of Gears"
+    condition: "Healthy"
+
+"Archive Security & Alert Level":
+  description: "Archive alert status, automaton sentinel patrols, and Grand Orrery lock status."
+  required: true
+  render: "Alert: {alert} | Sentinels: {sentinels} | Grand Orrery: {grand_orrery}"
+  fields:
+    alert: "Current alert level (e.g. 'Green (Undetected)', 'Yellow (Searching)', 'Red (Hostile)')"
+    sentinels: "Sentinel patrol state and locations"
+    grand_orrery: "Grand Orrery lock and alignment status"
+  initial:
+    alert: "Green (Undetected)"
+    sentinels: "Patrolling Lower Gallery"
+    grand_orrery: "Locked"
+
+"Collected Codices & Clues":
+  description: "Cipher keys, documents, and historical notes gathered by the explorer."
+  required: false
+  initial: "Found: Brass Cipher Wheel (unsolved), Notes on Keeper Orun's exile."
