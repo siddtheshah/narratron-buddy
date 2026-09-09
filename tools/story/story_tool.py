@@ -12,6 +12,7 @@ from components.theater_manager import Theater
 from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
+from tools.story.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule
 from tools.story.story_response_module import StoryResponseModule
 
@@ -45,6 +46,8 @@ class StoryTool:
             else raw_config
         )
         self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
+        # This is the single note collection for both story modules.
+        self.notepad = Notepad(self.config, canvas_manager=canvas_manager)
 
         self.lore_library = LoreLibrary(theater=theater)
         self.character_manager = CharacterManager(
@@ -74,6 +77,7 @@ class StoryTool:
             character_manager=self.character_manager,
             session_service=self.planning_session_service,
             session_id=self.planning_session_id,
+            notepad=self.notepad,
         )
         self.response_module = StoryResponseModule(
             theater=theater,
@@ -82,6 +86,7 @@ class StoryTool:
             lore_library=self.lore_library,
             character_manager=self.character_manager,
             planning_module=self.planning_module,
+            notepad=self.notepad,
             session_service=self.response_session_service,
             session_id=self.response_session_id,
         )
@@ -92,6 +97,8 @@ class StoryTool:
         self.character_manager.on_change = self.response_module.save_to_session_state
         self.planning_module.recent_story_log_fn = self.response_module._format_recent_story_log
         self.planning_module.on_save_state = self.response_module.save_to_session_state
+        self.notepad.on_change = self.response_module.save_to_session_state
+        self.notepad.sync_story_state()
 
     def __getattr__(self, name: str) -> Any:
         """Expose the response module's existing public tool surface."""

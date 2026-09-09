@@ -97,7 +97,10 @@ class TestCreateAgent(unittest.TestCase):
     ):
         mock_image_cls.return_value.list_references.return_value = []
         canvas_state_service = MagicMock()
-        config = {"agent": {"model_id": "test-model"}}
+        config = {
+            "agent": {"model_id": "test-model"},
+            "story_planning": {"adventure_mode": True},
+        }
 
         create_agent(
             theater_id="test_agent_theater",
@@ -108,7 +111,7 @@ class TestCreateAgent(unittest.TestCase):
         expected_theater = mock_image_cls.call_args.args[0]
         expected_canvas = mock_image_cls.call_args.kwargs["canvas_manager"]
         mock_image_cls.assert_called_once_with(
-            expected_theater, canvas_manager=expected_canvas, adventure_mode=False
+            expected_theater, canvas_manager=expected_canvas, adventure_mode=True
         )
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(expected_theater, expected_canvas)

@@ -12,6 +12,7 @@ from tools.story.lore_library import (
     MAX_LORE_DOCUMENT_CONTEXT_CHARS,
     MAX_LORE_DOCUMENTS_LISTED,
 )
+from tools.story.notepad import Notepad
 from tools.story.story_planning_module import (
     StoryPlanningModule,
     StickyNoteItem,
@@ -63,6 +64,7 @@ from tools.story.story_tool import StoryPlanningTools, StoryResponseTool, StoryT
 
 __all__ = [
     "LoreLibrary",
+    "Notepad",
     "CharacterManager",
     "StoryPlanningModule",
     "StoryResponseModule",

@@ -28,6 +28,7 @@ from components.theater_manager import Theater
 from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
+from tools.story.notepad import Notepad
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +341,7 @@ class StoryPlanningModule:
         session_id: str,
         recent_story_log_fn: Optional[Callable[[], str]] = None,
         on_save_state: Optional[Callable[[], None]] = None,
+        notepad: Optional[Notepad] = None,
     ):
         if theater is None:
             raise ValueError("theater is required.")
@@ -373,6 +375,11 @@ class StoryPlanningModule:
         raw_config = theater.config() or {}
         subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
         self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
+        # StoryTool supplies the shared pad.  The fallback keeps direct module
+        # construction compatible for focused module tests and integrations.
+        self.notepad = notepad or Notepad(self.config, canvas_manager=canvas_manager)
+        if self.notepad.on_change is None:
+            self.notepad.on_change = lambda: self.on_save_state() if self.on_save_state else None
 
         # Load planning schema: check theater first, then config
         schema_data = None
@@ -405,65 +412,15 @@ class StoryPlanningModule:
             else OrderedDict()
         )
         self._deep_plan_update_model = build_deep_plan_update_model(self._sticky_definitions)
-        self._sticky_notes: OrderedDict[str, str] = OrderedDict()
-        self._structured_sticky_notes: OrderedDict[str, Any] = OrderedDict()
-        self._required_stickies: OrderedDict[str, str] = OrderedDict()
-        self._sticky_notes_lock = Lock()
-
-        raw_hidden = self.config.get("hidden_stickies", [])
-        self.hidden_stickies: set[str] = (
-            {str(s).strip() for s in raw_hidden if str(s).strip()}
-            if isinstance(raw_hidden, (list, tuple, set))
-            else set()
+        self.notepad.configure_schema(
+            self._sticky_definitions,
+            self._deep_plan_update_model,
+            render_structured_sticky,
         )
-
-        if self._sticky_definitions:
-            for topic, definition in self._sticky_definitions.items():
-                if definition.get("required"):
-                    self._required_stickies[topic] = ""
-        else:
-            req_keys = self.config.get(
-                "required_stickies",
-                self.config.get("required_sticky_notes", self.config.get("required_elements", [])),
-            )
-            if isinstance(req_keys, (list, tuple, set)):
-                for k in req_keys:
-                    if isinstance(k, dict):
-                        topic = str(k.get("topic", k.get("name", ""))).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                        info = str(k.get("info", k.get("content", ""))).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-                    else:
-                        topic = str(k).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                        info = ""
-                    if topic:
-                        self._required_stickies[topic] = info
-            elif isinstance(req_keys, dict):
-                for k, v in req_keys.items():
-                    topic = str(k).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                    info = str(v).strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-                    if topic:
-                        self._required_stickies[topic] = info
-            elif isinstance(req_keys, str):
-                for k in req_keys.split(","):
-                    topic = str(k).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                    if topic:
-                        self._required_stickies[topic] = ""
 
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
         self.style: str = str(configured_style).strip() or DEFAULT_STORY_PLANNING_STYLE
-
-        self.max_sticky_notes: int = max(
-            len(self._required_stickies),
-            len(self._sticky_definitions),
-            max(
-                1,
-                min(
-                    int(self.config.get("max_sticky_notes", self.config.get("max_named_elements", DEFAULT_MAX_STICKY_NOTES))),
-                    MAX_STICKY_NOTES,
-                ),
-            ),
-        )
-        self.max_named_elements: int = self.max_sticky_notes
 
         # Deep plan state
         self._deep_plan: Dict[str, Any] = {}
@@ -541,52 +498,35 @@ class StoryPlanningModule:
             auto_create_session=True,
         )
 
-        # Initial stickies
-        if self._sticky_definitions:
-            initial_structured = {
-                topic: definition["initial"]
-                for topic, definition in self._sticky_definitions.items()
-                if definition.get("initial") is not None
-            }
-            validated_initial = self._deep_plan_update_model.model_validate(
-                {"sticky_notes": initial_structured}
-            ).model_dump(mode="json", by_alias=True)["sticky_notes"]
-            for topic, value in validated_initial.items():
-                self._structured_sticky_notes[topic] = value
-                info = render_structured_sticky(self._sticky_definitions[topic], value)
-                self._sticky_notes[topic] = info
-                if topic in self._required_stickies:
-                    self._required_stickies[topic] = info
-        else:
-            initial_notes = self.config.get("initial_sticky_notes", self.config.get("initial_elements", {}))
-            if isinstance(initial_notes, dict):
-                for k, v in initial_notes.items():
-                    topic = str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                    info = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
-                    if topic:
-                        self._sticky_notes[topic] = info
-                        if topic in self._required_stickies and not self._required_stickies[topic]:
-                            self._required_stickies[topic] = info
-            elif isinstance(initial_notes, list):
-                for elem in initial_notes:
-                    if isinstance(elem, dict):
-                        topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                        info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
-                        if topic:
-                            self._sticky_notes[topic] = info
-                            if topic in self._required_stickies and not self._required_stickies[topic]:
-                                self._required_stickies[topic] = info
+    # Compatibility views keep older callers working while note state stays in
+    # the shared Notepad owned by StoryTool.
+    @property
+    def max_sticky_notes(self) -> int:
+        return self.notepad.max_sticky_notes
 
-        for req_topic, req_info in self._required_stickies.items():
-            if req_topic not in self._sticky_notes:
-                self._sticky_notes[req_topic] = req_info
+    @max_sticky_notes.setter
+    def max_sticky_notes(self, value: int) -> None:
+        self.notepad.max_sticky_notes = max(1, int(value))
 
-        while len(self._sticky_notes) > self.max_sticky_notes:
-            evict_key = next((k for k in self._sticky_notes if k not in self._required_stickies), None)
-            if evict_key is not None:
-                del self._sticky_notes[evict_key]
-            else:
-                break
+    @property
+    def max_named_elements(self) -> int:
+        return self.notepad.max_named_elements
+
+    @property
+    def _sticky_notes(self) -> OrderedDict[str, str]:
+        return self.notepad._sticky_notes
+
+    @property
+    def _structured_sticky_notes(self) -> OrderedDict[str, Any]:
+        return self.notepad._structured_sticky_notes
+
+    @property
+    def _required_stickies(self) -> OrderedDict[str, str]:
+        return self.notepad._required_stickies
+
+    @property
+    def _sticky_notes_lock(self) -> Lock:
+        return self.notepad._sticky_notes_lock
 
     def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
         compaction = self.config.get("compaction")
@@ -720,89 +660,22 @@ class StoryPlanningModule:
 
     def update_sticky_note(self, topic: str, info: str) -> str:
         """Insert or replace one sticky note in the current scene."""
-        clean_topic = str(topic or "").strip()
-        clean_info = str(info or "").strip()
-        if not clean_topic:
-            return "Error: Sticky note topic cannot be empty."
-        if not clean_info:
-            return "Error: Sticky note info cannot be empty."
-        if len(clean_topic) > MAX_STICKY_NOTE_TOPIC_CHARS:
-            return f"Error: Sticky note topic must be {MAX_STICKY_NOTE_TOPIC_CHARS} characters or fewer."
-        if len(clean_info) > MAX_STICKY_NOTE_INFO_CHARS:
-            return f"Error: Sticky note info must be {MAX_STICKY_NOTE_INFO_CHARS} characters or fewer."
-
-        dropped_topic = None
-        with self._sticky_notes_lock:
-            is_update = clean_topic in self._sticky_notes
-            if is_update:
-                existing_info = self._sticky_notes[clean_topic]
-                if clean_info.count("|") != existing_info.count("|"):
-                    return (
-                        f"Error: Sticky note divider count mismatch for '{clean_topic}'. "
-                        f"Expected valid update for '{existing_info}'."
-                    )
-                self._sticky_notes[clean_topic] = clean_info
-                self._sticky_notes.move_to_end(clean_topic)
-            else:
-                if len(self._sticky_notes) >= self.max_sticky_notes:
-                    evict_key = next((k for k in self._sticky_notes if k not in self._required_stickies), None)
-                    if evict_key is not None:
-                        del self._sticky_notes[evict_key]
-                        dropped_topic = evict_key
-                self._sticky_notes[clean_topic] = clean_info
-            current_count = len(self._sticky_notes)
-
-        if self.on_save_state:
-            self.on_save_state()
-
-        action = "Updated" if is_update else "Added"
-        logger.debug(
-            "[StoryPlanningModule] %s sticky note '%s' (theater=%s). Active sticky notes count: %d",
-            action,
-            clean_topic,
-            self.theater_id or "default",
-            current_count,
-        )
-
-        warning = ""
-        if dropped_topic:
-            warning = f" Warning: Maximum limit of {self.max_sticky_notes} sticky notes reached. Oldest sticky note '{dropped_topic}' was dropped to make room."
-        elif current_count >= self.max_sticky_notes and not is_update:
-            warning = f" Note: Sticky note limit of {self.max_sticky_notes} reached. Adding another new note will drop the oldest non-required one."
-
-        return f"{action} sticky note '{clean_topic}'.{warning}"
+        return self.notepad.update_sticky_note(topic, info)
 
     def update_or_insert_named_element(self, name: str, content: str) -> str:
         return self.update_sticky_note(topic=name, info=content)
 
-    def get_present_sticky_notes(self, include_hidden: bool = True) -> list[dict[str, str]]:
-        with self._sticky_notes_lock:
-            items = [
-                (t, i) for t, i in self._sticky_notes.items()
-                if include_hidden or t not in self.hidden_stickies
-            ]
-            return [
-                {
-                    "topic": topic[:MAX_STICKY_NOTE_TOPIC_CHARS],
-                    "info": info[:MAX_STICKY_NOTE_INFO_CHARS],
-                    "name": topic[:MAX_STICKY_NOTE_TOPIC_CHARS],
-                    "content": info[:MAX_STICKY_NOTE_INFO_CHARS],
-                }
-                for topic, info in items[-self.max_sticky_notes:]
-            ]
+    def get_present_sticky_notes(self) -> list[dict[str, str]]:
+        return self.notepad.get_present_sticky_notes()
 
-    def get_present_elements(self, include_hidden: bool = True) -> list[dict[str, str]]:
-        return self.get_present_sticky_notes(include_hidden=include_hidden)
+    def get_present_elements(self) -> list[dict[str, str]]:
+        return self.get_present_sticky_notes()
 
     def get_present_structured_sticky_notes(self) -> Dict[str, Any]:
-        with self._sticky_notes_lock:
-            return {
-                topic: dict(value) if isinstance(value, dict) else value
-                for topic, value in self._structured_sticky_notes.items()
-            }
+        return self.notepad.get_present_structured_sticky_notes()
 
     def get_required_sticky_notes(self) -> list[str]:
-        return list(self._required_stickies.keys())
+        return self.notepad.get_required_sticky_notes()
 
     def get_deep_plan(self) -> Dict[str, Any]:
         with self._deep_plan_lock:
@@ -831,52 +704,7 @@ class StoryPlanningModule:
         if not isinstance(raw_update, dict) or raw_update.get("error"):
             return False
         update = self._deep_plan_update_model.model_validate(raw_update)
-
-        raw_notes = update.sticky_notes
-        if self._sticky_definitions:
-            structured_notes = update.model_dump(mode="json", by_alias=True)["sticky_notes"]
-            with self._sticky_notes_lock:
-                self._structured_sticky_notes = OrderedDict(structured_notes)
-                self._sticky_notes = OrderedDict(
-                    (
-                        topic,
-                        render_structured_sticky(self._sticky_definitions[topic], value),
-                    )
-                    for topic, value in self._structured_sticky_notes.items()
-                )
-        elif raw_notes:
-            with self._sticky_notes_lock:
-                existing_snapshot = dict(self._sticky_notes)
-                new_notes: OrderedDict[str, str] = OrderedDict()
-                for item in raw_notes:
-                    if isinstance(item, dict):
-                        raw_topic = item.get("topic", item.get("name", ""))
-                        raw_info = item.get("info", item.get("content", ""))
-                    else:
-                        raw_topic = getattr(item, "topic", "")
-                        raw_info = getattr(item, "info", "")
-                    topic = str(raw_topic or "").strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                    info = str(raw_info or "").strip()[:MAX_STICKY_NOTE_INFO_CHARS]
-                    if not topic or not info:
-                        continue
-                    new_notes[topic] = info
-
-                for req_key, default_info in self._required_stickies.items():
-                    if req_key not in new_notes:
-                        new_notes[req_key] = existing_snapshot.get(req_key, default_info)
-
-                if len(new_notes) > self.max_sticky_notes:
-                    excess = len(new_notes) - self.max_sticky_notes
-                    non_required = [
-                        key for key in new_notes if key not in self._required_stickies
-                    ]
-                    keys_to_drop = set(non_required[:excess])
-                    new_notes = OrderedDict(
-                        (key, value)
-                        for key, value in new_notes.items()
-                        if key not in keys_to_drop
-                    )
-                self._sticky_notes = new_notes
+        self.notepad.replace_from_deep_update(update)
 
         with self._deep_plan_lock:
             self._deep_plan_revision += 1
@@ -1097,29 +925,13 @@ class StoryPlanningModule:
             return {"error": f"Deep planner failed: {exc}"}
 
     def export_planning_state(self) -> Dict[str, Any]:
-        with self._sticky_notes_lock:
-            canvas_notes = [
-                {"topic": topic, "info": info, "name": topic, "content": info}
-                for topic, info in self._sticky_notes.items()
-                if topic not in self.hidden_stickies
-            ]
-            all_notes = [
-                {"topic": topic, "info": info, "name": topic, "content": info}
-                for topic, info in self._sticky_notes.items()
-            ]
         with self._deep_plan_lock:
             deep_plan = dict(self._deep_plan)
             deep_plan_revision = self._deep_plan_revision
             deep_plan_through_turn_id = self._deep_plan_through_turn_id
 
         return {
-            "sticky_notes": [{"topic": n["topic"], "info": n["info"]} for n in canvas_notes],
-            "all_sticky_notes": [{"topic": n["topic"], "info": n["info"]} for n in all_notes],
-            "structured_sticky_notes": {
-                k: dict(v) if isinstance(v, dict) else v
-                for k, v in self._structured_sticky_notes.items()
-            },
-            "named_elements": [{"name": n["name"], "content": n["content"]} for n in canvas_notes],
+            **self.notepad.export_state(),
             "deep_plan": deep_plan,
             "deep_plan_revision": deep_plan_revision,
             "deep_plan_through_turn_id": deep_plan_through_turn_id,
@@ -1129,48 +941,7 @@ class StoryPlanningModule:
         if not isinstance(state, dict):
             return
 
-        with self._sticky_notes_lock:
-            self._sticky_notes.clear()
-            if self._sticky_definitions:
-                structured = state.get("structured_sticky_notes")
-                if not isinstance(structured, dict):
-                    deep_state = state.get("deep_plan", {})
-                    structured = (
-                        deep_state.get("sticky_notes")
-                        if isinstance(deep_state, dict)
-                        else None
-                    )
-                if isinstance(structured, dict):
-                    try:
-                        structured = self._deep_plan_update_model.model_validate(
-                            {"sticky_notes": structured}
-                        ).model_dump(mode="json", by_alias=True)["sticky_notes"]
-                        self._structured_sticky_notes = OrderedDict(structured)
-                    except Exception as exc:
-                        logger.warning(
-                            "[StoryPlanningModule] Ignoring invalid persisted structured sticky state: %s",
-                            exc,
-                        )
-                for topic, value in self._structured_sticky_notes.items():
-                    self._sticky_notes[topic] = render_structured_sticky(
-                        self._sticky_definitions[topic], value
-                    )
-            else:
-                notes = state.get("all_sticky_notes", state.get("sticky_notes", state.get("named_elements", [])))
-                if isinstance(notes, list):
-                    for elem in notes:
-                        if isinstance(elem, dict):
-                            topic = str(elem.get("topic", elem.get("name", "")))[:MAX_STICKY_NOTE_TOPIC_CHARS]
-                            info = str(elem.get("info", elem.get("content", "")))[:MAX_STICKY_NOTE_INFO_CHARS]
-                            if topic and info:
-                                self._sticky_notes[topic] = info
-                elif isinstance(notes, dict):
-                    for k, v in notes.items():
-                        self._sticky_notes[str(k)[:MAX_STICKY_NOTE_TOPIC_CHARS]] = str(v)[:MAX_STICKY_NOTE_INFO_CHARS]
-
-            for req_topic, req_info in self._required_stickies.items():
-                if req_topic not in self._sticky_notes:
-                    self._sticky_notes[req_topic] = req_info
+        self.notepad.import_state(state)
 
         with self._deep_plan_lock:
             imported_plan = state.get("deep_plan", {})

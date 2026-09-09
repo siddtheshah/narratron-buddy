@@ -19,6 +19,7 @@ from tools.music_tool import MusicTools
 from services.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
 from tools.story import StoryTool
+from tools.notepad_tool import NotepadTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider, get_video_provider
@@ -324,90 +325,99 @@ def create_tool_bundle_for_session(
     adventure_mode = bool(story_planning_config.get("adventure_mode", False))
     image_config = config.get("image_generation", {})
     image_generation_enabled = bool(image_config.get("enabled", True))
+
+    tools = []
     image_tools = ImageTools(
         theater,
         canvas_manager=canvas_manager,
         adventure_mode=adventure_mode,
     )
+    tools.extend([
+        image_tools.list_references,
+        image_tools.show_image,
+        image_tools.browse_images,
+        image_tools.search_image_by_metadata,
+    ])
 
-    # Animation is an independent theater capability. It can use mounted
-    # assets as references even when standalone image generation is disabled.
-    animation_config = config.get("animation", {})
-    animation_enabled = bool(animation_config.get("enabled", False))
-    animation_text_provider = get_text_response_provider(
-        str(animation_config.get("text_provider", "gemini-2-5")),
-        {"model": str(animation_config.get("text_model", "gemini-2.5-flash-lite"))},
-    )
-    video_provider = get_video_provider(str(animation_config.get("video_provider", "fal-minimax-h3-turbo")))
-
-    animation_tools = (
-        AnimationTools(
-            theater,
-            canvas_manager,
-            animation_text_provider,
-            FalQwenLayeredProvider(),
-            video_provider=video_provider,
-        )
-        if animation_enabled
-        else None
-    )
     chat_tools = ChatTools(theater, canvas_manager)
-    story_planning_text_provider = get_text_response_provider(
-        str(story_planning_config.get("text_provider", "gemini-3")),
-        {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
-    )
-    story_planning_tools = StoryTool(
-        theater,
-        canvas_manager=canvas_manager,
-        text_response_provider=story_planning_text_provider,
-    )
-    interactive_canvas_tools = None
-    interactive_canvas_config = config.get("interactive_canvas", {})
-    if interactive_canvas_config.get("enabled", False):
-        app_interactive_canvas_config = get_app_config().get("interactive_canvas", {})
-        interactive_canvas_tools = InteractiveCanvasTools(
-            theater,
-            canvas_manager=canvas_manager,
-            text_response_provider=story_planning_text_provider,
-            model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
-            adventure_mode=adventure_mode,
-        )
+    tools.append(chat_tools.send_chat_message)
+
     if music_catalog is None:
         music_catalog = MusicCatalog.from_config(
             config=config,
             database_manager=database_manager,
         )
     music_tools = MusicTools(
-        theater, canvas_manager,
+        theater,
+        canvas_manager,
         music_catalog=music_catalog,
     )
-
-    tools = [
-        image_tools.list_references,
-        image_tools.show_image,
-        image_tools.browse_images,
-        image_tools.search_image_by_metadata,
-        chat_tools.send_chat_message,
+    tools.extend([
         music_tools.play_music,
         music_tools.pause_music,
         music_tools.resume_music,
-    ]
+    ])
+
     if image_generation_enabled:
         tools.append(image_tools.create_image)
-    if story_planning_tools.adventure_mode:
+
+    if adventure_mode:
+        story_planning_text_provider = get_text_response_provider(
+            str(story_planning_config.get("text_provider", "gemini-3")),
+            {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
+        )
+        story_planning_tools = StoryTool(
+            theater,
+            canvas_manager=canvas_manager,
+            text_response_provider=story_planning_text_provider,
+        )
         tools.append(story_planning_tools.process_user_action)
     else:
-        tools.append(story_planning_tools.update_sticky_note)
-    if interactive_canvas_tools:
+        notepad_tools = NotepadTool(theater, canvas_manager=canvas_manager)
+        tools.append(notepad_tools.update_sticky_note)
+
+    interactive_canvas_config = config.get("interactive_canvas", {})
+    if interactive_canvas_config.get("enabled", False):
+        app_interactive_canvas_config = get_app_config().get("interactive_canvas", {})
+        interactive_canvas_tools = InteractiveCanvasTools(
+            theater,
+            canvas_manager=canvas_manager,
+            text_response_provider=get_text_response_provider(
+                str(story_planning_config.get("text_provider", "gemini-3")),
+                {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
+            ),
+            model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
+            adventure_mode=adventure_mode,
+        )
         tools.extend([
             interactive_canvas_tools.update_interactive_canvas,
             interactive_canvas_tools.clear_interactive_canvas,
         ])
+
     if music_tools.use_generated_music:
         tools.append(music_tools.create_music)
-    if animation_tools:
+
+    # Animation is an independent theater capability. It can use mounted
+    # assets as references even when standalone image generation is disabled.
+    animation_config = config.get("animation", {})
+    if bool(animation_config.get("enabled", False)):
+        animation_text_provider = get_text_response_provider(
+            str(animation_config.get("text_provider", "gemini-2-5")),
+            {"model": str(animation_config.get("text_model", "gemini-2.5-flash-lite"))},
+        )
+        animation_tools = AnimationTools(
+            theater,
+            canvas_manager,
+            animation_text_provider,
+            FalQwenLayeredProvider(),
+            video_provider=get_video_provider(
+                str(animation_config.get("video_provider", "fal-minimax-h3-turbo"))
+            ),
+        )
         tools.extend([
-            animation_tools.create_animation, animation_tools.play_animation, animation_tools.browse_animations,
+            animation_tools.create_animation,
+            animation_tools.play_animation,
+            animation_tools.browse_animations,
         ])
     observability_config = config.get("observability_tool", {})
     if isinstance(observability_config, dict) and observability_config.get("enabled", False):

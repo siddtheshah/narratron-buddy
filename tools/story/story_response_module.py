@@ -29,6 +29,7 @@ from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
 from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
+from tools.story.notepad import Notepad
 from tools.story.story_planning_module import (
     StoryPlanningModule,
     VertexGemini,
@@ -253,6 +254,7 @@ class StoryResponseModule(BaseTools):
         character_manager: CharacterManager,
         session_service: InMemorySessionService,
         session_id: str,
+        notepad: Optional[Notepad] = None,
     ):
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
@@ -362,6 +364,7 @@ class StoryResponseModule(BaseTools):
         self._recent_story_log = self._read_recent_story_log()
 
         self.planning_module = planning_module
+        self.notepad = notepad or getattr(planning_module, "notepad", None) or Notepad(self.config)
 
         # Fast responder runner
         self._responder_agent: Agent = self._create_responder_agent()
@@ -381,31 +384,31 @@ class StoryResponseModule(BaseTools):
     # Sticky Notes & Deep Planning delegations to planning_module
     @property
     def max_sticky_notes(self) -> int:
-        return self.planning_module.max_sticky_notes
+        return self.notepad.max_sticky_notes
 
     @max_sticky_notes.setter
     def max_sticky_notes(self, value: int) -> None:
-        self.planning_module.max_sticky_notes = value
+        self.notepad.max_sticky_notes = value
 
     @property
     def max_named_elements(self) -> int:
-        return self.planning_module.max_named_elements
+        return self.notepad.max_named_elements
 
     @property
     def _sticky_notes(self) -> OrderedDict[str, str]:
-        return self.planning_module._sticky_notes
+        return self.notepad._sticky_notes
 
     @property
     def _sticky_notes_lock(self) -> Lock:
-        return self.planning_module._sticky_notes_lock
+        return self.notepad._sticky_notes_lock
 
     @property
     def _elements(self) -> OrderedDict[str, str]:
-        return self.planning_module._sticky_notes
+        return self.notepad._sticky_notes
 
     @property
     def _elements_lock(self) -> Lock:
-        return self.planning_module._sticky_notes_lock
+        return self.notepad._sticky_notes_lock
 
     @property
     def _deep_plan(self) -> Dict[str, Any]:
@@ -421,22 +424,22 @@ class StoryResponseModule(BaseTools):
 
     @logged_tool_call
     def update_sticky_note(self, topic: str, info: str) -> str:
-        return self.planning_module.update_sticky_note(topic, info)
+        return self.notepad.update_sticky_note(topic, info)
 
     def update_or_insert_named_element(self, name: str, content: str) -> str:
         return self.planning_module.update_or_insert_named_element(name, content)
 
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
-        return self.planning_module.get_present_sticky_notes()
+        return self.notepad.get_present_sticky_notes()
 
     def get_present_elements(self) -> list[dict[str, str]]:
-        return self.planning_module.get_present_elements()
+        return self.notepad.get_present_elements()
 
     def get_present_structured_sticky_notes(self) -> Dict[str, Dict[str, Any]]:
-        return self.planning_module.get_present_structured_sticky_notes()
+        return self.notepad.get_present_structured_sticky_notes()
 
     def get_required_sticky_notes(self) -> list[str]:
-        return self.planning_module.get_required_sticky_notes()
+        return self.notepad.get_required_sticky_notes()
 
     def get_deep_plan(self) -> Dict[str, Any]:
         return self.planning_module.get_deep_plan()

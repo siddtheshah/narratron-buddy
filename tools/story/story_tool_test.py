@@ -46,6 +46,8 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertIs(planning_kwargs["text_response_provider"], self.provider)
         self.assertIs(response_kwargs["text_response_provider"], self.provider)
         self.assertIs(response_kwargs["planning_module"], planning)
+        self.assertIs(planning_kwargs["notepad"], tool.notepad)
+        self.assertIs(response_kwargs["notepad"], tool.notepad)
         self.assertIsNot(
             planning_kwargs["session_service"],
             response_kwargs["session_service"],

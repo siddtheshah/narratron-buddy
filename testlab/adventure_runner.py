@@ -65,6 +65,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, get_references_context
 from tools.story import StoryTool, VertexGemini
+from tools.notepad_tool import NotepadTool
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider
 from providers.text_response_provider import TextResponseRequest
@@ -424,10 +425,16 @@ class AdventureSession:
             str(sp_config.get("text_provider", "gemini-3")),
             {"model": planner_model_name},
         )
-        self.story_tool = StoryTool(
-            self.theater_manager.theater(self.session_id),
-            canvas_manager=self.canvas_state_service.get(self.session_id),
-            text_response_provider=story_planning_text_provider,
+        theater = self.theater_manager.theater(self.session_id)
+        canvas_manager = self.canvas_state_service.get(self.session_id)
+        self.story_tool = (
+            StoryTool(
+                theater,
+                canvas_manager=canvas_manager,
+                text_response_provider=story_planning_text_provider,
+            )
+            if bool(sp_config.get("adventure_mode", False))
+            else NotepadTool(theater, canvas_manager=canvas_manager)
         )
 
         # Build mock peripheral tool bundle

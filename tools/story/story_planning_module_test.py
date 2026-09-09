@@ -321,7 +321,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             },
         )
 
-    def test_loads_theater_schema_and_hides_configured_stickies(self) -> None:
+    def test_loads_theater_schema_without_filtering_canvas_hidden_stickies(self) -> None:
         theater = MagicMock(spec=Theater)
         theater.theater_id = "schema_theater"
         theater.read_planning_schema.return_value = {
@@ -352,15 +352,14 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             session_id="theater-schema-session",
         )
 
-        self.assertEqual(len(module.get_present_sticky_notes(include_hidden=True)), 3)
-        visible_topics = {
-            note["topic"]
-            for note in module.get_present_sticky_notes(include_hidden=False)
-        }
-        self.assertEqual(visible_topics, {"Clock", "Contraband"})
+        self.assertEqual(len(module.get_present_sticky_notes()), 3)
+        self.assertEqual(
+            {note["topic"] for note in module.get_present_sticky_notes()},
+            {"Clock", "Contraband", "Secret Plot"},
+        )
 
         exported = module.export_planning_state()
-        self.assertNotIn(
+        self.assertIn(
             "Secret Plot",
             {note["topic"] for note in exported["sticky_notes"]},
         )
@@ -380,7 +379,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             },
         )
         self.assertTrue(committed)
-        updated_notes = module.get_present_sticky_notes(include_hidden=True)
+        updated_notes = module.get_present_sticky_notes()
         clock_note = next(
             note for note in updated_notes if note["topic"] == "Clock"
         )
