@@ -7,20 +7,9 @@ import uvicorn
 
 # Importing the API package registers every HTTP and WebSocket route on the shared app.
 import api_server.app  # noqa: F401
+from api_server.app import LogFilter, suppress_noisy_loggers
 from object_registry import FLAGS, app
 
-
-class LogFilter(logging.Filter):
-    def __init__(self, prefixes: str = "", filter_polling: bool = True):
-        super().__init__()
-        self.prefixes = tuple(prefix.strip() for prefix in prefixes.split(",") if prefix.strip())
-        self.filter_polling = filter_polling
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        message = record.getMessage()
-        if self.filter_polling and ("/api/latest" in message or "/agent/status" in message):
-            return False
-        return not self.prefixes or any(prefix in message or prefix in record.name for prefix in self.prefixes)
 
 
 def configure_logging() -> None:
@@ -36,7 +25,7 @@ def configure_logging() -> None:
     for handler in logging.getLogger().handlers:
         handler.addFilter(log_filter)
     logging.getLogger("uvicorn.access").addFilter(log_filter)
-    logging.getLogger("PIL").setLevel(logging.INFO)
+    suppress_noisy_loggers(FLAGS.log_prefixes)
     warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 

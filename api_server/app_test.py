@@ -132,7 +132,58 @@ def test_generic_websocket_fallback_accepts_connection():
         assert websocket is not None
 
 
+def test_log_filter_truncates_large_request_payload_in_logger_debug():
+    import logging
+    import io
+
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+
+    log_filter = app_module.LogFilter(prefixes="[Story", max_payload_len=80)
+    handler.addFilter(log_filter)
+
+    flow_logger = logging.getLogger("google_adk.google.adk.flows.llm_flows.base_llm_flow")
+    flow_logger.setLevel(logging.DEBUG)
+    flow_logger.addHandler(handler)
+
+    huge_content = "Content(parts=[Part(text='[Story] " + "Z" * 1000 + "')])"
+    flow_logger.debug("Sending live request %s to active streams: %s", huge_content, ["stream_1"])
+
+    output = buf.getvalue().strip()
+    assert "... [truncated]" in output
+    assert len(output) < 250
+    assert "Z" * 1000 not in output
+
+
+def test_log_filter_truncates_gemini_llm_connection_debug():
+    import logging
+    import io
+
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    log_filter = app_module.LogFilter(prefixes="[Story", max_payload_len=80)
+    handler.addFilter(log_filter)
+
+    conn_logger = logging.getLogger("google_adk.google.adk.models.gemini_llm_connection")
+    conn_logger.setLevel(logging.DEBUG)
+    conn_logger.addHandler(handler)
+
+    huge_parts = "parts=[Part(text='[Story] " + "Y" * 1000 + "')]"
+    conn_logger.debug("Sending LLM new content %s", huge_parts)
+
+    output = buf.getvalue().strip()
+    assert "... [truncated]" in output
+    assert len(output) < 250
+    assert "Y" * 1000 not in output
+
+
+def test_suppress_noisy_loggers_sets_wire_loggers_to_info():
+    import logging
+    app_module.suppress_noisy_loggers("[Story")
+    for noisy in ("PIL", "httpcore", "httpx", "websockets", "urllib3"):
+        assert logging.getLogger(noisy).level == logging.INFO
+
+
 if __name__ == "__main__":
     unittest.main()
-
 

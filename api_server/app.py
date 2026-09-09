@@ -29,12 +29,43 @@ load_dotenv()
 
 # Configure logging filter
 class LogFilter(logging.Filter):
-    def __init__(self, prefixes: str = "", filter_polling: bool = True):
+    def __init__(
+        self,
+        prefixes: str = "",
+        filter_polling: bool = True,
+        max_payload_len: int = 150,
+    ):
         super().__init__()
         self.prefixes = tuple(prefix.strip() for prefix in prefixes.split(",") if prefix.strip())
         self.filter_polling = filter_polling
+        self.max_payload_len = max_payload_len
+
+    def _truncate_payload(self, record: logging.LogRecord) -> None:
+        if record.levelno <= logging.DEBUG and (
+            record.name.startswith(("google_adk", "google.adk", "google_genai"))
+            or "Sending live request" in str(record.msg)
+            or "Sending LLM new content" in str(record.msg)
+        ):
+            if record.args:
+                if isinstance(record.args, tuple):
+                    record.args = tuple(
+                        (str(arg)[: self.max_payload_len] + "... [truncated]")
+                        if len(str(arg)) > self.max_payload_len
+                        else arg
+                        for arg in record.args
+                    )
+                elif isinstance(record.args, dict):
+                    record.args = {
+                        k: (str(v)[: self.max_payload_len] + "... [truncated]")
+                        if len(str(v)) > self.max_payload_len
+                        else v
+                        for k, v in record.args.items()
+                    }
+            elif isinstance(record.msg, str) and len(record.msg) > self.max_payload_len:
+                record.msg = record.msg[: self.max_payload_len] + "... [truncated]"
 
     def filter(self, record: logging.LogRecord) -> bool:
+        self._truncate_payload(record)
         msg = record.getMessage()
         if self.filter_polling and ("/api/latest" in msg or "/agent/status" in msg):
             return False
@@ -58,14 +89,32 @@ for handler in logging.getLogger().handlers:
 uvicorn_access = logging.getLogger("uvicorn.access")
 uvicorn_access.addFilter(log_filter)
 
-# Suppress PIL debug clutter
-logging.getLogger("PIL").setLevel(logging.INFO)
+NOISY_DEBUG_LOGGERS = (
+    "PIL",
+    "httpcore",
+    "httpx",
+    "websockets",
+    "urllib3",
+)
+
+
+
+def suppress_noisy_loggers(log_prefixes: str = "") -> None:
+    """Suppress overly verbose third-party loggers unless explicitly requested."""
+    prefixes = tuple(p.strip() for p in (log_prefixes or "").split(",") if p.strip())
+    for noisy_logger in NOISY_DEBUG_LOGGERS:
+        if not any(prefix in noisy_logger or noisy_logger in prefix for prefix in prefixes):
+            logging.getLogger(noisy_logger).setLevel(logging.INFO)
+
+
+# Suppress noisy third-party debug clutter (e.g. google_adk live request dumps)
+suppress_noisy_loggers(FLAGS.log_prefixes)
 
 # Suppress Pydantic serialization warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
-
 APP_NAME = "narratron-combined"
+
 
 # Static assets shared by the canvas templates.
 static_dir = Path(__file__).resolve().parent.parent / "static"
