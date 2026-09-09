@@ -601,7 +601,7 @@ class StoryResponseModule:
         personality: str = "",
         motivation: str = "",
         quirk: str = "",
-        voice_tags: Any = None,
+        voice_tags: list[str] = None,
     ) -> Dict[str, Any]:
         return self.character_manager.generate_character_profile(
             name=name,
