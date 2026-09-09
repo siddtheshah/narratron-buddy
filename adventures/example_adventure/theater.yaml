@@ -35,7 +35,6 @@ story_planning:
     auto_begin: true
     character_voicing: false
     text_beautification: true
-    nodes_ahead: 3
     style: "thoughtful mystery emphasizing puzzle-solving, mechanical deductions, and emergent lore discovery"
     cooldown_duration: 8
     require_user_input: true

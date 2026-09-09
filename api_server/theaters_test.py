@@ -884,6 +884,7 @@ async def test_get_theater_sticky_notes_with_hidden_stickies():
     mock_tm.get_theater_config.return_value = {
         "story_planning": {
             "hidden_stickies": ["Secret Letter"],
+            "stickies": {"Planner Audit": {"hidden": True}},
         }
     }
 
@@ -895,7 +896,7 @@ async def test_get_theater_sticky_notes_with_hidden_stickies():
         request = MagicMock()
         res = await theaters.get_theater_sticky_notes("stage", request)
 
-        assert res["hidden_stickies"] == ["Secret Letter"]
+        assert res["hidden_stickies"] == ["Secret Letter", "Planner Audit"]
         assert len(res["sticky_notes"]) == 2
 
 

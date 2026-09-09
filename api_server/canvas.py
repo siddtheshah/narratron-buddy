@@ -471,6 +471,14 @@ def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
                 hidden_stickies = [s.strip() for s in raw_hidden.split(",") if s.strip()]
             elif isinstance(raw_hidden, dict):
                 hidden_stickies = [str(k).strip() for k in raw_hidden.keys() if str(k).strip()]
+            structured = sp_cfg.get("stickies", {})
+            if isinstance(structured, dict):
+                hidden_stickies.extend(
+                    str(topic).strip()
+                    for topic, definition in structured.items()
+                    if isinstance(definition, dict) and definition.get("hidden")
+                )
+                hidden_stickies = list(dict.fromkeys(hidden_stickies))
         except Exception:
             hidden_stickies = []
 

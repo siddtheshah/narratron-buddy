@@ -89,7 +89,7 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")
     @patch("services.agent.ChatTools")
-    @patch("services.agent.StoryPlanningTools")
+    @patch("services.agent.StoryTool")
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_create_agent_passes_canvas_state_service_to_every_tool(
@@ -127,7 +127,7 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.agent.ImageTools")
     @patch("services.agent.AnimationTools")
     @patch("services.agent.ChatTools")
-    @patch("services.agent.StoryPlanningTools")
+    @patch("services.agent.StoryTool")
     @patch("services.agent.MusicTools")
     @patch("services.agent.Agent")
     def test_animation_tools_are_created_only_when_theater_enables_them(
@@ -208,7 +208,7 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.agent.get_text_response_provider")
     @patch("services.agent.ImageTools")
     @patch("services.agent.ChatTools")
-    @patch("services.agent.StoryPlanningTools")
+    @patch("services.agent.StoryTool")
     @patch("services.agent.MusicTools")
     def test_create_tool_bundle_conditional_create_music(
         self, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_image_cls, mock_get_text_provider

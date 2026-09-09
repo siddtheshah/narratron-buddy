@@ -95,6 +95,7 @@ def test_get_sticky_notes_returns_configured_hidden_stickies():
     mock_tm.get_theater_config.return_value = {
         "story_planning": {
             "hidden_stickies": ["Secret"],
+            "stickies": {"Planner Audit": {"hidden": True}},
         }
     }
 
@@ -103,7 +104,7 @@ def test_get_sticky_notes_returns_configured_hidden_stickies():
          patch.object(canvas, "theater_manager", mock_tm):
         result = canvas.get_sticky_notes(request(), "stage")
 
-    assert result["hidden_stickies"] == ["Secret"]
+    assert result["hidden_stickies"] == ["Secret", "Planner Audit"]
     assert len(result["sticky_notes"]) == 2
 
 

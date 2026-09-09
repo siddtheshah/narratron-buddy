@@ -61,7 +61,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from services.text_beautifier import TextBeautifier
 
-from tools.story_planning_tool import StoryPlanningTools
+from tools.story import StoryTool
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
@@ -448,16 +448,15 @@ def create_story_planner_session(body: dict[str, Any]):
     canvas_state_service = CanvasStateService(theater_manager)
     canvas_manager = canvas_state_service.get(f"testlab_{run_id}")
     canvas_manager.story.text_beautifier = False
-    tools = StoryPlanningTools(
+    tools = StoryTool(
         theater_manager.theater(f"testlab_{run_id}"),
         canvas_manager=canvas_manager,
         text_response_provider=get_text_response_provider("gemini-3", options={"model": model}),
     )
-    tools.adventure_mode = True
-    tools.nodes_ahead = nodes_ahead
+    tools.response_module.adventure_mode = True
     tools.on_scene_reaction = on_scene_reaction
-    tools.require_user_input = False
-    tools._user_input_detected = True
+    tools.response_module.require_user_input = False
+    tools.response_module._user_input_detected = True
     run["tools"] = tools
     with _runs_lock:
         _story_planner_runs[run_id] = run
@@ -495,7 +494,8 @@ def _story_planner_payload(run: dict[str, Any]) -> dict[str, Any]:
         "events": list(run["events"]),
         "state": {
             "characters": tools.get_present_characters(),
-            "plot_beats": tools.get_plot_beats(),
+            "plot_beats": [],
+            "deep_plan": tools.get_deep_plan(),
             "last_scene_reaction": dict(getattr(tools, "_last_scene_reaction", {})),
         },
     }

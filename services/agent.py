@@ -18,7 +18,7 @@ from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
 from tools.music_tool import MusicTools
 from services.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
-from tools.story_planning_tool import StoryPlanningTools
+from tools.story import StoryTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider, get_video_provider
@@ -356,7 +356,7 @@ def create_tool_bundle_for_session(
         str(story_planning_config.get("text_provider", "gemini-3")),
         {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
     )
-    story_planning_tools = StoryPlanningTools(
+    story_planning_tools = StoryTool(
         theater,
         canvas_manager=canvas_manager,
         text_response_provider=story_planning_text_provider,

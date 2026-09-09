@@ -47,13 +47,16 @@ def test_story_planner_lab_submits_action_and_records_event():
         "narration": "The shadows part as you step forward.",
         "dialogue": [],
         "manifested_characters": [],
-        "plot_beats": [
-            {"plot_beat": "A door creaks open ahead."},
-            {"plot_beat": "Footsteps echo in the distance."},
+        "planning_signals": [
+            "A door may creak open ahead.",
+            "Footsteps are approaching in the distance.",
         ],
     }
 
-    with patch("tools.story_planning_tool.StoryPlanningTools._run_planner_agent", return_value=mock_reaction) as mock_run:
+    with patch(
+        "tools.story.story_response_module.StoryResponseModule._run_responder_agent",
+        return_value=mock_reaction,
+    ) as mock_run:
         submitted = client.post(
             f"/api/story-planner/sessions/{session_id}/actions",
             json={"action": "I step into the hallway.", "nudge": "An ominous chill fills the air"},
@@ -73,6 +76,8 @@ def test_story_planner_lab_submits_action_and_records_event():
 
         assert len(data["events"]) == 1
         assert data["events"][0]["result"]["narration"] == mock_reaction["narration"]
-        assert len(data["state"]["plot_beats"]) == 2
+        # Foreground responder beats are compatibility input only; the deep
+        # planner is the sole owner of committed plot beats.
+        assert data["state"]["plot_beats"] == []
         mock_run.assert_called_once_with("I step into the hallway.", nudge="An ominous chill fills the air")
 

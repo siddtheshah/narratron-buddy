@@ -64,7 +64,7 @@ from pydantic import BaseModel, Field
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from services.agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, get_references_context
-from tools.story_planning_tool import StoryPlanningTools, VertexGemini
+from tools.story import StoryTool, VertexGemini
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider
 from providers.text_response_provider import TextResponseRequest
@@ -371,7 +371,7 @@ def load_adventure_config(adventure_id_or_path: str) -> Tuple[Dict[str, Any], Pa
 
 
 class AdventureSession:
-    """Manages an isolated text-agent session running an adventure with real StoryPlanningTools."""
+    """Manages an isolated text-agent session running an adventure with a real StoryTool."""
 
     def __init__(
         self,
@@ -405,22 +405,26 @@ class AdventureSession:
             self.config.setdefault("agent_internal", {})["model"] = self.agent_model_override
             self.config.setdefault("agent", {})["model_id"] = self.agent_model_override
         if self.planner_model_override:
-            self.config.setdefault("story_planning", {})["planner_model"] = self.planner_model_override
-        if self.nodes_ahead_override is not None:
-            self.config.setdefault("story_planning", {})["nodes_ahead"] = self.nodes_ahead_override
+            story_config = self.config.setdefault("story_planning", {})
+            story_config["responder_model"] = self.planner_model_override
+            story_config.setdefault("deep_planning", {})["model"] = self.planner_model_override
 
         self._populate_theater_workspace()
 
         self.canvas_state_service = CanvasStateService(self.theater_manager)
 
-        # Initialize the real StoryPlanningTools
+        # Initialize the real StoryTool
         sp_config = self.config.get("story_planning", {})
-        planner_model_name = str(sp_config.get("planner_model", "gemini-3.7-flash"))
+        planner_model_name = str(
+            sp_config.get("responder_model")
+            or sp_config.get("model")
+            or "gemini-3.7-flash"
+        )
         story_planning_text_provider = get_text_response_provider(
             str(sp_config.get("text_provider", "gemini-3")),
             {"model": planner_model_name},
         )
-        self.story_planning_tools = StoryPlanningTools(
+        self.story_tool = StoryTool(
             self.theater_manager.theater(self.session_id),
             canvas_manager=self.canvas_state_service.get(self.session_id),
             text_response_provider=story_planning_text_provider,
@@ -489,14 +493,30 @@ class AdventureSession:
         logger.info("[AdventureRunner] process_user_action called: action=%r, nudge=%r", clean_action, clean_nudge)
 
         # Run in a dedicated worker thread so that the internal asyncio.run() in
-        # StoryPlanningTools._run_planner_agent does not collide with the ADK agent's event loop.
+        # StoryTool._resolve_user_action may create its own event loop, so keep
+        # it isolated from the ADK agent's event loop.
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
-                self.story_planning_tools._resolve_user_action,
+                self.story_tool._resolve_user_action,
                 clean_action,
                 nudge=clean_nudge,
             )
             result = future.result()
+
+        # Production narration never waits for long-horizon planning, but the
+        # deterministic CLI/autoplay harness should observe the completed plan
+        # and sticky projection before choosing its next action.
+        deep_wait_timeout = float(
+            getattr(self.story_tool, "deep_planner_timeout_seconds", 300.0)
+        ) + 5.0
+        if not self.story_tool.wait_for_deep_planning(
+            timeout=deep_wait_timeout,
+            target_turn_id=int(result.get("turn_id") or 0),
+        ):
+            logger.warning(
+                "[AdventureRunner] Deep planner did not drain within %.1f seconds",
+                deep_wait_timeout,
+            )
 
         self.mock_canvas.log_call(
             "process_user_action",
@@ -527,7 +547,7 @@ class AdventureSession:
         if bool(self.config.get("story_planning", {}).get("adventure_mode", False)):
             tools.append(self._process_user_action_wrapper)
         else:
-            tools.append(self.story_planning_tools.update_sticky_note)
+            tools.append(self.story_tool.update_sticky_note)
 
         # Interactive Canvas
         if bool(self.config.get("interactive_canvas", {}).get("enabled", False)):
@@ -674,7 +694,7 @@ class AdventureSession:
 
         # Fallback to last scene reaction if process_user_action wasn't in new_tool_calls
         if not narration or not dialogue:
-            last_reaction = getattr(self.story_planning_tools, "_last_scene_reaction", {})
+            last_reaction = getattr(self.story_tool, "_last_scene_reaction", {})
             if isinstance(last_reaction, dict):
                 if not narration and last_reaction.get("narration"):
                     narration = str(last_reaction["narration"]).strip()
@@ -710,10 +730,13 @@ class AdventureSession:
             "session_id": self.session_id,
             "adventure_id": self.adventure_id,
             "created_at": self.created_at,
-            "sticky_notes": self.story_planning_tools.get_present_sticky_notes(),
-            "characters": self.story_planning_tools.get_present_characters(),
-            "plot_beats": self.story_planning_tools.get_plot_beats(),
-            "last_scene_reaction": dict(getattr(self.story_planning_tools, "_last_scene_reaction", {})),
+            "sticky_notes": self.story_tool.get_present_sticky_notes(),
+            "characters": self.story_tool.get_present_characters(),
+            # Retain the response field for older Test Lab clients. The new
+            # deep planner owns durable state through stickies, not plot beats.
+            "plot_beats": [],
+            "deep_plan": self.story_tool.get_deep_plan(),
+            "last_scene_reaction": dict(getattr(self.story_tool, "_last_scene_reaction", {})),
             "lore_documents": self.theater_manager.get_lore_documents(self.session_id),
             "mock_canvas": self.mock_canvas.as_dict(),
             "turns_count": len(self.history),

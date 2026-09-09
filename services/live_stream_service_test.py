@@ -6,7 +6,7 @@ from fastapi import WebSocketDisconnect
 from google.genai import types
 
 from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
-from tools.story_planning_tool import StoryPlanningTools
+from tools.story import StoryTool
 
 
 @dataclass
@@ -37,7 +37,7 @@ class CanvasFixture:
 def test_format_canvas_state_includes_present_scene_elements():
     theater = MagicMock(theater_id="stage")
     theater.config = MagicMock(return_value={})
-    elements = StoryPlanningTools(
+    elements = StoryTool(
         theater,
         canvas_manager=MagicMock(),
         text_response_provider=MagicMock(),
@@ -56,7 +56,7 @@ def test_format_canvas_state_includes_present_scene_elements():
 def test_format_canvas_state_includes_active_characters():
     theater = MagicMock(theater_id="stage_chars")
     theater.config = MagicMock(return_value={"adventure_mode": True})
-    elements = StoryPlanningTools(
+    elements = StoryTool(
         theater,
         canvas_manager=MagicMock(),
         text_response_provider=MagicMock(),

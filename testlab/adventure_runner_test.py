@@ -44,6 +44,8 @@ interactive_canvas:
   enabled: true
 story_planning:
   adventure_mode: true
+  deep_planning:
+    enabled: false
   initial_elements:
     "Synthetic Widget": "A synthetic widget for testing."
     "Synthetic Radar": "A synthetic radar."
@@ -121,7 +123,7 @@ def test_adventure_session_assembly_and_prompt(sample_adventure):
     try:
         assert session.adventure_id == "synthetic-test-adventure"
         assert session.agent is not None
-        assert session.story_planning_tools is not None
+        assert session.story_tool is not None
 
         # Verify prompt includes adventure's special instructions
         instruction = session.agent.instruction
@@ -154,15 +156,19 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
             "scene_label": "Syncopated Bridge",
             "dialogue": [{"speaker": "Captain Funk", "text": "Groove locked in!"}],
             "manifested_characters": [],
-            "plot_beats": [
-                {"plot_beat": "A mysterious funk distress signal arrives."},
-                {"plot_beat": "The navigation transducer heats up."},
-                {"plot_beat": "A rival vessel drops out of swing warp."},
+            "planning_signals": [
+                "A mysterious funk distress signal may arrive.",
+                "The navigation transducer is heating up.",
+                "A rival vessel is nearby in swing warp.",
             ],
         }
 
-        # Mock story planner agent execution so _resolve_user_action processes and commits the reaction
-        with patch.object(session.story_planning_tools, "_run_planner_agent", return_value=mock_reaction):
+        # Mock responder execution so _resolve_user_action processes the reaction.
+        with patch.object(
+            session.story_tool.response_module,
+            "_run_responder_agent",
+            return_value=mock_reaction,
+        ):
             # Simulate ADK runner execution
             mock_events = [
                 MagicMock(
@@ -199,7 +205,7 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
 
                 # Check updated state
                 state = res["state"]
-                assert len(state["plot_beats"]) == 3
+                assert state["plot_beats"] == []
                 assert session.mock_canvas.current_music == "groove_alpha"
                 assert session.mock_canvas.music_status == "playing"
     finally:
@@ -253,7 +259,7 @@ def test_adventure_runner_lab_api_routes(sample_adventure):
         "scene_label": "Cockpit",
         "dialogue": [],
         "manifested_characters": [],
-        "plot_beats": [{"plot_beat": "Beat 1"}, {"plot_beat": "Beat 2"}, {"plot_beat": "Beat 3"}],
+        "planning_signals": ["Beat 1", "Beat 2", "Beat 3"],
     }
 
     async def fake_run_async(*args, **kwargs):
@@ -264,7 +270,11 @@ def test_adventure_runner_lab_api_routes(sample_adventure):
             content=MagicMock(parts=[MagicMock(text="You observe the glittering dust of the syncopated nebula.")]),
         )
 
-    with patch.object(active_session.story_planning_tools, "_run_planner_agent", return_value=mock_reaction):
+    with patch.object(
+        active_session.story_tool.response_module,
+        "_run_responder_agent",
+        return_value=mock_reaction,
+    ):
         with patch.object(active_session.runner, "run_async", side_effect=fake_run_async):
             msg_res = client.post(
                 f"/api/adventure-runner/sessions/{session_id}/messages",
@@ -307,7 +317,7 @@ def test_send_message_inside_running_event_loop(sample_adventure):
             "scene_label": "Cockpit",
             "dialogue": [],
             "manifested_characters": [],
-            "plot_beats": [{"plot_beat": "Beat 1"}, {"plot_beat": "Beat 2"}, {"plot_beat": "Beat 3"}],
+            "planning_signals": ["Beat 1", "Beat 2", "Beat 3"],
         }
 
         async def fake_run_async(*args, **kwargs):
@@ -317,7 +327,11 @@ def test_send_message_inside_running_event_loop(sample_adventure):
                 content=MagicMock(parts=[MagicMock(text="Response from agent.")]),
             )
 
-        with patch.object(session.story_planning_tools, "_run_planner_agent", return_value=mock_reaction):
+        with patch.object(
+            session.story_tool.response_module,
+            "_run_responder_agent",
+            return_value=mock_reaction,
+        ):
             with patch.object(session.runner, "run_async", side_effect=fake_run_async):
                 # Call send_message directly from within an active asyncio event loop
                 async def run_in_active_loop():
@@ -333,14 +347,14 @@ def test_send_message_inside_running_event_loop(sample_adventure):
 def test_lore_browsing_tracked_in_turn(sample_adventure):
     session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
     try:
-        # Simulate StoryPlanningTools reading lore during a turn
-        session.story_planning_tools.reset_lore_call_counts()
-        session.story_planning_tools.read_lore("01_synthetic_lore.txt")
-        session.story_planning_tools.search_lore("testing rig")
+        # Simulate StoryTool reading lore during a turn
+        session.story_tool.reset_lore_call_counts()
+        session.story_tool.read_lore("01_synthetic_lore.txt")
+        session.story_tool.search_lore("testing rig")
 
-        browsed = session.story_planning_tools.get_lore_docs_browsed_this_turn()
+        browsed = session.story_tool.get_lore_docs_browsed_this_turn()
         assert "01_synthetic_lore.txt" in browsed
-        activity = session.story_planning_tools.get_lore_activity_this_turn()
+        activity = session.story_tool.get_lore_activity_this_turn()
         assert any(a["type"] == "read_file" for a in activity)
         assert any(a["type"] == "search" for a in activity)
     finally:

@@ -136,6 +136,25 @@ class Theater:
     def read_lore_document(self, document: str) -> str:
         return self.manager.read_lore_document(self.theater_id, document)
 
+    def planning_schema_path(self) -> Optional[Path]:
+        for name in ("planning.yaml", "planning.yml"):
+            p = self.directory() / name
+            if p.is_file():
+                return p
+        return None
+
+    def read_planning_schema(self) -> Optional[Dict[str, Any]]:
+        path = self.planning_schema_path()
+        if path:
+            try:
+                import yaml
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                    return data if isinstance(data, dict) else None
+            except Exception as e:
+                logger.warning("Failed to load planning schema from %s: %s", path, e)
+        return None
+
 
 def extract_asset_package(
     zip_bytes: bytes, max_bytes: int = MAX_ZIP_BYTES,
@@ -161,7 +180,9 @@ def extract_asset_package(
                 if not parts or parts[-1].startswith("."):
                     continue
                 filename, content = parts[-1], archive.read(info.filename)
-                if "references" in parts or (filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) and "playlists" not in parts):
+                if filename.lower() in ("planning.yaml", "planning.yml"):
+                    reference_files.append(("planning.yaml", content))
+                elif "references" in parts or (filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) and "playlists" not in parts):
                     reference_files.append((info.filename, content))
                 elif "playlists" in parts and filename.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
                     index = parts.index("playlists")
@@ -323,6 +344,9 @@ class TheaterManager:
             parts = [part for part in relative_filename.replace("\\", "/").split("/") if part]
             if relative_filename == "metadata.json" or (parts and parts[-1].lower() == "metadata.json"):
                 (theater_dir / "metadata.json").write_bytes(content)
+                continue
+            if relative_filename in ("planning.yaml", "planning.yml") or (parts and parts[-1].lower() in ("planning.yaml", "planning.yml")):
+                (theater_dir / "planning.yaml").write_bytes(content)
                 continue
             relative_path = Path(*parts[parts.index("references") + 1:]) if "references" in parts else Path(parts[-1])
             target = reference_dir / relative_path

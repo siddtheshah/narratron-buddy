@@ -310,11 +310,22 @@ def test_get_and_set_story_planning_state_persists_and_notifies() -> None:
 
     planning_data = {
         "plot_beats": [{"plot_beat": "A door opens."}],
+        "deep_plan": {
+            "plot_beats": ["A second door opens."],
+            "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
+        },
         "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
     }
     state.set_story_planning_state(planning_data)
 
-    assert state.get_story_planning_state() == planning_data
+    expected = {
+        "deep_plan": {
+            "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
+        },
+        "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
+    }
+    assert state.get_story_planning_state() == expected
+    assert state.serialize()["story_planning_state"] == expected
     assert state.sticky_notes() == [{"topic": "Key", "info": "Brass key"}]
     assert state.named_elements == [{"topic": "Key", "info": "Brass key"}]
     persist.assert_called_once_with()

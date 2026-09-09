@@ -160,7 +160,6 @@ music:
 story_planning:
     adventure_mode: true             # Required: Enables player action resolution & turn tracking
     auto_begin: true                 # Automatically initiates the opening narrative scene
-    nodes_ahead: 3                   # Number of prospective plot beats the planner anticipates
     style: "engaging mystery with player agency, dramatic tension, and fair consequences"
 
     # Maximum number of persistent state stickies kept on the canvas board

@@ -42,6 +42,10 @@ music:
 story_planning:
     max_named_elements: 5
     initial_elements: {}
+    # Optional schema-backed sticky contracts. Each topic declares an object
+    # JSON Schema, a conforming initial mapping, and an optional render string.
+    # When present, the deep planner must return this exact typed JSON shape.
+    stickies: {}
     # List of sticky note keys/topics that the story planner must always retain and never drop
     required_stickies: []
     # Names of sticky notes to hide in the canvas UI view by default until toggled
@@ -57,7 +61,21 @@ story_planning:
     # In Adventure Mode, apply dynamic visual text effects (vibrating,
     # scintillating, glitch, fonts) to high-energy spans using TextBeautifier.
     text_beautification: true
-    nodes_ahead: 3
+    # Adventure Mode uses a shallow background planning heartbeat. Completed
+    # responder turns enter an ordered queue; each heartbeat assimilates a
+    # bounded batch and publishes typed sticky state.
+    # Adventure-specific durable concepts belong in the sticky schemas above.
+    deep_planning:
+        enabled: true
+        heartbeat_seconds: 1
+        max_events_per_turn: 4
+        thinking_budget: 2048
+        max_output_tokens: 6144
+        timeout_seconds: 45
+        failure_retries: 2
+        # Optional extra refinement heartbeats after the response queue drains.
+        # Keep at zero by default to avoid unbounded idle model usage.
+        idle_refinement_turns: 0
     # Guidance for the Adventure Mode story planner. Theater creators can
     # override this with a voice, tone, or consequence philosophy (for
     # example: "harsh and unforgiving, but never arbitrary").

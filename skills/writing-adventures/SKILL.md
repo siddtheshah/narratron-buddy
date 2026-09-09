@@ -118,7 +118,6 @@ story_planning:
     auto_begin: true                 # Automatically initiates opening scene without waiting for prompt
     character_voicing: true          # Gives NPCs distinct dialogue voices
     text_beautification: true        # Polishes narrative output
-    nodes_ahead: 3                   # Number of prospective plot beats the planner anticipates
     style: "engaging mystery with player agency, dramatic tension, and fair consequences"
 
     max_named_elements: 8            # Maximum sticky notes maintained on the canvas board
@@ -336,7 +335,7 @@ uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> --
 ```
 
 - Returns exit code `0` on success.
-- Prints active sticky notes, opening agent response, staged peripheral calls, and plot beats.
+- Prints active sticky notes, opening agent response, and staged peripheral calls.
 
 ### 7.2. Interactive CLI Playthrough
 Play through multiple turns directly in the terminal to evaluate dialogue, state updates, and pacing:
