@@ -55,6 +55,17 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.assertEqual(module.session_id, self.session_id)
 
     def test_rejects_missing_injected_dependencies(self) -> None:
+        with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
+            StoryResponseModule(  # type: ignore[arg-type]
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                text_response_provider=None,
+                planning_module=self.planning_module,
+                lore_library=self.lore_library,
+                character_manager=self.character_manager,
+                session_service=self.session_service,
+                session_id=self.session_id,
+            )
         with self.assertRaisesRegex(ValueError, "planning_module is required"):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
