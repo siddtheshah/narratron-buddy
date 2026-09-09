@@ -767,7 +767,17 @@ class StoryResponseModule(BaseTools):
         if not self.theater or not self.theater_id:
             return []
         try:
-            raw_lines = self.theater.read_output_file_lines("story_log.jsonl")
+            if hasattr(self.theater, "read_output_file_lines"):
+                raw_lines = self.theater.read_output_file_lines("story_log.jsonl")
+            elif hasattr(self.theater, "output_dir"):
+                path = self.theater.output_dir() / "story_log.jsonl"
+                if path.is_file():
+                    with open(path, "r", encoding="utf-8", errors="replace") as f:
+                        raw_lines = f.readlines()
+                else:
+                    raw_lines = []
+            else:
+                raw_lines = []
             entries: List[StoryLogEntry] = []
             for line in raw_lines[-STORY_LOG_CONTEXT_LINES:]:
                 line = line.strip()
@@ -797,7 +807,13 @@ class StoryResponseModule(BaseTools):
 
         if self.theater and self.theater_id:
             try:
-                self.theater.append_output_file("story_log.jsonl", entry.model_dump_json() + "\n")
+                if hasattr(self.theater, "append_output_file"):
+                    self.theater.append_output_file("story_log.jsonl", entry.model_dump_json() + "\n")
+                elif hasattr(self.theater, "output_dir"):
+                    out_path = self.theater.output_dir() / "story_log.jsonl"
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(out_path, "a", encoding="utf-8") as f:
+                        f.write(entry.model_dump_json() + "\n")
             except Exception:
                 logger.exception("[StoryResponseModule] Failed to append theater story log")
         return entry

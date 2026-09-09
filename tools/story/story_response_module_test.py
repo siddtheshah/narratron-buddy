@@ -12,7 +12,7 @@ from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.story_planning_module import StoryPlanningModule
-from tools.story.story_response_module import StoryResponseModule
+from tools.story.story_response_module import StoryLogEntry, StoryResponseModule
 
 
 class TestStoryResponseModuleDependencies(unittest.TestCase):
@@ -261,6 +261,23 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "I sneak into the shrine.",
             result,
         )
+
+    def test_appends_and_reads_story_log_entry(self) -> None:
+        self.theater.append_output_file = MagicMock()
+        entry = StoryLogEntry(type="user_action", action="Look around")
+        appended = self.module._append_story_log_entry(entry)
+
+        self.assertIsNotNone(appended)
+        self.assertEqual(appended.action, "Look around")
+        self.theater.append_output_file.assert_called_once()
+        args, _ = self.theater.append_output_file.call_args
+        self.assertEqual(args[0], "story_log.jsonl")
+        self.assertIn("Look around", args[1])
+
+        self.theater.read_output_file_lines.return_value = [args[1]]
+        loaded = self.module._read_recent_story_log()
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].action, "Look around")
 
 
 if __name__ == "__main__":

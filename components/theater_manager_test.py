@@ -138,3 +138,24 @@ class TestTheaterManager(unittest.TestCase):
 
         rel_url = theater.get_url_for_path("animations/hero_anim/frame_1.png")
         self.assertEqual(rel_url, "/theaters/stage/output/animations/hero_anim/frame_1.png")
+
+    def test_append_and_read_output_file_lines(self):
+        self.manager.create_theater(name="Output Theater", theater_id="out_test")
+        theater = self.manager.theater("out_test")
+        self.assertEqual(theater.read_output_file_lines("story_log.jsonl"), [])
+
+        theater.append_output_file("story_log.jsonl", '{"turn": 1}\n')
+        theater.append_output_file("story_log.jsonl", '{"turn": 2}\n')
+
+        lines = theater.read_output_file_lines("story_log.jsonl")
+        self.assertEqual(lines, ['{"turn": 1}\n', '{"turn": 2}\n'])
+
+    def test_output_file_cannot_escape_output_directory(self):
+        self.manager.create_theater(name="Output Escape Theater", theater_id="out_esc")
+        theater = self.manager.theater("out_esc")
+        with self.assertRaises(ValueError):
+            theater.append_output_file("../forbidden.txt", "data")
+        with self.assertRaises(ValueError):
+            theater.read_output_file_lines("../forbidden.txt")
+        with self.assertRaises(ValueError):
+            theater.append_output_file("", "data")

@@ -9,24 +9,10 @@
 
 
 ## Refactors
+- [ ] Fix Deep planner config layout
+- [ ] Eliminate traces of 'named element' terminology.
+- [ ] Add separate notepad tool for non-adv mode.
 - [ ] Refactor canvas.html to be more modular.
-- [x] Refactor image cycle into VisualState
-
-## Text Input
-- [ ] Add configurability to hotkey. Currently has a default input but should be modifiable.
-
-## Docs
-- [ ] Add Instructions for Text Input
-- [ ] Add instructions for adventure development. 
-  - [ ] We're going to make Anti-gravity our primary environment for adventure development, with testlab as its runner. Add instructions for downloading the git repo and setting up.
-
-
-## Quality
-- [ ] In animation technique selection, avoid video if there is any reference attached.
-- [ ] Dual layer Responder-Planner story tool
-  - [ ] Refactor into StoryResponseModule and StoryPlanningModule.
-  - [ ] Add YAML schema to specify how the story should be planned.
-  
 
 ## Performance
 - [ ] Add database and request observability before and after optimization.s

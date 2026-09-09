@@ -136,6 +136,12 @@ class Theater:
     def read_lore_document(self, document: str) -> str:
         return self.manager.read_lore_document(self.theater_id, document)
 
+    def read_output_file_lines(self, file_path: str) -> List[str]:
+        return self.manager.read_output_file_lines(self.theater_id, file_path)
+
+    def append_output_file(self, file_path: str, content: str | bytes) -> None:
+        self.manager.append_output_file(self.theater_id, file_path, content)
+
     def planning_schema_path(self) -> Optional[Path]:
         for name in ("planning.yaml", "planning.yml"):
             p = self.directory() / name
@@ -443,6 +449,41 @@ class TheaterManager:
             return target.read_text(encoding="utf-8")
         except UnicodeDecodeError as error:
             raise ValueError("Lore documents must be UTF-8 encoded text.") from error
+
+    def read_output_file_lines(self, theater_id: str, file_path: str) -> List[str]:
+        """Read lines from a file in the theater output directory."""
+        output_dir = self._get_theater_output_dir(theater_id).resolve()
+        requested = Path(str(file_path or "").replace("\\", "/"))
+        if not file_path or requested.is_absolute():
+            raise ValueError("Output file path must be a relative path.")
+        target = (output_dir / requested).resolve()
+        if output_dir not in target.parents:
+            raise ValueError("Output file path cannot escape the output directory.")
+        if not target.is_file():
+            return []
+        try:
+            with open(target, "r", encoding="utf-8", errors="replace") as f:
+                return f.readlines()
+        except OSError as error:
+            logger.warning("Failed to read output file %s: %s", target, error)
+            return []
+
+    def append_output_file(self, theater_id: str, file_path: str, content: str | bytes) -> None:
+        """Append text or bytes to a file in the theater output directory."""
+        output_dir = self._get_theater_output_dir(theater_id).resolve()
+        requested = Path(str(file_path or "").replace("\\", "/"))
+        if not file_path or requested.is_absolute():
+            raise ValueError("Output file path must be a relative path.")
+        target = (output_dir / requested).resolve()
+        if output_dir not in target.parents:
+            raise ValueError("Output file path cannot escape the output directory.")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, (bytes, bytearray)):
+            with open(target, "ab") as f:
+                f.write(content)
+        else:
+            with open(target, "a", encoding="utf-8") as f:
+                f.write(str(content))
 
     def list_theaters(self) -> List[TheaterMetadata]:
         theaters = []
