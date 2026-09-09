@@ -14,7 +14,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from services.agent import build_run_config
+from services.live_agent import build_run_config
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import (
     format_canvas_state,
@@ -42,7 +42,7 @@ AUTO_BEGIN_ADVENTURE_ACTION = (
 )
 
 
-class AgentSession:
+class LiveAgentSession:
     def __init__(
         self,
         theater_id: str,
@@ -218,7 +218,7 @@ class AgentSession:
     def send_content(self, content: types.Content) -> bool:
         """Send a system or canvas notification to an active Live session."""
         if not self.is_alive:
-            logger.debug(f"[AgentSession] Stopped; suppressing content input for session {self.theater_id}.")
+            logger.debug(f"[LiveAgentSession] Stopped; suppressing content input for session {self.theater_id}.")
             return False
         self.live_request_queue.send_content(content)
         return True
@@ -226,7 +226,7 @@ class AgentSession:
     def send_user_content(self, content: types.Content) -> bool:
         """Send typed input as a complete Live user-input turn."""
         if not self.is_alive:
-            logger.debug(f"[AgentSession] Stopped; suppressing user input for session {self.theater_id}.")
+            logger.debug(f"[LiveAgentSession] Stopped; suppressing user input for session {self.theater_id}.")
             return False
         self.record_user_input()
         if hasattr(self.live_request_queue, "send_user_input"):
@@ -250,7 +250,7 @@ class AgentSession:
     def send_realtime(self, blob: types.Blob) -> bool:
         """Send realtime audio/image blob to live_request_queue if user is connected; suppress otherwise."""
         if not self.websocket_connected:
-            logger.debug(f"[AgentSession] User disconnected; suppressing realtime input for session {self.theater_id}.")
+            logger.debug(f"[LiveAgentSession] User disconnected; suppressing realtime input for session {self.theater_id}.")
             return False
         self.live_request_queue.send_realtime(blob)
         return True
@@ -289,12 +289,12 @@ class AgentSession:
             if tool_name in ("process_user_action", "image_cycle"):
                 return
             msg = f"[System Notification] The cooldown for '{tool_name}' has expired. You may now call {tool_name} again."
-            logger.info(f"[AgentSession] Cooldown expired notification: {msg}")
+            logger.info(f"[LiveAgentSession] Cooldown expired notification: {msg}")
             try:
                 content = types.Content(parts=[types.Part(text=msg)])
                 self.send_content(content)
             except Exception as e:
-                logger.error(f"[AgentSession] Failed to send cooldown expired notification: {e}")
+                logger.error(f"[LiveAgentSession] Failed to send cooldown expired notification: {e}")
 
         def handle_after_image_tool(_tool_name: str, _canvas_info: dict):
             self.send_canvas_state()
@@ -319,7 +319,7 @@ class AgentSession:
         def handle_animation_ready(animation_id: str, technique: str = "") -> None:
             technique_str = f" ({technique})" if technique else ""
             msg = f"[System Notification] Animation '{animation_id}'{technique_str} is ready to play. Call play_animation with animation_id='{animation_id}' to display it on canvas."
-            logger.info(f"[AgentSession] Animation ready notification: {msg}")
+            logger.info(f"[LiveAgentSession] Animation ready notification: {msg}")
             content = types.Content(parts=[types.Part(text=msg)])
 
             def enqueue() -> None:
@@ -389,7 +389,7 @@ class AgentSession:
     def send_canvas_state(self) -> bool:
         """Inject current canvas image/music state into LiveRequestQueue."""
         if not self.websocket_connected:
-            logger.debug(f"[AgentSession] User disconnected; suppressing canvas state update for session {self.theater_id}.")
+            logger.debug(f"[LiveAgentSession] User disconnected; suppressing canvas state update for session {self.theater_id}.")
             return False
         now = time.monotonic()
         with self.state_lock:
@@ -404,11 +404,11 @@ class AgentSession:
             try:
                 self.send_content(types.Content(parts=[types.Part(text=msg)]))
             except Exception as e:
-                logger.error(f"[AgentSession] Failed to send canvas observability update: {e}", exc_info=True)
+                logger.error(f"[LiveAgentSession] Failed to send canvas observability update: {e}", exc_info=True)
                 return False
             self.last_canvas_state_sent = now
         self._schedule_doodle_snapshot()
-        logger.info("[AgentSession] Canvas state update: %s", msg.replace("\n", " | "))
+        logger.info("[LiveAgentSession] Canvas state update: %s", msg.replace("\n", " | "))
         return True
 
     def send_collaboration_toggle_observability(self) -> bool:
@@ -419,7 +419,7 @@ class AgentSession:
         """
         if not self.websocket_connected:
             logger.debug(
-                "[AgentSession] User disconnected; suppressing collaboration toggle update for session %s.",
+                "[LiveAgentSession] User disconnected; suppressing collaboration toggle update for session %s.",
                 self.theater_id,
             )
             return False
@@ -432,7 +432,7 @@ class AgentSession:
                 < self.collaboration_observability_cooldown
             ):
                 logger.debug(
-                    "[AgentSession] Collaboration toggle update is cooling down for session %s.",
+                    "[LiveAgentSession] Collaboration toggle update is cooling down for session %s.",
                     self.theater_id,
                 )
                 return False
@@ -442,7 +442,7 @@ class AgentSession:
                 self.send_content(types.Content(parts=[types.Part(text=msg)]))
             except Exception as e:
                 logger.error(
-                    "[AgentSession] Failed to send collaboration toggle observability update: %s",
+                    "[LiveAgentSession] Failed to send collaboration toggle observability update: %s",
                     e,
                     exc_info=True,
                 )
@@ -451,7 +451,7 @@ class AgentSession:
             self.last_collaboration_observability_sent = now
 
         self._schedule_doodle_snapshot()
-        logger.info("[AgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
+        logger.info("[LiveAgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
         return True
 
     def send_agent_requested_observability(self) -> bool:
@@ -466,7 +466,7 @@ class AgentSession:
         """
         if not self.websocket_connected:
             logger.debug(
-                "[AgentSession] User disconnected; suppressing agent-requested canvas update for session %s.",
+                "[LiveAgentSession] User disconnected; suppressing agent-requested canvas update for session %s.",
                 self.theater_id,
             )
             return False
@@ -489,7 +489,7 @@ class AgentSession:
                 self.send_content(types.Content(parts=parts))
             except Exception as e:
                 logger.error(
-                    "[AgentSession] Failed to send agent-requested canvas observability update: %s",
+                    "[LiveAgentSession] Failed to send agent-requested canvas observability update: %s",
                     e,
                     exc_info=True,
                 )
@@ -499,7 +499,7 @@ class AgentSession:
 
         # The visual attached above already includes viewer doodles when
         # collaboration is enabled, so do not enqueue a second, late image.
-        logger.info("[AgentSession] Agent-requested canvas state update: %s", msg.replace("\n", " | "))
+        logger.info("[LiveAgentSession] Agent-requested canvas state update: %s", msg.replace("\n", " | "))
         return True
 
     def _get_current_canvas_image_part(self) -> Optional[types.Part]:
@@ -544,7 +544,7 @@ class AgentSession:
             return types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_data))
         except OSError as error:
             logger.warning(
-                "[AgentSession] Could not load current canvas image for observability in theater %s: %s",
+                "[LiveAgentSession] Could not load current canvas image for observability in theater %s: %s",
                 self.theater_id,
                 error,
             )
@@ -613,7 +613,7 @@ class AgentSession:
 
     async def _run_downstream(self):
         """Task that runs runner.run_live() continuously and broadcasts model events to attached WebSockets."""
-        logger.info(f"[AgentSession] Starting downstream_task (runner.run_live) for theater_id={self.theater_id}")
+        logger.info(f"[LiveAgentSession] Starting downstream_task (runner.run_live) for theater_id={self.theater_id}")
         try:
             if await self.session_service.get_session(
                 app_name=self.runner.app_name,
@@ -625,7 +625,7 @@ class AgentSession:
                     user_id=self.adk_user_id,
                     session_id=self.adk_session_id,
                 )
-                logger.info(f"[AgentSession] Created ADK session {self.adk_session_id} for user {self.adk_user_id}")
+                logger.info(f"[LiveAgentSession] Created ADK session {self.adk_session_id} for user {self.adk_user_id}")
 
             async for event in self.runner.run_live(
                 user_id=self.adk_user_id,
@@ -649,14 +649,14 @@ class AgentSession:
                 event_json = json.dumps(event_dict)
                 await self.broadcast_text(event_json)
         except asyncio.CancelledError:
-            logger.debug(f"[AgentSession] downstream_task cancelled for theater_id={self.theater_id}")
+            logger.debug(f"[LiveAgentSession] downstream_task cancelled for theater_id={self.theater_id}")
         except Exception as e:
-            logger.error(f"[AgentSession] Exception in downstream_task for theater_id={self.theater_id}: {e}", exc_info=True)
+            logger.error(f"[LiveAgentSession] Exception in downstream_task for theater_id={self.theater_id}: {e}", exc_info=True)
             if self.canvas_state_manager:
                 try:
                     self.canvas_state_manager.tool_response.set_agent_thought("wandering")
                 except Exception:
-                    logger.exception("[AgentSession] Could not update failed agent thought for theater_id=%s", self.theater_id)
+                    logger.exception("[LiveAgentSession] Could not update failed agent thought for theater_id=%s", self.theater_id)
             try:
                 await self.broadcast_text(json.dumps({
                     "type": "agent_failed",
@@ -674,7 +674,7 @@ class AgentSession:
                     try:
                         owner = db_inst.get_user_by_id(owner_id)
                         if owner and owner.get("credits", 0.0) <= 0.0:
-                            logger.warning(f"[AgentSession] Owner user {owner_id} credit balance <= 0. Auto-stopping agent session for {self.theater_id}.")
+                            logger.warning(f"[LiveAgentSession] Owner user {owner_id} credit balance <= 0. Auto-stopping agent session for {self.theater_id}.")
                             await self.broadcast_text(json.dumps({
                                 "type": "insufficient_credits",
                                 "detail": "Agent stopped because your credit balance reached 0 or less.",
@@ -683,7 +683,7 @@ class AgentSession:
                             self.close()
                             return
                     except Exception as err:
-                        logger.debug(f"[AgentSession] Periodic credit check error: {err}")
+                        logger.debug(f"[LiveAgentSession] Periodic credit check error: {err}")
 
                 if self.websocket_connected and self.canvas_state_manager:
                     self.canvas_state_manager.set_tool_activity("live", active=True, recent_seconds=10.0)
@@ -708,7 +708,7 @@ class AgentSession:
             while True:
                 await asyncio.sleep(TOOL_INJECTION_INTERVAL_SECONDS)
                 if self.websocket_connected and self.tool_bundle:
-                    logger.info(f"[AgentSession] Populating live request queue with tool definitions for session {self.theater_id}")
+                    logger.info(f"[LiveAgentSession] Populating live request queue with tool definitions for session {self.theater_id}")
                     self.inject_tool_definitions()
         except asyncio.CancelledError:
             return
@@ -729,7 +729,7 @@ class AgentSession:
                 await asyncio.sleep(LIVE_TOOL_REMINDER_INTERVAL_SECONDS)
                 if self.send_live_tool_reminder():
                     logger.debug(
-                        "[AgentSession] Sent live tool reminder for theater %s.",
+                        "[LiveAgentSession] Sent live tool reminder for theater %s.",
                         self.theater_id,
                     )
         except asyncio.CancelledError:
@@ -744,10 +744,10 @@ class AgentSession:
             self.status = "active"
             self.last_active_at = time.time()
             self._has_connected = True
-            logger.info(f"[AgentSession] WebSocket attached to session {self.theater_id} (total={len(self.websockets)})")
+            logger.info(f"[LiveAgentSession] WebSocket attached to session {self.theater_id} (total={len(self.websockets)})")
 
         if was_disconnected:
-            logger.info(f"[AgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
+            logger.info(f"[LiveAgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state()
             self._record_theater_connection()
 
@@ -759,7 +759,7 @@ class AgentSession:
             return self.theater_manager.record_theater_connected(self.theater_id)
         except Exception:
             logger.exception(
-                "[AgentSession] Failed to record theater connection for %s",
+                "[LiveAgentSession] Failed to record theater connection for %s",
                 self.theater_id,
             )
             return None, None
@@ -772,7 +772,7 @@ class AgentSession:
             self.theater_manager.record_theater_disconnected(self.theater_id)
         except Exception:
             logger.exception(
-                "[AgentSession] Failed to record theater disconnection for %s",
+                "[LiveAgentSession] Failed to record theater disconnection for %s",
                 self.theater_id,
             )
 
@@ -808,7 +808,7 @@ class AgentSession:
         last_session_end = last_disconnected_at or last_connected_at
         if self._was_connected_within_auto_begin_window(last_session_end):
             logger.info(
-                "[AgentSession] Skipping auto-begin for theater %s; its last session ended within the last hour.",
+                "[LiveAgentSession] Skipping auto-begin for theater %s; its last session ended within the last hour.",
                 self.theater_id,
             )
             return
@@ -822,13 +822,13 @@ class AgentSession:
                 AUTO_BEGIN_ADVENTURE_ACTION, "Starting/Resuming Adventure"
             )
             logger.info(
-                "[AgentSession] Auto-begin requested for theater %s: %s",
+                "[LiveAgentSession] Auto-begin requested for theater %s: %s",
                 self.theater_id,
                 result,
             )
         except Exception:
             logger.exception(
-                "[AgentSession] Failed to auto-begin adventure for theater %s",
+                "[LiveAgentSession] Failed to auto-begin adventure for theater %s",
                 self.theater_id,
             )
 
@@ -876,28 +876,28 @@ class AgentSession:
         """Record image created for active theater session and flush usage."""
         self.images_created_count += 1
         self.unbilled_images += 1
-        logger.info(f"[AgentSession] Image created recorded for theater {self.theater_id} (total={self.images_created_count})")
+        logger.info(f"[LiveAgentSession] Image created recorded for theater {self.theater_id} (total={self.images_created_count})")
         self.flush_usage_to_db()
 
     def record_music_created(self, music_path: str = ""):
         """Record music track created for active theater session and flush usage."""
         self.music_created_count += 1
         self.unbilled_music += 1
-        logger.info(f"[AgentSession] Music created recorded for theater {self.theater_id} (total={self.music_created_count})")
+        logger.info(f"[LiveAgentSession] Music created recorded for theater {self.theater_id} (total={self.music_created_count})")
         self.flush_usage_to_db()
 
     def record_interactive_canvas_used(self, detail: str = ""):
         """Record interactive canvas tool usage for active theater session and flush usage."""
         self.interactive_canvas_used_count += 1
         self.unbilled_interactive_canvas += 1
-        logger.info(f"[AgentSession] Interactive canvas usage recorded for theater {self.theater_id} (total={self.interactive_canvas_used_count})")
+        logger.info(f"[LiveAgentSession] Interactive canvas usage recorded for theater {self.theater_id} (total={self.interactive_canvas_used_count})")
         self.flush_usage_to_db()
 
     def record_layered_animation_created(self, animation_id: str = ""):
         """Record layered animation created for active theater session and flush usage."""
         self.layered_animations_created_count += 1
         self.unbilled_layered_animations += 1
-        logger.info(f"[AgentSession] Layered animation created recorded for theater {self.theater_id} (total={self.layered_animations_created_count})")
+        logger.info(f"[LiveAgentSession] Layered animation created recorded for theater {self.theater_id} (total={self.layered_animations_created_count})")
         self.flush_usage_to_db()
 
     def record_story_plan_completed(self):
@@ -912,7 +912,7 @@ class AgentSession:
             self.character_voiced_turns_count += 1
             self.unbilled_character_voiced_turns += 1
         logger.info(
-            "[AgentSession] Story plan completed for theater %s (total=%s)",
+            "[LiveAgentSession] Story plan completed for theater %s (total=%s)",
             self.theater_id,
             self.story_plans_count,
         )
@@ -982,12 +982,12 @@ class AgentSession:
                     self._pending_usage_batches.pop(0)
                     auth_session_cache.invalidate_user(owner_id)
                     logger.info(
-                        f"[AgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}, character_voiced_turns={unbilled_character_voiced_turns}, interactive_canvas={unbilled_canvas}, layered_animations={unbilled_layered_anim}"
+                        f"[LiveAgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}, character_voiced_turns={unbilled_character_voiced_turns}, interactive_canvas={unbilled_canvas}, layered_animations={unbilled_layered_anim}"
                     )
                     credits_remaining = updated_user.get("credits", 0.0) if updated_user else 1.0
                     if credits_remaining <= 0.0:
                         logger.warning(
-                            f"[AgentSession] Owner user {owner_id} credit balance reached <= 0 ({credits_remaining:.2f}). Gracefully stopping agent session for theater {self.theater_id}."
+                            f"[LiveAgentSession] Owner user {owner_id} credit balance reached <= 0 ({credits_remaining:.2f}). Gracefully stopping agent session for theater {self.theater_id}."
                         )
                         try:
                             loop = asyncio.get_running_loop()
@@ -1002,7 +1002,7 @@ class AgentSession:
                 except Exception as e:
                     # Retain the exact event key and payload.  Retrying it is
                     # safe whether the timed-out commit did or did not land.
-                    logger.error(f"[AgentSession] Error flushing usage to DB: {e}")
+                    logger.error(f"[LiveAgentSession] Error flushing usage to DB: {e}")
                     return
 
     def get_usage(self) -> Dict[str, Any]:
@@ -1030,7 +1030,7 @@ class AgentSession:
                 if deployment:
                     self.owner_user_id = deployment.get("user_id")
             except Exception as e:
-                logger.debug(f"[AgentSession] Could not fetch deployment owner: {e}")
+                logger.debug(f"[LiveAgentSession] Could not fetch deployment owner: {e}")
         return self.owner_user_id
 
     def save_named_elements_to_session_state(self):
@@ -1053,9 +1053,9 @@ class AgentSession:
             is_now_disconnected = len(self.websockets) == 0
             if is_now_disconnected and getattr(self, "status", None) != "stopped":
                 self.status = "ready"
-            logger.info(f"[AgentSession] WebSocket detached from session {self.theater_id} (remaining={len(self.websockets)})")
+            logger.info(f"[LiveAgentSession] WebSocket detached from session {self.theater_id} (remaining={len(self.websockets)})")
             if is_now_disconnected:
-                logger.info(f"[AgentSession] User disconnected for session {self.theater_id}; inputs are now suppressed.")
+                logger.info(f"[LiveAgentSession] User disconnected for session {self.theater_id}; inputs are now suppressed.")
                 self.save_named_elements_to_session_state()
         if is_now_disconnected:
             self._record_theater_disconnection()
@@ -1069,7 +1069,7 @@ class AgentSession:
                         continue
                     await ws.send_text(text)
                 except (WebSocketDisconnect, RuntimeError, ConnectionResetError) as err:
-                    logger.debug(f"[AgentSession] broadcast_text skipped (closed): {err}")
+                    logger.debug(f"[LiveAgentSession] broadcast_text skipped (closed): {err}")
                     self.websockets.discard(ws)
                     self.websocket_user_ids.pop(ws, None)
 
@@ -1093,12 +1093,12 @@ class AgentSession:
         try:
             self.live_request_queue.close()
         except Exception as e:
-            logger.debug(f"[AgentSession] Error closing live_request_queue: {e}")
+            logger.debug(f"[LiveAgentSession] Error closing live_request_queue: {e}")
 
-from services.agent import create_agent, create_tool_bundle_for_session  # noqa: E402
+from services.live_agent import create_agent, create_tool_bundle_for_session  # noqa: E402
 
 
-class AgentSessionManager:
+class LiveAgentSessionManager:
     def __init__(
         self,
         theater_manager: TheaterManager,
@@ -1112,7 +1112,7 @@ class AgentSessionManager:
         self.theater_manager = theater_manager
         self.database_manager = database_manager
         self._music_catalog = music_catalog
-        self._sessions: Dict[str, AgentSession] = {}
+        self._sessions: Dict[str, LiveAgentSession] = {}
         self.shared_session_service = InMemorySessionService()
 
         # Construct run_config internally from configuration
@@ -1132,7 +1132,7 @@ class AgentSessionManager:
     def music_catalog(self, value: Optional[Any]) -> None:
         self._music_catalog = value
 
-    def get_session(self, theater_id: str) -> Optional[AgentSession]:
+    def get_session(self, theater_id: str) -> Optional[LiveAgentSession]:
         """Retrieve an active agent session by theater_id if present."""
         return self._sessions.get(theater_id)
 
@@ -1141,19 +1141,19 @@ class AgentSessionManager:
         theater_id: str,
         canvas_state_service: Optional[Any] = None,
         use_in_memory_artifacts: bool = False,
-    ) -> AgentSession:
-        """Fetch an existing active session or instantiate a new AgentSession."""
+    ) -> LiveAgentSession:
+        """Fetch an existing active session or instantiate a new LiveAgentSession."""
         existing = self.get_session(theater_id)
         if existing and existing.is_alive:
             existing.last_active_at = time.time()
             return existing
 
         if existing:
-            logger.info(f"[AgentSessionManager] Existing session for theater_id={theater_id} is dead or stopped (status={existing.status}). Purging and recreating.")
+            logger.info(f"[LiveAgentSessionManager] Existing session for theater_id={theater_id} is dead or stopped (status={existing.status}). Purging and recreating.")
             existing.close()
             self._sessions.pop(theater_id, None)
 
-        logger.info(f"[AgentSessionManager] Creating new AgentSession for theater_id={theater_id}")
+        logger.info(f"[LiveAgentSessionManager] Creating new LiveAgentSession for theater_id={theater_id}")
 
         canvas_mgr = canvas_state_service.get(theater_id) if canvas_state_service and hasattr(canvas_state_service, "get") else None
 
@@ -1201,7 +1201,7 @@ class AgentSessionManager:
             artifact_service=artifact_service,
         )
 
-        agent_session = AgentSession(
+        agent_session = LiveAgentSession(
             theater_id=theater_id,
             runner=runner,
             tool_bundle=tool_bundle,
@@ -1222,7 +1222,7 @@ class AgentSessionManager:
         if not session:
             return False
 
-        logger.info(f"[AgentSessionManager] Stopping agent theater_id={theater_id}")
+        logger.info(f"[LiveAgentSessionManager] Stopping agent theater_id={theater_id}")
         session.close()
         del self._sessions[theater_id]
         return True
@@ -1236,7 +1236,7 @@ class AgentSessionManager:
                 expired_ids.append(sid)
 
         for sid in expired_ids:
-            logger.info(f"[AgentSessionManager] Auto-cleaning idle theater_id={sid}")
+            logger.info(f"[LiveAgentSessionManager] Auto-cleaning idle theater_id={sid}")
             self.stop_session(sid)
 
         return expired_ids

@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import ANY, MagicMock, patch
 
-from services.agent import AGENT_INSTRUCTION_TEMPLATE, create_agent
+from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, create_agent
 
 
 class TestCreateAgent(unittest.TestCase):
@@ -13,8 +13,8 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("confirmed by at least two distinct narrative events or user actions", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("use_generated_music", AGENT_INSTRUCTION_TEMPLATE)
 
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_create_agent_calls_list_references_on_init(
         self, mock_agent_cls, mock_bundle_fn
     ):
@@ -43,9 +43,9 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("/path/to/hero_character.png", instruction)
         self.assertIs(agent_inst, mock_agent_cls.return_value)
 
-    @patch("services.agent.get_playlists_context")
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.get_playlists_context")
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_create_agent_embeds_playlists_without_exposing_a_listing_tool(
         self, mock_agent_cls, mock_bundle_fn, mock_playlists_fn
     ):
@@ -68,9 +68,9 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("* list_playlists:", instruction)
         self.assertNotIn("create_music", instruction)
 
-    @patch("services.agent.get_playlists_context")
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.get_playlists_context")
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_create_agent_includes_create_music_instruction_only_when_enabled(
         self, mock_agent_cls, mock_bundle_fn, mock_playlists_fn
     ):
@@ -85,13 +85,13 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("create_music", instruction)
         self.assertIn("Last resort", instruction)
 
-    @patch("services.agent.get_text_response_provider")
-    @patch("services.agent.ImageTools")
-    @patch("services.agent.AnimationTools")
-    @patch("services.agent.ChatTools")
-    @patch("services.agent.StoryTool")
-    @patch("services.agent.MusicTools")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.get_text_response_provider")
+    @patch("services.live_agent.ImageTools")
+    @patch("services.live_agent.AnimationTools")
+    @patch("services.live_agent.ChatTools")
+    @patch("services.live_agent.StoryTool")
+    @patch("services.live_agent.MusicTools")
+    @patch("services.live_agent.Agent")
     def test_create_agent_passes_canvas_state_service_to_every_tool(
         self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
     ):
@@ -123,13 +123,13 @@ class TestCreateAgent(unittest.TestCase):
             music_catalog=ANY,
         )
 
-    @patch("services.agent.get_text_response_provider")
-    @patch("services.agent.ImageTools")
-    @patch("services.agent.AnimationTools")
-    @patch("services.agent.ChatTools")
-    @patch("services.agent.StoryTool")
-    @patch("services.agent.MusicTools")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.get_text_response_provider")
+    @patch("services.live_agent.ImageTools")
+    @patch("services.live_agent.AnimationTools")
+    @patch("services.live_agent.ChatTools")
+    @patch("services.live_agent.StoryTool")
+    @patch("services.live_agent.MusicTools")
+    @patch("services.live_agent.Agent")
     def test_animation_tools_are_created_only_when_theater_enables_them(
         self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
     ):
@@ -146,8 +146,8 @@ class TestCreateAgent(unittest.TestCase):
             video_provider=ANY,
         )
 
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_animation_instructions_appear_only_when_enabled(self, mock_agent_cls, mock_bundle_fn):
         mock_bundle = MagicMock()
         mock_bundle.tools = []
@@ -160,8 +160,8 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("## Animation", instruction)
         self.assertIn("create_animation", instruction)
 
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_create_agent_renders_instruction_sections_in_order(self, mock_agent_cls, mock_bundle_fn):
         reference_tool = MagicMock()
         reference_tool.name = "list_references"
@@ -191,8 +191,8 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Keep the story suspenseful.", instruction)
         self.assertIn("Cooldowns are now lifted. GO!", instruction)
 
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_create_agent_omits_special_instructions_section_when_blank(self, mock_agent_cls, mock_bundle_fn):
         mock_bundle = MagicMock()
         mock_bundle.tools = []
@@ -205,15 +205,15 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("No preloaded reference images found.", instruction)
         self.assertIn("## Startup", instruction)
 
-    @patch("services.agent.get_text_response_provider")
-    @patch("services.agent.ImageTools")
-    @patch("services.agent.ChatTools")
-    @patch("services.agent.StoryTool")
-    @patch("services.agent.MusicTools")
+    @patch("services.live_agent.get_text_response_provider")
+    @patch("services.live_agent.ImageTools")
+    @patch("services.live_agent.ChatTools")
+    @patch("services.live_agent.StoryTool")
+    @patch("services.live_agent.MusicTools")
     def test_create_tool_bundle_conditional_create_music(
         self, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_image_cls, mock_get_text_provider
     ):
-        from services.agent import create_tool_bundle_for_session
+        from services.live_agent import create_tool_bundle_for_session
         music_inst = mock_music_cls.return_value
         music_inst.use_generated_music = False
         bundle = create_tool_bundle_for_session("test_t", config={"music": {"use_generated_music": False}})
@@ -225,9 +225,9 @@ class TestCreateAgent(unittest.TestCase):
         tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
 
-    @patch("services.agent.get_text_response_provider")
+    @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_omits_image_creation_when_disabled(self, mock_get_text_provider):
-        from services.agent import create_tool_bundle_for_session
+        from services.live_agent import create_tool_bundle_for_session
 
         bundle = create_tool_bundle_for_session(
             "assets_only_theater",
@@ -243,9 +243,9 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("show_image", tool_names)
         self.assertIn("create_animation", tool_names)
 
-    @patch("services.agent.get_text_response_provider")
+    @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_only_includes_observability_tool_when_enabled(self, mock_get_text_provider):
-        from services.agent import create_tool_bundle_for_session
+        from services.live_agent import create_tool_bundle_for_session
 
         base_config = {
             "visuals": {"model": "hybrid-flux-gemini"},
@@ -265,11 +265,11 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("request_canvas_observability", disabled_names)
         self.assertIn("request_canvas_observability", enabled_names)
 
-    @patch("services.agent.get_text_response_provider")
+    @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_only_includes_interactive_canvas_when_explicitly_enabled(
         self, mock_get_text_provider
     ):
-        from services.agent import create_tool_bundle_for_session
+        from services.live_agent import create_tool_bundle_for_session
 
         base_config = {
             "story_planning": {"adventure_mode": False},
@@ -297,7 +297,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("clear_interactive_canvas", enabled_names)
 
     def test_get_references_context_with_references(self):
-        from services.agent import get_references_context
+        from services.live_agent import get_references_context
         mock_tool = MagicMock()
         mock_tool.name = "list_references"
         mock_tool.func = MagicMock(return_value=[
@@ -311,14 +311,14 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Hero desc", res)
 
     def test_get_references_context_empty(self):
-        from services.agent import get_references_context
+        from services.live_agent import get_references_context
         bundle = MagicMock()
         bundle.tools = []
         res = get_references_context(bundle)
         self.assertEqual(res, "No preloaded reference images found.")
 
     def test_get_playlists_context_empty(self):
-        from services.agent import get_playlists_context
+        from services.live_agent import get_playlists_context
         mock_theater = MagicMock()
         mock_theater.playlists_dir.return_value = "/nonexistent/playlists"
         mock_theater.music_artifacts_dir.return_value = "/nonexistent/output"
@@ -329,7 +329,7 @@ class TestCreateAgent(unittest.TestCase):
         import tempfile
         import shutil
         import os
-        from services.agent import get_playlists_context
+        from services.live_agent import get_playlists_context
         tmp_dir = tempfile.mkdtemp()
         try:
             playlists_dir = os.path.join(tmp_dir, "playlists")
@@ -353,9 +353,9 @@ class TestCreateAgent(unittest.TestCase):
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    @patch("services.agent.get_playlists_context")
-    @patch("services.agent.create_tool_bundle_for_session")
-    @patch("services.agent.Agent")
+    @patch("services.live_agent.get_playlists_context")
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_create_agent_adventure_mode_instructions(
         self, mock_agent_cls, mock_bundle_fn, mock_playlists_fn
     ):
@@ -379,12 +379,12 @@ class TestCreateAgent(unittest.TestCase):
 
 
 class TestBuildRunConfig(unittest.TestCase):
-    @patch("services.agent.get_app_config")
+    @patch("services.live_agent.get_app_config")
     def test_build_run_config_native_audio_defaults(self, mock_get_app_config):
         mock_get_app_config.return_value = {
             "agent_internal": {"model": "gemini-3.1-flash-live-preview"}
         }
-        from services.agent import build_run_config
+        from services.live_agent import build_run_config
         config = {
             "agent": {
                 "proactivity": True,
@@ -398,18 +398,18 @@ class TestBuildRunConfig(unittest.TestCase):
         self.assertTrue(run_cfg.enable_affective_dialog)
         self.assertEqual(run_cfg.tool_thread_pool_config.max_workers, 5)
 
-    @patch("services.agent.get_app_config")
+    @patch("services.live_agent.get_app_config")
     def test_build_run_config_text_modality(self, mock_get_app_config):
         mock_get_app_config.return_value = {
             "agent_internal": {"model": "gemini-2.0-flash"}
         }
-        from services.agent import build_run_config
+        from services.live_agent import build_run_config
         run_cfg = build_run_config(model_name="gemini-text-only")
         self.assertEqual(run_cfg.response_modalities, ["TEXT"])
         self.assertIsNone(run_cfg.input_audio_transcription)
 
-    def test_reexported_from_agent_manager(self):
-        from services.agent import build_run_config as agent_build_cfg
-        from services.agent_manager import build_run_config as manager_build_cfg
+    def test_reexported_from_live_agent_manager(self):
+        from services.live_agent import build_run_config as agent_build_cfg
+        from services.live_agent_manager import build_run_config as manager_build_cfg
         self.assertIs(agent_build_cfg, manager_build_cfg)
 

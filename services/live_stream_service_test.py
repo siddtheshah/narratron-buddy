@@ -126,14 +126,14 @@ class TestLiveStreamServiceAudioChunking(unittest.TestCase):
         mock_session.remove_websocket = AsyncMock()
         mock_session.can_accept_controller_input.return_value = True
 
-        mock_agent_manager = MagicMock()
-        mock_agent_manager.get_or_create_session.return_value = mock_session
+        mock_live_agent_manager = MagicMock()
+        mock_live_agent_manager.get_or_create_session.return_value = mock_session
 
         asyncio.run(
             handle_live_websocket_connection(
                 websocket=mock_ws,
                 theater_id="test_mic_muted",
-                agent_manager=mock_agent_manager,
+                live_agent_manager=mock_live_agent_manager,
                 send_setup_complete_immediately=False,
             )
         )
@@ -170,14 +170,14 @@ class TestLiveStreamServiceAudioChunking(unittest.TestCase):
         mock_session.record_audio_input = MagicMock()
         mock_session.send_realtime = MagicMock()
 
-        mock_agent_manager = MagicMock()
-        mock_agent_manager.get_or_create_session.return_value = mock_session
+        mock_live_agent_manager = MagicMock()
+        mock_live_agent_manager.get_or_create_session.return_value = mock_session
 
         asyncio.run(
             handle_live_websocket_connection(
                 websocket=mock_ws,
                 theater_id="test_chunking_theater",
-                agent_manager=mock_agent_manager,
+                live_agent_manager=mock_live_agent_manager,
                 send_setup_complete_immediately=False,
             )
         )
@@ -208,14 +208,14 @@ class TestLiveStreamServiceAudioChunking(unittest.TestCase):
         mock_session.record_audio_input = MagicMock()
         mock_session.send_realtime = MagicMock()
 
-        mock_agent_manager = MagicMock()
-        mock_agent_manager.get_or_create_session.return_value = mock_session
+        mock_live_agent_manager = MagicMock()
+        mock_live_agent_manager.get_or_create_session.return_value = mock_session
 
         asyncio.run(
             handle_live_websocket_connection(
                 websocket=mock_ws,
                 theater_id="test_disconnect_flush",
-                agent_manager=mock_agent_manager,
+                live_agent_manager=mock_live_agent_manager,
                 send_setup_complete_immediately=False,
             )
         )
@@ -239,14 +239,14 @@ class TestLiveStreamServiceAudioChunking(unittest.TestCase):
         # baton changes before the disconnect flush forwards the partial data.
         mock_session.can_accept_controller_input.side_effect = [True, False]
 
-        mock_agent_manager = MagicMock()
-        mock_agent_manager.get_or_create_session.return_value = mock_session
+        mock_live_agent_manager = MagicMock()
+        mock_live_agent_manager.get_or_create_session.return_value = mock_session
 
         asyncio.run(
             handle_live_websocket_connection(
                 websocket=mock_ws,
                 theater_id="test_baton_handoff",
-                agent_manager=mock_agent_manager,
+                live_agent_manager=mock_live_agent_manager,
                 user_id=1,
                 send_setup_complete_immediately=False,
             )

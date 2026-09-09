@@ -43,7 +43,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertIsNone(owner_id)
 
     @patch("object_registry.db")
-    @patch("object_registry.agent_manager")
+    @patch("object_registry.live_agent_manager")
     def test_start_agent_blocked_when_credits_le_zero(self, mock_agent_mgr, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_poor", "user_id": 99}
         mock_db.get_user_by_id.return_value = {"id": 99, "credits": 0.0}
@@ -56,7 +56,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_poor")
 
     @patch("object_registry.db")
-    @patch("object_registry.agent_manager")
+    @patch("object_registry.live_agent_manager")
     def test_start_agent_allowed_when_credits_positive(self, mock_agent_mgr, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_rich", "user_id": 88}
         mock_db.get_user_by_id.return_value = {"id": 88, "credits": 20.0}
@@ -71,7 +71,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertTrue(json_data.get("agent_running"))
 
     @patch("object_registry.db")
-    @patch("object_registry.agent_manager")
+    @patch("object_registry.live_agent_manager")
     def test_get_agent_status_stops_session_when_credits_le_zero(self, mock_agent_mgr, mock_db):
         mock_db.get_deployment.return_value = {"theater_id": "theater_depleted", "user_id": 77}
         mock_db.get_user_by_id.return_value = {"id": 77, "credits": -1.0}
@@ -86,10 +86,10 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertFalse(json_data.get("agent_running"))
         mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_depleted")
 
-    @patch("services.agent_manager.logger")
-    @patch("services.agent_manager.AgentSession._get_database")
+    @patch("services.live_agent_manager.logger")
+    @patch("services.live_agent_manager.LiveAgentSession._get_database")
     def test_flush_usage_stops_session_on_credit_exhaustion(self, mock_get_database, mock_logger):
-        from services.agent_manager import AgentSession
+        from services.live_agent_manager import LiveAgentSession
 
         mock_runner = MagicMock()
         mock_session_service = MagicMock()
@@ -101,7 +101,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         mock_get_database.return_value = mock_db
         mock_db.get_deployment.return_value = {"user_id": 10}
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="t_exhaust",
             runner=mock_runner,
             tool_bundle=MagicMock(),

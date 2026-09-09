@@ -20,7 +20,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from services.adventure_service import AdventureService, ensure_adventures_root
-from services.agent_manager import AgentSessionManager
+from services.live_agent_manager import LiveAgentSessionManager
 from services.music_catalog import MusicCatalog
 from services.suggestion_service import SuggestionService
 from services.text_beautifier import TextBeautifier
@@ -122,7 +122,7 @@ music_catalog = MusicCatalog.from_config(
     config=config,
     database_manager=db,
 )
-agent_manager = AgentSessionManager(
+live_agent_manager = LiveAgentSessionManager(
     app_name="narratron-combined",
     config=config,
     theater_manager=theater_manager,

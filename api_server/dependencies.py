@@ -44,7 +44,7 @@ class RegistryDependency:
 FLAGS = RegistryDependency("FLAGS")
 SERVER_RUN_ID = RegistryDependency("SERVER_RUN_ID")
 adventure_service = RegistryDependency("adventure_service")
-agent_manager = RegistryDependency("agent_manager")
+live_agent_manager = RegistryDependency("live_agent_manager")
 canvas_states = RegistryDependency("canvas_states")
 db = RegistryDependency("db")
 music_catalog = RegistryDependency("music_catalog")

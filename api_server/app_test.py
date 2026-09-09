@@ -79,7 +79,7 @@ def test_start_agent_stops_registry_session_when_owner_has_no_credits():
     registry_db.get_user_by_id.return_value = {"id": 11, "credits": 0}
     manager = MagicMock()
 
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "agent_manager", manager):
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "live_agent_manager", manager):
         response = asyncio.run(app_module.start_agent_endpoint("stage"))
 
     assert response.status_code == 402
@@ -94,7 +94,7 @@ def test_start_agent_summons_the_live_session_without_a_microphone_connection():
     manager = MagicMock()
     manager.get_or_create_session.return_value = session
 
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "agent_manager", manager):
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "live_agent_manager", manager):
         result = asyncio.run(app_module.start_agent_endpoint("stage"))
 
     assert result["agent_running"] is True
@@ -110,7 +110,7 @@ def test_agent_status_reads_active_session_from_registry_manager():
         status="running", websocket_connected=True, created_at="now", last_active_at="later"
     )
 
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "agent_manager", manager):
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "live_agent_manager", manager):
         result = asyncio.run(app_module.get_agent_status_endpoint("stage"))
 
     assert result["agent_running"] is True

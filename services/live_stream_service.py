@@ -82,23 +82,23 @@ def get_bound_tool_instance(agent: object, tool_name: str) -> object:
 
 
 def build_run_config(*args, **kwargs):
-    """Lazy proxy for build_run_config defined in services.agent."""
-    from services.agent import build_run_config as _build_run_config
+    """Lazy proxy for build_run_config defined in services.live_agent."""
+    from services.live_agent import build_run_config as _build_run_config
     return _build_run_config(*args, **kwargs)
 
 
 async def handle_live_websocket_connection(
     websocket: WebSocket,
     theater_id: str,
-    agent_manager: Any,
+    live_agent_manager: Any,
     user_id: Optional[int] = None,
     send_setup_complete_immediately: bool = True,
     canvas_state_service: Optional[Any] = None,
 ) -> None:
-    """Handles WebSocket attachment and upstream audio/text/image frames forwarding to AgentSession."""
+    """Handles WebSocket attachment and upstream audio/text/image frames forwarding to LiveAgentSession."""
     await websocket.accept()
 
-    agent_session = agent_manager.get_or_create_session(
+    agent_session = live_agent_manager.get_or_create_session(
         theater_id=theater_id,
         canvas_state_service=canvas_state_service,
     )

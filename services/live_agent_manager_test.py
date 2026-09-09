@@ -9,10 +9,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from components.theater_manager import TheaterManager
-from services.agent_manager import (
+from services.live_agent_manager import (
     AUTO_BEGIN_ADVENTURE_ACTION,
-    AgentSessionManager,
-    AgentSession,
+    LiveAgentSessionManager,
+    LiveAgentSession,
 )
 from tools.observability_tool import ObservabilityTools
 
@@ -29,7 +29,7 @@ def canvas_observability_fixture(image_path=None, collaboration_enabled=False, d
     return canvas
 
 
-class TestAgentSessionManager(unittest.TestCase):
+class TestLiveAgentSessionManager(unittest.TestCase):
     def test_summon_starts_planner_and_greeting_once(self):
         class PlannerTools:
             def record_user_input(self):
@@ -51,7 +51,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="auto_begin",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -80,7 +80,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(theater_id="summon_turn", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(theater_id="summon_turn", runner=mock_runner, tool_bundle=MagicMock())
 
         self.assertTrue(session.summon())
 
@@ -94,7 +94,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
     def test_auto_begin_is_disabled_unless_both_adventure_flags_are_true(self):
         planner_tools = MagicMock()
-        session = AgentSession.__new__(AgentSession)
+        session = LiveAgentSession.__new__(LiveAgentSession)
         session.theater_id = "not_auto_begin"
         session.config = {
             "story_planning": {"adventure_mode": False, "auto_begin": True}
@@ -108,7 +108,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
     def test_auto_begin_is_skipped_after_a_recent_theater_connection(self):
         planner_tools = MagicMock()
-        session = AgentSession.__new__(AgentSession)
+        session = LiveAgentSession.__new__(LiveAgentSession)
         session.theater_id = "recent_auto_begin"
         session.config = {
             "story_planning": {"adventure_mode": True, "auto_begin": True}
@@ -123,7 +123,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
     def test_auto_begin_prefers_the_last_disconnection_time(self):
         planner_tools = MagicMock()
-        session = AgentSession.__new__(AgentSession)
+        session = LiveAgentSession.__new__(LiveAgentSession)
         session.theater_id = "recent_disconnect"
         session.config = {
             "story_planning": {"adventure_mode": True, "auto_begin": True}
@@ -139,7 +139,7 @@ class TestAgentSessionManager(unittest.TestCase):
         planner_tools.process_system_action.assert_not_called()
 
     def test_baton_handoff_ends_outgoing_audio_without_closing_session(self):
-        session = AgentSession.__new__(AgentSession)
+        session = LiveAgentSession.__new__(LiveAgentSession)
         session.active_controller_user_id = 1
         session.send_activity_end = MagicMock()
 
@@ -150,16 +150,16 @@ class TestAgentSessionManager(unittest.TestCase):
         self.assertFalse(session.can_accept_controller_input(1))
         self.assertTrue(session.can_accept_controller_input(2))
 
-    @patch("services.agent_manager.create_tool_bundle_for_session")
-    @patch("services.agent_manager.AgentSession.start_background_tasks")
-    @patch("services.agent_manager.create_agent")
+    @patch("services.live_agent_manager.create_tool_bundle_for_session")
+    @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
+    @patch("services.live_agent_manager.create_agent")
     def test_get_or_create_session(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
         mock_database_manager = MagicMock()
-        manager = AgentSessionManager(
+        manager = LiveAgentSessionManager(
             theater_manager=TheaterManager(), database_manager=mock_database_manager
         )
         session1 = manager.get_or_create_session(theater_id="s1")
@@ -173,15 +173,15 @@ class TestAgentSessionManager(unittest.TestCase):
         session2 = manager.get_or_create_session(theater_id="s1")
         self.assertIs(session1, session2)
 
-    @patch("services.agent_manager.create_tool_bundle_for_session")
-    @patch("services.agent_manager.AgentSession.start_background_tasks")
-    @patch("services.agent_manager.create_agent")
+    @patch("services.live_agent_manager.create_tool_bundle_for_session")
+    @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
+    @patch("services.live_agent_manager.create_agent")
     def test_stop_session(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager(
+        manager = LiveAgentSessionManager(
             theater_manager=TheaterManager(), database_manager=MagicMock()
         )
         manager.get_or_create_session(theater_id="s2")
@@ -194,15 +194,15 @@ class TestAgentSessionManager(unittest.TestCase):
         # Stopping non-existent session returns False
         self.assertFalse(manager.stop_session("s2"))
 
-    @patch("services.agent_manager.create_tool_bundle_for_session")
-    @patch("services.agent_manager.AgentSession.start_background_tasks")
-    @patch("services.agent_manager.create_agent")
+    @patch("services.live_agent_manager.create_tool_bundle_for_session")
+    @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
+    @patch("services.live_agent_manager.create_agent")
     def test_cleanup_idle_sessions(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
 
-        manager = AgentSessionManager(
+        manager = LiveAgentSessionManager(
             theater_manager=TheaterManager(), database_manager=MagicMock()
         )
         session = manager.get_or_create_session(theater_id="s3")
@@ -233,7 +233,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = mock_session_service
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_sess",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -265,7 +265,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner.session_service.get_session = AsyncMock(side_effect=RuntimeError("connection lost"))
         canvas_state_manager = MagicMock()
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_failure",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -290,7 +290,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_suppress",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -342,7 +342,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(theater_id="planner_queue", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(theater_id="planner_queue", runner=mock_runner, tool_bundle=MagicMock())
         session.live_request_queue = MagicMock()
         session.image_tools = mock_image_tools
         session.interactive_canvas_tools = MagicMock()
@@ -381,7 +381,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="asset_only_adventure",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -402,7 +402,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(theater_id="voice_fwd", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(theater_id="voice_fwd", runner=mock_runner, tool_bundle=MagicMock())
         session.story_planning_tools = mock_story_planning
         session.websockets.add(MagicMock())
 
@@ -448,7 +448,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(theater_id="cooldown_filter", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(theater_id="cooldown_filter", runner=mock_runner, tool_bundle=MagicMock())
         session.send_content = MagicMock()
 
         # Trigger cooldown expired for process_user_action -> Should NOT send content
@@ -469,7 +469,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_reconnect",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -493,7 +493,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_observability_timing",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -509,17 +509,17 @@ class TestAgentSessionManager(unittest.TestCase):
         session.canvas_state_manager = canvas_observability_fixture()
 
         session.observability_available_at = 110.0
-        with patch("services.agent_manager.time.monotonic", return_value=100.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=100.0):
             self.assertFalse(session.send_canvas_state())
 
-        with patch("services.agent_manager.time.monotonic", return_value=110.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=110.0):
             self.assertTrue(session.send_canvas_state())
         self.assertEqual(session.live_request_queue.send_content.call_count, 1)
 
-        with patch("services.agent_manager.time.monotonic", return_value=139.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=139.0):
             self.assertFalse(session.send_canvas_state())
 
-        with patch("services.agent_manager.time.monotonic", return_value=140.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=140.0):
             self.assertTrue(session.send_canvas_state())
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
@@ -529,7 +529,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_collaboration_observability",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -545,13 +545,13 @@ class TestAgentSessionManager(unittest.TestCase):
         session.canvas_state_manager = canvas_observability_fixture()
         session.observability_available_at = 0.0
 
-        with patch("services.agent_manager.time.monotonic", return_value=100.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=100.0):
             self.assertTrue(session.send_collaboration_toggle_observability())
-        with patch("services.agent_manager.time.monotonic", return_value=102.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=102.0):
             self.assertFalse(session.send_collaboration_toggle_observability())
-        with patch("services.agent_manager.time.monotonic", return_value=129.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=129.0):
             self.assertFalse(session.send_canvas_state())
-        with patch("services.agent_manager.time.monotonic", return_value=130.0):
+        with patch("services.live_agent_manager.time.monotonic", return_value=130.0):
             self.assertTrue(session.send_canvas_state())
 
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
@@ -568,7 +568,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_agent_requested_observability",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -583,11 +583,11 @@ class TestAgentSessionManager(unittest.TestCase):
             session.canvas_state_manager = canvas_observability_fixture(image_path=image_path)
             session.observability_available_at = 0.0
 
-            with patch("services.agent_manager.time.monotonic", return_value=100.0):
+            with patch("services.live_agent_manager.time.monotonic", return_value=100.0):
                 self.assertIn("Current canvas state sent", observability_tools.request_canvas_observability())
-            with patch("services.agent_manager.time.monotonic", return_value=129.0):
+            with patch("services.live_agent_manager.time.monotonic", return_value=129.0):
                 self.assertFalse(session.send_canvas_state())
-            with patch("services.agent_manager.time.monotonic", return_value=130.0):
+            with patch("services.live_agent_manager.time.monotonic", return_value=130.0):
                 self.assertTrue(session.send_canvas_state())
 
             first_content = session.live_request_queue.send_content.call_args_list[0].args[0]
@@ -602,7 +602,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = MagicMock(tools=[])
         mock_runner.session_service = MagicMock()
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_observability_doodles",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -631,7 +631,7 @@ class TestAgentSessionManager(unittest.TestCase):
             mock_runner = MagicMock()
             mock_runner.agent = mock_agent
             mock_runner.session_service = MagicMock()
-            session = AgentSession(
+            session = LiveAgentSession(
                 theater_id="test_async_doodle_snapshot",
                 runner=mock_runner,
                 tool_bundle=MagicMock(),
@@ -666,7 +666,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_db.get_deployment.return_value = {"user_id": 123}
         mock_db.record_user_usage.return_value = {"credits": 1.0}
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -743,7 +743,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_db = MagicMock()
         mock_db.get_deployment.return_value = {"user_id": 123}
         mock_db.record_user_usage.return_value = {"credits": 5.0}
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_voiced_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -765,7 +765,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_db = MagicMock()
         mock_db.get_deployment.return_value = {"user_id": 123}
         mock_db.record_user_usage.return_value = {"credits": 5.0}
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_unvoiced_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -792,7 +792,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
 
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_inject",
             runner=mock_runner,
             tool_bundle=tool_bundle,
@@ -813,7 +813,7 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = MagicMock()
         mock_runner.session_service = MagicMock()
-        session = AgentSession(
+        session = LiveAgentSession(
             theater_id="test_tool_reminder",
             runner=mock_runner,
             tool_bundle=None,
@@ -839,7 +839,7 @@ class TestAgentSessionManager(unittest.TestCase):
             default_runner = MagicMock()
             default_runner.agent = MagicMock()
             default_runner.session_service = MagicMock()
-            session_default = AgentSession(
+            session_default = LiveAgentSession(
                 theater_id="test_flag_default",
                 runner=default_runner,
                 tool_bundle=MagicMock(),
@@ -858,7 +858,7 @@ class TestAgentSessionManager(unittest.TestCase):
             enabled_runner = MagicMock()
             enabled_runner.agent = MagicMock()
             enabled_runner.session_service = MagicMock()
-            session_enabled = AgentSession(
+            session_enabled = LiveAgentSession(
                 theater_id="test_flag_enabled",
                 runner=enabled_runner,
                 tool_bundle=MagicMock(),
@@ -882,7 +882,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
     def test_remove_websocket_saves_named_elements_to_session_state(self):
         async def run_test():
-            session = AgentSession.__new__(AgentSession)
+            session = LiveAgentSession.__new__(LiveAgentSession)
             session.theater_id = "theater_drop"
             session.ws_lock = asyncio.Lock()
             session.websockets = set()
@@ -902,7 +902,7 @@ class TestAgentSessionManager(unittest.TestCase):
 
     def test_remove_websocket_preserves_stopped_status(self):
         async def run_test():
-            session = AgentSession.__new__(AgentSession)
+            session = LiveAgentSession.__new__(LiveAgentSession)
             session.theater_id = "theater_stopped_test"
             session.ws_lock = asyncio.Lock()
             session.websockets = set()
@@ -922,7 +922,7 @@ class TestAgentSessionManager(unittest.TestCase):
         asyncio.run(run_test())
 
     def test_is_alive_property(self):
-        session = AgentSession.__new__(AgentSession)
+        session = LiveAgentSession.__new__(LiveAgentSession)
         session.status = "ready"
         session.downstream_task = None
         # Before tasks are started, status='ready' is considered alive
@@ -971,12 +971,12 @@ class TestAgentSessionManager(unittest.TestCase):
             mock_session_service.create_session = AsyncMock()
             mock_runner.session_service = mock_session_service
 
-            with patch("services.agent_manager.create_tool_bundle_for_session"), \
-                 patch("services.agent_manager.create_agent", return_value=mock_agent), \
-                 patch("services.agent_manager.Runner", return_value=mock_runner):
+            with patch("services.live_agent_manager.create_tool_bundle_for_session"), \
+                 patch("services.live_agent_manager.create_agent", return_value=mock_agent), \
+                 patch("services.live_agent_manager.Runner", return_value=mock_runner):
 
-                from services.agent_manager import AgentSessionManager, TheaterManager
-                manager = AgentSessionManager(
+                from services.live_agent_manager import LiveAgentSessionManager, TheaterManager
+                manager = LiveAgentSessionManager(
                     theater_manager=TheaterManager(),
                     database_manager=MagicMock()
                 )
@@ -1016,14 +1016,14 @@ class TestAgentSessionManager(unittest.TestCase):
         mock_animation_tools = MagicMock()
         mock_agent.tools = []
 
-        with patch("services.agent_manager.get_bound_tool_instance") as mock_get_tool:
+        with patch("services.live_agent_manager.get_bound_tool_instance") as mock_get_tool:
             def side_effect(agent, tool_name):
                 if tool_name == "create_animation":
                     return mock_animation_tools
                 return None
             mock_get_tool.side_effect = side_effect
 
-            session = AgentSession(
+            session = LiveAgentSession(
                 theater_id="test_anim_notif",
                 runner=MagicMock(agent=mock_agent, session_service=MagicMock()),
                 tool_bundle=MagicMock(),

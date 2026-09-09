@@ -9,7 +9,7 @@ from components.theater_manager import TheaterManager
 from components.canvas.canvas_state_service import CanvasStateService
 from providers.music_provider import MusicGenerationResult
 from testing.base import BaseTestCase
-from services.agent import get_playlists_context
+from services.live_agent import get_playlists_context
 from services.music_catalog import MusicCatalog
 from tools.music_tool import MusicTools
 

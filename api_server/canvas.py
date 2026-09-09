@@ -20,7 +20,7 @@ from api_server.shared import (
     _require_canvas_access_async,
     can_control_agent_websocket,
 )
-from api_server.dependencies import agent_manager
+from api_server.dependencies import live_agent_manager
 
 
 class ChatMessage(BaseModel):
@@ -340,7 +340,7 @@ def post_a2ui_action(payload: A2UIActionEnvelope, request: Request, theater_id: 
     ).split())[:2000]
     if not user_action:
         raise HTTPException(status_code=400, detail="Interactive control has no user action.")
-    session = agent_manager.get_session(theater_id)
+    session = live_agent_manager.get_session(theater_id)
     if not session or not session.is_alive:
         raise HTTPException(status_code=409, detail="The live agent is not connected.")
     notification = (
@@ -367,7 +367,7 @@ def post_orator_command(command: OratorCommand, request: Request, theater_id: st
     if not text:
         raise HTTPException(status_code=400, detail="A command cannot be empty.")
 
-    session = agent_manager.get_session(theater_id)
+    session = live_agent_manager.get_session(theater_id)
     if not session or not session.is_alive:
         raise HTTPException(status_code=409, detail="The live agent is not connected.")
 
@@ -482,7 +482,7 @@ def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
         except Exception:
             hidden_stickies = []
 
-    session = agent_manager.get_session(theater_id) if theater_id else None
+    session = live_agent_manager.get_session(theater_id) if theater_id else None
     session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
     if session_tools and hasattr(session_tools, "get_present_sticky_notes"):
         notes = session_tools.get_present_sticky_notes()
@@ -535,7 +535,7 @@ def set_viewer_collab_mode(
         raise HTTPException(status_code=403, detail="Only the theater owner can change collaboration mode.")
 
     _state(theater_id).ui.set_viewer_collab_enabled(payload.enabled)
-    session = agent_manager.get_session(theater_id)
+    session = live_agent_manager.get_session(theater_id)
     if session:
         session.send_collaboration_toggle_observability()
     return {

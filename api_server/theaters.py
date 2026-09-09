@@ -25,7 +25,7 @@ from api_server.shared import (
     _grant_canvas_access,
     PROJECT_ROOT
 )
-from api_server.dependencies import agent_manager, suggestion_service, adventure_service
+from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service
 from api_server.canvas import broadcast_baton_update
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
@@ -52,7 +52,7 @@ async def _sync_agent_controller(theater_id: str, baton_state: dict) -> None:
     active_orator = baton_state.get("active_orator") or {}
     active_orator_id = active_orator.get("id")
     if active_orator_id is not None:
-        agent_manager.set_active_controller(theater_id, active_orator_id)
+        live_agent_manager.set_active_controller(theater_id, active_orator_id)
 
 
 class ResolveJoinKeyRequest(BaseModel):
@@ -830,7 +830,7 @@ async def get_theater_suggestions(theater_id: str, request: Request):
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
-    session = agent_manager.get_session(theater_id)
+    session = live_agent_manager.get_session(theater_id)
     named_elements = []
     session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
     if session_tools and hasattr(session_tools, "get_present_elements"):
@@ -860,7 +860,7 @@ async def get_theater_sticky_notes(theater_id: str, request: Request):
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
-    session = agent_manager.get_session(theater_id)
+    session = live_agent_manager.get_session(theater_id)
     sticky_notes = []
     session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
     if session_tools and hasattr(session_tools, "get_present_sticky_notes"):

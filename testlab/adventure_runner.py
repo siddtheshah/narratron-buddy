@@ -63,7 +63,7 @@ from pydantic import BaseModel, Field
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
-from services.agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, get_references_context
+from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, get_references_context
 from tools.story import StoryTool, VertexGemini
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider

@@ -67,7 +67,7 @@ def test_get_sticky_notes_uses_session_or_canvas_state():
     mock_session.story_planning_tools = mock_tools
     mock_agent_mgr.get_session.return_value = mock_session
 
-    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "agent_manager", mock_agent_mgr):
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "live_agent_manager", mock_agent_mgr):
         result = canvas.get_sticky_notes(request(), "stage")
     assert result == {"sticky_notes": [{"topic": "Clue", "info": "Old map"}], "hidden_stickies": [], "count": 1}
 
@@ -75,7 +75,7 @@ def test_get_sticky_notes_uses_session_or_canvas_state():
     mock_agent_mgr.get_session.return_value = None
     mock_canvas_states = MagicMock()
     mock_canvas_states.get.return_value.story.sticky_notes.return_value = [{"topic": "Fallback", "info": "Cached note"}]
-    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "agent_manager", mock_agent_mgr), patch.object(object_registry, "canvas_states", mock_canvas_states):
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "live_agent_manager", mock_agent_mgr), patch.object(object_registry, "canvas_states", mock_canvas_states):
         result = canvas.get_sticky_notes(request(), "stage")
     assert result == {"sticky_notes": [{"topic": "Fallback", "info": "Cached note"}], "hidden_stickies": [], "count": 1}
 
@@ -100,7 +100,7 @@ def test_get_sticky_notes_returns_configured_hidden_stickies():
     }
 
     with patch.object(canvas, "_require_canvas_access"), \
-         patch.object(object_registry, "agent_manager", mock_agent_mgr), \
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
          patch.object(canvas, "theater_manager", mock_tm):
         result = canvas.get_sticky_notes(request(), "stage")
 
@@ -143,7 +143,7 @@ def test_collaboration_mode_requests_agent_observability_update():
     session = MagicMock()
     manager = MagicMock()
     manager.get_session.return_value = session
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(object_registry, "agent_manager", manager), patch.object(canvas, "get_current_user", return_value={"id": 3}):
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(object_registry, "live_agent_manager", manager), patch.object(canvas, "get_current_user", return_value={"id": 3}):
         result = canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
 
     assert result == {"theater_id": "stage", "viewer_collab_enabled": True}
@@ -177,7 +177,7 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     )
 
     with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), \
-            patch.object(canvas, "agent_manager", manager), patch.object(canvas, "_require_canvas_access"), \
+            patch.object(canvas, "live_agent_manager", manager), patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 3}):
         result = canvas.post_a2ui_action(payload, request(), "stage")
 
@@ -212,7 +212,7 @@ def test_orator_command_relays_direct_input_without_creating_chat_message():
     manager = MagicMock()
     manager.get_session.return_value = session
 
-    with patch.object(canvas, "db", registry_db), patch.object(canvas, "agent_manager", manager), \
+    with patch.object(canvas, "db", registry_db), patch.object(canvas, "live_agent_manager", manager), \
             patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 3}):
         result = canvas.post_orator_command(

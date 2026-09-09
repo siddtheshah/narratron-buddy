@@ -830,7 +830,7 @@ async def test_get_theater_suggestions_endpoint():
 
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
-         patch.object(object_registry, "agent_manager", mock_agent_mgr), \
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
          patch.object(object_registry, "suggestion_service", mock_suggestion_svc):
 
         request = MagicMock()
@@ -855,7 +855,7 @@ async def test_get_theater_sticky_notes_endpoint():
 
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
-         patch.object(object_registry, "agent_manager", mock_agent_mgr):
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr):
 
         request = MagicMock()
         res = await theaters.get_theater_sticky_notes("stage", request)
@@ -890,7 +890,7 @@ async def test_get_theater_sticky_notes_with_hidden_stickies():
 
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
-         patch.object(object_registry, "agent_manager", mock_agent_mgr), \
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
          patch.object(theaters, "theater_manager", mock_tm):
 
         request = MagicMock()

@@ -21,7 +21,7 @@ from api_server import (
     get_current_user_async,
     can_control_agent_websocket,
 )
-from api_server.dependencies import agent_manager
+from api_server.dependencies import live_agent_manager
 from api_server import can_access_agent_websocket as can_access_agent_websocket  # noqa: F401
 from api_server import theater_manager as theater_manager  # noqa: F401
 
@@ -98,7 +98,7 @@ async def start_agent_endpoint(theater_id: str):
     """API endpoint to instantiate/start the agent session in memory if owner has sufficient credits."""
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
-        agent_manager.stop_session(theater_id=theater_id)
+        live_agent_manager.stop_session(theater_id=theater_id)
         return JSONResponse(
             status_code=402,
             content={
@@ -110,7 +110,7 @@ async def start_agent_endpoint(theater_id: str):
                 "agent_running": False,
             },
         )
-    agent_session = agent_manager.get_or_create_session(
+    agent_session = live_agent_manager.get_or_create_session(
         theater_id=theater_id,
         canvas_state_service=canvas_states,
         use_in_memory_artifacts=use_in_memory_artifacts,
@@ -128,7 +128,7 @@ async def start_agent_endpoint(theater_id: str):
 @app.post("/api/theaters/{theater_id}/agent/stop")
 async def stop_agent_endpoint(theater_id: str):
     """API endpoint to explicitly stop and remove the agent session from memory."""
-    stopped = agent_manager.stop_session(theater_id=theater_id)
+    stopped = live_agent_manager.stop_session(theater_id=theater_id)
     return {
         "status": "stopped" if stopped else "not_found",
         "theater_id": theater_id,
@@ -141,9 +141,9 @@ async def get_agent_status_endpoint(theater_id: str):
     """API endpoint to check if an agent session is active in memory."""
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
-        session = agent_manager.get_session(theater_id=theater_id)
+        session = live_agent_manager.get_session(theater_id=theater_id)
         if session and session.status != "stopped":
-            agent_manager.stop_session(theater_id=theater_id)
+            live_agent_manager.stop_session(theater_id=theater_id)
         return {
             "theater_id": theater_id,
             "agent_running": False,
@@ -153,7 +153,7 @@ async def get_agent_status_endpoint(theater_id: str):
             "credits": credits_bal,
         }
 
-    session = agent_manager.get_session(theater_id=theater_id)
+    session = live_agent_manager.get_session(theater_id=theater_id)
     if not session or session.status == "stopped":
         return {
             "theater_id": theater_id,
@@ -196,7 +196,7 @@ async def agent_websocket_endpoint(
     user_id: Optional[str] = None,
 ) -> None:
     """WebSocket endpoint for bidirectional streaming with ADK.
-    Retrieves or creates the in-memory AgentSession instance for stream handling.
+    Retrieves or creates the in-memory LiveAgentSession instance for stream handling.
     """
     # ``user_id`` remains in the legacy URL for client compatibility, but it
     # must never establish identity.  Agent control follows the authenticated
@@ -210,7 +210,7 @@ async def agent_websocket_endpoint(
 
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
-        agent_manager.stop_session(theater_id=theater_id)
+        live_agent_manager.stop_session(theater_id=theater_id)
         await websocket.accept()
         await websocket.send_json({
             "type": "insufficient_credits",
@@ -223,12 +223,12 @@ async def agent_websocket_endpoint(
     await handle_live_websocket_connection(
         websocket=websocket,
         theater_id=theater_id,
-        agent_manager=agent_manager,
+        live_agent_manager=live_agent_manager,
         user_id=current_user["id"],
         canvas_state_service=canvas_states,
     )
     # Perform periodic cleanup of old idle sessions
-    agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)
+    live_agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)
 
 if __name__ == "__main__":
     sys.argv = FLAGS(sys.argv, known_only=True)
