@@ -175,7 +175,7 @@ chat:
 
 ### 4.3. `planning.yaml` Specification
 
-Sticky notes and persistent story planning contracts are configured in `planning.yaml`. All field values are strictly strings:
+Sticky notes and persistent story planning contracts are configured in `planning.yaml`. All field values are strictly strings. Adventure planning checks a sticky's contract before it updates that individual note; set `story_planning.enforce_structured: false` only when intentionally allowing free-form sticky updates.
 
 ```yaml
 # Deep Planner Schema: planning.yaml

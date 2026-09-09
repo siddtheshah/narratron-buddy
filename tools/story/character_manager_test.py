@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager, normalize_voice_tags
+from tools.story.notepad import Notepad
 
 
 class TestNormalizeVoiceTags(unittest.TestCase):
@@ -21,14 +22,13 @@ class TestNormalizeVoiceTags(unittest.TestCase):
 class TestCharacterManager(unittest.TestCase):
     def setUp(self) -> None:
         self.provider = MagicMock(spec=TextResponseProvider)
-        self.elements_provider = MagicMock(
-            return_value=[{"topic": "Quest", "info": "Recover the starblade"}]
-        )
-        self.on_change = MagicMock()
+        self.notepad = MagicMock(spec=Notepad)
+        self.notepad.get_present_elements.return_value = [
+            {"topic": "Quest", "info": "Recover the starblade"}
+        ]
         self.manager = CharacterManager(
             text_response_provider=self.provider,
-            elements_provider=self.elements_provider,
-            on_change=self.on_change,
+            notepad=self.notepad,
         )
 
     def _create_character(self, name: str, description: str = "") -> str:
@@ -43,11 +43,14 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_requires_text_response_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
-            CharacterManager(None)  # type: ignore[arg-type]
+            CharacterManager(None, self.notepad)  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "notepad is required"):
+            CharacterManager(self.provider, None)  # type: ignore[arg-type]
 
     def test_loads_and_normalizes_initial_characters(self) -> None:
         manager = CharacterManager(
             self.provider,
+            self.notepad,
             config={
                 "initial_characters": {
                     "Kaelen": {
@@ -74,8 +77,7 @@ class TestCharacterManager(unittest.TestCase):
         )
 
     def test_limits_present_characters_without_discarding_history(self) -> None:
-        manager = CharacterManager(self.provider, config={"max_active_characters": 2})
-        manager.on_change = MagicMock()
+        manager = CharacterManager(self.provider, self.notepad, config={"max_active_characters": 2})
         for name in ("One", "Two", "Three"):
             manager.generate_character(
                 name=name,
@@ -127,7 +129,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(profile["quirk"], "Polishes a brass key")
         request = self.provider.generate.call_args.args[0]
         self.assertIn("Recover the starblade", request.prompt)
-        self.elements_provider.assert_called_once_with()
+        self.notepad.get_present_elements.assert_called_once_with()
 
     def test_uses_defaults_when_generation_fails(self) -> None:
         self.provider.generate.side_effect = RuntimeError("provider unavailable")
@@ -150,14 +152,12 @@ class TestCharacterManager(unittest.TestCase):
 
         self.assertIn("Created character 'Lyra'", result)
         self.assertEqual(self.manager.count(), 1)
-        self.on_change.assert_called_once_with()
 
     def test_empty_character_name_does_not_mutate_or_notify(self) -> None:
         result = self._create_character("   ")
 
         self.assertEqual(result, "Character name cannot be empty.")
         self.assertEqual(self.manager.count(), 0)
-        self.on_change.assert_not_called()
 
     def test_applies_at_most_two_character_updates(self) -> None:
         updates = [
@@ -175,18 +175,15 @@ class TestCharacterManager(unittest.TestCase):
 
         self.assertEqual([character["name"] for character in manifested], ["One", "Two"])
         self.assertEqual(self.manager.count(), 2)
-        self.assertEqual(self.on_change.call_count, 2)
 
     def test_clear_scene_returns_count_and_notifies(self) -> None:
         self._create_character("Lyra")
         self._create_character("Kaelen")
-        self.on_change.reset_mock()
 
         removed = self.manager.clear_scene()
 
         self.assertEqual(removed, 2)
         self.assertEqual(self.manager.get_present_characters(), [])
-        self.on_change.assert_called_once_with()
 
     def test_export_is_defensive_and_import_replaces_state(self) -> None:
         self._create_character("Lyra")

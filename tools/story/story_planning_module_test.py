@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.sessions import InMemorySessionService
-from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
@@ -22,7 +21,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         )
         client = MagicMock()
         with patch(
-            "tools.story.story_planning_module.genai.Client",
+            "tools.story.story_models.genai.Client",
             return_value=client,
         ) as create_client:
             self.assertIs(model.api_client, client)
@@ -36,7 +35,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
     def _make_module(
         self,
-        provider: TextResponseProvider,
         lore_library: LoreLibrary,
         config: dict | None = None,
     ) -> StoryPlanningModule:
@@ -53,7 +51,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             return StoryPlanningModule(
                 theater=theater,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=MagicMock(spec=CharacterManager),
                 session_service=MagicMock(spec=InMemorySessionService),
@@ -62,7 +59,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             )
 
     def test_uses_injected_provider_and_lore_library(self) -> None:
-        provider = MagicMock(spec=TextResponseProvider)
         lore_library = MagicMock(spec=LoreLibrary)
         character_manager = MagicMock(spec=CharacterManager)
         theater = MagicMock(spec=Theater)
@@ -80,7 +76,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             module = StoryPlanningModule(
                 theater=theater,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=character_manager,
                 session_service=session_service,
@@ -88,7 +83,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 notepad=Notepad(theater, canvas_manager=canvas),
             )
 
-        self.assertIs(module.text_response_provider, provider)
         self.assertIs(module.lore_library, lore_library)
         self.assertIs(module.character_manager, character_manager)
         self.assertIs(module.theater, theater)
@@ -104,11 +98,10 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         character_manager.lookup_character.assert_called_once_with("Lyra")
 
     def test_wraps_shared_lore_operations_with_its_own_run_budgets(self) -> None:
-        provider = MagicMock(spec=TextResponseProvider)
         lore_library = MagicMock(spec=LoreLibrary)
         lore_library.read_lore.return_value = "read result"
         lore_library.search_lore.return_value = "search result"
-        module = self._make_module(provider, lore_library)
+        module = self._make_module(lore_library)
 
         self.assertEqual([module.deep_read_lore("lore.txt") for _ in range(3)], [
             "read result",
@@ -130,7 +123,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertEqual(module.deep_search_lore("clue"), "search result")
 
     def test_rejects_missing_injected_dependencies(self) -> None:
-        provider = MagicMock(spec=TextResponseProvider)
         lore_library = MagicMock(spec=LoreLibrary)
         character_manager = MagicMock(spec=CharacterManager)
         theater = MagicMock(spec=Theater)
@@ -145,7 +137,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=None,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=character_manager,
                 session_service=session_service,
@@ -156,18 +147,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=theater,
                 canvas_manager=None,
-                text_response_provider=provider,
-                lore_library=lore_library,
-                character_manager=character_manager,
-                session_service=session_service,
-                session_id="planning-boundary-session",
-                notepad=notepad,
-            )
-        with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
-            StoryPlanningModule(  # type: ignore[arg-type]
-                theater=theater,
-                canvas_manager=canvas,
-                text_response_provider=None,
                 lore_library=lore_library,
                 character_manager=character_manager,
                 session_service=session_service,
@@ -178,7 +157,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=theater,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=None,
                 character_manager=character_manager,
                 session_service=session_service,
@@ -189,7 +167,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=theater,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=None,
                 session_service=session_service,
@@ -200,7 +177,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=theater,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=character_manager,
                 session_service=None,
@@ -211,7 +187,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=theater,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=character_manager,
                 session_service=session_service,
@@ -222,7 +197,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=theater,
                 canvas_manager=canvas,
-                text_response_provider=provider,
                 lore_library=lore_library,
                 character_manager=character_manager,
                 session_service=session_service,
@@ -233,7 +207,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
 class TestStoryPlanningModuleState(unittest.TestCase):
     def setUp(self) -> None:
-        self.provider = MagicMock(spec=TextResponseProvider)
         self.lore_library = MagicMock(spec=LoreLibrary)
         self.character_manager = MagicMock(spec=CharacterManager)
         self.theater = MagicMock(spec=Theater)
@@ -263,7 +236,6 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         return StoryPlanningModule(
             theater=theater or self.theater,
             canvas_manager=self.canvas,
-            text_response_provider=self.provider,
             lore_library=self.lore_library,
             character_manager=self.character_manager,
             session_service=self.session_service,
@@ -437,6 +409,18 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         self.assertEqual(plan["through_turn_id"], 1)
         self.assertNotIn("plot_beats", plan)
         self.assertNotIn("plot_beats", self.module.export_planning_state())
+
+    def test_tool_driven_commit_keeps_unmodified_stickies(self) -> None:
+        self.module.notepad.update_sticky_note("Quest", "The relic is now guarded")
+
+        self.assertTrue(self.module._commit_deep_plan_update(1, {"tool_updates": True}))
+        notes = {
+            note["topic"]: note["info"]
+            for note in self.module.notepad.get_present_sticky_notes()
+        }
+        self.assertEqual(notes["Quest"], "The relic is now guarded")
+        self.assertEqual(notes["HUD"], "HP: 100 | MP: 50")
+        self.assertEqual(self.module.get_deep_plan()["through_turn_id"], 1)
 
 
 if __name__ == "__main__":

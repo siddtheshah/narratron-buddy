@@ -7,12 +7,13 @@ import json
 import logging
 import re
 from threading import Lock
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from jinja2 import Template
 
 from providers import TextResponseProvider, TextResponseRequest
 from services.quirk_service import get_quirk_generator_service
+from tools.story.notepad import Notepad
 
 logger = logging.getLogger(__name__)
 
@@ -66,17 +67,17 @@ class CharacterManager:
     def __init__(
         self,
         text_response_provider: TextResponseProvider,
+        notepad: Notepad,
         config: Optional[Dict[str, Any]] = None,
-        elements_provider: Optional[Callable[[], list[dict[str, str]]]] = None,
-        on_change: Optional[Callable[[], None]] = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
+        if notepad is None:
+            raise ValueError("notepad is required.")
 
         self.text_response_provider = text_response_provider
+        self.notepad = notepad
         self.config = config or {}
-        self.elements_provider = elements_provider
-        self.on_change = on_change
         self.max_active_characters = max(
             1,
             min(
@@ -176,7 +177,7 @@ class CharacterManager:
         clean_tags = normalize_voice_tags(voice_tags)
 
         if not clean_personality or not clean_motivation or not clean_tags:
-            elements = self.elements_provider() if self.elements_provider else []
+            elements = self.notepad.get_present_elements()
             request = TextResponseRequest(
                 prompt=_CHARACTER_GEN_PROMPT_TEMPLATE.render(
                     name=clean_name,
@@ -246,7 +247,6 @@ class CharacterManager:
 
         with self._characters_lock:
             self._characters[profile["name"]] = profile
-        self._notify_change()
         tags = (
             f" [Voice: {', '.join(profile['voice_tags'])}]"
             if profile.get("voice_tags")
@@ -287,7 +287,6 @@ class CharacterManager:
         with self._characters_lock:
             count = len(self._characters)
             self._characters.clear()
-        self._notify_change()
         return count
 
     def export_characters(self) -> list[dict[str, Any]]:
@@ -325,10 +324,6 @@ class CharacterManager:
 
         with self._characters_lock:
             self._characters = imported
-
-    def _notify_change(self) -> None:
-        if self.on_change:
-            self.on_change()
 
 
 __all__ = [

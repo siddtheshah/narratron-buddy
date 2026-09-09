@@ -40,11 +40,14 @@ music:
     style: "no lyrics, instrumental focus, steady volume, 90 second duration, loopable ambiance"
 
 story_planning:
+    # Adventure planners validate each schema-backed sticky update. The normal
+    # live-agent notepad deliberately keeps this disabled.
+    enforce_structured: true
     max_named_elements: 5
     initial_elements: {}
-    # Optional schema-backed sticky contracts. Each topic declares an object
-    # JSON Schema, a conforming initial mapping, and an optional render string.
-    # When present, the deep planner must return this exact typed JSON shape.
+    # Optional schema-backed sticky contracts. Each topic declares field names,
+    # a conforming initial mapping, and an optional render string. The deep
+    # planner validates and updates these stickies independently.
     stickies: {}
     # List of sticky note keys/topics that the story planner must always retain and never drop
     required_stickies: []

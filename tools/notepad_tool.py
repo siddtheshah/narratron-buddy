@@ -19,6 +19,7 @@ class NotepadTool(BaseTools):
             theater,
             on_change=self.save_to_session_state,
             canvas_manager=canvas_manager,
+            enforce_structured=False,
         )
         self.reload_from_session_state()
         self.notepad.sync_story_state()

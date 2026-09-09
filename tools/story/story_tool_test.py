@@ -35,6 +35,7 @@ class TestStoryToolComposition(unittest.TestCase):
         lore_type.assert_called_once_with(theater=self.theater)
         character_type.assert_called_once_with(
             text_response_provider=self.provider,
+            notepad=tool.notepad,
             config={"session_id": "shared-session"},
         )
         planning_kwargs = planning_type.call_args.kwargs
@@ -43,9 +44,9 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertIs(response_kwargs["lore_library"], lore)
         self.assertIs(planning_kwargs["character_manager"], characters)
         self.assertIs(response_kwargs["character_manager"], characters)
-        self.assertIs(planning_kwargs["text_response_provider"], self.provider)
-        self.assertIs(response_kwargs["text_response_provider"], self.provider)
-        self.assertIs(response_kwargs["planning_module"], planning)
+        self.assertNotIn("text_response_provider", planning_kwargs)
+        self.assertNotIn("text_response_provider", response_kwargs)
+        self.assertNotIn("planning_module", response_kwargs)
         self.assertIs(planning_kwargs["notepad"], tool.notepad)
         self.assertIs(response_kwargs["notepad"], tool.notepad)
         self.assertIsNot(
@@ -65,26 +66,18 @@ class TestStoryToolComposition(unittest.TestCase):
         with (
             patch("tools.story.story_tool.CharacterManager") as character_type,
             patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule") as planning_type,
+            patch("tools.story.story_tool.StoryPlanningModule"),
             patch("tools.story.story_tool.StoryResponseModule") as response_type,
         ):
-            planning = planning_type.return_value
             response = response_type.return_value
-            characters = character_type.return_value
             tool = StoryTool(self.theater, self.canvas, self.provider)
 
-        self.assertIs(characters.elements_provider.__self__, tool)
-        self.assertIs(
-            characters.elements_provider.__func__,
-            StoryTool.get_present_elements,
-        )
-        self.assertIs(characters.on_change, response.save_to_session_state)
-        self.assertIs(planning.recent_story_log_fn, response._format_recent_story_log)
-        self.assertIs(planning.on_save_state, response.save_to_session_state)
+        self.assertIs(character_type.call_args.kwargs["notepad"], tool.notepad)
 
         callback = MagicMock()
         tool.on_scene_reaction = callback
-        self.assertIs(response.on_scene_reaction, callback)
+        self.assertIs(tool.on_scene_reaction, callback)
+        self.assertIs(response.on_scene_reaction.__self__, tool)
 
     def test_delegates_public_surface_to_response_module(self) -> None:
         with (

@@ -13,29 +13,28 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jinja2 import Template
-from pydantic import BaseModel, PrivateAttr
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
-from google.adk.models.google_llm import Gemini
 from google.adk.runners import RunConfig, Runner
 from google.adk.sessions import InMemorySessionService
-from google import genai
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import (
     Notepad,
 )
+from tools.story.story_models import (
+    DEFAULT_COMPACTION_TARGET_TOKENS,
+    DEFAULT_COMPACTION_TRIGGER_TOKENS,
+    DEFAULT_STORY_PLANNING_STYLE,
+    VertexGemini,
+)
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COMPACTION_TRIGGER_TOKENS = 12_000
-DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
-DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 DEFAULT_DEEP_THINKING_BUDGET = 2048
 DEFAULT_DEEP_MAX_OUTPUT_TOKENS = 6144
 DEFAULT_DEEP_PLANNER_TIMEOUT_SECONDS = 45.0
@@ -52,8 +51,7 @@ _DEEP_PLANNING_PROMPT_TEMPLATE = Template(
 """# Role & Mission
 You are the deep planner for an interactive adventure. You do not narrate the current scene and you never choose actions, speech, thoughts, or feelings for the player. Take a broad view of the player's accumulated actions, established lore, unresolved setups, off-screen actors, deadlines, and world consequences.
 
-You are the sole owner of Adventure Mode sticky notes. Produce the complete replacement sticky-note state after assimilating the committed turn below.
-Populate `sticky_notes` first and keep all strategic prose concise. A response without the complete sticky object is invalid and will not advance the queue.
+You are the sole owner of Adventure Mode sticky notes. Assimilate the committed turn by deciding which individual notes, if any, need an update. Use `update_sticky_note` once per changed sticky; do not replace or restate notes that did not change. Before updating a schema-backed sticky, call `check_schema` for that sticky and use its result to retry any rejected update.
 
 # Non-Negotiable Planning Rules
 - Committed events are immutable facts. Replan around them; never retcon them to protect an outline.
@@ -72,9 +70,9 @@ Populate `sticky_notes` first and keep all strategic prose concise. A response w
 (No deep plan exists yet. Bootstrap one from the lore, initial stickies, and committed turn.)
 {% endif -%}
 
-# Sticky State Contract
+# Sticky State Reference
 {% if sticky_schema_json -%}
-`sticky_notes` must be a JSON object keyed by the exact configured topics below. For topics with configured fields, return a JSON object of string values for each field. For single-value topics, return a string value. Return every configured topic and no others. Never encode this state as prose.
+Each topic below is independently validated by the notepad tool. Do not attempt to publish a complete `sticky_notes` object. Call `check_schema(topic)` immediately before each schema-backed update; for field-backed notes, its `info` argument must be a JSON object encoded as a string.
 {{ sticky_schema_json }}
 
 # Current Structured Sticky State
@@ -133,57 +131,30 @@ No new responder events are queued. Use this heartbeat for one conservative refi
 # Lore Tools
 Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
-# Output Requirements
-- `sticky_notes`: {% if sticky_schema_json %}the complete typed JSON object conforming exactly to the sticky contract{% else %}the complete set, at most {{ max_sticky_notes }} notes, including all required topics{% endif %}.
+# Completion
+After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
 """
 )
 
 
-class VertexGemini(Gemini):
-    project_id: Optional[str] = None
-    location: Optional[str] = None
-    _client_cache: dict = PrivateAttr(default_factory=dict)
-
-    @property
-    def api_client(self):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        if loop not in self._client_cache:
-            kwargs = {}
-            if self.project_id:
-                kwargs["project"] = self.project_id
-            if self.location:
-                kwargs["location"] = self.location
-            if kwargs:
-                kwargs["vertexai"] = True
-            self._client_cache[loop] = genai.Client(**kwargs)
-        return self._client_cache[loop]
-
-
 class StoryPlanningModule:
-    """Sole owner of sticky notes and background deep planning."""
+    """Sole owner of background deep planning."""
 
     def __init__(
         self,
         theater: Theater,
         canvas_manager: CanvasStateManager,
-        text_response_provider: TextResponseProvider,
         lore_library: LoreLibrary,
         character_manager: CharacterManager,
         session_service: InMemorySessionService,
         session_id: str,
         notepad: Notepad,
-        recent_story_log_fn: Optional[Callable[[], str]] = None,
-        on_save_state: Optional[Callable[[], None]] = None,
+        story_log_context_fn: Optional[Callable[[], str]] = None,
     ):
         if theater is None:
             raise ValueError("theater is required.")
         if canvas_manager is None:
             raise ValueError("canvas_manager is required.")
-        if text_response_provider is None:
-            raise ValueError("text_response_provider is required.")
         if lore_library is None:
             raise ValueError("lore_library is required.")
         if character_manager is None:
@@ -198,7 +169,6 @@ class StoryPlanningModule:
         self.theater = theater
         self.theater_id = getattr(theater, "theater_id", "")
         self.canvas_manager = canvas_manager
-        self.text_response_provider = text_response_provider
         self.lore_library = lore_library
         self.character_manager = character_manager
         self._deep_read_lore_calls_this_run = 0
@@ -206,13 +176,9 @@ class StoryPlanningModule:
         self._deep_lore_calls_lock = Lock()
         self.session_service = session_service
         self.session_id = str(session_id)
-        self.recent_story_log_fn = recent_story_log_fn
-        self.on_save_state = on_save_state
-
         self.notepad = notepad
+        self._story_log_context_fn = story_log_context_fn or (lambda: "")
         self.config = self.notepad.config
-        if self.notepad.on_change is None:
-            self.notepad.on_change = lambda: self.on_save_state() if self.on_save_state else None
 
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
@@ -361,7 +327,7 @@ class StoryPlanningModule:
 
     def _build_deep_planner_instruction(self, ctx: Any = None) -> str:
         lore_context = self.lore_library.get_lore_context()
-        recent_story_log = self.recent_story_log_fn() if self.recent_story_log_fn else ""
+        recent_story_log = self._story_log_context_fn()
         return (
             "You maintain the long-horizon plan for one interactive adventure. "
             "Return only the requested structured deep-plan update.\n\n"
@@ -394,9 +360,9 @@ class StoryPlanningModule:
                 self.deep_search_lore,
                 self.deep_read_lore,
                 self._lookup_character,
+                self.notepad.check_schema,
+                self.notepad.update_sticky_note,
             ],
-            output_schema=self.notepad.deep_plan_update_model,
-            output_key="deep_plan_update",
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
             generate_content_config=generate_content_config,
@@ -450,15 +416,31 @@ class StoryPlanningModule:
     ) -> bool:
         if not isinstance(raw_update, dict) or raw_update.get("error"):
             return False
-        update = self.notepad.deep_plan_update_model.model_validate(raw_update)
-        self.notepad.replace_from_deep_update(update)
+        # Tool-driven planning has already applied each accepted update. Keep
+        # the replacement path for importing older persisted plans and direct
+        # callers during the transition.
+        if not raw_update.get("tool_updates"):
+            update = self.notepad.deep_plan_update_model.model_validate(raw_update)
+            self.notepad.replace_from_deep_update(update)
 
         with self._deep_plan_lock:
             self._deep_plan_revision += 1
             self._deep_plan_through_turn_id = max(
                 self._deep_plan_through_turn_id, turn_id
             )
-            plan = update.model_dump(mode="json", by_alias=True)
+            if raw_update.get("tool_updates"):
+                plan = {
+                    "sticky_notes": (
+                        self.notepad.get_present_structured_sticky_notes()
+                        if self.notepad.sticky_definitions
+                        else [
+                            {"topic": note["topic"], "info": note["info"]}
+                            for note in self.notepad.get_present_sticky_notes()
+                        ]
+                    )
+                }
+            else:
+                plan = update.model_dump(mode="json", by_alias=True)
             plan["revision"] = self._deep_plan_revision
             plan["through_turn_id"] = self._deep_plan_through_turn_id
             if not self.notepad.sticky_definitions:
@@ -468,8 +450,7 @@ class StoryPlanningModule:
                 ]
             self._deep_plan = plan
 
-        if self.on_save_state:
-            self.on_save_state()
+
         logger.info(
             "[StoryPlanningModule] Deep plan revision=%d committed through turn=%d",
             self._deep_plan_revision,
@@ -611,46 +592,16 @@ class StoryPlanningModule:
                 if self._run_compression_config
                 else None
             )
-            session = await self.session_service.get_session(
-                app_name="narratron_story_deep_planner",
-                user_id="story_deep_planner",
-                session_id=self.session_id,
-            )
-            if session and session.state:
-                session.state.pop("deep_plan_update", None)
-
-            final_text = ""
             async for event in runner.run_async(
                 user_id="story_deep_planner",
                 session_id=self.session_id,
                 new_message=types.Content(role="user", parts=[types.Part(text=prompt_input)]),
                 run_config=run_config,
             ):
-                if event.is_final_response() and event.content and event.content.parts:
-                    final_text = "".join(part.text or "" for part in event.content.parts)
-
-            session = await self.session_service.get_session(
-                app_name="narratron_story_deep_planner",
-                user_id="story_deep_planner",
-                session_id=self.session_id,
-            )
-            stored_update = (session.state or {}).get("deep_plan_update") if session else None
-            if isinstance(stored_update, BaseModel):
-                raw_update = stored_update.model_dump()
-            elif isinstance(stored_update, dict):
-                raw_update = stored_update
-            elif isinstance(stored_update, str):
-                raw_update = json.loads(stored_update)
-            else:
-                raw_update = {}
-            if not raw_update:
-                raise ValueError(
-                    "Deep planner returned no fresh plan update "
-                    f"(final_response_chars={len(final_text)})."
-                )
-            return self.notepad.deep_plan_update_model.model_validate(raw_update).model_dump(
-                mode="json", by_alias=True
-            )
+                # Sticky writes occur through notepad tools as the agent runs.
+                pass
+            # A heartbeat that finds nothing to change is still a valid pass.
+            return {"tool_updates": True}
 
         try:
             return asyncio.run(

@@ -133,6 +133,32 @@ class TestNotepad(unittest.TestCase):
         self.assertEqual(reloaded.get_present_sticky_notes()[0]["info"], "HP: 8 | MP: 3")
         self.assertEqual(reloaded.get_present_structured_sticky_notes()["Secret"], "Disarmed")
 
+    def test_enforced_structured_updates_expose_schema_and_preserve_other_notes(self) -> None:
+        schema = {
+            "Stats": {
+                "fields": {"hp": "Hit points", "mp": "Magic points"},
+                "initial": {"hp": "10", "mp": "5"},
+                "render": "HP: {hp} | MP: {mp}",
+            },
+            "Location": {"initial": "Observatory"},
+        }
+        pad = self._make_notepad(
+            {"enforce_structured": True},
+            schema,
+        )
+
+        self.assertIn("requires a JSON object", pad.update_sticky_note("Stats", "HP: 9 | MP: 4"))
+        self.assertIn('"required": ["hp", "mp"]', pad.check_schema("Stats"))
+        self.assertIn(
+            "Updated sticky note 'Stats'",
+            pad.update_sticky_note("Stats", '{"hp": "9", "mp": "4"}'),
+        )
+        self.assertEqual(
+            pad.get_present_structured_sticky_notes(),
+            {"Stats": {"hp": "9", "mp": "4"}, "Location": "Observatory"},
+        )
+        self.assertIn("not configured", pad.update_sticky_note("Untracked", "value"))
+
     def test_syncs_canvas_story_state_from_the_internal_pad(self) -> None:
         canvas_manager = Mock(spec=CanvasStateManager)
         canvas_manager.story = StoryState()

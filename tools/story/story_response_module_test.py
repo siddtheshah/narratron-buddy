@@ -12,8 +12,7 @@ from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
-from tools.story.story_planning_module import StoryPlanningModule
-from tools.story.story_response_module import StoryLogEntry, StoryResponseModule
+from tools.story.story_response_module import StoryResponseModule
 
 
 class TestStoryResponseModuleDependencies(unittest.TestCase):
@@ -24,7 +23,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.provider = MagicMock(spec=TextResponseProvider)
         self.lore_library = MagicMock(spec=LoreLibrary)
-        self.planning_module = MagicMock(spec=StoryPlanningModule)
         self.character_manager = MagicMock(spec=CharacterManager)
         self.session_service = MagicMock(spec=InMemorySessionService)
         self.session_id = "response-boundary-session"
@@ -33,7 +31,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
     def test_uses_injected_dependencies(self) -> None:
         with (
             patch.object(StoryResponseModule, "_create_responder_agent"),
-            patch.object(StoryResponseModule, "_read_recent_story_log", return_value=[]),
             patch.object(StoryResponseModule, "reload_from_session_state"),
             patch("tools.story.story_response_module.App"),
             patch("tools.story.story_response_module.Runner"),
@@ -41,8 +38,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             module = StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                text_response_provider=self.provider,
-                planning_module=self.planning_module,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
@@ -50,8 +45,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 session_id=self.session_id,
             )
 
-        self.assertIs(module.text_response_provider, self.provider)
-        self.assertIs(module.planning_module, self.planning_module)
         self.assertIs(module.notepad, self.notepad)
         self.assertIs(module.lore_library, self.lore_library)
         self.assertIs(module.character_manager, self.character_manager)
@@ -59,36 +52,10 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.assertEqual(module.session_id, self.session_id)
 
     def test_rejects_missing_injected_dependencies(self) -> None:
-        with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
-            StoryResponseModule(  # type: ignore[arg-type]
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                text_response_provider=None,
-                planning_module=self.planning_module,
-                notepad=self.notepad,
-                lore_library=self.lore_library,
-                character_manager=self.character_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
-        with self.assertRaisesRegex(ValueError, "planning_module is required"):
-            StoryResponseModule(  # type: ignore[arg-type]
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                text_response_provider=self.provider,
-                planning_module=None,
-                notepad=self.notepad,
-                lore_library=self.lore_library,
-                character_manager=self.character_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
         with self.assertRaisesRegex(ValueError, "lore_library is required"):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                text_response_provider=self.provider,
-                planning_module=self.planning_module,
                 notepad=self.notepad,
                 lore_library=None,
                 character_manager=self.character_manager,
@@ -99,8 +66,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                text_response_provider=self.provider,
-                planning_module=self.planning_module,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=None,
@@ -111,8 +76,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                text_response_provider=self.provider,
-                planning_module=self.planning_module,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
@@ -123,8 +86,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                text_response_provider=self.provider,
-                planning_module=self.planning_module,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
@@ -135,8 +96,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                text_response_provider=self.provider,
-                planning_module=self.planning_module,
                 notepad=None,
                 lore_library=self.lore_library,
                 character_manager=self.character_manager,
@@ -165,26 +124,15 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.canvas.tool_response = MagicMock()
         self.provider = MagicMock(spec=TextResponseProvider)
         self.lore_library = LoreLibrary(theater=self.theater)
+        self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.character_manager = CharacterManager(
             text_response_provider=self.provider,
-            config=self.config,
-        )
-        self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
-        self.planning_module = StoryPlanningModule(
-            theater=self.theater,
-            canvas_manager=self.canvas,
-            text_response_provider=self.provider,
-            lore_library=self.lore_library,
-            character_manager=self.character_manager,
-            session_service=InMemorySessionService(),
-            session_id="response-test-planning-session",
             notepad=self.notepad,
+            config=self.config,
         )
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
-            text_response_provider=self.provider,
-            planning_module=self.planning_module,
             notepad=self.notepad,
             lore_library=self.lore_library,
             character_manager=self.character_manager,
@@ -224,10 +172,6 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         )
 
         self.assertIn("Lore details", self.lore_library.read_lore("lore.txt"))
-        self.assertIn(
-            "Lore details",
-            self.planning_module.deep_read_lore("lore.txt"),
-        )
 
         self.module.reset_lore_call_counts()
         self.assertIn("Lore details", self.module.read_lore("lore.txt"))
@@ -252,7 +196,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.module.clear_scene()
         self.assertEqual(self.module.get_present_characters(), [])
 
-    def test_resolves_user_action_and_queues_planning(self) -> None:
+    def test_resolves_user_action_does_not_coordinate_planning(self) -> None:
         scene_delta = {
             "narration": "You slip through the shadowy arches of the ruined shrine.",
             "dialogue": [{"speaker": "Kaelen", "text": "Stay quiet."}],
@@ -262,16 +206,10 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "scene_label": "Ruined Shrine",
         }
 
-        with (
-            patch.object(
-                self.module,
-                "_run_responder_agent",
-                return_value=scene_delta,
-            ),
-            patch.object(
-                self.planning_module,
-                "queue_deep_planning",
-            ) as queue_planning,
+        with patch.object(
+            self.module,
+            "_run_responder_agent",
+            return_value=scene_delta,
         ):
             result = self.module._resolve_user_action("I sneak into the shrine.")
 
@@ -281,28 +219,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             scene_delta["narration"],
             [{"speaker": "Kaelen", "text": "Stay quiet.", "kind": "speech"}],
         )
-        queue_planning.assert_called_once_with(
-            1,
-            "I sneak into the shrine.",
-            result,
-        )
 
-    def test_appends_and_reads_story_log_entry(self) -> None:
-        self.theater.append_output_file = MagicMock()
-        entry = StoryLogEntry(type="user_action", action="Look around")
-        appended = self.module._append_story_log_entry(entry)
-
-        self.assertIsNotNone(appended)
-        self.assertEqual(appended.action, "Look around")
-        self.theater.append_output_file.assert_called_once()
-        args, _ = self.theater.append_output_file.call_args
-        self.assertEqual(args[0], "story_log.jsonl")
-        self.assertIn("Look around", args[1])
-
-        self.theater.read_output_file_lines.return_value = [args[1]]
-        loaded = self.module._read_recent_story_log()
-        self.assertEqual(len(loaded), 1)
-        self.assertEqual(loaded[0].action, "Look around")
 
 
 if __name__ == "__main__":

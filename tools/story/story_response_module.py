@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
-from datetime import datetime, timezone
 import json
 import logging
-import math
 import os
 import re
 import threading
 from threading import Lock
 import time
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from jinja2 import Template
 from pydantic import BaseModel, Field
@@ -25,21 +23,20 @@ from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
-from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
-from tools.story.story_planning_module import (
-    StoryPlanningModule,
+from tools.story.story_models import (
     VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
     DEFAULT_COMPACTION_TARGET_TOKENS,
     DEFAULT_STORY_PLANNING_STYLE,
-    STORY_LOG_CONTEXT_LINES,
 )
 
+STORY_LOG_CONTEXT_LINES = 200
+
 logger = logging.getLogger(__name__)
+
 
 DEFAULT_THINKING_BUDGET = 1024
 USER_ACTION_TIMEOUT_SECONDS = 25.0
@@ -190,31 +187,6 @@ class StoryLogDieRoll(BaseModel):
         return getattr(self, item, default)
 
 
-class StoryResponseOutput(BaseModel):
-    narration: str
-    dialogue: List[Dict[str, str]] = Field(default_factory=list)
-    die_rolls: List[Dict[str, Any]] = Field(default_factory=list)
-
-    def __getitem__(self, item: str) -> Any:
-        return getattr(self, item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        return getattr(self, item, default)
-
-
-class StoryLogEntry(BaseModel):
-    type: Literal["user_action", "story_response", "story_plan"]
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    action: Optional[str] = None
-    output: Optional[StoryResponseOutput] = None
-
-    def __getitem__(self, item: str) -> Any:
-        return getattr(self, item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        return getattr(self, item, default)
-
-
 def build_story_context_prompt(
     elements: list[dict[str, str]],
     characters: list[dict[str, Any]],
@@ -241,25 +213,19 @@ def build_scene_reaction_prompt(
     ).strip()
 
 
-class StoryResponseModule(BaseTools):
+class StoryResponseModule:
     """Fast, authoritative turn responder with dependencies supplied by ``StoryTool``."""
 
     def __init__(
         self,
         theater: Theater,
         canvas_manager: CanvasStateManager,
-        text_response_provider: TextResponseProvider,
-        planning_module: StoryPlanningModule,
         notepad: Notepad,
         lore_library: LoreLibrary,
         character_manager: CharacterManager,
         session_service: InMemorySessionService,
         session_id: str,
     ):
-        if text_response_provider is None:
-            raise ValueError("text_response_provider is required.")
-        if planning_module is None:
-            raise ValueError("planning_module is required.")
         if notepad is None:
             raise ValueError("notepad is required.")
         if lore_library is None:
@@ -271,14 +237,13 @@ class StoryResponseModule(BaseTools):
         if not session_id:
             raise ValueError("session_id is required.")
 
-        super().__init__(
-            theater=theater,
-            canvas_manager=canvas_manager,
-        )
-
-        subconfig = self.config.get("story_planning", self.config) if "story_planning" in self.config else self.config
+        self.theater = theater
+        self.canvas_manager = canvas_manager
+        raw_config = theater.config() or {}
+        subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
         self.config = subconfig if isinstance(subconfig, dict) else {}
-        self.text_response_provider = text_response_provider
+        self._in_flight_tools: set[str] = set()
+        self._in_flight_lock = Lock()
 
         self.lore_library = lore_library
         self.character_manager = character_manager
@@ -307,18 +272,6 @@ class StoryResponseModule(BaseTools):
         self._user_input_lock: Lock = Lock()
         self._last_voice_input_log_time: float = -float("inf")
 
-        # Cooldowns
-        self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
-        self.action_cooldown_base_seconds: float = max(
-            0.0, float(self.config.get("action_cooldown_base_seconds", self.cooldown_duration or 10.0))
-        )
-        self.action_cooldown_words_per_second: float = max(
-            1.0, float(self.config.get("action_cooldown_words_per_second", 5.0))
-        )
-        self.action_cooldown_max_seconds: float = max(
-            self.action_cooldown_base_seconds,
-            float(self.config.get("action_cooldown_max_seconds", 30.0)),
-        )
         self.user_action_timeout_seconds: float = USER_ACTION_TIMEOUT_SECONDS
 
         # Session & ADK
@@ -361,11 +314,6 @@ class StoryResponseModule(BaseTools):
             self.config.get("on_story_response_completed")
         )
 
-        # Story log
-        self._story_log_lock = Lock()
-        self._recent_story_log = self._read_recent_story_log()
-
-        self.planning_module = planning_module
         self.notepad = notepad
 
         # Fast responder runner
@@ -384,32 +332,22 @@ class StoryResponseModule(BaseTools):
         self.reload_from_session_state()
 
     @property
-    def _deep_plan(self) -> Dict[str, Any]:
-        return self.planning_module._deep_plan
+    def theater_id(self) -> str:
+        return getattr(self.theater, "theater_id", "")
 
-    @property
-    def _deep_plan_lock(self) -> Lock:
-        return self.planning_module._deep_plan_lock
+    def acquire_in_flight(self, tool_name: str) -> bool:
+        with self._in_flight_lock:
+            if tool_name in self._in_flight_tools:
+                return False
+            self._in_flight_tools.add(tool_name)
+            return True
 
-    @property
-    def deep_planning_enabled(self) -> bool:
-        return self.planning_module.deep_planning_enabled
+    def release_in_flight(self, tool_name: str) -> None:
+        with self._in_flight_lock:
+            self._in_flight_tools.discard(tool_name)
 
-    def get_deep_plan(self) -> Dict[str, Any]:
-        return self.planning_module.get_deep_plan()
-
-    def wait_for_deep_planning(
-        self, timeout: float = 5.0, target_turn_id: Optional[int] = None
-    ) -> bool:
-        return self.planning_module.wait_for_deep_planning(timeout, target_turn_id)
-
-    def _queue_deep_planning(
-        self, turn_id: int, action: str, result: Dict[str, Any]
-    ) -> threading.Thread:
-        return self.planning_module.queue_deep_planning(turn_id, action, result)
 
     # Shared Lore delegations to lore_library
-    @logged_tool_call
     def read_lore(self, document: str = "") -> str:
         with self._read_lore_lock:
             if self._read_lore_calls_this_turn >= MAX_READ_LORE_CALLS_PER_TURN:
@@ -438,7 +376,6 @@ class StoryResponseModule(BaseTools):
             )
         return result
 
-    @logged_tool_call
     def search_lore(self, query: str) -> str:
         with self._search_lore_lock:
             if self._search_lore_calls_this_turn >= MAX_SEARCH_LORE_CALLS_PER_TURN:
@@ -475,12 +412,6 @@ class StoryResponseModule(BaseTools):
                 "return the scene reaction JSON.]"
             )
         return result
-
-    def deep_read_lore(self, document: str = "") -> str:
-        return self.planning_module.deep_read_lore(document)
-
-    def deep_search_lore(self, query: str) -> str:
-        return self.planning_module.deep_search_lore(query)
 
     def clear_lore_cache(self) -> None:
         self.lore_library.clear_lore_cache()
@@ -589,12 +520,6 @@ class StoryResponseModule(BaseTools):
     def is_action_in_flight(self) -> bool:
         return self.is_in_flight("process_user_action")
 
-    def get_user_action_cooldown_seconds(self) -> float:
-        extra_seconds = math.ceil(
-            self._last_action_response_word_count / self.action_cooldown_words_per_second
-        )
-        return min(self.action_cooldown_max_seconds, self.action_cooldown_base_seconds + extra_seconds)
-
     # Exposed Agent tools
     def get_tools(self) -> List[Any]:
         if self.adventure_mode:
@@ -610,7 +535,6 @@ class StoryResponseModule(BaseTools):
         with self._die_rolls_lock:
             return [dict(r) for r in self._die_rolls_this_turn]
 
-    @logged_tool_call
     def roll_dice(
         self,
         sides: int = 20,
@@ -667,11 +591,9 @@ class StoryResponseModule(BaseTools):
     def get_present_characters(self) -> list[dict[str, Any]]:
         return self.character_manager.get_present_characters()
 
-    @logged_tool_call
     def lookup_character(self, query: str = "") -> str:
         return self.character_manager.lookup_character(query)
 
-    @logged_tool_call
     def generate_character_profile(
         self,
         name: str,
@@ -708,7 +630,6 @@ class StoryResponseModule(BaseTools):
             voice_tags=voice_tags,
         )
 
-    @logged_tool_call
     def clear_scene(self) -> str:
         """Remove characters from the current scene while preserving durable story context."""
         char_count = self.character_manager.clear_scene()
@@ -718,81 +639,6 @@ class StoryResponseModule(BaseTools):
             self.theater_id or "default",
         )
         return f"Cleared {char_count} character(s) from the scene; sticky notes and story context were preserved."
-
-    # Story Log
-    def _read_recent_story_log(self) -> List[StoryLogEntry]:
-        if not self.theater or not self.theater_id:
-            return []
-        try:
-            if hasattr(self.theater, "read_output_file_lines"):
-                raw_lines = self.theater.read_output_file_lines("story_log.jsonl")
-            elif hasattr(self.theater, "output_dir"):
-                path = self.theater.output_dir() / "story_log.jsonl"
-                if path.is_file():
-                    with open(path, "r", encoding="utf-8", errors="replace") as f:
-                        raw_lines = f.readlines()
-                else:
-                    raw_lines = []
-            else:
-                raw_lines = []
-            entries: List[StoryLogEntry] = []
-            for line in raw_lines[-STORY_LOG_CONTEXT_LINES:]:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entries.append(StoryLogEntry.model_validate_json(line))
-                except Exception as e:
-                    logger.warning("[StoryResponseModule] Failed to validate story log line: %s", e)
-            return entries
-        except Exception as exc:
-            logger.warning("[StoryResponseModule] Failed to read theater story log: %s", exc)
-            return []
-
-    def _append_story_log_entry(self, entry: StoryLogEntry | Dict[str, Any]) -> Optional[StoryLogEntry]:
-        if not isinstance(entry, StoryLogEntry):
-            try:
-                entry = StoryLogEntry.model_validate(entry)
-            except Exception as exc:
-                logger.warning("[StoryResponseModule] Invalid StoryLogEntry: %s", exc)
-                return None
-
-        with self._story_log_lock:
-            self._recent_story_log.append(entry)
-            if len(self._recent_story_log) > STORY_LOG_CONTEXT_LINES:
-                self._recent_story_log = self._recent_story_log[-STORY_LOG_CONTEXT_LINES:]
-
-        if self.theater and self.theater_id:
-            try:
-                if hasattr(self.theater, "append_output_file"):
-                    self.theater.append_output_file("story_log.jsonl", entry.model_dump_json() + "\n")
-                elif hasattr(self.theater, "output_dir"):
-                    out_path = self.theater.output_dir() / "story_log.jsonl"
-                    out_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(out_path, "a", encoding="utf-8") as f:
-                        f.write(entry.model_dump_json() + "\n")
-            except Exception:
-                logger.exception("[StoryResponseModule] Failed to append theater story log")
-        return entry
-
-    def _format_recent_story_log(self) -> str:
-        with self._story_log_lock:
-            entries = list(self._recent_story_log)
-        lines: List[str] = []
-        for entry in entries:
-            if entry.type == "user_action":
-                lines.append(f"Player: {entry.action}")
-            elif entry.type == "story_plan" and entry.output:
-                for roll in entry.output.die_rolls:
-                    lines.append(f"Roll: {roll.get('count', 1)}d{roll.get('sides', 20)} -> {roll.get('total', 0)}")
-                if entry.output.narration:
-                    lines.append(f"Narration: {entry.output.narration}")
-                for dlg in entry.output.dialogue:
-                    speaker = dlg.get("speaker") if isinstance(dlg, dict) else getattr(dlg, "speaker", "")
-                    text = dlg.get("text") if isinstance(dlg, dict) else getattr(dlg, "text", "")
-                    if text:
-                        lines.append(f"Dialogue — {speaker}: {text}")
-        return "\n".join(lines)
 
     # ADK Responder Agent
     def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
@@ -843,12 +689,6 @@ class StoryResponseModule(BaseTools):
             characters=snapshot["characters"],
             total_characters=snapshot["total_characters"],
         )
-        recent_story_log = self._format_recent_story_log()
-        if recent_story_log:
-            responder_context += (
-                f"\n\nRecent Story Log (last {STORY_LOG_CONTEXT_LINES} entries):\n"
-                f"{recent_story_log}"
-            )
         return build_scene_reaction_prompt(
             context=responder_context,
             style=self.style,
@@ -895,7 +735,6 @@ class StoryResponseModule(BaseTools):
         self._responder_runner = None
         self._responder_agent = None
         self._responder_app = None
-        self._recent_story_log = self._read_recent_story_log()
         self._get_or_create_responder_runner()
 
     def _get_or_create_responder_runner(self) -> Runner:
@@ -1047,11 +886,6 @@ class StoryResponseModule(BaseTools):
             message_type=message_type,
         )
 
-    @with_cooldown(
-        action_desc="resolving story update",
-        duration=lambda tools: tools.get_user_action_cooldown_seconds(),
-        tool_name="process_user_action",
-    )
     def _process_user_action(
         self, user_action: str, nudge: str = "", message_type: str = ""
     ) -> Dict[str, Any]:
@@ -1081,9 +915,6 @@ class StoryResponseModule(BaseTools):
                 )
             }
 
-        log_action = f"<{str(message_type).strip()}>" if str(message_type).strip() else action
-        self._append_story_log_entry(StoryLogEntry(type="user_action", action=log_action))
-
         with self._user_input_lock:
             if self.require_user_input:
                 self._user_input_detected = False
@@ -1100,16 +931,6 @@ class StoryResponseModule(BaseTools):
                 self.release_in_flight("process_user_action")
                 if self.canvas_manager and hasattr(self.canvas_manager, "tool_response"):
                     self.canvas_manager.tool_response.set_activity("user_action", active=False)
-
-            plan_output = None
-            if isinstance(result, dict) and "error" not in result:
-                plan_output = StoryResponseOutput(
-                    narration=str(result.get("narration") or "").strip(),
-                    dialogue=result.get("dialogue") if isinstance(result.get("dialogue"), list) else [],
-                    die_rolls=result.get("die_rolls") if isinstance(result.get("die_rolls"), list) else [],
-                )
-
-            self._append_story_log_entry(StoryLogEntry(type="story_response", output=plan_output))
 
             callback = self.on_scene_reaction
             if callback and result is not None:
@@ -1149,7 +970,7 @@ class StoryResponseModule(BaseTools):
             self._turn_id += 1
             turn_id = self._turn_id
 
-        deep_plan_revision_used = self.get_deep_plan().get("revision", 0)
+        deep_plan_revision_used = 0
         scene_name = str(parsed.get("scene_label") or "").strip()
         reference_images = parsed.get("reference_images") or []
         result = {
@@ -1167,10 +988,6 @@ class StoryResponseModule(BaseTools):
         }
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
-        last_action_time = self._last_call_times.get("process_user_action")
-        if last_action_time is not None:
-            remaining = self.get_user_action_cooldown_seconds() - (time.time() - last_action_time)
-            self._schedule_cooldown_timer("process_user_action", remaining)
         self._publish_scene(narration, dialogue)
         self.save_to_session_state()
         logger.debug(
@@ -1185,8 +1002,6 @@ class StoryResponseModule(BaseTools):
             except Exception:
                 logger.exception("[StoryResponseModule] Story response usage callback failed")
 
-        # Communicate resolved turn to the background planning module!
-        self.planning_module.queue_deep_planning(turn_id, action, result)
         return result
 
     @staticmethod
@@ -1202,8 +1017,8 @@ class StoryResponseModule(BaseTools):
         return len(re.findall(r"\b[\w'-]+\b", " ".join(text_parts)))
 
     # Session State
-    def export_story_planning_state(self) -> Dict[str, Any]:
-        planning_state = self.planning_module.export_planning_state()
+    def export_response_state(self) -> Dict[str, Any]:
+        planning_state = self.notepad.export_state()
         with self._turn_id_lock:
             turn_id = self._turn_id
 
@@ -1215,11 +1030,11 @@ class StoryResponseModule(BaseTools):
         })
         return result
 
-    def import_story_planning_state(self, state: Dict[str, Any]) -> None:
+    def import_response_state(self, state: Dict[str, Any]) -> None:
         if not isinstance(state, dict):
             return
 
-        self.planning_module.import_planning_state(state)
+        self.notepad.import_state(state)
         self.character_manager.import_characters(state.get("characters", []))
 
         with self._turn_id_lock:
@@ -1235,14 +1050,14 @@ class StoryResponseModule(BaseTools):
                 return
             sp_state = self.canvas_manager.story.get_story_planning_state()
             if sp_state:
-                self.import_story_planning_state(sp_state)
+                self.import_response_state(sp_state)
                 return
 
             saved_notes = self.canvas_manager.story.get_sticky_notes()
             if self.notepad.sticky_definitions:
                 return
             if saved_notes:
-                self.planning_module.import_planning_state({"sticky_notes": saved_notes})
+                self.notepad.import_state({"sticky_notes": saved_notes})
         except Exception as e:
             logger.warning(
                 "[StoryResponseModule] Failed to reload story planning state from session state: %s",
@@ -1252,7 +1067,7 @@ class StoryResponseModule(BaseTools):
     def save_to_session_state(self) -> None:
         try:
             if self.canvas_manager and hasattr(self.canvas_manager, "story"):
-                self.canvas_manager.story.set_story_planning_state(self.export_story_planning_state())
+                self.canvas_manager.story.set_story_planning_state(self.export_response_state())
         except Exception as e:
             logger.warning(
                 "[StoryResponseModule] Failed to save story planning state to session state: %s",

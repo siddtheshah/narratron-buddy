@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+import json
 import logging
 from pathlib import Path
 import re
@@ -154,6 +155,7 @@ class Notepad:
         *,
         canvas_manager: CanvasStateManager,
         on_change: Optional[Callable[[], None]] = None,
+        enforce_structured: Optional[bool] = None,
     ) -> None:
         if theater is None:
             raise ValueError("theater is required.")
@@ -163,6 +165,13 @@ class Notepad:
         raw_config = theater.config() or {}
         subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
         self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
+        # Normal narration accepts free-form notes. Adventure planning opts in
+        # so its agent must satisfy the per-sticky contracts.
+        self.enforce_structured = (
+            bool(self.config.get("enforce_structured", False))
+            if enforce_structured is None
+            else bool(enforce_structured)
+        )
         self._sticky_definitions: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self._deep_plan_update_model: type[BaseModel] = DeepPlanUpdate
         self.on_change = on_change
@@ -324,6 +333,15 @@ class Notepad:
             return f"Error: Sticky note topic must be {MAX_STICKY_NOTE_TOPIC_CHARS} characters or fewer."
         if len(clean_info) > MAX_STICKY_NOTE_INFO_CHARS:
             return f"Error: Sticky note info must be {MAX_STICKY_NOTE_INFO_CHARS} characters or fewer."
+        structured_value: Any = None
+        if self.enforce_structured and self._sticky_definitions:
+            validation_error, structured_value = self._validate_structured_update(
+                clean_topic, clean_info
+            )
+            if validation_error:
+                return validation_error
+            clean_info = self._render(clean_topic, structured_value)
+
         dropped_topic = None
         with self._sticky_notes_lock:
             is_update = clean_topic in self._sticky_notes
@@ -339,6 +357,8 @@ class Notepad:
                     if dropped_topic is not None:
                         del self._sticky_notes[dropped_topic]
                 self._sticky_notes[clean_topic] = clean_info
+            if structured_value is not None:
+                self._structured_sticky_notes[clean_topic] = structured_value
             count = len(self._sticky_notes)
         self._changed()
         action = "Updated" if is_update else "Added"
@@ -349,6 +369,75 @@ class Notepad:
         else:
             warning = ""
         return f"{action} sticky note '{clean_topic}'.{warning}"
+
+    def _validate_structured_update(self, topic: str, info: str) -> tuple[Optional[str], Any]:
+        """Validate one tool update without requiring every sticky at once."""
+        definition = self._sticky_definitions.get(topic)
+        if definition is None:
+            return (
+                f"Error: Sticky note '{topic}' is not configured. "
+                "Call check_schema with its exact topic first.",
+                None,
+            )
+        fields = definition.get("fields")
+        if not fields:
+            return None, info
+        try:
+            value = json.loads(info)
+        except json.JSONDecodeError:
+            return (
+                f"Error: Sticky note '{topic}' requires a JSON object. "
+                f"Call check_schema('{topic}') for the required fields.",
+                None,
+            )
+        if not isinstance(value, dict):
+            return f"Error: Sticky note '{topic}' requires a JSON object.", None
+        expected = set(fields)
+        actual = set(value)
+        missing, extra = expected - actual, actual - expected
+        if missing or extra:
+            details = []
+            if missing:
+                details.append(f"missing fields: {', '.join(sorted(missing))}")
+            if extra:
+                details.append(f"unexpected fields: {', '.join(sorted(extra))}")
+            return (
+                f"Error: Sticky note '{topic}' has {'; '.join(details)}. "
+                f"Call check_schema('{topic}') and retry.",
+                None,
+            )
+        non_strings = [field for field in fields if not isinstance(value[field], str)]
+        if non_strings:
+            return (
+                f"Error: Sticky note '{topic}' fields must be strings: "
+                f"{', '.join(non_strings)}. Call check_schema('{topic}') and retry.",
+                None,
+            )
+        return None, {field: value[field] for field in fields}
+
+    def check_schema(self, topic: str) -> str:
+        """Return the exact update contract for one configured sticky note."""
+        clean_topic = str(topic or "").strip()
+        definition = self._sticky_definitions.get(clean_topic)
+        if definition is None:
+            available = ", ".join(self._sticky_definitions) or "none configured"
+            return f"Error: No schema is configured for '{clean_topic}'. Available topics: {available}."
+        fields = definition.get("fields")
+        contract: Dict[str, Any] = {
+            "topic": clean_topic,
+            "description": definition.get("description", ""),
+            "type": "object" if fields else "string",
+        }
+        if fields:
+            contract["required"] = list(fields)
+            contract["properties"] = {
+                field: {"type": "string", "description": description}
+                for field, description in fields.items()
+            }
+            contract["update_format"] = "Pass info as a JSON object encoded as a string."
+        else:
+            contract["update_format"] = "Pass info as a plain string."
+        return json.dumps(contract, ensure_ascii=False)
 
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
         with self._sticky_notes_lock:
