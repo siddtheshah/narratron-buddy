@@ -56,8 +56,11 @@ _STORY_CONTEXT_PROMPT_TEMPLATE = Template(
 (No active sticky notes)
 {% else -%}
 {% for elem in elements -%}
-- {{ elem.topic or elem.name }}: {{ elem.info or elem.content }}
+- {{ elem.topic or elem.name }}{% if (elem.topic or elem.name) in changed_topics %} [↑ UPDATED]{% endif %}: {{ elem.info or elem.content }}
 {% endfor -%}
+{% if changed_topics %}
+(Notes marked [↑ UPDATED] were changed by the planning module since your last turn. Pay close attention to them.)
+{% endif -%}
 {% endif -%}
 
 Active characters, personalities, motivations & distinct quirks:
@@ -80,7 +83,9 @@ _SCENE_REACTION_PROMPT_TEMPLATE = Template(
 You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
 A separate deep-planning agent owns long-term continuity through sticky notes. Treat those notes as authoritative planning guidance, but never modify them or create a competing long-term plan during this turn.
+Do not worry about any instructions related to updating sticky notes. That is handled by your other half.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
+
 
 # Story-Planning Style (User Specified)
 {{ style }}
@@ -191,11 +196,13 @@ def build_story_context_prompt(
     elements: list[dict[str, str]],
     characters: list[dict[str, Any]],
     total_characters: Optional[int] = None,
+    changed_topics: frozenset[str] = frozenset(),
 ) -> str:
     return _STORY_CONTEXT_PROMPT_TEMPLATE.render(
         elements=elements,
         characters=characters,
         total_characters=total_characters,
+        changed_topics=changed_topics,
     ).strip()
 
 
@@ -677,6 +684,8 @@ class StoryResponseModule:
         )
 
     def _build_responder_instruction(self, ctx: Any = None) -> str:
+        changed_topics = self.notepad.get_recently_changed_topics()
+        self.notepad.mark_stickies_read()
         snapshot = {
             "elements": self.notepad.get_present_elements(),
             "characters": self.get_present_characters(),
@@ -688,6 +697,7 @@ class StoryResponseModule:
             elements=snapshot["elements"],
             characters=snapshot["characters"],
             total_characters=snapshot["total_characters"],
+            changed_topics=changed_topics,
         )
         return build_scene_reaction_prompt(
             context=responder_context,

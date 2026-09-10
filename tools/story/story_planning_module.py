@@ -60,8 +60,9 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 - Audit earlier player behavior when lore calls for counter-plotting. Opposition should investigate evidence the player plausibly left, but must not gain impossible knowledge.
 - Use the author-defined sticky fields as the only durable planning vocabulary. Do not invent a parallel generic summary, thread tracker, consequence list, clock, or faction model.
 - Think across short, medium, and long horizons, but publish only the configured sticky state.
-- Do not reveal private plans merely because they are in planning state. Only sticky notes are supplied to the turn responder.
-- Every sticky note must reflect established state or actionable pressure. Do not put a planned twist into a player-facing sticky before it becomes established, except in an explicitly configured hidden tracking sticky intended for the story system.
+- If there are stickies that are for plot building or reveals, these are a priority for you to set up and maintain.
+- For stickies that track numeric state, ensure you follow the appropriate rules defined in the lore to faithfully update them.
+
 
 # Current Deep Plan
 {% if deep_plan_json -%}
@@ -84,16 +85,7 @@ Each topic below is independently validated by the notepad tool. Do not attempt 
 {% else -%}
 (No active sticky notes)
 {% endfor -%}
-
-# Required Sticky Notes
-The following topics must all be present in the complete output. You may reorganize their prose or `|`-separated structure when that makes the state clearer:
-{% for topic in required_stickies -%}
-- {{ topic }}
-{% else -%}
-(None)
-{% endfor -%}
 {% endif -%}
-
 # Heartbeat Work
 This is one shallow, bounded planning heartbeat. Assimilate only the supplied queue batch, then return a useful complete plan without exhaustive deliberation. Later heartbeats can refine it.
 {% if turn_events -%}
@@ -581,7 +573,6 @@ class StoryPlanningModule:
             )
             if self.notepad.sticky_definitions
             else "",
-            required_stickies=self.notepad.get_required_sticky_notes(),
             turn_events=event_payloads,
             max_sticky_notes=self.notepad.max_sticky_notes,
         ).strip()

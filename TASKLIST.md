@@ -11,7 +11,6 @@
 ## Refactors
 - [ ] Fix Deep planner config layout
 - [ ] Eliminate traces of 'named element' terminology.
-- [ ] Add separate notepad tool for non-adv mode.
 - [ ] Refactor canvas.html to be more modular.
 
 ## Performance

@@ -152,8 +152,8 @@ class Notepad:
     def __init__(
         self,
         theater: Theater,
-        *,
         canvas_manager: CanvasStateManager,
+        *,
         on_change: Optional[Callable[[], None]] = None,
         enforce_structured: Optional[bool] = None,
     ) -> None:
@@ -180,6 +180,7 @@ class Notepad:
         self._structured_sticky_notes: OrderedDict[str, Any] = OrderedDict()
         self._required_stickies: OrderedDict[str, str] = OrderedDict()
         self._sticky_notes_lock = RLock()
+        self._recently_changed: set[str] = set()
 
         self.max_sticky_notes = DEFAULT_MAX_STICKY_NOTES
         self.configure_schema(self._read_planning_schema())
@@ -359,6 +360,7 @@ class Notepad:
                 self._sticky_notes[clean_topic] = clean_info
             if structured_value is not None:
                 self._structured_sticky_notes[clean_topic] = structured_value
+            self._recently_changed.add(clean_topic)
             count = len(self._sticky_notes)
         self._changed()
         action = "Updated" if is_update else "Added"
@@ -461,8 +463,12 @@ class Notepad:
         with self._sticky_notes_lock:
             if self._sticky_definitions:
                 structured = update.model_dump(mode="json", by_alias=True)["sticky_notes"]
+                previous_rendered = {topic: self._render(topic, value) for topic, value in self._structured_sticky_notes.items()}
                 self._structured_sticky_notes = OrderedDict(structured)
                 self._sticky_notes = OrderedDict((topic, self._render(topic, value)) for topic, value in structured.items())
+                for topic, rendered in self._sticky_notes.items():
+                    if previous_rendered.get(topic) != rendered:
+                        self._recently_changed.add(topic)
             elif raw_notes:
                 previous = dict(self._sticky_notes)
                 notes: OrderedDict[str, str] = OrderedDict()
@@ -474,6 +480,9 @@ class Notepad:
                         notes[topic] = info
                 for topic, default in self._required_stickies.items():
                     notes.setdefault(topic, previous.get(topic, default))
+                for topic, info in notes.items():
+                    if previous.get(topic) != info:
+                        self._recently_changed.add(topic)
                 self._sticky_notes = notes
                 self._restore_required_and_enforce_limit()
         self.sync_story_state()
@@ -524,6 +533,16 @@ class Notepad:
                     if topic and info:
                         self._sticky_notes[topic] = info
             self._restore_required_and_enforce_limit()
+
+    def get_recently_changed_topics(self) -> frozenset[str]:
+        """Return the set of sticky topics modified since the last call to mark_stickies_read()."""
+        with self._sticky_notes_lock:
+            return frozenset(self._recently_changed)
+
+    def mark_stickies_read(self) -> None:
+        """Clear the recently-changed set; call after the responder has snapshotted the changed topics."""
+        with self._sticky_notes_lock:
+            self._recently_changed.clear()
 
     def _changed(self) -> None:
         self.sync_story_state()

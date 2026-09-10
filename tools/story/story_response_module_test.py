@@ -12,7 +12,7 @@ from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
-from tools.story.story_response_module import StoryResponseModule
+from tools.story.story_response_module import StoryResponseModule, build_story_context_prompt
 
 
 class TestStoryResponseModuleDependencies(unittest.TestCase):
@@ -220,6 +220,32 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             [{"speaker": "Kaelen", "text": "Stay quiet.", "kind": "speech"}],
         )
 
+
+class TestBuildStoryContextPrompt(unittest.TestCase):
+    def _elements(self, *topics_infos: tuple[str, str]) -> list[dict[str, str]]:
+        return [{"topic": t, "info": i, "name": t, "content": i} for t, i in topics_infos]
+
+    def test_annotates_changed_topics_and_omits_unchanged(self) -> None:
+        elements = self._elements(("HUD", "HP: 9"), ("Quest", "Find the key"), ("Location", "Observatory"))
+        prompt = build_story_context_prompt(
+            elements=elements,
+            characters=[],
+            changed_topics=frozenset({"HUD", "Location"}),
+        )
+        self.assertIn("HUD [\u2191 UPDATED]", prompt)
+        self.assertIn("Location [\u2191 UPDATED]", prompt)
+        self.assertNotIn("Quest [\u2191 UPDATED]", prompt)
+        self.assertIn("Pay close attention", prompt)
+
+    def test_no_annotation_when_no_changed_topics(self) -> None:
+        elements = self._elements(("HUD", "HP: 10"))
+        prompt = build_story_context_prompt(
+            elements=elements,
+            characters=[],
+            changed_topics=frozenset(),
+        )
+        self.assertNotIn("UPDATED", prompt)
+        self.assertNotIn("Pay close attention", prompt)
 
 
 if __name__ == "__main__":

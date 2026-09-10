@@ -192,6 +192,48 @@ class TestNotepad(unittest.TestCase):
             [("Quest", "Reach the observatory")],
         )
 
+    def test_recently_changed_tracks_updates_and_is_cleared_on_read(self) -> None:
+        pad = self._make_notepad(
+            {
+                "max_sticky_notes": 3,
+                "initial_sticky_notes": {"HUD": "HP: 10"},
+            }
+        )
+        # Initial stickies should NOT appear in recently-changed.
+        self.assertEqual(pad.get_recently_changed_topics(), frozenset())
+
+        pad.update_sticky_note("HUD", "HP: 9")
+        pad.update_sticky_note("Quest", "Reach the gate")
+        changed = pad.get_recently_changed_topics()
+        self.assertIn("HUD", changed)
+        self.assertIn("Quest", changed)
+
+        pad.mark_stickies_read()
+        self.assertEqual(pad.get_recently_changed_topics(), frozenset())
+
+    def test_recently_changed_tracks_deep_update_only_for_modified_values(self) -> None:
+        pad = self._make_notepad(
+            {
+                "max_sticky_notes": 3,
+                "initial_sticky_notes": {"HUD": "HP: 10", "Quest": "Find key"},
+            }
+        )
+        pad.mark_stickies_read()  # clear any initial pollution
+
+        from types import SimpleNamespace
+
+        pad.replace_from_deep_update(
+            SimpleNamespace(
+                sticky_notes=[
+                    {"topic": "HUD", "info": "HP: 10"},   # unchanged
+                    {"topic": "Quest", "info": "Gate opened"},  # changed
+                ]
+            )
+        )
+        changed = pad.get_recently_changed_topics()
+        self.assertNotIn("HUD", changed)
+        self.assertIn("Quest", changed)
+
 
 if __name__ == "__main__":
     unittest.main()
