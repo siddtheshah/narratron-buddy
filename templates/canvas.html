@@ -5826,11 +5826,9 @@
                 stopMicStream();
             } else {
                 try {
-                    if (!isAgentStarted) {
-                        isMicAwaiting = true;
-                        updateMicToggleUI();
-                        await startAgentTheater();
-                    }
+                    isMicAwaiting = true;
+                    updateMicToggleUI();
+                    if (!isAgentStarted) await startAgentTheater();
                     await connectAgent();
                     await startMicStream();
                 } catch (err) {
