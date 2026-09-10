@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from components.theater_manager import TheaterManager
 from services.live_agent_manager import (
@@ -775,6 +775,58 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         kwargs = mock_db.record_user_usage.call_args.kwargs
         self.assertEqual(kwargs["story_plans"], 1)
         self.assertEqual(usage["total_audio_bytes"], 96000)
+
+    def test_completed_image_flushes_usage_after_agent_failure(self):
+        class ImageTools:
+            def __init__(self):
+                self.on_image_created = None
+
+            def create_image(self, prompt):
+                return prompt
+
+        class FailingRunner:
+            app_name = "test-app"
+
+            def __init__(self, image_tools):
+                self.agent = MagicMock(
+                    tools=[SimpleNamespace(name="create_image", func=image_tools.create_image)]
+                )
+                self.session_service = MagicMock()
+                self.session_service.get_session = AsyncMock(return_value=object())
+
+            async def run_live(self, **_kwargs):
+                if False:
+                    yield None
+                raise RuntimeError("agent died")
+
+        async def run_test():
+            image_tools = ImageTools()
+            mock_db = MagicMock()
+            mock_db.get_deployment.return_value = {"user_id": 123}
+            mock_db.record_user_usage.return_value = {"credits": 1.0}
+            session = LiveAgentSession(
+                theater_id="late_image_usage",
+                runner=FailingRunner(image_tools),
+                tool_bundle=MagicMock(),
+                database_manager=mock_db,
+            )
+
+            await session._run_downstream()
+            self.assertEqual(session.status, "stopped")
+
+            # Image generation runs in a separate thread. It may finish after
+            # the live agent has failed and closed its request queue.
+            image_tools.on_image_created("path/to/late-image.jpg")
+
+            self.assertEqual(session.images_created_count, 1)
+            kwargs = mock_db.record_user_usage.call_args.kwargs
+            self.assertEqual(kwargs["user_id"], 123)
+            self.assertEqual(kwargs["images_created"], 1)
+            self.assertTrue(
+                kwargs["idempotency_key"].startswith("live-usage:late_image_usage:")
+            )
+
+        asyncio.run(run_test())
 
     def test_character_voicing_adds_usage_for_each_completed_planner_turn(self):
         mock_agent = MagicMock()
