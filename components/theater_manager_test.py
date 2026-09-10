@@ -12,7 +12,6 @@ from components.theater_manager import (
     TheaterManager,
     extract_asset_package,
     get_ephemeral_root,
-    ensure_ephemeral_root,
 )
 
 
@@ -94,6 +93,17 @@ class TestTheaterManager(unittest.TestCase):
         persisted = (theater_dir / "theater.json").read_text(encoding="utf-8")
         self.assertIn('"theater_id": "legacy"', persisted)
         self.assertIn('"name": "legacy"', persisted)
+
+    def test_record_auto_begin_persists_the_timestamp(self):
+        self.manager.create_theater(name="Auto Begin", theater_id="auto-begin")
+
+        recorded_at = self.manager.record_auto_begin("auto-begin")
+
+        self.assertIsNotNone(recorded_at)
+        self.assertEqual(
+            self.manager.get_theater("auto-begin").last_auto_begin_at,
+            recorded_at,
+        )
 
     def test_extract_asset_package_groups_assets_and_rejects_oversize_input(self):
         archive = io.BytesIO()

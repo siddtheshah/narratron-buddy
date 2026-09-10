@@ -34,7 +34,7 @@ DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
 DEFAULT_LIVE_TOOL_BUDGET = 3
-AUTO_BEGIN_RECENT_CONNECTION_SECONDS = 60 * 60
+AUTO_BEGIN_COOLDOWN_SECONDS = 60 * 60
 AUTO_BEGIN_ADVENTURE_ACTION = (
     "Begin or resume the adventure. If this is a resumed adventure, briefly summarize "
     "where the player left off; then introduce the current scene, situation, and an "
@@ -242,7 +242,7 @@ class LiveAgentSession:
         self._summoned = True
         self.status = "active"
         self.last_active_at = time.time()
-        self._auto_begin_adventure()
+        self._auto_begin_adventure(self._get_last_auto_begin_at())
         return self.send_user_content(types.Content(parts=[types.Part(text=(
             "You have just been summoned. Say hello by sending a chat message."
         ))]))
@@ -776,23 +776,48 @@ class LiveAgentSession:
                 self.theater_id,
             )
 
+    def _get_last_auto_begin_at(self) -> Optional[str]:
+        """Read the durable auto-begin marker without changing connection state."""
+        if not getattr(self, "theater_manager", None):
+            return None
+        try:
+            metadata = self.theater_manager.get_theater(self.theater_id)
+            return metadata.last_auto_begin_at if metadata else None
+        except Exception:
+            logger.exception(
+                "[LiveAgentSession] Failed to read the auto-begin marker for %s",
+                self.theater_id,
+            )
+            return None
+
+    def _record_auto_begin(self) -> None:
+        """Persist a successful auto-begin without disrupting the live session."""
+        if not getattr(self, "theater_manager", None):
+            return
+        try:
+            self.theater_manager.record_auto_begin(self.theater_id)
+        except Exception:
+            logger.exception(
+                "[LiveAgentSession] Failed to record auto-begin for %s",
+                self.theater_id,
+            )
+
     @staticmethod
-    def _was_connected_within_auto_begin_window(last_connected_at: Optional[str]) -> bool:
-        if not last_connected_at:
+    def _was_auto_begin_within_cooldown(last_auto_begin_at: Optional[str]) -> bool:
+        if not last_auto_begin_at:
             return False
         try:
-            connected_at = datetime.fromisoformat(last_connected_at.replace("Z", "+00:00"))
-            if connected_at.tzinfo is None:
-                connected_at = connected_at.replace(tzinfo=timezone.utc)
-            return (datetime.now(timezone.utc) - connected_at).total_seconds() < AUTO_BEGIN_RECENT_CONNECTION_SECONDS
+            auto_begin_at = datetime.fromisoformat(last_auto_begin_at.replace("Z", "+00:00"))
+            if auto_begin_at.tzinfo is None:
+                auto_begin_at = auto_begin_at.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - auto_begin_at).total_seconds() < AUTO_BEGIN_COOLDOWN_SECONDS
         except (TypeError, ValueError):
-            logger.warning("Invalid last_connected_at value %r; allowing auto-begin.", last_connected_at)
+            logger.warning("Invalid last_auto_begin_at value %r; allowing auto-begin.", last_auto_begin_at)
             return False
 
     def _auto_begin_adventure(
         self,
-        last_connected_at: Optional[str] = None,
-        last_disconnected_at: Optional[str] = None,
+        last_auto_begin_at: Optional[str] = None,
     ) -> None:
         """Start one configured Adventure Mode opening without involving Live."""
         story_planning_config = self.config.get("story_planning", {})
@@ -805,10 +830,9 @@ class LiveAgentSession:
             or not hasattr(self.story_planning_tools, "process_system_action")
         ):
             return
-        last_session_end = last_disconnected_at or last_connected_at
-        if self._was_connected_within_auto_begin_window(last_session_end):
+        if self._was_auto_begin_within_cooldown(last_auto_begin_at):
             logger.info(
-                "[LiveAgentSession] Skipping auto-begin for theater %s; its last session ended within the last hour.",
+                "[LiveAgentSession] Skipping auto-begin for theater %s; it auto-began within the last hour.",
                 self.theater_id,
             )
             return
@@ -821,6 +845,8 @@ class LiveAgentSession:
             result = self.story_planning_tools.process_system_action(
                 AUTO_BEGIN_ADVENTURE_ACTION, "Starting/Resuming Adventure"
             )
+            if not (isinstance(result, dict) and result.get("error")):
+                self._record_auto_begin()
             logger.info(
                 "[LiveAgentSession] Auto-begin requested for theater %s: %s",
                 self.theater_id,

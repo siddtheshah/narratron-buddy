@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from providers import TextResponseProvider
+from services.quirk_service import QuirkGeneratorService
 from tools.story.character_manager import CharacterManager, normalize_voice_tags
 from tools.story.notepad import Notepad
 
@@ -114,8 +115,8 @@ class TestCharacterManager(unittest.TestCase):
                 "```"
             )
         )
-        quirk_service = MagicMock()
-        quirk_service.generate_quirk.return_value = "Polishes a brass key"
+        quirk_service = MagicMock(spec=QuirkGeneratorService)
+        quirk_service.get_random_quirk.return_value = "Polishes a brass key"
 
         with patch(
             "tools.story.character_manager.get_quirk_generator_service",
@@ -127,14 +128,15 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(profile["motivation"], "Find truth")
         self.assertEqual(profile["voice_tags"], ["male"])
         self.assertEqual(profile["quirk"], "Polishes a brass key")
+        quirk_service.get_random_quirk.assert_called_once_with(exclude=[])
         request = self.provider.generate.call_args.args[0]
         self.assertIn("Recover the starblade", request.prompt)
         self.notepad.get_present_elements.assert_called_once_with()
 
     def test_uses_defaults_when_generation_fails(self) -> None:
         self.provider.generate.side_effect = RuntimeError("provider unavailable")
-        quirk_service = MagicMock()
-        quirk_service.generate_quirk.return_value = "Checks the exits"
+        quirk_service = MagicMock(spec=QuirkGeneratorService)
+        quirk_service.get_random_quirk.return_value = "Checks the exits"
 
         with patch(
             "tools.story.character_manager.get_quirk_generator_service",
@@ -146,6 +148,28 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(profile["motivation"], "Survive and prosper in the current scene.")
         self.assertEqual(profile["voice_tags"], ["female"])
         self.assertEqual(profile["quirk"], "Checks the exits")
+        quirk_service.get_random_quirk.assert_called_once_with(exclude=[])
+
+    def test_generated_quirk_excludes_quirks_of_present_characters(self) -> None:
+        self._create_character("Lyra")
+        quirk_service = MagicMock(spec=QuirkGeneratorService)
+        quirk_service.get_random_quirk.return_value = "Checks the exits"
+
+        with patch(
+            "tools.story.character_manager.get_quirk_generator_service",
+            return_value=quirk_service,
+        ):
+            profile = self.manager.generate_character_profile(
+                "Mira",
+                personality="Watchful",
+                motivation="Keep everyone safe",
+                voice_tags=["female"],
+            )
+
+        self.assertEqual(profile["quirk"], "Checks the exits")
+        quirk_service.get_random_quirk.assert_called_once_with(
+            exclude=["Counts every doorway"]
+        )
 
     def test_generate_character_mutates_state_and_notifies(self) -> None:
         result = self._create_character("Lyra")

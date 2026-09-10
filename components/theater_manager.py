@@ -54,6 +54,7 @@ class TheaterMetadata(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     last_connected_at: Optional[str] = None
     last_disconnected_at: Optional[str] = None
+    last_auto_begin_at: Optional[str] = None
     mounted_references: List[str] = Field(default_factory=list)
     mounted_playlists: Dict[str, List[str]] = Field(default_factory=dict)
     config: Dict = Field(default_factory=dict)
@@ -320,6 +321,15 @@ class TheaterManager:
             return
         metadata.last_disconnected_at = datetime.now(timezone.utc).isoformat()
         self._save_metadata(metadata)
+
+    def record_auto_begin(self, theater_id: str) -> Optional[str]:
+        """Persist and return the time at which Adventure Mode auto-began."""
+        metadata = self.get_theater(theater_id)
+        if metadata is None:
+            return None
+        metadata.last_auto_begin_at = datetime.now(timezone.utc).isoformat()
+        self._save_metadata(metadata)
+        return metadata.last_auto_begin_at
 
     def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, lore_files: Optional[List[tuple[str, bytes]]] = None, theater_config: Optional[Dict] = None, metadata_json: Optional[Any] = None) -> TheaterMetadata:
         # Import lazily so config loading can reuse the theater-root helper.

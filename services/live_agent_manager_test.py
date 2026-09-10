@@ -106,7 +106,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         planner_tools.process_user_action.assert_not_called()
 
-    def test_auto_begin_is_skipped_after_a_recent_theater_connection(self):
+    def test_auto_begin_is_skipped_after_a_recent_auto_begin(self):
         planner_tools = MagicMock()
         session = LiveAgentSession.__new__(LiveAgentSession)
         session.theater_id = "recent_auto_begin"
@@ -116,27 +116,69 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session.story_planning_tools = planner_tools
         session._auto_begin_started = False
 
-        recent_connection = datetime.now(timezone.utc).isoformat()
-        session._auto_begin_adventure(recent_connection)
+        recent_auto_begin = datetime.now(timezone.utc).isoformat()
+        session._auto_begin_adventure(recent_auto_begin)
 
         planner_tools.process_system_action.assert_not_called()
 
-    def test_auto_begin_prefers_the_last_disconnection_time(self):
+    def test_auto_begin_is_skipped_when_a_new_session_is_resummoned(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            theater_manager = TheaterManager(base_theaters_dir=temp_dir)
+            theater_manager.create_theater(name="Auto Begin", theater_id="resummon")
+
+            def make_session():
+                mock_agent = MagicMock()
+                mock_agent.tools = []
+                mock_runner = MagicMock()
+                mock_runner.agent = mock_agent
+                mock_runner.session_service = MagicMock()
+                session = LiveAgentSession(
+                    theater_id="resummon",
+                    runner=mock_runner,
+                    tool_bundle=MagicMock(),
+                    theater_manager=theater_manager,
+                    config={
+                        "story_planning": {
+                            "adventure_mode": True,
+                            "auto_begin": True,
+                        }
+                    },
+                )
+                session.story_planning_tools = MagicMock()
+                session.story_planning_tools.process_system_action.return_value = {
+                    "status": "processing"
+                }
+                session.send_user_content = MagicMock(return_value=True)
+                return session
+
+            first_session = make_session()
+            first_session.summon()
+            second_session = make_session()
+            second_session.summon()
+
+            first_session.story_planning_tools.process_system_action.assert_called_once()
+            second_session.story_planning_tools.process_system_action.assert_not_called()
+            self.assertIsNotNone(
+                theater_manager.get_theater("resummon").last_auto_begin_at
+            )
+
+    def test_failed_auto_begin_is_not_persisted(self):
         planner_tools = MagicMock()
+        planner_tools.process_system_action.return_value = {
+            "error": "Story action is already in flight."
+        }
         session = LiveAgentSession.__new__(LiveAgentSession)
-        session.theater_id = "recent_disconnect"
+        session.theater_id = "failed_auto_begin"
         session.config = {
             "story_planning": {"adventure_mode": True, "auto_begin": True}
         }
         session.story_planning_tools = planner_tools
+        session.theater_manager = MagicMock()
         session._auto_begin_started = False
 
-        session._auto_begin_adventure(
-            "2020-01-01T00:00:00+00:00",
-            datetime.now(timezone.utc).isoformat(),
-        )
+        session._auto_begin_adventure()
 
-        planner_tools.process_system_action.assert_not_called()
+        session.theater_manager.record_auto_begin.assert_not_called()
 
     def test_baton_handoff_ends_outgoing_audio_without_closing_session(self):
         session = LiveAgentSession.__new__(LiveAgentSession)

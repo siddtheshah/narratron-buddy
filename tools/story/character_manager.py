@@ -209,11 +209,13 @@ class CharacterManager:
         clean_motivation = clean_motivation or "Survive and prosper in the current scene."
         clean_tags = clean_tags or ["female"]
         if not clean_quirk:
-            clean_quirk = get_quirk_generator_service().generate_quirk(
-                name=clean_name,
-                personality=clean_personality,
-                motivation=clean_motivation,
-                description=clean_description,
+            existing_quirks = [
+                character.get("quirk", "")
+                for character in self.get_present_characters()
+                if character.get("quirk")
+            ]
+            clean_quirk = get_quirk_generator_service().get_random_quirk(
+                exclude=existing_quirks,
             )
 
         return {
