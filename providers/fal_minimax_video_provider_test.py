@@ -73,9 +73,9 @@ def test_minimax_video_requires_prompt():
 
 
 def test_minimax_video_requires_api_key(monkeypatch):
-    monkeypatch.delenv("FAL_KEY", raising=False)
     monkeypatch.delenv("FAL_API_KEY", raising=False)
-    with pytest.raises(VideoProviderError, match="FAL_KEY or FAL_API_KEY is not configured"):
+    monkeypatch.delenv("FAL_API_KEY", raising=False)
+    with pytest.raises(VideoProviderError, match="FAL_API_KEY or FAL_API_KEY is not configured"):
         FalMinimaxVideoProvider(api_key=None)
 
 

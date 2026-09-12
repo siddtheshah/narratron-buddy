@@ -40,7 +40,7 @@ class FalSeedSpeechProvider(SpeechProvider):
     model = "fal-ai/bytedance/seed-speech/tts/v2"
 
     def __init__(self, *, api_key: str | None = None, request_json: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None, download: Callable[[str], tuple[bytes, str]] | None = None, output_format: str = "mp3", sample_rate_hz: int = 24_000) -> None:
-        self.api_key = api_key or os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")
+        self.api_key = api_key or os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")
         self.output_format = output_format
         self.sample_rate_hz = sample_rate_hz
         self._request_json = request_json or self._post_json
@@ -73,7 +73,7 @@ class FalSeedSpeechProvider(SpeechProvider):
 
     def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResult:
         if not self.api_key:
-            raise SpeechProviderError("FAL_KEY or FAL_API_KEY is not configured for Seed Speech.")
+            raise SpeechProviderError("FAL_API_KEY or FAL_API_KEY is not configured for Seed Speech.")
         payload: dict[str, Any] = {
             "text": request.text,
             "voice": request.voice or "stokie_en",

@@ -179,9 +179,9 @@ def list_image_provider_specs() -> list[dict[str, Any]]:
         if spec["id"] == "gemini":
             spec["status"] = "available" if os.getenv("GEMINI_API_KEY") else "unconfigured"
         if spec["id"] == "flux-klein":
-            spec["status"] = "available" if (os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
+            spec["status"] = "available" if (os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
         if spec["id"] == "hybrid-flux-gemini":
-            spec["status"] = "available" if (os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")) and os.getenv("GEMINI_API_KEY") else "unconfigured"
+            spec["status"] = "available" if (os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")) and os.getenv("GEMINI_API_KEY") else "unconfigured"
     return specs
 
 
@@ -217,7 +217,7 @@ def list_music_provider_specs() -> list[dict[str, Any]]:
     has_base_provider = any(spec["id"] != "test-base-plus-adapter" and spec["status"] == "available" for spec in specs)
     for spec in specs:
         if spec["id"] == "test-base-plus-adapter":
-            spec["status"] = "available" if has_base_provider and bool(os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
+            spec["status"] = "available" if has_base_provider and bool(os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
     return specs
 
 
@@ -225,7 +225,7 @@ def list_music_adapter_specs() -> list[dict[str, Any]]:
     specs = [dict(spec) for spec in _MUSIC_ADAPTER_SPECS]
     for spec in specs:
         if spec["id"] == "fal-stable-audio-3-base-a2a":
-            spec["status"] = "available" if (os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
+            spec["status"] = "available" if (os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
     return specs
 
 
@@ -304,7 +304,7 @@ def list_speech_provider_specs() -> list[dict[str, Any]]:
         if spec["id"] == "gemini-flash-tts":
             spec["status"] = "available" if (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")) else "unconfigured"
         if spec["id"] == "fal-seed-speech":
-            spec["status"] = "available" if (os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
+            spec["status"] = "available" if (os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")) else "unconfigured"
         if spec["id"] == "google-chirp-3-hd":
             spec["status"] = "available" if (os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")) else "unconfigured"
     return specs
@@ -344,7 +344,7 @@ def list_video_provider_specs() -> list[dict[str, Any]]:
         if spec["id"] == "fal-minimax-h3-turbo":
             spec["status"] = (
                 "available"
-                if (os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY"))
+                if (os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY"))
                 else "unconfigured"
             )
     return specs

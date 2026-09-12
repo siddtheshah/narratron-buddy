@@ -31,9 +31,9 @@ class FalMinimaxVideoProvider(VideoProvider):
         prompt_expansion_mode: str = "balanced",
         timeout_seconds: int = 300,
     ):
-        self.api_key = api_key or os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")
+        self.api_key = api_key or os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")
         if not self.api_key:
-            raise VideoProviderError("FAL_KEY or FAL_API_KEY is not configured for MiniMax Video.")
+            raise VideoProviderError("FAL_API_KEY or FAL_API_KEY is not configured for MiniMax Video.")
         self._request_json = request_json or self._post_json
         self._download = download or self._download_video
         self.prompt_expansion_mode = prompt_expansion_mode

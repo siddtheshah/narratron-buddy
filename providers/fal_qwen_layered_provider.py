@@ -46,9 +46,9 @@ class FalQwenLayeredProvider:
         num_inference_steps: int = 14,
         negative_prompt: str = "unclear boundaries, incomplete extractions",
     ):
-        self.api_key = api_key or os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")
+        self.api_key = api_key or os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")
         if not self.api_key:
-            raise ImageProviderError("FAL_KEY or FAL_API_KEY is not configured for Qwen Image Layered.")
+            raise ImageProviderError("FAL_API_KEY or FAL_API_KEY is not configured for Qwen Image Layered.")
         self._request_json = request_json or self._post_json
         self._download = download or self._download_image
         self.num_inference_steps = num_inference_steps

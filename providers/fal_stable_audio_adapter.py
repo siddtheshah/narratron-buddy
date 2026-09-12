@@ -35,9 +35,9 @@ class FalStableAudioAdapter(MusicAdapter):
         bitrate: str = "192k",
         urlopen_fn: Any = urlopen,
     ) -> None:
-        self.api_key = api_key or os.getenv("FAL_KEY") or os.getenv("FAL_API_KEY")
+        self.api_key = api_key or os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")
         if not self.api_key:
-            raise MusicProviderError("FAL_KEY or FAL_API_KEY is not configured for Stable Audio 3.")
+            raise MusicProviderError("FAL_API_KEY or FAL_API_KEY is not configured for Stable Audio 3.")
         if not 0 <= init_noise_level <= 1:
             raise ValueError("init_noise_level must be between 0 and 1.")
         self.init_noise_level = init_noise_level
