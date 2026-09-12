@@ -55,6 +55,22 @@ def test_docs_index_links_to_each_documentation_page():
     assert 'href="/docs/beyond20"' in response
 
 
+def test_docs_pages_render_persistent_navigation_and_search():
+    for response in [
+        pages.read_docs(),
+        pages.read_docs_about(),
+        pages.read_docs_ideas(),
+        pages.read_docs_theater_yaml(),
+        pages.read_docs_writing_adventures(),
+        pages.read_docs_beyond20(),
+        pages.read_terms(),
+        pages.read_privacy(),
+    ]:
+        assert 'class="docs-sidebar"' in response
+        assert 'id="docsSearch"' in response
+        assert 'href="/docs/theater-yaml"' in response
+
+
 def test_docs_writing_adventures_page_renders():
     response = pages.read_docs_writing_adventures()
     assert "Writing Adventures for Narratron Buddy" in response

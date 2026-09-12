@@ -1,0 +1,22 @@
+<aside class="docs-sidebar" aria-label="Documentation navigation">
+  <a class="docs-sidebar-brand" href="/docs">Narratron <span>Docs</span></a>
+  <label class="docs-search-label" for="docsSearch">Search documentation</label>
+  <div class="docs-search-wrap">
+    <input id="docsSearch" class="docs-search" type="search" placeholder="Search docs…" autocomplete="off" aria-controls="docsSearchResults">
+    <kbd aria-hidden="true">/</kbd>
+  </div>
+  <div id="docsSearchResults" class="docs-search-results" role="status" aria-live="polite"></div>
+  <nav class="docs-nav" aria-label="All documentation">
+    <p class="docs-nav-heading">Get started</p>
+    <a href="/docs" class="{% if active_page == 'docs' %}is-active{% endif %}">Docs home</a>
+    <a href="/docs/about" class="{% if active_page == 'docs-about' %}is-active{% endif %}">About Narratron</a>
+    <a href="/docs/ideas" class="{% if active_page == 'docs-ideas' %}is-active{% endif %}">Ideas &amp; recipes</a>
+    <p class="docs-nav-heading">Build a theater</p>
+    <a href="/docs/theater-yaml" class="{% if active_page == 'docs-theater-yaml' %}is-active{% endif %}"><code>theater.yaml</code> reference</a>
+    <a href="/docs/writing-adventures" class="{% if active_page == 'docs-writing-adventures' %}is-active{% endif %}">Writing adventures</a>
+    <a href="/docs/beyond20" class="{% if active_page == 'docs-beyond20' %}is-active{% endif %}">Beyond20 dice rolls</a>
+    <p class="docs-nav-heading">Policies</p>
+    <a href="/docs/terms" class="{% if active_page == 'docs-terms' %}is-active{% endif %}">Terms of Service</a>
+    <a href="/docs/privacy" class="{% if active_page == 'docs-privacy' %}is-active{% endif %}">Privacy Policy</a>
+  </nav>
+</aside>

@@ -168,6 +168,17 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return out
 
 
+def render_docs_sidebar(active_page: str = "") -> str:
+    """Render the persistent documentation navigation and search control."""
+    template_path = PROJECT_ROOT / "templates" / "docs_sidebar.html"
+    raw = template_path.read_text(encoding="utf-8")
+    try:
+        import jinja2
+        return jinja2.Template(raw).render(active_page=active_page)
+    except Exception:
+        return raw
+
+
 def render_page_template(
     template_name: str,
     active_page: str = "",
@@ -179,6 +190,7 @@ def render_page_template(
     html_content = template_path.read_text(encoding="utf-8")
     topbar_html = render_shared_topbar(active_page=active_page, show_pricing=show_pricing)
     html_content = html_content.replace("<!-- SHARED_TOPBAR -->", topbar_html)
+    html_content = html_content.replace("<!-- DOCS_SIDEBAR -->", render_docs_sidebar(active_page))
     html_content = re.sub(
         r"/static/js/auth-flow\.js(?:\?[^\"'>\s]*)?",
         f"/static/js/auth-flow.js?v={SERVER_RUN_ID}",

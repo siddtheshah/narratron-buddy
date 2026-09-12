@@ -55,13 +55,13 @@ class TestPolicyPages(unittest.TestCase):
         self.assertIn('class="policy-tab " id="tabTermsLink"', privacy_res.text)
         self.assertIn('class="policy-tab active" id="tabPrivacyLink"', privacy_res.text)
 
-    def test_policy_links_in_docs_hub(self):
-        """Verify the documentation index contains cards for Terms and Privacy."""
-        docs_html = Path("templates/docs.html").read_text(encoding="utf-8")
-        self.assertIn('href="/terms"', docs_html)
-        self.assertIn('href="/privacy"', docs_html)
-        self.assertIn("Terms of Service", docs_html)
-        self.assertIn("Privacy Policy", docs_html)
+    def test_policy_links_are_in_persistent_docs_navigation(self):
+        """Verify policy pages remain reachable from every documentation page."""
+        sidebar_html = Path("templates/docs_sidebar.html").read_text(encoding="utf-8")
+        self.assertIn('href="/docs/terms"', sidebar_html)
+        self.assertIn('href="/docs/privacy"', sidebar_html)
+        self.assertIn("Terms of Service", sidebar_html)
+        self.assertIn("Privacy Policy", sidebar_html)
 
     def test_policy_links_in_footers(self):
         """Verify footer links on public join splash and stats dashboard."""

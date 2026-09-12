@@ -9,7 +9,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/auth-flow.css">
+  <link rel="stylesheet" href="/static/css/docs-navigation.css">
   <script src="/static/js/auth-flow.js"></script>
+  <script defer src="/static/js/docs-navigation.js"></script>
   <style>
     :root { --bg:#0b0d12; --panel:rgba(22,27,38,.75); --line:rgba(255,255,255,.11); --ink:#f8fafc; --muted:#a8b4c7; --violet:#818cf8; --pink:#e879f9; --cyan:#67e8f9; }
     * { box-sizing:border-box; } body { margin:0; min-height:100vh; color:var(--ink); font-family:Outfit,sans-serif; background:radial-gradient(circle at 12% 10%,rgba(99,102,241,.21),transparent 28rem),radial-gradient(circle at 90% 62%,rgba(217,70,239,.15),transparent 30rem),var(--bg); }
@@ -21,7 +23,9 @@
 </head>
 <body>
   <!-- SHARED_TOPBAR -->
-  <main>
+  <div class="docs-shell">
+    <!-- DOCS_SIDEBAR -->
+    <main>
     <p class="eyebrow">Make the next moment yours</p><h1>Stories are better when the room helps make them.</h1><p class="intro">Narratron is a live canvas for narration, atmosphere, and shared imagination. Start with a world you love, then invite people to shape where it goes.</p><a class="cta" href="/deploy">Create a theater →</a>
     <section><h2 class="section-title">Your theater, your ingredients</h2><p class="section-lede">Bring in the things that make a story feel unmistakably yours.</p><div class="capability-grid">
       <article class="card"><div class="icon">♫</div><h2>Orchestrate the perfect soundtrack</h2><p>Bring your own playlists and let them carry the scene. When there's a moment your library doesn't cover, AI-generated music steps in seamlessly—so the atmosphere never drops, even in uncharted territory.</p></article>
@@ -39,6 +43,7 @@
       <article class="card idea-card" style="--glow:#fbbf24"><span class="idea-type">Podcast visualizer</span><h2>Make the episode visible</h2><p>Give a podcast episode its own visual language. Upload guest photos, archival images, or a moodboard, then let Narratron create a shifting companion world for the conversation.</p><p class="recipe">Try: uploaded audio + image references + custom style</p></article>
       <article class="card idea-card" style="--glow:#fb7185"><span class="idea-type">Comedy night</span><h2>The presentation nobody asked for</h2><p>Turn a silly premise into a dead-serious visual presentation: explain a pet’s secret career, defend an absurd invention, or reveal the history of an imaginary town. Pass the baton so every presenter gets their moment.</p><p class="recipe">Try: custom images + Starlight twinkle + shared baton</p></article>
     </div></section>
-  </main>
+    </main>
+  </div>
 </body>
 </html>
