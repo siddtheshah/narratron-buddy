@@ -1,3 +1,30 @@
+Version 1.3.0 - 9/12/2026
+
+Canvas
+ - Animations
+    - layered
+    - video
+ - Interactive UI
+    - Healthbars, buttons, and more.
+ - Text beautifcation (adventure mode)
+
+Adventure Features
+ - Structured context management
+ - Dual brain story planning and response.
+
+New Adventures
+ - The OVerlord's Assistant
+ - The Gilded Misappropriation
+ - updates to many other adventures to improve quality.
+
+Integrations
+ - Foundry (https://github.com/siddtheshah/narratron-foundry)
+ - Beyond20 extension.
+
+Social
+ - Gift Links
+ - Tiktok clipping
+
 Version 1.2.0 - 8/15/2026
 
 Adventure mode is now live. Should be engaging.
