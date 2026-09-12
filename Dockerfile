@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install build-essential for any native extensions
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential && \
+    apt-get install -y --no-install-recommends build-essential ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -15,6 +15,8 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 FROM python:3.12-slim
 
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local

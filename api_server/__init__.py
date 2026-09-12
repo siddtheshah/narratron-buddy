@@ -28,6 +28,7 @@ import api_server.theaters  # noqa: F401
 import api_server.canvas  # noqa: F401
 import api_server.profiles  # noqa: F401
 import api_server.pages  # noqa: F401
+import api_server.tiktok  # noqa: F401
 
 # Re-export symbols that external code imports by name
 from api_server.payments import _is_mock_payment_mode, CREDIT_PACKAGES  # noqa: F401

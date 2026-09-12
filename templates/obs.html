@@ -146,8 +146,9 @@
     <div id="clip-draft-handoff" aria-live="polite">
         <div class="clip-capture-card">
             <h1>Your clip is ready</h1>
-            <p>It was downloaded to this device. Open TikTok, log in if needed, and select that downloaded clip to continue editing it as a draft. You choose when to publish.</p>
-            <a id="clip-tiktok-draft-link" class="clip-draft-action" href="https://www.tiktok.com/tiktokstudio/upload?lang=en" target="_blank" rel="noopener">Open TikTok and create draft</a>
+            <p>It was downloaded to this device. Connect TikTok to send this same clip into its editable draft flow. You choose when to publish.</p>
+            <button id="clip-tiktok-draft-link" class="clip-draft-action" type="button">Send to TikTok draft</button>
+            <div id="clip-draft-status" aria-live="polite"></div>
         </div>
     </div>
 
@@ -683,6 +684,9 @@
         const clipStopEarlyBtn = document.getElementById('clip-stop-early-btn');
         const clipStartOverBtn = document.getElementById('clip-start-over-btn');
         const clipDraftHandoff = document.getElementById('clip-draft-handoff');
+        const clipTikTokDraftLink = document.getElementById('clip-tiktok-draft-link');
+        const clipDraftStatus = document.getElementById('clip-draft-status');
+        let completedClip = null;
         const CLIP_DURATION_MS = 30_000;
         let activeClipControl = null;
         let clipTimerInterval = null;
@@ -714,8 +718,48 @@
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
 
-        function showTikTokDraftHandoff() {
+        function showTikTokDraftHandoff(clip) {
+            completedClip = clip;
             clipDraftHandoff?.classList.add('active');
+        }
+
+        async function sendClipToTikTokDraft() {
+            if (!completedClip) return;
+            clipDraftStatus.textContent = 'Preparing secure TikTok connection…';
+            const popup = window.open('/api/tiktok/connect', 'narratron-tiktok-connect', 'popup=yes,width=520,height=720');
+            if (!popup) { clipDraftStatus.textContent = 'Allow pop-ups to connect TikTok.'; return; }
+            window.addEventListener('message', async function connected(event) {
+                if (event.origin !== window.location.origin || event.data?.type !== 'narratron-tiktok-connected') return;
+                window.removeEventListener('message', connected);
+                try {
+                    clipDraftStatus.textContent = 'Sending clip to TikTok…';
+                    const baseMimeType = (completedClip.type || 'video/webm').split(';', 1)[0];
+                    const response = baseMimeType === 'video/webm'
+                        ? await fetch('/api/tiktok/draft-upload-transcoded', {method: 'POST', body: (() => { const form = new FormData(); form.append('clip', completedClip, 'narratron-clip.webm'); return form; })()})
+                        : await fetch('/api/tiktok/draft-upload', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({video_size: completedClip.size, mime_type: baseMimeType})});
+                    if (!response.ok) {
+                        const failure = await response.json().catch(() => ({}));
+                        const detail = failure.detail;
+                        const message = typeof detail === 'string'
+                            ? detail
+                            : detail?.message || detail?.code || JSON.stringify(detail || failure);
+                        throw new Error(message || 'TikTok draft setup failed.');
+                    }
+                    if (baseMimeType !== 'video/webm') {
+                        const {upload_url} = await response.json();
+                        const put = await fetch(upload_url, {method: 'PUT', headers: {'Content-Type': baseMimeType, 'Content-Length': String(completedClip.size), 'Content-Range': `bytes 0-${completedClip.size - 1}/${completedClip.size}`}, body: completedClip});
+                        if (!put.ok) throw new Error('TikTok could not receive the clip.');
+                    }
+                    completedClip = null;
+                    clipDraftStatus.textContent = 'Sent. Checking TikTok delivery…';
+                    setTimeout(async () => {
+                        const status = await fetch('/api/tiktok/draft-status').then(response => response.json());
+                        clipDraftStatus.textContent = status.status === 'SEND_TO_USER_INBOX'
+                            ? 'Delivered to your TikTok inbox—open the notification to edit the draft.'
+                            : `TikTok status: ${status.status || 'processing'}${status.fail_reason ? ` (${status.fail_reason})` : ''}`;
+                    }, 4000);
+                } catch (error) { clipDraftStatus.textContent = error.message || 'Unable to send the clip.'; }
+            });
         }
 
         async function createClipAudioMix(displayStream, includeMicrophone) {
@@ -826,7 +870,7 @@
                         return;
                     }
                     downloadClip(clip, clip.type);
-                    showTikTokDraftHandoff();
+                    showTikTokDraftHandoff(clip);
                 } catch (error) {
                     showClipReadyState(error?.message || 'Unable to record the clip.');
                     console.error('Failed to record OBS clip:', error);
@@ -836,6 +880,7 @@
             clipStartRecordingBtn?.addEventListener('click', beginClipCapture);
             clipStopEarlyBtn?.addEventListener('click', () => activeClipControl?.stop(false));
             clipStartOverBtn?.addEventListener('click', () => activeClipControl?.stop(true));
+            clipTikTokDraftLink?.addEventListener('click', sendClipToTikTokDraft);
         }
     </script>
 </body>
