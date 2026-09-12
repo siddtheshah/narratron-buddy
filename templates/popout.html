@@ -7,6 +7,7 @@
     <title>Narratron - Pop-out Chat</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/chat.css">
     <style>
         :root {
             --bg-color: #0f1115;
@@ -110,6 +111,7 @@
             display: none;
             flex-direction: column;
             overflow: hidden;
+            min-height: 0;
         }
 
         .tab-content.active {
@@ -119,20 +121,32 @@
         /* Chat Tab */
         #chat-messages {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 1rem;
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
         }
 
         #chat-messages::-webkit-scrollbar {
-            width: 5px;
+            width: 6px;
+        }
+
+        #chat-messages::-webkit-scrollbar-track {
+            background: transparent;
         }
 
         #chat-messages::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.28);
             border-radius: 10px;
+        }
+
+        #chat-messages::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.55);
         }
 
         .agent-thought-card {
@@ -177,6 +191,7 @@
             line-height: 1.4;
             color: #cbd5e1;
             word-wrap: break-word;
+            flex-shrink: 0;
         }
 
         #chat-form {
@@ -351,6 +366,64 @@
             const isNarratron = (rawAuthor.toLowerCase() === 'agent' || rawAuthor.toLowerCase() === 'narratron');
             const displayAuthor = isNarratron ? 'Narratron' : rawAuthor;
             const color = getAuthorColor(displayAuthor);
+
+            if (msg.roll_data) {
+                div.classList.add('chat-roll-message');
+
+                const card = document.createElement('div');
+                card.className = 'chat-roll-card';
+
+                if (msg.roll_data.html) {
+                    // Render only the card directly (no extra wrapper headers)
+                    card.innerHTML = msg.roll_data.html;
+                } else {
+                    // Fallback for roll_data without pre-rendered HTML: render results without header
+                    const resultsRow = document.createElement('div');
+                    resultsRow.className = 'chat-roll-results';
+
+                    if (Array.isArray(msg.roll_data.attack_rolls) && msg.roll_data.attack_rolls.length > 0) {
+                        msg.roll_data.attack_rolls.forEach(r => {
+                            const rollBadge = document.createElement('span');
+                            rollBadge.className = 'roll-badge attack-roll';
+                            const totalVal = r.total !== undefined ? r.total : r.result;
+                            if (r.is_crit) rollBadge.classList.add('crit-hit');
+                            if (r.is_fail) rollBadge.classList.add('crit-fail');
+                            rollBadge.textContent = `🎯 ${totalVal}`;
+                            resultsRow.appendChild(rollBadge);
+                        });
+                    }
+
+                    if (Array.isArray(msg.roll_data.damage_rolls) && msg.roll_data.damage_rolls.length > 0) {
+                        msg.roll_data.damage_rolls.forEach(([dmgType, dmgRoll]) => {
+                            const dmgBadge = document.createElement('span');
+                            dmgBadge.className = 'roll-badge damage-roll';
+                            const dmgVal = dmgRoll ? (dmgRoll.total !== undefined ? dmgRoll.total : dmgRoll.result) : '';
+                            dmgBadge.textContent = `💥 ${dmgVal} ${dmgType || ''}`.trim();
+                            resultsRow.appendChild(dmgBadge);
+                        });
+                    } else if (msg.roll_data.total_damages && Object.keys(msg.roll_data.total_damages).length > 0) {
+                        Object.entries(msg.roll_data.total_damages).forEach(([label, total]) => {
+                            const dmgBadge = document.createElement('span');
+                            dmgBadge.className = 'roll-badge damage-roll';
+                            const totalVal = (total && typeof total === 'object' && total.total !== undefined) ? total.total : total;
+                            dmgBadge.textContent = `💥 ${totalVal} ${label === 'Total' ? '' : label}`.trim();
+                            resultsRow.appendChild(dmgBadge);
+                        });
+                    }
+
+                    if (resultsRow.children.length > 0) {
+                        card.appendChild(resultsRow);
+                    } else if (msg.text) {
+                        const summaryDiv = document.createElement('div');
+                        summaryDiv.className = 'chat-roll-summary-text';
+                        summaryDiv.textContent = msg.text.replace(/^🎲\s*/, '');
+                        card.appendChild(summaryDiv);
+                    }
+                }
+
+                div.appendChild(card);
+                return div;
+            }
 
             const prefixSpan = document.createElement('span');
             prefixSpan.className = 'chat-prefix';

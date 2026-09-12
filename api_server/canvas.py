@@ -19,6 +19,7 @@ from api_server.shared import (
     _require_canvas_access,
     _require_canvas_access_async,
     can_control_agent_websocket,
+    is_allowed_orator,
 )
 from api_server.dependencies import live_agent_manager
 
@@ -26,6 +27,7 @@ from api_server.dependencies import live_agent_manager
 class ChatMessage(BaseModel):
     author: str
     text: str
+    roll_data: Optional[dict[str, Any]] = None
 
 
 class OratorCommand(BaseModel):
@@ -441,9 +443,26 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
         chat_kwargs["profile_username"] = profile_username
         if profile_color:
             chat_kwargs["profile_color"] = profile_color
+    if msg.roll_data:
+        if theater_id:
+            deployment = db.get_deployment(theater_id)
+            if deployment and not is_allowed_orator(deployment, current_user=user):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only users with allowed_orators permission can submit dice rolls.",
+                )
+        chat_kwargs["roll_data"] = msg.roll_data
     state = _state(theater_id)
     state.chat.add_message({"text": msg.text, **chat_kwargs})
     state.notify_changed("chat")
+
+    if msg.roll_data and theater_id and state.ui.viewer_collab_enabled:
+        if not msg.roll_data.get("forwarded_to_agent"):
+            session = live_agent_manager.get_session(theater_id)
+            if session and session.is_alive:
+                session.send_user_content(
+                    types.Content(parts=[types.Part(text=f"[D&D Dice Roll] {msg.text}")])
+                )
     return {"status": "ok", "type": "chat"}
 
 

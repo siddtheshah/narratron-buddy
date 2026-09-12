@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/image-effects.css?v=effects-20260811-2">
     <link rel="stylesheet" href="/static/css/splitting.css">
     <link rel="stylesheet" href="/static/css/text-effects.css">
+    <link rel="stylesheet" href="/static/css/chat.css">
     <script src="/static/js/splitting.min.js"></script>
     <style>
         :root {
@@ -1665,11 +1666,15 @@
 
         #chat-messages {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 1rem;
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
         }
 
         /* Customize scrollbar */
@@ -1677,9 +1682,17 @@
             width: 6px;
         }
 
+        #chat-messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
         #chat-messages::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.28);
             border-radius: 10px;
+        }
+
+        #chat-messages::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.55);
         }
 
         .agent-thought-card {
@@ -1924,6 +1937,7 @@
             color: #cbd5e1;
             animation: fadeIn 0.3s ease;
             word-wrap: break-word;
+            flex-shrink: 0;
         }
 
         @keyframes fadeIn {
@@ -2679,7 +2693,7 @@
             </button>
         </div>
 
-        <div id="panel-body" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+        <div id="panel-body" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0;">
             <div id="chat-user-bar"
                 style="padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15); display: flex; align-items: center; gap: 8px; font-size: 0.8rem;">
                 <span style="color: #94a3b8; font-weight: 500; white-space: nowrap;">Name:</span>
@@ -2703,6 +2717,8 @@
 
     <script type="module">
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
+        import { initializeChatController } from "/static/js/chat-controller.js";
+        import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
 
         // Keep canvas identity self-contained: this page must still recognize
         // its owner if a shared UI script fails to load. Concurrent consumers
@@ -3189,216 +3205,7 @@
             return dialogueSpeakerColors.get(speaker);
         }
 
-        const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
-        const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
-
-        function generateFunUsername() {
-            const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-            const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
-            const num = Math.floor(Math.random() * 90) + 10;
-            return `${adj} ${noun} ${num}`;
-        }
-
-        function getAuthorColor(author) {
-            if (!author || author.toLowerCase() === 'agent' || author.toLowerCase() === 'narratron') {
-                return '#ffffff'; // Reserved white exclusively for Narratron
-            }
-            let hash = 0;
-            for (let i = 0; i < author.length; i++) {
-                hash = author.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const hue = Math.abs(hash) % 360;
-            return `hsl(${hue}, 85%, 68%)`;
-        }
-
-        function renderChatMessage(msg) {
-            const div = document.createElement('div');
-            div.className = 'chat-message';
-
-            const rawAuthor = msg.author || 'Narratron';
-            const isNarratron = (rawAuthor.toLowerCase() === 'agent' || rawAuthor.toLowerCase() === 'narratron');
-            const displayAuthor = isNarratron ? 'Narratron' : rawAuthor;
-            const color = (!isNarratron && /^#[0-9a-fA-F]{6}$/.test(msg.profile_color || ''))
-                ? msg.profile_color
-                : getAuthorColor(displayAuthor);
-
-            function makeAuthorElement(className) {
-                const element = msg.profile_username ? document.createElement('a') : document.createElement('span');
-                element.className = className;
-                if (msg.profile_username) {
-                    element.href = `/users/${encodeURIComponent(msg.profile_username)}`;
-                    element.title = `View ${displayAuthor}'s profile`;
-                }
-                return element;
-            }
-
-            // Suggestion-type messages get special rendering
-            if (msg.type === 'suggestion') {
-                div.classList.add('suggestion-message');
-                div.dataset.suggestionAuthor = rawAuthor;
-
-                const prefixSpan = makeAuthorElement('suggestion-prefix');
-                prefixSpan.textContent = `💡 ${displayAuthor} suggests:`;
-                div.appendChild(prefixSpan);
-
-                const textSpan = document.createElement('span');
-                textSpan.className = 'chat-text';
-                textSpan.textContent = msg.text;
-                div.appendChild(textSpan);
-
-                // Action row: upvote + vote count + withdraw
-                const actions = document.createElement('div');
-                actions.className = 'suggestion-actions';
-
-                const upvoteBtn = document.createElement('button');
-                upvoteBtn.className = 'suggestion-upvote-btn';
-                upvoteBtn.textContent = '👍 +1';
-                upvoteBtn.addEventListener('click', () => upvoteSuggestion(rawAuthor));
-                actions.appendChild(upvoteBtn);
-
-                const countSpan = document.createElement('span');
-                countSpan.className = 'suggestion-vote-count';
-                countSpan.dataset.voteCountFor = rawAuthor;
-                countSpan.textContent = '';
-                actions.appendChild(countSpan);
-
-                // Show withdraw button only for the suggestion author
-                if (rawAuthor === currentChatUsername) {
-                    const withdrawBtn = document.createElement('button');
-                    withdrawBtn.className = 'suggestion-withdraw-btn';
-                    withdrawBtn.textContent = '✕ Withdraw';
-                    withdrawBtn.addEventListener('click', () => withdrawMySuggestion());
-                    actions.appendChild(withdrawBtn);
-                }
-
-                div.appendChild(actions);
-                return div;
-            }
-
-            const prefixSpan = makeAuthorElement('chat-prefix');
-            prefixSpan.style.color = color;
-            prefixSpan.style.fontWeight = '600';
-            prefixSpan.style.marginRight = '6px';
-            prefixSpan.textContent = `${displayAuthor}:`;
-
-            const textSpan = document.createElement('span');
-            textSpan.className = 'chat-text';
-            textSpan.textContent = msg.text;
-
-            div.appendChild(prefixSpan);
-            div.appendChild(textSpan);
-            return div;
-        }
-
-        // --- Suggestion helpers ---
-        async function upvoteSuggestion(targetAuthor) {
-            try {
-                await fetch('/api/suggestions/upvote' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ voter: currentChatUsername, target_author: targetAuthor })
-                });
-                fetchSuggestions();
-            } catch (err) {
-                console.error('Failed to upvote suggestion:', err);
-            }
-        }
-
-        async function withdrawMySuggestion() {
-            try {
-                await fetch('/api/suggestions/withdraw' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ author: currentChatUsername })
-                });
-                fetchChat();
-                fetchSuggestions();
-            } catch (err) {
-                console.error('Failed to withdraw suggestion:', err);
-            }
-        }
-
-        async function fetchSuggestions() {
-            try {
-                const res = await fetch('/api/suggestions' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
-                const suggestions = await res.json();
-                const activeAuthors = new Set(suggestions.map(s => s.author));
-                document.querySelectorAll('.suggestion-message').forEach(el => {
-                    if (!activeAuthors.has(el.dataset.suggestionAuthor)) el.remove();
-                });
-                // Update vote counts on rendered suggestion messages
-                for (const s of suggestions) {
-                    const countEls = document.querySelectorAll(`[data-vote-count-for="${CSS.escape(s.author)}"]`);
-                    countEls.forEach(el => {
-                        el.textContent = s.upvote_count > 0 ? `${s.upvote_count} vote${s.upvote_count !== 1 ? 's' : ''}` : '';
-                    });
-                    // Highlight upvote buttons if current user has voted
-                    if (s.upvoters && s.upvoters.includes(currentChatUsername)) {
-                        document.querySelectorAll(`.suggestion-message[data-suggestion-author="${CSS.escape(s.author)}"] .suggestion-upvote-btn`)
-                            .forEach(btn => btn.classList.add('voted'));
-                    }
-                }
-            } catch (err) {
-                console.error('Failed to fetch suggestions:', err);
-            }
-        }
-
-        let currentChatUsername = "";
-        let isAuthenticatedUser = false;
-
-        async function initChatUser() {
-            try {
-                const data = await getCanvasAuthState();
-                if (data.authenticated && data.user && data.user.username) {
-                    currentChatUsername = data.user.username;
-                    isAuthenticatedUser = true;
-                    const badge = document.getElementById('chat-name-badge');
-                    if (badge) {
-                        badge.textContent = 'Member';
-                        badge.style.background = 'rgba(34, 197, 94, 0.2)';
-                        badge.style.color = '#4ade80';
-                    }
-                }
-            } catch (e) { }
-
-            if (!currentChatUsername) {
-                const savedAnonName = localStorage.getItem('narratron_anon_chat_name');
-                if (savedAnonName && savedAnonName.trim()) {
-                    currentChatUsername = savedAnonName.trim();
-                } else {
-                    currentChatUsername = generateFunUsername();
-                    localStorage.setItem('narratron_anon_chat_name', currentChatUsername);
-                }
-            }
-
-            const nameInput = document.getElementById('chat-name-input');
-            if (nameInput) {
-                nameInput.value = currentChatUsername;
-                nameInput.addEventListener('change', updateChatName);
-                nameInput.addEventListener('blur', updateChatName);
-            }
-        }
-
-        function updateChatName() {
-            const nameInput = document.getElementById('chat-name-input');
-            if (!nameInput) return;
-            const newName = nameInput.value.trim();
-            if (newName) {
-                currentChatUsername = newName;
-                if (!isAuthenticatedUser) {
-                    localStorage.setItem('narratron_anon_chat_name', newName);
-                }
-                if (typeof popoutBroadcast !== 'undefined' && popoutBroadcast) {
-                    popoutBroadcast.postMessage({ type: 'name_updated', name: newName });
-                }
-            } else {
-                nameInput.value = currentChatUsername;
-            }
-        }
-
-        initChatUser();
-
-        // Generate anonymous user ID
+        // Generate anonymous user ID and read theater context
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
         const urlParams = new URLSearchParams(window.location.search);
         const theaterId = urlParams.get('theater_id');
@@ -3409,6 +3216,62 @@
                 return window._isActiveOratorState;
             }
             return initialRoleIsOrator;
+        }
+
+        const popoutBroadcast = new BroadcastChannel('narratron_popout_channel');
+
+        // Modular Chat Controller
+        const chatController = initializeChatController({
+            messagesContainer: chatMessages,
+            chatForm: chatForm,
+            chatInput: chatInput,
+            nameInput: document.getElementById('chat-name-input'),
+            nameBadge: document.getElementById('chat-name-badge'),
+            hideSuggestionsBtn: document.getElementById('hide-suggestions-btn'),
+            theaterId: theaterId,
+            isCurrentOrator: () => isCurrentOrator(),
+            getAgentWs: () => ((isCurrentOrator() && agentWs) ? agentWs : null),
+            getAuthState: () => getCanvasAuthState(),
+            popoutBroadcast: popoutBroadcast,
+        });
+
+        function isCollabModeEnabled() {
+            return (typeof viewerCollabEnabled !== 'undefined') ? Boolean(viewerCollabEnabled) : false;
+        }
+
+        function hasAllowedOratorsPermission() {
+            if (isCurrentOrator()) return true;
+            if (window._isAllowedOrator) return true;
+            if (typeof currentBatonState !== 'undefined' && currentBatonState) {
+                const myId = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+                if (myId) {
+                    if (currentBatonState.owner && currentBatonState.owner.id === myId) return true;
+                    if (currentBatonState.active_orator && currentBatonState.active_orator.id === myId) return true;
+                    if (Array.isArray(currentBatonState.allowed_orators) && currentBatonState.allowed_orators.some(u => u.id === myId)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Beyond20 Roll & Character Event Integration
+        const beyond20Listener = initializeBeyond20Listener({
+            chatController: chatController,
+            theaterId: theaterId,
+            isAllowedOrator: () => hasAllowedOratorsPermission(),
+            isCollabModeEnabled: () => isCollabModeEnabled(),
+            isCurrentOrator: () => isCurrentOrator(),
+            getAgentWs: () => ((isCurrentOrator() && agentWs) ? agentWs : null),
+        });
+
+        // Backward compatibility helpers for canvas state refresh and popout
+        function fetchChat() {
+            return chatController.fetchChat();
+        }
+
+        function fetchSuggestions() {
+            return chatController.fetchSuggestions();
         }
 
         const oratorCommandOverlay = document.getElementById('orator-command-overlay');
@@ -4383,25 +4246,7 @@
             }
         });
 
-        let lastChatFingerprint = '';
         let lastAgentThought = null;
-        async function fetchChat() {
-            try {
-                const response = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
-                const messages = await response.json();
-                const fingerprint = JSON.stringify(messages);
-                if (fingerprint !== lastChatFingerprint) {
-                    chatMessages.innerHTML = '';
-                    messages.forEach(msg => {
-                        chatMessages.appendChild(renderChatMessage(msg));
-                    });
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                    lastChatFingerprint = fingerprint;
-                }
-            } catch (err) {
-                console.error("Failed to fetch chat:", err);
-            }
-        }
 
         function updateAgentThought(thought) {
             const text = thought && thought.text ? thought.text.trim() : '';
@@ -5064,6 +4909,7 @@
                         const isOwner = data.metadata.is_owner;
                         const isActiveOrator = data.metadata.is_active_orator;
                         const isAllowedOrator = data.metadata.is_allowed_orator;
+                        window._isAllowedOrator = Boolean(isOwner || isActiveOrator || isAllowedOrator);
                         if (!isOwner && !isActiveOrator && !isAllowedOrator) {
                             if (isCurrentOrator()) {
                                 alert("🔒 Only the theater owner or co-orators can become the Orator.");
@@ -5125,6 +4971,8 @@
 
             const isOwner = currentUser && batonState.owner && currentUser.id === batonState.owner.id;
             const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
+            const isAllowedOratorInList = currentUser && (batonState.allowed_orators || []).some(u => u.id === currentUser.id);
+            window._isAllowedOrator = Boolean(isOwner || isActiveOrator || isAllowedOratorInList);
 
             // This is the single baton control: it identifies the current
             // holder and opens the owner's assignment menu.
@@ -5525,42 +5373,7 @@
 
 
 
-        // Chat submit forwarding to agent
-        chatForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const text = chatInput.value.trim();
-            if (!text) return;
 
-            chatInput.value = '';
-            try {
-                // Post to chat_manager (backend auto-detects /suggest prefix)
-                const res = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
-                });
-                if (!res.ok) {
-                    throw new Error(`Chat request failed: ${res.status}`);
-                }
-                fetchChat();
-
-                // If it was a suggestion, also refresh suggestions
-                const result = await res.json();
-                if (result.type === 'suggestion') {
-                    fetchSuggestions();
-                }
-
-                // Send to agent if connected (only non-suggestion messages)
-                if (result.type !== 'suggestion' && isCurrentOrator() && agentWs && agentWs.readyState === WebSocket.OPEN) {
-                    agentWs.send(JSON.stringify({
-                        type: "text",
-                        text: text
-                    }));
-                }
-            } catch (err) {
-                console.error("Failed to send message:", err);
-            }
-        });
 
         // Audio Recorder Callback with Opus compression (~20-60 bytes per chunk)
         let clientAudioChunkCount = 0;
@@ -6437,7 +6250,6 @@
 
         let isPanelCollapsed = false;
         let popoutWindowRef = null;
-        const popoutBroadcast = new BroadcastChannel('narratron_popout_channel');
 
         function setPanelCollapsed(collapsed) {
             isPanelCollapsed = collapsed;
@@ -6498,9 +6310,7 @@
             } else if (event.data.type === 'chat_sent') {
                 fetchChat();
             } else if (event.data.type === 'name_updated') {
-                currentChatUsername = event.data.name;
-                const nameInput = document.getElementById('chat-name-input');
-                if (nameInput) nameInput.value = currentChatUsername;
+                chatController.setChatUsername(event.data.name);
             }
         };
 

@@ -28,6 +28,9 @@ class RegistryDependency:
     def __setattr__(self, name: str, value: Any) -> None:
         setattr(self.target, name, value)
 
+    def __delattr__(self, name: str) -> None:
+        delattr(self.target, name)
+
     def __bool__(self) -> bool:
         return bool(self.target)
 

@@ -52,6 +52,7 @@ def test_docs_index_links_to_each_documentation_page():
     assert 'href="/docs/ideas"' in response
     assert 'href="/docs/theater-yaml"' in response
     assert 'href="/docs/writing-adventures"' in response
+    assert 'href="/docs/beyond20"' in response
 
 
 def test_docs_writing_adventures_page_renders():
@@ -60,6 +61,13 @@ def test_docs_writing_adventures_page_renders():
     assert "syclonex" in response
     assert "The Clockwork Archive" in response or "example_adventure" in response
     assert "<pre><code" in response
+
+
+def test_docs_beyond20_page_renders():
+    response = pages.read_docs_beyond20()
+    assert "Using Beyond20 with a Narratron canvas" in response
+    assert "Viewer collaboration" in response
+    assert '<title>Beyond20 · Docs · Narratron</title>' in response
 
 
 def test_docs_index_is_not_shadowed_by_the_openapi_docs():

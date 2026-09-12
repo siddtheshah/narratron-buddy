@@ -246,6 +246,32 @@ def can_control_agent_websocket(
     return current_user.get("id") == active_orator_id
 
 
+def is_allowed_orator(
+    deployment: dict,
+    *,
+    current_user: Optional[dict] = None,
+) -> bool:
+    """Return whether the current user has 'allowed_orators' permission.
+
+    The theater owner, active orator, and users listed in allowed_orators have permission.
+    """
+    if not deployment or not current_user:
+        return False
+    user_id = current_user.get("id")
+    if not user_id:
+        return False
+    if user_id == deployment.get("user_id"):
+        return True
+    if user_id == deployment.get("active_orator_id"):
+        return True
+    raw_allowed = deployment.get("allowed_orators") or "[]"
+    try:
+        allowed_ids = json.loads(raw_allowed) if isinstance(raw_allowed, str) else list(raw_allowed)
+    except Exception:
+        allowed_ids = []
+    return user_id in allowed_ids
+
+
 
 
 def _require_canvas_access(

@@ -28,12 +28,13 @@ UI integration tests are the exception: place them in `testing/ui/`, also using 
   - `services/live_stream_service_test.py` (tests `services/live_stream_service.py`)
 
 ### Running Unit Tests
-To run all unit tests across the repository:
+To run unit tests:
 
 ```bash
-pytest --ignore=scratch
+pytest <subdirectory> --ignore=scratch
 ```
 
+Only run the full unit test suite when testing broader integrations.
 
 ### Mocking Practices
 - **Gemini API / Vertex AI**: Always mock `genai.Client` in `ImageTools` tests using `unittest.mock.patch("tools.image_tool.genai.Client")` to avoid external API calls during unit tests.

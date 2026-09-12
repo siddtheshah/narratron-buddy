@@ -149,9 +149,9 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return template.render(active_page=active_page, show_pricing=show_pricing)
     except Exception:
         out = raw
-        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-adventures", "docs-terms", "docs-privacy"}
+        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-adventures", "docs-beyond20", "docs-terms", "docs-privacy"}
         out = out.replace(
-            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures', 'docs-terms', 'docs-privacy'] %}active{% endif %}",
+            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures', 'docs-beyond20', 'docs-terms', 'docs-privacy'] %}active{% endif %}",
             "active" if docs_active else "",
         )
         out = out.replace(
@@ -287,6 +287,21 @@ def read_docs_writing_adventures():
         extra_replacements={
             "<!-- ABOUT_CONTENT -->": adventures_content,
             "<title>About Narratron</title>": "<title>Writing Adventures · Docs · Narratron</title>",
+        },
+    )
+
+
+@app.get("/docs/beyond20", response_class=HTMLResponse)
+def read_docs_beyond20():
+    """Serve setup guidance for the Beyond20 canvas integration."""
+    doc_path = PROJECT_ROOT / "docs" / "beyond20.md"
+    beyond20_content = render_about_markdown(doc_path.read_text(encoding="utf-8"))
+    return render_page_template(
+        "about.html",
+        active_page="docs-beyond20",
+        extra_replacements={
+            "<!-- ABOUT_CONTENT -->": beyond20_content,
+            "<title>About Narratron</title>": "<title>Beyond20 · Docs · Narratron</title>",
         },
     )
 

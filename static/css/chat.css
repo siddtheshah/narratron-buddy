@@ -1,0 +1,174 @@
+/* Chat and Beyond20 Dice Roll Styling for Narratron */
+
+/* Chat Messages Scrollbar & Overflow Container */
+#chat-messages {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+
+#chat-messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+#chat-messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#chat-messages::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 10px;
+}
+
+#chat-messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+/* Chat Messages Base */
+.chat-message {
+    flex-shrink: 0;
+}
+
+/* White Background Dice Roll Card */
+.chat-message.chat-roll-message {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.08);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.chat-message.chat-roll-message:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28), 0 2px 5px rgba(0, 0, 0, 0.12);
+}
+
+.chat-roll-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #ffffff !important;
+    color: #0f172a !important;
+}
+
+/* Ensure all elements inside the card render dark text on the white background */
+.chat-roll-card * {
+    color: #0f172a;
+}
+
+.chat-roll-card a {
+    color: #2563eb;
+}
+
+.chat-roll-card table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.chat-roll-card th,
+.chat-roll-card td {
+    padding: 4px 8px;
+    border: 1px solid #e2e8f0;
+    color: #1e293b;
+}
+
+/* Beyond20 Specific Element Styling on White Card */
+.chat-roll-card .beyond20-message,
+.chat-roll-card .beyond20-card,
+.chat-roll-card .dnd5e {
+    background: #ffffff !important;
+    color: #0f172a !important;
+}
+
+.chat-roll-card .beyond20-total-damage {
+    color: #991b1b !important;
+    background: #fef2f2 !important;
+    border: 1px solid #fecaca !important;
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 2px 8px;
+}
+
+.chat-roll-card .beyond20-healing {
+    color: #166534 !important;
+    background: #f0fdf4 !important;
+    border: 1px solid #bbf7d0 !important;
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 2px 8px;
+}
+
+.chat-roll-card .beyond20-dice-roller-content {
+    background-color: #f1f5f9 !important;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.chat-roll-card .beyond20-roll-result {
+    color: #1e293b;
+}
+
+/* Fallback badges (when roll_data has no pre-rendered HTML) */
+.chat-roll-results {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.chat-roll-summary-text {
+    font-size: 0.84rem;
+    color: #334155 !important;
+    font-weight: 500;
+}
+
+.roll-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.roll-badge.attack-roll {
+    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    color: #1d4ed8 !important;
+}
+
+.roll-badge.attack-roll.crit-hit {
+    background: #ecfdf5;
+    border: 1.5px solid #34d399;
+    color: #047857 !important;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+    animation: roll-crit-pulse 2s infinite ease-in-out;
+}
+
+.roll-badge.attack-roll.crit-fail {
+    background: #fef2f2;
+    border: 1.5px solid #f87171;
+    color: #b91c1c !important;
+}
+
+.roll-badge.damage-roll {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    color: #b45309 !important;
+}
+
+@keyframes roll-crit-pulse {
+    0%, 100% {
+        box-shadow: 0 0 6px rgba(16, 185, 129, 0.25);
+    }
+    50% {
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+    }
+}
