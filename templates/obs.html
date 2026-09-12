@@ -93,6 +93,25 @@
         .scene-dialogue-bubble { max-width: min(88vw,900px); color: #fff; font-size: clamp(1.05rem,2.1vw,1.65rem); font-weight: 600; line-height: 1.25; text-align: center; text-shadow: 0 2px 5px rgba(0,0,0,.95), 0 0 12px rgba(0,0,0,.7); }
         .scene-dialogue-bubble.thought { font-style: italic; }
         .scene-dialogue-speaker { color: inherit; font-size: .78em; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-right: .4em; }
+
+        #clip-capture-panel { position: fixed; z-index: 20; inset: 0; display: none; align-items: center; justify-content: center; padding: 1.5rem; background: rgba(2, 6, 23, .78); font-family: 'Outfit', sans-serif; }
+        #clip-capture-panel.active { display: flex; }
+        .clip-capture-card { width: min(440px, 100%); padding: 1.5rem; border: 1px solid rgba(236, 72, 153, .55); border-radius: 18px; background: #111827; color: #fff; box-shadow: 0 25px 70px rgba(0,0,0,.6); }
+        .clip-capture-card h1 { margin: 0; font-size: 1.25rem; }
+        .clip-capture-card p { margin: .75rem 0 0; color: #cbd5e1; line-height: 1.45; font-size: .92rem; }
+        #clip-capture-start { width: 100%; margin-top: 1.2rem; padding: .75rem 1rem; border: 1px solid rgba(244, 114, 182, .7); border-radius: 10px; background: rgba(236, 72, 153, .28); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+        #clip-capture-status { min-height: 1.2em; margin-top: .75rem; color: #f9a8d4; font-size: .82rem; }
+        .clip-audio-option { display: flex; align-items: flex-start; gap: .55rem; margin-top: 1rem; color: #e2e8f0; font-size: .86rem; line-height: 1.35; cursor: pointer; }
+        .clip-audio-option input { margin-top: .15rem; accent-color: #ec4899; }
+        #clip-recording-bar { position: fixed; right: 1rem; bottom: 1rem; left: 1rem; z-index: 15; display: none; align-items: center; justify-content: center; gap: .7rem; padding: .55rem .8rem; border: 1px solid rgba(244, 114, 182, .55); border-radius: 14px; background: rgba(15, 23, 42, .9); box-shadow: 0 8px 24px rgba(0,0,0,.4); opacity: 0; transform: translateY(8px); transition: opacity .16s ease, transform .16s ease; }
+        #clip-recording-bar.active { display: flex; }
+        #clip-recording-bar.active:not(.recording) { opacity: 1; transform: translateY(0); }
+        #clip-recording-bar:hover, #clip-recording-bar:focus-within { opacity: 1; transform: translateY(0); }
+        #clip-recording-bar button { border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: .38rem .65rem; color: #fff; background: rgba(255,255,255,.1); font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; }
+        #clip-stop-early-btn { background: rgba(239,68,68,.24) !important; border-color: rgba(248,113,113,.55) !important; }
+        #clip-recording-time { min-width: 4.25rem; color: #f9a8d4; font-size: .84rem; font-variant-numeric: tabular-nums; text-align: center; }
+        #clip-recording-bar.recording #clip-start-recording-btn { display: none; }
+        #clip-recording-bar:not(.recording) #clip-stop-early-btn, #clip-recording-bar:not(.recording) #clip-start-over-btn { display: none; }
     </style>
 </head>
 
@@ -104,6 +123,21 @@
         <img id="ghost-image" src="" alt="" aria-hidden="true">
         <canvas id="doodle-canvas"></canvas>
         <div id="scene-dialogue-overlay" aria-live="polite"></div>
+    </div>
+    <div id="clip-capture-panel" aria-live="polite">
+        <div class="clip-capture-card">
+            <h1>Create silent TikTok clip</h1>
+            <p>Select this Narratron Clip tab in the browser picker and enable <strong>Share tab audio</strong> so the canvas music is included. The resulting clip is up to 30 seconds and contains only this OBS canvas, including image and text effects.</p>
+            <label class="clip-audio-option"><input id="clip-include-mic" type="checkbox" checked> <span>Include my microphone voice in this clip. Narratron asks for microphone permission only for this local recording.</span></label>
+            <button id="clip-capture-start" type="button">Choose tab and record</button>
+            <div id="clip-capture-status"></div>
+        </div>
+    </div>
+    <div id="clip-recording-bar" aria-label="Clip recording controls">
+        <span id="clip-recording-time">0:00 / 0:30</span>
+        <button id="clip-start-recording-btn" type="button">Start recording</button>
+        <button id="clip-stop-early-btn" type="button">Stop early</button>
+        <button id="clip-start-over-btn" type="button">Start over</button>
     </div>
 
     <script type="module">
@@ -623,6 +657,169 @@
             }
         });
         connectCanvasStateSocket();
+
+        // Clip mode is intentionally isolated from the interactive canvas so
+        // screen capture sees the OBS visual stage only. The recorder gets a
+        // filtered video-only stream; it cannot receive microphone/tab audio.
+        const clipMode = urlParams.get('clip') === '1';
+        const clipCapturePanel = document.getElementById('clip-capture-panel');
+        const clipCaptureStart = document.getElementById('clip-capture-start');
+        const clipCaptureStatus = document.getElementById('clip-capture-status');
+        const clipIncludeMic = document.getElementById('clip-include-mic');
+        const clipRecordingBar = document.getElementById('clip-recording-bar');
+        const clipRecordingTime = document.getElementById('clip-recording-time');
+        const clipStartRecordingBtn = document.getElementById('clip-start-recording-btn');
+        const clipStopEarlyBtn = document.getElementById('clip-stop-early-btn');
+        const clipStartOverBtn = document.getElementById('clip-start-over-btn');
+        const CLIP_DURATION_MS = 30_000;
+        let activeClipControl = null;
+        let clipTimerInterval = null;
+
+        function showClipReadyState(message = 'Ready to record') {
+            clipRecordingBar?.classList.add('active');
+            clipRecordingBar?.classList.remove('recording');
+            if (clipRecordingTime) clipRecordingTime.textContent = message;
+        }
+
+        function preferredClipMimeType() {
+            return [
+                'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+                'video/webm;codecs=vp9,opus',
+                'video/webm;codecs=vp8,opus',
+                'video/webm',
+            ].find(type => MediaRecorder.isTypeSupported(type)) || '';
+        }
+
+        function downloadClip(blob, mimeType) {
+            const extension = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `narratron-tiktok-clip-${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        async function createClipAudioMix(displayStream, includeMicrophone) {
+            let microphoneStream = null;
+            if (includeMicrophone) {
+                const selectedDeviceId = localStorage.getItem('narratron_mic_device_id') || '';
+                const audio = selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true;
+                microphoneStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+            }
+            const sources = [displayStream, microphoneStream].filter(stream => stream?.getAudioTracks().length);
+            if (!sources.length) {
+                return { tracks: [], cleanup: () => microphoneStream?.getTracks().forEach(track => track.stop()) };
+            }
+            const audioContext = new AudioContext();
+            const destination = audioContext.createMediaStreamDestination();
+            const nodes = sources.map(stream => {
+                const node = audioContext.createMediaStreamSource(stream);
+                node.connect(destination);
+                return node;
+            });
+            await audioContext.resume();
+            return {
+                tracks: destination.stream.getAudioTracks(),
+                cleanup: () => {
+                    nodes.forEach(node => node.disconnect());
+                    microphoneStream?.getTracks().forEach(track => track.stop());
+                    audioContext.close().catch(() => {});
+                },
+            };
+        }
+
+        async function recordClipFromObsStage() {
+            if (!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder) {
+                throw new Error('This browser cannot create a clip. Try a current desktop browser.');
+            }
+            const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                video: { frameRate: { ideal: 30, max: 30 } },
+                audio: true,
+                selfBrowserSurface: 'include',
+                preferCurrentTab: true,
+            });
+            const videoTrack = displayStream.getVideoTracks()[0];
+            displayStream.getAudioTracks().forEach(track => track.stop());
+            if (!videoTrack) {
+                displayStream.getTracks().forEach(track => track.stop());
+                throw new Error('Select the Narratron Clip tab to capture it.');
+            }
+
+            const mimeType = preferredClipMimeType();
+            let audioMix;
+            try {
+                audioMix = await createClipAudioMix(displayStream, Boolean(clipIncludeMic?.checked));
+            } catch (error) {
+                displayStream.getTracks().forEach(track => track.stop());
+                throw error;
+            }
+            const recorder = new MediaRecorder(new MediaStream([videoTrack, ...audioMix.tracks]), mimeType ? { mimeType } : undefined);
+            const chunks = [];
+            let cancelled = false;
+            let timerStartedAt = 0;
+            const updateClipTimer = () => {
+                const elapsed = Math.min(CLIP_DURATION_MS, Date.now() - timerStartedAt);
+                if (clipRecordingTime) clipRecordingTime.textContent = `0:${String(Math.ceil(elapsed / 1000)).padStart(2, '0')} / 0:30`;
+            };
+            const finished = new Promise((resolve, reject) => {
+                recorder.addEventListener('dataavailable', event => { if (event.data.size) chunks.push(event.data); });
+                recorder.addEventListener('error', () => reject(new Error('The clip recorder stopped unexpectedly.')));
+                recorder.addEventListener('stop', () => {
+                    displayStream.getTracks().forEach(track => track.stop());
+                    audioMix.cleanup();
+                    activeClipControl = null;
+                    if (clipTimerInterval) clearInterval(clipTimerInterval);
+                    clipTimerInterval = null;
+                    showClipReadyState(cancelled ? 'Take discarded' : 'Recording complete');
+                    if (cancelled || !chunks.length) resolve(null);
+                    else resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
+                }, { once: true });
+            });
+            videoTrack.addEventListener('ended', () => {
+                cancelled = true;
+                if (recorder.state !== 'inactive') recorder.stop();
+            }, { once: true });
+            clipCapturePanel?.classList.remove('active');
+            activeClipControl = {
+                stop: (discard = false) => {
+                    cancelled = discard;
+                    if (recorder.state !== 'inactive') recorder.stop();
+                },
+            };
+            timerStartedAt = Date.now();
+            updateClipTimer();
+            clipTimerInterval = setInterval(updateClipTimer, 250);
+            clipRecordingBar?.classList.add('active', 'recording');
+            recorder.start(250);
+            setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop(); }, CLIP_DURATION_MS);
+            return finished;
+        }
+
+        if (clipMode) {
+            document.title = 'Narratron Clip Stage';
+            clipCapturePanel?.classList.add('active');
+            const beginClipCapture = async () => {
+                try {
+                    clipCapturePanel?.classList.remove('active');
+                    clipRecordingBar?.classList.remove('active', 'recording');
+                    const clip = await recordClipFromObsStage();
+                    if (!clip) {
+                        return;
+                    }
+                    downloadClip(clip, clip.type);
+                } catch (error) {
+                    showClipReadyState(error?.message || 'Unable to record the clip.');
+                    console.error('Failed to record OBS clip:', error);
+                }
+            };
+            clipCaptureStart?.addEventListener('click', beginClipCapture);
+            clipStartRecordingBtn?.addEventListener('click', beginClipCapture);
+            clipStopEarlyBtn?.addEventListener('click', () => activeClipControl?.stop(false));
+            clipStartOverBtn?.addEventListener('click', () => activeClipControl?.stop(true));
+        }
     </script>
 </body>
 

@@ -19,6 +19,32 @@ class TestDoodles(UITestCase):
         self.assertIn("if (!pendingDoodleMessages.length || doodleReconnectTimer || !isActiveCanvasWindow()) return;", canvas)
         self.assertIn("connectDoodleSocket(true);", canvas)
 
+    def test_canvas_clip_sharing_mixes_opt_in_voice_and_tab_audio_locally(self):
+        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        obs = (Path(__file__).resolve().parents[2] / "templates" / "obs.html").read_text(encoding="utf-8")
+        self.assertIn('id="clip-share-btn"', canvas)
+        self.assertIn("new URL('/obs', window.location.origin)", canvas)
+        self.assertIn("clipUrl.searchParams.set('clip', '1');", canvas)
+        self.assertIn('id="clip-capture-panel"', obs)
+        self.assertIn("const CLIP_DURATION_MS = 30_000;", obs)
+        self.assertIn("navigator.mediaDevices.getDisplayMedia", obs)
+        self.assertIn("audio: true", obs)
+        self.assertIn('id="clip-include-mic"', obs)
+        self.assertIn("navigator.mediaDevices.getUserMedia({ audio, video: false })", obs)
+        self.assertIn("createMediaStreamDestination()", obs)
+        self.assertIn("new MediaStream([videoTrack, ...audioMix.tracks])", obs)
+        self.assertIn("'video/webm;codecs=vp8,opus'", obs)
+        self.assertIn("'video/mp4;codecs=avc1.42E01E,mp4a.40.2'", obs)
+        self.assertIn('id="clip-recording-bar"', obs)
+        self.assertIn('id="clip-start-recording-btn"', obs)
+        self.assertIn('id="clip-stop-early-btn"', obs)
+        self.assertIn('id="clip-start-over-btn"', obs)
+        self.assertIn("activeClipControl?.stop(false)", obs)
+        self.assertIn("activeClipControl?.stop(true)", obs)
+        self.assertIn("clipStartRecordingBtn?.addEventListener('click', beginClipCapture)", obs)
+        self.assertIn("const clipMode = urlParams.get('clip') === '1';", obs)
+        self.assertNotIn("/api/clips", obs)
+
     def test_doodles_persist_and_reset_when_cleared(self):
         theater_id = "doodle_persistence"
         first_image = self.workspace / "img1.jpg"

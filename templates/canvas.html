@@ -2224,6 +2224,48 @@
             opacity: 1;
             transform: translateX(-50%) translateY(0) scale(1);
         }
+
+        .clip-share-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: rgba(2, 6, 23, 0.72);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .clip-share-modal.show { display: flex; }
+
+        .clip-share-card {
+            width: min(390px, 100%);
+            padding: 1.4rem;
+            border: 1px solid rgba(129, 140, 248, 0.55);
+            border-radius: 18px;
+            background: #111827;
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.55);
+        }
+
+        .clip-share-actions { display: flex; gap: 0.7rem; margin-top: 1.15rem; }
+
+        .clip-share-actions button {
+            flex: 1;
+            border: 1px solid rgba(165, 180, 252, 0.5);
+            border-radius: 10px;
+            padding: 0.7rem 0.85rem;
+            color: #fff;
+            background: rgba(99, 102, 241, 0.22);
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .clip-share-actions button:hover { background: rgba(99, 102, 241, 0.42); }
+        .clip-share-actions .clip-cancel { background: rgba(255, 255, 255, 0.08); }
+
     </style>
 </head>
 
@@ -2250,6 +2292,11 @@
             <button id="share-theater-btn" title="Copy theater share link"
                 style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 🔗
+            </button>
+            <button id="clip-share-btn" title="Create a 30-second TikTok clip"
+                style="background: rgba(236, 72, 153, 0.2); border: 1px solid rgba(236, 72, 153, 0.45); color: #f9a8d4; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;"
+                aria-label="Create a 30-second TikTok clip">
+                🎬
             </button>
             <button id="obs-theater-btn" title="Copy OBS Browser Source link"
                 style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
@@ -5402,6 +5449,37 @@
             });
         }
 
+        const clipShareBtn = document.getElementById('clip-share-btn');
+        const clipShareModal = document.getElementById('clip-share-modal');
+        const clipRecordBtn = document.getElementById('clip-record-btn');
+        const clipCancelBtn = document.getElementById('clip-cancel-btn');
+
+        function closeClipShareModal() {
+            clipShareModal?.classList.remove('show');
+            clipShareModal?.setAttribute('aria-hidden', 'true');
+        }
+
+        clipShareBtn?.addEventListener('click', () => {
+            clipShareModal?.classList.add('show');
+            clipShareModal?.setAttribute('aria-hidden', 'false');
+        });
+        clipCancelBtn?.addEventListener('click', closeClipShareModal);
+        clipShareModal?.addEventListener('click', event => {
+            if (event.target === clipShareModal) closeClipShareModal();
+        });
+        clipRecordBtn?.addEventListener('click', async () => {
+            closeClipShareModal();
+            const clipUrl = new URL('/obs', window.location.origin);
+            new URL(window.location.href).searchParams.forEach((value, key) => clipUrl.searchParams.set(key, value));
+            clipUrl.searchParams.set('clip', '1');
+            const clipWindow = window.open(clipUrl.toString(), 'narratron-tiktok-clip', 'popup=yes,width=960,height=640');
+            if (!clipWindow) {
+                showShareToast('Allow pop-ups to open the clean clip stage.');
+            } else {
+                showShareToast('🎬 The clean clip stage is ready in a new window.');
+            }
+        });
+
         const obsTheaterBtn = document.getElementById('obs-theater-btn');
         if (obsTheaterBtn) {
             obsTheaterBtn.addEventListener('click', async () => {
@@ -6445,6 +6523,7 @@
         const pulloutCloseBtn = document.getElementById('pullout-close-btn');
         const menuItemHowto = document.getElementById('menu-item-howto');
         const menuItemShare = document.getElementById('menu-item-share');
+        const menuItemClip = document.getElementById('menu-item-clip');
         const menuItemObs = document.getElementById('menu-item-obs');
         const minimalModeInput = document.getElementById('minimal-mode-input');
 
@@ -6490,6 +6569,13 @@
                 closePulloutMenu();
                 const shareBtn = document.getElementById('share-theater-btn');
                 if (shareBtn) shareBtn.click();
+            });
+        }
+
+        if (menuItemClip) {
+            menuItemClip.addEventListener('click', () => {
+                closePulloutMenu();
+                clipShareBtn?.click();
             });
         }
 
@@ -7176,12 +7262,30 @@
                             <span class="pullout-item-icon">🔗</span>
                             <span>Copy Share Link</span>
                         </button>
+                        <button id="menu-item-clip" class="pullout-menu-item">
+                            <span class="pullout-item-icon">🎬</span>
+                            <span>Create TikTok Clip</span>
+                        </button>
                         <button id="menu-item-obs" class="pullout-menu-item">
                             <span class="pullout-item-icon">📹</span>
                             <span>Copy OBS Source Link</span>
                         </button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="clip-share-modal" class="clip-share-modal" role="dialog" aria-modal="true"
+        aria-labelledby="clip-share-title" aria-hidden="true">
+        <div class="clip-share-card">
+            <h2 id="clip-share-title" style="margin: 0; font-size: 1.2rem;">Create a TikTok-ready clip</h2>
+            <p style="margin: 0.7rem 0 0; color: #cbd5e1; line-height: 1.45; font-size: 0.9rem;">
+                This opens a clean OBS canvas stage in a new window. In that window, select its Narratron tab when your browser asks what to share. It records up to 30 seconds of image and text effects, canvas music, and optional voice, then downloads the clip locally for review before creating a TikTok draft.
+            </p>
+            <div class="clip-share-actions">
+                <button id="clip-record-btn" type="button">Open clean clip stage</button>
+                <button id="clip-cancel-btn" class="clip-cancel" type="button">Cancel</button>
             </div>
         </div>
     </div>
