@@ -112,6 +112,10 @@
         #clip-recording-time { min-width: 4.25rem; color: #f9a8d4; font-size: .84rem; font-variant-numeric: tabular-nums; text-align: center; }
         #clip-recording-bar.recording #clip-start-recording-btn { display: none; }
         #clip-recording-bar:not(.recording) #clip-stop-early-btn, #clip-recording-bar:not(.recording) #clip-start-over-btn { display: none; }
+        #clip-draft-handoff { position: fixed; z-index: 25; inset: 0; display: none; align-items: center; justify-content: center; padding: 1.5rem; background: rgba(2, 6, 23, .78); font-family: 'Outfit', sans-serif; }
+        #clip-draft-handoff.active { display: flex; }
+        .clip-draft-action { display: inline-block; width: 100%; margin-top: 1.2rem; padding: .75rem 1rem; border: 1px solid rgba(244, 114, 182, .7); border-radius: 10px; color: #fff; background: rgba(236, 72, 153, .28); font-weight: 700; text-align: center; text-decoration: none; }
+        .clip-draft-action:hover { background: rgba(236, 72, 153, .42); }
     </style>
 </head>
 
@@ -126,7 +130,7 @@
     </div>
     <div id="clip-capture-panel" aria-live="polite">
         <div class="clip-capture-card">
-            <h1>Create silent TikTok clip</h1>
+            <h1>Create a TikTok clip</h1>
             <p>Select this Narratron Clip tab in the browser picker and enable <strong>Share tab audio</strong> so the canvas music is included. The resulting clip is up to 30 seconds and contains only this OBS canvas, including image and text effects.</p>
             <label class="clip-audio-option"><input id="clip-include-mic" type="checkbox" checked> <span>Include my microphone voice in this clip. Narratron asks for microphone permission only for this local recording.</span></label>
             <button id="clip-capture-start" type="button">Choose tab and record</button>
@@ -138,6 +142,13 @@
         <button id="clip-start-recording-btn" type="button">Start recording</button>
         <button id="clip-stop-early-btn" type="button">Stop early</button>
         <button id="clip-start-over-btn" type="button">Start over</button>
+    </div>
+    <div id="clip-draft-handoff" aria-live="polite">
+        <div class="clip-capture-card">
+            <h1>Your clip is ready</h1>
+            <p>It was downloaded to this device. Open TikTok, log in if needed, and select that downloaded clip to continue editing it as a draft. You choose when to publish.</p>
+            <a id="clip-tiktok-draft-link" class="clip-draft-action" href="https://www.tiktok.com/tiktokstudio/upload?lang=en" target="_blank" rel="noopener">Open TikTok and create draft</a>
+        </div>
     </div>
 
     <script type="module">
@@ -671,6 +682,7 @@
         const clipStartRecordingBtn = document.getElementById('clip-start-recording-btn');
         const clipStopEarlyBtn = document.getElementById('clip-stop-early-btn');
         const clipStartOverBtn = document.getElementById('clip-start-over-btn');
+        const clipDraftHandoff = document.getElementById('clip-draft-handoff');
         const CLIP_DURATION_MS = 30_000;
         let activeClipControl = null;
         let clipTimerInterval = null;
@@ -700,6 +712,10 @@
             link.click();
             link.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function showTikTokDraftHandoff() {
+            clipDraftHandoff?.classList.add('active');
         }
 
         async function createClipAudioMix(displayStream, includeMicrophone) {
@@ -810,6 +826,7 @@
                         return;
                     }
                     downloadClip(clip, clip.type);
+                    showTikTokDraftHandoff();
                 } catch (error) {
                     showClipReadyState(error?.message || 'Unable to record the clip.');
                     console.error('Failed to record OBS clip:', error);

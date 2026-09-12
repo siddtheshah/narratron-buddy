@@ -43,6 +43,10 @@ class TestDoodles(UITestCase):
         self.assertIn("activeClipControl?.stop(true)", obs)
         self.assertIn("clipStartRecordingBtn?.addEventListener('click', beginClipCapture)", obs)
         self.assertIn("const clipMode = urlParams.get('clip') === '1';", obs)
+        self.assertIn('id="clip-tiktok-draft-link"', obs)
+        self.assertIn('href="https://www.tiktok.com/tiktokstudio/upload?lang=en"', obs)
+        self.assertIn("function showTikTokDraftHandoff()", obs)
+        self.assertIn("showTikTokDraftHandoff();", obs)
         self.assertNotIn("/api/clips", obs)
 
     def test_doodles_persist_and_reset_when_cleared(self):
