@@ -425,6 +425,17 @@
       background: rgba(15, 23, 42, 0.4);
     }
 
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    footer a:hover {
+      color: var(--text-main);
+      text-decoration: underline;
+    }
+
     .join-modal[hidden] {
       display: none;
     }
@@ -621,7 +632,7 @@
   </div>
 
   <footer>
-    Narratron Stats Tracking & Analytics System &copy; 2026
+    Narratron Stats Tracking & Analytics System &copy; 2026 &middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a>
   </footer>
 
   <script>

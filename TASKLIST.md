@@ -19,8 +19,8 @@
   - Establish load-test baselines for canvas, OBS, and popout viewers; report DB reads per active viewer and verify the WebSocket migration materially reduces them.
 
 ## Policy Pages
-- [ ] Page for terms of use.
-- [ ] Page for privacy policy.
+- [x] Page for terms of use.
+- [x] Page for privacy policy.
 
 ## New Demos
 - [ ] Drawing demo

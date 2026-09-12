@@ -149,12 +149,16 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return template.render(active_page=active_page, show_pricing=show_pricing)
     except Exception:
         out = raw
-        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-adventures"}
+        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-adventures", "docs-terms", "docs-privacy"}
+        out = out.replace(
+            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures', 'docs-terms', 'docs-privacy'] %}active{% endif %}",
+            "active" if docs_active else "",
+        )
         out = out.replace(
             "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures'] %}active{% endif %}",
             "active" if docs_active else "",
         )
-        for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "stats", "deploy"]:
+        for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-terms", "docs-privacy", "stats", "deploy"]:
             pattern = f"{{% if active_page == '{p}' %}}active{{% endif %}}"
             out = out.replace(pattern, "active" if active_page == p else "")
         if show_pricing:
@@ -285,6 +289,48 @@ def read_docs_writing_adventures():
             "<title>About Narratron</title>": "<title>Writing Adventures · Docs · Narratron</title>",
         },
     )
+
+
+@app.get("/terms", response_class=HTMLResponse)
+@app.get("/terms-of-service", response_class=HTMLResponse)
+@app.get("/terms-of-use", response_class=HTMLResponse)
+@app.get("/docs/terms", response_class=HTMLResponse)
+def read_terms():
+    """Serve the Terms of Service placeholder page."""
+    doc_path = PROJECT_ROOT / "docs" / "terms_of_service.md"
+    raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
+    terms_content = render_about_markdown(raw_content)
+    return render_page_template(
+        "policy.html",
+        active_page="docs-terms",
+        extra_replacements={
+            "<!-- POLICY_TITLE -->": "Terms of Service",
+            "<!-- POLICY_CONTENT -->": terms_content,
+            "<!-- TERMS_ACTIVE -->": "active",
+            "<!-- PRIVACY_ACTIVE -->": "",
+        },
+    )
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+@app.get("/privacy-policy", response_class=HTMLResponse)
+@app.get("/docs/privacy", response_class=HTMLResponse)
+def read_privacy():
+    """Serve the Privacy Policy placeholder page."""
+    doc_path = PROJECT_ROOT / "docs" / "privacy_policy.md"
+    raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
+    privacy_content = render_about_markdown(raw_content)
+    return render_page_template(
+        "policy.html",
+        active_page="docs-privacy",
+        extra_replacements={
+            "<!-- POLICY_TITLE -->": "Privacy Policy",
+            "<!-- POLICY_CONTENT -->": privacy_content,
+            "<!-- TERMS_ACTIVE -->": "",
+            "<!-- PRIVACY_ACTIVE -->": "active",
+        },
+    )
+
 
 @app.get("/stats", response_class=HTMLResponse)
 def read_stats():

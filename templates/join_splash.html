@@ -395,6 +395,17 @@
       font-size: 0.85rem;
       border-top: 1px solid var(--glass-border);
     }
+
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    footer a:hover {
+      color: var(--text-main);
+      text-decoration: underline;
+    }
   </style>
 </head>
 
@@ -521,7 +532,7 @@
   </main>
 
   <footer>
-    Narratron &copy; 2026.
+    Narratron &copy; 2026 &middot; <a href="/terms">Terms of Service</a> &middot; <a href="/privacy">Privacy Policy</a>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>
