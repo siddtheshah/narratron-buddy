@@ -684,9 +684,6 @@ class LiveAgentSession:
                             return
                     except Exception as err:
                         logger.debug(f"[LiveAgentSession] Periodic credit check error: {err}")
-
-                if self.websocket_connected and self.canvas_state_manager:
-                    self.canvas_state_manager.set_tool_activity("live", active=True, recent_seconds=10.0)
                 self.send_canvas_state()
                 await asyncio.sleep(60.0)
         except asyncio.CancelledError:
