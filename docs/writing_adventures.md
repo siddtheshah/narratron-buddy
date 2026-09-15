@@ -181,7 +181,6 @@ Sticky notes and persistent story planning contracts are configured in `planning
 # Deep Planner Schema: planning.yaml
 "Player Character":
   description: "Established player identity, objective, and condition."
-  required: true
   render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
   fields:
     name: "Character name"
@@ -196,7 +195,6 @@ Sticky notes and persistent story planning contracts are configured in `planning
 
 "Spire Security Level":
   description: "Alert tier and automaton activity."
-  required: true
   render: "Alert: {alert} | Automatons: {automatons}"
   fields:
     alert: "Current alert level"
@@ -207,7 +205,6 @@ Sticky notes and persistent story planning contracts are configured in `planning
 
 "Known Clues":
   description: "Discovered clues and hints."
-  required: false
   initial: "The Spire activates only when three harmonic keys are aligned."
 ```
 

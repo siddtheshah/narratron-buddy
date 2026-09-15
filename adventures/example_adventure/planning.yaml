@@ -3,7 +3,7 @@
 
 "Player Character":
   description: "Established player identity, role, primary objective, and physical condition."
-  required: true
+  
   render: "Name: {name} | Role: {role} | Goal: {goal} | Condition: {condition}"
   fields:
     name: "Character name"
@@ -18,7 +18,7 @@
 
 "Archive Security & Alert Level":
   description: "Archive alert status, automaton sentinel patrols, and Grand Orrery lock status."
-  required: true
+  
   render: "Alert: {alert} | Sentinels: {sentinels} | Grand Orrery: {grand_orrery}"
   fields:
     alert: "Current alert level (e.g. 'Green (Undetected)', 'Yellow (Searching)', 'Red (Hostile)')"
@@ -31,5 +31,5 @@
 
 "Collected Codices & Clues":
   description: "Cipher keys, documents, and historical notes gathered by the explorer."
-  required: false
+  
   initial: "Found: Brass Cipher Wheel (unsolved), Notes on Keeper Orun's exile."

@@ -234,6 +234,105 @@ class TestNotepad(unittest.TestCase):
         self.assertNotIn("HUD", changed)
         self.assertIn("Quest", changed)
 
+    def test_schema_fields_are_assumed_required_and_pinned_in_order(self) -> None:
+        schema = {
+            "Player Character": {
+                "fields": {"name": "Name", "charm": "Charm"},
+                "initial": {"name": "Unnamed", "charm": "Novice"},
+                "render": "Name: {name} | Charm: {charm}",
+            },
+            "Affection Tracker": {
+                "fields": {"mood": "Mood"},
+                "initial": {"mood": "Curious"},
+                "render": "Mood: {mood}",
+            },
+            "Activity Log": {
+                "initial": "Session started",
+            },
+        }
+        pad = self._make_notepad({"enforce_structured": True}, schema=schema)
+
+        # All fields are assumed to be required in schema definition order
+        self.assertEqual(
+            pad.get_required_sticky_notes(),
+            ["Player Character", "Affection Tracker", "Activity Log"],
+        )
+
+        # Initial order is pinned
+        self.assertEqual(
+            [note["topic"] for note in pad.get_present_sticky_notes()],
+            ["Player Character", "Affection Tracker", "Activity Log"],
+        )
+
+        # Updating an earlier sticky note does NOT move it to the end; order remains pinned
+        pad.update_sticky_note("Player Character", '{"name": "Hero", "charm": "High"}')
+        self.assertEqual(
+            [note["topic"] for note in pad.get_present_sticky_notes()],
+            ["Player Character", "Affection Tracker", "Activity Log"],
+        )
+        self.assertEqual(
+            pad.get_present_sticky_notes()[0]["info"],
+            "Name: Hero | Charm: High",
+        )
+
+        # Updating another sticky maintains the exact pinned order
+        pad.update_sticky_note("Affection Tracker", '{"mood": "Enamored"}')
+        self.assertEqual(
+            [note["topic"] for note in pad.get_present_sticky_notes()],
+            ["Player Character", "Affection Tracker", "Activity Log"],
+        )
+
+        # Deep update maintains pinned order
+        update_model = pad.deep_plan_update_model
+        update = update_model.model_validate(
+            {
+                "sticky_notes": {
+                    "Activity Log": "Entered temple",
+                    "Player Character": {"name": "Hero", "charm": "Master"},
+                    "Affection Tracker": {"mood": "Devoted"},
+                }
+            }
+        )
+        pad.replace_from_deep_update(update)
+        self.assertEqual(
+            [note["topic"] for note in pad.get_present_sticky_notes()],
+            ["Player Character", "Affection Tracker", "Activity Log"],
+        )
+
+        # Export and re-import maintains pinned order
+        state = pad.export_state()
+        reloaded = self._make_notepad({}, schema=schema)
+        reloaded.import_state(state)
+        self.assertEqual(
+            [note["topic"] for note in reloaded.get_present_sticky_notes()],
+            ["Player Character", "Affection Tracker", "Activity Log"],
+        )
+
+    def test_schema_pinned_order_with_unpinned_dynamic_notes(self) -> None:
+        schema = {
+            "First": {"initial": "1"},
+            "Second": {"initial": "2"},
+        }
+        pad = self._make_notepad({"max_sticky_notes": 4}, schema=schema)
+        pad.update_sticky_note("Extra1", "info1")
+        pad.update_sticky_note("Extra2", "info2")
+        self.assertEqual(
+            [note["topic"] for note in pad.get_present_sticky_notes()],
+            ["First", "Second", "Extra1", "Extra2"],
+        )
+        # Updating First does not unpin it
+        pad.update_sticky_note("First", "new1")
+        self.assertEqual(
+            [note["topic"] for note in pad.get_present_sticky_notes()],
+            ["First", "Second", "Extra1", "Extra2"],
+        )
+        # Updating Extra1 moves Extra1 to the end among unpinned notes
+        pad.update_sticky_note("Extra1", "info1_updated")
+        self.assertEqual(
+            [note["topic"] for note in pad.get_present_sticky_notes()],
+            ["First", "Second", "Extra2", "Extra1"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

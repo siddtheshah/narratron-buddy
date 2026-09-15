@@ -107,7 +107,7 @@ def parse_planning_schema(schema: Dict[str, Any]) -> OrderedDict[str, Dict[str, 
         parsed[topic] = {
             "topic": topic,
             "description": str(entry.get("description", "")).strip(),
-            "required": bool(entry.get("required", True)),
+            "required": True,
             "render": str(entry.get("render", entry.get("display_template", entry.get("template", "")))).strip(),
             "fields": fields,
             "initial": initial,
@@ -246,15 +246,11 @@ class Notepad:
 
     def _configure_required_stickies(self) -> None:
         if self._sticky_definitions:
-            for topic, definition in self._sticky_definitions.items():
-                if definition.get("required"):
-                    self._required_stickies[topic] = ""
+            for topic in self._sticky_definitions:
+                self._required_stickies[topic] = ""
             return
 
-        required = self.config.get(
-            "required_stickies",
-            self.config.get("required_sticky_notes", self.config.get("required_elements", [])),
-        )
+        required = self.config.get("required_stickies", [])
         if isinstance(required, (list, tuple, set)):
             for value in required:
                 if isinstance(value, dict):
@@ -275,6 +271,25 @@ class Notepad:
                 if clean_topic:
                     self._required_stickies[clean_topic] = ""
 
+    def _enforce_pinned_order(self) -> None:
+        if not self._sticky_definitions:
+            return
+        ordered_notes = OrderedDict()
+        ordered_structured = OrderedDict()
+        for topic in self._sticky_definitions:
+            if topic in self._sticky_notes:
+                ordered_notes[topic] = self._sticky_notes[topic]
+            if topic in self._structured_sticky_notes:
+                ordered_structured[topic] = self._structured_sticky_notes[topic]
+        for topic, info in self._sticky_notes.items():
+            if topic not in self._sticky_definitions:
+                ordered_notes[topic] = info
+        for topic, val in self._structured_sticky_notes.items():
+            if topic not in self._sticky_definitions:
+                ordered_structured[topic] = val
+        self._sticky_notes = ordered_notes
+        self._structured_sticky_notes = ordered_structured
+
     def _load_initial_stickies(self) -> None:
         if self._sticky_definitions:
             initial = {
@@ -283,11 +298,14 @@ class Notepad:
                 if definition.get("initial") is not None
             }
             validated = self._deep_plan_update_model.model_validate({"sticky_notes": initial}).model_dump(mode="json", by_alias=True)["sticky_notes"]
-            for topic, value in validated.items():
-                self._structured_sticky_notes[topic] = value
-                self._sticky_notes[topic] = self._render(topic, value)
-                if topic in self._required_stickies:
-                    self._required_stickies[topic] = self._sticky_notes[topic]
+            for topic in self._sticky_definitions:
+                if topic in validated:
+                    value = validated[topic]
+                    self._structured_sticky_notes[topic] = value
+                    self._sticky_notes[topic] = self._render(topic, value)
+                    if topic in self._required_stickies:
+                        self._required_stickies[topic] = self._sticky_notes[topic]
+            self._enforce_pinned_order()
         else:
             initial = self.config.get("initial_sticky_notes", self.config.get("initial_elements", {}))
             if isinstance(initial, dict):
@@ -319,6 +337,7 @@ class Notepad:
             if evict is None:
                 break
             del self._sticky_notes[evict]
+        self._enforce_pinned_order()
 
     @property
     def max_named_elements(self) -> int:
@@ -351,7 +370,8 @@ class Notepad:
                 if clean_info.count("|") != existing.count("|"):
                     return f"Error: Sticky note divider count mismatch for '{clean_topic}'. Expected valid update for '{existing}'."
                 self._sticky_notes[clean_topic] = clean_info
-                self._sticky_notes.move_to_end(clean_topic)
+                if clean_topic not in self._sticky_definitions:
+                    self._sticky_notes.move_to_end(clean_topic)
             else:
                 if len(self._sticky_notes) >= self.max_sticky_notes:
                     dropped_topic = next((key for key in self._sticky_notes if key not in self._required_stickies), None)
@@ -360,6 +380,7 @@ class Notepad:
                 self._sticky_notes[clean_topic] = clean_info
             if structured_value is not None:
                 self._structured_sticky_notes[clean_topic] = structured_value
+            self._enforce_pinned_order()
             self._recently_changed.add(clean_topic)
             count = len(self._sticky_notes)
         self._changed()
@@ -443,10 +464,13 @@ class Notepad:
 
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
         with self._sticky_notes_lock:
-            return [
+            notes = [
                 {"topic": topic, "info": info, "name": topic, "content": info}
                 for topic, info in self._sticky_notes.items()
-            ][-self.max_sticky_notes:]
+            ]
+            if self._sticky_definitions:
+                return notes[:self.max_sticky_notes]
+            return notes[-self.max_sticky_notes:]
 
     def get_present_elements(self) -> list[dict[str, str]]:
         return self.get_present_sticky_notes()
@@ -466,6 +490,7 @@ class Notepad:
                 previous_rendered = {topic: self._render(topic, value) for topic, value in self._structured_sticky_notes.items()}
                 self._structured_sticky_notes = OrderedDict(structured)
                 self._sticky_notes = OrderedDict((topic, self._render(topic, value)) for topic, value in structured.items())
+                self._enforce_pinned_order()
                 for topic, rendered in self._sticky_notes.items():
                     if previous_rendered.get(topic) != rendered:
                         self._recently_changed.add(topic)
@@ -522,6 +547,7 @@ class Notepad:
                         structured = {}
                 for topic, value in self._structured_sticky_notes.items():
                     self._sticky_notes[topic] = self._render(topic, value)
+                self._enforce_pinned_order()
             else:
                 notes = state.get("all_sticky_notes", state.get("sticky_notes", state.get("named_elements", [])))
                 source = notes.items() if isinstance(notes, dict) else (

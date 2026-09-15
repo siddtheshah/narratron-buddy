@@ -147,7 +147,6 @@ handled by the deep story planner.
 
 "Player Character":
   description: "Established player identity, objective, and physical condition."
-  required: true
   render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
   fields:
     name: "Character name"
@@ -162,7 +161,6 @@ handled by the deep story planner.
 
 "Spire Security Level":
   description: "Alert level and defense automaton activity."
-  required: true
   render: "Alert: {alert} | Automatons: {automatons}"
   fields:
     alert: "Current alert level"
@@ -173,13 +171,12 @@ handled by the deep story planner.
 
 "Known Clues":
   description: "Discovered clues and historical hints."
-  required: false
   initial: "The Spire activates only when three harmonic keys are aligned."
 ```
 
 ### Critical Rules for `theater.yaml` & `planning.yaml`
 1. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
-2. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, rendering strings, and `required: true|false` in `planning.yaml` rather than declaring `initial_elements` in `theater.yaml`.
+2. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
 3. **`hidden_stickies` overlay**: Optional list in `theater.yaml` of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget.
 4. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
 
