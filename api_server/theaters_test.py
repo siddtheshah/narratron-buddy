@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -809,12 +810,11 @@ def test_export_theater_requires_the_registry_deployment_owner():
 @pytest.mark.asyncio
 async def test_get_theater_suggestions_endpoint():
     mock_agent_mgr = MagicMock()
-    mock_session = MagicMock()
-    mock_story_planning_tools = MagicMock()
-    mock_story_planning_tools.get_present_elements.return_value = [
+    mock_notepad = MagicMock()
+    mock_notepad.get_present_elements.return_value = [
         {"name": "hero", "content": "Mara, a bold cartographer"}
     ]
-    mock_session.story_planning_tools = mock_story_planning_tools
+    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_suggestion_svc = MagicMock()
@@ -845,12 +845,11 @@ async def test_get_theater_suggestions_endpoint():
 @pytest.mark.asyncio
 async def test_get_theater_sticky_notes_endpoint():
     mock_agent_mgr = MagicMock()
-    mock_session = MagicMock()
-    mock_story_planning_tools = MagicMock()
-    mock_story_planning_tools.get_present_sticky_notes.return_value = [
+    mock_notepad = MagicMock()
+    mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Ancient Key", "info": "Rust-covered bronze key found under floorboards."}
     ]
-    mock_session.story_planning_tools = mock_story_planning_tools
+    mock_session = SimpleNamespace(story_planning_tools=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
@@ -871,13 +870,12 @@ async def test_get_theater_sticky_notes_endpoint():
 @pytest.mark.asyncio
 async def test_get_theater_sticky_notes_with_hidden_stickies():
     mock_agent_mgr = MagicMock()
-    mock_session = MagicMock()
-    mock_story_planning_tools = MagicMock()
-    mock_story_planning_tools.get_present_sticky_notes.return_value = [
+    mock_notepad = MagicMock()
+    mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Ancient Key", "info": "Rust-covered bronze key."},
         {"topic": "Secret Letter", "info": "Treasonous correspondence."},
     ]
-    mock_session.story_planning_tools = mock_story_planning_tools
+    mock_session = SimpleNamespace(story_planning_tools=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_tm = MagicMock()

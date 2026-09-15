@@ -61,10 +61,9 @@ def test_upvote_reports_missing_suggestion():
 
 def test_get_sticky_notes_uses_session_or_canvas_state():
     mock_agent_mgr = MagicMock()
-    mock_session = MagicMock()
-    mock_tools = MagicMock()
-    mock_tools.get_present_sticky_notes.return_value = [{"topic": "Clue", "info": "Old map"}]
-    mock_session.story_planning_tools = mock_tools
+    mock_notepad = MagicMock()
+    mock_notepad.get_present_sticky_notes.return_value = [{"topic": "Clue", "info": "Old map"}]
+    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "live_agent_manager", mock_agent_mgr):
@@ -82,13 +81,12 @@ def test_get_sticky_notes_uses_session_or_canvas_state():
 
 def test_get_sticky_notes_returns_configured_hidden_stickies():
     mock_agent_mgr = MagicMock()
-    mock_session = MagicMock()
-    mock_tools = MagicMock()
-    mock_tools.get_present_sticky_notes.return_value = [
+    mock_notepad = MagicMock()
+    mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Visible", "info": "Public"},
         {"topic": "Secret", "info": "Hidden detail"},
     ]
-    mock_session.story_planning_tools = mock_tools
+    mock_session = SimpleNamespace(story_planning_tools=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_tm = MagicMock()

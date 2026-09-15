@@ -34,6 +34,16 @@ from utils.config_loader import get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
 
+
+def _session_notepad(session: object) -> object | None:
+    """Return the shared notepad from either live-agent tool holder."""
+    for attribute in ("notepad_tool", "story_planning_tools"):
+        tool = getattr(session, attribute, None)
+        notepad = getattr(tool, "notepad", None)
+        if notepad is not None:
+            return notepad
+    return None
+
 async def _export_canvas_theater_async(theater_id: str) -> bool:
     """Export theater canvas data to repository asynchronously."""
     def _export():
@@ -826,15 +836,15 @@ def export_theater_assets(theater_id: str, request: Request):
 @app.get("/theaters/{theater_id}/suggestions")
 @app.get("/api/theaters/{theater_id}/suggestions")
 async def get_theater_suggestions(theater_id: str, request: Request):
-    """Generate structured scene suggestions based on present named elements from NamedElementTool."""
+    """Generate structured scene suggestions from the current notepad entries."""
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
     session = live_agent_manager.get_session(theater_id)
     named_elements = []
-    session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
-    if session_tools and hasattr(session_tools, "get_present_elements"):
-        named_elements = session_tools.get_present_elements()
+    notepad = _session_notepad(session)
+    if notepad and hasattr(notepad, "get_present_elements"):
+        named_elements = notepad.get_present_elements()
     if not named_elements and canvas_states:
         try:
             named_elements = canvas_states.get(theater_id).story.sticky_notes()
@@ -862,11 +872,11 @@ async def get_theater_sticky_notes(theater_id: str, request: Request):
 
     session = live_agent_manager.get_session(theater_id)
     sticky_notes = []
-    session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
-    if session_tools and hasattr(session_tools, "get_present_sticky_notes"):
-        sticky_notes = session_tools.get_present_sticky_notes()
-    elif session_tools and hasattr(session_tools, "get_present_elements"):
-        sticky_notes = session_tools.get_present_elements()
+    notepad = _session_notepad(session)
+    if notepad and hasattr(notepad, "get_present_sticky_notes"):
+        sticky_notes = notepad.get_present_sticky_notes()
+    elif notepad and hasattr(notepad, "get_present_elements"):
+        sticky_notes = notepad.get_present_elements()
 
     if not sticky_notes and canvas_states:
         try:

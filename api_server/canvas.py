@@ -75,6 +75,18 @@ def _state(theater_id: Optional[str] = None):
     return canvas_states.get(theater_id)
 
 
+def _session_notepad(session: Any) -> Any:
+    """Return the shared notepad from either live-agent tool holder."""
+    if session is None:
+        return None
+    for attribute in ("notepad_tool", "story_planning_tools"):
+        tool = getattr(session, attribute, None)
+        notepad = getattr(tool, "notepad", None)
+        if notepad is not None:
+            return notepad
+    return None
+
+
 def _unregister_doodle_websocket(state: Any, websocket: WebSocket) -> None:
     connections = state.connections
     if websocket in connections.active_ws_connections:
@@ -502,12 +514,12 @@ def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
             hidden_stickies = []
 
     session = live_agent_manager.get_session(theater_id) if theater_id else None
-    session_tools = getattr(session, "story_planning_tools", None) or getattr(session, "named_element_tools", None) if session else None
-    if session_tools and hasattr(session_tools, "get_present_sticky_notes"):
-        notes = session_tools.get_present_sticky_notes()
+    notepad = _session_notepad(session)
+    if notepad and hasattr(notepad, "get_present_sticky_notes"):
+        notes = notepad.get_present_sticky_notes()
         return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
-    elif session_tools and hasattr(session_tools, "get_present_elements"):
-        notes = session_tools.get_present_elements()
+    elif notepad and hasattr(notepad, "get_present_elements"):
+        notes = notepad.get_present_elements()
         return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
     notes = _state(theater_id).story.sticky_notes()
     return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
