@@ -31,6 +31,9 @@ music:
 
 # Dynamic narrative & sticky note state management
 story_planning:
+    deep_planning:
+        enabled: true
+        max_events_per_turn: 4
     adventure_mode: true
     auto_begin: true
     character_voicing: false
