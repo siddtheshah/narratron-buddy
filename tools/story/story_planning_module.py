@@ -168,9 +168,9 @@ class StoryPlanningModule:
         self._deep_lore_calls_lock = Lock()
         self.session_service = session_service
         self.session_id = str(session_id)
-        self.notepad = notepad
         self._story_log_context_fn = story_log_context_fn or (lambda: "")
-        self.config = self.notepad.config
+        self.notepad = notepad
+        self.config = notepad.config
 
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
@@ -199,34 +199,19 @@ class StoryPlanningModule:
             or self.config.get("deep_planner_model")
             or self.planner_model
         )
-        self.deep_planner_timeout_seconds: float = max(
-            1.0,
-            float(self.deep_planning_config.get("timeout_seconds", DEFAULT_DEEP_PLANNER_TIMEOUT_SECONDS)),
-        )
-        self.deep_heartbeat_seconds: float = max(
-            0.05,
-            float(self.deep_planning_config.get("heartbeat_seconds", DEFAULT_DEEP_HEARTBEAT_SECONDS)),
-        )
+        self.deep_planner_timeout_seconds: float = DEFAULT_DEEP_PLANNER_TIMEOUT_SECONDS
+        self.deep_heartbeat_seconds: float = DEFAULT_DEEP_HEARTBEAT_SECONDS
         self.deep_max_events_per_turn: int = max(
             1,
             int(self.deep_planning_config.get("max_events_per_turn", DEFAULT_DEEP_MAX_EVENTS_PER_TURN)),
         )
-        self.deep_idle_refinement_turns: int = max(
-            0,
-            int(self.deep_planning_config.get("idle_refinement_turns", DEFAULT_DEEP_IDLE_REFINEMENT_TURNS)),
-        )
-        self.deep_heartbeat_failure_retries: int = max(
-            0,
-            int(self.deep_planning_config.get("failure_retries", DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES)),
-        )
-        raw_deep_budget = self.deep_planning_config.get("thinking_budget", DEFAULT_DEEP_THINKING_BUDGET)
+        self.deep_idle_refinement_turns: int = DEFAULT_DEEP_IDLE_REFINEMENT_TURNS
+        self.deep_heartbeat_failure_retries: int = DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES
+        raw_deep_budget = DEFAULT_DEEP_THINKING_BUDGET
         self.deep_thinking_budget: Optional[int] = (
             int(raw_deep_budget) if raw_deep_budget is not None else None
         )
-        self.deep_max_output_tokens: int = max(
-            1024,
-            min(16384, int(self.deep_planning_config.get("max_output_tokens", DEFAULT_DEEP_MAX_OUTPUT_TOKENS))),
-        )
+        self.deep_max_output_tokens: int = DEFAULT_DEEP_MAX_OUTPUT_TOKENS
         self.vertex_project: Optional[str] = (
             self.config.get("vertex_project")
             or self.config.get("gcloud", {}).get("project_id")
