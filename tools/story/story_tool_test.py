@@ -102,6 +102,13 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertIs(StoryPlanningTools, StoryTool)
         self.assertIs(StoryResponseTool, StoryTool)
 
+    def test_exports_reflect_and_retry(self) -> None:
+        from tools.story import ReflectAndRetry, ReflectAndRetryToolPlugin
+        from google.adk.plugins import ReflectAndRetryToolPlugin as ADKPlugin
+
+        self.assertIs(ReflectAndRetry, ADKPlugin)
+        self.assertIs(ReflectAndRetryToolPlugin, ADKPlugin)
+
 
 class TestStoryToolStateIntegration(unittest.TestCase):
     def setUp(self) -> None:

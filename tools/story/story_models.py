@@ -6,6 +6,7 @@ import asyncio
 from typing import Optional
 
 from google import genai
+from google.genai import types
 from google.adk.models.google_llm import Gemini
 from pydantic import PrivateAttr
 
@@ -20,6 +21,7 @@ class VertexGemini(Gemini):
 
     project_id: Optional[str] = None
     location: Optional[str] = None
+    http_options: Optional[types.HttpOptions] = None
     _client_cache: dict = PrivateAttr(default_factory=dict)
 
     @property
@@ -34,6 +36,8 @@ class VertexGemini(Gemini):
                 kwargs["project"] = self.project_id
             if self.location:
                 kwargs["location"] = self.location
+            if self.http_options:
+                kwargs["http_options"] = self.http_options
             if kwargs:
                 kwargs["vertexai"] = True
             self._client_cache[loop] = genai.Client(**kwargs)

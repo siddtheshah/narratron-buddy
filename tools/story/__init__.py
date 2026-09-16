@@ -61,6 +61,9 @@ from tools.story.story_response_module import (
     MAX_SEARCH_LORE_CALLS_PER_TURN,
 )
 from tools.story.story_tool import StoryLogEntry, StoryPlanningTools, StoryResponseOutput, StoryResponseTool, StoryTool
+from google.adk.plugins import ReflectAndRetryToolPlugin
+
+ReflectAndRetry = ReflectAndRetryToolPlugin
 
 __all__ = [
     "LoreLibrary",
@@ -68,6 +71,8 @@ __all__ = [
     "CharacterManager",
     "StoryPlanningModule",
     "StoryResponseModule",
+    "ReflectAndRetry",
+    "ReflectAndRetryToolPlugin",
     "StoryTool",
     "StoryResponseTool",
     "StoryPlanningTools",

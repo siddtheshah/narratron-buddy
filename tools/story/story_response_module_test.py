@@ -3,6 +3,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from google.adk.plugins import ReflectAndRetryToolPlugin
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.sessions import InMemorySessionService
 
 from components.canvas.story_state import StoryState
@@ -50,6 +52,107 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.assertIs(module.character_manager, self.character_manager)
         self.assertIs(module.session_service, self.session_service)
         self.assertEqual(module.session_id, self.session_id)
+
+    def test_initializes_with_reflect_and_retry_plugin_by_default(self) -> None:
+        with (
+            patch.object(StoryResponseModule, "_create_responder_agent"),
+            patch.object(StoryResponseModule, "reload_from_session_state"),
+            patch("tools.story.story_response_module.App") as mock_app_class,
+            patch("tools.story.story_response_module.Runner"),
+        ):
+            module = StoryResponseModule(
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                notepad=self.notepad,
+                lore_library=self.lore_library,
+                character_manager=self.character_manager,
+                session_service=self.session_service,
+                session_id=self.session_id,
+            )
+
+        self.assertEqual(len(module.plugins), 1)
+        self.assertIsInstance(module.plugins[0], ReflectAndRetryToolPlugin)
+        self.assertEqual(module.plugins[0].max_retries, 3)
+        self.assertTrue(module.plugins[0].throw_exception_if_retry_exceeded)
+        mock_app_class.assert_called_once()
+        _, kwargs = mock_app_class.call_args
+        self.assertIn("plugins", kwargs)
+        self.assertEqual(kwargs["plugins"], module.plugins)
+
+    def test_restart_responder_agent_retains_plugins(self) -> None:
+        custom_plugin = MagicMock(spec=BasePlugin)
+        with (
+            patch.object(StoryResponseModule, "_create_responder_agent"),
+            patch.object(StoryResponseModule, "reload_from_session_state"),
+            patch("tools.story.story_response_module.App") as mock_app_class,
+            patch("tools.story.story_response_module.Runner"),
+        ):
+            module = StoryResponseModule(
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                notepad=self.notepad,
+                lore_library=self.lore_library,
+                character_manager=self.character_manager,
+                session_service=self.session_service,
+                session_id=self.session_id,
+            )
+            module.plugins = [custom_plugin]
+            mock_app_class.reset_mock()
+            module.restart_responder_agent()
+
+        mock_app_class.assert_called_once()
+        _, kwargs = mock_app_class.call_args
+        self.assertEqual(kwargs["plugins"], [custom_plugin])
+
+    def test_enables_priority_paygo_by_default(self) -> None:
+        with (
+            patch.object(StoryResponseModule, "_create_responder_agent"),
+            patch.object(StoryResponseModule, "reload_from_session_state"),
+            patch("tools.story.story_response_module.App"),
+            patch("tools.story.story_response_module.Runner"),
+        ):
+            module = StoryResponseModule(
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                notepad=self.notepad,
+                lore_library=self.lore_library,
+                character_manager=self.character_manager,
+                session_service=self.session_service,
+                session_id=self.session_id,
+            )
+        self.assertTrue(module.priority_paygo)
+        self.assertEqual(module.vertex_location, "global")
+
+    def test_configures_agent_and_model_with_priority_paygo(self) -> None:
+        from google.genai import types
+
+        with (
+            patch.object(StoryResponseModule, "reload_from_session_state"),
+            patch("tools.story.story_response_module.App"),
+            patch("tools.story.story_response_module.Runner"),
+        ):
+            module = StoryResponseModule(
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                notepad=self.notepad,
+                lore_library=self.lore_library,
+                character_manager=self.character_manager,
+                session_service=self.session_service,
+                session_id=self.session_id,
+            )
+
+        agent = module._create_responder_agent()
+        # Verify generate_content_config has service_tier and http_options
+        self.assertIsNotNone(agent.generate_content_config)
+        self.assertEqual(agent.generate_content_config.service_tier, types.ServiceTier.PRIORITY)
+        headers = agent.generate_content_config.http_options.headers
+        self.assertEqual(headers["X-Vertex-AI-LLM-Shared-Request-Type"], "priority")
+        self.assertEqual(headers["X-Vertex-AI-LLM-Request-Type"], "shared")
+
+        # Verify model has http_options
+        model_headers = agent.model.http_options.headers
+        self.assertEqual(model_headers["X-Vertex-AI-LLM-Shared-Request-Type"], "priority")
+        self.assertEqual(model_headers["X-Vertex-AI-LLM-Request-Type"], "shared")
 
     def test_rejects_missing_injected_dependencies(self) -> None:
         with self.assertRaisesRegex(ValueError, "lore_library is required"):

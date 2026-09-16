@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
+from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
@@ -30,6 +31,32 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         create_client.assert_called_once_with(
             project="test-project",
             location="global",
+            vertexai=True,
+        )
+
+    def test_vertex_gemini_passes_http_options(self) -> None:
+        from google.genai import types
+
+        http_options = types.HttpOptions(
+            headers={"X-Vertex-AI-LLM-Shared-Request-Type": "priority"}
+        )
+        model = VertexGemini(
+            model="gemini-test",
+            project_id="test-project",
+            location="global",
+            http_options=http_options,
+        )
+        client = MagicMock()
+        with patch(
+            "tools.story.story_models.genai.Client",
+            return_value=client,
+        ) as create_client:
+            self.assertIs(model.api_client, client)
+
+        create_client.assert_called_once_with(
+            project="test-project",
+            location="global",
+            http_options=http_options,
             vertexai=True,
         )
 
@@ -96,6 +123,70 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         character_manager.lookup_character.return_value = "Lyra: Mystic scholar"
         self.assertEqual(module._lookup_character("Lyra"), "Lyra: Mystic scholar")
         character_manager.lookup_character.assert_called_once_with("Lyra")
+
+    def test_initializes_with_reflect_and_retry_plugin_by_default(self) -> None:
+        lore_library = MagicMock(spec=LoreLibrary)
+        theater = MagicMock(spec=Theater)
+        theater.theater_id = "planning-boundary"
+        theater.config.return_value = {}
+        theater.read_planning_schema.return_value = None
+        canvas = MagicMock(spec=CanvasStateManager)
+        session_service = MagicMock(spec=InMemorySessionService)
+
+        with (
+            patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
+            patch("tools.story.story_planning_module.App") as mock_app_class,
+            patch("tools.story.story_planning_module.Runner"),
+        ):
+            module = StoryPlanningModule(
+                theater=theater,
+                canvas_manager=canvas,
+                lore_library=lore_library,
+                character_manager=MagicMock(spec=CharacterManager),
+                session_service=session_service,
+                session_id="default-plugin-session",
+                notepad=Notepad(theater, canvas_manager=canvas),
+            )
+
+        self.assertEqual(len(module.plugins), 1)
+        self.assertIsInstance(module.plugins[0], ReflectAndRetryToolPlugin)
+        self.assertEqual(module.plugins[0].max_retries, 3)
+        self.assertTrue(module.plugins[0].throw_exception_if_retry_exceeded)
+        # Verify plugins were passed to App
+        mock_app_class.assert_called_once()
+        _, kwargs = mock_app_class.call_args
+        self.assertIn("plugins", kwargs)
+        self.assertEqual(kwargs["plugins"], module.plugins)
+
+    def test_restart_deep_planner_agent_retains_plugins(self) -> None:
+        lore_library = MagicMock(spec=LoreLibrary)
+        theater = MagicMock(spec=Theater)
+        theater.theater_id = "restart-test"
+        theater.config.return_value = {}
+        theater.read_planning_schema.return_value = None
+        canvas = MagicMock(spec=CanvasStateManager)
+        session_service = MagicMock(spec=InMemorySessionService)
+
+        with (
+            patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
+            patch("tools.story.story_planning_module.App") as mock_app_class,
+            patch("tools.story.story_planning_module.Runner"),
+        ):
+            module = StoryPlanningModule(
+                theater=theater,
+                canvas_manager=canvas,
+                lore_library=lore_library,
+                character_manager=MagicMock(spec=CharacterManager),
+                session_service=session_service,
+                session_id="restart-session",
+                notepad=Notepad(theater, canvas_manager=canvas),
+            )
+            mock_app_class.reset_mock()
+            module.restart_deep_planner_agent()
+
+        mock_app_class.assert_called_once()
+        _, kwargs = mock_app_class.call_args
+        self.assertEqual(kwargs["plugins"], module.plugins)
 
     def test_wraps_shared_lore_operations_with_its_own_run_budgets(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)

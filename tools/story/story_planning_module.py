@@ -15,6 +15,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from jinja2 import Template
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
+from google.adk.plugins import ReflectAndRetryToolPlugin
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import RunConfig, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -225,10 +227,13 @@ class StoryPlanningModule:
             self._build_run_compression_config()
         )
 
+        self.plugins: List[BasePlugin] = [ReflectAndRetryToolPlugin()]
+
         self._deep_planner_agent: Agent = self._create_deep_planner_agent()
         self._deep_planner_app: App = App(
             name="narratron_story_deep_planner",
             root_agent=self._deep_planner_agent,
+            plugins=self.plugins,
             events_compaction_config=self.compaction_config,
         )
         self._deep_planner_runner: Runner = Runner(
@@ -354,6 +359,7 @@ class StoryPlanningModule:
         self._deep_planner_app = App(
             name="narratron_story_deep_planner",
             root_agent=self._deep_planner_agent,
+            plugins=self.plugins,
             events_compaction_config=self.compaction_config,
         )
         self._deep_planner_runner = Runner(

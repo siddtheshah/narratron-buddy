@@ -17,6 +17,8 @@ from jinja2 import Template
 from pydantic import BaseModel, Field
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
+from google.adk.plugins import ReflectAndRetryToolPlugin
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import RunConfig, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -309,8 +311,9 @@ class StoryResponseModule:
             or self.config.get("gcloud", {}).get("project_id")
             or os.getenv("GOOGLE_CLOUD_PROJECT")
         )
+        self.priority_paygo: bool = True
         self.vertex_location: str = str(
-            self.config.get("vertex_location") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
+            self.config.get("vertex_location") or "global"
         )
 
         # Callbacks
@@ -323,11 +326,14 @@ class StoryResponseModule:
 
         self.notepad = notepad
 
+        self.plugins: List[BasePlugin] = [ReflectAndRetryToolPlugin()]
+
         # Fast responder runner
         self._responder_agent: Agent = self._create_responder_agent()
         self._responder_app: App = App(
             name="narratron_story_responder",
             root_agent=self._responder_agent,
+            plugins=self.plugins,
             events_compaction_config=self.compaction_config,
         )
         self._responder_runner: Runner = Runner(
@@ -707,13 +713,29 @@ class StoryResponseModule:
         )
 
     def _create_responder_agent(self) -> Agent:
-        generate_content_config = None
+        config_kwargs: dict[str, Any] = {
+            "service_tier": types.ServiceTier.PRIORITY,
+            "http_options": types.HttpOptions(
+                headers={
+                    "X-Vertex-AI-LLM-Request-Type": "shared",
+                    "X-Vertex-AI-LLM-Shared-Request-Type": "priority",
+                }
+            ),
+        }
         if self.thinking_budget is not None:
-            generate_content_config = types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=self.thinking_budget
-                )
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_budget=self.thinking_budget
             )
+
+        generate_content_config = types.GenerateContentConfig(**config_kwargs)
+
+        model_http_options = types.HttpOptions(
+            headers={
+                "X-Vertex-AI-LLM-Request-Type": "shared",
+                "X-Vertex-AI-LLM-Shared-Request-Type": "priority",
+            }
+        )
+
         return Agent(
             name="story_responder",
             description="Authoritative responder for interactive story turns.",
@@ -721,6 +743,7 @@ class StoryResponseModule:
                 model=self.responder_model,
                 project_id=self.vertex_project,
                 location=self.vertex_location,
+                http_options=model_http_options,
             ),
             instruction=self._build_responder_instruction,
             tools=[
@@ -753,6 +776,7 @@ class StoryResponseModule:
             self._responder_app = App(
                 name="narratron_story_responder",
                 root_agent=self._responder_agent,
+                plugins=self.plugins,
                 events_compaction_config=self.compaction_config,
             )
             self._responder_runner = Runner(
