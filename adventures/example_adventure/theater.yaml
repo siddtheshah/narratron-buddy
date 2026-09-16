@@ -2,8 +2,8 @@
 # Narratron Adventure Theater Configuration: The Clockwork Archive
 # ==============================================================================
 
-# Agent instructions & behavioral flags
-agent:
+# Live agent instructions & behavioral flags
+live_agent:
     proactivity: false
     affective_dialog: false
     special_instructions: "Guide the player through the labyrinthine Clockwork Archive. Present tactile mechanical puzzles, react dynamically to player choices, and maintain an air of ancient scholarly intrigue."

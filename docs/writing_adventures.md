@@ -131,15 +131,21 @@ adventures/my-custom-adventure/
 
 ### 4.2. `theater.yaml` Specification
 
-Adventures use Narratron's standard theater configuration schema to define agent persona, art direction, audio pacing, and state preservation.
+Adventures use Narratron's standard theater configuration schema to define the live agent persona, art direction, audio pacing, and state preservation. Live-agent behavior belongs under the `live_agent` section; the former `agent` section is no longer used.
 
 > [!NOTE]
 > **Canonical Configuration Reference**:
-> Rather than maintaining a separate explanation here, please refer to the **[theater.yaml Reference](/docs/theater-yaml)** for comprehensive documentation on all available sections and options—including `agent`, `visuals`, `image_generation`, `animation`, `interactive_canvas`, `music`, `story_planning`, and `chat`.
+> Rather than maintaining a separate explanation here, please refer to the **[theater.yaml Reference](/docs/theater-yaml)** for comprehensive documentation on all available sections and options—including `live_agent`, `visuals`, `image_generation`, `animation`, `interactive_canvas`, `music`, `story_planning`, and `chat`.
 
 Adventures specifically rely on the **`story_planning`** section to govern the interactive adventure loop. Here is an adventure-focused configuration example:
 
 ```yaml
+# Live Gemini agent behavior and adventure-specific instructions
+live_agent:
+    proactivity: false
+    affective_dialog: false
+    special_instructions: "Carry user actions faithfully and guide the adventure with dramatic tension and clear consequences."
+
 # Starting visual displayed on the canvas when the adventure starts
 starting_image: "references/cover.png"
 

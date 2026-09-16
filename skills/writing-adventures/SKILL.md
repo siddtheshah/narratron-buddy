@@ -92,7 +92,7 @@ Adventures use `theater.yaml` to govern agent persona, art direction, and runtim
 ### 4.1. Standard Adventure Theater Template (`theater.yaml`)
 
 ```yaml
-agent:
+live_agent:
     proactivity: false
     affective_dialog: false
     special_instructions: "Carry user actions faithfully and let the story planner resolve questions. Guide the adventure with dramatic tension and clear consequences."
@@ -175,10 +175,11 @@ handled by the deep story planner.
 ```
 
 ### Critical Rules for `theater.yaml` & `planning.yaml`
-1. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
-2. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
-3. **`hidden_stickies` overlay**: Optional list in `theater.yaml` of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget.
-4. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
+1. **Use `live_agent` for live-agent settings**: Put persona flags and `special_instructions` under `live_agent`; the former `agent` and `agent_internal` section names are no longer used.
+2. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
+3. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
+4. **`hidden_stickies` overlay**: Optional list in `theater.yaml` of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget.
+5. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
 
 ---
 
@@ -434,6 +435,7 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] `title`, `description`, `author`, `genre`, and `tags` are complete.
 - [ ] **`theater.yaml`**:
   - [ ] Valid YAML syntax.
+  - [ ] Live-agent behavior and instructions use the `live_agent` section.
   - [ ] `story_planning.adventure_mode: true` is set.
   - [ ] `starting_image` points to a valid file in `references/`.
   - [ ] All keys in `required_stickies` exist in `initial_elements`.
