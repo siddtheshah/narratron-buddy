@@ -60,6 +60,22 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             vertexai=True,
         )
 
+    def test_vertex_gemini_can_explicitly_use_enterprise(self) -> None:
+        model = VertexGemini(
+            model="gemini-test",
+            project_id="test-project",
+            location="global",
+            enterprise=True,
+        )
+        with patch("tools.story.story_models.genai.Client") as create_client:
+            model.api_client
+
+        create_client.assert_called_once_with(
+            project="test-project",
+            location="global",
+            enterprise=True,
+        )
+
     def _make_module(
         self,
         lore_library: LoreLibrary,

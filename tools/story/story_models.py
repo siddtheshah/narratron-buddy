@@ -22,6 +22,7 @@ class VertexGemini(Gemini):
     project_id: Optional[str] = None
     location: Optional[str] = None
     http_options: Optional[types.HttpOptions] = None
+    enterprise: bool = False
     _client_cache: dict = PrivateAttr(default_factory=dict)
 
     @property
@@ -39,6 +40,9 @@ class VertexGemini(Gemini):
             if self.http_options:
                 kwargs["http_options"] = self.http_options
             if kwargs:
-                kwargs["vertexai"] = True
+                # ``enterprise`` is the current SDK spelling for the Vertex
+                # backend. Keep the legacy flag for existing story consumers
+                # unless a caller explicitly opts in to Enterprise.
+                kwargs["enterprise" if self.enterprise else "vertexai"] = True
             self._client_cache[loop] = genai.Client(**kwargs)
         return self._client_cache[loop]

@@ -13,6 +13,7 @@ from threading import Lock
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from absl import flags
 from jinja2 import Template
 from pydantic import BaseModel, Field
 from google.adk.agents import Agent
@@ -38,6 +39,14 @@ from tools.story.story_models import (
 STORY_LOG_CONTEXT_LINES = 200
 
 logger = logging.getLogger(__name__)
+
+if "disable_story_response_enterprise" not in flags.FLAGS:
+    flags.DEFINE_boolean(
+        "disable_story_response_enterprise",
+        False,
+        "Use the legacy Vertex AI client for StoryResponseModule instead of Enterprise.",
+    )
+FLAGS = flags.FLAGS
 
 
 DEFAULT_THINKING_BUDGET = 1024
@@ -312,6 +321,9 @@ class StoryResponseModule:
             or os.getenv("GOOGLE_CLOUD_PROJECT")
         )
         self.priority_paygo: bool = True
+        # This is intentionally an app flag rather than GOOGLE_GENAI_USE_ENTERPRISE,
+        # which changes the SDK backend for every client in this process.
+        self.use_enterprise: bool = not bool(FLAGS["disable_story_response_enterprise"].value)
         self.vertex_location: str = str(
             self.config.get("vertex_location") or "global"
         )
@@ -714,9 +726,10 @@ class StoryResponseModule:
 
     def _create_responder_agent(self) -> Agent:
         config_kwargs: dict[str, Any] = {
-            "service_tier": types.ServiceTier.PRIORITY,
             "http_options": types.HttpOptions(
                 headers={
+                    # Priority PayGo is selected by these Vertex headers.
+                    # The Enterprise endpoint rejects service_tier="priority".
                     "X-Vertex-AI-LLM-Request-Type": "shared",
                     "X-Vertex-AI-LLM-Shared-Request-Type": "priority",
                 }
@@ -744,6 +757,7 @@ class StoryResponseModule:
                 project_id=self.vertex_project,
                 location=self.vertex_location,
                 http_options=model_http_options,
+                enterprise=self.use_enterprise,
             ),
             instruction=self._build_responder_instruction,
             tools=[

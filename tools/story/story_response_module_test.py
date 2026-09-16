@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from absl.testing import flagsaver
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.sessions import InMemorySessionService
@@ -119,13 +120,32 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 character_manager=self.character_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
-            )
+        )
         self.assertTrue(module.priority_paygo)
+        self.assertTrue(module.use_enterprise)
         self.assertEqual(module.vertex_location, "global")
 
-    def test_configures_agent_and_model_with_priority_paygo(self) -> None:
-        from google.genai import types
+    @flagsaver.flagsaver(disable_story_response_enterprise=True)
+    def test_can_disable_enterprise_with_app_flag(self) -> None:
+        with (
+            patch.object(StoryResponseModule, "reload_from_session_state"),
+            patch("tools.story.story_response_module.App"),
+            patch("tools.story.story_response_module.Runner"),
+        ):
+            module = StoryResponseModule(
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                notepad=self.notepad,
+                lore_library=self.lore_library,
+                character_manager=self.character_manager,
+                session_service=self.session_service,
+                session_id=self.session_id,
+            )
 
+        self.assertFalse(module.use_enterprise)
+        self.assertFalse(module._responder_agent.model.enterprise)
+
+    def test_configures_agent_and_model_with_priority_paygo(self) -> None:
         with (
             patch.object(StoryResponseModule, "reload_from_session_state"),
             patch("tools.story.story_response_module.App"),
@@ -142,9 +162,9 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             )
 
         agent = module._create_responder_agent()
-        # Verify generate_content_config has service_tier and http_options
+        # Priority PayGo is selected by Vertex headers, not service_tier.
         self.assertIsNotNone(agent.generate_content_config)
-        self.assertEqual(agent.generate_content_config.service_tier, types.ServiceTier.PRIORITY)
+        self.assertIsNone(agent.generate_content_config.service_tier)
         headers = agent.generate_content_config.http_options.headers
         self.assertEqual(headers["X-Vertex-AI-LLM-Shared-Request-Type"], "priority")
         self.assertEqual(headers["X-Vertex-AI-LLM-Request-Type"], "shared")

@@ -3,10 +3,22 @@
 import unittest
 from unittest.mock import ANY, MagicMock, patch
 
-from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, create_agent
+from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, DeveloperLiveGemini, create_agent
 
 
 class TestCreateAgent(unittest.TestCase):
+    @patch.dict("os.environ", {"GOOGLE_GENAI_USE_ENTERPRISE": "true"}, clear=False)
+    @patch("services.live_agent.genai.Client")
+    def test_live_model_forces_developer_api_when_enterprise_is_enabled(self, mock_client):
+        model = DeveloperLiveGemini(model="gemini-3.1-flash-live-preview")
+
+        model.api_client
+        model._live_api_client
+
+        self.assertEqual(mock_client.call_count, 2)
+        for call in mock_client.call_args_list:
+            self.assertFalse(call.kwargs["enterprise"])
+
     def test_music_instruction_prefers_reuse_and_requires_scene_and_tone_change(self):
         self.assertIn("Music continuity is the default", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("both** the story has moved to a materially different scene **and** the emotional tone", AGENT_INSTRUCTION_TEMPLATE)
@@ -41,6 +53,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Preloaded References Context", instruction)
         self.assertIn("hero_character", instruction)
         self.assertIn("/path/to/hero_character.png", instruction)
+        self.assertIsInstance(mock_agent_cls.call_args.kwargs["model"], DeveloperLiveGemini)
         self.assertIs(agent_inst, mock_agent_cls.return_value)
 
     @patch("services.live_agent.get_playlists_context")

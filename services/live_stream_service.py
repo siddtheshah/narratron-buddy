@@ -80,13 +80,6 @@ def get_bound_tool_instance(agent: object, tool_name: str) -> object:
     return None
 
 
-
-def build_run_config(*args, **kwargs):
-    """Lazy proxy for build_run_config defined in services.live_agent."""
-    from services.live_agent import build_run_config as _build_run_config
-    return _build_run_config(*args, **kwargs)
-
-
 async def handle_live_websocket_connection(
     websocket: WebSocket,
     theater_id: str,

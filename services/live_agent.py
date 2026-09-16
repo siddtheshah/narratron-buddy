@@ -1,10 +1,13 @@
 import glob
 import logging
 import os
+from functools import cached_property
 from typing import Any, Optional
 
+from google import genai
 from google.adk.agents import Agent
 from google.adk.agents.run_config import RunConfig, StreamingMode, ToolThreadPoolConfig
+from google.adk.models.google_llm import Gemini
 from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 from jinja2 import StrictUndefined, Template
@@ -26,6 +29,41 @@ from providers import get_text_response_provider, get_video_provider
 from utils.config_loader import get_app_config, get_theater_config
 
 logger = logging.getLogger(__name__)
+
+
+class DeveloperLiveGemini(Gemini):
+    """ADK Gemini model pinned to the Gemini Developer API for Live sessions.
+
+    The live model uses an API key and must remain on the Gemini Developer
+    API, even if a process-wide SDK setting selects the Enterprise backend.
+    """
+
+    @cached_property
+    def api_client(self):
+        base_url, api_version = self._base_url_and_api_version
+        http_options: dict[str, Any] = {
+            "headers": self._tracking_headers(),
+            "retry_options": self.retry_options,
+            "base_url": base_url,
+        }
+        if api_version:
+            http_options["api_version"] = api_version
+        return genai.Client(
+            enterprise=False,
+            http_options=types.HttpOptions(**http_options),
+        )
+
+    @cached_property
+    def _live_api_client(self):
+        base_url, _ = self._base_url_and_api_version
+        return genai.Client(
+            enterprise=False,
+            http_options=types.HttpOptions(
+                headers=self._tracking_headers(),
+                api_version=self._live_api_version,
+                base_url=base_url,
+            ),
+        )
 
 AGENT_INSTRUCTION_TEMPLATE = """
 # Objective
@@ -209,11 +247,6 @@ def build_run_config(
         or app_internal.get("model", "gemini-3.1-flash-live-preview")
     )
 
-    is_native_audio = any(
-        token in model_name.lower()
-        for token in ["native-audio", "1.5-flash", "2.0-flash-exp", "3.1-flash", "live"]
-    )
-
     compaction = app_internal.get("compaction", {})
     compaction_config = None
     if compaction:
@@ -224,40 +257,29 @@ def build_run_config(
             sliding_window=types.SlidingWindow(target_tokens=int(target)) if target is not None else None,
         )
 
-    if is_native_audio:
-        response_modalities = ["AUDIO"]
-        return RunConfig(
-            streaming_mode=StreamingMode.BIDI,
-            response_modalities=response_modalities,
-            input_audio_transcription=types.AudioTranscriptionConfig(),
-            output_audio_transcription=None,
-            context_window_compression=compaction_config,
-            proactivity=(
-                types.ProactivityConfig(proactive_audio=True) if proactivity else None
+    response_modalities = ["AUDIO"]
+    return RunConfig(
+        streaming_mode=StreamingMode.BIDI,
+        response_modalities=response_modalities,
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=None,
+        context_window_compression=compaction_config,
+        proactivity=(
+            types.ProactivityConfig(proactive_audio=True) if proactivity else None
+        ),
+        enable_affective_dialog=affective_dialog if affective_dialog else None,
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                disabled=True
             ),
-            enable_affective_dialog=affective_dialog if affective_dialog else None,
-            realtime_input_config=types.RealtimeInputConfig(
-                automatic_activity_detection=types.AutomaticActivityDetection(
-                    disabled=True
-                ),
-                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
-            ),
-            tool_thread_pool_config=ToolThreadPoolConfig(
-                max_workers=agent_config.get("max_tool_workers", 3)
-            ),
-            get_session_config=GetSessionConfig(num_recent_events=0),
-            session_resumption=types.SessionResumptionConfig()
-        )
-    else:
-        response_modalities = ["TEXT"]
-        return RunConfig(
-            streaming_mode=StreamingMode.BIDI,
-            response_modalities=response_modalities,
-            input_audio_transcription=None,
-            output_audio_transcription=None,
-            context_window_compression=compaction_config,
-            get_session_config=GetSessionConfig(num_recent_events=0),
-        )
+            activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+        ),
+        tool_thread_pool_config=ToolThreadPoolConfig(
+            max_workers=agent_config.get("max_tool_workers", 3)
+        ),
+        get_session_config=GetSessionConfig(num_recent_events=0),
+        session_resumption=types.SessionResumptionConfig()
+    )
 
 
 def get_playlists_context(theater: Any) -> str:
@@ -507,7 +529,7 @@ def create_agent(
     model_id = app_internal.get("model_id") or app_internal.get("model", "gemini-3.1-flash-live-preview")
     return Agent(
         name="narratron_agent",
-        model=model_id,
+        model=DeveloperLiveGemini(model=model_id),
         instruction=instruction,
         tools=tool_bundle.tools,
         # planner=BuiltInPlanner(thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_budget=1024)),
