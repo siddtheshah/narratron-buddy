@@ -1,8 +1,11 @@
 """Tests for session-scoped Narratron agent construction."""
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import ANY, MagicMock, patch
 
+from components.theater_manager import TheaterManager
 from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, DeveloperLiveGemini, create_agent
 
 
@@ -80,6 +83,32 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("moonlit forest", instruction)
         self.assertNotIn("* list_playlists:", instruction)
         self.assertNotIn("create_music", instruction)
+
+    @patch("services.live_agent.Agent")
+    def test_create_agent_reads_playlists_from_theater_filesystem(self, mock_agent_cls):
+        with TemporaryDirectory() as temp_dir:
+            theater_manager = TheaterManager(base_theaters_dir=temp_dir)
+            playlist_dir = Path(temp_dir) / "music_context_theater" / "playlists" / "moonlit_forest"
+            playlist_dir.mkdir(parents=True)
+            (playlist_dir / "description.txt").write_text(
+                "Quiet, mysterious woodland ambience.", encoding="utf-8"
+            )
+            (playlist_dir / "dusk.mp3").write_bytes(b"audio")
+            tool_bundle = MagicMock()
+            tool_bundle.tools = []
+
+            create_agent(
+                theater_id="music_context_theater",
+                config={"music": {"use_generated_music": False}},
+                tool_bundle=tool_bundle,
+                theater_manager=theater_manager,
+            )
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("Music ID: 'moonlit_forest'", instruction)
+        self.assertIn("Quiet, mysterious woodland ambience.", instruction)
+        self.assertIn("dusk.mp3", instruction)
+        self.assertNotIn("Error loading playlists context", instruction)
 
     @patch("services.live_agent.get_playlists_context")
     @patch("services.live_agent.create_tool_bundle_for_session")

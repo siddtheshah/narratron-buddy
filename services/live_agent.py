@@ -504,7 +504,8 @@ def create_agent(
     ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
     theater_manager = theater_manager or TheaterManager()
-    theater = theater_manager.get_theater(theater_id)
+    theater = theater_manager.theater(theater_id)
+    theater_metadata = theater.metadata
     playlists = get_playlists_context(theater)
     if not isinstance(playlists, str) or not playlists.strip():
         playlists = "No preloaded music playlists found."
@@ -524,7 +525,7 @@ def create_agent(
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
         theater_id=theater_id,
-        theater_name=theater.name if theater else theater_id,
+        theater_name=theater_metadata.name if theater_metadata else theater_id,
         config=config,
         agent=config.get("live_agent", {}),
     ).strip()
