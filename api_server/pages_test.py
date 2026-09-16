@@ -104,6 +104,7 @@ def test_demos_page_reads_template():
     response = pages.read_demos()
     assert "Narratron demos" in response
     assert "The original Narratron theater" in response
+    assert "https://www.youtube.com/watch?v=lk0V8i1VU5I" in response
 
 
 
