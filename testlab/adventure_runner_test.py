@@ -38,7 +38,7 @@ def sample_adventure(tmp_path, monkeypatch):
     (adv_dir / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
 
     theater_yaml = """
-agent:
+live_agent:
   special_instructions: "Maintain a synthetic test persona for unit testing."
 interactive_canvas:
   enabled: true

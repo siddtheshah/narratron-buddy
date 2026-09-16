@@ -403,8 +403,7 @@ class AdventureSession:
         self.config, self.adventure_path, self.adventure_id = load_adventure_config(self.adventure_id_or_path)
 
         if self.agent_model_override:
-            self.config.setdefault("live_agent", {})["model"] = self.agent_model_override
-            self.config.setdefault("agent", {})["model_id"] = self.agent_model_override
+            self.config.setdefault("live_agent", {})["model_id"] = self.agent_model_override
         if self.planner_model_override:
             story_config = self.config.setdefault("story_planning", {})
             story_config["responder_model"] = self.planner_model_override

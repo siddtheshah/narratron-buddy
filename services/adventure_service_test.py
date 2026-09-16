@@ -34,7 +34,7 @@ class TestAdventureService(unittest.TestCase):
             }),
             encoding="utf-8",
         )
-        (self.adv1_dir / "theater.yaml").write_text("agent:\n  style: epic\n", encoding="utf-8")
+        (self.adv1_dir / "theater.yaml").write_text("live_agent:\n  style: epic\n", encoding="utf-8")
         refs_dir = self.adv1_dir / "references"
         refs_dir.mkdir()
         (refs_dir / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\nfakeimage")
@@ -58,7 +58,7 @@ class TestAdventureService(unittest.TestCase):
             }),
             encoding="utf-8",
         )
-        (self.adv2_dir / "theater.yaml").write_text("agent:\n  style: mysterious\n", encoding="utf-8")
+        (self.adv2_dir / "theater.yaml").write_text("live_agent:\n  style: mysterious\n", encoding="utf-8")
         refs2_dir = self.adv2_dir / "references"
         refs2_dir.mkdir()
         (refs2_dir / "beta_cover.jpg").write_bytes(b"\xff\xd8\xfffakejpeg")
@@ -77,7 +77,7 @@ class TestAdventureService(unittest.TestCase):
             encoding="utf-8",
         )
         (self.adv3_dir / "theater.yaml").write_text(
-            "agent:\n  style: space-funk\nstory_planning:\n  adventure_mode: true\n  required_stickies:\n    - HUD\n    - Radar\n",
+            "live_agent:\n  style: space-funk\nstory_planning:\n  adventure_mode: true\n  required_stickies:\n    - HUD\n    - Radar\n",
             encoding="utf-8",
         )
         refs3_dir = self.adv3_dir / "references"
@@ -127,7 +127,7 @@ class TestAdventureService(unittest.TestCase):
         self.assertEqual(playlists["battle"][0][0], "theme.mp3")
         self.assertEqual(len(lore), 1)
         self.assertEqual(lore[0][0].replace("\\", "/"), "lore/history.txt")
-        self.assertIn("agent", config)
+        self.assertIn("live_agent", config)
         self.assertEqual(config["live_agent"]["style"], "epic")
 
     def test_adventure_package_structure_and_required_stickies(self):
