@@ -32,7 +32,7 @@ def test_docs_theater_yaml_page_reads_the_reference_template():
     assert "Configuration reference" in response
     assert "story_planning" in response
     for section_id in [
-        "agent",
+        "live_agent",
         "starting-image",
         "observability-tool",
         "image-generation",

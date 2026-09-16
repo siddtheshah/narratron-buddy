@@ -45,7 +45,7 @@ class TestTheaterManager(unittest.TestCase):
             theater_id="quest",
             reference_files=[("references/maps/hero.png", b"image")],
             playlists_data={"ambient": [("rain.mp3", b"audio")]},
-            theater_config={"agent": {"proactivity": False, "style": "painted fantasy"}},
+            theater_config={"live_agent": {"proactivity": False, "style": "painted fantasy"}},
         )
 
         theater_dir = Path(self.temp_dir.name) / "quest"

@@ -246,7 +246,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(config["visuals"]["style"], get_theater_default_config()["visuals"]["style"])
         self.assertEqual(
             config["live_agent"]["special_instructions"],
-            get_theater_default_config()["agent"]["special_instructions"],
+            get_theater_default_config()["live_agent"]["special_instructions"],
         )
 
     def test_auth_registration_and_login_flow(self):
@@ -950,7 +950,7 @@ async def test_create_and_deploy_theater_with_preset_adventure():
     mock_adv_refs = [("references/cover.jpg", b"fakejpg")]
     mock_adv_playlists = {"arctic": [("wind.mp3", b"fakemp3")]}
     mock_adv_lore = [("lore/station.txt", b"Arctic station lore")]
-    mock_adv_config = {"agent": {"style": "eerie"}}
+    mock_adv_config = {"live_agent": {"style": "eerie"}}
 
     from starlette.datastructures import FormData
 
@@ -979,7 +979,7 @@ async def test_create_and_deploy_theater_with_preset_adventure():
         assert create_args["reference_files"] == mock_adv_refs
         assert create_args["lore_files"] == mock_adv_lore
         assert "arctic" in create_args["playlists_data"]
-        assert create_args["theater_config"]["agent"]["style"] == "eerie"
+        assert create_args["theater_config"]["live_agent"]["style"] == "eerie"
         assert create_args["theater_config"]["story_planning"]["adventure_mode"] is True
         assert create_args["metadata_json"] == mock_adv_meta
         mock_db.record_deployment.assert_called_once_with(

@@ -519,7 +519,7 @@ async def create_and_deploy_theater(request: Request):
                 for sub_k, sub_v in v.items():
                     theater_config[k].setdefault(sub_k, deepcopy(sub_v))
     if creation_mode != "folder" and not advanced_config_canonical:
-        agent_config = theater_config.setdefault("agent", {})
+        agent_config = theater_config.setdefault("live_agent", {})
         if not isinstance(agent_config, dict):
             raise HTTPException(status_code=400, detail="Invalid theater configuration: agent must be a mapping.")
         if special_instructions:
