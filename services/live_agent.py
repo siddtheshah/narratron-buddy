@@ -1,4 +1,3 @@
-import glob
 import logging
 import os
 from functools import cached_property
@@ -18,7 +17,7 @@ from tools.chat_tool import ChatTools
 from tools.image_tool import ImageTools
 from tools.animation_tool import AnimationTools
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
-from tools.music_tool import MusicTools
+from tools.music_tool import MusicTools, SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
 from services.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
 from tools.story import StoryTool
@@ -308,12 +307,16 @@ def get_playlists_context(theater: Any) -> str:
                     with open(desc_path, "r", encoding="utf-8") as f:
                         desc = f.read().strip()
 
-                mp3_files = [os.path.basename(f) for f in glob.glob(os.path.join(path, "*.mp3"))]
-                if mp3_files:
-                    tracks_str = ", ".join(mp3_files)
+                track_files = sorted(
+                    entry.name for entry in os.scandir(path)
+                    if entry.is_file()
+                    and os.path.splitext(entry.name)[1].lower() in SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
+                )
+                if track_files:
+                    tracks_str = ", ".join(track_files)
                     result.append(f"- Music ID: '{subdir}' (Playlist)\n  Description: {desc}\n  Tracks: {tracks_str}")
                 else:
-                    result.append(f"- Music ID: '{subdir}' (Playlist)\n  Description: {desc}\n  Tracks: (No mp3 tracks found)")
+                    result.append(f"- Music ID: '{subdir}' (Playlist)\n  Description: {desc}\n  Tracks: (No supported audio tracks found)")
 
         if os.path.exists(output_dir):
             created_tracks = [f for f in os.listdir(output_dir) if f.lower().endswith((".mp3", ".wav", ".ogg"))]

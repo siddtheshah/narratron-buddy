@@ -20,6 +20,11 @@ from services.music_catalog import MusicCatalog
 
 logger = logging.getLogger(__name__)
 
+# Keep this aligned with the theater asset API.  Playlists are user-uploaded
+# assets, so limiting resolution to MP3 made otherwise valid theater tracks
+# invisible to the agent.
+SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a")
+
 class MusicTools(BaseTools):
     def __init__(
         self,
@@ -126,15 +131,18 @@ class MusicTools(BaseTools):
         if clean_stem in self.music_aliases:
             return [self.music_aliases[clean_stem]]
 
-        # 2. Check user playlist directory (folder containing MP3 files)
+        # 2. Check the theater playlist directory.
         playlist_path = os.path.join(self.theater_playlists_dir, clean_id)
         if os.path.exists(playlist_path) and os.path.isdir(playlist_path):
-            mp3_paths = glob.glob(os.path.join(playlist_path, "*.mp3"))
-            if mp3_paths:
-                mp3_paths.sort()
+            track_paths = sorted(
+                path for path in glob.glob(os.path.join(playlist_path, "*"))
+                if os.path.isfile(path)
+                and Path(path).suffix.lower() in SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
+            )
+            if track_paths:
                 if self.active_theater_id:
-                    return [f"/theaters/{self.active_theater_id}/playlists/{clean_id}/{os.path.basename(f)}" for f in mp3_paths]
-                return [f"/playlists/{clean_id}/{os.path.basename(f)}" for f in mp3_paths]
+                    return [f"/theaters/{self.active_theater_id}/playlists/{clean_id}/{os.path.basename(f)}" for f in track_paths]
+                return [f"/playlists/{clean_id}/{os.path.basename(f)}" for f in track_paths]
 
         # 3. Check created music output directory output/music
         if os.path.exists(self.output_dir):
@@ -293,7 +301,6 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         logger.debug("[MusicTools] play_music requested for theater=%s music_id=%s.", self.active_theater_id, music_id)
-        self.record_tool_call("play_music")
         return self._play_music_internal(music_id)
 
     @logged_tool_call

@@ -75,6 +75,7 @@ def test_audio_state_serialize_and_load_round_trip() -> None:
         "current_playlist": "ambient",
         "current_playlist_tracks": ["amb1.mp3", "amb2.mp3"],
         "music_paused": True,
+        "current_playlist_time": state.current_playlist_time,
     }
 
     new_state = AudioState(lambda *_: None)
@@ -83,7 +84,20 @@ def test_audio_state_serialize_and_load_round_trip() -> None:
     assert new_state.current_playlist == "ambient"
     assert new_state.current_playlist_tracks == ["amb1.mp3", "amb2.mp3"]
     assert new_state.music_paused is True
+    assert new_state.current_playlist_time == state.current_playlist_time
     assert new_state.serialize() == serialized
+
+
+def test_audio_state_loads_legacy_playback_with_a_fresh_timestamp() -> None:
+    state = AudioState(lambda *_: None)
+    state.load({
+        "current_music_id": "ambient",
+        "current_playlist": "ambient",
+        "current_playlist_tracks": ["amb1.mp3"],
+        "music_paused": False,
+    })
+
+    assert state.current_playlist_time > 0
 
 
 def test_audio_state_load_handles_malformed_and_missing_data() -> None:

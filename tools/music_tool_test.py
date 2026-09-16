@@ -101,6 +101,24 @@ class TestMusicTools(BaseTestCase):
         res = self.music_tools.play_music("unknown")
         self.assertIn("Error: Music or playlist 'unknown' not found.", res)
 
+    def test_missing_playlist_does_not_start_switch_cooldown(self):
+        self.music_tools.cooldown_duration = 60.0
+
+        self.assertIn("not found", self.music_tools.play_music("missing"))
+        self.assertIn("Successfully started playing", self.music_tools.play_music("ambient"))
+
+    def test_play_music_supports_all_theater_audio_formats(self):
+        wav_path = os.path.join(self.ambient_dir, "rain.WAV")
+        with open(wav_path, "w", encoding="utf-8") as f:
+            f.write("dummy audio")
+
+        self.music_tools.play_music("ambient")
+
+        self.assertIn(
+            "/theaters/test_theater/playlists/ambient/rain.WAV",
+            self.music_tools.canvas_manager.audio.current_playlist_tracks,
+        )
+
     def test_pause_and_resume_music(self):
         mock_pause_cb = MagicMock()
         mock_resume_cb = MagicMock()

@@ -42,7 +42,18 @@ class AudioState:
         tracks = data.get("current_playlist_tracks", [])
         self.current_playlist_tracks = [track for track in tracks if isinstance(track, str)] if isinstance(tracks, list) else []
         self.music_paused = bool(data.get("music_paused", False))
+        saved_time = data.get("current_playlist_time")
+        if isinstance(saved_time, (int, float)) and saved_time > 0:
+            self.current_playlist_time = float(saved_time)
+        elif self.current_music_id or self.current_playlist:
+            # Older saved theater files did not include a timestamp.  Give
+            # restored playback a fresh event time so a newly connected canvas
+            # does not discard it as stale.
+            self.current_playlist_time = time.time()
+        else:
+            self.current_playlist_time = 0.0
 
     def serialize(self) -> dict[str, object]:
         return {"current_music_id": self.current_music_id, "current_playlist": self.current_playlist,
-                "current_playlist_tracks": self.current_playlist_tracks, "music_paused": self.music_paused}
+                "current_playlist_tracks": self.current_playlist_tracks, "music_paused": self.music_paused,
+                "current_playlist_time": self.current_playlist_time}
