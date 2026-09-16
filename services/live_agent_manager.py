@@ -67,24 +67,24 @@ class LiveAgentSession:
         self.theater_manager = theater_manager
         self.music_catalog = music_catalog
         self.owner_user_id: Optional[int] = None
-        agent_internal = self.config.get("agent_internal", {})
-        self.enable_tool_injection = bool(agent_internal.get("enable_tool_injection", False))
+        live_agent_config = self.config.get("live_agent", {})
+        self.enable_tool_injection = bool(live_agent_config.get("enable_tool_injection", False))
         self.observability_startup_delay = self._get_nonnegative_config_seconds(
-            agent_internal.get(
+            live_agent_config.get(
                 "observability_startup_delay",
                 DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS,
             ),
             "observability_startup_delay",
         )
         self.observability_interval = self._get_nonnegative_config_seconds(
-            agent_internal.get(
+            live_agent_config.get(
                 "observability_interval",
                 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS,
             ),
             "observability_interval",
         )
         self.collaboration_observability_cooldown = self._get_nonnegative_config_seconds(
-            agent_internal.get(
+            live_agent_config.get(
                 "collaboration_observability_cooldown",
                 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS,
             ),
@@ -124,7 +124,7 @@ class LiveAgentSession:
 
         self.live_request_queue = PriorityLiveRequestQueue(
             live_tool_budget=self._get_live_tool_budget(
-                agent_internal.get("live_tool_budget")
+                live_agent_config.get("live_tool_budget")
             )
         )
         self.websockets: Set[WebSocket] = set()

@@ -230,8 +230,8 @@ def build_run_config(
 ) -> RunConfig:
     """Construct RunConfig for ADK streaming execution using parameters from config.yaml."""
     config = config or {}
-    agent_config = config.get("agent", {})
-    app_internal = get_app_config().get("agent_internal", {})
+    agent_config = config.get("live_agent", {})
+    app_internal = get_app_config().get("live_agent", {})
 
     if proactivity is None:
         proactivity = agent_config.get("proactivity", False)
@@ -510,7 +510,7 @@ def create_agent(
         playlists = "No preloaded music playlists found."
     playlist_context = "\n\n## Preloaded Music Playlists Context (Loaded at Agent Init)\n" + playlists
 
-    special_instructions = str(config.get("agent", {}).get("special_instructions", "")).strip()
+    special_instructions = str(config.get("live_agent", {}).get("special_instructions", "")).strip()
     instruction = Template(
         AGENT_INSTRUCTION_TEMPLATE,
         undefined=StrictUndefined,
@@ -526,9 +526,9 @@ def create_agent(
         theater_id=theater_id,
         theater_name=theater.name if theater else theater_id,
         config=config,
-        agent=config.get("agent", {}),
+        agent=config.get("live_agent", {}),
     ).strip()
-    app_internal = get_app_config().get("agent_internal", {})
+    app_internal = get_app_config().get("live_agent", {})
     model_id = app_internal.get("model_id") or app_internal.get("model", "gemini-3.1-flash-live-preview")
     return Agent(
         name="narratron_agent",

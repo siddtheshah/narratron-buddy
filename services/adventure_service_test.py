@@ -128,7 +128,7 @@ class TestAdventureService(unittest.TestCase):
         self.assertEqual(len(lore), 1)
         self.assertEqual(lore[0][0].replace("\\", "/"), "lore/history.txt")
         self.assertIn("agent", config)
-        self.assertEqual(config["agent"]["style"], "epic")
+        self.assertEqual(config["live_agent"]["style"], "epic")
 
     def test_adventure_package_structure_and_required_stickies(self):
         service = AdventureService(base_dir=self.local_dir)

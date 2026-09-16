@@ -88,9 +88,9 @@ def get_theater_config(
         # Save theater.yaml file into theater directory
         save_theater_config(theater_id, config, theater_manager=theater_manager)
 
-    # Strictly enforce agent_internal from app.yaml so user theater config cannot override it
-    if "agent_internal" in app_config:
-        config["agent_internal"] = app_config["agent_internal"]
+    # Strictly enforce live_agent from app.yaml so user theater config cannot override it
+    if "live_agent" in app_config:
+        config["live_agent"] = app_config["live_agent"]
 
     # Visual model selection is an application-level operational setting.
     # Merge it last so all theaters use the model selected in app.yaml while

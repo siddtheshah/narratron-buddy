@@ -32,7 +32,7 @@ smtp:
     host: "smtp.gmail.com"
     port: 587
 
-agent_internal:
+live_agent:
     model_id: "gemini-3.1-flash-live-preview"
     # Model tool calls allowed after each VAD end before the the live model is starved.
     live_tool_budget: 5

@@ -398,7 +398,7 @@ class TestBuildRunConfig(unittest.TestCase):
     @patch("services.live_agent.get_app_config")
     def test_build_run_config_native_audio_defaults(self, mock_get_app_config):
         mock_get_app_config.return_value = {
-            "agent_internal": {"model": "gemini-3.1-flash-live-preview"}
+            "live_agent": {"model": "gemini-3.1-flash-live-preview"}
         }
         from services.live_agent import build_run_config
         config = {

@@ -245,7 +245,7 @@ class TestTheaterAPI(BaseTestCase):
         config = yaml.safe_load(response.json()["config_yaml"])
         self.assertEqual(config["visuals"]["style"], get_theater_default_config()["visuals"]["style"])
         self.assertEqual(
-            config["agent"]["special_instructions"],
+            config["live_agent"]["special_instructions"],
             get_theater_default_config()["agent"]["special_instructions"],
         )
 
@@ -358,8 +358,8 @@ class TestTheaterAPI(BaseTestCase):
         config = yaml.safe_load(
             (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
         )
-        self.assertEqual(config["agent"]["style"], "advanced style")
-        self.assertEqual(config["agent"]["special_instructions"], "advanced instructions")
+        self.assertEqual(config["live_agent"]["style"], "advanced style")
+        self.assertEqual(config["live_agent"]["special_instructions"], "advanced instructions")
 
     def test_feature_flags_forwarded_to_theater_config(self):
         self.client.post("/api/auth/register", json={

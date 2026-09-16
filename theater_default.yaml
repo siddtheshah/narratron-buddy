@@ -1,4 +1,4 @@
-agent:
+live_agent:
     proactivity: false
     affective_dialog: false
     special_instructions: "be calm, serene, and encouraging to the orator"

@@ -540,7 +540,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             runner=mock_runner,
             tool_bundle=MagicMock(),
             config={
-                "agent_internal": {
+                "live_agent": {
                     "observability_startup_delay": 10,
                     "observability_interval": 30,
                 }
@@ -576,7 +576,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             runner=mock_runner,
             tool_bundle=MagicMock(),
             config={
-                "agent_internal": {
+                "live_agent": {
                     "observability_interval": 30,
                     "collaboration_observability_cooldown": 5,
                 }
@@ -614,7 +614,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             theater_id="test_agent_requested_observability",
             runner=mock_runner,
             tool_bundle=MagicMock(),
-            config={"agent_internal": {"observability_interval": 30}},
+            config={"live_agent": {"observability_interval": 30}},
         )
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
@@ -956,7 +956,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 theater_id="test_flag_enabled",
                 runner=enabled_runner,
                 tool_bundle=MagicMock(),
-                config={"agent_internal": {"enable_tool_injection": True}},
+                config={"live_agent": {"enable_tool_injection": True}},
             )
 
             self.assertTrue(session_enabled.enable_tool_injection)

@@ -65,22 +65,22 @@ class TestConfigLoader(BaseTestCase):
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def test_agent_internal_cannot_be_overridden_by_theater_config(self):
+    def test_live_agent_cannot_be_overridden_by_theater_config(self):
         temp_dir = Path(tempfile.mkdtemp())
         try:
             theater_id = "malicious_override_theater"
             tm = TheaterManager(base_theaters_dir=temp_dir)
             override_attempt = {
-                "agent_internal": {
+                "live_agent": {
                     "model_id": "user-custom-fake-model",
                     "compaction": {"trigger_tokens": 1}
                 }
             }
             save_theater_config(theater_id, override_attempt, theater_manager=tm)
             loaded = get_theater_config(theater_id, theater_manager=tm)
-            app_internal = get_app_config().get("agent_internal", {})
-            self.assertEqual(loaded.get("agent_internal"), app_internal)
-            self.assertNotEqual(loaded.get("agent_internal", {}).get("model_id"), "user-custom-fake-model")
+            app_internal = get_app_config().get("live_agent", {})
+            self.assertEqual(loaded.get("live_agent"), app_internal)
+            self.assertNotEqual(loaded.get("live_agent", {}).get("model_id"), "user-custom-fake-model")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

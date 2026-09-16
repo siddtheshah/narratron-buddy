@@ -364,7 +364,7 @@ def load_adventure_config(adventure_id_or_path: str) -> Tuple[Dict[str, Any], Pa
             logger.warning("Failed to load %s: %s", yaml_path, e)
 
     app_config = get_app_config()
-    for key in ("agent_internal", "visuals", "image_generation", "story_planning", "interactive_canvas", "music"):
+    for key in ("live_agent", "visuals", "image_generation", "story_planning", "interactive_canvas", "music"):
         if key in app_config:
             deep_merge(config.setdefault(key, {}), app_config[key])
 
@@ -403,7 +403,7 @@ class AdventureSession:
         self.config, self.adventure_path, self.adventure_id = load_adventure_config(self.adventure_id_or_path)
 
         if self.agent_model_override:
-            self.config.setdefault("agent_internal", {})["model"] = self.agent_model_override
+            self.config.setdefault("live_agent", {})["model"] = self.agent_model_override
             self.config.setdefault("agent", {})["model_id"] = self.agent_model_override
         if self.planner_model_override:
             story_config = self.config.setdefault("story_planning", {})
@@ -601,7 +601,7 @@ class AdventureSession:
             playlists = "No preloaded music playlists found."
         playlist_context = "\n\n## Preloaded Music Playlists Context (Loaded at Agent Init)\n" + playlists
 
-        special_instructions = str(self.config.get("agent", {}).get("special_instructions", "")).strip()
+        special_instructions = str(self.config.get("live_agent", {}).get("special_instructions", "")).strip()
 
         instruction = Template(
             AGENT_INSTRUCTION_TEMPLATE,
@@ -618,12 +618,12 @@ class AdventureSession:
             theater_id=self.session_id,
             theater_name=self.adventure_id,
             config=self.config,
-            agent=self.config.get("agent", {}),
+            agent=self.config.get("live_agent", {}),
         ).strip()
 
-        app_internal = get_app_config().get("agent_internal", {})
+        app_internal = get_app_config().get("live_agent", {})
         model_id = (
-            self.config.get("agent", {}).get("model_id")
+            self.config.get("live_agent", {}).get("model_id")
             or app_internal.get("model_id")
             or app_internal.get("model", "gemini-3.7-flash")
         )
@@ -1230,7 +1230,7 @@ def run_autoplay(
         )
 
     agent_model_name = str(
-        session.agent_model_override or session.config.get("agent", {}).get("model_id") or "gemini-3.7-flash"
+        session.agent_model_override or session.config.get("live_agent", {}).get("model_id") or "gemini-3.7-flash"
     )
     planner_model_name = str(
         session.planner_model_override
