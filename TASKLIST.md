@@ -9,7 +9,6 @@
 
 
 ## Refactors
-- [ ] Fix Deep planner config layout
 - [ ] Eliminate traces of 'named element' terminology.
 - [ ] Refactor canvas.html to be more modular.
 
@@ -18,12 +17,13 @@
   - Record per-endpoint request count, latency, DB query count/time, live-pool checkout waits/timeouts, and cache hit rate.
   - Establish load-test baselines for canvas, OBS, and popout viewers; report DB reads per active viewer and verify the WebSocket migration materially reduces them.
 
-## Policy Pages
-- [x] Page for terms of use.
-- [x] Page for privacy policy.
-
-## New Demos
-- [ ] Drawing demo
-
 ## Billing
 - [ ] Storage Daemon is not checking file sizes of owned theaters. Need to fix.
+
+## Adventure Mode
+- [ ] Achievements; let adventure writers come up with accomplishments for players to achieve.
+
+## Adventures
+- [ ] Escape room adventure: for hardcore puzzlers. More constrained, but with a freeform hinter. 
+- [ ] The Judge adventure: psychological thriller. Players are continually confronted by Death over the choices
+they make. 

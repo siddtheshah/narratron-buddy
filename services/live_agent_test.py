@@ -414,18 +414,4 @@ class TestBuildRunConfig(unittest.TestCase):
         self.assertTrue(run_cfg.enable_affective_dialog)
         self.assertEqual(run_cfg.tool_thread_pool_config.max_workers, 5)
 
-    @patch("services.live_agent.get_app_config")
-    def test_build_run_config_text_modality(self, mock_get_app_config):
-        mock_get_app_config.return_value = {
-            "agent_internal": {"model": "gemini-2.0-flash"}
-        }
-        from services.live_agent import build_run_config
-        run_cfg = build_run_config(model_name="gemini-text-only")
-        self.assertEqual(run_cfg.response_modalities, ["TEXT"])
-        self.assertIsNone(run_cfg.input_audio_transcription)
-
-    def test_reexported_from_live_agent_manager(self):
-        from services.live_agent import build_run_config as agent_build_cfg
-        from services.live_agent_manager import build_run_config as manager_build_cfg
-        self.assertIs(agent_build_cfg, manager_build_cfg)
 

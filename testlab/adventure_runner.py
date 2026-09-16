@@ -154,7 +154,7 @@ class MockToolBundle:
         self,
         image_prompt: str,
         image_name: str,
-        reference_images: List[str] | str | None = None,
+        reference_images: List[str] = None,
         display: bool = True,
         effect: str = "gleam3",
     ) -> str:
