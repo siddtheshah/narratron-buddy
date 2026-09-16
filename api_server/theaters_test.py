@@ -346,7 +346,7 @@ class TestTheaterAPI(BaseTestCase):
                 "agent_special_instructions": "quick instructions",
                 "advanced_config_canonical": "true",
                 "theater_config_yaml": (
-                    "agent:\n"
+                    "live_agent:\n"
                     "  style: advanced style\n"
                     "  special_instructions: advanced instructions\n"
                 ),
