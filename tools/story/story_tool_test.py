@@ -213,6 +213,60 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             "Prepare yourselves.",
         )
 
+    def test_manifested_character_voice_selected_with_gender_in_process_user_action(self) -> None:
+        speech_provider = MagicMock()
+        speech_provider.select_voice.return_value = "voice_female_1"
+        self.story_state.enable_scene_speech(speech_provider)
+
+        scene_delta = {
+            "narration": "A hooded figure emerges from the fog.",
+            "dialogue": [{"speaker": "Vesper", "text": "Who goes there?"}],
+            "manifested_characters": ["Vesper"],
+            "character_updates": [{"name": "Vesper", "gender": "female"}],
+            "planning_signals": [],
+            "scene_label": "Foggy Crossroads",
+        }
+
+        with patch.object(self.tool.response_module, "_run_responder_agent", return_value=scene_delta):
+            self.tool.response_module._resolve_user_action("I call out.")
+
+        # Vesper's voice was assigned using female tag
+        speech_provider.select_voice.assert_called_once_with(["female"], exclude=set())
+        self.assertEqual(self.story_state.get_character_voice("Vesper"), "voice_female_1")
+
+    def test_manifested_nonbinary_character_voice_selected_in_process_user_action(self) -> None:
+        speech_provider = MagicMock()
+        speech_provider.select_voice.return_value = "voice_nb_1"
+        self.story_state.enable_scene_speech(speech_provider)
+
+        scene_delta = {
+            "narration": "A spirit drifts near.",
+            "dialogue": [{"speaker": "Echo", "text": "Listen closely."}],
+            "manifested_characters": ["Echo"],
+            "character_updates": [{"name": "Echo", "gender": "nonbinary"}],
+            "planning_signals": [],
+            "scene_label": "Spirit Grove",
+        }
+
+        with patch.object(self.tool.response_module, "_run_responder_agent", return_value=scene_delta):
+            self.tool.response_module._resolve_user_action("I listen.")
+
+        speech_provider.select_voice.assert_called_once_with(["nonbinary"], exclude=set())
+        self.assertEqual(self.story_state.get_character_voice("Echo"), "voice_nb_1")
+
+    def test_sync_character_voice_tags_updates_story_state(self) -> None:
+        self.tool.character_manager.import_characters([
+            {"name": "Gwen", "gender": "female"},
+            {"name": "Boran", "gender": "male"},
+            {"name": "Zephyr", "gender": "nonbinary"},
+        ])
+        self.tool.sync_character_voice_tags()
+
+        self.assertEqual(self.story_state.get_character_voice_tags("Gwen"), ["female"])
+        self.assertEqual(self.story_state.get_character_voice_tags("Boran"), ["male"])
+        self.assertEqual(self.story_state.get_character_voice_tags("Zephyr"), ["nonbinary"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

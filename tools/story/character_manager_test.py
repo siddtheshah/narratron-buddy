@@ -17,6 +17,7 @@ class TestNormalizeVoiceTags(unittest.TestCase):
             ["female", "male"],
         )
         self.assertEqual(normalize_voice_tags("male, FEMALE unsupported"), ["male", "female"])
+        self.assertEqual(normalize_voice_tags("non-binary, nb, FEMALE"), ["nonbinary", "female"])
         self.assertEqual(normalize_voice_tags(None), [])
 
 
@@ -216,10 +217,40 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(self.manager.get_present_characters()[0]["name"], "Lyra")
 
         self.manager.import_characters(
-            [{"name": "Orin", "description": "Archivist", "voice_tags": "male"}]
+            [{"name": "Orin", "description": "Archivist", "voice_tags": "male", "gender": "male"}]
         )
         self.assertEqual([character["name"] for character in self.manager.export_characters()], ["Orin"])
         self.assertEqual(self.manager.export_characters()[0]["voice_tags"], ["male"])
+        self.assertEqual(self.manager.export_characters()[0]["gender"], "male")
+
+    def test_generate_character_profile_with_explicit_gender_and_nonbinary(self) -> None:
+        quirk_service = MagicMock(spec=QuirkGeneratorService)
+        quirk_service.get_random_quirk.return_value = "Plays with a coin"
+
+        with patch(
+            "tools.story.character_manager.get_quirk_generator_service",
+            return_value=quirk_service,
+        ):
+            # Explicit male
+            male_prof = self.manager.generate_character_profile("Cedric", gender="male")
+            self.assertEqual(male_prof["gender"], "male")
+            self.assertIn("male", male_prof["voice_tags"])
+
+            # Explicit nonbinary
+            nb_prof = self.manager.generate_character_profile("Rowan", gender="nonbinary")
+            self.assertEqual(nb_prof["gender"], "nonbinary")
+            self.assertIn("nonbinary", nb_prof["voice_tags"])
+
+            # Alias nb
+            nb_alias = self.manager.generate_character_profile("Ash", gender="nb")
+            self.assertEqual(nb_alias["gender"], "nonbinary")
+            self.assertIn("nonbinary", nb_alias["voice_tags"])
+
+    def test_get_character_voice_tags_direct_lookup(self) -> None:
+        self.manager.generate_character("Rowan", gender="nonbinary")
+        self.assertEqual(self.manager.get_character_voice_tags("Rowan"), ["nonbinary"])
+        self.assertEqual(self.manager.get_character_voice_tags("rowan"), ["nonbinary"])
+        self.assertEqual(self.manager.get_character_voice_tags("Unknown"), [])
 
 
 if __name__ == "__main__":

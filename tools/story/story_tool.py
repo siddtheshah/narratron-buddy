@@ -131,6 +131,22 @@ class StoryTool(BaseTools):
         self.notepad.on_change = self.response_module.save_to_session_state
         self.response_module.on_scene_reaction = self._handle_scene_reaction
         self.notepad.sync_story_state()
+        self.sync_character_voice_tags()
+
+    def sync_character_voice_tags(self) -> None:
+        """Communicate current character voice lookup tags cleanly to StoryState."""
+        if not (self.canvas_manager and hasattr(self.canvas_manager, "story")):
+            return
+        story = self.canvas_manager.story
+        if not hasattr(story, "update_character_voice_tags"):
+            return
+        characters = self.character_manager.export_characters()
+        tag_map = {
+            char["name"]: char.get("voice_tags", [char["gender"]] if char.get("gender") else [])
+            for char in characters
+            if "name" in char
+        }
+        story.update_character_voice_tags(tag_map)
 
     def _load_story_log(self) -> None:
         """Restore the theater log into the shared Notepad store."""
@@ -207,6 +223,7 @@ class StoryTool(BaseTools):
             action = self._pending_actions.pop(0)
             result["deep_plan_revision_used"] = self.planning_module.get_deep_plan().get("revision", 0)
             self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
+        self.sync_character_voice_tags()
         if self._on_scene_reaction:
             self._on_scene_reaction(result)
 

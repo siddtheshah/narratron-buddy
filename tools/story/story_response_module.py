@@ -11,11 +11,11 @@ import re
 import threading
 from threading import Lock
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from absl import flags
 from jinja2 import Template
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.plugins import ReflectAndRetryToolPlugin
@@ -142,11 +142,12 @@ No lore documents are available for this theater. Invent the lore, world details
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
 - **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character.
 - **Planning Signals**: Briefly record facts established by this resolution, threads affected, and consequences the background planning system should consider. These signals are internal and must describe what actually happened, not invent future events.
-- **Character Updates**: Character updates are for NPCs only. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, define voice_tags as a list containing 'male' or 'female' to guide speech synthesis.
+- **Character Updates**: Character updates are for NPCs only. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, you MUST assign an explicit gender ('male', 'female', or 'nonbinary') and voice_tags to guide speech synthesis.
 
 # Character Generation
 Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
 If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
+Every generated character must have an explicit gender assignment ('male', 'female', or 'nonbinary') to ensure appropriate voice synthesis.
 
 # Scene Labeling
 Ensure the scene has a label. The location name is generally a good choice. Keep using that label until a major shift occurs.
@@ -165,12 +166,37 @@ class ResponseDialogue(BaseModel):
 
 class ResponseCharacter(BaseModel):
     name: str
+    gender: Literal["male", "female", "nonbinary"] = Field(
+        description="Explicit gender of the character: 'male', 'female', or 'nonbinary' to determine voice assignment."
+    )
     description: Optional[str] = None
     personality: Optional[str] = None
     motivation: Optional[str] = None
     quirk: Optional[str] = None
     voice_type: Optional[str] = None
     voice_tags: Optional[List[str]] = None
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def validate_gender(cls, v: Any) -> str:
+        if not v:
+            raise ValueError("Gender must be explicitly assigned as 'male', 'female', or 'nonbinary'.")
+        norm = str(v).strip().lower().replace("-", "")
+        if norm in ("nb", "nonbinary"):
+            return "nonbinary"
+        if norm in ("male", "man", "m"):
+            return "male"
+        if norm in ("female", "woman", "f"):
+            return "female"
+        raise ValueError(f"Invalid gender '{v}'. Must be 'male', 'female', or 'nonbinary'.")
+
+    @model_validator(mode="after")
+    def populate_voice_tags(self) -> ResponseCharacter:
+        if not self.voice_tags:
+            self.voice_tags = [self.gender]
+        elif self.gender not in self.voice_tags:
+            self.voice_tags.insert(0, self.gender)
+        return self
 
 
 class SceneReaction(BaseModel):
@@ -627,7 +653,9 @@ class StoryResponseModule:
         motivation: str = "",
         quirk: str = "",
         voice_tags: list[str] = None,
+        gender: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Generate a complete NPC profile with an explicit gender ('male', 'female', or 'nonbinary')."""
         return self.character_manager.generate_character_profile(
             name=name,
             description=description,
@@ -635,6 +663,7 @@ class StoryResponseModule:
             motivation=motivation,
             quirk=quirk,
             voice_tags=voice_tags,
+            gender=gender,
         )
 
     def generate_character(
@@ -645,6 +674,7 @@ class StoryResponseModule:
         motivation: str = "",
         quirk: str = "",
         voice_tags: Any = None,
+        gender: Optional[str] = None,
     ) -> str:
         return self.character_manager.generate_character(
             name=name,
@@ -653,6 +683,7 @@ class StoryResponseModule:
             motivation=motivation,
             quirk=quirk,
             voice_tags=voice_tags,
+            gender=gender,
         )
 
     def clear_scene(self) -> str:
@@ -1036,8 +1067,8 @@ class StoryResponseModule:
         }
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
-        self._publish_scene(narration, dialogue)
         self.save_to_session_state()
+        self._publish_scene(narration, dialogue)
         logger.debug(
             "[StoryResponseModule] Scene name: %s | Reference images: %s",
             scene_name or "(unspecified)",
@@ -1115,7 +1146,16 @@ class StoryResponseModule:
     def save_to_session_state(self) -> None:
         try:
             if self.canvas_manager and hasattr(self.canvas_manager, "story"):
-                self.canvas_manager.story.set_story_planning_state(self.export_response_state())
+                story = self.canvas_manager.story
+                story.set_story_planning_state(self.export_response_state())
+                if hasattr(story, "update_character_voice_tags"):
+                    characters = self.character_manager.export_characters()
+                    tag_map = {
+                        char["name"]: char.get("voice_tags", [char["gender"]] if char.get("gender") else [])
+                        for char in characters
+                        if "name" in char
+                    }
+                    story.update_character_voice_tags(tag_map)
         except Exception as e:
             logger.warning(
                 "[StoryResponseModule] Failed to save story planning state to session state: %s",

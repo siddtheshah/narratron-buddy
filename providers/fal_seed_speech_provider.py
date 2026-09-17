@@ -56,9 +56,9 @@ class FalSeedSpeechProvider(SpeechProvider):
         tags = extract_voice_tags(voice_tags)
         excluded = set(exclude or ())
 
-        if "female" in tags and "male" not in tags:
+        if "female" in tags and "male" not in tags and "nonbinary" not in tags:
             pool = FEMALE_SEED_VOICES
-        elif "male" in tags and "female" not in tags:
+        elif "male" in tags and "female" not in tags and "nonbinary" not in tags:
             pool = MALE_SEED_VOICES
         else:
             pool = SEED_CHARACTER_VOICES

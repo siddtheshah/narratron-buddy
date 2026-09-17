@@ -118,7 +118,7 @@ def test_story_state_delegates_to_provider_select_voice() -> None:
 
     state = StoryState()
     state.enable_scene_speech(mock_provider)
-    state._character_lookup = lambda name: ["male"]
+    state.set_character_voice_tags("Arthur", ["male"])
 
     voice = state._voice_for("Arthur")
     assert voice == "custom_voice_alpha"
@@ -294,6 +294,8 @@ def test_get_character_voice_tags_filters_to_binary_gender_and_handles_single_st
         "characters": [
             {"name": "Elder", "voice_tags": ["elderly", "deep", "male", "wise"]},
             {"name": "Princess", "voice_tags": "female"},
+            {"name": "Sprite", "voice_tags": ["playful", "nonbinary"]},
+            {"name": "Rowan", "gender": "nonbinary"},
             {"name": "Robot", "voice_tags": ["robotic", "metallic"]},
         ]
     }
@@ -302,8 +304,32 @@ def test_get_character_voice_tags_filters_to_binary_gender_and_handles_single_st
     assert state.get_character_voice_tags("Elder") == ["male"]
     # Single string "female" handled
     assert state.get_character_voice_tags("Princess") == ["female"]
-    # Non-gender tags filtered to empty list
+    assert state.get_character_voice_tags("Sprite") == ["nonbinary"]
+    assert state.get_character_voice_tags("Rowan") == ["nonbinary"]
     assert state.get_character_voice_tags("Robot") == []
+
+
+def test_story_state_internal_voice_tags_update_and_lookup() -> None:
+    state = StoryState()
+    state.update_character_voice_tags({
+        "Mara": ["female"],
+        "Arthur": "male",
+        "Rowan": ["nonbinary"],
+    })
+    assert state.get_character_voice_tags("Mara") == ["female"]
+    assert state.get_character_voice_tags("Arthur") == ["male"]
+    assert state.get_character_voice_tags("Rowan") == ["nonbinary"]
+    assert state.get_character_voice_tags("Unknown") == []
+
+    # Verify serialization and reloading
+    serialized = state.serialize()
+    assert serialized["character_voice_tags"]["mara"] == ["female"]
+    assert serialized["character_voice_tags"]["arthur"] == ["male"]
+    assert serialized["character_voice_tags"]["rowan"] == ["nonbinary"]
+
+    reloaded = StoryState()
+    reloaded.load(serialized)
+    assert reloaded.get_character_voice_tags("Mara") == ["female"]
 
 
 def test_load_handles_none_or_non_dict_gracefully() -> None:

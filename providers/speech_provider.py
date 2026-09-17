@@ -8,14 +8,21 @@ from typing import Any, Iterable, Mapping
 
 
 def extract_voice_tags(tags: Any = None) -> list[str]:
-    """Extract and normalize voice tags ('male' or 'female')."""
+    """Extract and normalize voice tags ('male', 'female', or 'nonbinary')."""
     if not tags:
         return []
     if isinstance(tags, Mapping):
-        tags = tags.get("voice_tags", [])
+        tags = tags.get("voice_tags") or tags.get("gender") or []
     if isinstance(tags, str):
         tags = [tags]
-    return [str(t).strip().lower() for t in tags if str(t).strip().lower() in ("male", "female")]
+    normalized = []
+    for t in tags:
+        clean = str(t).strip().lower().replace("-", "")
+        if clean in ("nb", "nonbinary"):
+            normalized.append("nonbinary")
+        elif clean in ("male", "female"):
+            normalized.append(clean)
+    return normalized
 
 
 def extract_character_description(character: str | Mapping[str, Any] | None) -> str:

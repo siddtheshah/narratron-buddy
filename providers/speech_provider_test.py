@@ -153,6 +153,18 @@ def test_fal_seed_speech_voice_selection_cues_and_exclusion():
     })
     assert male_voice in MALE_SEED_VOICES
 
+    # Dict character metadata with gender field fallback
+    male_from_gender = provider.select_voice({
+        "name": "Cedric",
+        "gender": "male",
+    })
+    assert male_from_gender in MALE_SEED_VOICES
+
+    # Nonbinary voice tag
+    from providers.fal_seed_speech_provider import SEED_CHARACTER_VOICES
+    nb_voice = provider.select_voice(["nonbinary"])
+    assert nb_voice in SEED_CHARACTER_VOICES
+
     # Stable selection for same voice tags
     assert provider.select_voice(["female"]) == provider.select_voice(["female"])
 
@@ -176,11 +188,19 @@ def test_gemini_speech_voice_selection():
 
     male_voice = provider.select_voice(["male"])
     assert male_voice in GEMINI_MALE_VOICES
+
+    nb_voice = provider.select_voice(["nonbinary"])
+    assert nb_voice in GEMINI_VOICES
+
     assert len(provider.select_voice(exclude=GEMINI_VOICES[:-1])) > 0
 
 
 def test_google_chirp_speech_voice_selection():
-    from providers.google_chirp_speech_provider import CHIRP_FEMALE_VOICES, CHIRP_MALE_VOICES
+    from providers.google_chirp_speech_provider import (
+        CHIRP_FEMALE_VOICES,
+        CHIRP_MALE_VOICES,
+        CHIRP_VOICES,
+    )
 
     provider = GoogleChirpSpeechProvider()
     female_voice = provider.select_voice(["female"])
@@ -188,6 +208,9 @@ def test_google_chirp_speech_voice_selection():
 
     male_voice = provider.select_voice(["male"])
     assert male_voice in CHIRP_MALE_VOICES
+
+    nb_voice = provider.select_voice(["nonbinary"])
+    assert nb_voice in CHIRP_VOICES
 
 
 def test_speech_provider_synthesize_uses_selected_voice():

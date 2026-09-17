@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import re
@@ -53,7 +53,7 @@ class StoryState:
         self.narration = ""
         self.narration_spans: list[dict[str, Any]] = []
         self.character_voice_assignments: dict[str, str] = {}
-        self._character_lookup: Callable[[str], Any] | None = None
+        self.character_voice_tags: dict[str, list[str]] = {}
         self._text_beautifier: Any = None
         self._speech_provider: SpeechProvider | None = None
         self._scene_speech_enabled = False
@@ -97,8 +97,6 @@ class StoryState:
             self._notify_changed = notify_changed
         if text_beautifier is not None:
             self._text_beautifier = text_beautifier
-        if character_lookup is not None:
-            self._character_lookup = character_lookup
         if provider is not None:
             self.enable_scene_speech(provider)
 
@@ -128,6 +126,13 @@ class StoryState:
         if isinstance(assignments, dict):
             self.character_voice_assignments = {str(k): str(v) for k, v in assignments.items()}
 
+        tags = data.get("character_voice_tags")
+        if isinstance(tags, dict):
+            self.character_voice_tags = {
+                speaker_key(k): [str(t) for t in v] if isinstance(v, (list, tuple)) else [str(v)]
+                for k, v in tags.items()
+            }
+
         # Accept the short-lived original field while restoring older local
         # theater state, but persist the explicit name below.
         generation = data.get("committed_scene_speech_generation", data.get("scene_speech_generation"))
@@ -143,6 +148,7 @@ class StoryState:
             "narration": self.narration,
             "narration_spans": self.narration_spans,
             "character_voice_assignments": self.character_voice_assignments,
+            "character_voice_tags": self.character_voice_tags,
             "committed_scene_speech_generation": self.committed_scene_speech_generation,
         }
     payload = serialize
@@ -237,12 +243,40 @@ class StoryState:
         self.character_voice_assignments[speaker_key(speaker)] = str(voice)
         if self._persist:
             self._persist()
+    def update_character_voice_tags(self, voice_tags: Mapping[str, Any]) -> None:
+        """Store character voice lookup tags internally."""
+        if not isinstance(voice_tags, Mapping):
+            return
+        allowed = {"male": "male", "female": "female", "nonbinary": "nonbinary", "nb": "nonbinary"}
+        for speaker, tags in voice_tags.items():
+            key = speaker_key(speaker)
+            if isinstance(tags, (list, tuple, set)):
+                cleaned = [str(t).strip().lower().replace("-", "") for t in tags]
+            elif isinstance(tags, str):
+                cleaned = [str(tags).strip().lower().replace("-", "")]
+            else:
+                cleaned = []
+            self.character_voice_tags[key] = [allowed[c] for c in cleaned if c in allowed]
+        if self._persist:
+            self._persist()
+
+    def set_character_voice_tags(self, speaker: str, tags: Any) -> None:
+        """Set voice lookup tags for a single character internally."""
+        self.update_character_voice_tags({speaker: tags})
+
     def get_character_voice_tags(self, speaker: str) -> list[str]:
+        key = speaker_key(speaker)
+        if key in self.character_voice_tags and self.character_voice_tags[key]:
+            return list(self.character_voice_tags[key])
         character = self._character(speaker)
-        tags = character.get("voice_tags", []) if character else []
+        tags = (character.get("voice_tags") or character.get("gender", [])) if character else []
+        candidates: list[str] = []
         if isinstance(tags, (list, tuple, set)):
-            return [str(tag).strip().lower() for tag in tags if str(tag).strip().lower() in {"male", "female"}]
-        return [tags.strip().lower()] if isinstance(tags, str) and tags.strip().lower() in {"male", "female"} else []
+            candidates = [str(tag).strip().lower().replace("-", "") for tag in tags]
+        elif isinstance(tags, str):
+            candidates = [str(tags).strip().lower().replace("-", "")]
+        allowed = {"male": "male", "female": "female", "nonbinary": "nonbinary", "nb": "nonbinary"}
+        return [allowed[c] for c in candidates if c in allowed]
     def get_character_description(self, speaker: str) -> str:
         character = self._character(speaker)
         if character:
@@ -293,7 +327,7 @@ class StoryState:
         if existing:
             return existing
 
-        tags = self._character_lookup(speaker) if self._character_lookup else self.get_character_voice_tags(speaker)
+        tags = self.get_character_voice_tags(speaker)
         used = set(self.character_voice_assignments.values())
         if self._speech_provider is not None:
             voice = self._speech_provider.select_voice(tags, exclude=used)

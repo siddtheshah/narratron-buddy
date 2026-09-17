@@ -15,7 +15,11 @@ from providers import TextResponseProvider
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
-from tools.story.story_response_module import StoryResponseModule, build_story_context_prompt
+from tools.story.story_response_module import (
+    ResponseCharacter,
+    StoryResponseModule,
+    build_story_context_prompt,
+)
 
 
 class TestStoryResponseModuleDependencies(unittest.TestCase):
@@ -342,6 +346,50 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             scene_delta["narration"],
             [{"speaker": "Kaelen", "text": "Stay quiet.", "kind": "speech"}],
         )
+
+    def test_response_character_validates_and_normalizes_gender(self) -> None:
+        char1 = ResponseCharacter(name="Cedric", gender="male")
+        self.assertEqual(char1.gender, "male")
+        self.assertEqual(char1.voice_tags, ["male"])
+
+        char2 = ResponseCharacter(name="Mara", gender="female")
+        self.assertEqual(char2.gender, "female")
+        self.assertEqual(char2.voice_tags, ["female"])
+
+        char3 = ResponseCharacter(name="Rowan", gender="nonbinary")
+        self.assertEqual(char3.gender, "nonbinary")
+        self.assertEqual(char3.voice_tags, ["nonbinary"])
+
+        char4 = ResponseCharacter(name="Ash", gender="nb")
+        self.assertEqual(char4.gender, "nonbinary")
+        self.assertEqual(char4.voice_tags, ["nonbinary"])
+
+    def test_response_character_requires_gender(self) -> None:
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            ResponseCharacter(name="Nameless")  # type: ignore[call-arg]
+
+        with self.assertRaises(ValidationError):
+            ResponseCharacter(name="Invalid", gender="alien")
+
+    def test_resolves_user_action_saves_to_session_state_before_publishing_scene(self) -> None:
+        call_order: list[str] = []
+        self.module.save_to_session_state = lambda: call_order.append("save_to_session_state")
+        self.story_state.set_scene.side_effect = lambda *args, **kwargs: call_order.append("set_scene")
+
+        scene_delta = {
+            "narration": "A newcomer approaches.",
+            "dialogue": [{"speaker": "Rowan", "text": "Greetings."}],
+            "manifested_characters": ["Rowan"],
+            "character_updates": [{"name": "Rowan", "gender": "nonbinary"}],
+            "planning_signals": [],
+            "scene_label": "Town Square",
+        }
+
+        with patch.object(self.module, "_run_responder_agent", return_value=scene_delta):
+            self.module._resolve_user_action("I look around.")
+
+        self.assertEqual(call_order, ["save_to_session_state", "set_scene"])
 
 
 class TestBuildStoryContextPrompt(unittest.TestCase):
