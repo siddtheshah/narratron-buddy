@@ -72,6 +72,30 @@ def test_gemini_speech_reports_failure_after_retry_limit():
         provider.synthesize(SpeechSynthesisRequest(text="Hello."))
 
 
+def test_gemini_speech_does_not_retry_permanent_client_errors():
+    calls = 0
+
+    class PermanentClientError(RuntimeError):
+        code = 400
+
+    class Interactions:
+        @staticmethod
+        def create(**kwargs):
+            nonlocal calls
+            calls += 1
+            raise PermanentClientError("invalid request")
+
+    provider = GeminiSpeechProvider(
+        client=type("Client", (), {"interactions": Interactions()})(),
+        max_attempts=3,
+        retry_delay_seconds=0,
+    )
+
+    with pytest.raises(SpeechProviderError, match=r"after 1 attempt\(s\).*invalid request"):
+        provider.synthesize(SpeechSynthesisRequest(text="Hello."))
+    assert calls == 1
+
+
 def test_fal_seed_speech_uses_documented_payload_and_downloads_audio():
     calls = []
 

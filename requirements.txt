@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 google-adk
-google-genai
+google-genai>=2.0.0
 google-cloud-texttospeech
 openai>=1.0
 pyyaml

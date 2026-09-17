@@ -78,7 +78,14 @@ class GeminiSpeechProvider(SpeechProvider):
             if not api_key:
                 raise SpeechProviderError("GEMINI_API_KEY or GOOGLE_API_KEY is not configured for Gemini TTS.")
             try:
-                self.client = genai.Client(api_key=api_key)
+                # TTS uses the Gemini Developer API's Interactions endpoint.
+                # Be explicit so ambient Vertex/Enterprise flags used by the
+                # rest of the app cannot redirect this API-key client.
+                self.client = genai.Client(
+                    api_key=api_key,
+                    enterprise=False,
+                    vertexai=False,
+                )
             except Exception as exc:
                 raise SpeechProviderError(f"Failed to initialize Gemini TTS client: {exc}") from exc
 
@@ -106,8 +113,11 @@ class GeminiSpeechProvider(SpeechProvider):
             raise SpeechProviderError("Installed google-genai client does not support the Gemini Interactions TTS API.")
 
         response: Any = None
+        pcm: bytes | None = None
         last_error: Exception | None = None
+        attempts_made = 0
         for attempt in range(self.max_attempts):
+            attempts_made = attempt + 1
             try:
                 response = interactions.create(
                     model=self.model,
@@ -122,12 +132,14 @@ class GeminiSpeechProvider(SpeechProvider):
                 break
             except Exception as exc:
                 last_error = exc
+                if not self._is_retryable(exc):
+                    break
                 if attempt + 1 < self.max_attempts and self.retry_delay_seconds:
                     time.sleep(self.retry_delay_seconds * (2 ** attempt))
-        else:
+        if pcm is None:
             detail = str(last_error) if last_error else "unknown failure"
             raise SpeechProviderError(
-                f"Gemini TTS request failed after {self.max_attempts} attempt(s): {detail}"
+                f"Gemini TTS request failed after {attempts_made} attempt(s): {detail}"
             ) from last_error
 
         sample_rate = request.sample_rate_hz or 24_000
@@ -136,7 +148,11 @@ class GeminiSpeechProvider(SpeechProvider):
             mime_type="audio/wav",
             provider=self.id,
             model=self.model,
-            request_id=self._value(response, "request_id") or self._value(response, "response_id"),
+            request_id=(
+                self._value(response, "id")
+                or self._value(response, "request_id")
+                or self._value(response, "response_id")
+            ),
             usage=self._usage(response),
         )
 
@@ -157,6 +173,16 @@ class GeminiSpeechProvider(SpeechProvider):
             wav.setframerate(sample_rate)
             wav.writeframes(pcm)
         return output.getvalue()
+
+    @staticmethod
+    def _is_retryable(exc: Exception) -> bool:
+        """Retry transient transport/rate-limit/server failures, not bad requests."""
+        status = getattr(exc, "code", None)
+        if not isinstance(status, int):
+            status = getattr(exc, "status_code", None)
+        if isinstance(status, int):
+            return status == 429 or status >= 500
+        return True
 
     @staticmethod
     def _usage(response: Any) -> dict[str, Any]:

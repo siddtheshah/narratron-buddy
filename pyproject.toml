@@ -1,3 +1,38 @@
+[project]
+name = "narratron-buddy"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "absl-py",
+    "av>=12.0.0",
+    "cloud-sql-python-connector[pg8000]",
+    "fastapi",
+    "google-adk",
+    "google-cloud-storage>=3.0.0",
+    "google-cloud-texttospeech",
+    "google-genai>=2.0.0",
+    "jinja2",
+    "joblib>=1.2.0",
+    "jsonschema>=4.0",
+    "openai>=1.0",
+    "pillow",
+    "playwright",
+    "pyarrow>=17.0",
+    "pytest",
+    "pytest-asyncio",
+    "python-dotenv>=1.0.1",
+    "python-multipart",
+    "pyyaml",
+    "scikit-learn>=1.5",
+    "stripe>=7.0.0",
+    "uvicorn",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12,<0.13",
+]
+
 [tool.ruff]
 target-version = "py310"
 extend-exclude = [
