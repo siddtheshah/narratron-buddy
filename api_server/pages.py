@@ -6,8 +6,10 @@ import os
 import re
 from typing import List, Optional
 
-from fastapi import Request
+from fastapi import Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+
+from services.docs_search import DocsSearchPage, docs_search_index
 
 from api_server.shared import (
     app,
@@ -357,6 +359,30 @@ def read_privacy():
             "<!-- PRIVACY_ACTIVE -->": "active",
         },
     )
+
+
+def rebuild_docs_search_index() -> int:
+    """Build the in-memory docs index from the same HTML served to users."""
+    pages = [
+        DocsSearchPage("Docs home", "/docs", read_docs()),
+        DocsSearchPage("About Narratron", "/docs/about", read_docs_about()),
+        DocsSearchPage("Ideas & recipes", "/docs/ideas", read_docs_ideas()),
+        DocsSearchPage("theater.yaml reference", "/docs/theater-yaml", read_docs_theater_yaml()),
+        DocsSearchPage("Writing adventures", "/docs/writing-adventures", read_docs_writing_adventures()),
+        DocsSearchPage("Beyond20 dice rolls", "/docs/beyond20", read_docs_beyond20()),
+        DocsSearchPage("Terms of Service", "/docs/terms", read_terms()),
+        DocsSearchPage("Privacy Policy", "/docs/privacy", read_privacy()),
+    ]
+    return docs_search_index.build(pages)
+
+
+@app.get("/api/docs/search")
+def search_docs(
+    q: str = Query(default="", max_length=200),
+    limit: int = Query(default=8, ge=1, le=20),
+):
+    """Return ranked documentation sections without sending the corpus."""
+    return {"query": q.strip(), "results": docs_search_index.search(q, limit=limit)}
 
 
 @app.get("/stats", response_class=HTMLResponse)

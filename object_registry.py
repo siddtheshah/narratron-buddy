@@ -87,6 +87,11 @@ def shutdown_database_connection() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Route modules are loaded by the time the ASGI lifespan begins. Rebuild
+    # from rendered pages so search always reflects the deployed docs.
+    from api_server.pages import rebuild_docs_search_index
+
+    rebuild_docs_search_index()
     yield
     shutdown_database_connection()
 

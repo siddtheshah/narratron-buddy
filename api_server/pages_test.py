@@ -73,6 +73,25 @@ def test_docs_pages_render_persistent_navigation_and_search():
         assert 'href="/docs/theater-yaml"' in response
 
 
+def test_docs_search_indexes_rendered_content_and_returns_section_links():
+    assert pages.rebuild_docs_search_index() > 8
+
+    response = pages.search_docs(q="character voicing", limit=5)
+
+    assert response["query"] == "character voicing"
+    assert response["results"]
+    assert response["results"][0]["page_title"] == "theater.yaml reference"
+    assert response["results"][0]["href"] == "/docs/theater-yaml#story-planning"
+
+
+def test_docs_search_tolerates_minor_typos():
+    pages.rebuild_docs_search_index()
+
+    response = pages.search_docs(q="charcter voicing", limit=5)
+
+    assert any(result["href"] == "/docs/theater-yaml#story-planning" for result in response["results"])
+
+
 def test_docs_writing_adventures_page_renders():
     response = pages.read_docs_writing_adventures()
     assert "Writing Adventures for Narratron Buddy" in response

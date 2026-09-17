@@ -10,8 +10,12 @@
 .docs-search-wrap kbd { position:absolute; right:.55rem; top:50%; transform:translateY(-50%); padding:.08rem .28rem; border:1px solid rgba(255,255,255,.15); border-radius:4px; color:#a8b4c7; font-size:.7rem; }
 .docs-search-results:empty { display:none; }
 .docs-search-results { margin:-.4rem 0 .8rem; padding:.3rem; border:1px solid rgba(103,232,249,.18); border-radius:9px; background:#101620; }
-.docs-search-results a { display:block; padding:.45rem .5rem; border-radius:6px; color:#dbeafe; font-size:.84rem; text-decoration:none; }
+.docs-search-results a { display:block; padding:.55rem .5rem; border-radius:6px; color:#dbeafe; font-size:.84rem; text-decoration:none; }
 .docs-search-results a:hover, .docs-search-results a:focus { background:rgba(103,232,249,.12); color:#fff; }
+.docs-search-results a strong, .docs-search-results a small, .docs-search-results a span { display:block; }
+.docs-search-results a strong { font-size:.86rem; }
+.docs-search-results a small { margin-top:.1rem; color:#67e8f9; font-size:.68rem; }
+.docs-search-results a span { margin-top:.25rem; color:#a8b4c7; font-size:.74rem; line-height:1.35; }
 .docs-search-empty { display:block; padding:.45rem .5rem; color:#a8b4c7; font-size:.8rem; }
 .docs-nav { border-top:1px solid rgba(255,255,255,.1); padding-top:.65rem; }
 .docs-nav-heading { margin:.75rem .45rem .3rem; color:#67e8f9; font-size:.69rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
