@@ -218,6 +218,53 @@ class TestLiveAgentSessionManager(unittest.TestCase):
     @patch("services.live_agent_manager.create_tool_bundle_for_session")
     @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
     @patch("services.live_agent_manager.create_agent")
+    def test_character_voicing_uses_configured_speech_provider(
+        self,
+        mock_create_agent,
+        mock_tasks,
+        mock_create_bundle,
+    ):
+        mock_agent = MagicMock(tools=[])
+        mock_create_agent.return_value = mock_agent
+        canvas_manager = MagicMock()
+        canvas_state_service = MagicMock()
+        canvas_state_service.get.return_value = canvas_manager
+        configured_provider = MagicMock()
+        config = {
+            "story_planning": {
+                "adventure_mode": True,
+                "character_voicing": True,
+            },
+            "speech": {
+                "provider": "gemini-flash-tts",
+                "model": "gemini-3.1-flash-tts-preview",
+            },
+        }
+
+        with (
+            patch("services.live_agent_manager.get_theater_config", return_value=config),
+            patch(
+                "services.live_agent_manager.get_speech_provider",
+                return_value=configured_provider,
+            ) as get_provider,
+        ):
+            manager = LiveAgentSessionManager(
+                theater_manager=TheaterManager(),
+                database_manager=MagicMock(),
+            )
+            manager.get_or_create_session(
+                theater_id="gemini-voicing",
+                canvas_state_service=canvas_state_service,
+            )
+
+        get_provider.assert_called_once_with("gemini-flash-tts", config["speech"])
+        canvas_manager.story.enable_scene_speech.assert_called_once_with(
+            configured_provider
+        )
+
+    @patch("services.live_agent_manager.create_tool_bundle_for_session")
+    @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
+    @patch("services.live_agent_manager.create_agent")
     def test_stop_session(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []

@@ -110,6 +110,9 @@ def get_theater_config(
     if "music" in app_config:
         deep_merge(config.setdefault("music", {}), app_config["music"])
 
+    if "speech" in app_config:
+        deep_merge(config.setdefault("speech", {}), app_config["speech"])
+
     return config
 
 def save_theater_config(

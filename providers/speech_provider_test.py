@@ -6,7 +6,7 @@ import pytest
 from providers.fal_seed_speech_provider import FalSeedSpeechProvider
 from providers.gemini_speech_provider import GeminiSpeechProvider
 from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
-from providers.speech_provider import SpeechSynthesisRequest
+from providers.speech_provider import SpeechProviderError, SpeechSynthesisRequest
 
 
 def test_speech_request_validation():
@@ -31,6 +31,45 @@ def test_gemini_speech_converts_pcm_to_wav():
     with wave.open(BytesIO(result.audio_bytes)) as output:
         assert output.getframerate() == 24_000
         assert output.readframes(2) == b"\x01\x00\x02\x00"
+
+
+def test_gemini_speech_uses_clear_transcript_prompt_and_retries_empty_audio():
+    calls = []
+
+    class Interactions:
+        @staticmethod
+        def create(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return {"output_audio": None}
+            return {"output_audio": {"data": "AQACAA=="}}
+
+    provider = GeminiSpeechProvider(
+        client=type("Client", (), {"interactions": Interactions()})(),
+        retry_delay_seconds=0,
+    )
+    result = provider.synthesize(SpeechSynthesisRequest(text="Hello there."))
+
+    assert len(calls) == 2
+    assert "Read only the transcript" in calls[0]["input"]
+    assert calls[0]["input"].endswith("Transcript:\nHello there.")
+    assert result.audio_bytes.startswith(b"RIFF")
+
+
+def test_gemini_speech_reports_failure_after_retry_limit():
+    class Interactions:
+        @staticmethod
+        def create(**kwargs):
+            raise RuntimeError("temporary server error")
+
+    provider = GeminiSpeechProvider(
+        client=type("Client", (), {"interactions": Interactions()})(),
+        max_attempts=2,
+        retry_delay_seconds=0,
+    )
+
+    with pytest.raises(SpeechProviderError, match=r"after 2 attempt\(s\).*temporary server error"):
+        provider.synthesize(SpeechSynthesisRequest(text="Hello."))
 
 
 def test_fal_seed_speech_uses_documented_payload_and_downloads_audio():
@@ -101,7 +140,11 @@ def test_fal_seed_speech_voice_selection_cues_and_exclusion():
 
 
 def test_gemini_speech_voice_selection():
-    from providers.gemini_speech_provider import GEMINI_FEMALE_VOICES, GEMINI_MALE_VOICES
+    from providers.gemini_speech_provider import (
+        GEMINI_FEMALE_VOICES,
+        GEMINI_MALE_VOICES,
+        GEMINI_VOICES,
+    )
 
     provider = GeminiSpeechProvider()
     female_voice = provider.select_voice(["female"])
@@ -109,6 +152,7 @@ def test_gemini_speech_voice_selection():
 
     male_voice = provider.select_voice(["male"])
     assert male_voice in GEMINI_MALE_VOICES
+    assert len(provider.select_voice(exclude=GEMINI_VOICES[:-1])) > 0
 
 
 def test_google_chirp_speech_voice_selection():
@@ -135,4 +179,3 @@ def test_speech_provider_synthesize_uses_selected_voice():
 
     assert calls[0][1]["voice"] == chosen_voice
     assert result.audio_bytes == b"mp3"
-

@@ -1,6 +1,8 @@
 import threading
 from unittest.mock import MagicMock, Mock
 
+import pytest
+
 from components.canvas.story_state import StoryState, speaker_key
 from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisResult
 
@@ -9,6 +11,17 @@ def test_story_state_isolated_from_other_theaters() -> None:
     first, second = StoryState(), StoryState()
     first.named_elements.append({"name": "Ada"})
     assert second.named_elements == []
+
+
+def test_enable_scene_speech_requires_an_injected_provider() -> None:
+    state = StoryState()
+
+    with pytest.raises(TypeError, match="requires a SpeechProvider"):
+        state.enable_scene_speech(None)  # type: ignore[arg-type]
+
+    state.enable_scene_speech(MagicMock(spec=SpeechProvider))
+    with pytest.raises(TypeError, match="requires a SpeechProvider"):
+        state.enable_scene_speech(None)  # type: ignore[arg-type]
 
 
 def test_speaker_key_normalizes_equivalent_display_names() -> None:

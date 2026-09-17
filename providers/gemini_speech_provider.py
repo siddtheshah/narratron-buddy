@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import os
+import time
 from typing import Any, Iterable, Mapping
 import wave
 
@@ -20,6 +21,10 @@ from providers.speech_provider import (
 
 GEMINI_VOICES = (
     "Kore", "Puck", "Charon", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr",
+    "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
+    "Despina", "Erinome", "Algenib", "Rasalgethi", "Laomedeia", "Achernar",
+    "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi",
+    "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
 )
 GEMINI_FEMALE_VOICES = ("Kore", "Aoede", "Leda")
 GEMINI_MALE_VOICES = ("Puck", "Charon", "Fenrir", "Orus", "Zephyr")
@@ -29,9 +34,18 @@ class GeminiSpeechProvider(SpeechProvider):
     id = "gemini-flash-tts"
     display_name = "Gemini 3.1 Flash TTS"
 
-    def __init__(self, model: str = "gemini-3.1-flash-tts-preview", client: Any = None) -> None:
+    def __init__(
+        self,
+        model: str = "gemini-3.1-flash-tts-preview",
+        client: Any = None,
+        *,
+        max_attempts: int = 3,
+        retry_delay_seconds: float = 0.25,
+    ) -> None:
         self.model = model
         self.client = client
+        self.max_attempts = max(1, int(max_attempts))
+        self.retry_delay_seconds = max(0.0, float(retry_delay_seconds))
 
     def select_voice(
         self,
@@ -75,27 +89,46 @@ class GeminiSpeechProvider(SpeechProvider):
         # Gemini's Interactions API only accepts the selected voice in
         # speech_config.  Performance direction belongs in the text prompt
         # (for example, Google's own examples use "Say cheerfully: …").
-        input_text = request.text
+        input_text = (
+            "Synthesize speech for the transcript below. Read only the transcript, "
+            "not these instructions.\n\nTranscript:\n"
+            f"{request.text}"
+        )
         if request.voice_instruction:
-            input_text = f"Say this with the following delivery: {request.voice_instruction}\n\n{request.text}"
-        try:
-            interactions = getattr(self.client, "interactions", None)
-            if interactions is None:
-                raise SpeechProviderError("Installed google-genai client does not support the Gemini Interactions TTS API.")
-            response = interactions.create(
-                model=self.model,
-                input=input_text,
-                response_format={"type": "audio"},
-                generation_config=generation_config,
+            input_text = (
+                "Synthesize speech for the transcript below. Read only the transcript, "
+                "not these instructions.\n"
+                f"Delivery direction: {request.voice_instruction}\n\nTranscript:\n{request.text}"
             )
-            encoded_audio = self._value(response, "output_audio", "data")
-            if not encoded_audio:
-                raise SpeechProviderError("Gemini TTS returned no audio data.")
-            pcm = base64.b64decode(encoded_audio) if isinstance(encoded_audio, str) else bytes(encoded_audio)
-        except SpeechProviderError:
-            raise
-        except Exception as exc:
-            raise SpeechProviderError(f"Gemini TTS request failed: {exc}") from exc
+
+        interactions = getattr(self.client, "interactions", None)
+        if interactions is None:
+            raise SpeechProviderError("Installed google-genai client does not support the Gemini Interactions TTS API.")
+
+        response: Any = None
+        last_error: Exception | None = None
+        for attempt in range(self.max_attempts):
+            try:
+                response = interactions.create(
+                    model=self.model,
+                    input=input_text,
+                    response_format={"type": "audio"},
+                    generation_config=generation_config,
+                )
+                encoded_audio = self._value(response, "output_audio", "data")
+                if not encoded_audio:
+                    raise ValueError("Gemini TTS returned no audio data.")
+                pcm = base64.b64decode(encoded_audio) if isinstance(encoded_audio, str) else bytes(encoded_audio)
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt + 1 < self.max_attempts and self.retry_delay_seconds:
+                    time.sleep(self.retry_delay_seconds * (2 ** attempt))
+        else:
+            detail = str(last_error) if last_error else "unknown failure"
+            raise SpeechProviderError(
+                f"Gemini TTS request failed after {self.max_attempts} attempt(s): {detail}"
+            ) from last_error
 
         sample_rate = request.sample_rate_hz or 24_000
         return SpeechSynthesisResult(

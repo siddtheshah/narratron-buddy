@@ -14,6 +14,8 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from providers import get_speech_provider
+
 from services.live_agent import build_run_config
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import (
@@ -1188,7 +1190,13 @@ class LiveAgentSessionManager:
             and bool(story_planning_config.get("adventure_mode", False))
             and bool(story_planning_config.get("character_voicing", False))
         ):
-            canvas_mgr.story.enable_scene_speech()
+            speech_config = theater_config.get("speech", {})
+            if not isinstance(speech_config, dict):
+                speech_config = {}
+            provider_id = str(speech_config.get("provider") or "gemini-flash-tts")
+            canvas_mgr.story.enable_scene_speech(
+                get_speech_provider(provider_id, speech_config)
+            )
         tool_bundle = create_tool_bundle_for_session(
             theater_id=theater_id,
             config=theater_config,

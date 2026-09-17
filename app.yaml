@@ -27,6 +27,11 @@ music:
     catalog_reranker_provider: "gemini-2-5"
     catalog_reranker_model: "gemini-2.5-flash-lite"
 
+# Application-wide text-to-speech backend for Adventure Mode character voices.
+speech:
+    provider: "gemini-flash-tts"
+    model: "gemini-3.1-flash-tts-preview"
+
 smtp:
     from_email: "noreply@narratron.io"
     host: "smtp.gmail.com"

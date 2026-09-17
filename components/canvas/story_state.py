@@ -258,18 +258,15 @@ class StoryState:
         if isinstance(characters, list):
             return next((character for character in characters if isinstance(character, dict) and str(character.get("name") or "").strip().lower() == normalized), None)
         return None
-    def enable_scene_speech(self, provider: SpeechProvider | None = None) -> None:
+
+    def enable_scene_speech(self, provider: SpeechProvider) -> None:
+        if provider is None:
+            raise TypeError("enable_scene_speech requires a SpeechProvider")
         if self._scene_speech_enabled and self._speech_provider is not None:
             return
-        if provider is None:
-            from providers import SpeechProviderError, get_speech_provider
-            try:
-                provider = get_speech_provider("fal-seed-speech")
-            except SpeechProviderError:
-                from providers.fal_seed_speech_provider import FalSeedSpeechProvider
-                provider = FalSeedSpeechProvider()
         self._speech_provider = provider
         self._scene_speech_enabled = True
+
     def cancel(self) -> int:
         """Invalidates any pending or in-flight scene synthesis."""
         with self._speech_lock:

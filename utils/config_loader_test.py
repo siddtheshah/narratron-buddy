@@ -97,6 +97,10 @@ class TestConfigLoader(BaseTestCase):
                 "music": {
                     "provider": "user-music-provider",
                 },
+                "speech": {
+                    "provider": "user-speech-provider",
+                    "model": "user-speech-model",
+                },
                 "visuals": {
                     "model": "user-image-model",
                 },
@@ -113,6 +117,7 @@ class TestConfigLoader(BaseTestCase):
             # App.yaml model selections should override theater settings
             self.assertEqual(loaded["story_planning"]["planner_model"], app_cfg["story_planning"]["planner_model"])
             self.assertEqual(loaded["music"]["provider"], app_cfg["music"]["provider"])
+            self.assertEqual(loaded["speech"], app_cfg["speech"])
             self.assertEqual(loaded["visuals"]["model"], app_cfg["visuals"]["model"])
             self.assertEqual(loaded["interactive_canvas"]["model"], app_cfg["interactive_canvas"]["model"])
 
