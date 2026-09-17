@@ -44,6 +44,8 @@ def test_docs_theater_yaml_page_reads_the_reference_template():
     ]:
         assert f'href="#{section_id}"' in response
         assert f'id="{section_id}"' in response
+    assert "required_stickies" not in response
+    assert "nodes_ahead" not in response
 
 
 def test_docs_index_links_to_each_documentation_page():
