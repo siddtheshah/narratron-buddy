@@ -76,69 +76,6 @@
   100% { transform: translate(-0.7px, 0.9px); }
 }
 
-/* 2. SCINTILLATE / STARRY SHIMMER
-   Magical radiance, sparkling crystals, celestial wonders, gleaming relics */
-.text-effect-scintillate {
-  display: inline-block;
-  color: #fef08a;
-  background: linear-gradient(
-    90deg,
-    #fef08a 0%,
-    #38bdf8 25%,
-    #e879f9 50%,
-    #fde047 75%,
-    #38bdf8 100%
-  );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: scintillate-shimmer 2.5s linear infinite;
-  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6)) drop-shadow(0 0 14px rgba(232, 121, 249, 0.4));
-}
-
-.text-effect-scintillate.splitting {
-  background: none !important;
-  -webkit-background-clip: unset !important;
-  background-clip: unset !important;
-  -webkit-text-fill-color: initial !important;
-}
-
-.text-effect-scintillate.splitting .char {
-  display: inline-block;
-  background: linear-gradient(
-    90deg,
-    #fef08a 0%,
-    #38bdf8 25%,
-    #e879f9 50%,
-    #fde047 75%,
-    #38bdf8 100%
-  );
-  background-size: 300% auto;
-  background-position: calc(var(--char-index) * 20%) 50%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: char-twinkle 1.8s ease-in-out infinite, scintillate-shimmer 2.5s linear infinite;
-  animation-delay: calc(var(--char-index) * 0.12s), calc(var(--char-index) * -0.15s);
-  filter: drop-shadow(0 0 3px rgba(254, 240, 138, 0.7));
-}
-
-@keyframes scintillate-shimmer {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
-}
-
-@keyframes char-twinkle {
-  0%, 100% {
-    filter: brightness(1) drop-shadow(0 0 2px rgba(255, 255, 255, 0.4));
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    filter: brightness(1.7) drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
-    transform: translateY(-1.5px) scale(1.06);
-  }
-}
 
 /* 3. GLITCH / DIGITAL CORRUPTION
    Cybernetic anomalies, reality tears, dimensional rifts, eldritch glitches */
@@ -374,7 +311,6 @@
 /* --- Accessibility: prefers-reduced-motion --- */
 @media (prefers-reduced-motion: reduce) {
   .text-effect-vibrate,
-  .text-effect-scintillate,
   .text-effect-glitch,
   .text-effect-flame,
   .text-effect-pulse,
@@ -382,7 +318,6 @@
   .text-effect-wave,
   .text-effect-drip,
   .text-effect-vibrate.splitting .char,
-  .text-effect-scintillate.splitting .char,
   .text-effect-glitch.splitting .char,
   .text-effect-flame.splitting .char,
   .text-effect-wave.splitting .char,

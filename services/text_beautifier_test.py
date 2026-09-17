@@ -294,7 +294,16 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertNotIn("Annotate the following text into sequential spans", scene_prompt)
     def test_allowed_effects_and_fonts_definitions(self):
         self.assertIn("drip", ALLOWED_EFFECTS)
+        self.assertNotIn("scintillate", ALLOWED_EFFECTS)
         self.assertIn("lacquer", ALLOWED_FONTS)
+
+    def test_scintillate_effect_sanitized_to_none(self):
+        beautifier = TextBeautifier()
+        normalized = beautifier._sanitize_span(
+            TextSpanEffect(text="Celestial light", effect="scintillate", font="cinematic")
+        )
+        self.assertEqual(normalized["effect"], "none")
+        self.assertEqual(normalized["font"], "cinematic")
 
     def test_creepster_alias_maps_to_lacquer(self):
         beautifier = TextBeautifier()

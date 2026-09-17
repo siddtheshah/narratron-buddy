@@ -2,7 +2,7 @@
 
 Underneath, uses a TextResponseProvider (default: gemini-3.5-flash-lite)
 to identify spans of high emotion, intensity, magic, or suspense, and apply
-kinetic effects (vibrating, scintillating, glitching, flame, pulse, glow, wave, drip)
+kinetic effects (vibrating, glitching, flame, pulse, glow, wave, drip)
 and expressive fonts (cinematic, lacquer, bangers, medieval, glitch).
 """
 
@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 EFFECTS: Dict[str, str] = {
     "vibrate": "Trembling with terror, seismic rumbles, shouting, explosive impacts.",
-    "scintillate": "Magical radiance, sparkling starlight, gleaming crystals or treasures.",
     "glitch": "Reality tearing, cybernetic corruption, eerie distortion.",
     "flame": "Fiery wrath, burning infernos, scorching heat.",
     "pulse": "Throbbing dread, heartbeat suspense, slow surging power.",

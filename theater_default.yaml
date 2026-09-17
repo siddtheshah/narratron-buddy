@@ -62,7 +62,7 @@ story_planning:
     # with a stable, automatically assigned application-level speech voice.
     character_voicing: false
     # In Adventure Mode, apply dynamic visual text effects (vibrating,
-    # scintillating, glitch, fonts) to high-energy spans using TextBeautifier.
+    # glitch, flame, fonts) to high-energy spans using TextBeautifier.
     text_beautification: true
     # Adventure Mode uses a shallow background planning heartbeat. Completed
     # responder turns enter an ordered queue; each heartbeat assimilates a
