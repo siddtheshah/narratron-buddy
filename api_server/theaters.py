@@ -421,8 +421,13 @@ async def create_and_deploy_theater(request: Request):
         adventure_metadata = adventure_service.get_adventure(preset_adventure_id)
 
     # Important to provide music for first time experience. Blank theater will not have any music tracks by default
-    # otherwise.
-    if creation_mode in ("blank", "adventure") and not playlists_data:
+    # otherwise. Adventures launched from adventures/ or deploy/ should not attach the default playlist.
+    is_adventure = (
+        creation_mode == "adventure"
+        or enable_adventure_mode
+        or bool(preset_adventure_id)
+    )
+    if creation_mode == "blank" and not is_adventure and not playlists_data:
         quick_deploy_track = PROJECT_ROOT / "playlists" / "default" / "new story.mp3"
         if quick_deploy_track.is_file():
             playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]

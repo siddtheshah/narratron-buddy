@@ -492,7 +492,43 @@ class TestTheaterAPI(BaseTestCase):
         theater_dir = theater_manager.theater(theater_id).directory()
         config = yaml.safe_load((theater_dir / "theater.yaml").read_text(encoding="utf-8"))
         self.assertTrue(config["story_planning"]["adventure_mode"])
-        self.assertTrue((theater_dir / "playlists" / "default" / "new_story.mp3").is_file())
+        self.assertFalse((theater_dir / "playlists" / "default" / "new_story.mp3").is_file())
+
+    def test_launch_adventure_from_adventures_page_or_deploy_does_not_attach_default_playlist(self):
+        self.client.post("/api/auth/register", json={
+            "username": "adv_launcher",
+            "email": "adv_launcher@example.com",
+            "password": "Password123",
+        })
+        # Simulate launching from adventures/ page
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Overlords Assistant",
+                "creation_mode": "adventure",
+                "preset_adventure_id": "the-overlords-assistant",
+                "enable_adventure_mode": "true",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        theater = theater_manager.theater(theater_id)
+        self.assertFalse((theater.playlists_dir() / "default").exists())
+        self.assertEqual(theater.manager.get_theater_playlists(theater_id), {})
+
+        # Simulate launching from deploy/ page with adventure path
+        response_deploy = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Custom Deploy Adventure",
+                "creation_mode": "adventure",
+                "enable_adventure_mode": "true",
+            },
+        )
+        self.assertEqual(response_deploy.status_code, 200)
+        deploy_theater_id = response_deploy.json()["theater_id"]
+        deploy_theater = theater_manager.theater(deploy_theater_id)
+        self.assertFalse((deploy_theater.playlists_dir() / "default").exists())
 
     def test_theater_output_route_uses_theater_bound_output_directory(self):
         reg_res = self.client.post("/api/auth/register", json={
