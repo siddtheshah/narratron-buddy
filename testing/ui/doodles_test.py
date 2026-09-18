@@ -8,6 +8,24 @@ from testing.ui.base import UITestCase
 
 class TestDoodles(UITestCase):
 
+    def test_deselecting_drawing_color_enables_scrollable_narration_pane(self):
+        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        narration_js = (Path(__file__).resolve().parents[2] / "static" / "js" / "narration-pane.js").read_text(encoding="utf-8")
+        narration_css = (Path(__file__).resolve().parents[2] / "static" / "css" / "narration-pane.css").read_text(encoding="utf-8")
+        narration_html = (Path(__file__).resolve().parents[2] / "static" / "html" / "narration-pane.html").read_text(encoding="utf-8")
+
+        self.assertIn("function setDrawingColor(color)", canvas)
+        self.assertIn("const nextColor = btn.classList.contains('active') ? null : btn.dataset.color;", canvas)
+        self.assertIn("canvas.classList.toggle('drawing-disabled', currentColor === null);", canvas)
+        self.assertIn("narrationPane.setDrawingColorSelected(currentColor !== null);", canvas)
+        self.assertIn('id="narration-pane-mount"', canvas)
+        self.assertIn('id="scene-dialogue-overlay"', narration_html)
+        self.assertIn("fetch('/static/html/narration-pane.html')", narration_js)
+        self.assertIn("container.classList.toggle('narration-interactive', !drawingColorSelected);", narration_js)
+        self.assertIn("#scene-dialogue-overlay.narration-interactive .scene-description:hover", narration_css)
+        self.assertIn("overflow-y: auto;", narration_css)
+        self.assertIn("overscroll-behavior: contain;", narration_css)
+
     def test_canvas_retries_active_doodle_websocket_connections(self):
         canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
         self.assertIn("function connectDoodleSocket(initialConnection = false)", canvas)

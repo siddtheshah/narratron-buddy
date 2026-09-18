@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/static/css/splitting.css">
     <link rel="stylesheet" href="/static/css/text-effects.css">
     <link rel="stylesheet" href="/static/css/chat.css">
+    <link rel="stylesheet" href="/static/css/narration-pane.css">
     <script src="/static/js/splitting.min.js"></script>
     <style>
         :root {
@@ -1746,21 +1747,6 @@
             }
         }
 
-        #scene-dialogue-overlay {
-            position: absolute;
-            right: 0;
-            bottom: clamp(1.25rem, 5vh, 3.5rem);
-            left: 0;
-            z-index: 20;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.3rem;
-            padding: 0 6%;
-            box-sizing: border-box;
-            pointer-events: none;
-        }
-
         #a2ui-canvas-layer {
             position: absolute;
             inset: 0;
@@ -2370,7 +2356,7 @@
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
-            <div id="scene-dialogue-overlay" aria-live="polite"></div>
+            <div id="narration-pane-mount"></div>
             <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title" aria-hidden="true">
                 <form id="orator-command-form">
                     <div id="orator-command-title" style="font-size: 1.05rem; font-weight: 600; color: #fff;">Command Narratron</div>
@@ -3073,6 +3059,7 @@
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=video-loop-silent-performance-20260906-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20260821-3";
+        import { createNarrationPane } from "/static/js/narration-pane.js";
 
         let lastTime = -1;
         let lastImageRawUrl = null;
@@ -3103,7 +3090,8 @@
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
         const agentThoughtText = document.getElementById('agent-thought-text');
-        const sceneDialogueOverlay = document.getElementById('scene-dialogue-overlay');
+        const narrationPane = await createNarrationPane(document.getElementById('narration-pane-mount'));
+        const sceneDialogueOverlay = narrationPane.element;
         const a2uiCanvasLayer = document.getElementById('a2ui-canvas-layer');
         const a2uiCanvasRenderer = createA2UICanvasRenderer({
             container: a2uiCanvasLayer,
@@ -4311,6 +4299,7 @@
             if (description) {
                 const caption = document.createElement('div');
                 caption.className = 'narration scene-narration scene-description';
+                narrationPane.prepare(caption);
                 const spansToRender = nSpans && nSpans.length > 0
                     ? nSpans
                     : [{ text: description, effect: 'none', font: 'default' }];
@@ -4520,6 +4509,17 @@
             paletteMenu.hidden = !open;
         }
 
+        function setDrawingColor(color) {
+            currentColor = color || null;
+            colorBtns.forEach(button => {
+                const isActive = currentColor !== null && button.dataset.color === currentColor;
+                button.classList.toggle('active', isActive);
+                button.setAttribute('aria-pressed', String(isActive));
+            });
+            canvas.classList.toggle('drawing-disabled', currentColor === null);
+            narrationPane.setDrawingColorSelected(currentColor !== null);
+        }
+
         if (paletteToggle) {
             paletteToggle.addEventListener('click', () => {
                 setPaletteOpen(paletteToggle.getAttribute('aria-expanded') !== 'true');
@@ -4541,12 +4541,12 @@
 
         colorBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                colorBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentColor = btn.dataset.color;
+                const nextColor = btn.classList.contains('active') ? null : btn.dataset.color;
+                setDrawingColor(nextColor);
                 setPaletteOpen(false);
             });
         });
+        setDrawingColor(currentColor);
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
@@ -4656,7 +4656,7 @@
         }
 
         canvas.addEventListener('mousedown', (e) => {
-            if (!doodlesEnabled) return;
+            if (!doodlesEnabled || !currentColor) return;
             isDrawing = true;
             const coords = getNormalizedCoords(e);
             lastNormX = coords.x;
@@ -4664,7 +4664,7 @@
         });
 
         canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing || !doodlesEnabled) return;
+            if (!isDrawing || !doodlesEnabled || !currentColor) return;
             const coords = getNormalizedCoords(e);
             drawLine(lastNormX, lastNormY, coords.x, coords.y, currentColor, currentBrushSize, true);
             lastNormX = coords.x;
@@ -4676,7 +4676,7 @@
 
         // Touch support for tablets/mobile
         canvas.addEventListener('touchstart', (e) => {
-            if (!doodlesEnabled) return;
+            if (!doodlesEnabled || !currentColor) return;
             e.preventDefault();
             isDrawing = true;
             const coords = getNormalizedCoords(e);
@@ -4685,7 +4685,7 @@
         }, { passive: false });
 
         canvas.addEventListener('touchmove', (e) => {
-            if (!isDrawing || !doodlesEnabled) return;
+            if (!isDrawing || !doodlesEnabled || !currentColor) return;
             e.preventDefault();
             const coords = getNormalizedCoords(e);
             drawLine(lastNormX, lastNormY, coords.x, coords.y, currentColor, currentBrushSize, true);

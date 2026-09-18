@@ -155,6 +155,15 @@ def test_canvas_reconstructs_missing_theater_using_theater_repository(tmp_path):
     mock_repo.reconstruct_theater.assert_called_once_with("stage", theater.directory.return_value)
 
 
+def test_canvas_includes_narration_pane_mount_without_server_templating():
+    request = SimpleNamespace(query_params={}, client=None)
+
+    response = __import__("asyncio").run(pages.read_canvas(request))
+
+    assert '<div id="narration-pane-mount"></div>' in response
+    assert "{%" not in response
+
+
 def test_narratron_avatar_endpoint():
     response = pages.read_narratron_avatar()
     assert response.status_code == 200
