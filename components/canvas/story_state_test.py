@@ -58,6 +58,16 @@ def test_scene_waits_for_beautification_then_commits_once() -> None:
     notify.assert_called_once_with("latest")
 
 
+def test_set_scene_preserves_long_narration_for_the_canvas() -> None:
+    state = StoryState()
+    narration = " ".join(f"word{index}" for index in range(100))
+
+    state.set_scene(narration, [])
+
+    assert state.narration == narration
+    assert state.serialize()["narration"] == narration
+
+
 def test_character_voice_assignment_is_normalized_and_serialized() -> None:
     persist = Mock()
     state = StoryState(persist=persist)

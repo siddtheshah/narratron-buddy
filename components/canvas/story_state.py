@@ -20,6 +20,7 @@ from providers import (
 logger = logging.getLogger("components.canvas_state")
 
 MAX_PARALLEL_SCENE_SPEECH = 4
+MAX_SCENE_NARRATION_CHARS = 2_000
 
 
 def speaker_key(speaker: str) -> str:
@@ -158,7 +159,7 @@ class StoryState:
         Keeping beautification ahead of the state mutation prevents clients from
         rendering the plain scene and then restarting it when styled spans arrive.
         """
-        scene_narration = " ".join(str(narration or "").strip().split()[:45])[:500]
+        scene_narration = str(narration or "").strip()[:MAX_SCENE_NARRATION_CHARS]
         scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
         narration_spans: list[dict[str, Any]] = []
         beautifier = self.text_beautifier
