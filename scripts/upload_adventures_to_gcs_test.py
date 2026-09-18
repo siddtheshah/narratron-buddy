@@ -16,6 +16,7 @@ from scripts.upload_adventures_to_gcs import (
     is_file_changed,
     upload_adventure_to_gcs,
     is_adventure_excluded,
+    validate_adventure_yaml_files,
 )
 
 
@@ -464,6 +465,50 @@ class TestUploadAdventuresToGCS(unittest.TestCase):
         )
         self.assertTrue(res.get("excluded"))
         self.assertEqual(res["files_count"], 0)
+        mock_bucket.blob.assert_not_called()
+
+    def test_validate_adventure_yaml_files_success(self):
+        yaml_files = validate_adventure_yaml_files(self.adv_dir)
+        self.assertEqual(len(yaml_files), 1)
+        self.assertEqual(yaml_files[0].name, "theater.yaml")
+
+    def test_validate_adventure_yaml_files_syntax_error(self):
+        bad_yaml = self.adv_dir / "broken.yaml"
+        bad_yaml.write_text("key: [unclosed list", encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            validate_adventure_yaml_files(self.adv_dir)
+        self.assertIn("Failed to parse YAML file in adventure", str(ctx.exception))
+        self.assertIn("broken.yaml", str(ctx.exception))
+
+    def test_validate_adventure_yaml_files_duplicate_keys(self):
+        dup_yaml = self.adv_dir / "duplicate.yaml"
+        dup_yaml.write_text("item:\n  sub: 1\n  sub: 2\n", encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            validate_adventure_yaml_files(self.adv_dir)
+        self.assertIn("duplicate key 'sub'", str(ctx.exception))
+
+    def test_validate_adventure_yaml_files_handles_merge_keys(self):
+        merge_yaml = self.adv_dir / "merge.yaml"
+        merge_yaml.write_text(
+            "default: &default\n  timeout: 30\ncustom:\n  <<: *default\n  retries: 3\n",
+            encoding="utf-8",
+        )
+        yaml_files = validate_adventure_yaml_files(self.adv_dir)
+        self.assertIn(merge_yaml, yaml_files)
+
+    def test_upload_adventure_aborts_on_invalid_yaml(self):
+        mock_bucket = MagicMock()
+        mock_bucket.name = "test-bucket"
+        bad_yaml = self.adv_dir / "planning.yaml"
+        bad_yaml.write_text("invalid: yaml: : syntax", encoding="utf-8")
+
+        with self.assertRaises(ValueError) as ctx:
+            upload_adventure_to_gcs(
+                adventure_dir=self.adv_dir,
+                bucket=mock_bucket,
+                gcs_prefix="adventures",
+            )
+        self.assertIn("Failed to parse YAML file", str(ctx.exception))
         mock_bucket.blob.assert_not_called()
 
 

@@ -18,6 +18,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+import yaml
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -109,6 +110,58 @@ def collect_adventure_files(adventure_dir: Path) -> List[Path]:
                 continue
             files.append(item)
     return files
+
+
+class UniqueKeyYamlLoader(yaml.SafeLoader):
+    """YAML SafeLoader that detects duplicate mapping keys and resolves merge keys."""
+
+    def construct_mapping(self, node: Any, deep: bool = False) -> Dict[Any, Any]:
+        if isinstance(node, yaml.MappingNode):
+            self.flatten_mapping(node)
+        mapping: Dict[Any, Any] = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key '{key}'",
+                    key_node.start_mark,
+                )
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
+def validate_adventure_yaml_files(adventure_dir: Path) -> List[Path]:
+    """Validate that all YAML files in an adventure directory parse correctly.
+
+    Scans for .yaml and .yml files (excluding temp/cache files) and verifies they
+    can be parsed without YAML syntax errors or duplicate mapping keys.
+
+    Returns:
+        List of validated YAML file paths.
+
+    Raises:
+        ValueError: If any YAML file fails to parse or contains duplicate keys.
+    """
+    yaml_files: List[Path] = []
+    for item in sorted(adventure_dir.rglob("*")):
+        if item.is_file() and item.suffix.lower() in (".yaml", ".yml"):
+            if item.name.startswith((".", "~")) or "__pycache__" in item.parts:
+                continue
+            yaml_files.append(item)
+
+    for yml_path in yaml_files:
+        try:
+            content = yml_path.read_text(encoding="utf-8")
+            list(yaml.load_all(content, Loader=UniqueKeyYamlLoader))
+        except (yaml.YAMLError, UnicodeDecodeError) as e:
+            rel = yml_path.relative_to(adventure_dir).as_posix()
+            raise ValueError(
+                f"Failed to parse YAML file in adventure '{adventure_dir.name}' ({rel}): {e}"
+            ) from e
+
+    return yaml_files
 
 
 def compute_file_md5(file_path: Path) -> str:
@@ -304,6 +357,8 @@ def upload_adventure_to_gcs(
             "excluded": True,
         }
 
+    validate_adventure_yaml_files(adventure_dir)
+
     files = collect_adventure_files(adventure_dir)
 
     print(f"\n📂 Processing Adventure: '{adventure_title}' ({adventure_dir.name}) -> {gcs_prefix}/{adventure_slug}/")
@@ -491,6 +546,15 @@ def main():
     elif diff_mode:
         prune_str = " (pruning enabled)" if args.prune else ""
         print(f"⚡ Incremental diff mode: Enabled{prune_str}")
+
+    print(f"🔍 Validating YAML files in {len(adventure_folders)} adventure folder(s)...")
+    try:
+        for adv_dir in adventure_folders:
+            validate_adventure_yaml_files(adv_dir)
+        print("  ✓ All adventure YAML files parsed successfully.")
+    except ValueError as e:
+        print(f"❌ YAML Validation Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     client = None
     bucket = None
