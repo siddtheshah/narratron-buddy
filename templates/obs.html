@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/static/css/image-effects.css?v=effects-20260811-2">
     <link rel="stylesheet" href="/static/css/splitting.css">
     <link rel="stylesheet" href="/static/css/text-effects.css">
+    <link rel="stylesheet" href="/static/css/narration-pane.css">
     <script src="/static/js/splitting.min.js"></script>
     <style>
         * {
@@ -94,6 +95,19 @@
         .scene-dialogue-bubble.thought { font-style: italic; }
         .scene-dialogue-speaker { color: inherit; font-size: .78em; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-right: .4em; }
 
+        .narration,
+        .scene-narration,
+        .scene-description {
+            max-width: min(88vw, 900px);
+            color: #fff;
+            font-size: clamp(1rem, 1.85vw, 1.45rem);
+            font-style: italic;
+            font-weight: 500;
+            line-height: 1.35;
+            text-align: center;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.7);
+        }
+
         #clip-capture-panel { position: fixed; z-index: 20; inset: 0; display: none; align-items: center; justify-content: center; padding: 1.5rem; background: rgba(2, 6, 23, .78); font-family: 'Outfit', sans-serif; }
         #clip-capture-panel.active { display: flex; }
         .clip-capture-card { width: min(440px, 100%); padding: 1.5rem; border: 1px solid rgba(236, 72, 153, .55); border-radius: 18px; background: #111827; color: #fff; box-shadow: 0 25px 70px rgba(0,0,0,.6); }
@@ -126,7 +140,7 @@
         <img id="current-image" src="" alt="Narratron Generation">
         <img id="ghost-image" src="" alt="" aria-hidden="true">
         <canvas id="doodle-canvas"></canvas>
-        <div id="scene-dialogue-overlay" aria-live="polite"></div>
+        <div id="narration-pane-mount"></div>
     </div>
     <div id="clip-capture-panel" aria-live="polite">
         <div class="clip-capture-card">
@@ -154,6 +168,7 @@
 
     <script type="module">
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=video-loop-silent-20260906-1";
+        import { createNarrationPane } from "/static/js/narration-pane.js";
         // Extract Theater ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
         let currenttheaterId = urlParams.get('theater_id') || '';
@@ -181,7 +196,9 @@
         const rendererCanvas = document.getElementById('canvas-renderer');
         const doodleCanvas = document.getElementById('doodle-canvas');
         const currentImage = document.getElementById('current-image');
-        const sceneDialogueOverlay = document.getElementById('scene-dialogue-overlay');
+        const narrationPane = await createNarrationPane(document.getElementById('narration-pane-mount'));
+        const sceneDialogueOverlay = narrationPane.element;
+        narrationPane.setDrawingColorSelected(false);
         let sceneDialogueSignature = '';
         let sceneDialogueRenderId = 0;
         const dialogueSpeakerColors = new Map();
@@ -394,6 +411,7 @@
         }
 
         function updateSceneDialogue(dialogue, narration, narration_spans) {
+            if (!sceneDialogueOverlay) return;
             const lines = (Array.isArray(dialogue) ? dialogue : [])
                 .filter(item => item && item.text)
                 .map(item => ({
@@ -415,6 +433,7 @@
             if (description) {
                 const caption = document.createElement('div');
                 caption.className = 'narration scene-narration scene-description';
+                narrationPane.prepare(caption);
                 const spansToRender = nSpans && nSpans.length > 0
                     ? nSpans
                     : [{ text: description, effect: 'none', font: 'default' }];

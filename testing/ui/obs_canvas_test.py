@@ -53,3 +53,15 @@ class TestOBSCanvas(UITestCase):
         self.assertIn('id="agent-disconnected-indicator"', response.text)
         self.assertIn('agentDisconnectedPulse', response.text)
 
+    def test_obs_canvas_includes_narration_pane(self):
+        response = self.client.get("/obs?theater_id=test_theater")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        self.assertIn('id="narration-pane-mount"', html)
+        self.assertIn('/static/css/narration-pane.css', html)
+        self.assertIn('import { createNarrationPane } from "/static/js/narration-pane.js";', html)
+        self.assertIn('const narrationPane = await createNarrationPane(', html)
+        self.assertIn('narrationPane.setDrawingColorSelected(false);', html)
+        self.assertIn('narrationPane.prepare(caption);', html)
+        self.assertIn('.scene-description', html)

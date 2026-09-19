@@ -13,6 +13,19 @@
     pointer-events: none;
 }
 
+.narration,
+.scene-narration,
+.scene-description {
+    max-width: min(88vw, 900px);
+    color: #fff;
+    font-size: clamp(1rem, 1.85vw, 1.45rem);
+    font-style: italic;
+    font-weight: 500;
+    line-height: 1.35;
+    text-align: center;
+    text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.7);
+}
+
 .scene-description {
     width: min(88vw, 900px);
     max-height: min(22vh, 10rem);
