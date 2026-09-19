@@ -27,6 +27,19 @@ class TestStickyNotesUI(unittest.TestCase):
         self.assertIn('sticky-note-hidden-badge', content)
         self.assertIn('hiddenRevealed', content)
 
+    def test_canvas_template_stickies_visibility_managed_by_orator_state_not_url_role(self):
+        canvas_path = Path("templates/canvas.html")
+        content = canvas_path.read_text(encoding="utf-8")
+
+        # Verify initialRoleIsOrator based on urlParams is no longer used
+        self.assertNotIn("initialRoleIsOrator", content)
+        self.assertNotIn("urlParams.get('role')", content)
+
+        # Verify applyRoleUI sets stickyNotesToggleBtn display based on orator state
+        self.assertIn("function applyRoleUI(isOrator)", content)
+        self.assertIn("if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'flex';", content)
+        self.assertIn("if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'none';", content)
+
 
 if __name__ == "__main__":
     unittest.main()

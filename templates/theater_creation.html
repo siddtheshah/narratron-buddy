@@ -2538,7 +2538,7 @@
 
                 if (response.ok && result.theater_id) {
                     await checkAuthStatus();
-                    window.location.href = `/canvas?theater_id=${encodeURIComponent(result.theater_id)}&role=orator`;
+                    window.location.href = `/canvas?theater_id=${encodeURIComponent(result.theater_id)}`;
                 } else {
                     alert('Error deploying theater: ' + (result.detail || `Server error (${response.status})`));
                 }
@@ -2699,7 +2699,7 @@
 
         function openCanvas(theaterId, isOwner = false, joinKey = '') {
             if (isOwner) {
-                window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}&role=orator`;
+                window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}`;
                 return;
             }
             pendingCanvastheaterId = theaterId;
@@ -2740,7 +2740,7 @@
                     }
                     closeJoinKeyModal();
                     const isOwnerTheater = (data.user_id && currentUser && data.user_id === currentUser.id);
-                    window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}${isOwnerTheater ? '&role=orator' : ''}`;
+                    window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
                 } else {
                     err.textContent = data.detail || 'Invalid Join Key.';
                     err.style.display = 'block';

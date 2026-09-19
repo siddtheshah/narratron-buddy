@@ -3595,14 +3595,15 @@
         // Generate anonymous user ID and read theater context
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
         const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('role')) {
+            urlParams.delete('role');
+            const cleanQuery = urlParams.toString() ? `?${urlParams.toString()}` : window.location.pathname;
+            window.history.replaceState({}, '', cleanQuery + window.location.hash);
+        }
         const theaterId = urlParams.get('theater_id');
-        const initialRoleIsOrator = urlParams.get('role') === 'orator';
 
         function isCurrentOrator() {
-            if (typeof window._isActiveOratorState === 'boolean') {
-                return window._isActiveOratorState;
-            }
-            return initialRoleIsOrator;
+            return Boolean(window._isActiveOratorState);
         }
 
         function updateCanvasPinButton() {
@@ -5470,52 +5471,77 @@
         let isAgentStarted = false;
         let agentReconnectTimer = null;
 
-        // Initialize UI based on role
+        // Role UI management
         const backBtn = document.getElementById('back-btn');
         const suggestionsToggleBtn = document.getElementById('suggestions-toggle-btn');
         const stickyNotesToggleBtn = document.getElementById('sticky-notes-toggle-btn');
-        if (isCurrentOrator()) {
-            if (backBtn) backBtn.href = '/deploy?from=canvas';
-            roleBadge.textContent = 'Orator';
-            roleBadge.style.color = '#f97316';
-            roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
-            roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
-            oratorControls.style.display = 'flex';
-            if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
-            if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
-            if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'flex';
-            if (collabSection) collabSection.style.display = 'flex';
-            if (hideSuggestionsBtn) {
-                hideSuggestionsBtn.style.display = 'inline-flex';
-                hideSuggestionsBtn.addEventListener('click', () => setSuggestionsHidden(!suggestionsHidden));
-            }
-            setSuggestionsHidden(localStorage.getItem(suggestionsHiddenStorageKey) === 'true', false);
-            statusIndicator.classList.add('disconnected'); // Start red
 
-            // Show Orator How-To popup automatically on first visit
-            if (!localStorage.getItem('narratron_orator_howto_seen')) {
-                setTimeout(() => openOratorHowtoModal({ openMicConfigOnClose: true }), 400);
+        if (hideSuggestionsBtn) {
+            hideSuggestionsBtn.addEventListener('click', () => setSuggestionsHidden(!suggestionsHidden));
+        }
+        if (viewerCollabGuideBtn) {
+            viewerCollabGuideBtn.addEventListener('click', openViewerCollabGuide);
+        }
+        setSuggestionsHidden(localStorage.getItem(suggestionsHiddenStorageKey) === 'true', false);
+
+        function applyRoleUI(isOrator) {
+            const wasActiveOrator = window._isActiveOratorState;
+            window._isActiveOratorState = Boolean(isOrator);
+            const isNowOrator = window._isActiveOratorState;
+            updateCanvasPinButton();
+            updateTextAnnotationAvailability();
+
+            if (isNowOrator) {
+                if (backBtn) backBtn.href = '/deploy?from=canvas';
+                roleBadge.textContent = 'Orator';
+                roleBadge.style.color = '#f97316';
+                roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
+                roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
+                if (oratorControls) oratorControls.style.display = 'flex';
+                if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
+                if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
+                if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'flex';
+                if (collabSection) collabSection.style.display = 'flex';
+                if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'inline-flex';
+                if (viewerCollabGuideBtn) viewerCollabGuideBtn.style.display = 'none';
+
+                if (!wasActiveOrator) {
+                    checkAgentStatus().then(status => {
+                        if (status && status.agent_running) {
+                            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                                connectAgent().catch(err => console.warn("Auto-connect agent on baton pass failed:", err));
+                            }
+                        }
+                    }).catch(() => { });
+                } else if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                    statusIndicator.classList.add('disconnected');
+                }
+
+                // Show Orator How-To popup automatically on first visit
+                if (!localStorage.getItem('narratron_orator_howto_seen')) {
+                    setTimeout(() => openOratorHowtoModal({ openMicConfigOnClose: true }), 400);
+                }
+            } else {
+                if (backBtn) backBtn.href = '/';
+                roleBadge.textContent = 'Viewer';
+                roleBadge.style.color = '#a5b4fc';
+                roleBadge.style.background = 'rgba(99, 102, 241, 0.2)';
+                roleBadge.style.borderColor = 'rgba(99, 102, 241, 0.4)';
+                if (oratorControls) oratorControls.style.display = 'none';
+                if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
+                if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
+                if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'none';
+                if (collabSection) collabSection.style.display = 'none';
+                if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
+                if (viewerCollabGuideBtn) viewerCollabGuideBtn.style.display = 'inline-flex';
+
+                if (isRecording) stopMicStream();
+                statusIndicator.classList.remove('disconnected');
             }
-        } else {
-            if (backBtn) backBtn.href = '/';
-            roleBadge.textContent = 'Viewer';
-            oratorControls.style.display = 'none';
-            if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
-            if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
-            if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'none';
-            if (collabSection) collabSection.style.display = 'none';
-            if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
-            if (viewerCollabGuideBtn) {
-                viewerCollabGuideBtn.style.display = 'inline-flex';
-                viewerCollabGuideBtn.addEventListener('click', openViewerCollabGuide);
-            }
-            const viewerGuideStorageKey = `narratron_viewer_collab_guide_seen:${theaterId}`;
-            if (!localStorage.getItem(viewerGuideStorageKey)) {
-                setTimeout(openViewerCollabGuide, 400);
-            }
-            statusIndicator.classList.remove('disconnected'); // Viewer always green/default
         }
 
+        // Initialize as viewer until server state verifies role
+        applyRoleUI(false);
 
         // Theater ownership & orator verification for Orator controls
         const activetheaterId = urlParams.get('theater_id');
@@ -5528,12 +5554,13 @@
                         const isActiveOrator = data.metadata.is_active_orator;
                         const isAllowedOrator = data.metadata.is_allowed_orator;
                         window._isAllowedOrator = Boolean(isOwner || isActiveOrator || isAllowedOrator);
-                        if (!isOwner && !isActiveOrator && !isAllowedOrator) {
-                            if (isCurrentOrator()) {
-                                alert("🔒 Only the theater owner or co-orators can become the Orator.");
-                                const params = new URLSearchParams(window.location.search);
-                                params.delete('role');
-                                window.location.search = params.toString() ? `?${params.toString()}` : '';
+                        if (isActiveOrator) {
+                            applyRoleUI(true);
+                        } else if (!isOwner && !isAllowedOrator) {
+                            applyRoleUI(false);
+                            const viewerGuideStorageKey = `narratron_viewer_collab_guide_seen:${activetheaterId}`;
+                            if (!localStorage.getItem(viewerGuideStorageKey)) {
+                                setTimeout(openViewerCollabGuide, 400);
                             }
                         }
                         const isAdventure = Boolean(
@@ -5566,6 +5593,9 @@
             .then(data => {
                 if (data.authenticated && data.user) {
                     currentUser = data.user;
+                    if (currentBatonState) {
+                        updateBatonStateUI(currentBatonState, activeViewersList);
+                    }
                     checkBatonState();
                 }
             })
@@ -5610,55 +5640,8 @@
                 menuTakeBackBatonBtn.style.display = (isOwner && !isActiveOrator) ? 'inline-flex' : 'none';
             }
 
-            const wasActiveOrator = window._isActiveOratorState;
-            window._isActiveOratorState = Boolean(isActiveOrator || (isOwner && !batonState.active_orator));
-            const isNowOrator = window._isActiveOratorState;
-            updateCanvasPinButton();
-            updateTextAnnotationAvailability();
-
-            // Role & Orator Controls activation based on active orator status
-            if (isNowOrator) {
-                if (backBtn) backBtn.href = '/deploy?from=canvas';
-                roleBadge.textContent = 'Orator';
-                roleBadge.style.color = '#f97316';
-                roleBadge.style.background = 'rgba(249, 115, 22, 0.2)';
-                roleBadge.style.borderColor = 'rgba(249, 115, 22, 0.4)';
-                if (oratorControls) oratorControls.style.display = 'flex';
-                if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
-                if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
-                if (collabSection) collabSection.style.display = 'flex';
-                if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'inline-flex';
-                if (viewerCollabGuideBtn) viewerCollabGuideBtn.style.display = 'none';
-
-                if (!wasActiveOrator) {
-                    checkAgentStatus().then(status => {
-                        if (status && status.agent_running) {
-                            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                                connectAgent().catch(err => console.warn("Auto-connect agent on baton pass failed:", err));
-                            }
-                        }
-                    }).catch(() => { });
-                } else if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                    statusIndicator.classList.add('disconnected');
-                }
-            } else {
-                if (backBtn) backBtn.href = '/';
-                roleBadge.textContent = 'Viewer';
-                roleBadge.style.color = '#a5b4fc';
-                roleBadge.style.background = 'rgba(99, 102, 241, 0.2)';
-                roleBadge.style.borderColor = 'rgba(99, 102, 241, 0.4)';
-                if (oratorControls) oratorControls.style.display = 'none';
-                if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
-                if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
-                if (collabSection) collabSection.style.display = 'none';
-                if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
-                if (viewerCollabGuideBtn) viewerCollabGuideBtn.style.display = 'inline-flex';
-
-                // Keep the live agent socket alive through baton transfers.
-                // The server ignores input from anyone who no longer holds it.
-                if (isRecording) stopMicStream();
-                statusIndicator.classList.remove('disconnected');
-            }
+            const isNowOrator = Boolean(isActiveOrator || (isOwner && !batonState.active_orator));
+            applyRoleUI(isNowOrator);
 
             // Check pending request targeting local user
             if (batonState.baton_request && currentUser && batonState.baton_request.target_user_id === currentUser.id) {
@@ -6165,14 +6148,13 @@
             });
         }
 
-        // Check agent status on page load for Orators
-        if (isCurrentOrator()) {
-            checkAgentStatus();
-            document.addEventListener('visibilitychange', () => {
-                if (isActiveCanvasWindow()) checkAgentStatus();
-            });
-            window.addEventListener('focus', () => checkAgentStatus());
-        }
+        // Check agent status when active window gains focus for Orators
+        document.addEventListener('visibilitychange', () => {
+            if (isActiveCanvasWindow() && isCurrentOrator()) checkAgentStatus();
+        });
+        window.addEventListener('focus', () => {
+            if (isCurrentOrator()) checkAgentStatus();
+        });
 
         // Connect Agent WebSocket
         function connectAgent() {
