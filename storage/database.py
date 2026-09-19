@@ -1673,7 +1673,7 @@ class _DatabaseManagerBase:
         if not dep:
             return None
         import json
-        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        allowed_ids = json.loads(dep.get("contributors") or "[]")
         active_orator_id = dep.get("active_orator_id") or dep["user_id"]
         baton_req_raw = dep.get("baton_request")
         baton_req = json.loads(baton_req_raw) if baton_req_raw else None
@@ -1699,38 +1699,38 @@ class _DatabaseManagerBase:
             "theater_id": theater_id,
             "owner": {"id": owner_user["id"], "username": owner_user["username"]} if owner_user else None,
             "active_orator": {"id": active_orator_user["id"], "username": active_orator_user["username"]} if active_orator_user else None,
-            "allowed_orators": allowed_users,
+            "contributors": allowed_users,
             "baton_request": baton_req,
         }
 
-    def add_allowed_orator(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+    def add_contributor(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
         dep = self.get_deployment(theater_id)
         if not dep or dep["user_id"] != owner_id:
-            raise ValueError("Only the theater owner can add allowed orators.")
+            raise ValueError("Only the theater owner can add contributors.")
         target_user = self.get_user_by_id(target_user_id)
         if not target_user:
             raise ValueError("Target user does not exist.")
         
         import json
-        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        allowed_ids = json.loads(dep.get("contributors") or "[]")
         if target_user_id not in allowed_ids:
             allowed_ids.append(target_user_id)
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE theaters SET allowed_orators = ? WHERE theater_id = ?",
+                    "UPDATE theaters SET contributors = ? WHERE theater_id = ?",
                     (json.dumps(allowed_ids), theater_id)
                 )
                 conn.commit()
         return self.get_theater_baton_state(theater_id)
 
-    def remove_allowed_orator(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+    def remove_contributor(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
         dep = self.get_deployment(theater_id)
         if not dep or dep["user_id"] != owner_id:
-            raise ValueError("Only the theater owner can remove allowed orators.")
+            raise ValueError("Only the theater owner can remove contributors.")
         
         import json
-        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        allowed_ids = json.loads(dep.get("contributors") or "[]")
         if target_user_id in allowed_ids:
             allowed_ids.remove(target_user_id)
         
@@ -1741,7 +1741,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE theaters SET allowed_orators = ?, active_orator_id = ? WHERE theater_id = ?",
+                "UPDATE theaters SET contributors = ?, active_orator_id = ? WHERE theater_id = ?",
                 (json.dumps(allowed_ids), active_orator_id, theater_id)
             )
             conn.commit()
@@ -1753,9 +1753,9 @@ class _DatabaseManagerBase:
             raise ValueError("Only the theater owner can request passing the baton.")
         
         import json
-        allowed_ids = json.loads(dep.get("allowed_orators") or "[]")
+        allowed_ids = json.loads(dep.get("contributors") or "[]")
         if target_user_id not in allowed_ids and target_user_id != owner_id:
-            raise ValueError("Target user is not in allowed orators.")
+            raise ValueError("Target user is not in contributors.")
         
         target_user = self.get_user_by_id(target_user_id)
         if not target_user:
@@ -1827,11 +1827,11 @@ class _DatabaseManagerBase:
     async def get_theater_baton_state_async(self, theater_id: str) -> Optional[Dict[str, Any]]:
         return await asyncio.to_thread(self.get_theater_baton_state, theater_id)
 
-    async def add_allowed_orator_async(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.add_allowed_orator, theater_id, owner_id, target_user_id)
+    async def add_contributor_async(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.add_contributor, theater_id, owner_id, target_user_id)
 
-    async def remove_allowed_orator_async(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.remove_allowed_orator, theater_id, owner_id, target_user_id)
+    async def remove_contributor_async(self, theater_id: str, owner_id: int, target_user_id: int) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.remove_contributor, theater_id, owner_id, target_user_id)
 
     async def request_baton_async(self, theater_id: str, owner_id: int, target_user_id: int, timeout_seconds: int = 30) -> Dict[str, Any]:
         return await asyncio.to_thread(self.request_baton, theater_id, owner_id, target_user_id, timeout_seconds)

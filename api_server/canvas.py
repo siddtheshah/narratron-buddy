@@ -19,7 +19,7 @@ from api_server.shared import (
     _require_canvas_access,
     _require_canvas_access_async,
     can_control_agent_websocket,
-    is_allowed_orator,
+    is_contributor,
 )
 from api_server.dependencies import live_agent_manager
 
@@ -526,10 +526,10 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
     if msg.roll_data:
         if theater_id:
             deployment = db.get_deployment(theater_id)
-            if deployment and not is_allowed_orator(deployment, current_user=user):
+            if deployment and not is_contributor(deployment, current_user=user):
                 raise HTTPException(
                     status_code=403,
-                    detail="Only users with allowed_orators permission can submit dice rolls.",
+                    detail="Only users with contributors permission can submit dice rolls.",
                 )
         chat_kwargs["roll_data"] = msg.roll_data
     state = _state(theater_id)

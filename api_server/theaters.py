@@ -74,7 +74,7 @@ class SaveTheaterConfigRequest(BaseModel):
 class RetitleTheaterRequest(BaseModel):
     name: str
 
-class AddAllowedOratorRequest(BaseModel):
+class AddContributorRequest(BaseModel):
     target_user_id: int
 
 class RequestBatonRequest(BaseModel):
@@ -265,12 +265,12 @@ async def get_theater(theater_id: str, request: Request):
             or (active_orator_id is None and is_owner)
         )
     )
-    raw_allowed = deployment.get("allowed_orators") or "[]"
+    raw_allowed = deployment.get("contributors") or "[]"
     try:
         allowed_ids = json.loads(raw_allowed) if isinstance(raw_allowed, str) else list(raw_allowed)
     except Exception:
         allowed_ids = []
-    is_allowed_orator = current_user is not None and current_user["id"] in allowed_ids
+    is_contributor = current_user is not None and current_user["id"] in allowed_ids
 
     # Analytics must not hold up the canvas reload, especially with a remote DB.
     client_ip = request.client.host if request.client else None
@@ -285,7 +285,7 @@ async def get_theater(theater_id: str, request: Request):
     meta_dict = meta.model_dump()
     meta_dict["is_owner"] = is_owner
     meta_dict["is_active_orator"] = is_active_orator
-    meta_dict["is_allowed_orator"] = is_allowed_orator
+    meta_dict["is_contributor"] = is_contributor
     meta_dict["is_adventure_mode"] = bool(
         meta_dict.get("config", {}).get("story_planning", {}).get("adventure_mode", False)
     )
@@ -686,14 +686,14 @@ async def get_theater_baton_state(theater_id: str, request: Request):
     return state
 
 
-@app.post("/api/theaters/{theater_id}/baton/allowed_orators")
-async def add_allowed_orator(theater_id: str, req: AddAllowedOratorRequest, request: Request):
+@app.post("/api/theaters/{theater_id}/baton/contributors")
+async def add_contributor(theater_id: str, req: AddContributorRequest, request: Request):
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = await db.add_allowed_orator_async(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
+        updated_state = await db.add_contributor_async(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
         await broadcast_baton_update(theater_id, updated_state)
         return updated_state
@@ -701,14 +701,14 @@ async def add_allowed_orator(theater_id: str, req: AddAllowedOratorRequest, requ
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/api/theaters/{theater_id}/baton/allowed_orators/{target_user_id}")
-async def remove_allowed_orator(theater_id: str, target_user_id: int, request: Request):
+@app.delete("/api/theaters/{theater_id}/baton/contributors/{target_user_id}")
+async def remove_contributor(theater_id: str, target_user_id: int, request: Request):
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     
     try:
-        updated_state = await db.remove_allowed_orator_async(theater_id, owner_id=user["id"], target_user_id=target_user_id)
+        updated_state = await db.remove_contributor_async(theater_id, owner_id=user["id"], target_user_id=target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await broadcast_baton_update(theater_id, updated_state)

@@ -751,43 +751,42 @@ class TestBatonManagement(BaseTestCase):
         self.assertIsNone(self.db.get_theater_baton_state("non_existent_theater"))
 
     def test_get_baton_state_batches_user_lookups(self):
-        self.db.add_allowed_orator(self.theater_id, self.owner["id"], self.orator1["id"])
-        self.db.add_allowed_orator(self.theater_id, self.owner["id"], self.orator2["id"])
+        self.db.add_contributor(self.theater_id, self.owner["id"], self.orator1["id"])
+        self.db.add_contributor(self.theater_id, self.owner["id"], self.orator2["id"])
         with patch.object(self.db, "get_users_by_ids", wraps=self.db.get_users_by_ids) as get_users:
             state = self.db.get_theater_baton_state(self.theater_id)
 
         get_users.assert_called_once_with([self.owner["id"], self.owner["id"], self.orator1["id"], self.orator2["id"]])
         self.assertEqual(
-            [user["id"] for user in state["allowed_orators"]],
+            [user["id"] for user in state["contributors"]],
             [self.orator1["id"], self.orator2["id"]],
         )
 
-    def test_add_allowed_orator_permissions_and_idempotency(self):
-        # Non-owner attempting to add orator
+    def test_add_contributor_permissions_and_idempotency(self):
+        # Non-owner attempting to add contributor
         with self.assertRaises(ValueError) as ctx:
-            self.db.add_allowed_orator(self.theater_id, owner_id=self.orator1["id"], target_user_id=self.orator2["id"])
+            self.db.add_contributor(self.theater_id, owner_id=self.orator1["id"], target_user_id=self.orator2["id"])
         self.assertIn("owner", str(ctx.exception).lower())
 
         # Target user does not exist
         with self.assertRaises(ValueError) as ctx:
-            self.db.add_allowed_orator(self.theater_id, owner_id=self.owner["id"], target_user_id=99999)
+            self.db.add_contributor(self.theater_id, owner_id=self.owner["id"], target_user_id=99999)
         self.assertIn("exist", str(ctx.exception).lower())
 
-        # Owner adds orator1
-        state = self.db.add_allowed_orator(self.theater_id, owner_id=self.owner["id"], target_user_id=self.orator1["id"])
-        self.assertEqual(len(state["allowed_orators"]), 1)
-        self.assertEqual(state["allowed_orators"][0]["username"], "orator_one")
-
+        # Owner adds orator1 as contributor
+        state = self.db.add_contributor(self.theater_id, owner_id=self.owner["id"], target_user_id=self.orator1["id"])
+        self.assertEqual(len(state["contributors"]), 1)
+        self.assertEqual(state["contributors"][0]["username"], "orator_one")
         # Idempotent add (adding orator1 again should not duplicate)
-        state2 = self.db.add_allowed_orator(self.theater_id, owner_id=self.owner["id"], target_user_id=self.orator1["id"])
-        self.assertEqual(len(state2["allowed_orators"]), 1)
+        state2 = self.db.add_contributor(self.theater_id, owner_id=self.owner["id"], target_user_id=self.orator1["id"])
+        self.assertEqual(len(state2["contributors"]), 1)
 
-    def test_remove_allowed_orator_and_active_orator_reset(self):
-        self.db.add_allowed_orator(self.theater_id, self.owner["id"], self.orator1["id"])
+    def test_remove_contributor_and_active_orator_reset(self):
+        self.db.add_contributor(self.theater_id, self.owner["id"], self.orator1["id"])
 
         # Non-owner cannot remove
         with self.assertRaises(ValueError):
-            self.db.remove_allowed_orator(self.theater_id, owner_id=self.orator1["id"], target_user_id=self.orator1["id"])
+            self.db.remove_contributor(self.theater_id, owner_id=self.orator1["id"], target_user_id=self.orator1["id"])
 
         # Directly set orator1 as active orator in DB
         with self.db._get_connection() as conn:
@@ -798,14 +797,14 @@ class TestBatonManagement(BaseTestCase):
             conn.commit()
 
         # Remove orator1 -> active orator should automatically reset to owner
-        state = self.db.remove_allowed_orator(self.theater_id, owner_id=self.owner["id"], target_user_id=self.orator1["id"])
-        self.assertEqual(len(state["allowed_orators"]), 0)
+        state = self.db.remove_contributor(self.theater_id, owner_id=self.owner["id"], target_user_id=self.orator1["id"])
+        self.assertEqual(len(state["contributors"]), 0)
         self.assertEqual(state["active_orator"]["id"], self.owner["id"])
 
     def test_request_accept_decline_and_take_back_baton(self):
-        self.db.add_allowed_orator(self.theater_id, self.owner["id"], self.orator1["id"])
+        self.db.add_contributor(self.theater_id, self.owner["id"], self.orator1["id"])
 
-        # Request baton for target not in allowed orators
+        # Request baton for target not in contributors
         with self.assertRaises(ValueError):
             self.db.request_baton(self.theater_id, owner_id=self.owner["id"], target_user_id=self.orator2["id"])
 
@@ -837,7 +836,7 @@ class TestBatonManagement(BaseTestCase):
         self.assertIsNone(state_declined["baton_request"])
 
     def test_get_baton_state_auto_expires_old_request(self):
-        self.db.add_allowed_orator(self.theater_id, self.owner["id"], self.orator1["id"])
+        self.db.add_contributor(self.theater_id, self.owner["id"], self.orator1["id"])
         self.db.request_baton(self.theater_id, self.owner["id"], self.orator1["id"], timeout_seconds=1)
 
         # Set baton request expiration in past
@@ -992,16 +991,16 @@ class TestAsyncDatabaseMethods(BaseTestCase):
 
             # Baton async methods
             baton_user = await self.db.register_user_async("baton_hero", "baton@test.com", "Pass12345")
-            await self.db.add_allowed_orator_async("async_theater", user["id"], baton_user["id"])
+            await self.db.add_contributor_async("async_theater", user["id"], baton_user["id"])
             baton_state = await self.db.get_theater_baton_state_async("async_theater")
-            self.assertEqual(len(baton_state["allowed_orators"]), 1)
+            self.assertEqual(len(baton_state["contributors"]), 1)
 
             await self.db.request_baton_async("async_theater", user["id"], baton_user["id"])
             await self.db.accept_baton_async("async_theater", baton_user["id"])
             await self.db.take_back_baton_async("async_theater", user["id"])
             await self.db.request_baton_async("async_theater", user["id"], baton_user["id"])
             await self.db.decline_baton_async("async_theater", baton_user["id"])
-            await self.db.remove_allowed_orator_async("async_theater", user["id"], baton_user["id"])
+            await self.db.remove_contributor_async("async_theater", user["id"], baton_user["id"])
             del_ok = await self.db.delete_user_async(user["id"])
             self.assertTrue(del_ok)
 

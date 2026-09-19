@@ -20,7 +20,7 @@ from api_server import (
     db,
     get_current_user_async,
     can_control_agent_websocket,
-    is_allowed_orator,
+    is_contributor,
 )
 from api_server.dependencies import live_agent_manager
 from api_server import can_access_agent_websocket as can_access_agent_websocket  # noqa: F401

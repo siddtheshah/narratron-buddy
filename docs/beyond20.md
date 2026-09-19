@@ -9,7 +9,7 @@ You need all of the following:
 - Latest version of Beyond20.
 - A D&D Beyond character sheet open in the same browser profile as Beyond20.
 - The Narratron canvas open in another tab in that same browser profile.
-- Permission to act as an orator in that theater. The theater owner, the active orator, and users in the theater's allowed-orators list can send rolls. Spectators cannot publish a roll to the shared chat.
+- Permission to act as an orator in that theater. The theater owner, the active orator, and users in the theater's contributors list can send rolls. Spectators cannot publish a roll to the shared chat.
 
 ## Set up the extension
 
@@ -37,7 +37,7 @@ This division is deliberate: the extension can be useful as a public dice log wi
 
 - Confirm that the canvas and D&D Beyond are open in the same browser profile where Beyond20 is installed.
 - Confirm the extension has permission to run on the Narratron host, then reload both tabs.
-- Verify that you are the theater owner, active orator, or are listed as an allowed co-orator. Viewer accounts are blocked from publishing extension roll events.
+- Verify that you are the theater owner, active orator, or are listed as an contributor. Viewer accounts are blocked from publishing extension roll events.
 - Check that the Narratron-enabled build is installed. A standard Beyond20 release without the Narratron destination cannot deliver events to the canvas.
 
 ### The roll appears in chat but Narratron does not react

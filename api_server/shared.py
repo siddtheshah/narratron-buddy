@@ -246,14 +246,14 @@ def can_control_agent_websocket(
     return current_user.get("id") == active_orator_id
 
 
-def is_allowed_orator(
+def is_contributor(
     deployment: dict,
     *,
     current_user: Optional[dict] = None,
 ) -> bool:
-    """Return whether the current user has 'allowed_orators' permission.
+    """Return whether the current user has 'contributors' permission.
 
-    The theater owner, active orator, and users listed in allowed_orators have permission.
+    The theater owner, active orator, and users listed in contributors have permission.
     """
     if not deployment or not current_user:
         return False
@@ -264,7 +264,10 @@ def is_allowed_orator(
         return True
     if user_id == deployment.get("active_orator_id"):
         return True
-    raw_allowed = deployment.get("allowed_orators") or "[]"
+    raw_allowed = (
+        deployment.get("contributors")
+        or "[]"
+    )
     try:
         allowed_ids = json.loads(raw_allowed) if isinstance(raw_allowed, str) else list(raw_allowed)
     except Exception:

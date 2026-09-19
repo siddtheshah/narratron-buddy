@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS theaters (
     join_key TEXT,
     cost DOUBLE PRECISION NOT NULL DEFAULT 5.0,
     created_at TEXT,
-    allowed_orators TEXT NOT NULL DEFAULT '[]',
+    contributors TEXT NOT NULL DEFAULT '[]',
     active_orator_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     baton_request TEXT,
     is_persistent BOOLEAN NOT NULL DEFAULT FALSE,

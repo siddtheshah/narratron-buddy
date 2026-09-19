@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import object_registry
-from api_server.app import can_control_agent_websocket, can_access_agent_websocket, is_allowed_orator
+from api_server.app import can_control_agent_websocket, can_access_agent_websocket, is_contributor
 app_module = importlib.import_module("api_server.app")
 
 
@@ -73,28 +73,28 @@ class TestCanControlAgentWebsocket(unittest.TestCase):
         self.assertFalse(can_control_agent_websocket(deployment, current_user=None))
 
 
-class TestIsAllowedOrator(unittest.TestCase):
+class TestIsContributor(unittest.TestCase):
     def test_allows_owner(self):
-        deployment = {"theater_id": "s1", "user_id": 42, "allowed_orators": "[]"}
-        self.assertTrue(is_allowed_orator(deployment, current_user={"id": 42}))
+        deployment = {"theater_id": "s1", "user_id": 42, "contributors": "[]"}
+        self.assertTrue(is_contributor(deployment, current_user={"id": 42}))
 
     def test_allows_active_orator(self):
-        deployment = {"theater_id": "s1", "user_id": 42, "active_orator_id": 99, "allowed_orators": "[]"}
-        self.assertTrue(is_allowed_orator(deployment, current_user={"id": 99}))
+        deployment = {"theater_id": "s1", "user_id": 42, "active_orator_id": 99, "contributors": "[]"}
+        self.assertTrue(is_contributor(deployment, current_user={"id": 99}))
 
-    def test_allows_user_in_allowed_orators_list(self):
-        deployment = {"theater_id": "s1", "user_id": 42, "allowed_orators": json.dumps([101, 102])}
-        self.assertTrue(is_allowed_orator(deployment, current_user={"id": 101}))
-        self.assertTrue(is_allowed_orator(deployment, current_user={"id": 102}))
+    def test_allows_user_in_contributors_list(self):
+        deployment = {"theater_id": "s1", "user_id": 42, "contributors": json.dumps([101, 102])}
+        self.assertTrue(is_contributor(deployment, current_user={"id": 101}))
+        self.assertTrue(is_contributor(deployment, current_user={"id": 102}))
 
     def test_rejects_unlisted_user(self):
-        deployment = {"theater_id": "s1", "user_id": 42, "allowed_orators": json.dumps([101])}
-        self.assertFalse(is_allowed_orator(deployment, current_user={"id": 77}))
+        deployment = {"theater_id": "s1", "user_id": 42, "contributors": json.dumps([101])}
+        self.assertFalse(is_contributor(deployment, current_user={"id": 77}))
 
     def test_rejects_unauthenticated_user(self):
-        deployment = {"theater_id": "s1", "user_id": 42, "allowed_orators": "[]"}
-        self.assertFalse(is_allowed_orator(deployment, current_user=None))
-        self.assertFalse(is_allowed_orator(None, current_user={"id": 42}))
+        deployment = {"theater_id": "s1", "user_id": 42, "contributors": "[]"}
+        self.assertFalse(is_contributor(deployment, current_user=None))
+        self.assertFalse(is_contributor(None, current_user={"id": 42}))
 
 
 def test_start_agent_stops_registry_session_when_owner_has_no_credits():

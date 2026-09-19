@@ -128,12 +128,12 @@ class TestChatPrefixes(UITestCase):
         self.assertEqual(messages[0]["author"], "Ada")
         self.assertEqual(messages[0]["roll_data"], roll_info)
 
-    def test_roll_data_rejected_for_user_without_allowed_orators_permission(self):
+    def test_roll_data_rejected_for_user_without_contributors_permission(self):
         deployment = {
             "theater_id": self.theater_id,
             "user_id": 1,
             "active_orator_id": 1,
-            "allowed_orators": "[2, 3]",
+            "contributors": "[2, 3]",
         }
         with patch("api_server.canvas.db.get_deployment", return_value=deployment), \
              patch("api_server.canvas.get_current_user", return_value={"id": 99, "username": "intruder"}):
@@ -146,14 +146,14 @@ class TestChatPrefixes(UITestCase):
                 },
             )
             self.assertEqual(res.status_code, 403)
-            self.assertIn("allowed_orators", res.json()["detail"])
+            self.assertIn("contributors", res.json()["detail"])
 
-    def test_roll_data_accepted_for_allowed_orators(self):
+    def test_roll_data_accepted_for_contributors(self):
         deployment = {
             "theater_id": self.theater_id,
             "user_id": 1,
             "active_orator_id": 1,
-            "allowed_orators": "[2, 3]",
+            "contributors": "[2, 3]",
         }
         with patch("api_server.canvas.db.get_deployment", return_value=deployment), \
              patch("api_server.canvas.get_current_user", return_value={"id": 2, "username": "co_orator"}):
@@ -171,7 +171,7 @@ class TestChatPrefixes(UITestCase):
         state = self.canvas_states.get(self.theater_id)
         mock_session = MagicMock()
         mock_session.is_alive = True
-        deployment = {"theater_id": self.theater_id, "user_id": 1, "allowed_orators": "[]"}
+        deployment = {"theater_id": self.theater_id, "user_id": 1, "contributors": "[]"}
 
         with patch("api_server.canvas.live_agent_manager.get_session", return_value=mock_session), \
              patch("api_server.canvas.db.get_deployment", return_value=deployment), \

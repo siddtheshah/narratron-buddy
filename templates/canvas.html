@@ -3659,15 +3659,15 @@
             return (typeof viewerCollabEnabled !== 'undefined') ? Boolean(viewerCollabEnabled) : false;
         }
 
-        function hasAllowedOratorsPermission() {
+        function hasContributorPermission() {
             if (isCurrentOrator()) return true;
-            if (window._isAllowedOrator) return true;
+            if (window._isContributor) return true;
             if (typeof currentBatonState !== 'undefined' && currentBatonState) {
                 const myId = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
                 if (myId) {
                     if (currentBatonState.owner && currentBatonState.owner.id === myId) return true;
                     if (currentBatonState.active_orator && currentBatonState.active_orator.id === myId) return true;
-                    if (Array.isArray(currentBatonState.allowed_orators) && currentBatonState.allowed_orators.some(u => u.id === myId)) {
+                    if (Array.isArray(currentBatonState.contributors) && currentBatonState.contributors.some(u => u.id === myId)) {
                         return true;
                     }
                 }
@@ -3679,7 +3679,7 @@
         const beyond20Listener = initializeBeyond20Listener({
             chatController: chatController,
             theaterId: theaterId,
-            isAllowedOrator: () => hasAllowedOratorsPermission(),
+            isContributor: () => hasContributorsPermission(),
             isCollabModeEnabled: () => isCollabModeEnabled(),
             isCurrentOrator: () => isCurrentOrator(),
             getAgentWs: () => ((isCurrentOrator() && agentWs) ? agentWs : null),
@@ -5552,11 +5552,11 @@
                     if (data && data.metadata) {
                         const isOwner = data.metadata.is_owner;
                         const isActiveOrator = data.metadata.is_active_orator;
-                        const isAllowedOrator = data.metadata.is_allowed_orator;
-                        window._isAllowedOrator = Boolean(isOwner || isActiveOrator || isAllowedOrator);
+                        const isContributor = data.metadata.is_contributor;
+                        window._isContributor = Boolean(isOwner || isActiveOrator || isContributor);
                         if (isActiveOrator) {
                             applyRoleUI(true);
-                        } else if (!isOwner && !isAllowedOrator) {
+                        } else if (!isOwner && !isContributor) {
                             applyRoleUI(false);
                             const viewerGuideStorageKey = `narratron_viewer_collab_guide_seen:${activetheaterId}`;
                             if (!localStorage.getItem(viewerGuideStorageKey)) {
@@ -5619,8 +5619,8 @@
 
             const isOwner = currentUser && batonState.owner && currentUser.id === batonState.owner.id;
             const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
-            const isAllowedOratorInList = currentUser && (batonState.allowed_orators || []).some(u => u.id === currentUser.id);
-            window._isAllowedOrator = Boolean(isOwner || isActiveOrator || isAllowedOratorInList);
+            const isContributorInList = currentUser && (batonState.contributors || []).some(u => u.id === currentUser.id);
+            window._isContributor = Boolean(isOwner || isActiveOrator || isContributorInList);
 
             // This is the single baton control: it identifies the current
             // holder and opens the owner's assignment menu.
@@ -5737,8 +5737,8 @@
             if (!currentBatonState) return;
 
             const activeViewersContainer = document.getElementById('active-viewers-list');
-            const allowedOratorsContainer = document.getElementById('allowed-orators-list');
-            const allowedIds = (currentBatonState.allowed_orators || []).map(u => u.id);
+            const contributorsContainer = document.getElementById('contributor-list');
+            const allowedIds = (currentBatonState.contributors || []).map(u => u.id);
 
             // Render Active Connected Viewers
             if (activeViewersContainer) {
@@ -5753,7 +5753,7 @@
                                 <span style="font-size:0.9rem; color:#fff;">👤 @${v.username}</span>
                                 ${isAllowed
                                 ? `<span style="font-size:0.75rem; color:#4ade80; font-weight:600;">Allowed</span>`
-                                : `<button onclick="addAllowedOrator(${v.id})" style="background:#6366f1; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">+ Allow Orator</button>`
+                                : `<button onclick="addContributor(${v.id})" style="background:#6366f1; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">+ Contributor</button>`
                             }
                             </div>
                         `;
@@ -5761,13 +5761,13 @@
                 }
             }
 
-            // Render Allowed Orators List
-            if (allowedOratorsContainer) {
-                const allowedList = currentBatonState.allowed_orators || [];
+            // Render Contributor List
+            if (contributorsContainer) {
+                const allowedList = currentBatonState.contributors || [];
                 if (allowedList.length === 0) {
-                    allowedOratorsContainer.innerHTML = '<div style="font-size:0.85rem; color:#64748b; padding:6px;">No allowed co-orators added yet.</div>';
+                    contributorsContainer.innerHTML = '<div style="font-size:0.85rem; color:#64748b; padding:6px;">No contributor added yet.</div>';
                 } else {
-                    allowedOratorsContainer.innerHTML = allowedList.map(u => {
+                    contributorsContainer.innerHTML = allowedList.map(u => {
                         const isTargeting = currentBatonState.baton_request && currentBatonState.baton_request.target_user_id === u.id;
                         return `
                             <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,0.05); border-radius:6px;">
@@ -5777,7 +5777,7 @@
                                 ? `<span style="font-size:0.75rem; color:#fbbf24; padding:3px 8px; font-weight:600;">Pending 30s...</span>`
                                 : `<button onclick="requestBatonPass(${u.id})" style="background:#f59e0b; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Pass Baton 🎙️</button>`
                             }
-                                    <button onclick="removeAllowedOrator(${u.id})" style="background:rgba(239,68,68,0.2); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:4px 8px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Remove</button>
+                                    <button onclick="removeContributor(${u.id})" style="background:rgba(239,68,68,0.2); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:4px 8px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Remove</button>
                                 </div>
                             </div>
                         `;
@@ -5786,18 +5786,18 @@
             }
         }
 
-        window.addAllowedOrator = function (targetUserId) {
+        window.addContributor = function (targetUserId) {
             if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/allowed_orators`, {
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/contributors`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_user_id: targetUserId })
             }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
         };
 
-        window.removeAllowedOrator = function (targetUserId) {
+        window.removeContributor = function (targetUserId) {
             if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/allowed_orators/${targetUserId}`, {
+            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/contributors/${targetUserId}`, {
                 method: 'DELETE'
             }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
         };
@@ -7991,10 +7991,10 @@
             <div>
                 <h4
                     style="margin: 0 0 8px 0; font-size: 0.85rem; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px;">
-                    Allowed Orators List</h4>
-                <div id="allowed-orators-list"
+                    Contributor List</h4>
+                <div id="contributors-list"
                     style="display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border);">
-                    <div style="font-size:0.85rem; color:#64748b; padding:6px;">No allowed co-orators added yet.</div>
+                    <div style="font-size:0.85rem; color:#64748b; padding:6px;">No contributors added yet.</div>
                 </div>
             </div>
         </div>

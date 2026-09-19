@@ -53,12 +53,12 @@ export function initializeBeyond20Listener(options = {}) {
     const {
         chatController,
         theaterId = '',
-        isAllowedOrator = () => false,
+        isContributor = () => false,
         isCollabModeEnabled = () => false,
         isCurrentOrator = () => false,
         getAgentWs = () => null,
         forwardRollToAgent = null,
-        onConnected = () => {},
+        onConnected = () => { },
         forwardToNarrator = true,
         notifyHPUpdates = true,
     } = options;
@@ -66,8 +66,8 @@ export function initializeBeyond20Listener(options = {}) {
     let isBeyond20Detected = false;
 
     function checkPermission() {
-        if (typeof isAllowedOrator === 'function') {
-            return isAllowedOrator();
+        if (typeof isContributor === 'function') {
+            return isContributor();
         }
         if (typeof isCurrentOrator === 'function') {
             return isCurrentOrator();
@@ -77,7 +77,7 @@ export function initializeBeyond20Listener(options = {}) {
 
     // 1. Listen for rendered rolls from Beyond20
     function handleRenderedRoll(event) {
-        // Dice rolls are forwarded and rendered ONLY by people who have the 'allowed_orators' permission
+        // Dice rolls are forwarded and rendered ONLY by people who have the 'contributors' permission
         if (!checkPermission()) {
             return;
         }
@@ -120,7 +120,7 @@ export function initializeBeyond20Listener(options = {}) {
             forwarded_to_agent: forwardedToAgent,
         };
 
-        // Post into chat (renders in Narratron chat timeline for allowed orators)
+        // Post into chat (renders in Narratron chat timeline for contributors)
         if (chatController && typeof chatController.postChatMessage === 'function') {
             chatController.postChatMessage({
                 author: charName,
@@ -146,7 +146,7 @@ export function initializeBeyond20Listener(options = {}) {
             chatController.postChatMessage({
                 author: name,
                 text: hpText,
-            }).catch(() => {});
+            }).catch(() => { });
         }
     }
 

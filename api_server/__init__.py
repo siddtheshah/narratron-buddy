@@ -12,7 +12,7 @@ from api_server.shared import (  # noqa: F401
     get_current_user_async,
     can_access_agent_websocket,
     can_control_agent_websocket,
-    is_allowed_orator,
+    is_contributor,
     _require_canvas_access,
     _require_canvas_access_async,
     _safe_path_param,

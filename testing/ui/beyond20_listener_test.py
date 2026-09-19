@@ -9,27 +9,27 @@ class TestBeyond20ListenerWiring(unittest.TestCase):
         self.canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
         self.listener_js = Path("static/js/beyond20-listener.js").read_text(encoding="utf-8")
 
-    def test_canvas_html_wires_allowed_orators_and_collab_mode(self):
+    def test_canvas_html_wires_contributors_and_collab_mode(self):
         # Must declare permission and collab mode helpers
-        self.assertIn("function hasAllowedOratorsPermission()", self.canvas_html)
+        self.assertIn("function hasContributorsPermission()", self.canvas_html)
         self.assertIn("function isCollabModeEnabled()", self.canvas_html)
 
         # Must pass helpers into initializeBeyond20Listener
-        self.assertIn("isAllowedOrator: () => hasAllowedOratorsPermission()", self.canvas_html)
+        self.assertIn("isContributor: () => hasContributorsPermission()", self.canvas_html)
         self.assertIn("isCollabModeEnabled: () => isCollabModeEnabled()", self.canvas_html)
 
         # Static guard: must preserve isCurrentOrator() && agentWs
         self.assertIn("isCurrentOrator() && agentWs", self.canvas_html)
 
-    def test_canvas_html_updates_allowed_orator_flag_on_state_changes(self):
-        # Updates _isAllowedOrator from theater metadata
-        self.assertIn("window._isAllowedOrator = Boolean(isOwner || isActiveOrator || isAllowedOrator)", self.canvas_html)
-        # Updates _isAllowedOrator from baton state
-        self.assertIn("window._isAllowedOrator = Boolean(isOwner || isActiveOrator || isAllowedOratorInList)", self.canvas_html)
+    def test_canvas_html_updates_contributor_flag_on_state_changes(self):
+        # Updates _isContributor from theater metadata
+        self.assertIn("window._isContributor = Boolean(isOwner || isActiveOrator || isContributor)", self.canvas_html)
+        # Updates _isContributor from baton state
+        self.assertIn("window._isContributor = Boolean(isOwner || isActiveOrator || isContributorInList)", self.canvas_html)
 
     def test_beyond20_listener_enforces_permissions_and_collab_mode(self):
-        # Must accept isAllowedOrator and isCollabModeEnabled
-        self.assertIn("isAllowedOrator = () => false", self.listener_js)
+        # Must accept isContributor and isCollabModeEnabled
+        self.assertIn("isContributor = () => false", self.listener_js)
         self.assertIn("isCollabModeEnabled = () => false", self.listener_js)
 
         # Must check permission before rendering or posting to chat

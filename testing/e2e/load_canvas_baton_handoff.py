@@ -1,7 +1,7 @@
 """Load-test a baton handoff while authenticated canvas viewers stay connected.
 
 This reuses the isolated-account, disposable-canvas, and local-server helpers
-from :mod:`load_canvas_viewers`.  The first viewer is made an allowed orator;
+from :mod:`load_canvas_viewers`.  The first viewer is made an contributor;
 the owner passes the baton to that viewer while every other viewer remains on
 the canvas.  Each trial records request delivery and the accepted-handoff
 delivery time for every connected browser.
@@ -109,7 +109,7 @@ async def measure_trial(
         baton_path = f"/api/theaters/{urllib.parse.quote(theater_id, safe='')}/baton"
         await fetch_json(
             owner_page,
-            f"{baton_path}/allowed_orators",
+            f"{baton_path}/contributors",
             method="POST",
             body={"target_user_id": secondary_user["id"]},
         )
