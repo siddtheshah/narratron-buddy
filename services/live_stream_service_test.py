@@ -13,6 +13,7 @@ from tools.story import StoryTool
 class CanvasVisualFixture:
     shown_image_path: str | None = None
     shown_image_prompt: str | None = None
+    pinned: bool = False
 
 
 @dataclass
@@ -91,6 +92,13 @@ def test_canvas_observability_includes_suggestion_when_collaboration_is_enabled(
 
     assert "[Viewer Suggestion]: Open the hidden door (by Ada, 2 upvotes)" in state
     canvas.chat.consume_top_suggestion.assert_called_once_with()
+
+
+def test_canvas_observability_informs_agent_when_orator_pins_visual():
+    state = format_canvas_state(CanvasFixture(visual=CanvasVisualFixture(pinned=True)))
+
+    assert "[Canvas Pin]: The orator has pinned the current canvas." in state
+    assert "tools will decline while pinned" in state
 
 
 def _make_opus_packet(samples: int = 480) -> bytes:

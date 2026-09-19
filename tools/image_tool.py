@@ -15,7 +15,7 @@ from providers import (
     ImageReference,
     get_image_provider,
 )
-from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
+from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, with_cooldown
 from utils.image_utils import (
     compress_image_to_webp,
     embed_image_metadata,
@@ -229,6 +229,7 @@ class ImageTools(BaseTools):
         if thread and thread.is_alive():
             thread.join(timeout=timeout)
 
+    @blocked_when_canvas_pinned
     @with_cooldown(action_desc="generating another image")
     def create_image(
         self,
@@ -419,6 +420,7 @@ class ImageTools(BaseTools):
             self._image_provider = get_image_provider(self.image_model, self.image_provider_options)
         return self._image_provider
 
+    @blocked_when_canvas_pinned
     @with_cooldown(action_desc="showing another image")
     def show_image(
         self,

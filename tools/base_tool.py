@@ -13,6 +13,29 @@ from components.theater_manager import Theater
 logger = logging.getLogger(__name__)
 
 
+CANVAS_PINNED_MESSAGE = (
+    "The canvas is currently pinned by the orator. Image and animation tools are "
+    "temporarily unavailable; keep the current canvas visual unchanged until the orator unpins it."
+)
+
+
+def blocked_when_canvas_pinned(func: Callable):
+    """Return a clear tool response without starting visual work while pinned."""
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        visual = getattr(getattr(self, "canvas_manager", None), "visual", None)
+        # Require the concrete state flag so permissive MagicMock-based tool
+        # fixtures (and legacy canvas implementations) remain unpinned.
+        if getattr(visual, "pinned", False) is True:
+            trigger_cb = getattr(self, "_trigger_after_tool_call", None)
+            if callable(trigger_cb):
+                trigger_cb(func.__name__)
+            return CANVAS_PINNED_MESSAGE
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
 def _tool_call_arguments(func: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
     """Return public tool arguments as named values for invocation logging."""
     try:

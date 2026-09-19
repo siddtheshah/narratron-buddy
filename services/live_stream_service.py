@@ -27,6 +27,11 @@ def format_canvas_state(
     image_prompt = visual.shown_image_prompt if visual and visual.shown_image_prompt else "none"
     playlist = audio.current_playlist if audio and audio.current_playlist else "none"
     parts = [f"[Canvas Image]: {image_name}, {image_prompt}", f"[Canvas music]: {playlist}"]
+    if visual and visual.pinned:
+        parts.append(
+            "[Canvas Pin]: The orator has pinned the current canvas. Do not request image or "
+            "animation changes until it is unpinned; those tools will decline while pinned."
+        )
 
     # Collaboration observability consumes the leading suggestion. When it is
     # disabled, a canvas pulse must be read-only so audience work is retained

@@ -69,6 +69,24 @@ class VisualState:
         self.shown_layered_animation: dict[str, object] | None = None
         self.shown_video_animation: dict[str, object] | None = None
         self.image_revision = 0
+        self.pinned = False
+
+    def set_pinned(self, pinned: bool) -> bool:
+        """Pin or unpin the current visual, discarding any pending replacement."""
+        pinned = bool(pinned)
+        with self._cycle_lock:
+            if self.pinned == pinned:
+                return False
+            self.pinned = pinned
+            if pinned:
+                self.next_cycle_image = None
+                if self._cycle_timer:
+                    self._cycle_timer.cancel()
+                    self._cycle_timer = None
+                self._cycle_active = False
+        if self.notify_changed_fn:
+            self.notify_changed_fn("latest")
+        return True
 
     def get_url_for_path(self, file_path: str, theater: Optional[Theater] = None) -> str:
         """Resolve a public or client-accessible URL for an image path."""
@@ -306,6 +324,12 @@ class VisualState:
         force_immediate = bool(item.get("force_immediate", False))
 
         with self._cycle_lock:
+            if self.pinned:
+                return {
+                    "status": "blocked",
+                    "resource": item,
+                    "message": "The canvas is pinned by the orator; the current visual will remain unchanged.",
+                }
             has_active = self.has_active_visual()
             is_cold_start = not has_active
 
@@ -418,6 +442,8 @@ class VisualState:
         Returns the new current_cycle_visual.
         """
         with self._cycle_lock:
+            if self.pinned:
+                return self.current_cycle_visual
             if self.next_cycle_image is not None:
                 staged = self.next_cycle_image
                 self.next_cycle_image = None
@@ -826,6 +852,7 @@ class VisualState:
                                url_for_path=url_for_path)
 
     def load(self, data: dict[str, object]) -> None:
+        self.pinned = bool(data.get("pinned", False))
         for name in ("current_image_basename", "shown_image_path", "shown_image_prompt", "shown_image_transition", "shown_image_effect"):
             value = data.get(name)
             if isinstance(value, str): setattr(self, name, value)
@@ -854,7 +881,7 @@ class VisualState:
                 "shown_image_prompt": self.shown_image_prompt, "shown_images_history": list(self.shown_images_history),
                 "shown_image_transition": self.shown_image_transition, "shown_image_effect": self.shown_image_effect,
                 "shown_animation_frames": list(self.shown_animation_frames), "shown_layered_animation": self.shown_layered_animation,
-                "shown_video_animation": self.shown_video_animation}
+                "shown_video_animation": self.shown_video_animation, "pinned": self.pinned}
 
     def payload(self) -> dict[str, object]:
         th = self.theater
@@ -928,6 +955,7 @@ class VisualState:
             "transition": transition,
             "effect": effect,
             "history": formatted_history,
+            "pinned": self.pinned,
         }
         if anim_info:
             result["animation"] = anim_info

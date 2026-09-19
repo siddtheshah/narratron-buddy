@@ -47,6 +47,10 @@ class ViewerCollabRequest(BaseModel):
     enabled: bool
 
 
+class CanvasPinRequest(BaseModel):
+    pinned: bool
+
+
 class A2UIActionBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     surfaceId: str = Field(min_length=1, max_length=100)
@@ -430,6 +434,33 @@ def post_orator_command(command: OratorCommand, request: Request, theater_id: st
     if not session.send_user_content(types.Content(parts=[types.Part(text=notification)])):
         raise HTTPException(status_code=409, detail="The live agent could not receive the command.")
     return {"status": "accepted"}
+
+
+@app.post("/api/theaters/{theater_id}/canvas-pin")
+def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request):
+    """Pin the current canvas visual on behalf of the active orator."""
+    _require_canvas_access(request, theater_id)
+    deployment = db.get_deployment(theater_id)
+    current_user = get_current_user(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can pin the canvas.")
+
+    state = _state(theater_id)
+    changed = state.visual.set_pinned(payload.pinned)
+    if changed:
+        state.persist()
+        session = live_agent_manager.get_session(theater_id)
+        if session and session.is_alive:
+            status = "pinned" if payload.pinned else "unpinned"
+            guidance = (
+                "Image and animation tools are now blocked; keep the current visual unchanged."
+                if payload.pinned
+                else "Image and animation tools are available again."
+            )
+            session.send_content(types.Content(parts=[types.Part(text=(
+                f"[System Notification] The orator has {status} the canvas. {guidance}"
+            ))]))
+    return {"theater_id": theater_id, "pinned": state.visual.pinned}
 
 
 @app.patch("/api/a2ui/surfaces/{surface_id}")

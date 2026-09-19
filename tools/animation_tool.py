@@ -29,7 +29,7 @@ from providers import (
     get_image_provider,
 )
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
-from tools.base_tool import BaseTools, logged_tool_call, single_flight, with_cooldown
+from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, single_flight, with_cooldown
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
@@ -163,6 +163,7 @@ class AnimationTools(BaseTools):
         if thread and thread.is_alive():
             thread.join(timeout=timeout)
 
+    @blocked_when_canvas_pinned
     @single_flight(
         error_message="An animation is already being generated. Please wait for it to complete.",
         hold_until_released=True,
@@ -758,6 +759,7 @@ class AnimationTools(BaseTools):
             )
         return resolved_references, None
 
+    @blocked_when_canvas_pinned
     @with_cooldown(action_desc="playing another animation")
     def play_animation(self, animation_id: str) -> str:
         """Display a saved animation (triframe or layered) on the canvas.

@@ -41,6 +41,28 @@ def test_visual_state_starts_with_a_crossfade_presentation() -> None:
     assert state.shown_layered_animation is None
     assert state.shown_video_animation is None
     assert state.image_revision == 0
+    assert state.pinned is False
+
+
+def test_pinned_visual_blocks_updates_and_discards_queued_replacement() -> None:
+    notify_changed = Mock()
+    state = VisualState(make_theater(), notify_changed_fn=notify_changed)
+    state.current_cycle_visual = {"type": "image", "path": "current.png"}
+    state.next_cycle_image = {"type": "image", "path": "queued.png"}
+
+    assert state.set_pinned(True) is True
+    assert state.next_cycle_image is None
+    assert state.update_image("replacement.png")["status"] == "blocked"
+    assert state.current_cycle_visual["path"] == "current.png"
+    assert state.payload()["pinned"] is True
+    assert state.serialize()["pinned"] is True
+    notify_changed.assert_called_once_with("latest")
+
+    restored = VisualState(make_theater())
+    restored.load(state.serialize())
+    assert restored.pinned is True
+    assert restored.set_pinned(False) is True
+    assert restored.update_image("replacement.png")["status"] == "displayed"
 
 
 def test_visual_state_resolves_registered_image_aliases(tmp_path: Path) -> None:
@@ -611,9 +633,10 @@ def test_serialize_returns_all_expected_keys() -> None:
         "shown_image_transition",
         "shown_image_effect",
         "shown_animation_frames",
-        "shown_layered_animation",
-        "shown_video_animation",
-    }
+            "shown_layered_animation",
+            "shown_video_animation",
+            "pinned",
+        }
     assert set(data.keys()) == expected_keys
     assert data["current_image_basename"] == "base.png"
     assert data["shown_image_path"] == "current.png"

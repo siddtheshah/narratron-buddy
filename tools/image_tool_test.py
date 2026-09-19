@@ -12,6 +12,7 @@ from components.theater_manager import TheaterManager
 from providers import ImageGenerationResult
 from testing.base import BaseTestCase
 from tools.image_tool import ImageTools
+from tools.base_tool import CANVAS_PINNED_MESSAGE
 
 
 def create_fake_image_bytes() -> bytes:
@@ -59,6 +60,16 @@ class TestImageTools(BaseTestCase):
             provider="hybrid-flux-gemini",
             model="fal-ai/flux-2/klein/9b",
         )
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_pinned_canvas_blocks_image_generation_and_display(self, mock_get_provider):
+        tools = self.make_image_tools(self.config, theater_id="pinned", theater_manager=self.manager)
+        tools.visual.set_pinned(True)
+
+        self.assertEqual(tools.create_image("a new scene", image_name="new_scene"), CANVAS_PINNED_MESSAGE)
+        self.assertEqual(tools.show_image("missing-is-never-resolved"), CANVAS_PINNED_MESSAGE)
+        mock_get_provider.return_value.generate.assert_not_called()
+        self.assertFalse(tools.is_in_flight("create_image"))
 
     @patch("tools.image_tool.get_image_provider")
     def test_create_image_uses_configured_provider(self, mock_get_provider):

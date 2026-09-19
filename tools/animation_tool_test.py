@@ -16,6 +16,7 @@ from providers.fal_qwen_layered_provider import LayeredImageResult
 from testing.base import BaseTestCase
 from tools.animation_tool import AnimationTools
 from tools.image_tool import ImageTools
+from tools.base_tool import CANVAS_PINNED_MESSAGE
 
 
 def fake_image_bytes() -> bytes:
@@ -69,6 +70,16 @@ class TestAnimationTools(BaseTestCase):
             image_provider=image_provider,
             **kwargs,
         )
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_pinned_canvas_blocks_animation_generation_and_playback(self, mock_get_provider):
+        image_tools = self.make_image_tools(self.config, "pinned_animation", self.manager)
+        tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock())
+        tools.visual.set_pinned(True)
+
+        self.assertEqual(tools.create_animation("A moving scene", "moving_scene"), CANVAS_PINNED_MESSAGE)
+        self.assertEqual(tools.play_animation("anything"), CANVAS_PINNED_MESSAGE)
+        self.assertFalse(tools.is_in_flight("create_animation"))
 
     @patch("tools.animation_tool.get_image_provider")
     def test_uses_image_provider_configured_by_visuals(self, mock_get_provider):

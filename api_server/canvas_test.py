@@ -150,6 +150,40 @@ def test_collaboration_mode_requests_agent_observability_update():
     session.send_collaboration_toggle_observability.assert_called_once_with()
 
 
+def test_active_orator_can_pin_canvas_and_agent_is_notified():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
+    state = MagicMock()
+    state.visual.pinned = True
+    state.visual.set_pinned.return_value = True
+    service = MagicMock()
+    service.get.return_value = state
+    session = MagicMock(is_alive=True)
+    manager = MagicMock()
+    manager.get_session.return_value = session
+
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(object_registry, "live_agent_manager", manager), patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "get_current_user", return_value={"id": 3}):
+        result = canvas.set_canvas_pin("stage", canvas.CanvasPinRequest(pinned=True), request())
+
+    assert result == {"theater_id": "stage", "pinned": True}
+    state.visual.set_pinned.assert_called_once_with(True)
+    state.persist.assert_called_once_with()
+    notification = session.send_content.call_args.args[0].parts[0].text
+    assert "orator has pinned the canvas" in notification
+    assert "tools are now blocked" in notification
+
+
+def test_non_orator_cannot_pin_canvas():
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
+    service = MagicMock()
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "get_current_user", return_value={"id": 4}), pytest.raises(HTTPException) as error:
+        canvas.set_canvas_pin("stage", canvas.CanvasPinRequest(pinned=True), request())
+
+    assert error.value.status_code == 403
+    service.get.assert_not_called()
+
+
 def _text_annotation_state(sender, *, collab_enabled: bool):
     state = MagicMock()
     state.connections.processed_doodle_message_ids = set()

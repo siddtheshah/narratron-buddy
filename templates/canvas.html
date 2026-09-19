@@ -6,7 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Narratron Canvas</title>
     <link rel="icon" type="image/png" href="/favicon.png">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=Lacquer&family=MedievalSharp&family=Rubik+Glitch&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Bangers&family=Cinzel:wght@700;900&family=Creepster&family=Lacquer&family=MedievalSharp&family=Rubik+Glitch&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="/static/css/image-effects.css?v=effects-20260811-2">
     <link rel="stylesheet" href="/static/css/splitting.css">
     <link rel="stylesheet" href="/static/css/text-effects.css">
@@ -1231,6 +1233,43 @@
             pointer-events: none;
         }
 
+        #canvas-pin-btn {
+            position: absolute;
+            right: 1.5rem;
+            bottom: 1.5rem;
+            z-index: 25;
+            display: none;
+            align-items: center;
+            gap: 0.45rem;
+            min-height: 44px;
+            padding: 0 0.9rem;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            border-radius: 22px;
+            background: rgba(15, 23, 42, 0.82);
+            color: #e2e8f0;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            cursor: pointer;
+            font: 600 0.8rem 'Outfit', sans-serif;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+
+        #canvas-pin-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+        }
+
+        #canvas-pin-btn:disabled {
+            cursor: wait;
+            opacity: 0.7;
+        }
+
+        #canvas-pin-btn.active {
+            border-color: rgba(251, 146, 60, 0.8);
+            background: rgba(124, 45, 18, 0.9);
+            color: #ffedd5;
+        }
+
         .agent-activity-icon {
             display: none;
             width: 42px;
@@ -1280,9 +1319,29 @@
             animation: diceRoll 0.72s cubic-bezier(0.22, 0.75, 0.28, 1) infinite, diceFlashGreen 0.65s steps(2, end) infinite;
         }
 
-        @keyframes diceFlashRed { 50% { border-color: #ef4444; box-shadow: 0 0 22px #ef4444; color: #ef4444; } }
-        @keyframes diceFlashYellow { 50% { border-color: #facc15; box-shadow: 0 0 22px #facc15; color: #facc15; } }
-        @keyframes diceFlashGreen { 50% { border-color: #22c55e; box-shadow: 0 0 22px #22c55e; color: #22c55e; } }
+        @keyframes diceFlashRed {
+            50% {
+                border-color: #ef4444;
+                box-shadow: 0 0 22px #ef4444;
+                color: #ef4444;
+            }
+        }
+
+        @keyframes diceFlashYellow {
+            50% {
+                border-color: #facc15;
+                box-shadow: 0 0 22px #facc15;
+                color: #facc15;
+            }
+        }
+
+        @keyframes diceFlashGreen {
+            50% {
+                border-color: #22c55e;
+                box-shadow: 0 0 22px #22c55e;
+                color: #22c55e;
+            }
+        }
 
         .agent-activity-icon.live {
             color: #10b981;
@@ -1783,7 +1842,9 @@
         }
 
         .a2ui-surface:hover .a2ui-surface-controls,
-        .a2ui-surface:focus-within .a2ui-surface-controls { opacity: 1; }
+        .a2ui-surface:focus-within .a2ui-surface-controls {
+            opacity: 1;
+        }
 
         .a2ui-surface-control {
             width: 28px;
@@ -1800,10 +1861,22 @@
             cursor: pointer;
         }
 
-        .a2ui-move { cursor: grab; }
-        .a2ui-move.dragging { cursor: grabbing; background: rgba(88, 28, 135, 0.96); }
-        .a2ui-delete:hover { background: rgba(185, 28, 28, 0.95); }
-        .a2ui-surface.persistent .a2ui-card { border-color: rgba(251, 191, 36, 0.52); }
+        .a2ui-move {
+            cursor: grab;
+        }
+
+        .a2ui-move.dragging {
+            cursor: grabbing;
+            background: rgba(88, 28, 135, 0.96);
+        }
+
+        .a2ui-delete:hover {
+            background: rgba(185, 28, 28, 0.95);
+        }
+
+        .a2ui-surface.persistent .a2ui-card {
+            border-color: rgba(251, 191, 36, 0.52);
+        }
 
         .a2ui-card {
             padding: clamp(0.7rem, 1.4vw, 1rem);
@@ -1816,20 +1889,58 @@
             -webkit-backdrop-filter: blur(12px);
         }
 
-        .a2ui-column { display: flex; flex-direction: column; gap: 0.55rem; }
-        .a2ui-row { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+        .a2ui-column {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+        }
+
+        .a2ui-row {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
         .a2ui-grid {
             display: grid;
             grid-template-columns: repeat(var(--a2ui-grid-columns, 2), minmax(0, 1fr));
             gap: 0.55rem;
             align-items: stretch;
         }
-        .a2ui-grid.gap-small { gap: 0.3rem; }
-        .a2ui-grid.gap-large { gap: 0.85rem; }
-        .a2ui-text { margin: 0; color: inherit; font-size: clamp(0.82rem, 1.2vw, 1rem); line-height: 1.35; }
-        .a2ui-text.heading { font-size: clamp(1rem, 1.5vw, 1.2rem); font-weight: 700; }
-        .a2ui-icon { color: #fbbf24; font-size: 1.25rem; }
-        .a2ui-divider { width: 100%; margin: 0.15rem 0; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.16); }
+
+        .a2ui-grid.gap-small {
+            gap: 0.3rem;
+        }
+
+        .a2ui-grid.gap-large {
+            gap: 0.85rem;
+        }
+
+        .a2ui-text {
+            margin: 0;
+            color: inherit;
+            font-size: clamp(0.82rem, 1.2vw, 1rem);
+            line-height: 1.35;
+        }
+
+        .a2ui-text.heading {
+            font-size: clamp(1rem, 1.5vw, 1.2rem);
+            font-weight: 700;
+        }
+
+        .a2ui-icon {
+            color: #fbbf24;
+            font-size: 1.25rem;
+        }
+
+        .a2ui-divider {
+            width: 100%;
+            margin: 0.15rem 0;
+            border: 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.16);
+        }
+
         .a2ui-button {
             appearance: none;
             border: 1px solid rgba(196, 181, 253, 0.52);
@@ -1843,13 +1954,40 @@
             box-shadow: 0 5px 16px rgba(49, 46, 129, 0.34);
             transition: transform 150ms ease, filter 150ms ease;
         }
-        .a2ui-button:hover { transform: translateY(-1px); filter: brightness(1.14); }
-        .a2ui-button:focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
-        .a2ui-button:disabled { opacity: 0.55; cursor: wait; }
-        .a2ui-button .a2ui-text { font-size: inherit; }
 
-        .a2ui-progress { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem 0.55rem; align-items: center; }
-        .a2ui-progress-label { grid-column: 1 / -1; color: #f8fafc; font-size: 0.82rem; font-weight: 700; }
+        .a2ui-button:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.14);
+        }
+
+        .a2ui-button:focus-visible {
+            outline: 3px solid #fbbf24;
+            outline-offset: 3px;
+        }
+
+        .a2ui-button:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
+        .a2ui-button .a2ui-text {
+            font-size: inherit;
+        }
+
+        .a2ui-progress {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 0.35rem 0.55rem;
+            align-items: center;
+        }
+
+        .a2ui-progress-label {
+            grid-column: 1 / -1;
+            color: #f8fafc;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
         .a2ui-progress-track {
             height: 12px;
             overflow: hidden;
@@ -1858,24 +1996,48 @@
             background: rgba(15, 23, 42, 0.75);
             box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.35);
         }
+
         .a2ui-progress-fill {
             height: 100%;
             border-radius: inherit;
             background: linear-gradient(90deg, #22c55e, #84cc16);
             transition: width 300ms ease;
         }
-        .a2ui-progress.health .a2ui-progress-fill { background: linear-gradient(90deg, #dc2626, #fb7185); }
-        .a2ui-progress.mana .a2ui-progress-fill { background: linear-gradient(90deg, #2563eb, #67e8f9); }
-        .a2ui-progress.warning .a2ui-progress-fill { background: linear-gradient(90deg, #d97706, #fbbf24); }
-        .a2ui-progress-reading { color: #cbd5e1; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+
+        .a2ui-progress.health .a2ui-progress-fill {
+            background: linear-gradient(90deg, #dc2626, #fb7185);
+        }
+
+        .a2ui-progress.mana .a2ui-progress-fill {
+            background: linear-gradient(90deg, #2563eb, #67e8f9);
+        }
+
+        .a2ui-progress.warning .a2ui-progress-fill {
+            background: linear-gradient(90deg, #d97706, #fbbf24);
+        }
+
+        .a2ui-progress-reading {
+            color: #cbd5e1;
+            font-size: 0.72rem;
+            font-variant-numeric: tabular-nums;
+        }
 
         @keyframes a2ui-arrive {
-            from { opacity: 0; transform: translate(-50%, -45%) scale(0.94); }
-            to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            from {
+                opacity: 0;
+                transform: translate(-50%, -45%) scale(0.94);
+            }
+
+            to {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
         }
 
         @media (max-width: 700px) {
-            .a2ui-surface { width: min(76%, 330px) !important; }
+            .a2ui-surface {
+                width: min(76%, 330px) !important;
+            }
         }
 
         .scene-dialogue-bubble {
@@ -2360,7 +2522,9 @@
             -webkit-backdrop-filter: blur(8px);
         }
 
-        .clip-share-modal.show { display: flex; }
+        .clip-share-modal.show {
+            display: flex;
+        }
 
         .clip-share-card {
             width: min(390px, 100%);
@@ -2371,7 +2535,11 @@
             box-shadow: 0 25px 70px rgba(0, 0, 0, 0.55);
         }
 
-        .clip-share-actions { display: flex; gap: 0.7rem; margin-top: 1.15rem; }
+        .clip-share-actions {
+            display: flex;
+            gap: 0.7rem;
+            margin-top: 1.15rem;
+        }
 
         .clip-share-actions button {
             flex: 1;
@@ -2385,9 +2553,13 @@
             cursor: pointer;
         }
 
-        .clip-share-actions button:hover { background: rgba(99, 102, 241, 0.42); }
-        .clip-share-actions .clip-cancel { background: rgba(255, 255, 255, 0.08); }
+        .clip-share-actions button:hover {
+            background: rgba(99, 102, 241, 0.42);
+        }
 
+        .clip-share-actions .clip-cancel {
+            background: rgba(255, 255, 255, 0.08);
+        }
     </style>
 </head>
 
@@ -2479,12 +2651,17 @@
             <canvas id="doodle-canvas"></canvas>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
             <div id="narration-pane-mount"></div>
-            <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title" aria-hidden="true">
+            <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title"
+                aria-hidden="true">
                 <form id="orator-command-form">
-                    <div id="orator-command-title" style="font-size: 1.05rem; font-weight: 600; color: #fff;">Command Narratron</div>
-                    <div style="margin-top: 0.3rem; color: #cbd5e1; font-size: 0.85rem;">Send a private instruction directly to the live agent.</div>
-                    <input id="orator-command-input" type="text" maxlength="2000" autocomplete="off" placeholder="Tell Narratron what to do…" aria-describedby="orator-command-hint">
-                    <div id="orator-command-hint" style="display: flex; justify-content: space-between; gap: 1rem; margin-top: 0.75rem; color: #94a3b8; font-size: 0.78rem;">
+                    <div id="orator-command-title" style="font-size: 1.05rem; font-weight: 600; color: #fff;">Command
+                        Narratron</div>
+                    <div style="margin-top: 0.3rem; color: #cbd5e1; font-size: 0.85rem;">Send a private instruction
+                        directly to the live agent.</div>
+                    <input id="orator-command-input" type="text" maxlength="2000" autocomplete="off"
+                        placeholder="Tell Narratron what to do…" aria-describedby="orator-command-hint">
+                    <div id="orator-command-hint"
+                        style="display: flex; justify-content: space-between; gap: 1rem; margin-top: 0.75rem; color: #94a3b8; font-size: 0.78rem;">
                         <span>Enter to send · Esc to cancel</span>
                         <span id="orator-command-status" aria-live="polite"></span>
                     </div>
@@ -2513,8 +2690,8 @@
                 </div>
                 <div id="agent-writing-indicator" class="agent-activity-icon writing" role="status"
                     title="Agent is writing the next chapter" aria-hidden="true">
-                    <svg width="25" height="25" viewBox="0.8 1.2 21.2 19" fill="none" stroke="currentColor" stroke-width="1.8"
-                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <svg width="25" height="25" viewBox="0.8 1.2 21.2 19" fill="none" stroke="currentColor"
+                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2H11v15H4.5A2.5 2.5 0 0 0 2 19.5Z" />
                         <path d="M11 2h3.5A2.5 2.5 0 0 1 17 4.5V9" />
                         <path d="M11 17h4a2.5 2.5 0 0 1 2.5 2.5" />
@@ -2532,7 +2709,8 @@
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M12 2L20.5 6.8V17.2L12 22L3.5 17.2V6.8L12 2Z" />
                         <path d="M6.5 8H17.5L12 17.5L6.5 8Z" />
-                        <path d="M12 2L6.5 8M12 2L17.5 8M3.5 6.8L6.5 8M20.5 6.8L17.5 8M3.5 17.2L6.5 8M3.5 17.2L12 17.5M20.5 17.2L17.5 8M20.5 17.2L12 17.5M12 17.5V22" />
+                        <path
+                            d="M12 2L6.5 8M12 2L17.5 8M3.5 6.8L6.5 8M20.5 6.8L17.5 8M3.5 17.2L6.5 8M3.5 17.2L12 17.5M20.5 17.2L17.5 8M20.5 17.2L12 17.5M12 17.5V22" />
                     </svg>
                 </div>
                 <div id="agent-disconnected-indicator" class="agent-activity-icon disconnected" role="status"
@@ -2545,6 +2723,9 @@
                     </svg>
                 </div>
             </div>
+            <button id="canvas-pin-btn" type="button" aria-pressed="false" title="Pin the current canvas visual">
+                <span id="canvas-pin-icon" aria-hidden="true">📌</span>
+            </button>
             <div id="prompt-toggle-btn" title="View Prompt">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round">
@@ -2604,29 +2785,31 @@
             <!-- Image History Paging Controls -->
             <div id="history-paging-controls">
                 <div id="history-paging-bar" aria-label="Image history paging and story log">
-                <button id="page-prev-btn" title="Previous Image (Left Arrow)"
-                    style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">◀</button>
-                <span id="page-indicator"
-                    style="font-size: 0.8rem; font-weight: 500; color: #e2e8f0; min-width: 80px; text-align: center; user-select: none;">1
-                    / 1</span>
-                <button id="page-next-btn" title="Next Image (Right Arrow)"
-                    style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">▶</button>
-                <button id="page-head-btn" title="Jump to Head / Latest Image"
-                    style="display: none; background: rgba(99, 102, 241, 0.3); border: 1px solid rgba(99, 102, 241, 0.5); color: #a5b4fc; border-radius: 16px; padding: 3px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s;">
-                    <span>Head ⏩</span>
-                    <span id="new-head-badge"
-                        style="display: none; background: #ef4444; color: #fff; font-size: 0.65rem; border-radius: 10px; padding: 1px 5px; font-weight: 700; animation: pulseBadge 1.5s infinite;">NEW</span>
-                </button>
-                <button id="story-log-toggle-btn" class="story-log-toggle-btn" title="Toggle Story Log" aria-label="Toggle Story Log" aria-expanded="false"
-                    style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #c7d2fe; border-radius: 16px; padding: 4px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-0.5-0.05" />
-                        <path d="M6 6h10" />
-                        <path d="M6 10h10" />
-                        <path d="M6 14h6" />
-                    </svg>
-                    <span>Log</span>
-                </button>
+                    <button id="page-prev-btn" title="Previous Image (Left Arrow)"
+                        style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">◀</button>
+                    <span id="page-indicator"
+                        style="font-size: 0.8rem; font-weight: 500; color: #e2e8f0; min-width: 80px; text-align: center; user-select: none;">1
+                        / 1</span>
+                    <button id="page-next-btn" title="Next Image (Right Arrow)"
+                        style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">▶</button>
+                    <button id="page-head-btn" title="Jump to Head / Latest Image"
+                        style="display: none; background: rgba(99, 102, 241, 0.3); border: 1px solid rgba(99, 102, 241, 0.5); color: #a5b4fc; border-radius: 16px; padding: 3px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s;">
+                        <span>Head ⏩</span>
+                        <span id="new-head-badge"
+                            style="display: none; background: #ef4444; color: #fff; font-size: 0.65rem; border-radius: 10px; padding: 1px 5px; font-weight: 700; animation: pulseBadge 1.5s infinite;">NEW</span>
+                    </button>
+                    <button id="story-log-toggle-btn" class="story-log-toggle-btn" title="Toggle Story Log"
+                        aria-label="Toggle Story Log" aria-expanded="false"
+                        style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #c7d2fe; border-radius: 16px; padding: 4px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-0.5-0.05" />
+                            <path d="M6 6h10" />
+                            <path d="M6 10h10" />
+                            <path d="M6 14h6" />
+                        </svg>
+                        <span>Log</span>
+                    </button>
                 </div>
                 <section id="story-log-inspector" role="dialog" aria-label="Story log">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
@@ -2637,7 +2820,8 @@
                                 style="background: transparent; border: none; color: #94a3b8; cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 0 4px; border-radius: 4px;">&times;</button>
                         </div>
                     </div>
-                    <div id="story-log-content" style="margin-top: 8px; color: #cbd5e1;">Click Log button to view the story log.</div>
+                    <div id="story-log-content" style="margin-top: 8px; color: #cbd5e1;">Click Log button to view the
+                        story log.</div>
                 </section>
             </div>
         </div>
@@ -2727,8 +2911,8 @@
                     <input type="range" id="brush-size" min="1" max="40" value="3" title="Brush Size">
                     <div class="text-annotation-tool">
                         <button id="text-annotation-toggle" class="text-annotation-toggle" type="button"
-                            aria-label="Add text annotation" aria-expanded="false"
-                            aria-controls="text-annotation-menu" title="Add text annotation">T</button>
+                            aria-label="Add text annotation" aria-expanded="false" aria-controls="text-annotation-menu"
+                            title="Add text annotation">T</button>
                         <div id="text-annotation-menu" class="text-annotation-menu" role="group"
                             aria-label="Text annotation settings" hidden>
                             <label>Font
@@ -2763,7 +2947,8 @@
                                         style="background: #a855f7;" aria-label="Purple" aria-pressed="false"></button>
                                 </span>
                             </label>
-                            <span style="color: #94a3b8; font-size: 0.7rem; line-height: 1.35;">Click the canvas, type, then press Enter.</span>
+                            <span style="color: #94a3b8; font-size: 0.7rem; line-height: 1.35;">Click the canvas, type,
+                                then press Enter.</span>
                         </div>
                     </div>
                     <button id="clear-doodle-btn">Clear</button>
@@ -3097,9 +3282,9 @@
                             <button type="button" id="sticky-notes-hidden-toggle-btn" class="${btnClass}" title="Toggle reveal of hidden stickies">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     ${hiddenRevealed
-                                        ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
-                                        : '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'
-                                    }
+                            ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+                            : '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'
+                        }
                                 </svg>
                                 <span class="sticky-notes-hidden-toggle-text">${label}</span>
                             </button>
@@ -3177,7 +3362,7 @@
                 }
             }
 
-            window.updateCanvasStickyNotes = function(notes, hidden) {
+            window.updateCanvasStickyNotes = function (notes, hidden) {
                 if (Array.isArray(notes)) {
                     cachedNotes = notes;
                     if (Array.isArray(hidden)) {
@@ -3247,6 +3432,9 @@
         // story-planner scene.
         let latestStateRequestSequence = 0;
         const currentImage = document.getElementById('current-image');
+        const canvasPinBtn = document.getElementById('canvas-pin-btn');
+        const canvasPinLabel = document.getElementById('canvas-pin-label');
+        let canvasPinned = false;
         const bgLayer = document.getElementById('bg-layer');
         const promptTextSpan = document.getElementById('prompt-text');
         const chatMessages = document.getElementById('chat-messages');
@@ -3282,7 +3470,7 @@
                 try {
                     audio.pause();
                     audio.src = '';
-                } catch (_) {}
+                } catch (_) { }
             }
         }
 
@@ -3368,6 +3556,38 @@
             }
             return initialRoleIsOrator;
         }
+
+        function updateCanvasPinButton() {
+            if (!canvasPinBtn) return;
+            canvasPinBtn.style.display = isCurrentOrator() ? 'inline-flex' : 'none';
+            canvasPinBtn.classList.toggle('active', canvasPinned);
+            canvasPinBtn.setAttribute('aria-pressed', String(canvasPinned));
+            canvasPinBtn.title = canvasPinned
+                ? 'Unpin canvas and allow visual changes'
+                : 'Pin the current canvas and block visual changes';
+            if (canvasPinLabel) canvasPinLabel.textContent = canvasPinned ? 'Canvas pinned' : 'Pin canvas';
+        }
+
+        canvasPinBtn?.addEventListener('click', async () => {
+            if (!isCurrentOrator() || !theaterId || canvasPinBtn.disabled) return;
+            canvasPinBtn.disabled = true;
+            try {
+                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/canvas-pin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pinned: !canvasPinned }),
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.detail || 'Unable to update the canvas pin.');
+                canvasPinned = Boolean(result.pinned);
+                updateCanvasPinButton();
+            } catch (error) {
+                console.error('Failed to update canvas pin:', error);
+                canvasPinBtn.title = error.message;
+            } finally {
+                canvasPinBtn.disabled = false;
+            }
+        });
 
         const popoutBroadcast = new BroadcastChannel('narratron_popout_channel');
 
@@ -4141,6 +4361,8 @@
                 if (requestSequence !== latestStateRequestSequence) return;
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
+                canvasPinned = Boolean(data.pinned);
+                updateCanvasPinButton();
                 updateSceneDialogue(
                     data.scene_dialogue,
                     data.narration,
@@ -5343,6 +5565,7 @@
             const wasActiveOrator = window._isActiveOratorState;
             window._isActiveOratorState = Boolean(isActiveOrator || (isOwner && !batonState.active_orator));
             const isNowOrator = window._isActiveOratorState;
+            updateCanvasPinButton();
             updateTextAnnotationAvailability();
 
             // Role & Orator Controls activation based on active orator status
@@ -7404,12 +7627,12 @@
                         <label class="pullout-menu-item" for="minimal-mode-input">
                             <span class="pullout-item-icon">⚡</span>
                             <span style="flex: 1;">Minimal Mode</span>
-                            <input id="minimal-mode-input" type="checkbox"
-                                aria-describedby="minimal-mode-hint">
+                            <input id="minimal-mode-input" type="checkbox" aria-describedby="minimal-mode-hint">
                         </label>
                         <div id="minimal-mode-hint"
                             style="padding: 0 0.75rem; color: #94a3b8; font-size: 0.75rem; line-height: 1.35;">
-                            Keeps only the image and doodles. Disables image effects, blur/glass layers, shadows, and UI animation.
+                            Keeps only the image and doodles. Disables image effects, blur/glass layers, shadows, and UI
+                            animation.
                         </div>
                     </div>
                 </div>
@@ -7440,7 +7663,9 @@
         <div class="clip-share-card">
             <h2 id="clip-share-title" style="margin: 0; font-size: 1.2rem;">Create a TikTok-ready clip</h2>
             <p style="margin: 0.7rem 0 0; color: #cbd5e1; line-height: 1.45; font-size: 0.9rem;">
-                This opens a clean OBS canvas stage in a new window. In that window, select its Narratron tab when your browser asks what to share. It records up to 30 seconds of image and text effects, canvas music, and optional voice, then downloads the clip locally for review before creating a TikTok draft.
+                This opens a clean OBS canvas stage in a new window. In that window, select its Narratron tab when your
+                browser asks what to share. It records up to 30 seconds of image and text effects, canvas music, and
+                optional voice, then downloads the clip locally for review before creating a TikTok draft.
             </p>
             <div class="clip-share-actions">
                 <button id="clip-record-btn" type="button">Open clean clip stage</button>
@@ -7473,7 +7698,8 @@
                         <div class="step-desc">
                             When the agent is running and this tab is active, the canvas connects automatically. Click
                             <strong>Enable Mic</strong> (or press hotkey <code
-                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;" id="howto-mic-hotkey-display">Ctrl+Shift+[</code>)
+                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;"
+                                id="howto-mic-hotkey-display">Ctrl+Shift+[</code>)
                             to begin real-time microphone streaming, then click <strong>Mute Mic</strong> to stop it.
                         </div>
                     </div>
@@ -7498,11 +7724,14 @@
                     <div class="step-content">
                         <div class="step-title">
                             Command Narratron via Text
-                            <span class="step-badge" style="background: rgba(99, 102, 241, 0.2); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.4);">💬 Text Input</span>
+                            <span class="step-badge"
+                                style="background: rgba(99, 102, 241, 0.2); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.4);">💬
+                                Text Input</span>
                         </div>
                         <div class="step-desc">
                             Prefer typing or directing the agent quietly? Press hotkey <code
-                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #c7d2fe;" id="howto-text-hotkey-display">Shift+Space</code>
+                                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #c7d2fe;"
+                                id="howto-text-hotkey-display">Shift+Space</code>
                             to summon the command prompt and send instructions directly to Narratron.
                         </div>
                     </div>
@@ -7515,8 +7744,10 @@
                         <div class="step-desc">
                             • Use headphones to prevent background audio echo.<br>
                             • Use the bottom toolbar to doodle live on canvas.<br>
-                            • Press <code id="howto-tip-text-hotkey" style="color:#c7d2fe;">Shift+Space</code> to type a direct command to Narratron without speaking.<br>
-                            • Open ✨ menu ➔ <strong>Microphone Configuration</strong> to customize your mic toggle and text input shortcuts.
+                            • Press <code id="howto-tip-text-hotkey" style="color:#c7d2fe;">Shift+Space</code> to type a
+                            direct command to Narratron without speaking.<br>
+                            • Open ✨ menu ➔ <strong>Microphone Configuration</strong> to customize your mic toggle and
+                            text input shortcuts.
                         </div>
                     </div>
                 </div>
@@ -7583,11 +7814,12 @@
     <div id="adventure-guide-modal" class="modal-overlay" role="dialog" aria-labelledby="adventure-guide-title"
         aria-hidden="true">
         <div class="modal-card">
-            <button id="adventure-guide-close-btn" class="modal-close-btn"
-                aria-label="Close adventure guide">✕</button>
+            <button id="adventure-guide-close-btn" class="modal-close-btn" aria-label="Close adventure guide">✕</button>
 
             <div class="howto-header">
-                <div class="howto-icon-badge" style="background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(236, 72, 153, 0.3)); border-color: rgba(168, 85, 247, 0.5);">🗺️</div>
+                <div class="howto-icon-badge"
+                    style="background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(236, 72, 153, 0.3)); border-color: rgba(168, 85, 247, 0.5);">
+                    🗺️</div>
                 <div>
                     <h3 id="adventure-guide-title" class="howto-title-text">Adventure Mode Guide</h3>
                     <div class="howto-subtitle">How to immerse yourself in Narratron's crafted narratives</div>
@@ -7596,50 +7828,64 @@
 
             <div class="howto-steps">
                 <div class="howto-step-card">
-                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">1</div>
+                    <div class="step-num"
+                        style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">
+                        1</div>
                     <div class="step-content">
                         <div class="step-title">
                             Immerse in a Crafted Narrative
-                            <span class="step-badge" style="background: linear-gradient(135deg, #a855f7, #ec4899); color: #fff;">Story Mode</span>
+                            <span class="step-badge"
+                                style="background: linear-gradient(135deg, #a855f7, #ec4899); color: #fff;">Story
+                                Mode</span>
                         </div>
                         <div class="step-desc">
-                            Adventure mode is built around a pre-existing sandbox and structure. Make meaningful choices in a story that is never told the same way twice.
+                            Adventure mode is built around a pre-existing sandbox and structure. Make meaningful choices
+                            in a story that is never told the same way twice.
                         </div>
                     </div>
                 </div>
 
                 <div class="howto-step-card">
-                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">2</div>
+                    <div class="step-num"
+                        style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">
+                        2</div>
                     <div class="step-content">
                         <div class="step-title">
                             Play In-Character, Don't Force Control
                         </div>
                         <div class="step-desc">
-                            Speak your character's dialogue and describe your actions. If you have your own story to show or tell, it is better to disable adventure mode and take full control.
+                            Speak your character's dialogue and describe your actions. If you have your own story to
+                            show or tell, it is better to disable adventure mode and take full control.
                         </div>
                     </div>
                 </div>
 
                 <div class="howto-step-card">
-                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">3</div>
+                    <div class="step-num"
+                        style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">
+                        3</div>
                     <div class="step-content">
                         <div class="step-title">
                             Dynamic Dialogue & Reactions
                         </div>
                         <div class="step-desc">
-                            NPC interactions appear in live canvas dialogue, while illustrative scenes and soundtrack dynamically respond to your choices.
+                            NPC interactions appear in live canvas dialogue, while illustrative scenes and soundtrack
+                            dynamically respond to your choices.
                         </div>
                     </div>
                 </div>
 
                 <div class="howto-step-card">
-                    <div class="step-num" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">4</div>
+                    <div class="step-num"
+                        style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">
+                        4</div>
                     <div class="step-content">
                         <div class="step-title">
                             Audience Collaboration
                         </div>
                         <div class="step-desc">
-                            Viewers in chat can brainstorm tactical ideas and plot moves to help guide your character through challenges.
+                            Viewers in chat can brainstorm tactical ideas and plot moves to help guide your character
+                            through challenges.
                         </div>
                     </div>
                 </div>
@@ -7649,7 +7895,8 @@
                     <div class="step-content">
                         <div class="step-title">Tips for Adventure Mode</div>
                         <div class="step-desc">
-                            • Treat the world as real! React to situations, investigate clues, and let the narrator reveal consequences.<br>
+                            • Treat the world as real! React to situations, investigate clues, and let the narrator
+                            reveal consequences.<br>
                             • Re-open this guide anytime from the left pullout menu.
                         </div>
                     </div>
@@ -7657,7 +7904,8 @@
             </div>
 
             <div class="howto-footer">
-                <button id="adventure-guide-ack-btn" class="howto-ack-btn" style="background: linear-gradient(135deg, #a855f7, #ec4899);">⚔️ Got it, let's explore!</button>
+                <button id="adventure-guide-ack-btn" class="howto-ack-btn"
+                    style="background: linear-gradient(135deg, #a855f7, #ec4899);">⚔️ Got it, let's explore!</button>
             </div>
         </div>
     </div>
