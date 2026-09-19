@@ -5874,14 +5874,14 @@
                         throw new Error(data.detail || 'Unable to load theater sharing details.');
                     }
 
-                    // The API returns the actual key only for owners. Viewers
-                    // receive the public join splash link instead.
-                    const shareUrl = metadata.is_owner
-                        ? new URL('/canvas', window.location.origin)
-                        : new URL('/join', window.location.origin);
-                    if (metadata.is_owner) {
-                        shareUrl.searchParams.set('theater_id', theaterId);
-                        shareUrl.searchParams.set('join_key', metadata.join_key);
+                    const joinKey = (metadata.join_key && !metadata.join_key.includes('Owner'))
+                        ? metadata.join_key
+                        : (new URL(window.location.href)).searchParams.get('join_key');
+
+                    const shareUrl = new URL('/canvas', window.location.origin);
+                    shareUrl.searchParams.set('theater_id', theaterId);
+                    if (joinKey) {
+                        shareUrl.searchParams.set('join_key', joinKey);
                     }
 
                     if (navigator.clipboard && navigator.clipboard.writeText) {
