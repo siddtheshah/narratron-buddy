@@ -134,6 +134,8 @@ No lore documents are available for this theater. Invent the lore, world details
 # Tool Usage Guidelines
 - **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
+  - **Player Reactionary Rolls (`procedural=False`, default)**: Use for resolving player actions, skill checks, contests, or direct consequences of player decisions. These rolls are visibly animated and displayed on the canvas for the player.
+  - **Procedural Rolls (`procedural=True`)**: Use for background procedural generation, random encounter tables, weather, NPC demeanor, or hidden world checks. These rolls are hidden from the canvas.
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
 - **Character Generation (`generate_character_profile`)**: You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
 - Those tools only provide information: the scene delta is the sole source of changes.
@@ -592,32 +594,70 @@ class StoryResponseModule:
         count: int = 1,
         modifier: int = 0,
         reason: str = "",
+        procedural: bool = False,
     ) -> Dict[str, Any]:
-        """Roll dice to resolve a genuinely uncertain story outcome."""
+        """Roll dice to resolve a genuinely uncertain story outcome.
+
+        Args:
+            sides: Number of sides per die (2-100, default 20).
+            count: Number of dice to roll (1-10, default 1).
+            modifier: Integer modifier to add to total (-100 to 100, default 0).
+            reason: Short description of why the roll is being made.
+            procedural: Set to True for behind-the-scenes procedural or ambient rolls
+                (e.g., random encounter tables, weather, NPC demeanor, hidden checks)
+                so the roll is hidden from the player canvas. Set to False (default)
+                for player reactionary rolls (e.g., resolving a player's action, skill checks,
+                saving throws, contests) so the roll is visibly animated on the canvas.
+        """
         safe_sides = max(2, min(100, int(sides)))
         safe_count = max(1, min(10, int(count)))
         safe_modifier = max(-100, min(100, int(modifier)))
         clean_reason = str(reason or "").strip()[:100]
+        is_procedural = bool(procedural)
 
         import random
         rolls = [random.randint(1, safe_sides) for _ in range(safe_count)]
         total = sum(rolls) + safe_modifier
 
+        possible_results = safe_count * (safe_sides - 1) + 1
+        roll_offset = sum(rolls) - safe_count
+        tier = (
+            "low" if roll_offset * 3 < possible_results
+            else "middle" if roll_offset * 3 < possible_results * 2
+            else "high"
+        )
+        notation = f"{safe_count}d{safe_sides}" + (f"{safe_modifier:+d}" if safe_modifier else "")
+
         result = {
+            "notation": notation,
+            "tier": tier,
             "sides": safe_sides,
             "count": safe_count,
             "rolls": rolls,
             "modifier": safe_modifier,
             "total": total,
             "reason": clean_reason,
+            "procedural": is_procedural,
         }
         with self._die_rolls_lock:
             self._die_rolls_this_turn.append(result)
 
+        if not is_procedural:
+            if self.canvas_manager and hasattr(self.canvas_manager, "tool_response"):
+                self.canvas_manager.tool_response.set_activity(
+                    "dice",
+                    active=True,
+                    recent_seconds=5.0,
+                    result=result,
+                )
+            if self.canvas_manager and hasattr(self.canvas_manager, "story") and hasattr(self.canvas_manager.story, "record_die_roll"):
+                self.canvas_manager.story.record_die_roll(result)
+
         logger.debug(
-            "[StoryResponseModule] Dice roll (theater=%s, reason=%s): %s",
+            "[StoryResponseModule] Dice roll (theater=%s, reason=%s, procedural=%s): %s",
             self.theater_id or "default",
             clean_reason or "general",
+            is_procedural,
             result,
         )
         return result

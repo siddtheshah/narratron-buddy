@@ -268,6 +268,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         )
 
     def test_rolls_and_resets_dice(self) -> None:
+        # 1. Player reactionary roll (default procedural=False) -> shown on canvas
         roll = self.module.roll_dice(
             sides=20,
             count=2,
@@ -279,7 +280,32 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertEqual(roll["count"], 2)
         self.assertEqual(roll["modifier"], 3)
         self.assertEqual(roll["total"], sum(roll["rolls"]) + 3)
+        self.assertEqual(roll["notation"], "2d20+3")
+        self.assertIn(roll["tier"], {"low", "middle", "high"})
+        self.assertFalse(roll["procedural"])
         self.assertEqual(len(self.module.get_die_rolls_this_turn()), 1)
+        self.canvas.tool_response.set_activity.assert_called_once_with(
+            "dice",
+            active=True,
+            recent_seconds=5.0,
+            result=roll,
+        )
+        self.story_state.record_die_roll.assert_called_once_with(roll)
+
+        # 2. Procedural roll (procedural=True) -> hidden from canvas
+        self.canvas.tool_response.set_activity.reset_mock()
+        self.story_state.record_die_roll.reset_mock()
+
+        proc_roll = self.module.roll_dice(
+            sides=6,
+            count=1,
+            reason="weather check",
+            procedural=True,
+        )
+        self.assertTrue(proc_roll["procedural"])
+        self.canvas.tool_response.set_activity.assert_not_called()
+        self.story_state.record_die_roll.assert_not_called()
+        self.assertEqual(len(self.module.get_die_rolls_this_turn()), 2)
 
         self.module.reset_die_roll_counts()
         self.assertEqual(self.module.get_die_rolls_this_turn(), [])

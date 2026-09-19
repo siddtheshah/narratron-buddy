@@ -66,6 +66,7 @@ class StoryState:
         # The active generation whose narration/dialogue is in the latest
         # canvas payload. Clients may play audio only for this generation.
         self.committed_scene_speech_generation = 0
+        self.last_die_roll: dict[str, Any] | None = None
     @property
     def text_beautifier(self) -> Any:
         if self._text_beautifier is not None:
@@ -210,6 +211,11 @@ class StoryState:
         self.committed_scene_speech_generation = generation
         if self._persist:
             self._persist()
+        if self._notify_changed:
+            self._notify_changed("latest")
+    def record_die_roll(self, roll: dict[str, Any]) -> None:
+        """Record the latest die roll in story state and notify canvas clients."""
+        self.last_die_roll = dict(roll) if isinstance(roll, dict) else None
         if self._notify_changed:
             self._notify_changed("latest")
     def get_sticky_notes(self) -> list[dict[str, str]]:

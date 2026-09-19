@@ -683,3 +683,14 @@ def test_dispatch_cancellation_while_gathering_publishes_no_lines() -> None:
 
     # Neither line should have been published
     assert len(published) == 0
+
+
+def test_story_state_record_die_roll() -> None:
+    notify = Mock()
+    state = StoryState(notify_changed=notify)
+    assert state.last_die_roll is None
+
+    roll_data = {"notation": "1d20+3", "total": 17, "tier": "high"}
+    state.record_die_roll(roll_data)
+    assert state.last_die_roll == roll_data
+    notify.assert_called_once_with("latest")
