@@ -26,6 +26,28 @@ class TestDoodles(UITestCase):
         self.assertIn("overflow-y: auto;", narration_css)
         self.assertIn("overscroll-behavior: contain;", narration_css)
 
+    def test_canvas_starts_without_a_drawing_color_and_click_controls_page_bar(self):
+        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+
+        self.assertIn("let currentColor = null;", canvas)
+        self.assertNotIn('class="color-btn active"', canvas)
+        self.assertIn("const clickedCanvas = imgContainer.contains(event.target);", canvas)
+        self.assertIn("const clickedDrawingControls = doodleToolbar?.contains(event.target);", canvas)
+        self.assertIn("if (!clickedCanvas && !clickedDrawingControls && currentColor !== null) {", canvas)
+        self.assertIn("setDrawingColor(null);", canvas)
+        self.assertIn(
+            "pagingControls?.classList.toggle('canvas-selected', clickedCanvas && currentColor === null);",
+            canvas,
+        )
+        self.assertIn("#history-paging-controls.canvas-selected,", canvas)
+
+    def test_selected_white_color_uses_a_black_ring(self):
+        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+
+        self.assertIn('.color-btn[data-color="#ffffff"].active {', canvas)
+        self.assertIn("border-color: #000;", canvas)
+        self.assertIn("box-shadow: 0 0 0 2px #000;", canvas)
+
     def test_canvas_retries_active_doodle_websocket_connections(self):
         canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
         self.assertIn("function connectDoodleSocket(initialConnection = false)", canvas)

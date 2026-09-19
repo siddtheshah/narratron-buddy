@@ -1540,6 +1540,7 @@
         }
 
         #history-paging-controls.hover-discovered,
+        #history-paging-controls.canvas-selected,
         #history-paging-controls:hover,
         #history-paging-controls:focus-within,
         #history-paging-controls.inspector-open,
@@ -2106,6 +2107,11 @@
             box-shadow: 0 0 0 2px rgba(15, 17, 21, 0.75);
         }
 
+        .color-btn[data-color="#ffffff"].active {
+            border-color: #000;
+            box-shadow: 0 0 0 2px #000;
+        }
+
         .doodle-palette {
             position: relative;
         }
@@ -2547,7 +2553,7 @@
                         aria-label="Red"></button>
                     <button class="color-btn" type="button" style="background: #22c55e;" data-color="#22c55e"
                         aria-label="Green"></button>
-                    <button class="color-btn active" type="button" style="background: #ffffff;" data-color="#ffffff"
+                    <button class="color-btn" type="button" style="background: #ffffff;" data-color="#ffffff"
                         aria-label="White"></button>
                     <button class="color-btn" type="button" style="background: #3b82f6;" data-color="#3b82f6"
                         aria-label="Blue"></button>
@@ -4374,7 +4380,7 @@
         const paletteToggle = document.getElementById('doodle-palette-toggle');
         const paletteMenu = document.getElementById('doodle-palette-menu');
 
-        let currentColor = '#ffffff';
+        let currentColor = null;
         let currentBrushSize = 3;
         let isDrawing = false;
         let lastNormX = 0;
@@ -4518,7 +4524,20 @@
             });
             canvas.classList.toggle('drawing-disabled', currentColor === null);
             narrationPane.setDrawingColorSelected(currentColor !== null);
+            if (currentColor !== null) {
+                pagingControls?.classList.remove('canvas-selected');
+            }
         }
+
+        document.addEventListener('click', (event) => {
+            if (!imgContainer) return;
+            const clickedCanvas = imgContainer.contains(event.target);
+            const clickedDrawingControls = doodleToolbar?.contains(event.target);
+            if (!clickedCanvas && !clickedDrawingControls && currentColor !== null) {
+                setDrawingColor(null);
+            }
+            pagingControls?.classList.toggle('canvas-selected', clickedCanvas && currentColor === null);
+        });
 
         if (paletteToggle) {
             paletteToggle.addEventListener('click', () => {
