@@ -225,7 +225,7 @@ def can_access_agent_websocket(
         }:
             return True
 
-    candidate_key = join_key or _canvas_access_grants(request).get(deployment["theater_id"])
+    candidate_key = _extract_candidate_join_key(request, deployment["theater_id"], join_key)
     return _valid_join_key(deployment["join_key"], candidate_key)
 
 
@@ -275,6 +275,18 @@ def is_contributor(
     return user_id in allowed_ids
 
 
+def _extract_candidate_join_key(
+    request: Request | WebSocket, theater_id: str, join_key: Optional[str] = None
+) -> Optional[str]:
+    """Resolve a candidate join key from explicit args, query params, or cookies."""
+    if join_key:
+        return join_key
+    query_params = getattr(request, "query_params", None)
+    if query_params and hasattr(query_params, "get"):
+        query_key = query_params.get("join_key")
+        if query_key:
+            return query_key
+    return _canvas_access_grants(request).get(theater_id)
 
 
 def _require_canvas_access(
@@ -283,7 +295,7 @@ def _require_canvas_access(
     """Require ownership or a verified join-key grant before serving theater content."""
     _safe_path_param(theater_id, "theater_id")
     current_user = get_current_user(request)
-    candidate_key = join_key or _canvas_access_grants(request).get(theater_id)
+    candidate_key = _extract_candidate_join_key(request, theater_id, join_key)
     principal = theater_access_cache.principal_key(
         user_id=current_user.get("id") if current_user else None,
         join_key=candidate_key,
@@ -324,7 +336,7 @@ async def _require_canvas_access_async(
     """Require canvas access without blocking the event loop on a cache miss."""
     _safe_path_param(theater_id, "theater_id")
     current_user = await get_current_user_async(request)
-    candidate_key = join_key or _canvas_access_grants(request).get(theater_id)
+    candidate_key = _extract_candidate_join_key(request, theater_id, join_key)
     principal = theater_access_cache.principal_key(
         user_id=current_user.get("id") if current_user else None,
         join_key=candidate_key,
@@ -358,3 +370,4 @@ async def _require_canvas_access_async(
     if allowed:
         return deployment
     raise HTTPException(status_code=403, detail="A valid join key is required to access this theater.")
+

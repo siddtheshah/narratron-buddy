@@ -3,7 +3,7 @@
 import base64
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, Response
@@ -52,3 +52,28 @@ def test_require_canvas_access_uses_registry_deployment_lookup():
     with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException) as error:
         shared._require_canvas_access(SimpleNamespace(cookies={}, query_params={}), "stage")
     assert error.value.status_code == 404
+
+
+def test_require_canvas_access_accepts_query_param_join_key():
+    deployment = {"theater_id": "stage", "join_key": "VALID-KEY", "user_id": 99}
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = deployment
+    request = SimpleNamespace(cookies={}, query_params={"join_key": "VALID-KEY"})
+
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(shared, "get_current_user", return_value=None):
+        result = shared._require_canvas_access(request, "stage")
+    assert result == deployment
+
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(shared, "get_current_user_async", AsyncMock(return_value=None)):
+        import asyncio
+        async_result = asyncio.run(shared._require_canvas_access_async(request, "stage"))
+    assert async_result == deployment
+
+
+def test_can_access_agent_websocket_accepts_query_param_join_key():
+    deployment = {"theater_id": "stage", "user_id": 10, "join_key": "VALID-KEY"}
+    request = SimpleNamespace(cookies={}, query_params={"join_key": "VALID-KEY"})
+    assert shared.can_access_agent_websocket(request, deployment)
+

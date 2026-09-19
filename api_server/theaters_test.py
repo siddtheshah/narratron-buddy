@@ -1023,6 +1023,29 @@ async def test_create_and_deploy_theater_with_preset_adventure():
         )
 
 
+def test_serve_theater_output_passes_join_key_to_require_canvas_access_async(tmp_path):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    img_file = output_dir / "test.png"
+    img_file.write_text("dummy", encoding="utf-8")
+
+    theater = MagicMock()
+    theater.output_dir.return_value = output_dir
+    tm = MagicMock()
+    tm.theater.return_value = theater
+
+    req = MagicMock()
+    with patch.object(theaters, "_require_canvas_access_async", AsyncMock()) as mock_require, \
+         patch.object(theaters, "theater_manager", tm), \
+         patch.object(theaters, "_safe_path_param"):
+        import asyncio
+        response = asyncio.run(theaters.serve_theater_output(req, "stage", "test.png", join_key="KEY-123"))
+
+    mock_require.assert_called_once_with(req, "stage", join_key="KEY-123")
+    assert response.status_code == 200
+
+
+
 
 
 

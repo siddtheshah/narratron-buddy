@@ -410,17 +410,13 @@ def read_popout(request: Request, theater_id: Optional[str] = None, join_key: Op
 async def read_obs_canvas(
     request: Request,
     theater_id: Optional[str] = None,
+    join_key: Optional[str] = None,
 ):
-    """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source."""
+    """Serve the dedicated, UI-free Canvas interface specifically for OBS Browser Source and Foundry VTT."""
+    deployment = None
+    resolved_join_key = join_key or request.query_params.get("join_key")
     if theater_id:
-        join_key = request.query_params.get("join_key")
-        deployment = await _require_canvas_access_async(request, theater_id, join_key)
-        if _valid_join_key(deployment["join_key"], join_key):
-            response = RedirectResponse(
-                url=str(request.url.remove_query_params("join_key")), status_code=303
-            )
-            _grant_canvas_access(response, request, theater_id, join_key)
-            return response
+        deployment = await _require_canvas_access_async(request, theater_id, resolved_join_key)
         theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
             theater_repository.reconstruct_theater(theater_id, theater_dir)
@@ -439,7 +435,12 @@ async def read_obs_canvas(
 
     template_path = os.path.join(str(PROJECT_ROOT), "templates", "obs.html")
     with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
+        content = f.read()
+
+    response = HTMLResponse(content=content)
+    if theater_id and deployment and resolved_join_key and _valid_join_key(deployment["join_key"], resolved_join_key):
+        _grant_canvas_access(response, request, theater_id, resolved_join_key)
+    return response
 
 @app.get("/canvas", response_class=HTMLResponse)
 async def read_canvas(

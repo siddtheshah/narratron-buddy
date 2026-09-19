@@ -343,3 +343,37 @@ def test_active_orator_can_move_and_delete_a2ui_surface():
     assert deleted == {"status": "deleted", "surface_id": "health"}
     service.get.return_value.ui.move_surface.assert_called_once_with("health", 76.5, 20.0)
     service.get.return_value.ui.delete_surface.assert_called_once_with("health")
+
+
+def test_get_latest_image_passes_join_key_to_require_canvas_access():
+    theater = MagicMock()
+    theater.directory.return_value.exists.return_value = True
+    manager = MagicMock()
+    manager.theater.return_value = theater
+    req = request()
+    with patch.object(canvas, "_require_canvas_access") as mock_require, \
+         patch.object(canvas, "theater_manager", manager), \
+         patch.object(canvas, "_state") as mock_state:
+        mock_state.return_value.get_latest_state.return_value = {"latest": "img.png"}
+        result = canvas.get_latest_image(req, theater_id="stage", join_key="KEY-123")
+
+    mock_require.assert_called_once_with(req, "stage", join_key="KEY-123")
+    assert result == {"latest": "img.png"}
+
+
+def test_websocket_endpoints_pass_join_key_to_require_canvas_access_async():
+    import asyncio
+    ws = MagicMock()
+    ws.close = AsyncMock()
+
+    with patch.object(canvas, "_require_canvas_access_async", AsyncMock(side_effect=HTTPException(status_code=403))) as mock_require:
+        asyncio.run(canvas.websocket_endpoint(ws, theater_id="stage", join_key="KEY-123"))
+        mock_require.assert_called_once_with(ws, "stage", join_key="KEY-123")
+        ws.close.assert_called_once_with(code=1008)
+
+    ws.close.reset_mock()
+    with patch.object(canvas, "_require_canvas_access_async", AsyncMock(side_effect=HTTPException(status_code=403))) as mock_require:
+        asyncio.run(canvas.canvas_state_websocket_endpoint(ws, theater_id="stage", join_key="KEY-123"))
+        mock_require.assert_called_once_with(ws, "stage", join_key="KEY-123")
+        ws.close.assert_called_once_with(code=1008)
+

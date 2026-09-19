@@ -256,10 +256,14 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
         await acknowledge()
 
 @app.websocket("/ws/doodle")
-async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = None):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    theater_id: Optional[str] = None,
+    join_key: Optional[str] = None,
+):
     if theater_id:
         try:
-            await _require_canvas_access_async(websocket, theater_id)
+            await _require_canvas_access_async(websocket, theater_id, join_key=join_key)
         except HTTPException:
             await websocket.close(code=1008)
             return
@@ -296,11 +300,15 @@ async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = N
 
 
 @app.websocket("/ws/canvas-state")
-async def canvas_state_websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = None):
+async def canvas_state_websocket_endpoint(
+    websocket: WebSocket,
+    theater_id: Optional[str] = None,
+    join_key: Optional[str] = None,
+):
     """Notification-only state channel; REST remains the source of truth."""
     if theater_id:
         try:
-            await _require_canvas_access_async(websocket, theater_id)
+            await _require_canvas_access_async(websocket, theater_id, join_key=join_key)
         except HTTPException:
             await websocket.close(code=1008)
             return
@@ -355,25 +363,38 @@ def get_orator_config():
     })
 
 @app.get("/api/latest")
-def get_latest_image(request: Request, theater_id: Optional[str] = None):
+def get_latest_image(
+    request: Request,
+    theater_id: Optional[str] = None,
+    join_key: Optional[str] = None,
+):
     if theater_id:
-        _require_canvas_access(request, theater_id)
+        _require_canvas_access(request, theater_id, join_key=join_key)
         theater_dir = theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
             theater_repository.reconstruct_theater(theater_id, theater_dir)
     return _state(theater_id).get_latest_state()
 
 @app.get("/api/chat")
-def get_chat(request: Request, theater_id: Optional[str] = None):
+def get_chat(
+    request: Request,
+    theater_id: Optional[str] = None,
+    join_key: Optional[str] = None,
+):
     if theater_id:
-        _require_canvas_access(request, theater_id)
+        _require_canvas_access(request, theater_id, join_key=join_key)
     return _state(theater_id).chat.get_messages()
 
 
 @app.post("/api/a2ui/action")
-def post_a2ui_action(payload: A2UIActionEnvelope, request: Request, theater_id: str):
+def post_a2ui_action(
+    payload: A2UIActionEnvelope,
+    request: Request,
+    theater_id: str,
+    join_key: Optional[str] = None,
+):
     """Validate a renderer action, then relay it to the active live agent."""
-    _require_canvas_access(request, theater_id)
+    _require_canvas_access(request, theater_id, join_key=join_key)
     if payload.version != "v1.0":
         raise HTTPException(status_code=400, detail="Unsupported A2UI protocol version.")
     deployment = db.get_deployment(theater_id)

@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api_server import pages
@@ -208,5 +209,45 @@ def test_render_shared_topbar_active_highlighting():
 
     pricing_topbar = pages.render_shared_topbar(active_page="deploy", show_pricing=True)
     assert 'onclick="openPricingModal()"' in pricing_topbar
+
+
+def test_obs_canvas_returns_200_without_redirect_and_grants_cookie(tmp_path):
+    deployment = {"theater_id": "stage", "join_key": "JOIN"}
+    theater = MagicMock()
+    theater.directory.return_value = tmp_path / "stage"
+    manager = MagicMock()
+    manager.theater.return_value = theater
+    mock_repo = MagicMock()
+    registry_db = MagicMock()
+    registry_db.record_theater_view_async = AsyncMock()
+    request = SimpleNamespace(query_params={"join_key": "JOIN"}, client=None)
+
+    with patch.object(pages, "theater_manager", manager), \
+         patch.object(pages, "theater_repository", mock_repo), \
+         patch.object(pages, "db", registry_db), \
+         patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), \
+         patch.object(pages, "_valid_join_key", return_value=True), \
+         patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)), \
+         patch.object(pages, "_grant_canvas_access") as grant:
+        response = __import__("asyncio").run(pages.read_obs_canvas(request, "stage", "JOIN"))
+
+    assert response.status_code == 200
+    assert "location" not in response.headers
+    grant.assert_called_once_with(response, request, "stage", "JOIN")
+
+
+def test_obs_canvas_unauthorized_raises_403():
+    from fastapi import HTTPException
+    request = SimpleNamespace(query_params={"join_key": "BAD"}, client=None)
+
+    with patch.object(
+        pages,
+        "_require_canvas_access_async",
+        AsyncMock(side_effect=HTTPException(status_code=403, detail="A valid join key is required")),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            __import__("asyncio").run(pages.read_obs_canvas(request, "stage", "BAD"))
+        assert exc_info.value.status_code == 403
+
 
 

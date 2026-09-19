@@ -163,6 +163,20 @@
                 currenttheaterId = decodeURIComponent(pathParts[2]);
             }
         }
+        const currentJoinKey = urlParams.get('join_key') || '';
+
+        function withJoinKey(url) {
+            if (!currentJoinKey || !url) return url;
+            try {
+                const parsed = new URL(url, window.location.origin);
+                if (!parsed.searchParams.has('join_key')) {
+                    parsed.searchParams.set('join_key', currentJoinKey);
+                }
+                return parsed.pathname + parsed.search + parsed.hash;
+            } catch (_) {
+                return url;
+            }
+        }
 
         const rendererCanvas = document.getElementById('canvas-renderer');
         const doodleCanvas = document.getElementById('doodle-canvas');
@@ -193,7 +207,7 @@
 
         function enqueueSceneSpeech(audioUrl) {
             if (!audioEnabled || !audioUrl) return;
-            sceneSpeechQueue.push(audioUrl);
+            sceneSpeechQueue.push(withJoinKey(audioUrl));
             if (sceneSpeechPlaying) return;
             const playNext = () => {
                 const next = sceneSpeechQueue.shift();
@@ -263,7 +277,7 @@
             if (!audioEnabled || activeTracks.length === 0) return;
             const track = chooseTrack(activeTracks);
             activeTrackSrc = track;
-            bgMusic.src = track;
+            bgMusic.src = withJoinKey(track);
             bgMusic.play().catch((error) => {
                 console.warn('OBS music playback could not start:', error);
             });
@@ -471,7 +485,10 @@
 
         async function fetchLatestImage() {
             try {
-                const apiUrl = currenttheaterId ? `/api/latest?theater_id=${encodeURIComponent(currenttheaterId)}` : '/api/latest';
+                const apiParams = new URLSearchParams();
+                if (currenttheaterId) apiParams.set('theater_id', currenttheaterId);
+                if (currentJoinKey) apiParams.set('join_key', currentJoinKey);
+                const apiUrl = apiParams.toString() ? `/api/latest?${apiParams.toString()}` : '/api/latest';
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 updateSceneDialogue(data.scene_dialogue, data.narration, data.narration_spans);
@@ -510,17 +527,21 @@
                         lastAnimationSignature = animationSignature;
                         if (animationSignature) {
                             if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
-                                playLayeredAnimation(data.animation.layers);
+                                const layersWithAuth = (data.animation.layers || []).map(layer => ({
+                                    ...layer,
+                                    url: withJoinKey(layer.url),
+                                }));
+                                playLayeredAnimation(layersWithAuth);
                             } else if (data.animation.type === 'video' && typeof playVideoAnimation === 'function') {
-                                playVideoAnimation(data.animation.video_url || data.animation.url, data.animation);
+                                playVideoAnimation(withJoinKey(data.animation.video_url || data.animation.url), data.animation);
                             } else {
-                                playImageSequence(data.animation.frames, {
+                                playImageSequence(data.animation.frames.map(f => withJoinKey(f)), {
                                     frameDuration: data.animation.frame_duration_ms || 1400,
                                     crossfadeDuration: data.animation.crossfade_duration_ms || 500,
                                 });
                             }
                         } else {
-                            const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                            const newImgUrl = withJoinKey(data.latest + "?t=" + new Date().getTime());
                             applyImageTransition(newImgUrl, 'none', currentImageEffect);
                         }
                     }
@@ -535,11 +556,15 @@
 
                     if (animationSignature) {
                         if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
-                            playLayeredAnimation(data.animation.layers);
+                            const layersWithAuth = (data.animation.layers || []).map(layer => ({
+                                ...layer,
+                                url: withJoinKey(layer.url),
+                            }));
+                            playLayeredAnimation(layersWithAuth);
                         } else if (data.animation.type === 'video' && typeof playVideoAnimation === 'function') {
-                            playVideoAnimation(data.animation.video_url || data.animation.url, data.animation);
+                            playVideoAnimation(withJoinKey(data.animation.video_url || data.animation.url), data.animation);
                         } else {
-                            playImageSequence(data.animation.frames, {
+                            playImageSequence(data.animation.frames.map(f => withJoinKey(f)), {
                                 frameDuration: data.animation.frame_duration_ms || 1400,
                                 crossfadeDuration: data.animation.crossfade_duration_ms || 500,
                             });
@@ -548,7 +573,7 @@
                         if (typeof stopImageAnimation === 'function') {
                             stopImageAnimation();
                         }
-                        const newImgUrl = data.latest + "?t=" + new Date().getTime();
+                        const newImgUrl = withJoinKey(data.latest + "?t=" + new Date().getTime());
                         const transition = (data.transition || 'crossfade').toLowerCase().trim();
                         applyImageTransition(newImgUrl, transition, currentImageEffect);
                     }
@@ -560,7 +585,10 @@
 
         // Connect WebSocket for Doodles Sync
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
+        const doodleParams = new URLSearchParams();
+        if (currenttheaterId) doodleParams.set('theater_id', currenttheaterId);
+        if (currentJoinKey) doodleParams.set('join_key', currentJoinKey);
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (doodleParams.toString() ? `?${doodleParams.toString()}` : '');
         const ws = new WebSocket(wsUrl);
 
         ws.onmessage = (event) => {
@@ -638,8 +666,11 @@
         }
 
         function connectCanvasStateSocket() {
+            const stateParams = new URLSearchParams();
+            if (currenttheaterId) stateParams.set('theater_id', currenttheaterId);
+            if (currentJoinKey) stateParams.set('join_key', currentJoinKey);
             const stateWsUrl = `${wsProtocol}//${window.location.host}/ws/canvas-state` +
-                (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
+                (stateParams.toString() ? `?${stateParams.toString()}` : '');
             canvasStateWs = new WebSocket(stateWsUrl);
             canvasStateWs.onopen = () => {
                 canvasStateReconnectDelay = 1000;

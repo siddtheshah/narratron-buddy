@@ -87,8 +87,13 @@ class RequestBatonRequest(BaseModel):
 # ========================================
 
 @app.get("/theaters/{theater_id}/references/{filename:path}")
-async def serve_theater_reference(request: Request, theater_id: str, filename: str):
-    await _require_canvas_access_async(request, theater_id)
+async def serve_theater_reference(
+    request: Request,
+    theater_id: str,
+    filename: str,
+    join_key: Optional[str] = None,
+):
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     ref_dir = theater_manager.theater(theater_id).references_dir()
     file_path = (ref_dir / filename).resolve()
@@ -99,8 +104,14 @@ async def serve_theater_reference(request: Request, theater_id: str, filename: s
     return FileResponse(file_path)
 
 @app.get("/theaters/{theater_id}/playlists/{playlist_name}/{filename}")
-async def serve_theater_playlist_track(request: Request, theater_id: str, playlist_name: str, filename: str):
-    await _require_canvas_access_async(request, theater_id)
+async def serve_theater_playlist_track(
+    request: Request,
+    theater_id: str,
+    playlist_name: str,
+    filename: str,
+    join_key: Optional[str] = None,
+):
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     _safe_path_param(playlist_name, "playlist_name")
     _safe_path_param(filename, "filename")
@@ -110,8 +121,13 @@ async def serve_theater_playlist_track(request: Request, theater_id: str, playli
     return FileResponse(file_path)
 
 @app.get("/theaters/{theater_id}/output/{filename:path}")
-async def serve_theater_output(request: Request, theater_id: str, filename: str):
-    await _require_canvas_access_async(request, theater_id)
+async def serve_theater_output(
+    request: Request,
+    theater_id: str,
+    filename: str,
+    join_key: Optional[str] = None,
+):
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     output_dir = theater_manager.theater(theater_id).output_dir()
     file_path = (output_dir / filename).resolve()
