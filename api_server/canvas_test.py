@@ -150,6 +150,61 @@ def test_collaboration_mode_requests_agent_observability_update():
     session.send_collaboration_toggle_observability.assert_called_once_with()
 
 
+def _text_annotation_state(sender, *, collab_enabled: bool):
+    state = MagicMock()
+    state.connections.processed_doodle_message_ids = set()
+    state.connections.active_ws_connections = [sender]
+    state.connections.active_user_connections = {sender: {"id": 9}}
+    state.ui.viewer_collab_enabled = collab_enabled
+    return state
+
+
+@pytest.mark.asyncio
+async def test_text_annotation_rejects_non_orator_when_collaboration_is_disabled():
+    sender = MagicMock()
+    sender.state.theater_id = "stage"
+    sender.send_json = AsyncMock()
+    state = _text_annotation_state(sender, collab_enabled=False)
+    deployment = {"theater_id": "stage", "user_id": 3, "active_orator_id": 3}
+    message = {
+        "type": "text", "x": 0.2, "y": 0.3, "text": "Nope", "size": 32,
+        "font": "Outfit", "color": "#ffffff", "client_message_id": "text-1",
+    }
+
+    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+        await canvas._apply_doodle_message(state, message, sender)
+
+    state.doodles.add.assert_not_called()
+    sender.send_json.assert_any_await(
+        {"type": "text_annotation_rejected", "client_message_id": "text-1"}
+    )
+    sender.send_json.assert_any_await({"type": "doodle_ack", "client_message_id": "text-1"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("collab_enabled,user_id", [(True, 9), (False, 3)])
+async def test_text_annotation_accepts_collaborating_viewer_or_active_orator(collab_enabled, user_id):
+    sender = MagicMock()
+    sender.state.theater_id = "stage"
+    sender.send_json = AsyncMock()
+    state = _text_annotation_state(sender, collab_enabled=collab_enabled)
+    state.connections.active_user_connections[sender] = {"id": user_id}
+    deployment = {"theater_id": "stage", "user_id": 3, "active_orator_id": 3}
+    message = {
+        "type": "text", "x": 0.2, "y": 0.3, "text": "  A clue  ", "size": 36,
+        "font": "Cinzel", "color": "#ffffff", "client_message_id": "text-2",
+    }
+
+    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+        await canvas._apply_doodle_message(state, message, sender)
+
+    state.doodles.add.assert_called_once_with([{
+        "type": "text", "x": 0.2, "y": 0.3, "text": "A clue",
+        "color": "#ffffff", "size": 36.0, "font": "Cinzel",
+    }])
+    sender.send_json.assert_awaited_once_with({"type": "doodle_ack", "client_message_id": "text-2"})
+
+
 def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}

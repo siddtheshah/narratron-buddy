@@ -3,7 +3,6 @@
 from collections.abc import Callable
 import io
 import logging
-from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +47,24 @@ class DoodleState:
     def snapshot_batches(self) -> list[dict[str, object]]:
         return doodle_snapshot_batches(self.doodles)
 
+    def text_annotations(self) -> list[dict[str, object]]:
+        """Return persisted text actions for websocket snapshot replay."""
+        return [dict(action) for action in self.doodles if action.get("type") == "text"]
+
+    def has_visible_annotations(self) -> bool:
+        """Return whether the canvas has a stroke or non-empty text annotation."""
+        return any(
+            action.get("type") == "draw"
+            or (action.get("type") == "text" and bool(str(action.get("text", "")).strip()))
+            for action in self.doodles
+        )
+
     def snapshot_png(self, image_path: str | None) -> bytes | None:
         """Render normalized strokes over the current scene for agent vision."""
         if not image_path or not self.doodles:
             return None
         try:
-            from PIL import Image, ImageDraw
+            from PIL import Image, ImageDraw, ImageFont
 
             with Image.open(image_path) as source:
                 image = source.convert("RGBA")
@@ -62,20 +73,34 @@ class DoodleState:
             width, height = image.size
             scale = max(1.0, min(width, height) / 900)
             for action in self.doodles:
-                if action.get("type") != "draw":
-                    continue
                 try:
-                    points = (
-                        float(action["x0"]) * width,
-                        float(action["y0"]) * height,
-                        float(action["x1"]) * width,
-                        float(action["y1"]) * height,
-                    )
-                    draw.line(
-                        points,
-                        fill=str(action.get("color", "#ffffff")),
-                        width=max(1, round(float(action.get("size", 3)) * scale)),
-                    )
+                    if action.get("type") == "draw":
+                        points = (
+                            float(action["x0"]) * width,
+                            float(action["y0"]) * height,
+                            float(action["x1"]) * width,
+                            float(action["y1"]) * height,
+                        )
+                        draw.line(
+                            points,
+                            fill=str(action.get("color", "#ffffff")),
+                            width=max(1, round(float(action.get("size", 3)) * scale)),
+                        )
+                    elif action.get("type") == "text":
+                        font_size = max(12, round(float(action.get("size", 32)) * scale))
+                        try:
+                            font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+                        except OSError:
+                            font = ImageFont.load_default()
+                        draw.multiline_text(
+                            (float(action["x"]) * width, float(action["y"]) * height),
+                            str(action.get("text", "")),
+                            fill=str(action.get("color", "#ffffff")),
+                            font=font,
+                            stroke_width=max(1, round(font_size / 10)),
+                            stroke_fill="#000000",
+                            spacing=max(2, round(font_size * 0.15)),
+                        )
                 except (KeyError, TypeError, ValueError):
                     continue
             output = io.BytesIO()

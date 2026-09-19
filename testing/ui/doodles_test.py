@@ -48,6 +48,25 @@ class TestDoodles(UITestCase):
         self.assertIn("border-color: #000;", canvas)
         self.assertIn("box-shadow: 0 0 0 2px #000;", canvas)
 
+    def test_text_annotation_uses_one_expandable_bottom_bar_control_and_collab_gating(self):
+        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        renderer = (Path(__file__).resolve().parents[2] / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
+        obs = (Path(__file__).resolve().parents[2] / "templates" / "obs.html").read_text(encoding="utf-8")
+
+        self.assertEqual(canvas.count('id="text-annotation-toggle"'), 1)
+        self.assertIn('aria-controls="text-annotation-menu"', canvas)
+        self.assertIn('id="text-annotation-font"', canvas)
+        self.assertIn('id="text-annotation-size"', canvas)
+        self.assertIn('class="text-annotation-colors"', canvas)
+        self.assertEqual(canvas.count('class="text-annotation-color"'), 6)
+        self.assertIn('class="text-annotation-color active"', canvas)
+        self.assertIn("currentTextColor = button.dataset.color || '#ffffff';", canvas)
+        self.assertIn("return doodlesEnabled && (isCurrentOrator() || isCollabModeEnabled());", canvas)
+        self.assertIn("canvas.addEventListener('click', beginTextAnnotation);", canvas)
+        self.assertIn("else if (data.type === 'text')", canvas)
+        self.assertIn('action.type === "text"', renderer)
+        self.assertIn("renderTextAnnotation(data);", obs)
+
     def test_canvas_retries_active_doodle_websocket_connections(self):
         canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
         self.assertIn("function connectDoodleSocket(initialConnection = false)", canvas)

@@ -213,6 +213,39 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
         await acknowledge()
         return
 
+    if data.get("type") == "text":
+        current_user = state.connections.active_user_connections.get(sender)
+        theater_id = getattr(getattr(sender, "state", None), "theater_id", None)
+        deployment = db.get_deployment(theater_id) if theater_id else None
+        is_orator = bool(deployment and can_control_agent_websocket(deployment, current_user=current_user))
+        if theater_id and not is_orator and not state.ui.viewer_collab_enabled:
+            await sender.send_json({"type": "text_annotation_rejected", "client_message_id": message_id})
+            await acknowledge()
+            return
+
+        text = data.get("text")
+        font = data.get("font", "Outfit")
+        color = data.get("color", "#ffffff")
+        allowed_fonts = {"Outfit", "Bangers", "Cinzel", "MedievalSharp", "Creepster", "Lacquer", "Rubik Glitch"}
+        try:
+            x, y, size = float(data.get("x")), float(data.get("y")), float(data.get("size", 32))
+        except (TypeError, ValueError):
+            return
+        if (
+            not isinstance(text, str) or not text.strip() or len(text) > 240
+            or not 0 <= x <= 1 or not 0 <= y <= 1 or not 12 <= size <= 96
+            or font not in allowed_fonts or not isinstance(color, str) or len(color) > 32
+        ):
+            return
+        action = {
+            "type": "text", "x": x, "y": y, "text": text.strip(),
+            "color": color, "size": size, "font": font,
+        }
+        state.doodles.add([action])
+        await _broadcast_doodle(state, action, sender)
+        await acknowledge()
+        return
+
     if data.get("type") in {"clear", "draw"}:
         state.doodles.add([data])
         await _broadcast_doodle(state, data, sender)
@@ -235,7 +268,11 @@ async def websocket_endpoint(websocket: WebSocket, theater_id: Optional[str] = N
         connections.active_ws_connections.append(websocket)
     connections.active_user_connections[websocket] = current_user
     await websocket.send_json({"type": "doodles_toggle", "enabled": cs.doodles.enabled})
-    await websocket.send_json({"type": "doodle_snapshot", "batches": cs.doodles.snapshot_batches()})
+    await websocket.send_json({
+        "type": "doodle_snapshot",
+        "batches": cs.doodles.snapshot_batches(),
+        "annotations": cs.doodles.text_annotations(),
+    })
     
     if theater_id:
         baton_st = await db.get_theater_baton_state_async(theater_id)

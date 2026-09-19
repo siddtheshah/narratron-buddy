@@ -352,6 +352,7 @@
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
+        const renderTextAnnotation = doodleRenderer.renderText;
 
         function createSpanElement(span) {
             const el = document.createElement('span');
@@ -582,6 +583,10 @@
                         renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
                     }
                 });
+                (data.annotations || []).forEach((action) => {
+                    doodleActions.push(action);
+                    renderTextAnnotation(action);
+                });
             } else if (data.type === 'draw_batch') {
                 const points = data.points || [];
                 const rect = doodleCanvas.getBoundingClientRect();
@@ -600,6 +605,9 @@
                         data.color, data.size || 3
                     );
                 }
+            } else if (data.type === 'text') {
+                doodleActions.push(data);
+                renderTextAnnotation(data);
             }
         };
 

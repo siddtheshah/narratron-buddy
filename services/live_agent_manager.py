@@ -481,10 +481,10 @@ class LiveAgentSession:
             if image_part:
                 if (
                     self.canvas_state_manager.ui.viewer_collab_enabled
-                    and self.canvas_state_manager.doodles.snapshot_batches()
+                    and self.canvas_state_manager.doodles.has_visible_annotations()
                 ):
                     parts.append(types.Part(
-                        text="[Viewer Doodles]: The attached image is the current canvas with the audience annotations applied."
+                        text="[Viewer Annotations]: The attached image is the current canvas with the audience annotations applied."
                     ))
                 parts.append(image_part)
             try:
@@ -516,7 +516,7 @@ class LiveAgentSession:
         if (
             canvas
             and canvas.ui.viewer_collab_enabled
-            and canvas.doodles.snapshot_batches()
+            and canvas.doodles.has_visible_annotations()
         ):
             try:
                 snapshot = canvas.doodles.snapshot_png(canvas.visual.shown_image_path)
@@ -558,7 +558,7 @@ class LiveAgentSession:
             self.websocket_connected
             and self.canvas_state_manager
             and self.canvas_state_manager.ui.viewer_collab_enabled
-            and self.canvas_state_manager.doodles.snapshot_batches()
+            and self.canvas_state_manager.doodles.has_visible_annotations()
         ):
             return
 
@@ -585,7 +585,7 @@ class LiveAgentSession:
             )
             if snapshot and self.websocket_connected:
                 content = types.Content(parts=[
-                    types.Part(text="[Viewer Doodles]: A composite canvas image with audience doodles is attached."),
+                    types.Part(text="[Viewer Annotations]: A composite canvas image with audience annotations is attached."),
                     types.Part(inline_data=types.Blob(mime_type="image/png", data=snapshot)),
                 ])
                 self.send_content(content)

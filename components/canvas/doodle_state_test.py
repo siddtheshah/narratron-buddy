@@ -65,6 +65,38 @@ def test_doodle_state_snapshot_png_renders_strokes() -> None:
             assert pixel[0] > 100  # Red channel should be bright
 
 
+def test_doodle_state_replays_and_renders_text_annotations() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        img_path = Path(temp_dir) / "text_scene.png"
+        Image.new("RGBA", (300, 180), (0, 0, 0, 255)).save(img_path)
+        action = {
+            "type": "text", "x": 0.2, "y": 0.25, "text": "Look here!",
+            "color": "#ffffff", "size": 32, "font": "Outfit",
+        }
+        state = DoodleState(lambda: None)
+        state.add(action)
+
+        assert state.text_annotations() == [action]
+        assert state.has_visible_annotations() is True
+        png_bytes = state.snapshot_png(str(img_path))
+        assert png_bytes is not None
+        with Image.open(io.BytesIO(png_bytes)) as rendered:
+            assert any(
+                rendered.getpixel((x, y))[:3] != (0, 0, 0)
+                for y in range(rendered.height)
+                for x in range(rendered.width)
+            )
+
+
+def test_doodle_state_visible_annotations_ignores_empty_text() -> None:
+    state = DoodleState(lambda: None)
+    assert state.has_visible_annotations() is False
+    state.doodles = [{"type": "text", "text": "   "}]
+    assert state.has_visible_annotations() is False
+    state.doodles.append({"type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1})
+    assert state.has_visible_annotations() is True
+
+
 def test_doodle_state_load_and_serialize() -> None:
     state = DoodleState(lambda: None)
     serialized = {"doodles": [{"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.2, "y1": 0.2}], "doodles_enabled": False}

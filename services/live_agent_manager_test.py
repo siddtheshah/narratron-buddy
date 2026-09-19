@@ -25,6 +25,7 @@ def canvas_observability_fixture(image_path=None, collaboration_enabled=False, d
     canvas.ui.viewer_collab_enabled = collaboration_enabled
     canvas.chat.consume_top_suggestion.return_value = None
     canvas.doodles.snapshot_batches.return_value = doodles or []
+    canvas.doodles.has_visible_annotations.return_value = bool(doodles)
     canvas.doodles.snapshot_png.return_value = None
     return canvas
 
@@ -711,6 +712,35 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         self.assertIn("audience annotations", content.parts[1].text)
         self.assertEqual(content.parts[2].inline_data.mime_type, "image/png")
         self.assertEqual(content.parts[2].inline_data.data, b"annotated-png")
+        canvas.doodles.snapshot_png.assert_called_once_with(None)
+
+    def test_agent_requested_observability_attaches_text_only_annotation(self):
+        """Text without any stroke must still select the annotated composite."""
+        mock_runner = MagicMock()
+        mock_runner.agent = MagicMock(tools=[])
+        mock_runner.session_service = MagicMock()
+        session = LiveAgentSession(
+            theater_id="test_observability_text_annotation",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+        )
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+        canvas = canvas_observability_fixture(
+            collaboration_enabled=True,
+            doodles=[{"type": "text", "text": "Secret door", "x": 0.2, "y": 0.3}],
+        )
+        canvas.doodles.snapshot_batches.return_value = []
+        canvas.doodles.snapshot_png.return_value = b"text-annotated-png"
+        session.canvas_state_manager = canvas
+
+        self.assertTrue(session.send_agent_requested_observability())
+
+        content = session.live_request_queue.send_content.call_args.args[0]
+        self.assertEqual(len(content.parts), 3)
+        self.assertIn("audience annotations", content.parts[1].text)
+        self.assertEqual(content.parts[2].inline_data.data, b"text-annotated-png")
+        canvas.doodles.has_visible_annotations.assert_called()
         canvas.doodles.snapshot_png.assert_called_once_with(None)
 
     def test_doodle_snapshot_is_rendered_off_the_event_loop(self):

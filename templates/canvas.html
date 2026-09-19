@@ -2157,6 +2157,122 @@
             display: grid;
         }
 
+        .text-annotation-tool {
+            position: relative;
+        }
+
+        .text-annotation-toggle {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.09);
+            color: #f8fafc;
+            cursor: pointer;
+            font: 800 1rem/1 Georgia, serif;
+        }
+
+        .text-annotation-toggle:hover,
+        .text-annotation-toggle.active,
+        .text-annotation-toggle[aria-expanded="true"] {
+            background: rgba(99, 102, 241, 0.28);
+            border-color: rgba(165, 180, 252, 0.75);
+            color: #c7d2fe;
+        }
+
+        .text-annotation-toggle:disabled {
+            opacity: 0.38;
+            cursor: not-allowed;
+        }
+
+        .text-annotation-menu {
+            position: absolute;
+            right: 0;
+            bottom: calc(100% + 10px);
+            z-index: 30;
+            display: none;
+            width: 210px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 12px;
+            background: rgba(15, 17, 21, 0.96);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+        }
+
+        .text-annotation-menu.open {
+            display: grid;
+            gap: 10px;
+        }
+
+        .text-annotation-menu label {
+            display: grid;
+            gap: 5px;
+            color: #cbd5e1;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+
+        .text-annotation-menu select,
+        .text-annotation-menu input {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .text-annotation-menu select {
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 8px;
+            padding: 6px 8px;
+            background: #171923;
+            color: #f8fafc;
+            font: inherit;
+        }
+
+        .text-annotation-colors {
+            display: grid;
+            grid-template-columns: repeat(7, 22px);
+            gap: 6px;
+        }
+
+        .text-annotation-color {
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: 2px solid transparent;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+        }
+
+        .text-annotation-color:hover {
+            transform: scale(1.1);
+        }
+
+        .text-annotation-color.active {
+            border-color: #fff;
+            box-shadow: 0 0 0 2px #0f1115, 0 0 0 3px #c7d2fe;
+        }
+
+        .text-annotation-color[data-color="#ffffff"].active {
+            border-color: #0f1115;
+        }
+
+        .canvas-text-editor {
+            position: absolute;
+            z-index: 16;
+            min-width: 180px;
+            max-width: min(420px, calc(100% - 20px));
+            padding: 4px 7px;
+            border: 1px dashed rgba(199, 210, 254, 0.95);
+            border-radius: 5px;
+            outline: none;
+            background: rgba(15, 23, 42, 0.55);
+            color: #fff;
+            text-shadow: 0 2px 3px #000;
+        }
+
         .eraser-btn {
             background: rgba(255, 255, 255, 0.1);
             color: #fff;
@@ -2609,6 +2725,47 @@
                         </svg>
                     </button>
                     <input type="range" id="brush-size" min="1" max="40" value="3" title="Brush Size">
+                    <div class="text-annotation-tool">
+                        <button id="text-annotation-toggle" class="text-annotation-toggle" type="button"
+                            aria-label="Add text annotation" aria-expanded="false"
+                            aria-controls="text-annotation-menu" title="Add text annotation">T</button>
+                        <div id="text-annotation-menu" class="text-annotation-menu" role="group"
+                            aria-label="Text annotation settings" hidden>
+                            <label>Font
+                                <select id="text-annotation-font">
+                                    <option value="Outfit">Outfit</option>
+                                    <option value="Bangers">Bangers</option>
+                                    <option value="Cinzel">Cinzel</option>
+                                    <option value="MedievalSharp">Medieval</option>
+                                    <option value="Creepster">Creepster</option>
+                                    <option value="Lacquer">Lacquer</option>
+                                    <option value="Rubik Glitch">Glitch</option>
+                                </select>
+                            </label>
+                            <label>Size <span id="text-annotation-size-value">32 px</span>
+                                <input id="text-annotation-size" type="range" min="12" max="96" value="32">
+                            </label>
+                            <label>Color
+                                <span class="text-annotation-colors" role="group" aria-label="Text annotation color">
+                                    <button class="text-annotation-color active" type="button" data-color="#ffffff"
+                                        style="background: #ffffff;" aria-label="White" aria-pressed="true"></button>
+                                    <button class="text-annotation-color" type="button" data-color="#ef4444"
+                                        style="background: #ef4444;" aria-label="Red" aria-pressed="false"></button>
+                                    <button class="text-annotation-color" type="button" data-color="#f97316"
+                                        style="background: #f97316;" aria-label="Orange" aria-pressed="false"></button>
+                                    <button class="text-annotation-color" type="button" data-color="#eab308"
+                                        style="background: #eab308;" aria-label="Yellow" aria-pressed="false"></button>
+                                    <button class="text-annotation-color" type="button" data-color="#22c55e"
+                                        style="background: #22c55e;" aria-label="Green" aria-pressed="false"></button>
+                                    <button class="text-annotation-color" type="button" data-color="#3b82f6"
+                                        style="background: #3b82f6;" aria-label="Blue" aria-pressed="false"></button>
+                                    <button class="text-annotation-color" type="button" data-color="#a855f7"
+                                        style="background: #a855f7;" aria-label="Purple" aria-pressed="false"></button>
+                                </span>
+                            </label>
+                            <span style="color: #94a3b8; font-size: 0.7rem; line-height: 1.35;">Click the canvas, type, then press Enter.</span>
+                        </div>
+                    </div>
                     <button id="clear-doodle-btn">Clear</button>
                 </div>
             </div>
@@ -3938,7 +4095,7 @@
             }
 
             if (doodleCanvas) {
-                doodleCanvas.style.pointerEvents = isPagedBack ? 'none' : (doodlesEnabled ? 'auto' : 'none');
+                refreshCanvasToolInteraction();
             }
         }
 
@@ -4000,6 +4157,7 @@
                         viewerCollabToggleBtn.textContent = viewerCollabEnabled ? '👥 Collab: On' : '👥 Collab: Off';
                         viewerCollabToggleBtn.classList.toggle('active', viewerCollabEnabled);
                     }
+                    updateTextAnnotationAvailability();
                 }
                 updateViewerCollabStatus(viewerCollabEnabled);
 
@@ -4379,6 +4537,12 @@
         const doodlesToggleBtn = document.getElementById('doodles-toggle-btn');
         const paletteToggle = document.getElementById('doodle-palette-toggle');
         const paletteMenu = document.getElementById('doodle-palette-menu');
+        const textAnnotationToggle = document.getElementById('text-annotation-toggle');
+        const textAnnotationMenu = document.getElementById('text-annotation-menu');
+        const textAnnotationFont = document.getElementById('text-annotation-font');
+        const textAnnotationSize = document.getElementById('text-annotation-size');
+        const textAnnotationSizeValue = document.getElementById('text-annotation-size-value');
+        const textAnnotationColors = document.querySelectorAll('.text-annotation-color');
 
         let currentColor = null;
         let currentBrushSize = 3;
@@ -4386,6 +4550,9 @@
         let lastNormX = 0;
         let lastNormY = 0;
         let doodlesEnabled = true;
+        let textAnnotationMode = false;
+        let currentTextColor = '#ffffff';
+        let activeTextEditor = null;
 
         // Stores all active doodle stroke segments for replay across window resizes
         let doodleActions = [];
@@ -4481,6 +4648,8 @@
                 doodlesToggleBtn.style.background = doodlesEnabled ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.08)';
                 doodlesToggleBtn.style.borderColor = doodlesEnabled ? 'rgba(99, 102, 241, 0.4)' : 'var(--glass-border)';
             }
+            updateTextAnnotationAvailability();
+            refreshCanvasToolInteraction();
         }
 
         if (doodlesToggleBtn) {
@@ -4505,6 +4674,7 @@
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
+        const renderTextAnnotation = doodleRenderer.renderText;
 
         window.addEventListener('resize', resizeDoodleCanvas);
 
@@ -4515,7 +4685,64 @@
             paletteMenu.hidden = !open;
         }
 
+        function canAddTextAnnotation() {
+            return doodlesEnabled && (isCurrentOrator() || isCollabModeEnabled());
+        }
+
+        function setTextAnnotationMenuOpen(open) {
+            if (!textAnnotationToggle || !textAnnotationMenu) return;
+            textAnnotationToggle.setAttribute('aria-expanded', String(open));
+            textAnnotationMenu.classList.toggle('open', open);
+            textAnnotationMenu.hidden = !open;
+        }
+
+        function refreshCanvasToolInteraction() {
+            const hasCanvasTool = currentColor !== null || textAnnotationMode;
+            const canvasInteractive = hasCanvasTool && doodlesEnabled && !isPagedBack;
+            canvas.classList.toggle('drawing-disabled', !canvasInteractive);
+            canvas.style.pointerEvents = canvasInteractive ? 'auto' : 'none';
+            canvas.style.cursor = canvasInteractive
+                ? (textAnnotationMode ? 'text' : 'crosshair')
+                : 'default';
+            narrationPane.setDrawingColorSelected(canvasInteractive);
+        }
+
+        function setTextAnnotationMode(active, openMenu = active) {
+            textAnnotationMode = Boolean(active && canAddTextAnnotation());
+            if (textAnnotationMode && currentColor) {
+                currentColor = null;
+                colorBtns.forEach(button => {
+                    button.classList.remove('active');
+                    button.setAttribute('aria-pressed', 'false');
+                });
+            }
+            textAnnotationToggle?.classList.toggle('active', textAnnotationMode);
+            textAnnotationToggle?.setAttribute('aria-pressed', String(textAnnotationMode));
+            setTextAnnotationMenuOpen(Boolean(openMenu && textAnnotationMode));
+            refreshCanvasToolInteraction();
+        }
+
+        function updateTextAnnotationAvailability() {
+            if (!textAnnotationToggle) return;
+            const available = canAddTextAnnotation();
+            textAnnotationToggle.disabled = !available;
+            textAnnotationToggle.title = available
+                ? 'Add text annotation'
+                : 'Text annotations require collaboration mode for viewers';
+            if (!available && textAnnotationMode) {
+                activeTextEditor?.remove();
+                activeTextEditor = null;
+                setTextAnnotationMode(false, false);
+            }
+        }
+
         function setDrawingColor(color) {
+            if (color !== null && textAnnotationMode) {
+                textAnnotationMode = false;
+                textAnnotationToggle?.classList.remove('active');
+                textAnnotationToggle?.setAttribute('aria-pressed', 'false');
+                setTextAnnotationMenuOpen(false);
+            }
             currentColor = color || null;
             colorBtns.forEach(button => {
                 const isActive = currentColor !== null && button.dataset.color === currentColor;
@@ -4524,6 +4751,7 @@
             });
             canvas.classList.toggle('drawing-disabled', currentColor === null);
             narrationPane.setDrawingColorSelected(currentColor !== null);
+            refreshCanvasToolInteraction();
             if (currentColor !== null) {
                 pagingControls?.classList.remove('canvas-selected');
             }
@@ -4537,6 +4765,28 @@
                 setDrawingColor(null);
             }
             pagingControls?.classList.toggle('canvas-selected', clickedCanvas && currentColor === null);
+            if (textAnnotationMode) pagingControls?.classList.remove('canvas-selected');
+        });
+
+        textAnnotationToggle?.addEventListener('click', () => {
+            if (!canAddTextAnnotation()) return;
+            setTextAnnotationMode(!textAnnotationMode, !textAnnotationMode);
+        });
+
+        textAnnotationSize?.addEventListener('input', () => {
+            if (textAnnotationSizeValue) textAnnotationSizeValue.textContent = `${textAnnotationSize.value} px`;
+        });
+
+        textAnnotationColors.forEach(button => {
+            button.addEventListener('click', () => {
+                currentTextColor = button.dataset.color || '#ffffff';
+                textAnnotationColors.forEach(option => {
+                    const selected = option === button;
+                    option.classList.toggle('active', selected);
+                    option.setAttribute('aria-pressed', String(selected));
+                });
+                if (activeTextEditor) activeTextEditor.style.color = currentTextColor;
+            });
         });
 
         if (paletteToggle) {
@@ -4549,12 +4799,18 @@
             if (paletteMenu && !paletteMenu.hidden && !event.target.closest('.doodle-palette')) {
                 setPaletteOpen(false);
             }
+            if (textAnnotationMenu && !textAnnotationMenu.hidden && !event.target.closest('.text-annotation-tool')) {
+                setTextAnnotationMenuOpen(false);
+            }
         });
 
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && paletteMenu && !paletteMenu.hidden) {
                 setPaletteOpen(false);
                 paletteToggle?.focus();
+            } else if (event.key === 'Escape' && textAnnotationMenu && !textAnnotationMenu.hidden) {
+                setTextAnnotationMenuOpen(false);
+                textAnnotationToggle?.focus();
             }
         });
 
@@ -4605,10 +4861,21 @@
                     doodleActions = [];
                     redrawAllDoodles();
                     (data.batches || []).forEach(renderDoodleBatch);
+                    (data.annotations || []).forEach(action => {
+                        doodleActions.push(action);
+                        renderTextAnnotation(action);
+                    });
                     doodleSocketReady = true;
                     flushQueuedDoodleMessages();
                 } else if (data.type === 'doodle_ack') {
                     inFlightDoodleMessages.delete(data.client_message_id);
+                } else if (data.type === 'text_annotation_rejected') {
+                    inFlightDoodleMessages.delete(data.client_message_id);
+                    const index = doodleActions.findIndex(action => action.client_message_id === data.client_message_id);
+                    if (index >= 0) {
+                        doodleActions.splice(index, 1);
+                        redrawAllDoodles();
+                    }
                 } else if (data.type === 'draw_batch') {
                     renderDoodleBatch(data);
                 } else if (data.type === 'draw') {
@@ -4619,6 +4886,9 @@
                         data.x1 * rect.width, data.y1 * rect.height,
                         data.color, data.size || 3
                     );
+                } else if (data.type === 'text') {
+                    doodleActions.push(data);
+                    renderTextAnnotation(data);
                 } else if (data.type === 'toggle_mic') {
                     if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
                         agentConnectBtn.click();
@@ -4674,6 +4944,61 @@
             };
         }
 
+        function beginTextAnnotation(event) {
+            if (!textAnnotationMode || !canAddTextAnnotation() || event.target !== canvas) return;
+            event.preventDefault();
+            activeTextEditor?.remove();
+
+            const coords = getNormalizedCoords(event);
+            const editor = document.createElement('input');
+            editor.type = 'text';
+            editor.maxLength = 240;
+            editor.className = 'canvas-text-editor';
+            editor.setAttribute('aria-label', 'Text annotation');
+            editor.placeholder = 'Type annotation…';
+            editor.style.left = `${coords.x * 100}%`;
+            editor.style.top = `${coords.y * 100}%`;
+            editor.style.fontFamily = `"${textAnnotationFont?.value || 'Outfit'}", sans-serif`;
+            editor.style.fontSize = `${textAnnotationSize?.value || 32}px`;
+            editor.style.color = currentTextColor;
+            imgContainer.appendChild(editor);
+            activeTextEditor = editor;
+
+            let finished = false;
+            const finish = (commit) => {
+                if (finished) return;
+                finished = true;
+                const text = editor.value.trim();
+                if (commit && text && canAddTextAnnotation()) {
+                    const action = {
+                        type: 'text', x: coords.x, y: coords.y, text,
+                        color: currentTextColor,
+                        size: Number(textAnnotationSize?.value || 32),
+                        font: textAnnotationFont?.value || 'Outfit',
+                    };
+                    sendOrQueueDoodleMessage(action);
+                    doodleActions.push(action);
+                    renderTextAnnotation(action);
+                }
+                editor.remove();
+                if (activeTextEditor === editor) activeTextEditor = null;
+            };
+            editor.addEventListener('keydown', (keyEvent) => {
+                if (keyEvent.key === 'Enter') {
+                    keyEvent.preventDefault();
+                    finish(true);
+                } else if (keyEvent.key === 'Escape') {
+                    keyEvent.preventDefault();
+                    finish(false);
+                    canvas.focus();
+                }
+            });
+            editor.addEventListener('blur', () => finish(true), { once: true });
+            editor.focus();
+        }
+
+        canvas.addEventListener('click', beginTextAnnotation);
+
         canvas.addEventListener('mousedown', (e) => {
             if (!doodlesEnabled || !currentColor) return;
             isDrawing = true;
@@ -4716,6 +5041,8 @@
 
         clearBtn.addEventListener('click', () => {
             flushDrawBatch();
+            activeTextEditor?.remove();
+            activeTextEditor = null;
             pendingDoodleMessages.length = 0;
             inFlightDoodleMessages.clear();
             doodleActions = [];
@@ -4825,6 +5152,7 @@
         const hideSuggestionsBtn = document.getElementById('hide-suggestions-btn');
         const viewerCollabGuideBtn = document.getElementById('viewer-collab-guide-btn');
         let viewerCollabEnabled = false;
+        updateTextAnnotationAvailability();
 
         function setSuggestionsHidden(hidden, persist = true) {
             suggestionsHidden = Boolean(hidden);
@@ -4855,6 +5183,7 @@
                     viewerCollabEnabled = Boolean(result.viewer_collab_enabled);
                     viewerCollabToggleBtn.textContent = viewerCollabEnabled ? '👥 Collab: On' : '👥 Collab: Off';
                     viewerCollabToggleBtn.classList.toggle('active', viewerCollabEnabled);
+                    updateTextAnnotationAvailability();
                 } catch (err) {
                     console.error('Failed to toggle viewer collab mode:', err);
                 }
@@ -5014,6 +5343,7 @@
             const wasActiveOrator = window._isActiveOratorState;
             window._isActiveOratorState = Boolean(isActiveOrator || (isOwner && !batonState.active_orator));
             const isNowOrator = window._isActiveOratorState;
+            updateTextAnnotationAvailability();
 
             // Role & Orator Controls activation based on active orator status
             if (isNowOrator) {

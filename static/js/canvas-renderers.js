@@ -831,6 +831,32 @@ export function createImageRenderer({
 export function createDoodleRenderer({ canvas, isVisible = () => true }) {
     const context = canvas?.getContext("2d");
 
+    function renderText(action) {
+        if (!context || !canvas || !action?.text) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const size = Math.max(12, Number(action.size) || 32);
+        const font = String(action.font || "Outfit").replace(/["'`;{}]/g, "");
+        const lines = String(action.text).split("\n").slice(0, 4);
+        const x = Number(action.x) * rect.width;
+        const y = Number(action.y) * rect.height;
+
+        context.save();
+        context.globalCompositeOperation = "source-over";
+        context.font = `600 ${size}px "${font}", sans-serif`;
+        context.textBaseline = "top";
+        context.lineJoin = "round";
+        context.strokeStyle = "rgba(0, 0, 0, 0.72)";
+        context.lineWidth = Math.max(2, size / 10);
+        context.fillStyle = action.color || "#ffffff";
+        lines.forEach((line, index) => {
+            const lineY = y + (index * size * 1.15);
+            context.strokeText(line, x, lineY);
+            context.fillText(line, x, lineY);
+        });
+        context.restore();
+    }
+
     function renderSegment(x0, y0, x1, y1, color, size) {
         if (!context) return;
 
@@ -869,6 +895,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true }) {
                     action.color,
                     action.size || 3,
                 );
+            } else if (action.type === "text") {
+                renderText(action);
             }
         });
     }
@@ -890,5 +918,5 @@ export function createDoodleRenderer({ canvas, isVisible = () => true }) {
         redraw(actions);
     }
 
-    return { renderSegment, redraw, resize };
+    return { renderSegment, renderText, redraw, resize };
 }
