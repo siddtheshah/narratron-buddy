@@ -3659,7 +3659,7 @@
             return (typeof viewerCollabEnabled !== 'undefined') ? Boolean(viewerCollabEnabled) : false;
         }
 
-        function hasContributorPermission() {
+        function hasContributorsPermission() {
             if (isCurrentOrator()) return true;
             if (window._isContributor) return true;
             if (typeof currentBatonState !== 'undefined' && currentBatonState) {
@@ -5737,7 +5737,7 @@
             if (!currentBatonState) return;
 
             const activeViewersContainer = document.getElementById('active-viewers-list');
-            const contributorsContainer = document.getElementById('contributor-list');
+            const contributorsContainer = document.getElementById('contributors-list');
             const allowedIds = (currentBatonState.contributors || []).map(u => u.id);
 
             // Render Active Connected Viewers
