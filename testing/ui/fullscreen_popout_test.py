@@ -57,3 +57,19 @@ class TestFullscreenPopout(UITestCase):
             "narratron_popout_channel",
         ):
             self.assertIn(element, html)
+
+    def test_canvas_contains_smaller_monitor_chat_rules(self):
+        response = self.client.get("/canvas?theater_id=test_theater")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for rule in (
+            "@media (max-width: 1280px)",
+            "#chat-sidebar",
+            "width: 280px",
+            "margin-right: -280px",
+            "SMALL_WINDOW_BREAKPOINT = 1280",
+            "window.innerWidth <= SMALL_WINDOW_BREAKPOINT",
+        ):
+            self.assertIn(rule, html)
+

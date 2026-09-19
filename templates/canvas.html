@@ -1415,6 +1415,54 @@
             pointer-events: none;
         }
 
+        /* Responsive chat styling for smaller monitors */
+        @media (max-width: 1280px) {
+            #chat-sidebar {
+                width: 280px;
+            }
+
+            #chat-sidebar.collapsed {
+                margin-right: -280px;
+            }
+
+            #chat-sidebar .panel-header {
+                padding: 0.55rem 0.85rem;
+            }
+
+            #chat-sidebar .panel-title {
+                font-size: 0.8rem;
+            }
+
+            #chat-sidebar #chat-user-bar {
+                padding: 0.35rem 0.75rem;
+                font-size: 0.78rem;
+            }
+
+            #chat-sidebar .agent-thought-card {
+                margin: 6px 8px 4px;
+                padding: 6px 10px;
+                font-size: 0.78rem;
+            }
+
+            #chat-sidebar #chat-messages {
+                padding: 0.5rem 0.75rem;
+            }
+
+            #chat-sidebar #chat-form {
+                padding: 0.5rem 0.75rem;
+            }
+
+            #chat-sidebar #chat-input {
+                padding: 7px 10px;
+                font-size: 0.82rem;
+            }
+
+            #chat-sidebar #chat-form button {
+                padding: 7px 12px;
+                font-size: 0.82rem;
+            }
+        }
+
         .panel-header {
             display: flex;
             align-items: center;
@@ -6820,10 +6868,13 @@
         const panelBody = document.getElementById('panel-body');
         const dockPanelBtn = document.getElementById('dock-panel-btn');
 
-        let isPanelCollapsed = false;
+        const SMALL_WINDOW_BREAKPOINT = 1280;
+        let userToggledPanel = false;
+        let isPanelCollapsed = window.innerWidth <= SMALL_WINDOW_BREAKPOINT;
         let popoutWindowRef = null;
 
-        function setPanelCollapsed(collapsed) {
+        function setPanelCollapsed(collapsed, manual = false) {
+            if (manual) userToggledPanel = true;
             isPanelCollapsed = collapsed;
             const sidebar = document.getElementById('chat-sidebar');
             if (sidebar) {
@@ -6843,11 +6894,27 @@
         }
 
         if (popoutCollapseBtn) {
-            popoutCollapseBtn.addEventListener('click', () => setPanelCollapsed(true));
+            popoutCollapseBtn.addEventListener('click', () => setPanelCollapsed(true, true));
         }
         if (popoutExpandBtn) {
-            popoutExpandBtn.addEventListener('click', () => setPanelCollapsed(false));
+            popoutExpandBtn.addEventListener('click', () => setPanelCollapsed(false, true));
         }
+
+        // Default-hide chat panel if the window is small
+        if (isPanelCollapsed) {
+            const sidebar = document.getElementById('chat-sidebar');
+            if (sidebar) sidebar.classList.add('collapsed');
+            if (popoutExpandBtn) popoutExpandBtn.style.display = 'flex';
+        }
+
+        window.addEventListener('resize', () => {
+            if (!userToggledPanel) {
+                const shouldCollapse = window.innerWidth <= SMALL_WINDOW_BREAKPOINT;
+                if (shouldCollapse !== isPanelCollapsed) {
+                    setPanelCollapsed(shouldCollapse, false);
+                }
+            }
+        });
 
         function openPopoutWindow() {
             const width = 400;
@@ -6887,14 +6954,14 @@
         };
 
         window.toggleFullScreen = toggleFullScreen;
-        window.togglePopoutPanel = () => setPanelCollapsed(!isPanelCollapsed);
+        window.togglePopoutPanel = () => setPanelCollapsed(!isPanelCollapsed, true);
         window.openPopoutWindow = openPopoutWindow;
         window.dockPanelBack = dockPanelBack;
 
         // Chat side arrow toggle tab listener
         const chatSideToggleBtn = document.getElementById('chat-side-toggle-btn');
         if (chatSideToggleBtn) {
-            chatSideToggleBtn.addEventListener('click', () => setPanelCollapsed(!isPanelCollapsed));
+            chatSideToggleBtn.addEventListener('click', () => setPanelCollapsed(!isPanelCollapsed, true));
         }
 
         // ========================================
