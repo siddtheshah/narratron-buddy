@@ -541,6 +541,49 @@ class TestTheaterAPI(BaseTestCase):
             self.assertTrue(deploy_config["interactive_canvas"]["enabled"])
             self.assertTrue(deploy_config["music"]["use_generated_music"])
 
+    def test_create_and_deploy_theater_with_advanced_config_direct(self):
+        self.client.post("/api/auth/register", json={
+            "username": "adv_config_user",
+            "email": "adv_config@example.com",
+            "password": "Password123",
+        })
+        custom_yaml = """
+live_agent:
+  style: cyberpunk noir detective
+  special_instructions: speak in terse radio jargon
+music:
+  use_generated_music: true
+"""
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Advanced Config Theater",
+                "advanced_config": custom_yaml,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        config = theater_manager.theater(theater_id).config()
+        self.assertEqual(config["live_agent"]["style"], "cyberpunk noir detective")
+        self.assertEqual(config["live_agent"]["special_instructions"], "speak in terse radio jargon")
+        self.assertTrue(config["music"]["use_generated_music"])
+
+    def test_create_and_deploy_theater_with_invalid_advanced_config(self):
+        self.client.post("/api/auth/register", json={
+            "username": "bad_adv_user",
+            "email": "bad_adv@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Bad Config Theater",
+                "advanced_config": "not_valid_yaml: [unclosed list",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid theater configuration", response.json()["detail"])
+
     def test_theater_output_route_uses_theater_bound_output_directory(self):
         reg_res = self.client.post("/api/auth/register", json={
             "username": "output_tester",

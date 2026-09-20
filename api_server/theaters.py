@@ -492,7 +492,6 @@ def build_theater_config(
         )
 
     # Ensure app.yaml is applied at the end
-    apply_app_config(theater_config)
     return theater_config
 
 
@@ -509,6 +508,7 @@ async def create_and_deploy_theater(request: Request):
     special_instructions = str(form.get("agent_special_instructions", "")).strip()
     creation_mode = str(form.get("creation_mode", "blank"))
     folder_config_yaml = form.get("folder_theater_config_yaml")
+    advanced_config = form.get("advanced_config")
     use_generated_music = str(form.get("use_generated_music", "false")).lower() == "true"
     # Default to enabled so older clients and existing integrations retain
     # their current behavior when they do not send the new field.
@@ -616,19 +616,27 @@ async def create_and_deploy_theater(request: Request):
                     playlists_data[pl_name].append((filename, content))
 
     # Build theater configuration
-    theater_config = build_theater_config(
-        creation_mode=creation_mode,
-        folder_config_yaml=folder_config_yaml,
-        adv_config=adv_config,
-        special_instructions=special_instructions,
-        style=style,
-        enable_image_generation=enable_image_generation,
-        use_generated_music=use_generated_music,
-        enable_scene_animations=enable_scene_animations,
-        enable_interactive_canvas=enable_interactive_canvas,
-        enable_adventure_mode=enable_adventure_mode,
-        story_planning_style=story_planning_style,
-    )
+    if advanced_config:
+        try:
+            theater_config = yaml.safe_load(advanced_config) if isinstance(advanced_config, str) else advanced_config
+            if not isinstance(theater_config, dict):
+                raise ValueError("Theater configuration must be a YAML mapping.")
+        except (yaml.YAMLError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=f"Invalid theater configuration: {error}")
+    else:
+        theater_config = build_theater_config(
+            creation_mode=creation_mode,
+            folder_config_yaml=folder_config_yaml,
+            adv_config=adv_config,
+            special_instructions=special_instructions,
+            style=style,
+            enable_image_generation=enable_image_generation,
+            use_generated_music=use_generated_music,
+            enable_scene_animations=enable_scene_animations,
+            enable_interactive_canvas=enable_interactive_canvas,
+            enable_adventure_mode=enable_adventure_mode,
+            story_planning_style=story_planning_style,
+        )
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = theater_manager.create_theater(

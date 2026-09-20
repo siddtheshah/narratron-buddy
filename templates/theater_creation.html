@@ -110,7 +110,7 @@
             align-items: start;
         }
 
-        .pricing-rates-column > :last-child,
+        .pricing-rates-column> :last-child,
         .pricing-calculator {
             margin-bottom: 0 !important;
         }
@@ -1074,7 +1074,8 @@
                                     <div>
                                         <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
                                             🖼️ AI Image Generation</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Turn off to coordinate your mounted visual assets without generating new images</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Turn off to
+                                            coordinate your mounted visual assets without generating new images</div>
                                     </div>
                                 </label>
                                 <label class="checkbox-card">
@@ -1100,7 +1101,8 @@
                                     <div>
                                         <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
                                             🧩 Interactive Canvas Tools</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets the agent add interactive controls and displays to the canvas</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets the agent
+                                            add interactive controls and displays to the canvas</div>
                                     </div>
                                 </label>
                             </div>
@@ -1236,7 +1238,8 @@
                         <h4 style="font-size: 0.95rem; font-weight: 700; color: #c4b5fd; margin-bottom: 0.25rem;">
                             Adventure Mode</h4>
                         <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45;">
-                            Start a choice-driven adventure immediately. Select a premade adventure preset to mount its lore, soundscapes, and character references, or create a custom world.
+                            Start a choice-driven adventure immediately. Select a premade adventure preset to mount its
+                            lore, soundscapes, and character references, or create a custom world.
                         </p>
                     </div>
 
@@ -1245,19 +1248,31 @@
                         <select id="adventurePresetSelect" onchange="onAdventurePresetSelected()">
                             <option value="">✨ Custom / Blank Adventure (No Preset)</option>
                         </select>
-                        <small>Selecting a preset automatically mounts its lore documents, playlists, character portraits, and planner configurations.</small>
+                        <small>Selecting a preset automatically mounts its lore documents, playlists, character
+                            portraits, and planner configurations.</small>
                     </div>
 
                     <!-- Preset Preview Card -->
-                    <div id="adventurePresetCard" style="display: none; margin-top: 0.75rem; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(139, 92, 246, 0.35); border-radius: var(--radius-md); overflow: hidden;">
-                        <div id="presetCardBanner" style="height: 110px; background-size: cover; background-position: center; position: relative;">
-                            <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(15,23,42,0.9) 100%);"></div>
-                            <span id="presetCardGenre" style="position: absolute; top: 8px; right: 8px; background: rgba(139, 92, 246, 0.85); color: #fff; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700;"></span>
+                    <div id="adventurePresetCard"
+                        style="display: none; margin-top: 0.75rem; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(139, 92, 246, 0.35); border-radius: var(--radius-md); overflow: hidden;">
+                        <div id="presetCardBanner"
+                            style="height: 110px; background-size: cover; background-position: center; position: relative;">
+                            <div
+                                style="position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(15,23,42,0.9) 100%);">
+                            </div>
+                            <span id="presetCardGenre"
+                                style="position: absolute; top: 8px; right: 8px; background: rgba(139, 92, 246, 0.85); color: #fff; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700;"></span>
                         </div>
                         <div style="padding: 0.85rem;">
-                            <div id="presetCardTitle" style="font-weight: 700; font-size: 0.95rem; color: #fff; margin-bottom: 0.25rem;"></div>
-                            <div id="presetCardDesc" style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 0.5rem;"></div>
-                            <div id="presetCardPills" style="display: flex; gap: 0.4rem; flex-wrap: wrap; font-size: 0.75rem; color: #cbd5e1;"></div>
+                            <div id="presetCardTitle"
+                                style="font-weight: 700; font-size: 0.95rem; color: #fff; margin-bottom: 0.25rem;">
+                            </div>
+                            <div id="presetCardDesc"
+                                style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 0.5rem;">
+                            </div>
+                            <div id="presetCardPills"
+                                style="display: flex; gap: 0.4rem; flex-wrap: wrap; font-size: 0.75rem; color: #cbd5e1;">
+                            </div>
                         </div>
                     </div>
 
@@ -1265,7 +1280,8 @@
                         <label for="storyPlanningStyle">Story Planning Style</label>
                         <textarea id="storyPlanningStyle" rows="3" maxlength="500"
                             placeholder="e.g. Harsh and unforgiving: failures leave lasting scars, enemies exploit mistakes, and victories must be earned—but never take away player agency."></textarea>
-                        <small>Sets the planner's tone, pacing, opposition, and consequences. Leave blank for a balanced, consequence-driven adventure.</small>
+                        <small>Sets the planner's tone, pacing, opposition, and consequences. Leave blank for a
+                            balanced, consequence-driven adventure.</small>
                     </div>
                 </div>
 
@@ -1606,152 +1622,185 @@
             <div class="pricing-content-grid">
                 <div class="pricing-rates-column">
                     <!-- Credit exchange is account-level information, separate from usage rates. -->
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(129, 140, 248, 0.25); border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 1.25rem;">
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(129, 140, 248, 0.25); border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 1.25rem;">
                         <div style="font-size: 0.85rem; font-weight: 700; color: #818cf8;">💵 Credit exchange</div>
-                        <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;">$1.00 = <span id="rateCreditsPerUsd">20.0</span> Cr</div>
-                        <div style="font-size: 0.8rem; color: var(--text-secondary);">1 credit = <span id="rateUsdPerCredit">$0.05</span> USD</div>
+                        <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;">$1.00 = <span
+                                id="rateCreditsPerUsd">20.0</span> Cr</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">1 credit = <span
+                                id="rateUsdPerCredit">$0.05</span> USD</div>
                     </div>
 
                     <!-- Pricing rates: one compact row per billable capability. -->
-                    <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; margin-bottom: 1.25rem;">
-                <div style="padding: 0.5rem 1rem; background: rgba(14, 116, 144, 0.12); border-bottom: 1px solid rgba(34, 211, 238, 0.25); color: #67e8f9; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
-                    🖥️ UI Updates
-                </div>
-                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #67e8f9;">🧩 Interactive canvas tools</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateInteractiveCanvas">0.25</span> Cr / use</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Agent-created interactive canvas controls (~<span id="rateInteractiveCanvasUsd">$0.01</span> / use)</div>
-                </div>
-                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #c084fc;">🎙️ Live voice</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateVoice">1.0</span> Cr / min</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Gemini Live streaming (~<span id="rateVoiceUsd">$0.05</span> / min)</div>
-                </div>
-                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #22d3ee;">🖼️ Image generation</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateImage">1.0</span> Cr / image</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Imagen / Flash scene images (~<span id="rateImageUsd">$0.05</span> / image)</div>
-                </div>
-                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #fb7185;">🎵 Music generation</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateMusic">2.0</span> Cr / track</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Lyria background tracks (~<span id="rateMusicUsd">$0.10</span> / track)</div>
-                </div>
-                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">🎬 Animation</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateLayeredAnimation">6.5</span> Cr / successful animation</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">All animation techniques (~<span id="rateLayeredAnimationUsd">$0.33</span> / animation)</div>
-                </div>
-                <div style="padding: 0.5rem 1rem; background: rgba(5, 150, 105, 0.12); border-bottom: 1px solid rgba(52, 211, 153, 0.25); color: #6ee7b7; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
-                    💾 Storage
-                </div>
-                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #34d399;">💾 Persistent storage</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateStorageMonthly">1.0</span> Cr / GB / mo</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Daily rate: ~<span id="rateStorageDaily">0.033</span> Cr / GB / day</div>
-                </div>
-                <div style="padding: 0.5rem 1rem; background: rgba(124, 58, 237, 0.12); border-bottom: 1px solid rgba(168, 85, 247, 0.25); color: #d8b4fe; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
-                    🗺️ Adventure Mode
-                </div>
-                <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #d8b4fe;">📖 Story planning</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateStoryPlanning">0.5</span> Cr / turn</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Each completed player action resolved by the story planner (~<span id="rateStoryPlanningUsd">$0.03</span> / turn)</div>
-                </div>
-                <div class="pricing-rate-row">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #fbbf24;">🗣️ Character voicing</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span id="rateCharacterVoicing">0.25</span> Cr / turn</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Seed Speech NPC dialogue (~<span id="rateCharacterVoicingUsd">$0.01</span> / turn)</div>
-                </div>
+                    <div
+                        style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; margin-bottom: 1.25rem;">
+                        <div
+                            style="padding: 0.5rem 1rem; background: rgba(14, 116, 144, 0.12); border-bottom: 1px solid rgba(34, 211, 238, 0.25); color: #67e8f9; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+                            🖥️ UI Updates
+                        </div>
+                        <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #67e8f9;">🧩 Interactive canvas
+                                tools</div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateInteractiveCanvas">0.25</span> Cr / use</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Agent-created interactive
+                                canvas controls (~<span id="rateInteractiveCanvasUsd">$0.01</span> / use)</div>
+                        </div>
+                        <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #c084fc;">🎙️ Live voice</div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateVoice">1.0</span> Cr / min</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Gemini Live streaming (~<span
+                                    id="rateVoiceUsd">$0.05</span> / min)</div>
+                        </div>
+                        <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #22d3ee;">🖼️ Image generation
+                            </div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateImage">1.0</span> Cr / image</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Imagen / Flash scene images
+                                (~<span id="rateImageUsd">$0.05</span> / image)</div>
+                        </div>
+                        <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #fb7185;">🎵 Music generation</div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateMusic">2.0</span> Cr / track</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Lyria background tracks
+                                (~<span id="rateMusicUsd">$0.10</span> / track)</div>
+                        </div>
+                        <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">🎬 Animation</div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateLayeredAnimation">6.5</span> Cr / successful animation</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">All animation techniques
+                                (~<span id="rateLayeredAnimationUsd">$0.33</span> / animation)</div>
+                        </div>
+                        <div
+                            style="padding: 0.5rem 1rem; background: rgba(5, 150, 105, 0.12); border-bottom: 1px solid rgba(52, 211, 153, 0.25); color: #6ee7b7; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+                            💾 Storage
+                        </div>
+                        <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #34d399;">💾 Persistent storage
+                            </div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateStorageMonthly">1.0</span> Cr / GB / mo</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Daily rate: ~<span
+                                    id="rateStorageDaily">0.033</span> Cr / GB / day</div>
+                        </div>
+                        <div
+                            style="padding: 0.5rem 1rem; background: rgba(124, 58, 237, 0.12); border-bottom: 1px solid rgba(168, 85, 247, 0.25); color: #d8b4fe; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+                            🗺️ Adventure Mode
+                        </div>
+                        <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #d8b4fe;">📖 Story planning</div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateStoryPlanning">0.5</span> Cr / turn</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Each completed player action
+                                resolved by the story planner (~<span id="rateStoryPlanningUsd">$0.03</span> / turn)
+                            </div>
+                        </div>
+                        <div class="pricing-rate-row">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #fbbf24;">🗣️ Character voicing
+                            </div>
+                            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
+                                    id="rateCharacterVoicing">0.25</span> Cr / turn</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Seed Speech NPC dialogue
+                                (~<span id="rateCharacterVoicingUsd">$0.01</span> / turn)</div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Interactive Session Cost Estimator -->
                 <div class="pricing-calculator"
-                style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 1.1rem; margin-bottom: 1.25rem;">
-                <div
-                    style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem;">
+                    style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 1.1rem; margin-bottom: 1.25rem;">
                     <div
-                        style="font-size: 0.85rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">
-                        🧮 Interactive Session Cost Calculator
-                    </div>
-                    <span style="font-size: 0.75rem; color: var(--text-muted);">Calculated live via API</span>
-                </div>
-
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 10px; margin-bottom: 1rem;">
-                    <div>
-                        <label
-                            style="font-size: 0.75rem; font-weight: 600; color: #d8b4fe; display: block; margin-bottom: 4px;">Story
-                            Turns</label>
-                        <input type="number" id="calcStoryTurnsInput" min="0" max="1000" step="1" value="0"
-                            oninput="calculateLivePricingEstimate()"
-                            style="width: 100%; background: #0f172a; border: 1px solid rgba(168,85,247,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
-                    </div>
-                    <div style="display: flex; flex-direction: column; justify-content: flex-end;">
-                        <label style="font-size: 0.75rem; font-weight: 600; color: #fbbf24; display: flex; align-items: center; gap: 7px; min-height: 34px; cursor: pointer;">
-                            <input type="checkbox" id="calcCharacterVoicingInput" onchange="calculateLivePricingEstimate()"
-                                style="accent-color: #fbbf24; width: 16px; height: 16px; cursor: pointer;">
-                            Character voicing
-                        </label>
-                    </div>
-                    <div>
-                        <label
-                            style="font-size: 0.75rem; font-weight: 600; color: #67e8f9; display: block; margin-bottom: 4px;">Canvas
-                            Tool Uses</label>
-                        <input type="number" id="calcInteractiveCanvasInput" min="0" max="1000" step="1" value="0"
-                            oninput="calculateLivePricingEstimate()"
-                            style="width: 100%; background: #0f172a; border: 1px solid rgba(34,211,238,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
-                    </div>
-                    <div>
-                        <label
-                            style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Voice
-                            (Mins)</label>
-                        <input type="number" id="calcVoiceInput" min="0" max="300" step="5" value="30"
-                            oninput="calculateLivePricingEstimate()"
-                            style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
-                    </div>
-                    <div>
-                        <label
-                            style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Images
-                            Created</label>
-                        <input type="number" id="calcImagesInput" min="0" max="100" step="1" value="10"
-                            oninput="calculateLivePricingEstimate()"
-                            style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
-                    </div>
-                    <div>
-                        <label
-                            style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Music
-                            Tracks</label>
-                        <input type="number" id="calcMusicInput" min="0" max="50" step="1" value="2"
-                            oninput="calculateLivePricingEstimate()"
-                            style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
-                    </div>
-                    <div>
-                        <label
-                            style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Storage
-                            (GB)</label>
-                        <input type="number" id="calcStorageInput" min="0" max="50" step="0.5" value="1.0"
-                            oninput="calculateLivePricingEstimate()"
-                            style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
-                    </div>
-                </div>
-
-                <div
-                    style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 0.85rem 1rem; display: flex; align-items: center; justify-content: space-between;">
-                    <div>
+                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem;">
                         <div
-                            style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600;">
-                            Estimated Session Cost</div>
-                        <div style="font-size: 0.8rem; color: var(--text-muted);" id="calcBreakdownText">30 voice mins +
-                            10 images + 2 music tracks + 0 story turns + 1.0 GB/mo</div>
+                            style="font-size: 0.85rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">
+                            🧮 Interactive Session Cost Calculator
+                        </div>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Calculated live via API</span>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 1.35rem; font-weight: 800; color: #34d399;" id="calcTotalCredits">⚡ 41.0
-                            Cr</div>
-                        <div style="font-size: 0.82rem; color: var(--text-secondary);" id="calcTotalUsd">~$2.05 USD
+
+                    <div
+                        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 10px; margin-bottom: 1rem;">
+                        <div>
+                            <label
+                                style="font-size: 0.75rem; font-weight: 600; color: #d8b4fe; display: block; margin-bottom: 4px;">Story
+                                Turns</label>
+                            <input type="number" id="calcStoryTurnsInput" min="0" max="1000" step="1" value="0"
+                                oninput="calculateLivePricingEstimate()"
+                                style="width: 100%; background: #0f172a; border: 1px solid rgba(168,85,247,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                        </div>
+                        <div style="display: flex; flex-direction: column; justify-content: flex-end;">
+                            <label
+                                style="font-size: 0.75rem; font-weight: 600; color: #fbbf24; display: flex; align-items: center; gap: 7px; min-height: 34px; cursor: pointer;">
+                                <input type="checkbox" id="calcCharacterVoicingInput"
+                                    onchange="calculateLivePricingEstimate()"
+                                    style="accent-color: #fbbf24; width: 16px; height: 16px; cursor: pointer;">
+                                Character voicing
+                            </label>
+                        </div>
+                        <div>
+                            <label
+                                style="font-size: 0.75rem; font-weight: 600; color: #67e8f9; display: block; margin-bottom: 4px;">Canvas
+                                Tool Uses</label>
+                            <input type="number" id="calcInteractiveCanvasInput" min="0" max="1000" step="1" value="0"
+                                oninput="calculateLivePricingEstimate()"
+                                style="width: 100%; background: #0f172a; border: 1px solid rgba(34,211,238,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                        </div>
+                        <div>
+                            <label
+                                style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Voice
+                                (Mins)</label>
+                            <input type="number" id="calcVoiceInput" min="0" max="300" step="5" value="30"
+                                oninput="calculateLivePricingEstimate()"
+                                style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                        </div>
+                        <div>
+                            <label
+                                style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Images
+                                Created</label>
+                            <input type="number" id="calcImagesInput" min="0" max="100" step="1" value="10"
+                                oninput="calculateLivePricingEstimate()"
+                                style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                        </div>
+                        <div>
+                            <label
+                                style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Music
+                                Tracks</label>
+                            <input type="number" id="calcMusicInput" min="0" max="50" step="1" value="2"
+                                oninput="calculateLivePricingEstimate()"
+                                style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
+                        </div>
+                        <div>
+                            <label
+                                style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Storage
+                                (GB)</label>
+                            <input type="number" id="calcStorageInput" min="0" max="50" step="0.5" value="1.0"
+                                oninput="calculateLivePricingEstimate()"
+                                style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
                     </div>
-                </div>
+
+                    <div
+                        style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 0.85rem 1rem; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <div
+                                style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600;">
+                                Estimated Session Cost</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);" id="calcBreakdownText">30 voice
+                                mins +
+                                10 images + 2 music tracks + 0 story turns + 1.0 GB/mo</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 1.35rem; font-weight: 800; color: #34d399;" id="calcTotalCredits">⚡
+                                41.0
+                                Cr</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary);" id="calcTotalUsd">~$2.05 USD
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2490,7 +2539,7 @@
 
                 const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
                 if (advancedConfigIsCanonical && theaterConfigYaml) {
-                    formData.append('theater_config_yaml', theaterConfigYaml);
+                    formData.append('advanced_config', theaterConfigYaml);
                 }
 
                 if (currentCreationPath === 'folder') {
