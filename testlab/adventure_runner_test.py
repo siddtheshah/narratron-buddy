@@ -433,15 +433,30 @@ def test_auto_player_prompt_and_decide_action():
         text_provider=mock_provider,
     )
 
-    # 1. Check prompt assembly on Turn 1 (no history)
+    # 1. Check prompt assembly on Turn 1 (no history, stickies hidden by default)
     p1 = player._build_prompt(
         session_state={"sticky_notes": [{"topic": "Power Unit", "info": "Active"}]},
         history=[],
         turn_index=1,
     )
     assert "Turn 1" in p1
-    assert "Power Unit" in p1
+    assert "Power Unit" not in p1
     assert "The adventure is just beginning" in p1
+
+    # Check with include_stickies=True
+    player_with_stickies = AutoPlayer(
+        adventure_title="Test Odyssey",
+        adventure_description="A test space adventure.",
+        instructions="Be zany and try to break the game",
+        text_provider=mock_provider,
+        include_stickies=True,
+    )
+    p1_with_stickies = player_with_stickies._build_prompt(
+        session_state={"sticky_notes": [{"topic": "Power Unit", "info": "Active"}]},
+        history=[],
+        turn_index=1,
+    )
+    assert "Power Unit" in p1_with_stickies
 
     # 2. Check prompt assembly on Turn 2 (with history)
     mock_history = [
@@ -649,5 +664,6 @@ def test_main_cli_autoplay_flags(monkeypatch):
             call_kwargs = mock_run_autoplay.call_args.kwargs
             assert call_kwargs["instructions"] == "Be zany and try to break the game"
             assert call_kwargs["max_turns"] == 3
+            assert call_kwargs["include_stickies"] is False
             mock_session.cleanup.assert_called_once()
 

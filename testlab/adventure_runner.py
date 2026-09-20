@@ -832,6 +832,7 @@ class AutoPlayer:
         model: str = "gemini-3.7-flash",
         provider_id: str = "gemini-3",
         text_provider: Optional[Any] = None,
+        include_stickies: bool = False,
     ) -> None:
         self.adventure_title = adventure_title or "Interactive Adventure"
         self.adventure_description = adventure_description or "An interactive text story."
@@ -840,6 +841,7 @@ class AutoPlayer:
         )
         self.model = model
         self.provider_id = provider_id
+        self.include_stickies = include_stickies
         self.text_provider = text_provider or get_text_response_provider(
             self.provider_id,
             options={"model": self.model},
@@ -876,10 +878,13 @@ class AutoPlayer:
         ) or "None recorded yet."
 
         if not history:
+            initial_clues = (
+                f"\n\nInitial Clues & Setting Elements:\n{sticky_summary}"
+                if self.include_stickies
+                else ""
+            )
             return (
-                f"The adventure is just beginning!\n\n"
-                f"Initial Clues & Setting Elements:\n"
-                f"{sticky_summary}\n\n"
+                f"The adventure is just beginning!{initial_clues}\n\n"
                 f"This is Turn {turn_index}. Based on your playstyle directives, decide on your very first action "
                 f"or dialogue to kick off the adventure."
             )
@@ -909,12 +914,15 @@ class AutoPlayer:
             history_blocks.append(block)
 
         history_str = "\n\n".join(history_blocks)
+        clues_block = (
+            f"\n\nCurrent Known Clues & Environment State:\n{sticky_summary}"
+            if self.include_stickies
+            else ""
+        )
 
         return (
             f"Recent Story Chronicle:\n"
-            f"{history_str}\n\n"
-            f"Current Known Clues & Environment State:\n"
-            f"{sticky_summary}\n\n"
+            f"{history_str}{clues_block}\n\n"
             f"This is Turn {turn_index}. Based on the latest narrative and your playstyle directives, "
             f"what do you do or say next?"
         )
@@ -1207,6 +1215,7 @@ def run_autoplay(
     delay: float = 0.0,
     player: Optional[AutoPlayer] = None,
     initial_action: str = "",
+    include_stickies: bool = False,
 ) -> Dict[str, Any]:
     """Execute an autonomous play session driven by an LLM player agent."""
     adv_meta_file = session.adventure_path / "metadata.json"
@@ -1226,6 +1235,7 @@ def run_autoplay(
             adventure_description=description,
             instructions=instructions,
             model=autoplay_model,
+            include_stickies=include_stickies,
         )
 
     agent_model_name = str(
@@ -1395,6 +1405,14 @@ def main() -> int:
         default=0.0,
         help="Pause in seconds between autoplay turns (default: 0.0).",
     )
+    parser.add_argument(
+        "--autoplay-include-stickies",
+        "--autoplay_include_stickies",
+        dest="autoplay_include_stickies",
+        action="store_true",
+        default=False,
+        help="Include active sticky notes in the prompt presented to the autonomous player (hidden by default).",
+    )
 
     args = parser.parse_args()
 
@@ -1467,6 +1485,7 @@ def main() -> int:
                 log_path=args.autoplay_log or None,
                 delay=args.autoplay_delay,
                 initial_action=args.action,
+                include_stickies=args.autoplay_include_stickies,
             )
         finally:
             session.cleanup()
