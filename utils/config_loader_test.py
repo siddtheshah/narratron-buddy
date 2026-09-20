@@ -79,7 +79,8 @@ class TestConfigLoader(BaseTestCase):
             save_theater_config(theater_id, override_attempt, theater_manager=tm)
             loaded = get_theater_config(theater_id, theater_manager=tm)
             app_internal = get_app_config().get("live_agent", {})
-            self.assertEqual(loaded.get("live_agent"), app_internal)
+            for k, v in app_internal.items():
+                self.assertEqual(loaded.get("live_agent", {}).get(k), v)
             self.assertNotEqual(loaded.get("live_agent", {}).get("model_id"), "user-custom-fake-model")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)

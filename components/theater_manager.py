@@ -1,5 +1,6 @@
 """Filesystem-backed theater lifecycle and asset management."""
 
+from copy import deepcopy
 from datetime import datetime, timezone
 import io
 import json
@@ -405,9 +406,10 @@ class TheaterManager:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
 
-        config = get_theater_default_config()
-        if theater_config:
-            deep_merge(config, theater_config)
+        if theater_config is not None:
+            config = deepcopy(theater_config)
+        else:
+            config = get_theater_default_config()
         save_theater_config(theater_id, config, theater_manager=self)
         metadata = TheaterMetadata(theater_id=theater_id, name=name, mounted_references=mounted_references, mounted_playlists=mounted_playlists, config=config)
         self._save_metadata(metadata)

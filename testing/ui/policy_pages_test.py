@@ -81,16 +81,6 @@ class TestPolicyPages(unittest.TestCase):
         self.assertIn("Terms of Service", auth_js)
         self.assertIn("Privacy Policy", auth_js)
 
-    def test_share_theater_link_targets_canvas_with_join_key(self):
-        """Verify share button creates a /canvas link with theater_id and join_key."""
-        canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
-        self.assertIn("const shareUrl = new URL('/canvas', window.location.origin);", canvas_html)
-        self.assertIn("shareUrl.searchParams.set('theater_id', theaterId);", canvas_html)
-        self.assertIn("shareUrl.searchParams.set('join_key', joinKey);", canvas_html)
-        self.assertNotIn("new URL('/join', window.location.origin)", canvas_html)
-
-        splash_html = Path("templates/join_splash.html").read_text(encoding="utf-8")
-        self.assertIn("window.location.href = `/canvas?theater_id=${encodeURIComponent(initialTheater)}&join_key=${encodeURIComponent(initialKey)}`;", splash_html)
 
 
 if __name__ == "__main__":

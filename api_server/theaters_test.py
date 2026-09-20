@@ -293,9 +293,9 @@ class TestTheaterAPI(BaseTestCase):
         join_key = data["theater"]["join_key"]
         self.assertIsNotNone(theater_id)
         self.assertIsNotNone(join_key)
-        theater_yaml = (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
-        self.assertIn("style: storybook watercolor", theater_yaml)
-        self.assertIn("special_instructions: Be concise.", theater_yaml)
+        config = theater_manager.theater(theater_id).config()
+        self.assertEqual(config["image_generation"]["style"], "storybook watercolor")
+        self.assertEqual(config["live_agent"]["special_instructions"], "Be concise.")
 
         # Test resolving join key
         res_key = self.client.post("/api/theaters/resolve-join-key", json={"join_key": join_key})
@@ -332,35 +332,6 @@ class TestTheaterAPI(BaseTestCase):
         self.assertTrue(response.json()["metadata"]["is_owner"])
         get_deployment.assert_called_once_with(theater_id)
 
-    def test_advanced_yaml_is_canonical_over_quick_agent_fields(self):
-        self.client.post("/api/auth/register", json={
-            "username": "advanced_config_user",
-            "email": "advanced-config@example.com",
-            "password": "Password123",
-        })
-        response = self.client.post(
-            "/api/theaters/create-and-deploy",
-            data={
-                "name": "Advanced Config Theater",
-                "agent_style": "quick style",
-                "agent_special_instructions": "quick instructions",
-                "advanced_config_canonical": "true",
-                "theater_config_yaml": (
-                    "live_agent:\n"
-                    "  style: advanced style\n"
-                    "  special_instructions: advanced instructions\n"
-                ),
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        theater_id = response.json()["theater_id"]
-        config = yaml.safe_load(
-            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
-        )
-        self.assertEqual(config["live_agent"]["style"], "advanced style")
-        self.assertEqual(config["live_agent"]["special_instructions"], "advanced instructions")
-
     def test_feature_flags_forwarded_to_theater_config(self):
         self.client.post("/api/auth/register", json={
             "username": "flags_user",
@@ -379,9 +350,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = yaml.safe_load(
-            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
-        )
+        config = theater_manager.theater(theater_id).config()
         self.assertTrue(config["music"]["use_generated_music"])
         self.assertTrue(config["animation"]["enabled"])
         self.assertTrue(config["interactive_canvas"]["enabled"])
@@ -402,9 +371,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = yaml.safe_load(
-            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
-        )
+        config = theater_manager.theater(theater_id).config()
         self.assertFalse(config["image_generation"]["enabled"])
 
     def test_feature_flags_default_to_false_when_omitted(self):
@@ -419,9 +386,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = yaml.safe_load(
-            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
-        )
+        config = theater_manager.theater(theater_id).config()
         self.assertFalse(config["music"]["use_generated_music"])
         self.assertFalse(config["animation"]["enabled"])
         self.assertFalse(config["interactive_canvas"]["enabled"])
@@ -444,9 +409,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = yaml.safe_load(
-            (theater_manager.theater(theater_id).directory() / "theater.yaml").read_text(encoding="utf-8")
-        )
+        config = theater_manager.theater(theater_id).config()
         self.assertEqual(config["story_planning"]["style"], "harsh and unforgiving, but never arbitrary")
 
     def test_folder_upload_requires_theater_yaml(self):
@@ -489,10 +452,10 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        theater_dir = theater_manager.theater(theater_id).directory()
-        config = yaml.safe_load((theater_dir / "theater.yaml").read_text(encoding="utf-8"))
+        theater = theater_manager.theater(theater_id)
+        config = theater.config()
         self.assertTrue(config["story_planning"]["adventure_mode"])
-        self.assertFalse((theater_dir / "playlists" / "default" / "new_story.mp3").is_file())
+        self.assertFalse((theater.directory() / "playlists" / "default" / "new_story.mp3").is_file())
 
     def test_launch_adventure_from_adventures_page_or_deploy_does_not_attach_default_playlist(self):
         self.client.post("/api/auth/register", json={
@@ -529,6 +492,54 @@ class TestTheaterAPI(BaseTestCase):
         deploy_theater_id = response_deploy.json()["theater_id"]
         deploy_theater = theater_manager.theater(deploy_theater_id)
         self.assertFalse((deploy_theater.playlists_dir() / "default").exists())
+
+    def test_adventure_preset_theater_yaml_not_overridden_by_defaults(self):
+        from services.adventure_service import AdventureService
+        adv_service = AdventureService(Path(__file__).parent.parent / "adventures")
+        with patch.object(object_registry, "adventure_service", adv_service):
+            self.client.post("/api/auth/register", json={
+                "username": "judge_player",
+                "email": "judge_player@example.com",
+                "password": "Password123",
+            })
+            # Simulate quick-launch from /adventures page (omits enable_interactive_canvas, use_generated_music)
+            response = self.client.post(
+                "/api/theaters/create-and-deploy",
+                data={
+                    "name": "The Judge",
+                    "creation_mode": "adventure",
+                    "preset_adventure_id": "the-judge",
+                    "enable_adventure_mode": "true",
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            theater_id = response.json()["theater_id"]
+            config = theater_manager.theater(theater_id).config()
+
+            # theater_default.yaml has interactive_canvas: enabled: false, but the-judge has enabled: true
+            self.assertTrue(config["interactive_canvas"]["enabled"])
+            self.assertEqual(config["interactive_canvas"]["max_surfaces"], 4)
+            self.assertEqual(config["interactive_canvas"]["cooldown_duration"], 5)
+            # theater_default.yaml has music: use_generated_music: false, but the-judge has true
+            self.assertTrue(config["music"]["use_generated_music"])
+
+            # Simulate deploying from /deploy page where hidden form toggles send "false"
+            response_deploy = self.client.post(
+                "/api/theaters/create-and-deploy",
+                data={
+                    "name": "The Judge via Deploy",
+                    "creation_mode": "adventure",
+                    "preset_adventure_id": "the-judge",
+                    "enable_adventure_mode": "true",
+                    "enable_interactive_canvas": "false",
+                    "use_generated_music": "false",
+                },
+            )
+            self.assertEqual(response_deploy.status_code, 200)
+            deploy_theater_id = response_deploy.json()["theater_id"]
+            deploy_config = theater_manager.theater(deploy_theater_id).config()
+            self.assertTrue(deploy_config["interactive_canvas"]["enabled"])
+            self.assertTrue(deploy_config["music"]["use_generated_music"])
 
     def test_theater_output_route_uses_theater_bound_output_directory(self):
         reg_res = self.client.post("/api/auth/register", json={
@@ -939,7 +950,9 @@ def test_list_adventures_endpoint():
         {"id": "adv-1", "title": "Adventure 1", "created_at": "2026-08-18T10:00:00Z"},
         {"id": "adv-2", "title": "Adventure 2", "created_at": "2026-08-17T10:00:00Z"},
     ]
-    with patch.object(object_registry.adventure_service, "list_adventures", return_value=mock_adventures):
+    mock_service = MagicMock()
+    mock_service.list_adventures.return_value = mock_adventures
+    with patch.object(object_registry, "adventure_service", mock_service):
         res = theaters.list_adventures_endpoint()
         assert len(res) == 2
         assert res[0]["id"] == "adv-1"
@@ -947,7 +960,9 @@ def test_list_adventures_endpoint():
 
 def test_get_adventure_endpoint_success_and_404():
     mock_adv = {"id": "adv-1", "title": "Adventure 1"}
-    with patch.object(object_registry.adventure_service, "get_adventure", side_effect=lambda adv_id: mock_adv if adv_id == "adv-1" else None):
+    mock_service = MagicMock()
+    mock_service.get_adventure.side_effect = lambda adv_id: mock_adv if adv_id == "adv-1" else None
+    with patch.object(object_registry, "adventure_service", mock_service):
         res = theaters.get_adventure_endpoint("adv-1")
         assert res["title"] == "Adventure 1"
 
@@ -957,7 +972,9 @@ def test_get_adventure_endpoint_success_and_404():
 
 
 def test_get_adventure_cover_endpoint_success_and_404():
-    with patch.object(object_registry.adventure_service, "get_adventure_cover", side_effect=lambda adv_id: (b"imagedata", "image/png") if adv_id == "adv-1" else None):
+    mock_service = MagicMock()
+    mock_service.get_adventure_cover.side_effect = lambda adv_id: (b"imagedata", "image/png") if adv_id == "adv-1" else None
+    with patch.object(object_registry, "adventure_service", mock_service):
         res = theaters.get_adventure_cover_endpoint("adv-1")
         assert res.body == b"imagedata"
         assert res.media_type == "image/png"
@@ -999,12 +1016,14 @@ async def test_create_and_deploy_theater_with_preset_adventure():
     ]))
 
     mock_adv_meta = {"id": "lesovik-station", "title": "Lesovik Station", "cover_image": "references/cover.jpg"}
+    mock_adv_service = MagicMock()
+    mock_adv_service.get_adventure.return_value = mock_adv_meta
+    mock_adv_service.load_adventure_assets.return_value = (mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)
 
     with patch.object(theaters, "get_current_user_async", AsyncMock(return_value=mock_user)), \
          patch.object(theaters, "theater_manager", mock_manager), \
          patch.object(theaters, "db", mock_db), \
-         patch.object(object_registry.adventure_service, "get_adventure", return_value=mock_adv_meta), \
-         patch.object(object_registry.adventure_service, "load_adventure_assets", return_value=(mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)):
+         patch.object(object_registry, "adventure_service", mock_adv_service):
 
         res = await theaters.create_and_deploy_theater(request)
 

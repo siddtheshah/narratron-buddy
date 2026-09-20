@@ -58,6 +58,42 @@ def get_theater_default_config() -> Dict[str, Any]:
     return deepcopy(config_data)
 
 
+def apply_app_config(
+    config: Dict[str, Any],
+    app_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Applies operational application-level configurations from app.yaml to theater config."""
+    if app_config is None:
+        app_config = get_app_config()
+
+    # Strictly enforce operational live_agent settings from app.yaml so theater config cannot override them
+    if "live_agent" in app_config:
+        deep_merge(config.setdefault("live_agent", {}), app_config["live_agent"])
+
+    # Visual model selection is an application-level operational setting.
+    # Merge it last so all theaters use the model selected in app.yaml while
+    # retaining theater-specific style and cycle settings.
+    if "visuals" in app_config:
+        deep_merge(config.setdefault("visuals", {}), app_config["visuals"])
+
+    if "story_planning" in app_config:
+        deep_merge(config.setdefault("story_planning", {}), app_config["story_planning"])
+
+    if "interactive_canvas" in app_config:
+        deep_merge(config.setdefault("interactive_canvas", {}), app_config["interactive_canvas"])
+
+    if "animation" in app_config:
+        deep_merge(config.setdefault("animation", {}), app_config["animation"])
+
+    if "music" in app_config:
+        deep_merge(config.setdefault("music", {}), app_config["music"])
+
+    if "speech" in app_config:
+        deep_merge(config.setdefault("speech", {}), app_config["speech"])
+
+    return config
+
+
 def get_theater_config(
     theater_id: str,
     theater_manager: Optional[TheaterManager] = None,
@@ -88,32 +124,8 @@ def get_theater_config(
         # Save theater.yaml file into theater directory
         save_theater_config(theater_id, config, theater_manager=theater_manager)
 
-    # Strictly enforce live_agent from app.yaml so user theater config cannot override it
-    if "live_agent" in app_config:
-        config["live_agent"] = app_config["live_agent"]
+    return apply_app_config(config, app_config)
 
-    # Visual model selection is an application-level operational setting.
-    # Merge it last so all theaters use the model selected in app.yaml while
-    # retaining theater-specific style and cycle settings.
-    if "visuals" in app_config:
-        deep_merge(config.setdefault("visuals", {}), app_config["visuals"])
-
-    if "story_planning" in app_config:
-        deep_merge(config.setdefault("story_planning", {}), app_config["story_planning"])
-
-    if "interactive_canvas" in app_config:
-        deep_merge(config.setdefault("interactive_canvas", {}), app_config["interactive_canvas"])
-
-    if "animation" in app_config:
-        deep_merge(config.setdefault("animation", {}), app_config["animation"])
-
-    if "music" in app_config:
-        deep_merge(config.setdefault("music", {}), app_config["music"])
-
-    if "speech" in app_config:
-        deep_merge(config.setdefault("speech", {}), app_config["speech"])
-
-    return config
 
 def save_theater_config(
     theater_id: str,
@@ -130,4 +142,3 @@ def save_theater_config(
         yaml.safe_dump(config_data, f, default_flow_style=False)
 
     return yaml_path
-

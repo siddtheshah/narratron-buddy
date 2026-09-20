@@ -4,7 +4,7 @@ import asyncio
 from copy import deepcopy
 import json
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional, Union
 import uuid
 import yaml
 
@@ -30,7 +30,7 @@ from api_server.canvas import broadcast_baton_update
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
-from utils.config_loader import get_theater_config, get_theater_default_config
+from utils.config_loader import apply_app_config, deep_merge, get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +390,112 @@ async def format_yaml_endpoint(req: SaveTheaterConfigRequest):
     except Exception as err:
         raise HTTPException(status_code=400, detail=f"Failed to format YAML: {err}")
 
+
+def configure_with_assets(
+    config: Dict[str, Any],
+    *,
+    special_instructions: str = "",
+    style: str = "",
+    enable_image_generation: bool = True,
+    use_generated_music: bool = False,
+    enable_scene_animations: bool = False,
+    enable_interactive_canvas: bool = False,
+    enable_adventure_mode: bool = False,
+    story_planning_style: str = "",
+) -> Dict[str, Any]:
+    """Applies asset/form configuration options onto a base theater configuration."""
+    agent_config = config.setdefault("live_agent", {})
+    if not isinstance(agent_config, dict):
+        raise HTTPException(status_code=400, detail="Invalid theater configuration: agent must be a mapping.")
+    if special_instructions:
+        agent_config["special_instructions"] = special_instructions
+
+    image_config = config.setdefault("image_generation", {})
+    if not isinstance(image_config, dict):
+        raise HTTPException(status_code=400, detail="Invalid theater configuration: image_generation must be a mapping.")
+    if style:
+        image_config["style"] = style
+    image_config["enabled"] = enable_image_generation
+
+    music_config = config.setdefault("music", {})
+    if not isinstance(music_config, dict):
+        raise HTTPException(status_code=400, detail="Invalid theater configuration: music must be a mapping.")
+    music_config["use_generated_music"] = use_generated_music
+
+    animation_config = config.setdefault("animation", {})
+    if not isinstance(animation_config, dict):
+        raise HTTPException(status_code=400, detail="Invalid theater configuration: animation must be a mapping.")
+    animation_config["enabled"] = enable_scene_animations
+
+    interactive_canvas_config = config.setdefault("interactive_canvas", {})
+    if not isinstance(interactive_canvas_config, dict):
+        raise HTTPException(status_code=400, detail="Invalid theater configuration: interactive_canvas must be a mapping.")
+    interactive_canvas_config["enabled"] = enable_interactive_canvas
+
+    story_planning_config = config.setdefault("story_planning", {})
+    if not isinstance(story_planning_config, dict):
+        raise HTTPException(status_code=400, detail="Invalid theater configuration: story_planning must be a mapping.")
+    story_planning_config["adventure_mode"] = enable_adventure_mode
+    if story_planning_style:
+        story_planning_config["style"] = story_planning_style
+
+    return config
+
+
+def build_theater_config(
+    *,
+    creation_mode: str = "blank",
+    folder_config_yaml: Optional[Union[str, dict]] = None,
+    adv_config: Optional[dict] = None,
+    special_instructions: str = "",
+    style: str = "",
+    enable_image_generation: bool = True,
+    use_generated_music: bool = False,
+    enable_scene_animations: bool = False,
+    enable_interactive_canvas: bool = False,
+    enable_adventure_mode: bool = False,
+    story_planning_style: str = "",
+) -> Dict[str, Any]:
+    """Build theater configuration according to source/mode.
+
+    - If uploaded from a folder or sourced from an adventure, don't bother with theater_default.yaml.
+    - Otherwise use theater_default.yaml and apply updates from configure_with_assets.
+    - Ensure app.yaml is applied at the end.
+    """
+    if creation_mode == "folder":
+        if not folder_config_yaml:
+            raise HTTPException(status_code=400, detail="Folder uploads must include a theater.yaml file.")
+        try:
+            theater_config = yaml.safe_load(folder_config_yaml) if isinstance(folder_config_yaml, str) else folder_config_yaml
+            if not isinstance(theater_config, dict):
+                raise ValueError("Theater configuration must be a YAML mapping.")
+        except (yaml.YAMLError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=f"Invalid theater configuration: {error}")
+
+    elif adv_config:
+        theater_config = deepcopy(adv_config)
+        if enable_adventure_mode or creation_mode == "adventure":
+            theater_config.setdefault("story_planning", {})["adventure_mode"] = True
+
+    else:
+        theater_config = get_theater_default_config()
+        configure_with_assets(
+            theater_config,
+            special_instructions=special_instructions,
+            style=style,
+            enable_image_generation=enable_image_generation,
+            use_generated_music=use_generated_music,
+            enable_scene_animations=enable_scene_animations,
+            enable_interactive_canvas=enable_interactive_canvas,
+            enable_adventure_mode=enable_adventure_mode,
+            story_planning_style=story_planning_style,
+        )
+
+    # Ensure app.yaml is applied at the end
+    apply_app_config(theater_config)
+    return theater_config
+
+
 @app.post("/api/theaters/create-and-deploy")
 async def create_and_deploy_theater(request: Request):
     """API endpoint to handle multi-file asset upload and deploy a theater."""
@@ -401,7 +507,6 @@ async def create_and_deploy_theater(request: Request):
     name = str(form.get("name", "Narratron Theater"))
     style = str(form.get("agent_style", "")).strip()
     special_instructions = str(form.get("agent_special_instructions", "")).strip()
-    advanced_config_canonical = str(form.get("advanced_config_canonical", "")).lower() == "true"
     creation_mode = str(form.get("creation_mode", "blank"))
     folder_config_yaml = form.get("folder_theater_config_yaml")
     use_generated_music = str(form.get("use_generated_music", "false")).lower() == "true"
@@ -438,12 +543,7 @@ async def create_and_deploy_theater(request: Request):
 
     # Important to provide music for first time experience. Blank theater will not have any music tracks by default
     # otherwise. Adventures launched from adventures/ or deploy/ should not attach the default playlist.
-    is_adventure = (
-        creation_mode == "adventure"
-        or enable_adventure_mode
-        or bool(preset_adventure_id)
-    )
-    if creation_mode == "blank" and not is_adventure and not playlists_data:
+    if creation_mode == "blank":
         quick_deploy_track = PROJECT_ROOT / "playlists" / "default" / "new story.mp3"
         if quick_deploy_track.is_file():
             playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]
@@ -515,60 +615,20 @@ async def create_and_deploy_theater(request: Request):
                         playlists_data[pl_name] = []
                     playlists_data[pl_name].append((filename, content))
 
-    raw_config_param = (
-        folder_config_yaml
-        if creation_mode == "folder"
-        else form.get("theater_config_yaml") or form.get("theater_config")
+    # Build theater configuration
+    theater_config = build_theater_config(
+        creation_mode=creation_mode,
+        folder_config_yaml=folder_config_yaml,
+        adv_config=adv_config,
+        special_instructions=special_instructions,
+        style=style,
+        enable_image_generation=enable_image_generation,
+        use_generated_music=use_generated_music,
+        enable_scene_animations=enable_scene_animations,
+        enable_interactive_canvas=enable_interactive_canvas,
+        enable_adventure_mode=enable_adventure_mode,
+        story_planning_style=story_planning_style,
     )
-    if creation_mode == "folder" and not raw_config_param:
-        raise HTTPException(status_code=400, detail="Folder uploads must include a theater.yaml file.")
-    theater_config = None
-    if raw_config_param:
-        try:
-            theater_config = yaml.safe_load(raw_config_param) if isinstance(raw_config_param, str) else raw_config_param
-            if theater_config is not None and not isinstance(theater_config, dict):
-                raise ValueError("Theater configuration must be a YAML mapping.")
-        except (yaml.YAMLError, ValueError) as error:
-            raise HTTPException(status_code=400, detail=f"Invalid theater configuration: {error}")
-
-    theater_config = theater_config or {}
-    if adv_config:
-        for k, v in adv_config.items():
-            if k not in theater_config:
-                theater_config[k] = deepcopy(v)
-            elif isinstance(v, dict) and isinstance(theater_config[k], dict):
-                for sub_k, sub_v in v.items():
-                    theater_config[k].setdefault(sub_k, deepcopy(sub_v))
-    if creation_mode != "folder" and not advanced_config_canonical:
-        agent_config = theater_config.setdefault("live_agent", {})
-        if not isinstance(agent_config, dict):
-            raise HTTPException(status_code=400, detail="Invalid theater configuration: agent must be a mapping.")
-        if special_instructions:
-            agent_config["special_instructions"] = special_instructions
-        image_config = theater_config.setdefault("image_generation", {})
-        if not isinstance(image_config, dict):
-            raise HTTPException(status_code=400, detail="Invalid theater configuration: image_generation must be a mapping.")
-        if style:
-            image_config["style"] = style
-        image_config["enabled"] = enable_image_generation
-        music_config = theater_config.setdefault("music", {})
-        if not isinstance(music_config, dict):
-            raise HTTPException(status_code=400, detail="Invalid theater configuration: music must be a mapping.")
-        music_config["use_generated_music"] = use_generated_music
-        animation_config = theater_config.setdefault("animation", {})
-        if not isinstance(animation_config, dict):
-            raise HTTPException(status_code=400, detail="Invalid theater configuration: animation must be a mapping.")
-        animation_config["enabled"] = enable_scene_animations
-        interactive_canvas_config = theater_config.setdefault("interactive_canvas", {})
-        if not isinstance(interactive_canvas_config, dict):
-            raise HTTPException(status_code=400, detail="Invalid theater configuration: interactive_canvas must be a mapping.")
-        interactive_canvas_config["enabled"] = enable_interactive_canvas
-        story_planning_config = theater_config.setdefault("story_planning", {})
-        if not isinstance(story_planning_config, dict):
-            raise HTTPException(status_code=400, detail="Invalid theater configuration: story_planning must be a mapping.")
-        story_planning_config["adventure_mode"] = enable_adventure_mode
-        if story_planning_style:
-            story_planning_config["style"] = story_planning_style
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     metadata = theater_manager.create_theater(
