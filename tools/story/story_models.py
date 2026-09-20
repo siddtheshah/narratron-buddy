@@ -11,8 +11,8 @@ from google.adk.models.google_llm import Gemini
 from pydantic import PrivateAttr
 
 
-DEFAULT_COMPACTION_TRIGGER_TOKENS = 12_000
-DEFAULT_COMPACTION_TARGET_TOKENS = 6_000
+DEFAULT_COMPACTION_TRIGGER_TOKENS = 10_000
+DEFAULT_COMPACTION_TARGET_TOKENS = 5_000
 DEFAULT_STORY_PLANNING_STYLE = "balanced, consequence-driven, and player-agency-first"
 
 
