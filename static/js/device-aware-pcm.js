@@ -8,9 +8,10 @@ export async function listenForSpeech(options) {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), channelCount: 1, sampleRate: { ideal: sampleRate }, echoCancellation: true, noiseSuppression: true } });
     if (!listening) return cleanup();
     context = new AudioContext({ sampleRate });
-    // 480 samples = 30 ms at the 16 kHz capture rate.  This lets each PCM
-    // frame reach the Live API immediately instead of arriving in bursts.
-    const processor = `class P extends AudioWorkletProcessor { constructor(){super();this.b=new Float32Array(480);this.i=0} process(inputs){const a=inputs[0]?.[0];if(!a)return true;for(const s of a){this.b[this.i++]=s;if(this.i===this.b.length){let q=0;for(const x of this.b)q+=x*x;const p=new Int16Array(this.b.length);for(let j=0;j<this.b.length;j++){const x=Math.max(-1,Math.min(1,this.b[j]));p[j]=x<0?x*32768:x*32767}this.port.postMessage({pcm:new Uint8Array(p.buffer),float32:this.b.slice(),rms:Math.sqrt(q/this.b.length)});this.i=0}}return true} } registerProcessor('narratron-device-pcm',P);`;
+    // iOS Safari often keeps the hardware rate (44.1/48 kHz) despite the
+    // requested 16 kHz context. Resample before emitting packets so their
+    // data and declared rate always agree.
+    const processor = `class P extends AudioWorkletProcessor { constructor(){super();this.b=new Float32Array(480);this.i=0;this.phase=0;this.step=sampleRate/16000;this.last=0} emit(){let q=0;for(const x of this.b)q+=x*x;const p=new Int16Array(this.b.length);for(let j=0;j<this.b.length;j++){const x=Math.max(-1,Math.min(1,this.b[j]));p[j]=x<0?x*32768:x*32767}this.port.postMessage({pcm:new Uint8Array(p.buffer),float32:this.b.slice(),rms:Math.sqrt(q/this.b.length)});this.i=0} process(inputs){const a=inputs[0]?.[0];if(!a)return true;if(sampleRate===16000){for(const s of a){this.b[this.i++]=s;if(this.i===this.b.length)this.emit()}return true}for(let n=0;n<a.length;n++){const current=a[n];while(this.phase<=n){const previous=n?a[n-1]:this.last;const t=this.phase-(n-1);this.b[this.i++]=previous+(current-previous)*t;if(this.i===this.b.length)this.emit();this.phase+=this.step}this.last=current}this.phase-=a.length;return true} } registerProcessor('narratron-device-pcm',P);`;
     const url = URL.createObjectURL(new Blob([processor], { type: "application/javascript" }));
     await context.audioWorklet.addModule(url); URL.revokeObjectURL(url);
     if (!listening) return cleanup();

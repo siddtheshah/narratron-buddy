@@ -78,10 +78,19 @@ function initAudioEncoder(handler) {
   }
 }
 
-function finishSpeech() {
+async function finishSpeech() {
   if (!speechActive) return;
-  emitVadEvent("stop", "speech_end");
   speechActive = false;
+  // AudioEncoder emits asynchronously. Make its last packet reach the socket
+  // before the activity boundary closes this turn on the server.
+  if (audioEncoder?.state === "configured") {
+    try {
+      await audioEncoder.flush();
+    } catch (err) {
+      console.warn("[AudioRecorder] Could not flush final Opus audio packet:", err);
+    }
+  }
+  emitVadEvent("stop", "speech_end");
   emitSpeechActivity("end");
 }
 
@@ -91,9 +100,16 @@ function finishSpeech() {
 export async function startAudioRecorderWorklet(handler) {
   stopMicrophone();
 
+  if (typeof window.AudioEncoder !== "function") {
+    throw new Error("Your browser is out of date and needs Opus audio support. Please update your browser and try again.");
+  }
+
   speechActive = false;
   audioRecorderHandler = handler;
   audioEncoder = initAudioEncoder(handler);
+  if (!audioEncoder) {
+    throw new Error("Your browser is out of date and needs Opus audio support. Please update your browser and try again.");
+  }
 
   stopListening = await listenForSpeech({
     deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
@@ -125,11 +141,11 @@ export async function startAudioRecorderWorklet(handler) {
       emitSpeechActivity("start");
     },
     onSpeechEnd: () => {
-      finishSpeech();
+      void finishSpeech();
     },
     onError: (error) => {
       console.error("[AudioRecorder] microphone capture failed:", error);
-      finishSpeech();
+      void finishSpeech();
     },
   });
 
@@ -140,16 +156,15 @@ export async function startAudioRecorderWorklet(handler) {
 export function stopMicrophone() {
   const stop = stopListening;
   stopListening = null;
-  if (typeof stop === "function") stop();
-  finishSpeech();
-  if (audioEncoder) {
-    try {
-      if (audioEncoder.state === "configured") {
-        audioEncoder.flush().catch(() => {});
-        audioEncoder.close();
-      }
-    } catch (e) {}
-    audioEncoder = null;
-  }
+  const encoderToClose = audioEncoder;
+  void finishSpeech().finally(() => {
+    if (typeof stop === "function") stop();
+    if (encoderToClose) {
+      try {
+        if (encoderToClose.state === "configured") encoderToClose.close();
+      } catch (e) {}
+    }
+  });
+  audioEncoder = null;
   audioRecorderHandler = null;
 }
