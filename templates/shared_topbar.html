@@ -10,6 +10,10 @@
     <a href="/adventures" class="deploy-nav-btn {% if active_page == 'adventures' %}active{% endif %}">🗺️ Adventures</a>
     <a href="/docs" class="deploy-nav-btn {% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures', 'docs-beyond20', 'docs-terms', 'docs-privacy'] %}active{% endif %}">Docs</a>
     <a href="/stats" class="deploy-nav-btn {% if active_page == 'stats' %}active{% endif %}">Stats</a>
+    {% if active_page == 'join' %}
+    <a href="/privacy" class="deploy-nav-btn">Privacy Policy</a>
+    <a href="/terms" class="deploy-nav-btn">Terms of Service</a>
+    {% endif %}
     {% if show_pricing %}
     <button type="button" class="deploy-nav-btn" onclick="openPricingModal()">🏷️ Pricing</button>
     {% endif %}

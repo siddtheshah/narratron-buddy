@@ -163,6 +163,12 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-terms", "docs-privacy", "stats", "deploy"]:
             pattern = f"{{% if active_page == '{p}' %}}active{{% endif %}}"
             out = out.replace(pattern, "active" if active_page == p else "")
+        out = re.sub(
+            r"\{%\s*if active_page == 'join'\s*%\}(.*?)\{%\s*endif\s*%\}",
+            r"\1" if active_page == "join" else "",
+            out,
+            flags=re.DOTALL,
+        )
         if show_pricing:
             out = re.sub(r"\{%\s*if show_pricing\s*%\}(.*?)\{%\s*endif\s*%\}", r"\1", out, flags=re.DOTALL)
         else:
