@@ -141,15 +141,15 @@ _TEXT_RESPONSE_SPECS = (
 _SPEECH_SPECS = (
     {
         "id": "gemini-flash-tts",
-        "name": "Gemini 3.1 Flash TTS",
-        "model": "gemini-3.1-flash-tts-preview",
-        "model_options": ["gemini-3.1-flash-tts-preview"],
+        "name": "Gemini 3.8 Flash TTS",
+        "model": "gemini-3.8-flash-tts",
+        "model_options": ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"],
         "voice": "Kore",
         # About 67 seconds of speech at 15 characters/second. Gemini bills
         # generated audio at 25 tokens/second and $20 per million tokens.
         "estimated_cost_usd_1k_chars": 0.0336,
         "status": "unconfigured",
-        "notes": "Gemini preview TTS. Returns 24 kHz PCM, normalized to WAV for browser playback.",
+        "notes": "Studio-quality Gemini TTS with structured delivery directions and complete WAV output.",
     },
     {
         "id": "fal-seed-speech",
@@ -316,7 +316,7 @@ def get_speech_provider(provider_id: str, options: dict[str, Any] | None = None)
     options = options or {}
     if provider_id == "gemini-flash-tts":
         return GeminiSpeechProvider(
-            model=str(options.get("model") or "gemini-3.1-flash-tts-preview"),
+            model=str(options.get("model") or "gemini-3.8-flash-tts"),
             max_attempts=int(options.get("max_attempts") or 3),
             retry_delay_seconds=float(options.get("retry_delay_seconds", 0.25)),
         )

@@ -30,7 +30,7 @@ music:
 # Application-wide text-to-speech backend for Adventure Mode character voices.
 speech:
     provider: "gemini-flash-tts"
-    model: "gemini-3.1-flash-tts-preview"
+    model: "gemini-3.8-flash-tts"
 
 smtp:
     from_email: "noreply@narratron.io"

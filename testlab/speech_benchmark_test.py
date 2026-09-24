@@ -13,7 +13,9 @@ def test_speech_benchmark_routes():
     client = TestClient(app)
     assert "Speech Provider Bench" in client.get("/speech-benchmark").text
     data = client.get("/api/speech-benchmark/catalog").json()
-    assert any(provider["id"] == "gemini-flash-tts" for provider in data["providers"])
+    gemini = next(provider for provider in data["providers"] if provider["id"] == "gemini-flash-tts")
+    assert gemini["model"] == "gemini-3.8-flash-tts"
+    assert gemini["model_options"] == ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"]
     assert any(provider["id"] == "fal-seed-speech" for provider in data["providers"])
     assert any(provider["id"] == "google-chirp-3-hd" for provider in data["providers"])
 
@@ -42,4 +44,3 @@ def test_speech_benchmark_custom_prompt_run(monkeypatch):
     assert data["prompts"][0]["title"] == "Custom Dialogue"
     assert data["prompts"][0]["text"] == "The kingdom has fallen, yet hope remains."
     assert data["prompts"][0]["voice_instruction"] == "Whisper with sorrow"
-

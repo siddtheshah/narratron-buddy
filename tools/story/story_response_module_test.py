@@ -17,6 +17,7 @@ from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
 from tools.story.story_response_module import (
     ResponseCharacter,
+    ResponseDialogue,
     StoryResponseModule,
     build_story_context_prompt,
 )
@@ -34,6 +35,15 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.session_service = MagicMock(spec=InMemorySessionService)
         self.session_id = "response-boundary-session"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+
+    def test_dialogue_supports_a_tts_voice_instruction(self) -> None:
+        dialogue = ResponseDialogue(
+            speaker="Mara",
+            text="The gate is opening.",
+            voice_instruction="A hushed warning, growing urgent.",
+        )
+
+        self.assertEqual(dialogue.voice_instruction, "A hushed warning, growing urgent.")
 
     def test_uses_injected_dependencies(self) -> None:
         with (

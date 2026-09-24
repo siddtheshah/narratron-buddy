@@ -359,7 +359,11 @@ class StoryState:
             voice = str(line["voice"])
             if self._speech_provider is None:
                 return line, None
-            result = self._speech_provider.synthesize(SpeechSynthesisRequest(text=str(line["text"]), voice=voice))
+            result = self._speech_provider.synthesize(SpeechSynthesisRequest(
+                text=str(line["text"]),
+                voice=voice,
+                voice_instruction=str(line.get("voice_instruction") or "").strip() or None,
+            ))
             with self._speech_lock:
                 if generation != self._active_speech_generation:
                     logger.debug(

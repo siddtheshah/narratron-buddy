@@ -15,10 +15,10 @@ class BenchmarkSpeechPrompt:
 
 
 SPEECH_PROMPTS = (
-    BenchmarkSpeechPrompt("heroic-rally", "Heroic Rally", "Energy & Clarity", "Hold the bridge! Dawn is behind us, and every soul in this valley is counting on us.", "Speak with resolute urgency, rising into an inspiring battle cry."),
-    BenchmarkSpeechPrompt("nervous-alchemist", "Nervous Alchemist", "Character Performance", "My insignia? No, no, you have misunderstood. I built the guardian to protect the city, not threaten it.", "Speak quickly with intelligent but anxious defensiveness."),
-    BenchmarkSpeechPrompt("quiet-revelation", "Quiet Revelation", "Emotional Subtlety", "The bells did not ring because the citadel woke. They rang because it finally remembered our names.", "Speak softly and reverently, with a pause before the final sentence."),
-    BenchmarkSpeechPrompt("comic-relief", "Comic Relief", "Timing & Expression", "Excellent plan. We sneak past the dragon, take the treasure, and absolutely do not mention that I brought a squeaky sword.", "Speak with dry comic confidence, then let the last phrase land like an embarrassed admission."),
+    BenchmarkSpeechPrompt("heroic-rally", "Heroic Rally", "Sustained style metadata", "Hold the bridge! Dawn is behind us, and every soul in this valley is counting on us.", "Resolute urgency that builds into an inspiring battle cry."),
+    BenchmarkSpeechPrompt("nervous-alchemist", "Nervous Alchemist", "Character Performance", "My insignia? No, no, you have misunderstood. I built the guardian to protect the city, not threaten it.", "Quick, intelligent, anxiously defensive delivery."),
+    BenchmarkSpeechPrompt("quiet-revelation", "Quiet Revelation", "Emotion and vocal event", "The bells did not ring because the citadel woke. <short pause> They rang because it finally remembered our names.", "Soft, reverent, and breath-held, growing emotional at the end."),
+    BenchmarkSpeechPrompt("comic-relief", "Comic Relief", "Timing and expression", "Excellent plan. We sneak past the dragon, take the treasure, and absolutely do not mention that I brought a squeaky sword.", "Dry comic confidence, ending as an embarrassed admission."),
 )
 
 

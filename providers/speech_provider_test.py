@@ -1,3 +1,4 @@
+import base64
 import wave
 from io import BytesIO
 
@@ -16,13 +17,31 @@ def test_speech_request_validation():
         SpeechSynthesisRequest(text="Hello", speed=0)
 
 
-def test_gemini_speech_converts_pcm_to_wav():
+def _wav_b64(frames: bytes = b"\x01\x00\x02\x00") -> str:
+    output = BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(24_000)
+        wav.writeframes(frames)
+    return base64.b64encode(output.getvalue()).decode("ascii")
+
+
+def test_gemini_speech_uses_structured_style_metadata_and_returns_wav():
     class Interactions:
         @staticmethod
         def create(**kwargs):
             assert kwargs["generation_config"]["speech_config"][0]["voice"] == "Kore"
-            assert "voice_instruction" not in kwargs["generation_config"]["speech_config"][0]
-            return {"output_audio": {"data": "AQACAAMABAA="}, "request_id": "gemini-request"}
+            assert kwargs["input"] == [{
+                "type": "user_input",
+                "content": [{
+                    "type": "text",
+                    "text": "Hello.",
+                    "annotations": [{"type": "speech_metadata", "style": "Speak warmly."}],
+                }],
+            }]
+            assert kwargs["response_format"] == {"type": "audio", "mime_type": "audio/wav"}
+            return {"output_audio": {"data": _wav_b64()}, "request_id": "gemini-request"}
 
     provider = GeminiSpeechProvider(client=type("Client", (), {"interactions": Interactions()})())
     result = provider.synthesize(SpeechSynthesisRequest(text="Hello.", voice_instruction="Speak warmly."))
@@ -33,7 +52,7 @@ def test_gemini_speech_converts_pcm_to_wav():
         assert output.readframes(2) == b"\x01\x00\x02\x00"
 
 
-def test_gemini_speech_uses_clear_transcript_prompt_and_retries_empty_audio():
+def test_gemini_speech_uses_verbatim_transcript_and_retries_empty_audio():
     calls = []
 
     class Interactions:
@@ -42,7 +61,7 @@ def test_gemini_speech_uses_clear_transcript_prompt_and_retries_empty_audio():
             calls.append(kwargs)
             if len(calls) == 1:
                 return {"output_audio": None}
-            return {"output_audio": {"data": "AQACAA=="}}
+            return {"output_audio": {"data": _wav_b64()}}
 
     provider = GeminiSpeechProvider(
         client=type("Client", (), {"interactions": Interactions()})(),
@@ -51,8 +70,10 @@ def test_gemini_speech_uses_clear_transcript_prompt_and_retries_empty_audio():
     result = provider.synthesize(SpeechSynthesisRequest(text="Hello there."))
 
     assert len(calls) == 2
-    assert "Read only the transcript" in calls[0]["input"]
-    assert calls[0]["input"].endswith("Transcript:\nHello there.")
+    assert calls[0]["input"] == [{
+        "type": "user_input",
+        "content": [{"type": "text", "text": "Hello there."}],
+    }]
     assert result.audio_bytes.startswith(b"RIFF")
 
 

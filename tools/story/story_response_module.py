@@ -142,7 +142,7 @@ No lore documents are available for this theater. Invent the lore, world details
 
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
-- **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character.
+- **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character. For each spoken line, include a concise `voice_instruction` that describes its sustained delivery (emotion, pace, volume, accent, or prosody). Do not put stage directions in `text`; use inline vocal tags such as `<sigh>` or `<short pause>` there only when an audible, momentary event belongs in the transcript.
 - **Planning Signals**: Briefly record facts established by this resolution, threads affected, and consequences the background planning system should consider. These signals are internal and must describe what actually happened, not invent future events.
 - **Character Updates**: Character updates are for NPCs only. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, you MUST assign an explicit gender ('male', 'female', or 'nonbinary') and voice_tags to guide speech synthesis.
 
@@ -164,6 +164,10 @@ class ResponseDialogue(BaseModel):
     speaker: str = "Narrator"
     text: str
     kind: str = "speech"
+    voice_instruction: Optional[str] = Field(
+        default=None,
+        description="Concise sustained delivery direction for TTS, such as 'quietly, with controlled grief'.",
+    )
 
 
 class ResponseCharacter(BaseModel):
@@ -976,10 +980,12 @@ class StoryResponseModule:
             if not text:
                 continue
             kind = str(item.get("kind") or "speech").strip().lower()
+            voice_instruction = str(item.get("voice_instruction") or "").strip()
             cleaned.append({
                 "speaker": str(item.get("speaker") or "Narrator").strip()[:80],
                 "text": text[:500],
                 "kind": kind if kind in {"speech", "thought"} else "speech",
+                **({"voice_instruction": voice_instruction[:240]} if voice_instruction else {}),
             })
         return cleaned
 

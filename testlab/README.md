@@ -10,7 +10,7 @@ Open `http://127.0.0.1:8015/` for the Test Lab index. It links to microphone/VAD
 
 The Music Provider Bench can run a regular generator or the **TEST ONLY: Generate base + audio adapter** fixture. Select Lyria as the base and Stable Audio 3 Small Music Base A2A (FAL) as the adapter, then use the source-preservation control (lower noise preserves more of the Lyria track). This fixture intentionally generates a new base for an A/B evaluation; production variants should instead pass a previously generated or stored track to `MusicAdapter`. Set `FAL_API_KEY` or `FAL_API_KEY` alongside the Lyria/Gemini key before launching it.
 
-The Speech Provider Bench compares Gemini Flash TTS and ByteDance **Seed Speech v2** on FAL using fixed narrative dialogue lines. Gemini uses `GEMINI_API_KEY`; Seed Speech uses `FAL_API_KEY` or `FAL_API_KEY`. (Seedance is ByteDance's video family; Seed Speech is its FAL TTS endpoint.)
+The Speech Provider Bench compares Gemini 3.8 Flash TTS, ByteDance **Seed Speech v2** on FAL, and Chirp 3 HD using fixed narrative dialogue lines. The Gemini presets demonstrate 3.8's structured sustained delivery directions and transcript-level vocal tags such as `<short pause>`. Gemini uses `GEMINI_API_KEY`; Seed Speech uses `FAL_API_KEY`. (Seedance is ByteDance's video family; Seed Speech is its FAL TTS endpoint.)
 
 To bypass the browser and exercise one real Vertex-backed planner turn, run:
 
@@ -30,4 +30,3 @@ Add `--image testlab/images/trace-knight-sword.png` to include a canvas image in
 The same configurable test is available in the Test Lab server at `/a2ui-canvas`. It accepts a model,
 canvas request, optional workspace-local image, expected surface count, and an optional persistence
 expectation. The browser default is a general canvas prompt; the health-bar scenario is reserved for the CLI smoke test.
-

@@ -432,6 +432,31 @@ def test_dispatch_parallelizes_dialogue_line_synthesis() -> None:
     assert [p["speaker"] for p in published] == ["Alice", "Bob"]
 
 
+def test_dispatch_forwards_line_voice_instruction_to_speech_provider() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_alpha"
+    mock_provider.synthesize.return_value = SpeechSynthesisResult(
+        audio_bytes=b"audio",
+        mime_type="audio/wav",
+        provider="mock",
+        model="mock",
+    )
+    state = StoryState(publish_audio_fn=Mock())
+    state.enable_scene_speech(mock_provider)
+
+    state.dispatch([{
+        "speaker": "Mara",
+        "text": "The gate is opening.",
+        "kind": "speech",
+        "voice_instruction": "A hushed warning, growing urgent.",
+    }])
+    state._executor.shutdown(wait=True)
+
+    request = mock_provider.synthesize.call_args.args[0]
+    assert request.voice == "voice_alpha"
+    assert request.voice_instruction == "A hushed warning, growing urgent."
+
+
 def test_dispatch_preserves_dialogue_order_when_lines_complete_out_of_order() -> None:
     import time
 
