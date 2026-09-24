@@ -154,8 +154,9 @@ class GeminiSpeechProvider(SpeechProvider):
         voice = request.voice or "Kore"
         generation_config: dict[str, Any] = {"speech_config": [{"voice": voice}]}
         annotations: list[dict[str, str]] = []
-        if request.voice_instruction:
-            annotations.append({"type": "speech_metadata", "style": request.voice_instruction})
+        instruction = request.style_instruction()
+        if instruction:
+            annotations.append({"type": "speech_metadata", "style": instruction})
         input_data = [{
             "type": "user_input",
             "content": [{

@@ -58,6 +58,7 @@ class StoryState:
         self._text_beautifier: Any = None
         self._speech_provider: SpeechProvider | None = None
         self._scene_speech_enabled = False
+        self._accent_augmentation = True
         self._speech_executor: ThreadPoolExecutor | None = None
         self._speech_lock = threading.Lock()
         # Incremented immediately to invalidate in-flight synthesis work.
@@ -308,9 +309,10 @@ class StoryState:
             return next((character for character in characters if isinstance(character, dict) and str(character.get("name") or "").strip().lower() == normalized), None)
         return None
 
-    def enable_scene_speech(self, provider: SpeechProvider) -> None:
+    def enable_scene_speech(self, provider: SpeechProvider, *, accent_augmentation: bool = True) -> None:
         if provider is None:
             raise TypeError("enable_scene_speech requires a SpeechProvider")
+        self._accent_augmentation = bool(accent_augmentation)
         if self._scene_speech_enabled and self._speech_provider is not None:
             return
         self._speech_provider = provider
@@ -378,7 +380,9 @@ class StoryState:
             result = self._speech_provider.synthesize(SpeechSynthesisRequest(
                 text=str(line["text"]),
                 voice=voice,
+                voice_tags=tuple(self.get_character_voice_tags(speaker)),
                 voice_instruction=str(line.get("voice_instruction") or "").strip() or None,
+                accent_augmentation=getattr(self, "_accent_augmentation", True),
             ))
             with self._speech_lock:
                 if generation != self._active_speech_generation:

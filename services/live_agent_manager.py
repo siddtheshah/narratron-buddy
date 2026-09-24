@@ -1194,9 +1194,18 @@ class LiveAgentSessionManager:
             if not isinstance(speech_config, dict):
                 speech_config = {}
             provider_id = str(speech_config.get("provider") or "gemini-flash-tts")
-            canvas_mgr.story.enable_scene_speech(
-                get_speech_provider(provider_id, speech_config)
-            )
+            accent_aug = speech_config.get("accent_augmentation")
+            if accent_aug is None and "accent_augmentation" in theater_config:
+                accent_aug = theater_config.get("accent_augmentation")
+            if accent_aug is not None:
+                canvas_mgr.story.enable_scene_speech(
+                    get_speech_provider(provider_id, speech_config),
+                    accent_augmentation=bool(accent_aug),
+                )
+            else:
+                canvas_mgr.story.enable_scene_speech(
+                    get_speech_provider(provider_id, speech_config)
+                )
         tool_bundle = create_tool_bundle_for_session(
             theater_id=theater_id,
             config=theater_config,

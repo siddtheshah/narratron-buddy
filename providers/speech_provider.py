@@ -59,6 +59,28 @@ class SpeechSynthesisRequest:
     voice_instruction: str | None = None
     speed: float | None = None
     sample_rate_hz: int | None = None
+    voice_tags: tuple[str, ...] = ()
+    accent_augmentation: bool = True
+
+    def style_instruction(self, *, accent_augmentation: bool | None = None) -> str | None:
+        """Combine line delivery with explicit accent tags without changing the transcript."""
+        enabled = self.accent_augmentation if accent_augmentation is None else accent_augmentation
+        if not enabled:
+            return self.voice_instruction
+        accents: list[str] = []
+        seen: set[str] = set()
+        for tag in self.voice_tags:
+            key, separator, value = tag.partition("=")
+            if not separator and ":" in tag:
+                key, separator, value = tag.partition(":")
+            value = value.strip()
+            if separator and key.strip().lower() == "accent" and value and value.casefold() not in seen:
+                accents.append(value)
+                seen.add(value.casefold())
+        if not accents:
+            return self.voice_instruction
+        direction = f"Speak with a clearly pronounced {', '.join(accents)} accent throughout."
+        return " ".join(part for part in ((self.voice_instruction or "").strip(), direction) if part)
 
     def __post_init__(self) -> None:
         if not self.text.strip():
@@ -67,6 +89,10 @@ class SpeechSynthesisRequest:
             raise ValueError("Speech speed must be positive.")
         if self.sample_rate_hz is not None and self.sample_rate_hz <= 0:
             raise ValueError("Speech sample rate must be positive.")
+        if self.voice_tags and not isinstance(self.voice_tags, tuple):
+            object.__setattr__(self, "voice_tags", tuple(self.voice_tags))
+        if not isinstance(self.accent_augmentation, bool):
+            object.__setattr__(self, "accent_augmentation", bool(self.accent_augmentation))
 
 
 @dataclass(frozen=True)

@@ -84,3 +84,9 @@ story_planning:
 
 chat:
     cooldown_duration: 20
+
+speech:
+    provider: "gemini-flash-tts"
+    model: "gemini-3.8-flash-tts"
+    voice_language_code: "en-US"
+    accent_augmentation: true

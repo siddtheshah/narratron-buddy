@@ -82,8 +82,9 @@ class FalSeedSpeechProvider(SpeechProvider):
         }
         if request.speed is not None:
             payload["speed"] = request.speed
-        if request.voice_instruction:
-            payload["voice_instruction"] = request.voice_instruction
+        instruction = request.style_instruction()
+        if instruction:
+            payload["voice_instruction"] = instruction
         response = self._request_json(self.model, payload)
         audio = response.get("audio") or {}
         url = audio.get("url") if isinstance(audio, Mapping) else None

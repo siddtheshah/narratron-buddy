@@ -333,3 +333,110 @@ def test_speech_provider_synthesize_uses_selected_voice():
 
     assert calls[0][1]["voice"] == chosen_voice
     assert result.audio_bytes == b"mp3"
+
+
+def test_speech_synthesis_request_accent_augmentation():
+    # Accent augmentation enabled by default
+    req_default = SpeechSynthesisRequest(
+        text="Welcome traveler.",
+        voice_tags=("gender=female", "accent=British"),
+    )
+    assert req_default.accent_augmentation is True
+    assert req_default.style_instruction() == "Speak with a clearly pronounced British accent throughout."
+
+    # Appends to existing voice instruction
+    req_with_instruction = SpeechSynthesisRequest(
+        text="Welcome traveler.",
+        voice_instruction="Whisper cautiously.",
+        voice_tags=("accent=Scottish",),
+        accent_augmentation=True,
+    )
+    assert req_with_instruction.style_instruction() == (
+        "Whisper cautiously. Speak with a clearly pronounced Scottish accent throughout."
+    )
+
+    # Disabled via request
+    req_disabled = SpeechSynthesisRequest(
+        text="Welcome traveler.",
+        voice_instruction="Whisper cautiously.",
+        voice_tags=("accent=Scottish",),
+        accent_augmentation=False,
+    )
+    assert req_disabled.style_instruction() == "Whisper cautiously."
+
+    # No accent tags
+    req_no_accent = SpeechSynthesisRequest(
+        text="Welcome traveler.",
+        voice_instruction="Whisper cautiously.",
+        voice_tags=("gender=male", "pitch=low"),
+        accent_augmentation=True,
+    )
+    assert req_no_accent.style_instruction() == "Whisper cautiously."
+
+    # Deduplication of accents
+    req_dedup = SpeechSynthesisRequest(
+        text="Welcome traveler.",
+        voice_tags=("accent=Irish", "accent=irish"),
+        accent_augmentation=True,
+    )
+    assert req_dedup.style_instruction() == "Speak with a clearly pronounced Irish accent throughout."
+
+
+def test_gemini_speech_honors_request_accent_augmentation():
+    captured_kwargs = None
+
+    class Interactions:
+        @staticmethod
+        def create(**kwargs):
+            nonlocal captured_kwargs
+            captured_kwargs = kwargs
+            return {"output_audio": {"data": _wav_b64()}, "request_id": "gemini-req"}
+
+    provider = GeminiSpeechProvider(client=type("Client", (), {"interactions": Interactions()})())
+
+    # Augmented
+    provider.synthesize(SpeechSynthesisRequest(
+        text="Hello.",
+        voice_tags=("accent=British",),
+        accent_augmentation=True,
+    ))
+    assert captured_kwargs["input"][0]["content"][0]["annotations"] == [
+        {"type": "speech_metadata", "style": "Speak with a clearly pronounced British accent throughout."}
+    ]
+
+    # Non-augmented
+    captured_kwargs = None
+    provider.synthesize(SpeechSynthesisRequest(
+        text="Hello.",
+        voice_tags=("accent=British",),
+        accent_augmentation=False,
+    ))
+    assert "annotations" not in captured_kwargs["input"][0]["content"][0]
+
+
+def test_fal_seed_speech_honors_request_accent_augmentation():
+    calls = []
+
+    def post(endpoint, payload):
+        calls.append((endpoint, payload))
+        return {"request_id": "fal-req", "audio": {"url": "https://audio.example/out.mp3"}}
+
+    provider = FalSeedSpeechProvider(api_key="test", request_json=post, download=lambda _: (b"mp3", "audio/mpeg"))
+
+    # Augmented
+    provider.synthesize(SpeechSynthesisRequest(
+        text="Hello.",
+        voice_tags=("accent=French",),
+        accent_augmentation=True,
+    ))
+    assert calls[0][1]["voice_instruction"] == "Speak with a clearly pronounced French accent throughout."
+
+    # Non-augmented
+    calls.clear()
+    provider.synthesize(SpeechSynthesisRequest(
+        text="Hello.",
+        voice_tags=("accent=French",),
+        accent_augmentation=False,
+    ))
+    assert "voice_instruction" not in calls[0][1]
+

@@ -729,3 +729,28 @@ def test_story_state_record_die_roll() -> None:
     state.record_die_roll(roll_data)
     assert state.last_die_roll == roll_data
     notify.assert_called_once_with("latest")
+
+
+def test_dispatch_forwards_voice_tags_and_accent_augmentation() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_beta"
+    mock_provider.synthesize.return_value = SpeechSynthesisResult(
+        audio_bytes=b"audio",
+        mime_type="audio/wav",
+        provider="mock",
+        model="mock",
+    )
+    state = StoryState(publish_audio_fn=Mock())
+    state.set_character_voice_tags("Mara", ["gender=female", "accent=British"])
+    state.enable_scene_speech(mock_provider, accent_augmentation=False)
+
+    state.dispatch([{
+        "speaker": "Mara",
+        "text": "Quiet now.",
+        "kind": "speech",
+    }])
+    state._executor.shutdown(wait=True)
+
+    request = mock_provider.synthesize.call_args.args[0]
+    assert request.voice_tags == ("gender=female", "accent=british")
+    assert request.accent_augmentation is False

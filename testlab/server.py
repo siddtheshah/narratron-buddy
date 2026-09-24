@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+from utils.config_loader import get_app_config
 
 from providers import (
     ImageGenerationRequest,
@@ -1356,6 +1357,18 @@ def _voice_profile_from_tags(raw_voice_tags: Any) -> tuple[Any, list[str]]:
     return (profile if any(profile.values()) else None), tags
 
 
+def _resolve_accent_augmentation(options: dict[str, Any] | None = None) -> bool:
+    if options and "accent_augmentation" in options:
+        return bool(options["accent_augmentation"])
+    app_cfg = get_app_config()
+    speech_cfg = app_cfg.get("speech", {}) if isinstance(app_cfg, dict) else {}
+    if isinstance(speech_cfg, dict) and "accent_augmentation" in speech_cfg:
+        return bool(speech_cfg["accent_augmentation"])
+    if isinstance(app_cfg, dict) and "accent_augmentation" in app_cfg:
+        return bool(app_cfg["accent_augmentation"])
+    return True
+
+
 def _benchmark_one_speech(provider_id: str, prompt: Any, repetition: int, provider_options: dict[str, Any] | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     item: dict[str, Any] = {"id": uuid.uuid4().hex, "provider_id": provider_id, "prompt_id": prompt.id, "repetition": repetition, "started_at": time.time(), "status": "failed"}
@@ -1369,9 +1382,11 @@ def _benchmark_one_speech(provider_id: str, prompt: Any, repetition: int, provid
         result = provider.synthesize(SpeechSynthesisRequest(
             text=prompt.text,
             voice=selected_voice,
+            voice_tags=tuple(voice_tags),
             voice_instruction=str(options.get("voice_instruction") or prompt.voice_instruction),
             speed=float(options["speed"]) if options.get("speed") is not None else None,
             sample_rate_hz=int(options["sample_rate_hz"]) if options.get("sample_rate_hz") else None,
+            accent_augmentation=_resolve_accent_augmentation(options),
         ))
         extension = mimetypes.guess_extension(result.mime_type) or ".mp3"
         filename = f"{item['id']}{extension}"
