@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
-from providers import TextResponseProvider
+from providers import SpeechProvider, TextResponseProvider
 from services.quirk_service import QuirkGeneratorService
 from tools.story.character_manager import CharacterManager, normalize_voice_tags
 from tools.story.notepad import Notepad
@@ -133,6 +133,25 @@ class TestCharacterManager(unittest.TestCase):
         request = self.provider.generate.call_args.args[0]
         self.assertIn("Recover the starblade", request.prompt)
         self.notepad.get_present_elements.assert_called_once_with()
+
+    def test_generation_prompt_uses_live_speech_provider_tag_catalog(self) -> None:
+        speech_provider = MagicMock(spec=SpeechProvider)
+        speech_provider.get_supported_voice_tags.return_value = {
+            "accent": ("British", "General American"),
+            "gender": ("female", "male", "nonbinary"),
+            "persona": ("Narrator",),
+        }
+        manager = CharacterManager(self.provider, self.notepad, speech_provider=speech_provider)
+        self.provider.generate.return_value = SimpleNamespace(
+            text='{"personality":"Patient","motivation":"Find truth","gender":"female","voice_tags":["gender=female","accent=British","persona=Narrator"]}'
+        )
+
+        profile = manager.generate_character_profile("Orin")
+
+        prompt = self.provider.generate.call_args.args[0].prompt
+        self.assertIn("accent: British, General American", prompt)
+        self.assertIn("persona: Narrator", prompt)
+        self.assertEqual(profile["voice_tags"], ["gender=female", "accent=British", "persona=Narrator"])
 
     def test_uses_defaults_when_generation_fails(self) -> None:
         self.provider.generate.side_effect = RuntimeError("provider unavailable")

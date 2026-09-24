@@ -7,11 +7,11 @@ import json
 import logging
 import re
 from threading import Lock
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from jinja2 import Template
 
-from providers import TextResponseProvider, TextResponseRequest
+from providers import SpeechProvider, TextResponseProvider, TextResponseRequest
 from services.quirk_service import get_quirk_generator_service
 from tools.story.notepad import Notepad
 
@@ -40,30 +40,62 @@ Your sticky notes:
 
 Generate a compelling personality description, core motivation, explicit gender, and voice tags for this character in an adventure story experience.
 The character's gender must be explicitly assigned: 'male', 'female', or 'nonbinary'.
-Return ONLY a JSON object with keys 'personality' (string), 'motivation' (string), 'gender' (string: 'male', 'female', or 'nonbinary'), and 'voice_tags' (list of strings containing 'male', 'female', or 'nonbinary')."""
+Voice tags select a speech voice. Use tags in the form `type=value`, choosing only from this provider's supported values:
+{{ voice_tag_options }}
+Always include `gender=<gender>` in voice_tags. You may include additional applicable tags.
+Return ONLY a JSON object with keys 'personality' (string), 'motivation' (string), 'gender' (string: 'male', 'female', or 'nonbinary'), and 'voice_tags' (list of strings)."""
 )
 
 
-def normalize_voice_tags(tags: Any) -> list[str]:
+def normalize_voice_tags(
+    tags: Any,
+    supported_voice_tags: Mapping[str, tuple[str, ...]] | None = None,
+) -> list[str]:
     """Normalize input into a unique list of supported voice tags."""
     if not tags:
         return []
     if isinstance(tags, str):
-        candidates = [tag.strip().lower().replace("-", "") for tag in re.split(r"[,\s]+", tags) if tag.strip()]
+        candidates = []
+        for tag in tags.split(","):
+            clean_tag = tag.strip()
+            if clean_tag:
+                candidates.extend([clean_tag] if "=" in clean_tag else clean_tag.split())
     elif isinstance(tags, (list, tuple, set)):
-        candidates = [str(tag).strip().lower().replace("-", "") for tag in tags if str(tag).strip()]
+        candidates = [str(tag).strip() for tag in tags if str(tag).strip()]
     else:
-        candidates = [str(tags).strip().lower().replace("-", "")]
+        candidates = [str(tags).strip()]
 
     alias_map = {"nb": "nonbinary", "nonbinary": "nonbinary", "male": "male", "female": "female"}
     seen = set()
     result = []
+    supported = supported_voice_tags or {}
     for candidate in candidates:
-        mapped = alias_map.get(candidate)
+        key, separator, value = candidate.partition("=")
+        if separator:
+            values = supported.get(key.strip())
+            if values:
+                match = next((item for item in values if item.lower() == value.strip().lower()), None)
+                if match:
+                    normalized = f"{key.strip()}={match}"
+                    if normalized not in seen:
+                        seen.add(normalized)
+                        result.append(normalized)
+            continue
+        mapped = alias_map.get(candidate.lower().replace("-", ""))
         if mapped and mapped in SUPPORTED_VOICE_TAGS and mapped not in seen:
             seen.add(mapped)
             result.append(mapped)
     return result
+
+
+def _voice_tag_gender(tags: list[str]) -> str:
+    """Return the explicit or legacy gender represented by voice tags."""
+    for tag in tags:
+        if tag in SUPPORTED_VOICE_TAGS:
+            return tag
+        if tag.startswith("gender=") and tag.removeprefix("gender=") in SUPPORTED_VOICE_TAGS:
+            return tag.removeprefix("gender=")
+    return ""
 
 
 class CharacterManager:
@@ -74,6 +106,7 @@ class CharacterManager:
         text_response_provider: TextResponseProvider,
         notepad: Notepad,
         config: Optional[Dict[str, Any]] = None,
+        speech_provider: SpeechProvider | None = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
@@ -83,6 +116,7 @@ class CharacterManager:
         self.text_response_provider = text_response_provider
         self.notepad = notepad
         self.config = config or {}
+        self.speech_provider = speech_provider
         self.max_active_characters = max(
             1,
             min(
@@ -186,10 +220,12 @@ class CharacterManager:
             if norm_g:
                 clean_gender = norm_g[0]
 
-        clean_tags = normalize_voice_tags(voice_tags)
-        if not clean_gender and clean_tags:
-            clean_gender = clean_tags[0]
-        elif clean_gender and clean_gender not in clean_tags:
+        supported_tags = self._supported_voice_tags()
+        clean_tags = normalize_voice_tags(voice_tags, supported_tags)
+        tag_gender = _voice_tag_gender(clean_tags)
+        if not clean_gender and tag_gender:
+            clean_gender = tag_gender
+        elif clean_gender and not tag_gender:
             clean_tags.insert(0, clean_gender)
 
         if not clean_personality or not clean_motivation or not clean_tags or not clean_gender:
@@ -200,6 +236,7 @@ class CharacterManager:
                     gender=clean_gender,
                     description=clean_description,
                     elements=elements,
+                    voice_tag_options=self._format_voice_tag_options(supported_tags),
                 ),
                 system_instruction=(
                     "You generate distinctive characters for interactive adventure stories."
@@ -222,7 +259,7 @@ class CharacterManager:
                     if gen_g:
                         clean_gender = gen_g[0]
                 if not clean_tags:
-                    clean_tags = normalize_voice_tags(generated.get("voice_tags"))
+                    clean_tags = normalize_voice_tags(generated.get("voice_tags"), supported_tags)
             except Exception as exc:
                 logger.warning("[CharacterManager] Character profile generation failed: %s", exc)
 
@@ -232,7 +269,7 @@ class CharacterManager:
             clean_gender = clean_tags[0] if clean_tags else "female"
         if not clean_tags:
             clean_tags = [clean_gender]
-        elif clean_gender not in clean_tags:
+        elif not _voice_tag_gender(clean_tags):
             clean_tags.insert(0, clean_gender)
 
         if not clean_quirk:
@@ -254,6 +291,20 @@ class CharacterManager:
             "quirk": clean_quirk,
             "voice_tags": clean_tags,
         }
+
+    def _supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:
+        if self.speech_provider is None:
+            return {"gender": ("female", "male", "nonbinary")}
+        try:
+            return self.speech_provider.get_supported_voice_tags()
+        except Exception as exc:
+            logger.warning("[CharacterManager] Unable to list speech voice tags: %s", exc)
+            return {"gender": ("female", "male", "nonbinary")}
+
+    @staticmethod
+    def _format_voice_tag_options(tags: Mapping[str, tuple[str, ...]]) -> str:
+        options = [f"- {field}: {', '.join(values)}" for field, values in sorted(tags.items()) if values]
+        return "\n".join(options) or "- gender: female, male, nonbinary"
 
     def generate_character(
         self,

@@ -319,6 +319,7 @@ def get_speech_provider(provider_id: str, options: dict[str, Any] | None = None)
             model=str(options.get("model") or "gemini-3.8-flash-tts"),
             max_attempts=int(options.get("max_attempts") or 3),
             retry_delay_seconds=float(options.get("retry_delay_seconds", 0.25)),
+            voice_language_code=str(options.get("voice_language_code") or "en-US"),
         )
     if provider_id == "fal-seed-speech":
         return FalSeedSpeechProvider(

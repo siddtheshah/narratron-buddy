@@ -1334,14 +1334,41 @@ def _benchmark_one_speech_limited(provider_id: str, prompt: Any, repetition: int
         return _benchmark_one_speech(provider_id, prompt, repetition, provider_options)
 
 
+def _voice_profile_from_tags(raw_voice_tags: Any) -> tuple[Any, list[str]]:
+    """Parse bench tags into documented Gemini voice-library filters."""
+    tags = (
+        [tag.strip() for tag in raw_voice_tags.split(",") if tag.strip()]
+        if isinstance(raw_voice_tags, str)
+        else [str(tag).strip() for tag in (raw_voice_tags or []) if str(tag).strip()]
+    )
+    profile: dict[str, list[str]] = {"voice_tags": []}
+    fields = {"language_code", "region_code", "accent", "pitch", "persona", "contexts", "gender"}
+    for tag in tags:
+        key, separator, value = tag.partition("=")
+        normalized_key = key.strip().lower().replace("-", "_")
+        if separator and normalized_key in fields and value.strip():
+            if normalized_key == "gender":
+                profile["voice_tags"].append(value.strip())
+            else:
+                profile.setdefault(normalized_key, []).append(value.strip())
+        else:
+            profile["voice_tags"].append(tag)
+    return (profile if any(profile.values()) else None), tags
+
+
 def _benchmark_one_speech(provider_id: str, prompt: Any, repetition: int, provider_options: dict[str, Any] | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     item: dict[str, Any] = {"id": uuid.uuid4().hex, "provider_id": provider_id, "prompt_id": prompt.id, "repetition": repetition, "started_at": time.time(), "status": "failed"}
     try:
         options = provider_options or {}
-        result = get_speech_provider(provider_id, options).synthesize(SpeechSynthesisRequest(
+        provider = get_speech_provider(provider_id, options)
+        voice_profile, voice_tags = _voice_profile_from_tags(options.get("voice_tags"))
+        selected_voice = provider.select_voice(voice_profile) if voice_profile else (
+            str(options["voice"]) if options.get("voice") else None
+        )
+        result = provider.synthesize(SpeechSynthesisRequest(
             text=prompt.text,
-            voice=str(options["voice"]) if options.get("voice") else None,
+            voice=selected_voice,
             voice_instruction=str(options.get("voice_instruction") or prompt.voice_instruction),
             speed=float(options["speed"]) if options.get("speed") is not None else None,
             sample_rate_hz=int(options["sample_rate_hz"]) if options.get("sample_rate_hz") else None,
@@ -1353,6 +1380,8 @@ def _benchmark_one_speech(provider_id: str, prompt: Any, repetition: int, provid
             "status": "completed", "audio_url": f"/benchmark-speech/{filename}", "model": result.model,
             "request_id": result.request_id, "usage": dict(result.usage),
             "estimated_output_cost_usd": _estimated_speech_output_cost(provider_id, prompt.text),
+            "selected_voice": selected_voice,
+            "voice_tags": voice_tags or [],
         })
     except (SpeechProviderError, OSError, ValueError) as exc:
         item["error"] = str(exc)

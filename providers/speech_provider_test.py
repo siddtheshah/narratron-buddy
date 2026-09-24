@@ -203,7 +203,7 @@ def test_gemini_speech_voice_selection():
         GEMINI_VOICES,
     )
 
-    provider = GeminiSpeechProvider()
+    provider = GeminiSpeechProvider(client=object())
     female_voice = provider.select_voice(["female"])
     assert female_voice in GEMINI_FEMALE_VOICES
 
@@ -214,6 +214,92 @@ def test_gemini_speech_voice_selection():
     assert nb_voice in GEMINI_VOICES
 
     assert len(provider.select_voice(exclude=GEMINI_VOICES[:-1])) > 0
+
+
+def test_gemini_speech_selects_and_caches_extended_library_voices():
+    calls = []
+
+    class Voices:
+        @staticmethod
+        def list(**kwargs):
+            calls.append(kwargs)
+            return {"voices": [{"id": "voice_british_scout"}, {"id": "voice_british_knight"}]}
+
+    provider = GeminiSpeechProvider(client=type("Client", (), {"voices": Voices()})())
+    profile = {
+        "voice_tags": ["female"],
+        "description": "A clever scout from the western marches.",
+        "language_code": "en-GB",
+        "accent": "British",
+        "persona": "Narrator",
+    }
+
+    first = provider.select_voice(profile)
+    second = provider.select_voice(profile)
+
+    assert first in {"voice_british_scout", "voice_british_knight"}
+    assert second == first
+    assert calls == [{
+        "type_": ["prebuilt"],
+        "page_size": 1000,
+        "gender": ["female"],
+        "language_code": ["en-GB"],
+        "accent": ["British"],
+        "persona": ["Narrator"],
+    }]
+
+
+def test_gemini_speech_lists_live_voice_tag_values_and_caches_them():
+    calls = []
+
+    class Voices:
+        @staticmethod
+        def list(**kwargs):
+            calls.append(kwargs)
+            return {
+                "voices": [
+                    {"gender": "female", "accent": "British", "language_code": "en-GB"},
+                    {"gender": "neutral", "accent": "General American", "persona": "Narrator"},
+                ]
+            }
+
+    provider = GeminiSpeechProvider(client=type("Client", (), {"voices": Voices()})())
+
+    assert provider.get_supported_voice_tags() == {
+        "accent": ("British", "General American"),
+        "gender": ("female", "nonbinary"),
+        "language_code": ("en-GB",),
+        "persona": ("Narrator",),
+    }
+    assert provider.get_supported_voice_tags()["accent"] == ("British", "General American")
+    assert calls == [{"type_": ["prebuilt"], "page_size": 1000}]
+
+
+def test_gemini_speech_resolves_typed_character_voice_tags_to_catalog_filters():
+    calls = []
+
+    class Voices:
+        @staticmethod
+        def list(**kwargs):
+            calls.append(kwargs)
+            return {"voices": [{"id": "voice_british_scout"}]}
+
+    provider = GeminiSpeechProvider(client=type("Client", (), {"voices": Voices()})())
+    assert provider.select_voice(["gender=female", "accent=British"]) == "voice_british_scout"
+    assert calls == [{
+        "type_": ["prebuilt"], "page_size": 1000,
+        "gender": ["female"], "language_code": ["en-US"], "accent": ["British"],
+    }]
+
+
+def test_gemini_speech_extended_library_respects_excluded_voices():
+    class Voices:
+        @staticmethod
+        def list(**kwargs):
+            return {"voices": [{"id": "voice_one"}, {"id": "voice_two"}]}
+
+    provider = GeminiSpeechProvider(client=type("Client", (), {"voices": Voices()})())
+    assert provider.select_voice(["male"], exclude=["voice_one"]) == "voice_two"
 
 
 def test_google_chirp_speech_voice_selection():

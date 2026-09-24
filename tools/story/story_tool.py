@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from providers import TextResponseProvider
+from providers import SpeechProvider, TextResponseProvider
 from tools.base_tool import BaseTools, with_cooldown
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
@@ -86,10 +86,15 @@ class StoryTool(BaseTools):
         self._load_story_log()
 
         self.lore_library = LoreLibrary(theater=theater)
+        scene_speech = getattr(canvas_manager, "story", None)
+        speech_provider = getattr(scene_speech, "speech_provider", None)
+        if not isinstance(speech_provider, SpeechProvider):
+            speech_provider = None
         self.character_manager = CharacterManager(
             text_response_provider=text_response_provider,
             notepad=self.notepad,
             config=self.config,
+            speech_provider=speech_provider,
         )
         configured_session_id = str(self.config.get("session_id") or "").strip()
         theater_id = getattr(theater, "theater_id", "")

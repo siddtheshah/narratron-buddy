@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 
 
 def extract_voice_tags(tags: Any = None) -> list[str]:
-    """Extract and normalize voice tags ('male', 'female', or 'nonbinary')."""
+    """Extract and normalize gender tags from legacy or ``gender=value`` tags."""
     if not tags:
         return []
     if isinstance(tags, Mapping):
@@ -18,6 +18,8 @@ def extract_voice_tags(tags: Any = None) -> list[str]:
     normalized = []
     for t in tags:
         clean = str(t).strip().lower().replace("-", "")
+        if clean.startswith("gender="):
+            clean = clean.removeprefix("gender=")
         if clean in ("nb", "nonbinary"):
             normalized.append("nonbinary")
         elif clean in ("male", "female"):
@@ -98,3 +100,11 @@ class SpeechProvider(ABC):
         """Select a voice based on voice tags (e.g. 'male' or 'female')."""
         return getattr(self, "model", "") or "default"
 
+    def get_supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:
+        """Return supported character voice-filter fields and their values.
+
+        Providers that expose a live voice catalog should override this method.
+        The base contract keeps character generation useful for providers that
+        only support the common gender selection hints.
+        """
+        return {"gender": ("female", "male", "nonbinary")}

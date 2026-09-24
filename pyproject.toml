@@ -10,7 +10,7 @@ dependencies = [
     "google-adk",
     "google-cloud-storage>=3.0.0",
     "google-cloud-texttospeech",
-    "google-genai>=2.0.0",
+    "google-genai>=2.25.0",
     "jinja2",
     "joblib>=1.2.0",
     "jsonschema>=4.0",

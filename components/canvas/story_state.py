@@ -263,7 +263,11 @@ class StoryState:
                 cleaned = [str(tags).strip().lower().replace("-", "")]
             else:
                 cleaned = []
-            self.character_voice_tags[key] = [allowed[c] for c in cleaned if c in allowed]
+            self.character_voice_tags[key] = [
+                allowed[c] if c in allowed else c
+                for c in cleaned
+                if c in allowed or re.fullmatch(r"[a-z_]+=[^=]+", c)
+            ]
         if self._persist:
             self._persist()
 
@@ -283,7 +287,11 @@ class StoryState:
         elif isinstance(tags, str):
             candidates = [str(tags).strip().lower().replace("-", "")]
         allowed = {"male": "male", "female": "female", "nonbinary": "nonbinary", "nb": "nonbinary"}
-        return [allowed[c] for c in candidates if c in allowed]
+        return [
+            allowed[c] if c in allowed else c
+            for c in candidates
+            if c in allowed or re.fullmatch(r"[a-z_]+=[^=]+", c)
+        ]
     def get_character_description(self, speaker: str) -> str:
         character = self._character(speaker)
         if character:
@@ -307,6 +315,11 @@ class StoryState:
             return
         self._speech_provider = provider
         self._scene_speech_enabled = True
+
+    @property
+    def speech_provider(self) -> SpeechProvider | None:
+        """The provider used for scene voices, when character voicing is enabled."""
+        return self._speech_provider
 
     def cancel(self) -> int:
         """Invalidates any pending or in-flight scene synthesis."""
@@ -337,7 +350,10 @@ class StoryState:
         tags = self.get_character_voice_tags(speaker)
         used = set(self.character_voice_assignments.values())
         if self._speech_provider is not None:
-            voice = self._speech_provider.select_voice(tags, exclude=used)
+            voice = self._speech_provider.select_voice({
+                "voice_tags": tags,
+                "description": self.get_character_description(speaker),
+            }, exclude=used)
         else:
             voice = "default"
 

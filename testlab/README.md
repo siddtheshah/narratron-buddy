@@ -12,6 +12,14 @@ The Music Provider Bench can run a regular generator or the **TEST ONLY: Generat
 
 The Speech Provider Bench compares Gemini 3.8 Flash TTS, ByteDance **Seed Speech v2** on FAL, and Chirp 3 HD using fixed narrative dialogue lines. The Gemini presets demonstrate 3.8's structured sustained delivery directions and transcript-level vocal tags such as `<short pause>`. Gemini uses `GEMINI_API_KEY`; Seed Speech uses `FAL_API_KEY`. (Seedance is ByteDance's video family; Seed Speech is its FAL TTS endpoint.)
 
+Use the **Voice tags / filters** field on a provider card to benchmark its automatic voice selection. Bare tags work across providers (for example, `female` or `male`); Gemini also accepts its Extended Voice Library filters in `field=value` form, such as `female, accent=General American, persona=Storyteller & Narrator`. Each result shows the selected voice ID used for synthesis.
+
+To inspect the live Gemini Extended Voice Library and its available filter values, set `GEMINI_API_KEY` and run:
+
+```powershell
+uv run python testlab/list_gemini_voice_tags.py
+```
+
 To bypass the browser and exercise one real Vertex-backed planner turn, run:
 
 ```powershell

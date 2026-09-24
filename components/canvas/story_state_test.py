@@ -133,7 +133,10 @@ def test_story_state_delegates_to_provider_select_voice() -> None:
     voice = state._voice_for("Arthur")
     assert voice == "custom_voice_alpha"
     assert state.character_voice_assignments["arthur"] == "custom_voice_alpha"
-    mock_provider.select_voice.assert_called_once_with(["male"], exclude=set())
+    mock_provider.select_voice.assert_called_once_with(
+        {"voice_tags": ["male"], "description": "Arthur"},
+        exclude=set(),
+    )
 
     # Second call uses assigned voice without re-querying provider
     mock_provider.select_voice.reset_mock()
@@ -317,6 +320,13 @@ def test_get_character_voice_tags_filters_to_binary_gender_and_handles_single_st
     assert state.get_character_voice_tags("Sprite") == ["nonbinary"]
     assert state.get_character_voice_tags("Rowan") == ["nonbinary"]
     assert state.get_character_voice_tags("Robot") == []
+
+
+def test_character_voice_tags_preserve_typed_speech_filters() -> None:
+    state = StoryState()
+    state.update_character_voice_tags({"Mara": ["gender=female", "accent=British", "unsupported"]})
+
+    assert state.get_character_voice_tags("Mara") == ["gender=female", "accent=british"]
 
 
 def test_story_state_internal_voice_tags_update_and_lookup() -> None:

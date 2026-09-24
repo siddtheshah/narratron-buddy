@@ -37,6 +37,7 @@ class TestStoryToolComposition(unittest.TestCase):
             text_response_provider=self.provider,
             notepad=tool.notepad,
             config={"session_id": "shared-session"},
+            speech_provider=None,
         )
         planning_kwargs = planning_type.call_args.kwargs
         response_kwargs = response_type.call_args.kwargs
@@ -231,7 +232,13 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             self.tool.response_module._resolve_user_action("I call out.")
 
         # Vesper's voice was assigned using female tag
-        speech_provider.select_voice.assert_called_once_with(["female"], exclude=set())
+        speech_provider.select_voice.assert_called_once_with(
+            {
+                "voice_tags": ["female"],
+                "description": unittest.mock.ANY,
+            },
+            exclude=set(),
+        )
         self.assertEqual(self.story_state.get_character_voice("Vesper"), "voice_female_1")
 
     def test_manifested_nonbinary_character_voice_selected_in_process_user_action(self) -> None:
@@ -251,7 +258,13 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         with patch.object(self.tool.response_module, "_run_responder_agent", return_value=scene_delta):
             self.tool.response_module._resolve_user_action("I listen.")
 
-        speech_provider.select_voice.assert_called_once_with(["nonbinary"], exclude=set())
+        speech_provider.select_voice.assert_called_once_with(
+            {
+                "voice_tags": ["nonbinary"],
+                "description": unittest.mock.ANY,
+            },
+            exclude=set(),
+        )
         self.assertEqual(self.story_state.get_character_voice("Echo"), "voice_nb_1")
 
     def test_sync_character_voice_tags_updates_story_state(self) -> None:

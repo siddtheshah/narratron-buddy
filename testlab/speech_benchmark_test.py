@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from providers.speech_provider import SpeechSynthesisResult
 from testlab.speech_benchmark import get_speech_prompt, speech_prompt_catalog
 from testlab.server import app
 
@@ -11,7 +12,10 @@ def test_speech_prompt_catalog():
 
 def test_speech_benchmark_routes():
     client = TestClient(app)
-    assert "Speech Provider Bench" in client.get("/speech-benchmark").text
+    page = client.get("/speech-benchmark").text
+    assert "Speech Provider Bench" in page
+    assert "Voice tags / filters (selects a voice)" in page
+    assert "Selected voice:" in page
     data = client.get("/api/speech-benchmark/catalog").json()
     gemini = next(provider for provider in data["providers"] if provider["id"] == "gemini-flash-tts")
     assert gemini["model"] == "gemini-3.8-flash-tts"
@@ -44,3 +48,41 @@ def test_speech_benchmark_custom_prompt_run(monkeypatch):
     assert data["prompts"][0]["title"] == "Custom Dialogue"
     assert data["prompts"][0]["text"] == "The kingdom has fallen, yet hope remains."
     assert data["prompts"][0]["voice_instruction"] == "Whisper with sorrow"
+
+
+def test_speech_benchmark_selects_a_voice_from_tags(monkeypatch, tmp_path):
+    from testlab import server
+
+    class Provider:
+        def __init__(self):
+            self.selected_tags = None
+            self.request = None
+
+        def select_voice(self, tags):
+            self.selected_tags = tags
+            return "voice_selected_from_tags"
+
+        def synthesize(self, request):
+            self.request = request
+            return SpeechSynthesisResult(
+                audio_bytes=b"wav",
+                mime_type="audio/wav",
+                provider="test",
+                model="test-model",
+            )
+
+    provider = Provider()
+    monkeypatch.setattr(server, "get_speech_provider", lambda *_: provider)
+    monkeypatch.setattr(server, "BENCHMARK_SPEECH_OUTPUT", tmp_path)
+
+    item = server._benchmark_one_speech(
+        "gemini-flash-tts",
+        get_speech_prompt("heroic-rally"),
+        1,
+        {"voice_tags": "female, adventurous"},
+    )
+
+    assert provider.selected_tags == {"voice_tags": ["female", "adventurous"]}
+    assert provider.request.voice == "voice_selected_from_tags"
+    assert item["selected_voice"] == "voice_selected_from_tags"
+    assert item["voice_tags"] == ["female", "adventurous"]
