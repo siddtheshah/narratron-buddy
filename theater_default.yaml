@@ -85,8 +85,11 @@ story_planning:
 chat:
     cooldown_duration: 20
 
+# Speech delivery defaults for synthesized dialogue (Adventure Mode).
+# Operational backend provider and model selection are configured in app.yaml.
 speech:
-    provider: "gemini-flash-tts"
-    model: "gemini-3.8-flash-tts"
+    # Default language/locale code used for voice selection when unspecified.
     voice_language_code: "en-US"
+    # When true, duplicates accent voice tags into delivery direction so accents
+    # remain clearly pronounced without altering the transcript text.
     accent_augmentation: true

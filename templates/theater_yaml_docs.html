@@ -328,7 +328,7 @@
             href="#observability-tool"><code>observability_tool</code></a><a href="#visuals"><code>visuals</code></a><a
             href="#image-generation"><code>image_generation</code></a><a href="#animation"><code>animation</code></a><a
             href="#interactive-canvas"><code>interactive_canvas</code></a><a href="#music"><code>music</code></a><a
-            href="#story-planning"><code>story_planning</code></a><a href="#chat"><code>chat</code></a>
+            href="#story-planning"><code>story_planning</code></a><a href="#speech"><code>speech</code></a><a href="#chat"><code>chat</code></a>
         </aside>
         <article class="content">
           <section class="section" id="loading">
@@ -549,6 +549,27 @@ story_planning:
     - captain
   style: "Tense science-fiction mystery; setbacks are fair and consequential."
   require_user_input: false</pre>
+          </section>
+
+          <section class="section" id="speech">
+            <h2><code>speech</code></h2>
+            <p>Controls speech synthesis delivery settings for Adventure Mode character voicing. The underlying TTS
+              provider and model are application-wide operational settings defined in <code>app.yaml</code>, which
+              override corresponding fields here.</p>
+            <dl class="options">
+              <dt><code>voice_language_code</code> <span class="type">string</span></dt>
+              <dd>Language and locale code used to select matching character voices from the voice library (for example,
+                <code>en-US</code> or <code>en-GB</code>). Default: <code>en-US</code>.</dd>
+              <dt><code>accent_augmentation</code> <span class="type">boolean</span></dt>
+              <dd>When enabled, any character accent voice tags (such as <code>accent=British</code> or
+                <code>accent=Scottish</code>) are automatically duplicated into structured delivery direction and style
+                instructions for the speech synthesizer so subtle accents are clearly pronounced throughout delivery.
+                Default: <code>true</code>.</dd>
+            </dl>
+            <h3>Example: character speech delivery</h3>
+            <pre>speech:
+  voice_language_code: "en-US"
+  accent_augmentation: true</pre>
           </section>
 
           <section class="section" id="chat">

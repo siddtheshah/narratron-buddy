@@ -492,7 +492,7 @@ def build_theater_config(
         )
 
     # Ensure app.yaml is applied at the end
-    return theater_config
+    return apply_app_config(theater_config)
 
 
 @app.post("/api/theaters/create-and-deploy")

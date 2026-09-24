@@ -134,6 +134,10 @@ story_planning:
 
 chat:
     cooldown_duration: 20
+
+speech:
+    voice_language_code: "en-US"
+    accent_augmentation: true        # Amplifies character accent voice tags into explicit delivery instructions
 ```
 
 ### 4.2. Deep Planning Schema Template (`planning.yaml`)
@@ -180,6 +184,7 @@ handled by the deep story planner.
 3. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
 4. **`hidden_stickies` overlay**: Optional list in `theater.yaml` of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget.
 5. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
+6. **`speech` settings**: Configure `voice_language_code` and `accent_augmentation` to shape NPC voice generation; backend speech provider and model are application-level operational settings defined in `app.yaml`, which override corresponding fields.
 
 ---
 

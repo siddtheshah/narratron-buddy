@@ -6,6 +6,7 @@ import unittest
 from components.theater_manager import TheaterManager
 from testing.base import BaseTestCase
 from utils.config_loader import (
+    apply_app_config,
     get_app_config,
     get_theater_default_config,
     get_theater_config,
@@ -118,7 +119,8 @@ class TestConfigLoader(BaseTestCase):
             # App.yaml model selections should override theater settings
             self.assertEqual(loaded["story_planning"]["planner_model"], app_cfg["story_planning"]["planner_model"])
             self.assertEqual(loaded["music"]["provider"], app_cfg["music"]["provider"])
-            self.assertEqual(loaded["speech"], app_cfg["speech"])
+            self.assertEqual(loaded["speech"]["provider"], app_cfg["speech"]["provider"])
+            self.assertEqual(loaded["speech"]["model"], app_cfg["speech"]["model"])
             self.assertEqual(loaded["visuals"]["model"], app_cfg["visuals"]["model"])
             self.assertEqual(loaded["interactive_canvas"]["model"], app_cfg["interactive_canvas"]["model"])
 
@@ -128,6 +130,34 @@ class TestConfigLoader(BaseTestCase):
             self.assertEqual(loaded["interactive_canvas"]["cooldown_duration"], 42)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_app_config_overrides_speech_fields_in_theater_default(self):
+        config = get_theater_default_config()
+        self.assertIn("speech", config)
+        self.assertEqual(config["speech"].get("voice_language_code"), "en-US")
+        self.assertEqual(config["speech"].get("accent_augmentation"), True)
+
+        app_override = {
+            "speech": {
+                "provider": "custom-tts",
+                "model": "custom-model",
+                "voice_language_code": "en-GB",
+                "accent_augmentation": False,
+            }
+        }
+        merged = apply_app_config(config, app_override)
+        self.assertEqual(merged["speech"]["provider"], "custom-tts")
+        self.assertEqual(merged["speech"]["model"], "custom-model")
+        self.assertEqual(merged["speech"]["voice_language_code"], "en-GB")
+        self.assertEqual(merged["speech"]["accent_augmentation"], False)
+
+    def test_app_config_top_level_accent_augmentation_overrides_speech_fields(self):
+        config = get_theater_default_config()
+        app_override = {
+            "accent_augmentation": False,
+        }
+        merged = apply_app_config(config, app_override)
+        self.assertEqual(merged["speech"]["accent_augmentation"], False)
 
 if __name__ == "__main__":
     unittest.main()

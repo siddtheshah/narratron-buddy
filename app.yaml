@@ -31,9 +31,6 @@ music:
 speech:
     provider: "gemini-flash-tts"
     model: "gemini-3.8-flash-tts"
-    voice_language_code: "en-US"
-    # Repeat accent voice tags in synthesis style/direction (Gemini and Seed).
-    accent_augmentation: true
 
 smtp:
     from_email: "noreply@narratron.io"
