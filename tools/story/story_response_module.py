@@ -93,8 +93,8 @@ _SCENE_REACTION_PROMPT_TEMPLATE = Template(
 """# Role & Mission
 You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
-A separate deep-planning agent owns long-term continuity through sticky notes. Treat those notes as authoritative planning guidance, but never modify them or create a competing long-term plan during this turn.
-Do not worry about any instructions related to updating sticky notes. That is handled by your other half.
+A separate deep-planning agent owns long-term continuity and is the sole agent that directly modifies sticky notes. Treat active notes as authoritative planning guidance, but never modify them directly or create a competing long-term plan during this turn.
+Crucially, you are the front-line observer of all immediate turn fallout. While your other half commits sticky note updates, you MUST explicitly communicate to the planner via `planning_signals` with direct instructions directed only to it. You are responsible for ensuring high recall of sticky note updates by explicitly flagging any active sticky notes that require updating based on this turn's resolution so the planner does not miss them.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 
@@ -143,7 +143,7 @@ No lore documents are available for this theater. Invent the lore, world details
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
 - **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character. For each spoken line, include a concise `voice_instruction` that describes its sustained delivery (emotion, pace, volume, accent, or prosody). Do not put stage directions in `text`; use inline vocal tags such as `<sigh>` or `<short pause>` there only when an audible, momentary event belongs in the transcript.
-- **Planning Signals**: Briefly record facts established by this resolution, threads affected, and consequences the background planning system should consider. These signals are internal and must describe what actually happened, not invent future events.
+- **Planning Signals (Direct Communication to Deep Planner)**: These signals are internal communication directed solely to the deep planner (never shown to the player). You MUST use this channel to ensure high recall of sticky note updates: explicitly review your active sticky notes and call out any topics that need an update based on this turn's resolution (e.g. `[STICKY UPDATE: <Exact Topic Name>] <what changed or new value>` for stat changes, inventory items gained/lost, location shifts, quest progress, combat status, enemy stats, or lasting effects), followed by factual story fallout and thread consequences for background planning. Do not invent future player events; describe what was established this turn.
 - **Character Updates**: Character updates are for NPCs only. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, you MUST assign an explicit gender ('male', 'female', or 'nonbinary') and voice_tags to guide speech synthesis.
 
 # Character Generation
@@ -210,7 +210,7 @@ class SceneReaction(BaseModel):
     dialogue: List[ResponseDialogue] = Field(default_factory=list, description="At most three NPC lines; never for the player.")
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
     character_updates: List[ResponseCharacter] = Field(default_factory=list, description="NPCs added or updated.")
-    planning_signals: List[str] = Field(default_factory=list, description="Factual story signals for deep planning.")
+    planning_signals: List[str] = Field(default_factory=list, description="Direct internal communication to deep planner, including sticky note update cues.")
     scene_label: Optional[str] = Field(default=None, description="Current scene label/location.")
     reference_images: Optional[List[str]] = Field(default=None, description="Referenced lore images.")
 

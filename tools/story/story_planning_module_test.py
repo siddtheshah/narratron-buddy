@@ -10,7 +10,11 @@ from google.adk.sessions import InMemorySessionService
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
-from tools.story.story_planning_module import StoryPlanningModule, VertexGemini
+from tools.story.story_planning_module import (
+    StoryPlanningModule,
+    VertexGemini,
+    _DEEP_PLANNING_PROMPT_TEMPLATE,
+)
 
 
 class TestStoryPlanningModuleDependencies(unittest.TestCase):
@@ -528,6 +532,36 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         self.assertEqual(notes["Quest"], "The relic is now guarded")
         self.assertEqual(notes["HUD"], "HP: 100 | MP: 50")
         self.assertEqual(self.module.get_deep_plan()["through_turn_id"], 1)
+
+
+class TestDeepPlanningPromptTemplate(unittest.TestCase):
+    def test_renders_responder_direct_communication_and_high_priority_guidance(self) -> None:
+        rendered = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
+            deep_plan_json="",
+            current_notes=[],
+            structured_sticky_json="",
+            sticky_schema_json="",
+            turn_events=[
+                {
+                    "turn_id": 1,
+                    "user_action": "I drink the health potion.",
+                    "narration": "A soothing warmth mends your injuries.",
+                    "dialogue": [],
+                    "planning_signals": [
+                        "[STICKY UPDATE: Combat Stats & Synergy] HP restored to 100/100",
+                        "[STICKY UPDATE: Equipment & Trait Deck] Consumed Health Potion",
+                    ],
+                    "characters": [],
+                    "die_rolls": [],
+                }
+            ],
+            max_sticky_notes=5,
+        )
+        self.assertIn("Independent Analysis & Responder Communication", rendered)
+        self.assertIn("DO NOT solely rely on responder signals", rendered)
+        self.assertIn("Turn responder direct communication & planning signals:", rendered)
+        self.assertIn("[STICKY UPDATE: Combat Stats & Synergy] HP restored to 100/100", rendered)
+        self.assertIn("update_sticky_note", rendered)
 
 
 if __name__ == "__main__":

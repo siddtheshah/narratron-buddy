@@ -18,7 +18,9 @@ from tools.story.notepad import Notepad
 from tools.story.story_response_module import (
     ResponseCharacter,
     ResponseDialogue,
+    SceneReaction,
     StoryResponseModule,
+    build_scene_reaction_prompt,
     build_story_context_prompt,
 )
 
@@ -453,6 +455,30 @@ class TestBuildStoryContextPrompt(unittest.TestCase):
         )
         self.assertNotIn("UPDATED", prompt)
         self.assertNotIn("Pay close attention", prompt)
+
+
+class TestBuildSceneReactionPrompt(unittest.TestCase):
+    def test_instructs_planner_communication_and_sticky_note_recall(self) -> None:
+        prompt = build_scene_reaction_prompt(
+            context="Your sticky notes:\n- HUD: HP: 100/100",
+            style="heroic fantasy",
+            lore_context="",
+        )
+        self.assertIn("planning_signals", prompt)
+        self.assertIn("STICKY UPDATE", prompt)
+        self.assertIn("sole agent that directly modifies sticky notes", prompt)
+        self.assertIn("high recall of sticky note updates", prompt)
+
+    def test_scene_reaction_model_validates_sticky_update_signals(self) -> None:
+        reaction = SceneReaction(
+            narration="You strike the golem, taking 15 damage in return.",
+            planning_signals=[
+                "[STICKY UPDATE: Combat Stats & Synergy] HP reduced to 85/100",
+                "Golem outer shell shattered",
+            ],
+        )
+        self.assertEqual(len(reaction.planning_signals), 2)
+        self.assertIn("[STICKY UPDATE: Combat Stats & Synergy]", reaction.planning_signals[0])
 
 
 if __name__ == "__main__":
