@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from testing.base import BaseTestCase
-from tools.base_tool import BaseTools, with_cooldown, single_flight
+from tools.base_tool import BaseTools, with_cooldown, with_cycle_cooldown, single_flight
 
 
 class SampleTools(BaseTools):
@@ -33,6 +33,20 @@ class SampleTools(BaseTools):
     async def async_slow_tool(self) -> str:
         await asyncio.sleep(0.3)
         return "Async Done"
+
+    @with_cycle_cooldown(action_desc="cycle tool", duration=0.1)
+    def cycle_tool(self, value: str) -> str:
+        if not hasattr(self, "cycle_calls"):
+            self.cycle_calls = []
+        self.cycle_calls.append(value)
+        return f"Ran {value}"
+
+    @with_cycle_cooldown(duration=0.1)
+    async def async_cycle_tool(self, value: str) -> str:
+        if not hasattr(self, "async_cycle_calls"):
+            self.async_cycle_calls = []
+        self.async_cycle_calls.append(value)
+        return f"Async ran {value}"
 
     def handle_timeout(self):
         self.timeout_called = True
@@ -132,6 +146,69 @@ class TestBaseTools(BaseTestCase):
             asyncio.run(sample.async_slow_tool())
         self.assertTrue(sample.timeout_called)
         self.assertFalse(sample.is_in_flight("async_slow_tool"))
+
+
+    def test_with_cycle_cooldown_immediate_and_scheduled_calls(self):
+        sample = self.make_sample({})
+        # First call executes immediately
+        res1 = sample.cycle_tool("A")
+        self.assertEqual(res1, "Ran A")
+        self.assertEqual(sample.cycle_calls, ["A"])
+
+        # Second call within cooldown is scheduled
+        res2 = sample.cycle_tool("B")
+        self.assertEqual(res2, "Tool 'cycle_tool' scheduled for next cycle when cooldown expires.")
+        self.assertEqual(sample.cycle_calls, ["A"])
+
+        # Third call within cooldown updates parameters instead of creating another entry
+        res3 = sample.cycle_tool("C")
+        self.assertEqual(res3, "Tool 'cycle_tool' parameters updated for next cycle.")
+        self.assertEqual(sample.cycle_calls, ["A"])
+
+        # Wait for cooldown to expire and background timer to execute the pending call
+        time.sleep(0.25)
+        self.assertEqual(sample.cycle_calls, ["A", "C"])
+
+    def test_with_cycle_cooldown_cancel_pending(self):
+        sample = self.make_sample({})
+        sample.cycle_tool("A")
+        sample.cycle_tool("B")
+        self.assertIsNotNone(sample.get_pending_cycle_call("cycle_tool"))
+
+        cancelled = sample.cancel_pending_cycle_call("cycle_tool")
+        self.assertTrue(cancelled)
+        self.assertIsNone(sample.get_pending_cycle_call("cycle_tool"))
+
+        time.sleep(0.2)
+        self.assertEqual(sample.cycle_calls, ["A"])
+
+    def test_with_cycle_cooldown_does_not_fire_expired_cb_when_pending_runs(self):
+        sample = self.make_sample({})
+        mock_expired = MagicMock()
+        sample.on_cooldown_expired = mock_expired
+
+        sample.cycle_tool("A")
+        sample.cycle_tool("B")
+
+        # After the first cycle, B runs and starts a new cooldown cycle, so on_cooldown_expired is not fired yet
+        time.sleep(0.2)
+        self.assertEqual(sample.cycle_calls, ["A", "B"])
+        mock_expired.assert_not_called()
+
+        # After the second cycle finishes with no pending calls, on_cooldown_expired is fired
+        time.sleep(0.2)
+        mock_expired.assert_called_with("cycle_tool")
+
+    def test_with_cycle_cooldown_async(self):
+        sample = self.make_sample({})
+        res1 = asyncio.run(sample.async_cycle_tool("A"))
+        self.assertEqual(res1, "Async ran A")
+
+        res2 = asyncio.run(sample.async_cycle_tool("B"))
+        self.assertEqual(res2, "Tool 'async_cycle_tool' scheduled for next cycle when cooldown expires.")
+
+        time.sleep(0.25)
+        self.assertEqual(sample.async_cycle_calls, ["A", "B"])
 
 
 if __name__ == "__main__":

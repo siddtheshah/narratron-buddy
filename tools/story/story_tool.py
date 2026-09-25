@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime, timezone
 import logging
 import math
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
 
 from google.adk.sessions import InMemorySessionService
 from pydantic import BaseModel, Field
@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import SpeechProvider, TextResponseProvider
-from tools.base_tool import BaseTools, with_cooldown
+from tools.base_tool import BaseTools, with_cycle_cooldown
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
@@ -255,12 +255,12 @@ class StoryTool(BaseTools):
             words = 0
         return min(self.action_cooldown_max_seconds, self.action_cooldown_base_seconds + math.ceil(words / self.action_cooldown_words_per_second))
 
-    @with_cooldown(
+    @with_cycle_cooldown(
         action_desc="resolving story update",
         duration=lambda tools: tools.get_user_action_cooldown_seconds(),
         tool_name="process_user_action",
     )
-    def process_user_action(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
+    def process_user_action(self, user_action: str, nudge: str = "") -> Union[Dict[str, Any], str]:
         """Apply the public cooldown before delegating story resolution."""
         self.append_story_log_entry({"type": "user_action", "action": str(user_action).strip()})
         self._pending_actions.append(str(user_action).strip())

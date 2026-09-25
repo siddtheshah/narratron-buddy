@@ -6,14 +6,14 @@ import threading
 import time
 import shutil
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from providers import (
     MusicGenerationRequest,
     MusicProviderError,
     get_music_provider,
 )
-from tools.base_tool import BaseTools, logged_tool_call, with_cooldown
+from tools.base_tool import BaseTools, logged_tool_call, with_cycle_cooldown
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from services.music_catalog import MusicCatalog
@@ -290,7 +290,11 @@ class MusicTools(BaseTools):
             logger.error("[MusicTools] Error playing music: %s", e)
             return f"Error playing music: {e}"
 
-    @with_cooldown("playing another music track")
+    @with_cycle_cooldown(
+        action_desc="playing another music track",
+        duration=lambda tools: tools.switch_cooldown,
+        tool_name="play_music",
+    )
     def play_music(self, music_id: str) -> str:
         """Choose music to play by its playlist name or generated track handle.
 

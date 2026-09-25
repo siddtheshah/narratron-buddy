@@ -95,6 +95,33 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertEqual(result, {"narration": "Done"})
         response_type.return_value.process_user_action.assert_called_once_with("Open the door")
 
+    def test_process_user_action_cycle_cooldown(self) -> None:
+        with (
+            patch("tools.story.story_tool.CharacterManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule") as response_type,
+        ):
+            response_type.return_value.process_user_action.return_value = {"narration": "Done"}
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+
+        # First call executes immediately
+        res1 = tool.process_user_action("First action")
+        self.assertEqual(res1, {"narration": "Done"})
+
+        # Second call within cooldown is scheduled
+        res2 = tool.process_user_action("Second action")
+        self.assertEqual(res2, "Tool 'process_user_action' scheduled for next cycle when cooldown expires.")
+
+        # Third call modifies parameters for the next cycle
+        res3 = tool.process_user_action("Third action", nudge="look closely")
+        self.assertEqual(res3, "Tool 'process_user_action' parameters updated for next cycle.")
+
+        pending = tool.get_pending_cycle_call("process_user_action")
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["args"], ("Third action",))
+        self.assertEqual(pending["kwargs"], {"nudge": "look closely"})
+
     def test_requires_text_response_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
             StoryTool(self.theater, self.canvas, None)  # type: ignore[arg-type]

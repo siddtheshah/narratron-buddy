@@ -1,3 +1,4 @@
+import time
 import os
 import shutil
 import tempfile
@@ -186,8 +187,32 @@ class TestMusicTools(BaseTestCase):
         res1 = self.music_tools.play_music("ambient")
         self.assertIn("Successfully started playing", res1)
 
+        # Call within cooldown is scheduled
         res2 = self.music_tools.play_music("combat")
-        self.assertIn("play_music is on cooldown", res2)
+        self.assertIn("Tool 'play_music' scheduled for next cycle when cooldown expires.", res2)
+
+        # Subsequent call updates parameters
+        res3 = self.music_tools.play_music("ambient")
+        self.assertIn("Tool 'play_music' parameters updated for next cycle.", res3)
+
+        pending = self.music_tools.get_pending_cycle_call("play_music")
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["args"], ("ambient",))
+
+    def test_play_music_cycle_cooldown_executes(self):
+        self.music_tools.cooldown_duration = 0.1
+        self.music_tools.play_music("ambient")
+
+        mock_play_cb = MagicMock()
+        self.music_tools.on_play_music = mock_play_cb
+
+        res = self.music_tools.play_music("combat")
+        self.assertIn("Tool 'play_music' scheduled for next cycle", res)
+        mock_play_cb.assert_not_called()
+
+        time.sleep(0.25)
+        mock_play_cb.assert_called_once()
+        self.assertEqual(mock_play_cb.call_args[0][0], "combat")
 
     def test_use_generated_music_config_disabled(self):
         config = {
