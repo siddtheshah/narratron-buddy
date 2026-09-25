@@ -2,6 +2,7 @@ import io
 import os
 import shutil
 import tempfile
+from pathlib import Path
 import re
 import threading
 from unittest.mock import MagicMock, patch
@@ -490,7 +491,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animations[0]["scene_prompt"], "A hero running across a bridge.")
 
     @patch("tools.image_tool.get_image_provider")
-    def test_create_animation_is_single_flight_while_generating(self, mock_get_provider):
+    def test_create_animation_cycle_cooldown_replaces_single_flight(self, mock_get_provider):
         started = threading.Event()
         release = threading.Event()
         planner = MagicMock()
@@ -505,19 +506,19 @@ class TestAnimationTools(BaseTestCase):
         image_provider = MagicMock()
         layered_provider = MagicMock(model="fal-ai/qwen-image-layered")
         image_tools = self.make_image_tools(self.config, "single_flight", self.manager)
-        tools = self.make_animation_tools(image_tools, image_provider, planner, layered_provider, {"cooldown_duration": 0})
+        tools = self.make_animation_tools(image_tools, image_provider, planner, layered_provider, {"cooldown_duration": 10.0})
         first_result = []
         first = threading.Thread(target=lambda: first_result.append(tools.create_animation("A traveler under stars.", "traveler")))
         first.start()
         self.assertTrue(started.wait(timeout=1))
 
         second_result = tools.create_animation("A second scene.", "second_scene")
-        self.assertIn("already being generated", second_result)
+        self.assertEqual(second_result, "Tool 'create_animation' scheduled for next cycle when cooldown expires.")
         release.set()
         first.join(timeout=2)
         tools.join_generation(timeout=2)
         self.assertIn("generation started", first_result[0])
-        self.assertFalse(tools.is_in_flight("create_animation"))
+
 
     def test_animation_layer_accepts_twist_and_bend_effects(self):
         from tools.animation_tool import AnimationLayer
@@ -1210,5 +1211,61 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(video_provider.generate.call_count, 1)
         request = video_provider.generate.call_args[0][0]
         self.assertEqual(request.video_duration_seconds, 7)
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_play_animation_cycle_cooldown_schedules_and_updates(self, mock_get_provider):
+        image_tools = self.make_image_tools(self.config, "cooldown_anim_play", self.manager)
+        tools = self.make_animation_tools(
+            image_tools, MagicMock(), MagicMock(), MagicMock(), {"cooldown_duration": 10.0}
+        )
+        tools._animations["anim_1"] = ["f1.jpg", "f2.jpg", "f3.jpg"]
+        tools._animations["anim_2"] = ["f4.jpg", "f5.jpg", "f6.jpg"]
+        tools._animations["anim_3"] = ["f7.jpg", "f8.jpg", "f9.jpg"]
+
+        res1 = tools.play_animation("anim_1")
+        self.assertIn("Playing animation", res1)
+
+        res2 = tools.play_animation("anim_2")
+        self.assertEqual(res2, "Tool 'play_animation' scheduled for next cycle when cooldown expires.")
+
+        res3 = tools.play_animation("anim_3")
+        self.assertEqual(res3, "Tool 'play_animation' parameters updated for next cycle.")
+
+        pending = tools.get_pending_cycle_call("play_animation")
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["args"], ("anim_3",))
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_animation_cycle_cooldown_schedules_and_updates(self, mock_get_provider):
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=b"video data",
+            mime_type="video/mp4",
+            provider="fal",
+            model="fal-ai/minimax-video",
+        )
+        image_tools = self.make_image_tools(self.config, "cooldown_anim_create", self.manager)
+        tools = self.make_animation_tools(
+            image_tools,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 10.0},
+            video_provider=video_provider,
+        )
+
+        res1 = tools.create_animation("first animation", "anim_first")
+        self.assertIn("Animation generation started", res1)
+
+        res2 = tools.create_animation("second animation", "anim_second")
+        self.assertEqual(res2, "Tool 'create_animation' scheduled for next cycle when cooldown expires.")
+
+        res3 = tools.create_animation("third animation", "anim_third")
+        self.assertEqual(res3, "Tool 'create_animation' parameters updated for next cycle.")
+
+        pending = tools.get_pending_cycle_call("create_animation")
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["args"], ("third animation", "anim_third"))
+        tools.join_generation()
 
 

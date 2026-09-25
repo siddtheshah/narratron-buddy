@@ -12,14 +12,14 @@ observability_tool:
     cooldown_duration: 30
 
 visuals:
-    cycle_length: 6
+    cycle_length: 9
     style: "wistful and bygone glories"
 
 image_generation:
     # Disable AI image creation while keeping mounted/reference images available
     # for the agent to browse and show on the canvas.
     enabled: true
-    cooldown_duration: 6
+    cooldown_duration: 9
 
 animation:
     enabled: false

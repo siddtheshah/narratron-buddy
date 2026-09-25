@@ -29,7 +29,7 @@ from providers import (
     get_image_provider,
 )
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
-from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, single_flight, with_cooldown
+from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
@@ -164,12 +164,7 @@ class AnimationTools(BaseTools):
             thread.join(timeout=timeout)
 
     @blocked_when_canvas_pinned
-    @single_flight(
-        error_message="An animation is already being generated. Please wait for it to complete.",
-        hold_until_released=True,
-        timeout=80.0,
-    )
-    @with_cooldown(action_desc="generating another animation")
+    @with_cycle_cooldown(action_desc="generating another animation")
     def create_animation(
         self,
         scene_prompt: str,
@@ -249,7 +244,7 @@ class AnimationTools(BaseTools):
                 logger.exception("[AnimationTools] Failed to create animation for %s", animation_id)
             finally:
                 self._set_canvas_activity(False)
-                self.release_in_flight("create_animation")
+
 
         thread = threading.Thread(target=_worker, daemon=True)
         self._last_generation_thread = thread
@@ -343,7 +338,7 @@ class AnimationTools(BaseTools):
             self._trigger_after_tool_call("create_animation")
 
     def _run_layered_animation(self, scene_prompt: str, animation_id: str) -> None:
-        """Run the long-lived pipeline after its public single-flight lease is acquired."""
+        """Run the long-lived pipeline."""
         self._set_canvas_activity(True)
         try:
             animation_dir = Path(self.animations_dir) / animation_id
@@ -760,7 +755,7 @@ class AnimationTools(BaseTools):
         return resolved_references, None
 
     @blocked_when_canvas_pinned
-    @with_cooldown(action_desc="playing another animation")
+    @with_cycle_cooldown(action_desc="playing another animation")
     def play_animation(self, animation_id: str) -> str:
         """Display a saved animation (triframe or layered) on the canvas.
 

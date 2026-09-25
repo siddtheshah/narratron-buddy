@@ -2,6 +2,7 @@ import io
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -565,5 +566,50 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(tools.visual.current_cycle_visual["path"], promoted["path"])
         self.assertIsNone(tools.visual.next_cycle_image)
         self.assertIsNone(c_state.visual.shown_video_animation)
+
+    def test_show_image_cycle_cooldown_schedules_and_updates(self):
+        tools = self.make_image_tools(self.config, theater_id="cooldown_show", theater_manager=self.manager)
+        tools.cooldown_duration = 10.0
+        img1 = os.path.join(tools.reference_dir, "pic1.jpg")
+        img2 = os.path.join(tools.reference_dir, "pic2.jpg")
+        img3 = os.path.join(tools.reference_dir, "pic3.jpg")
+        Image.new("RGB", (10, 10), color="red").save(img1)
+        Image.new("RGB", (10, 10), color="green").save(img2)
+        Image.new("RGB", (10, 10), color="blue").save(img3)
+
+        res1 = tools.show_image("pic1.jpg")
+        self.assertIn("Successfully displayed", res1)
+
+        res2 = tools.show_image("pic2.jpg")
+        self.assertEqual(res2, "Tool 'show_image' scheduled for next cycle when cooldown expires.")
+
+        res3 = tools.show_image("pic3.jpg")
+        self.assertEqual(res3, "Tool 'show_image' parameters updated for next cycle.")
+
+        pending = tools.get_pending_cycle_call("show_image")
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["args"], ("pic3.jpg",))
+
+    @patch("tools.image_tool.get_image_provider")
+    def test_create_image_cycle_cooldown_schedules_and_updates(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(self.config, theater_id="cooldown_create", theater_manager=self.manager)
+        tools.cooldown_duration = 10.0
+
+        res1 = tools.create_image("scene one", image_name="img1", display=False)
+        self.assertIn("Image generation started", res1)
+
+        res2 = tools.create_image("scene two", image_name="img2", display=False)
+        self.assertEqual(res2, "Tool 'create_image' scheduled for next cycle when cooldown expires.")
+
+        res3 = tools.create_image("scene three", image_name="img3", display=False)
+        self.assertEqual(res3, "Tool 'create_image' parameters updated for next cycle.")
+
+        pending = tools.get_pending_cycle_call("create_image")
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["args"], ("scene three",))
+        self.assertEqual(pending["kwargs"], {"image_name": "img3", "display": False})
+        tools.join_generation()
 
 
