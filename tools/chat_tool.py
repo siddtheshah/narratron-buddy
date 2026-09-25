@@ -1,7 +1,7 @@
 import logging
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.base_tool import BaseTools, with_cooldown
+from tools.base_tool import BaseTools, with_cycle_cooldown
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class ChatTools(BaseTools):
         self.cooldown_duration = float(self.config.get("cooldown_duration", 0.0))
         self.on_send_chat_message = None
 
-    @with_cooldown(action_desc="sending chat message")
+    @with_cycle_cooldown(action_desc="sending chat message")
     def send_chat_message(self, text: str) -> str:
         """Updates Narratron's pinned current-thought panel.
 

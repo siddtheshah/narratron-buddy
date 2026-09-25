@@ -83,7 +83,7 @@ story_planning:
     action_cooldown_max_seconds: 25
 
 chat:
-    cooldown_duration: 20
+    cooldown_duration: 10
 
 # Speech delivery defaults for synthesized dialogue (Adventure Mode).
 # Operational backend provider and model selection are configured in app.yaml.
