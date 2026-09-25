@@ -440,6 +440,27 @@ class TestTheaterAPI(BaseTestCase):
         track = theater_manager.theater(theater_id).playlists_dir() / "default" / "new_story.mp3"
         self.assertTrue(track.is_file())
 
+    def test_created_theater_yaml_does_not_contain_app_yaml_fields(self):
+        self.client.post("/api/auth/register", json={
+            "username": "clean_config_user",
+            "email": "clean-config@example.com",
+            "password": "Password123",
+        })
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Clean Config Theater", "creation_mode": "blank"},
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+        yaml_disk_path = theater_manager.theater(theater_id).directory() / "theater.yaml"
+        self.assertTrue(yaml_disk_path.is_file())
+        saved_yaml_data = yaml.safe_load(yaml_disk_path.read_text(encoding="utf-8"))
+        # Operational app.yaml fields should not be saved in theater.yaml
+        self.assertNotIn("model", saved_yaml_data.get("visuals", {}))
+        self.assertNotIn("model_id", saved_yaml_data.get("live_agent", {}))
+        self.assertNotIn("live_tool_budget", saved_yaml_data.get("live_agent", {}))
+        self.assertNotIn("text_model", saved_yaml_data.get("animation", {}))
+
     def test_adventure_creation_mode_enables_adventure_story_planning(self):
         self.client.post("/api/auth/register", json={
             "username": "adventure_user",

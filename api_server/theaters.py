@@ -30,7 +30,7 @@ from api_server.canvas import broadcast_baton_update
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
-from utils.config_loader import apply_app_config, deep_merge, get_theater_config, get_theater_default_config
+from utils.config_loader import deep_merge, get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
 
@@ -460,7 +460,6 @@ def build_theater_config(
 
     - If uploaded from a folder or sourced from an adventure, don't bother with theater_default.yaml.
     - Otherwise use theater_default.yaml and apply updates from configure_with_assets.
-    - Ensure app.yaml is applied at the end.
     """
     if creation_mode == "folder":
         if not folder_config_yaml:
@@ -491,8 +490,7 @@ def build_theater_config(
             story_planning_style=story_planning_style,
         )
 
-    # Ensure app.yaml is applied at the end
-    return apply_app_config(theater_config)
+    return theater_config
 
 
 @app.post("/api/theaters/create-and-deploy")
