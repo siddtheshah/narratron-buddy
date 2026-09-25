@@ -20,6 +20,7 @@ from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule
 from tools.story.story_response_module import StoryResponseModule
+from tools.image.image_library import ImageLibrary
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class StoryTool(BaseTools):
         theater: Theater,
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
+        image_library: Optional[ImageLibrary] = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
@@ -86,6 +88,7 @@ class StoryTool(BaseTools):
         self._load_story_log()
 
         self.lore_library = LoreLibrary(theater=theater)
+        self.image_library = image_library or ImageLibrary(theater=theater)
         scene_speech = getattr(canvas_manager, "story", None)
         speech_provider = getattr(scene_speech, "speech_provider", None)
         if not isinstance(speech_provider, SpeechProvider):
@@ -115,6 +118,7 @@ class StoryTool(BaseTools):
             theater=theater,
             canvas_manager=canvas_manager,
             lore_library=self.lore_library,
+            image_library=self.image_library,
             character_manager=self.character_manager,
             session_service=self.planning_session_service,
             session_id=self.planning_session_id,

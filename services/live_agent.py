@@ -14,7 +14,7 @@ from jinja2 import StrictUndefined, Template
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from tools.chat_tool import ChatTools
-from tools.image_tool import ImageTools
+from tools.image import ImageTools
 from tools.animation_tool import AnimationTools
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
 from tools.music_tool import MusicTools, SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
@@ -398,6 +398,7 @@ def create_tool_bundle_for_session(
             theater,
             canvas_manager=canvas_manager,
             text_response_provider=story_planning_text_provider,
+            image_library=image_tools.image_library,
         )
         tools.append(story_planning_tools.process_user_action)
     else:

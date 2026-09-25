@@ -13,7 +13,7 @@ from testing.ui.base import UITestCase
 
 class TestCrossfade(UITestCase):
     def test_show_image_forwards_transition_and_effect_to_callback(self):
-        from tools.image_tool import ImageTools
+        from tools.image import ImageTools
 
         theater_id = "image_tool_transition"
         theater_manager = TheaterManager(base_theaters_dir=self.theaters_dir)

@@ -12,7 +12,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from providers import ImageGenerationResult
 from testing.base import BaseTestCase
-from tools.image_tool import ImageTools
+from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
 
 
@@ -62,7 +62,7 @@ class TestImageTools(BaseTestCase):
             model="fal-ai/flux-2/klein/9b",
         )
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_pinned_canvas_blocks_image_generation_and_display(self, mock_get_provider):
         tools = self.make_image_tools(self.config, theater_id="pinned", theater_manager=self.manager)
         tools.visual.set_pinned(True)
@@ -72,7 +72,7 @@ class TestImageTools(BaseTestCase):
         mock_get_provider.return_value.generate.assert_not_called()
         self.assertFalse(tools.is_in_flight("create_image"))
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_uses_configured_provider(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -88,7 +88,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(request.prompt, "a dog carrying a bag")
         self.assertEqual(request.references, [])
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_passes_loaded_references_to_provider(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -105,7 +105,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(references[0].name, "hero.png")
         self.assertEqual(references[0].mime_type, "image/png")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_saves_output_and_registers_alias(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -125,7 +125,7 @@ class TestImageTools(BaseTestCase):
         with self.assertRaisesRegex(ValueError, "visuals.model"):
             self.make_image_tools({"image_generation": {"cooldown_duration": 0}}, "missing", self.manager)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_rejects_an_empty_required_image_name(self, mock_get_provider):
         tools = self.make_image_tools(self.config, theater_id="required_name", theater_manager=self.manager)
 
@@ -148,7 +148,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(tools.search_image_by_metadata("chrysolic"), [reference_path])
         self.assertEqual(tools.list_references()[0]["title"], "The Candlelit Scribe")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_show_image_cycle_and_staging(self, mock_get_provider):
         tools = self.make_image_tools(self.config, theater_id="show_cycle", theater_manager=self.manager)
         visual = tools.visual
@@ -200,7 +200,7 @@ class TestImageTools(BaseTestCase):
         )
         self.assertEqual(canvas_state.get_latest_state()["latest"], "/theaters/starting_image/references/opening scene.jpg")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_has_priority_over_show_image_in_next_cycle(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -240,7 +240,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(advanced["source"], "create_image")
         visual.stop_cycle()
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_missing_reference_returns_error_without_calling_provider(self, mock_get_provider):
         tools = self.make_image_tools(self.config, theater_id="missing_reference", theater_manager=self.manager)
 
@@ -283,7 +283,7 @@ class TestImageTools(BaseTestCase):
         result = tools._apply_default_style(prompt)
         self.assertEqual(result, prompt)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_adventure_mode_throttles_create_image_until_story_plan_completed(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -321,7 +321,7 @@ class TestImageTools(BaseTestCase):
         tools.join_generation()
         self.assertFalse(tools.is_story_plan_completed)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_adventure_mode_throttles_show_image_until_story_plan_completed(self, mock_get_provider):
         config = {
             **self.config,
@@ -357,7 +357,7 @@ class TestImageTools(BaseTestCase):
         self.assertIn("queued for the next image cycle", res4)
         self.assertFalse(tools.is_story_plan_completed)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_non_adventure_mode_does_not_throttle(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -370,7 +370,7 @@ class TestImageTools(BaseTestCase):
         tools.join_generation()
         self.assertTrue(tools.is_story_plan_completed)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_saves_full_quality_and_compressed_webp_and_displays_webp(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -401,7 +401,7 @@ class TestImageTools(BaseTestCase):
         self.assertTrue(displayed_path.endswith(".webp"))
         self.assertEqual(displayed_path, webp_path)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_preserves_theater_workspace_assets(self, mock_get_provider):
         """A generated image must never replace or remove its theater workspace."""
         provider = mock_get_provider.return_value
@@ -517,7 +517,7 @@ class TestImageTools(BaseTestCase):
         self.assertIsNone(tools.visual.next_cycle_image)
         self.assertIsNone(c_state.visual.shown_video_animation)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_takes_priority_when_animation_is_active(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -590,7 +590,7 @@ class TestImageTools(BaseTestCase):
         self.assertIsNotNone(pending)
         self.assertEqual(pending["args"], ("pic3.jpg",))
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_cycle_cooldown_schedules_and_updates(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()

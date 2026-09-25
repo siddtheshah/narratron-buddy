@@ -9,6 +9,7 @@ from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
+from tools.image.image_library import ImageLibrary
 from tools.story.notepad import Notepad
 from tools.story.story_planning_module import (
     StoryPlanningModule,
@@ -232,6 +233,23 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         module.reset_deep_lore_call_counts()
         self.assertEqual(module.deep_read_lore("lore.txt"), "read result")
         self.assertEqual(module.deep_search_lore("clue"), "search result")
+
+    def test_exposes_image_name_lookup_to_deep_planner(self) -> None:
+        library = MagicMock(spec=ImageLibrary)
+        library.find_image_names.return_value = [{"name": "tower", "alias": "tower"}]
+        module = self._make_module(MagicMock(spec=LoreLibrary))
+        module.image_library = library
+
+        self.assertEqual(module.find_image_names("tower"), [{"name": "tower", "alias": "tower"}])
+        library.find_image_names.assert_called_once_with("tower")
+
+    def test_deep_planner_agent_includes_image_name_lookup_tool(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary))
+
+        with patch("tools.story.story_planning_module.Agent") as agent_type:
+            module._create_deep_planner_agent()
+
+        self.assertIn(module.find_image_names, agent_type.call_args.kwargs["tools"])
 
     def test_rejects_missing_injected_dependencies(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)

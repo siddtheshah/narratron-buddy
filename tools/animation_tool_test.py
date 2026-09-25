@@ -16,7 +16,7 @@ from providers.video_provider import VideoGenerationResult
 from providers.fal_qwen_layered_provider import LayeredImageResult
 from testing.base import BaseTestCase
 from tools.animation_tool import AnimationTools
-from tools.image_tool import ImageTools
+from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
 
 
@@ -72,7 +72,7 @@ class TestAnimationTools(BaseTestCase):
             **kwargs,
         )
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_pinned_canvas_blocks_animation_generation_and_playback(self, mock_get_provider):
         image_tools = self.make_image_tools(self.config, "pinned_animation", self.manager)
         tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock())
@@ -107,7 +107,7 @@ class TestAnimationTools(BaseTestCase):
         )
         self.assertEqual(tools.default_style, "ink wash")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_uses_triframe_technique(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -149,7 +149,7 @@ class TestAnimationTools(BaseTestCase):
             self.assertIsNotNone(frame_path)
             self.assertTrue(os.path.exists(frame_path))
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_play_animation_publishes_saved_triframe_to_canvas_state(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -185,7 +185,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(len(animation["frames"]), 3)
         self.assertIn(f"/output/animations/{animation_id}/frame_1.jpg", animation["frames"][0])
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_passes_references_to_each_frame(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -216,7 +216,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(requests[0].references[0].name, "hero.png")
         self.assertEqual(len(requests[1].references), 2)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_rejects_unknown_reference(self, mock_get_provider):
         image_tools = self.make_image_tools(self.config, "tri_frame_missing_reference", self.manager)
         animation_tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock())
@@ -225,7 +225,7 @@ class TestAnimationTools(BaseTestCase):
 
         self.assertIn("Reference image 'missing' not found", result)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_requires_animation_name(self, mock_get_provider):
         image_tools = self.make_image_tools(self.config, "missing_anim_name", self.manager)
         animation_tools = self.make_animation_tools(image_tools, MagicMock(), MagicMock(), MagicMock())
@@ -233,7 +233,7 @@ class TestAnimationTools(BaseTestCase):
         result = animation_tools.create_animation("A hero stands in a courtyard.", "")
         self.assertIn("animation_name is required", result)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_animation_cooldown_uses_animation_configuration(self, mock_get_provider):
         image_tools = self.make_image_tools(self.config, "tri_frame_cooldown", self.manager)
         animation_tools = self.make_animation_tools(
@@ -242,7 +242,7 @@ class TestAnimationTools(BaseTestCase):
 
         self.assertEqual(animation_tools.cooldown_duration, 27)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_uses_layered_technique(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -285,7 +285,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][-1]["effect"], "sway")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_uses_halo_effects(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -322,7 +322,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animation["layers"][1]["effect"], "light_halo")
         self.assertEqual(animation["layers"][2]["effect"], "dark_halo")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_uses_ghostly_effect(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -357,7 +357,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][1]["effect"], "ghostly")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_uses_reflective_effect(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -392,7 +392,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][1]["effect"], "reflective")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_uses_energy_blast_effect(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -427,7 +427,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animation["type"], "layered")
         self.assertEqual(animation["layers"][1]["effect"], "energy_blast")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_triframe_animation_outputs_triframe_json(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -461,7 +461,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(len(manifest["frames"]), 3)
         self.assertEqual(manifest["scene_prompt"], "A hero running across a bridge.")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_browse_animations_returns_saved_animations(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -490,7 +490,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(animations[0]["type"], "triframe")
         self.assertEqual(animations[0]["scene_prompt"], "A hero running across a bridge.")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_cycle_cooldown_replaces_single_flight(self, mock_get_provider):
         started = threading.Event()
         release = threading.Event()
@@ -565,7 +565,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertNotIn("ordered", prompt)
         self.assertNotIn("back to front", prompt)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_on_animation_ready_notifies_callback_for_triframe(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -599,7 +599,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(ready_notifications[0], (animation_id, "triframe"))
         self.assertEqual(completed_animations, [animation_id])
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_on_animation_ready_notifies_callback_for_layered(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -638,7 +638,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(ready_notifications[0], (animation_id, "layered"))
         self.assertEqual(completed_animations, [animation_id])
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_uses_video_technique(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -699,7 +699,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertIsNotNone(video_path)
         self.assertTrue(os.path.exists(video_path))
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_play_video_animation_publishes_to_canvas_state(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -738,7 +738,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(state["animation"]["id"], animation_id)
         self.assertEqual(state["animation"]["video_url"], "https://fal.media/ocean.mp4")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_on_animation_ready_notifies_callback_for_video(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -776,7 +776,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(ready_notifications[0], (animation_id, "video"))
         self.assertEqual(completed_animations, [animation_id])
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_failed_animation_does_not_notify_completion_callback(self, mock_get_provider):
         image_tools = self.make_image_tools(self.config, "failed_video_callback", self.manager)
         video_provider = MagicMock()
@@ -797,7 +797,7 @@ class TestAnimationTools(BaseTestCase):
 
         completed_animations.assert_not_called()
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_browse_animations_returns_video_animations(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -831,7 +831,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(video_anims[0]["scene_prompt"], "A spaceship entering hyperdrive.")
         self.assertEqual(video_anims[0]["video_url"], "https://fal.media/browse.mp4")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_forced_technique_video_bypasses_classification(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -864,7 +864,7 @@ class TestAnimationTools(BaseTestCase):
         planning_provider.generate.assert_not_called()
         video_provider.generate.assert_called_once()
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_forced_technique_triframe_bypasses_classification(self, mock_get_provider):
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
@@ -905,7 +905,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(image_provider.generate.call_count, 3)
         video_provider.generate.assert_not_called()
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_forced_technique_config(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -1009,7 +1009,7 @@ class TestAnimationTools(BaseTestCase):
         prompt = tools._apply_video_style("A lone castle on a cliff. Style: oil painting, loopable")
         self.assertEqual(prompt, "A lone castle on a cliff. Style: oil painting, loopable")
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_video_passes_shared_visual_style_and_loopable(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -1100,7 +1100,7 @@ class TestAnimationTools(BaseTestCase):
         canvas_state_service.tool_response.set_activity.assert_any_call("animation", active=True)
         canvas_state_service.tool_response.set_activity.assert_any_call("animation", active=False)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_video_duration_defaults_to_5s(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -1145,7 +1145,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertNotIn("duration", state["animation"])
         self.assertNotIn("duration_seconds", state["animation"])
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_video_duration_configurable(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -1182,7 +1182,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertNotIn("duration", manifest)
         self.assertNotIn("duration_seconds", manifest)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_video_duration_from_nested_config(self, mock_get_provider):
         image_provider = MagicMock()
         video_provider = MagicMock()
@@ -1212,7 +1212,7 @@ class TestAnimationTools(BaseTestCase):
         request = video_provider.generate.call_args[0][0]
         self.assertEqual(request.video_duration_seconds, 7)
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_play_animation_cycle_cooldown_schedules_and_updates(self, mock_get_provider):
         image_tools = self.make_image_tools(self.config, "cooldown_anim_play", self.manager)
         tools = self.make_animation_tools(
@@ -1235,7 +1235,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertIsNotNone(pending)
         self.assertEqual(pending["args"], ("anim_3",))
 
-    @patch("tools.image_tool.get_image_provider")
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_cycle_cooldown_schedules_and_updates(self, mock_get_provider):
         video_provider = MagicMock()
         video_provider.generate.return_value = VideoGenerationResult(

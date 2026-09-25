@@ -167,6 +167,7 @@ class TestCreateAgent(unittest.TestCase):
             expected_theater,
             canvas_manager=expected_canvas,
             text_response_provider=ANY,
+            image_library=mock_image_cls.return_value.image_library,
         )
         mock_music_cls.assert_called_once_with(
             expected_theater,

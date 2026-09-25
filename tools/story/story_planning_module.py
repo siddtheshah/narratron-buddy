@@ -25,6 +25,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
+from tools.image.image_library import ImageLibrary
 from tools.story.notepad import (
     Notepad,
 )
@@ -123,8 +124,8 @@ This is one shallow, bounded planning heartbeat. Assimilate only the supplied qu
 No new responder events are queued. Use this heartbeat for one conservative refinement of unresolved threads and causal world consequences. Do not advance in-world time or claim that a planned event occurred.
 {% endif -%}
 
-# Lore Tools
-Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
+# Lore and Image Tools
+Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of a mounted or generated image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
 After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
@@ -145,6 +146,7 @@ class StoryPlanningModule:
         session_id: str,
         notepad: Notepad,
         story_log_context_fn: Optional[Callable[[], str]] = None,
+        image_library: Optional[ImageLibrary] = None,
     ):
         if theater is None:
             raise ValueError("theater is required.")
@@ -165,6 +167,7 @@ class StoryPlanningModule:
         self.theater_id = getattr(theater, "theater_id", "")
         self.canvas_manager = canvas_manager
         self.lore_library = lore_library
+        self.image_library = image_library or ImageLibrary(theater)
         self.character_manager = character_manager
         self._deep_read_lore_calls_this_run = 0
         self._deep_search_lore_calls_this_run = 0
@@ -308,6 +311,14 @@ class StoryPlanningModule:
     def _lookup_character(self, query: str = "") -> str:
         return self.character_manager.lookup_character(query)
 
+    def find_image_names(self, query: str = "") -> list[dict[str, str]]:
+        """Find available image aliases and names for use in sticky notes.
+
+        Returns only catalog data; this never displays an image or changes the
+        canvas. Prefer the returned alias when recording an image reference.
+        """
+        return self.image_library.find_image_names(query)
+
     def _build_deep_planner_instruction(self, ctx: Any = None) -> str:
         lore_context = self.lore_library.get_lore_context()
         recent_story_log = self._story_log_context_fn()
@@ -343,6 +354,7 @@ class StoryPlanningModule:
                 self.deep_search_lore,
                 self.deep_read_lore,
                 self._lookup_character,
+                self.find_image_names,
                 self.notepad.check_schema,
                 self.notepad.update_sticky_note,
             ],

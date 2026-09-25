@@ -20,12 +20,12 @@ from utils.image_utils import (
     compress_image_to_webp,
     embed_image_metadata,
     extract_image_metadata_description,
-    extract_image_metadata_title,
     extract_image_prompt,
 )
 from components.canvas_state import CanvasStateManager
 from components.canvas.visual_state import VisualState, PRIORITY_SHOW, PRIORITY_CREATE
 from components.theater_manager import Theater
+from tools.image.image_library import ImageLibrary
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +50,10 @@ class ImageTools(BaseTools):
         self.adventure_mode = bool(adventure_mode)
 
         self.default_style = str(self.visuals_config.get("style", "")).strip()
-        self.output_dir = str(self.theater.image_artifacts_dir())
+        self.image_library = ImageLibrary(theater)
+        self.output_dir = self.image_library.output_dir
+        self.reference_dir = self.image_library.reference_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        
-        self.reference_dir = str(self.theater.references_dir())
         os.makedirs(self.reference_dir, exist_ok=True)
 
         self.image_model = str(self.visuals_config.get("model") or "").strip()
@@ -71,8 +71,7 @@ class ImageTools(BaseTools):
         self._story_plan_lock: threading.Lock = threading.Lock()
         self.is_generating: bool = False
         
-        self.references_manifest: Dict[str, dict] = {}
-        self._load_references()
+        self.references_manifest = self.image_library.references_manifest
         if self.visual:
             for entry in self.references_manifest.values():
                 path = entry.get("path")
@@ -155,28 +154,12 @@ class ImageTools(BaseTools):
     def _load_references(self):
         """Scans the references folder once at startup and builds a read-only manifest."""
         try:
-            if os.path.exists(self.reference_dir):
-                for root, _, files in os.walk(self.reference_dir):
-                    for filename in files:
-                        if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                            filepath = os.path.join(root, filename)
-                            stem = Path(filename).stem
-                            clean_stem = re.sub(r'[^a-zA-Z0-9_-]', '_', stem)
-                            
-                            metadata_desc = extract_image_metadata_description(filepath)
-                            metadata_title = extract_image_metadata_title(filepath)
-
-                            entry = {
-                                "name": stem,
-                                "alias": clean_stem,
-                                "path": filepath,
-                                "title": metadata_title,
-                                "description": metadata_desc or f"Reference image {filename}"
-                            }
-                            self.references_manifest[filepath] = entry
-                            if self.visual:
-                                self.visual.register_image(filepath, stem, clean_stem)
-            unique_count = len(set(item['path'] for item in self.references_manifest.values())) if self.references_manifest else 0
+            self.image_library._load_references()
+            self.references_manifest = self.image_library.references_manifest
+            for entry in self.references_manifest.values():
+                if self.visual:
+                    self.visual.register_image(entry["path"], entry["name"], entry["alias"])
+            unique_count = len(self.references_manifest)
             logger.debug(f"[ImageTools] Loaded {unique_count} reference images into references manifest.")
         except Exception as e:
             logger.warning(f"[ImageTools] Failed to load references: {e}")
@@ -187,18 +170,7 @@ class ImageTools(BaseTools):
         Returns:
             A list of dictionaries with image names, file paths, and metadata descriptions.
         """
-        seen_paths = set()
-        results = []
-        for item in self.references_manifest.values():
-            if item["path"] not in seen_paths:
-                seen_paths.add(item["path"])
-                results.append({
-                    "name": item["name"],
-                    "alias": item["alias"],
-                    "path": item["path"],
-                    "title": item.get("title", ""),
-                    "description": item["description"]
-                })
+        results = self.image_library.list_references()
         self._trigger_after_tool_call("list_references")
         return results
 
@@ -566,28 +538,7 @@ class ImageTools(BaseTools):
             A list of file paths to all available images.
         """
         try:
-            images = []
-            seen = set()
-            
-            # Include items from preloaded references manifest first
-            for item in self.references_manifest.values():
-                full_p = item["path"]
-                if full_p not in seen and os.path.exists(full_p):
-                    seen.add(full_p)
-                    images.append(full_p)
-
-            search_dirs = [
-                self.output_dir,
-                self.reference_dir,
-            ]
-            for d in search_dirs:
-                if os.path.exists(d):
-                    for filename in os.listdir(d):
-                        if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                            full_p = os.path.join(d, filename)
-                            if full_p not in seen:
-                                seen.add(full_p)
-                                images.append(full_p)
+            images = self.image_library.browse_images()
             self._trigger_after_tool_call("browse_images")
             logger.debug(f"[ImageTools] Found {len(images)} images: {images}")
             return images
@@ -607,54 +558,7 @@ class ImageTools(BaseTools):
             A list of file paths to images matching the query.
         """
         try:
-            matches = []
-            seen = set()
-            query_lower = metadata_query.lower()
-
-            # Search in-memory references manifest
-            for item in self.references_manifest.values():
-                full_p = item["path"]
-                if full_p not in seen and os.path.exists(full_p):
-                    desc = item.get("description", "")
-                    title = item.get("title", "")
-                    name = item.get("name", "")
-                    alias = item.get("alias", "")
-                    if (
-                        query_lower in desc.lower()
-                        or query_lower in title.lower()
-                        or query_lower in name.lower()
-                        or query_lower in alias.lower()
-                    ):
-                        seen.add(full_p)
-                        matches.append(full_p)
-
-            # Search directories for EXIF / PNG metadata
-            search_dirs = [
-                self.output_dir,
-                self.reference_dir,
-            ]
-            for d in search_dirs:
-                if not os.path.exists(d):
-                    continue
-                for filename in os.listdir(d):
-                    if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                        filepath = os.path.join(d, filename)
-                        if filepath in seen:
-                            continue
-                        
-                        try:
-                            metadata_desc = extract_image_metadata_description(filepath)
-                            metadata_title = extract_image_metadata_title(filepath)
-                            filename_without_ext = Path(filename).stem
-                            if (
-                                (metadata_desc and query_lower in metadata_desc.lower())
-                                or (metadata_title and query_lower in metadata_title.lower())
-                                or (query_lower in filename_without_ext.lower())
-                            ):
-                                seen.add(filepath)
-                                matches.append(filepath)
-                        except Exception:
-                            pass
+            matches = self.image_library.search_images(metadata_query)
             self._trigger_after_tool_call("search_image_by_metadata")
             return matches
         except Exception as e:
