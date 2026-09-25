@@ -28,6 +28,12 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("confirmed by at least two distinct narrative events or user actions", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("use_generated_music", AGENT_INSTRUCTION_TEMPLATE)
 
+    def test_tool_cycle_cooldown_instruction_informs_agent(self):
+        self.assertIn(
+            "Tools on cooldown will still allow input, but will simply change what will be run in the next tool cycle.",
+            AGENT_INSTRUCTION_TEMPLATE,
+        )
+
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
     def test_create_agent_calls_list_references_on_init(
