@@ -15,7 +15,7 @@ Unit tests follow the `*_test.py` naming convention and are placed **directly ad
 UI integration tests are the exception: place them in `testing/ui/`, also using the `*_test.py` convention.
 
 - **Tools**:
-  - `tools/image_tool_test.py` (tests `tools/image_tool.py`)
+  - `tools/image/image_tool_test.py` (tests `tools/image/image_tool.py`)
   - `tools/music_tool_test.py` (tests `tools/music_tool.py`)
   - `tools/notes_tool_test.py` (tests `tools/notes_tool.py`)
   - `tools/chat_tool_test.py` (tests `tools/chat_tool.py`)
