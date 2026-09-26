@@ -146,7 +146,7 @@
         #orator-command-overlay {
             position: absolute;
             inset: 0;
-            z-index: 20;
+            z-index: 200;
             display: none;
             align-items: center;
             justify-content: center;
@@ -1858,7 +1858,7 @@
         #a2ui-canvas-layer {
             position: absolute;
             inset: 0;
-            z-index: 19;
+            z-index: 100;
             pointer-events: none;
         }
 
@@ -1870,6 +1870,23 @@
             pointer-events: auto;
             animation: a2ui-arrive 260ms ease-out both;
             transition: opacity 180ms ease, transform 180ms ease;
+            color: #f8fafc;
+            background: linear-gradient(145deg, #0f172a, #24143a);
+            border: 1px solid rgba(216, 180, 254, 0.42);
+            border-radius: 16px;
+            box-shadow: 0 14px 38px rgba(0, 0, 0, 0.65), inset 0 1px rgba(255, 255, 255, 0.08);
+            padding: clamp(0.7rem, 1.4vw, 1rem);
+            box-sizing: border-box;
+            z-index: 1;
+        }
+
+        .a2ui-surface:hover,
+        .a2ui-surface:focus-within {
+            z-index: 5;
+        }
+
+        .a2ui-surface.dragging {
+            z-index: 10;
         }
 
         .a2ui-surface-used {
@@ -1903,7 +1920,7 @@
             border: 1px solid rgba(255, 255, 255, 0.26);
             border-radius: 999px;
             color: #fff;
-            background: rgba(15, 23, 42, 0.92);
+            background: #0f172a;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
             font: 700 1rem/1 sans-serif;
             cursor: pointer;
@@ -1915,26 +1932,36 @@
 
         .a2ui-move.dragging {
             cursor: grabbing;
-            background: rgba(88, 28, 135, 0.96);
+            background: #581c87;
         }
 
         .a2ui-delete:hover {
-            background: rgba(185, 28, 28, 0.95);
+            background: #b91c1c;
         }
 
+        .a2ui-surface.persistent,
         .a2ui-surface.persistent .a2ui-card {
-            border-color: rgba(251, 191, 36, 0.52);
+            border-color: rgba(251, 191, 36, 0.75);
+        }
+
+        .a2ui-surface > .a2ui-card {
+            padding: 0;
+            background: none;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
         }
 
         .a2ui-card {
             padding: clamp(0.7rem, 1.4vw, 1rem);
             color: #f8fafc;
-            background: linear-gradient(145deg, rgba(15, 23, 42, 0.91), rgba(49, 24, 72, 0.88));
+            background: linear-gradient(145deg, #0f172a, #24143a);
             border: 1px solid rgba(216, 180, 254, 0.42);
             border-radius: 16px;
-            box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.08);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 14px 38px rgba(0, 0, 0, 0.65), inset 0 1px rgba(255, 255, 255, 0.08);
+            box-sizing: border-box;
         }
 
         .a2ui-column {
@@ -1995,11 +2022,11 @@
             border-radius: 999px;
             padding: 0.52rem 0.85rem;
             color: #fff;
-            background: linear-gradient(135deg, rgba(126, 34, 206, 0.9), rgba(79, 70, 229, 0.9));
+            background: linear-gradient(135deg, #7e22ce, #4f46e5);
             font: inherit;
             font-weight: 700;
             cursor: pointer;
-            box-shadow: 0 5px 16px rgba(49, 46, 129, 0.34);
+            box-shadow: 0 5px 16px rgba(49, 46, 129, 0.45);
             transition: transform 150ms ease, filter 150ms ease;
         }
 
@@ -2041,7 +2068,7 @@
             overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 999px;
-            background: rgba(15, 23, 42, 0.75);
+            background: #0f172a;
             box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.35);
         }
 
@@ -3454,7 +3481,7 @@
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=video-loop-silent-performance-20260906-1";
-        import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20260821-3";
+        import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20260926-1";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
         let lastTime = -1;

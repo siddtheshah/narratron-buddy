@@ -208,6 +208,7 @@ export function createA2UICanvasRenderer({ container, actionUrl, surfaceUrl, can
             if (event.button !== 0) return;
             dragging = true;
             move.classList.add('dragging');
+            host.classList.add('dragging');
             move.setPointerCapture(event.pointerId);
             event.preventDefault();
         });
@@ -223,6 +224,7 @@ export function createA2UICanvasRenderer({ container, actionUrl, surfaceUrl, can
             if (!dragging) return;
             dragging = false;
             move.classList.remove('dragging');
+            host.classList.remove('dragging');
             try { move.releasePointerCapture(event.pointerId); } catch (_) {}
             try {
                 await moveSurface(surface.surface_id, latestLeft, latestTop);
