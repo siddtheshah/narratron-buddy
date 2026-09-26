@@ -18,7 +18,7 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, Field
 
 from providers import TextResponseAttachment, TextResponseProvider, TextResponseRequest
-from tools.base_tool import BaseTools, logged_tool_call, single_flight, with_cooldown
+from tools.base_tool import BaseTools, logged_tool_call, with_cycle_cooldown
 
 logger = logging.getLogger(__name__)
 LOG_PREFIX = "[InteractiveCanvasTools]"
@@ -660,9 +660,8 @@ object interactions, clues, and flavor cards must use persistent=false."""
             raise ValueError(f"Identifier {value!r} cannot be normalized safely.")
         return normalized
 
-    @single_flight(timeout=30.0, error_message="An interactive canvas design is already in progress.")
-    @with_cooldown(action_desc="updating the interactive canvas")
-    def update_interactive_canvas(self, request: str) -> dict[str, Any]:
+    @with_cycle_cooldown(action_desc="updating the interactive canvas")
+    def update_interactive_canvas(self, request: str) -> dict[str, Any] | str:
         """Ask the UI agent to add new UI or update the relevant current surface.
 
         Args:

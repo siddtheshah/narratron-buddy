@@ -48,6 +48,12 @@ class SampleTools(BaseTools):
         self.async_cycle_calls.append(value)
         return f"Async ran {value}"
 
+    @with_cycle_cooldown(duration=10.0)
+    def cycle_tool_dict_error(self, succeed: bool) -> dict:
+        if not succeed:
+            return {"error": "Something went wrong"}
+        return {"status": "ok"}
+
     def handle_timeout(self):
         self.timeout_called = True
 
@@ -209,6 +215,14 @@ class TestBaseTools(BaseTestCase):
 
         time.sleep(0.25)
         self.assertEqual(sample.async_cycle_calls, ["A", "B"])
+
+    def test_with_cycle_cooldown_dict_error_clears_cooldown(self):
+        sample = self.make_sample({})
+        err = sample.cycle_tool_dict_error(False)
+        self.assertEqual(err, {"error": "Something went wrong"})
+        # Should not be on cooldown
+        res = sample.cycle_tool_dict_error(True)
+        self.assertEqual(res, {"status": "ok"})
 
 
 if __name__ == "__main__":

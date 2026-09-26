@@ -48,6 +48,14 @@ def _tool_call_arguments(func: Callable, args: tuple, kwargs: dict) -> Dict[str,
         return {"args": args, "kwargs": kwargs}
 
 
+def _is_error_result(result: Any) -> bool:
+    if isinstance(result, str) and result.startswith("Error:"):
+        return True
+    if isinstance(result, dict) and "error" in result:
+        return True
+    return False
+
+
 def logged_tool_call(func: Callable):
     """Log a public tool invocation without changing its cooldown behavior."""
     @functools.wraps(func)
@@ -192,7 +200,7 @@ def with_cooldown(
                 return cooldown_err
 
             result = func(self, *args, **kwargs)
-            if not (isinstance(result, str) and result.startswith("Error:")):
+            if not _is_error_result(result):
                 self.record_tool_call(cooldown_key, duration=duration)
             return result
 
@@ -213,7 +221,7 @@ def with_cooldown(
                     return cooldown_err
 
                 result = func(self, *args, **kwargs)
-                if not (isinstance(result, str) and result.startswith("Error:")):
+                if not _is_error_result(result):
                     self.record_tool_call(cooldown_key, duration=duration)
                 return result
             return wrapper
@@ -252,7 +260,7 @@ def with_cycle_cooldown(
                 self._last_call_times[cooldown_key] = time.time()
                 try:
                     result = await func(self, *args, **kwargs)
-                    if not (isinstance(result, str) and result.startswith("Error:")):
+                    if not _is_error_result(result):
                         self.record_tool_call(cooldown_key, duration=duration)
                     else:
                         self._last_call_times.pop(cooldown_key, None)
@@ -279,7 +287,7 @@ def with_cycle_cooldown(
                 self._last_call_times[cooldown_key] = time.time()
                 try:
                     result = func(self, *args, **kwargs)
-                    if not (isinstance(result, str) and result.startswith("Error:")):
+                    if not _is_error_result(result):
                         self.record_tool_call(cooldown_key, duration=duration)
                     else:
                         self._last_call_times.pop(cooldown_key, None)
@@ -502,7 +510,7 @@ class BaseTools:
             else:
                 result = func(self, *args, **kwargs)
 
-            if not (isinstance(result, str) and result.startswith("Error:")):
+            if not _is_error_result(result):
                 self.record_tool_call(tool_name, duration=duration)
             else:
                 self._last_call_times.pop(tool_name, None)

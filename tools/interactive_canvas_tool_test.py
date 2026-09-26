@@ -1,4 +1,5 @@
 import logging
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -341,7 +342,7 @@ def test_update_interactive_canvas_creation_requires_player_action():
     canvas.ui.upsert_surface.assert_not_called()
 
 
-def test_update_interactive_canvas_has_configurable_cooldown():
+def test_update_interactive_canvas_cycle_cooldown_schedules_and_updates():
     tools, canvas = make_tools(lambda *_: valid_draft())
     tools.cooldown_duration = 60
 
@@ -350,8 +351,45 @@ def test_update_interactive_canvas_has_configurable_cooldown():
 
     assert first["status"] == "displayed"
     assert isinstance(second, str)
-    assert second.startswith("Error: update_interactive_canvas is on cooldown")
+    assert second == "Tool 'update_interactive_canvas' scheduled for next cycle when cooldown expires."
     assert canvas.ui.upsert_surface.call_count == 1
+
+    third = tools.update_interactive_canvas("Change the status card again")
+    assert third == "Tool 'update_interactive_canvas' parameters updated for next cycle."
+    assert canvas.ui.upsert_surface.call_count == 1
+
+    pending = tools.get_pending_cycle_call("update_interactive_canvas")
+    assert pending is not None
+    assert pending["args"] == ("Change the status card again",)
+
+
+def test_update_interactive_canvas_cycle_cooldown_executes():
+    tools, canvas = make_tools(lambda *_: valid_draft())
+    tools.cooldown_duration = 0.1
+
+    first = tools.update_interactive_canvas("Create a status card")
+    assert first["status"] == "displayed"
+    assert canvas.ui.upsert_surface.call_count == 1
+
+    second = tools.update_interactive_canvas("Change the status card")
+    assert second == "Tool 'update_interactive_canvas' scheduled for next cycle when cooldown expires."
+    assert canvas.ui.upsert_surface.call_count == 1
+
+    time.sleep(0.25)
+    assert canvas.ui.upsert_surface.call_count == 2
+
+
+def test_update_interactive_canvas_cancel_pending_cycle_call():
+    tools, canvas = make_tools(lambda *_: valid_draft())
+    tools.cooldown_duration = 60
+
+    tools.update_interactive_canvas("Create a status card")
+    scheduled = tools.update_interactive_canvas("Change the status card")
+    assert scheduled == "Tool 'update_interactive_canvas' scheduled for next cycle when cooldown expires."
+
+    cancelled = tools.cancel_pending_cycle_call("update_interactive_canvas")
+    assert cancelled is True
+    assert tools.get_pending_cycle_call("update_interactive_canvas") is None
 
 
 def test_adventure_mode_locks_interactive_canvas_until_story_plan_completes():
