@@ -19,7 +19,7 @@ visuals:
 # Canvas image generation controls
 image_generation:
     enabled: true
-    cooldown_duration: 6
+    cooldown_duration: 10
 
 # Audio & Playlist configuration
 music:
@@ -49,4 +49,4 @@ story_planning:
 
 # Chat cooldown in seconds
 chat:
-    cooldown_duration: 20
+    cooldown_duration: 10
