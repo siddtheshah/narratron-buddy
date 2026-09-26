@@ -7,6 +7,7 @@ from collections import deque
 import json
 import logging
 import os
+from pathlib import Path
 import threading
 from threading import Lock
 import time
@@ -48,6 +49,7 @@ DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES = 2
 STORY_LOG_CONTEXT_LINES = 200
 MAX_DEEP_READ_LORE_CALLS_PER_RUN = 3
 MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN = 3
+DEFAULT_DEEP_RECENT_IMAGES_LIMIT = 5
 
 
 _DEEP_PLANNING_PROMPT_TEMPLATE = Template(
@@ -121,11 +123,19 @@ This is one shallow, bounded planning heartbeat. Assimilate only the supplied qu
 {% endif -%}
 {% endfor -%}
 {% else -%}
-No new responder events are queued. Use this heartbeat for one conservative refinement of unresolved threads and causal world consequences. Do not advance in-world time or claim that a planned event occurred.
+No new responder events are queued. Use this heartbeat for one conservative refinement of unresolved threads and causal world consequences.
+{% endif -%}
+
+{% if recent_images -%}
+# Recently Generated Images
+The most recent generated images available to reference in sticky notes (newest first):
+{% for img in recent_images -%}
+- Alias: `{{ img.alias }}` | Name: `{{ img.name }}`{% if img.title %} | Title: "{{ img.title }}"{% endif %}{% if img.description and img.description != ('Image ' ~ img.name) and img.description != ('Image ' ~ img.name ~ '.jpg') and img.description != ('Image ' ~ img.name ~ '.png') and img.description != ('Image ' ~ img.name ~ '.webp') %} | Description: {{ img.description }}{% endif %}
+{% endfor -%}
 {% endif -%}
 
 # Lore and Image Tools
-Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of a mounted or generated image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
+Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an older mounted or generated image not listed above. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
 After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
@@ -210,6 +220,14 @@ class StoryPlanningModule:
         self.deep_max_events_per_turn: int = max(
             1,
             int(self.deep_planning_config.get("max_events_per_turn", DEFAULT_DEEP_MAX_EVENTS_PER_TURN)),
+        )
+        self.deep_recent_images_limit: int = max(
+            1,
+            int(
+                self.deep_planning_config.get(
+                    "recent_images_limit", DEFAULT_DEEP_RECENT_IMAGES_LIMIT
+                )
+            ),
         )
         self.deep_idle_refinement_turns: int = DEFAULT_DEEP_IDLE_REFINEMENT_TURNS
         self.deep_heartbeat_failure_retries: int = DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES
@@ -319,9 +337,44 @@ class StoryPlanningModule:
         """
         return self.image_library.find_image_names(query)
 
+    def _get_recent_images(self) -> list[dict[str, Any]]:
+        """Fetch recently generated images safely from the image library."""
+        if not hasattr(self.image_library, "get_recent_images"):
+            return []
+        images = self.image_library.get_recent_images(
+            limit=self.deep_recent_images_limit, generated_only=True
+        )
+        return images if isinstance(images, list) else []
+
+    def _format_recent_images(self, recent_images: list[dict[str, Any]]) -> str:
+        if not recent_images:
+            return ""
+        lines = []
+        for img in recent_images:
+            desc = img.get("description", "")
+            title = img.get("title", "")
+            name = img.get("name", "")
+            alias = img.get("alias", "")
+            parts = [f"Alias: `{alias}`", f"Name: `{name}`"]
+            if title:
+                parts.append(f'Title: "{title}"')
+            path = str(img.get("path") or "")
+            default_desc = f"Image {Path(path).name}" if path else ""
+            if desc and desc != default_desc:
+                parts.append(f"Description: {desc}")
+            lines.append("- " + " | ".join(parts))
+        return "\n".join(lines)
+
     def _build_deep_planner_instruction(self, ctx: Any = None) -> str:
         lore_context = self.lore_library.get_lore_context()
         recent_story_log = self._story_log_context_fn()
+        recent_images = self._get_recent_images()
+        recent_images_context = self._format_recent_images(recent_images)
+        images_section = (
+            f"\n\nRecently generated images (available for sticky note references):\n{recent_images_context}"
+            if recent_images_context
+            else ""
+        )
         return (
             "You maintain the long-horizon plan for one interactive adventure. "
             "Return only the requested structured deep-plan update.\n\n"
@@ -330,6 +383,7 @@ class StoryPlanningModule:
             f"{lore_context or '(No theater lore is available.)'}\n\n"
             f"Recent committed story log (up to {STORY_LOG_CONTEXT_LINES} entries):\n"
             f"{recent_story_log or '(No committed history yet.)'}"
+            f"{images_section}"
         )
 
     def _create_deep_planner_agent(self) -> Agent:
@@ -579,6 +633,7 @@ class StoryPlanningModule:
             else "",
             turn_events=event_payloads,
             max_sticky_notes=self.notepad.max_sticky_notes,
+            recent_images=self._get_recent_images(),
         ).strip()
 
         async def run_turn() -> Dict[str, Any]:

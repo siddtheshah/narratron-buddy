@@ -243,6 +243,36 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertEqual(module.find_image_names("tower"), [{"name": "tower", "alias": "tower"}])
         library.find_image_names.assert_called_once_with("tower")
 
+    def test_instruction_includes_recent_generated_images(self) -> None:
+        library = MagicMock(spec=ImageLibrary)
+        library.get_recent_images.return_value = [
+            {
+                "name": "sunset_1720000000",
+                "alias": "sunset_1720000000",
+                "title": "Crimson Sunset",
+                "description": "Dramatic clouds over the mountain",
+                "created_at": 1720000000.0,
+            }
+        ]
+        module = self._make_module(MagicMock(spec=LoreLibrary))
+        module.image_library = library
+
+        instruction = module._build_deep_planner_instruction()
+        self.assertIn("Recently generated images (available for sticky note references):", instruction)
+        self.assertIn("Alias: `sunset_1720000000`", instruction)
+        self.assertIn('Title: "Crimson Sunset"', instruction)
+        self.assertIn("Description: Dramatic clouds over the mountain", instruction)
+        library.get_recent_images.assert_called_once_with(
+            limit=module.deep_recent_images_limit, generated_only=True
+        )
+
+    def test_recent_images_limit_configuration(self) -> None:
+        module = self._make_module(
+            MagicMock(spec=LoreLibrary),
+            config={"deep_planning": {"recent_images_limit": 10}},
+        )
+        self.assertEqual(module.deep_recent_images_limit, 10)
+
     def test_deep_planner_agent_includes_image_name_lookup_tool(self) -> None:
         module = self._make_module(MagicMock(spec=LoreLibrary))
 
@@ -580,6 +610,29 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         self.assertIn("Turn responder direct communication & planning signals:", rendered)
         self.assertIn("[STICKY UPDATE: Combat Stats & Synergy] HP restored to 100/100", rendered)
         self.assertIn("update_sticky_note", rendered)
+
+    def test_renders_recently_generated_images_in_prompt(self) -> None:
+        rendered = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
+            deep_plan_json="",
+            current_notes=[],
+            structured_sticky_json="",
+            sticky_schema_json="",
+            turn_events=[],
+            max_sticky_notes=5,
+            recent_images=[
+                {
+                    "name": "dungeon_entrance",
+                    "alias": "dungeon_entrance",
+                    "title": "The Iron Gate",
+                    "description": "Ancient runes glowing blue",
+                }
+            ],
+        )
+        self.assertIn("# Recently Generated Images", rendered)
+        self.assertIn("Alias: `dungeon_entrance`", rendered)
+        self.assertIn('Title: "The Iron Gate"', rendered)
+        self.assertIn("Description: Ancient runes glowing blue", rendered)
+
 
 
 if __name__ == "__main__":
