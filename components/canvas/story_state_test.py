@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from components.canvas.story_state import StoryState, speaker_key
+from components.canvas.story_state import (
+    CharacterState,
+    PlayerCharacterState,
+    StoryState,
+    speaker_key,
+)
 from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisResult
 from tools.story.character_manager import Character
 
@@ -766,3 +771,62 @@ def test_dispatch_forwards_voice_tags_and_accent_augmentation() -> None:
     request = mock_provider.synthesize.call_args.args[0]
     assert request.voice_tags == ("gender=female", "accent=british")
     assert request.accent_augmentation is False
+
+
+def test_story_state_create_snapshot_and_diff() -> None:
+    state = StoryState()
+    state.set_sticky_notes([
+        {"topic": "HUD", "info": "HP: 100"},
+        {"topic": "OldNote", "info": "Keep quiet"},
+    ])
+    prev_snapshot = state.create_snapshot(
+        player_character=PlayerCharacterState(name="Hero", image_description="A warrior"),
+        characters={"Guide": CharacterState(name="Guide", personality="Helpful", motivation="Save realm", quirk="Hums")},
+        known_image_names={"castle_gate"},
+        deep_plan_revision=1,
+    )
+
+    # Now change state
+    state.set_sticky_notes([
+        {"topic": "HUD", "info": "HP: 75"},
+        {"topic": "NewClue", "info": "Ancient key found"},
+    ])
+    diff_result = state.diff(
+        previous=prev_snapshot,
+        current_pc=PlayerCharacterState(name="Hero", image_description="A wounded warrior", reference="hero_portrait"),
+        current_chars={
+            "Guide": CharacterState(name="Guide", personality="Helpful", motivation="Run away", quirk="Hums"),
+            "Villain": CharacterState(name="Villain", personality="Cruel", motivation="Rule all", quirk="Laughs"),
+        },
+        recent_images=[
+            {"name": "castle_gate", "alias": "gate"},
+            {"name": "dungeon_cell", "alias": "cell", "title": "Cell"},
+        ],
+        current_deep_plan_revision=2,
+        current_through_turn=3,
+    )
+
+    # Check sticky diffs
+    assert "+ Added [NewClue]: Ancient key found" in diff_result.sticky_diffs
+    assert '~ Updated [HUD]: was "HP: 100" -> now "HP: 75"' in diff_result.sticky_diffs
+    assert "- Removed [OldNote]" in diff_result.sticky_diffs
+
+    # Check player character diff
+    assert "A wounded warrior" in diff_result.player_character_diff
+    assert "hero_portrait" in diff_result.player_character_diff
+
+    # Check character diffs
+    assert any("Updated Guide" in d for d in diff_result.character_diffs)
+    assert any("Added Villain" in d for d in diff_result.character_diffs)
+
+    # Check image diffs
+    assert len(diff_result.new_images) == 1
+    assert diff_result.new_images[0]["name"] == "dungeon_cell"
+
+    # Check deep plan diff
+    assert "revision advanced from 1 to 2" in diff_result.deep_plan_diff
+
+    # Test tuple unpacking support
+    sticky_diffs, pc_diff, char_diffs, new_images, dp_diff = diff_result
+    assert sticky_diffs == diff_result.sticky_diffs
+    assert pc_diff == diff_result.player_character_diff

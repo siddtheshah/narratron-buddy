@@ -1,8 +1,10 @@
 """Dependency-boundary tests for ``StoryPlanningModule``."""
 
+from collections.abc import AsyncIterator
 import unittest
 from unittest.mock import MagicMock, patch
 
+from components.canvas import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
@@ -14,7 +16,11 @@ from tools.story.notepad import Notepad
 from tools.story.story_planning_module import (
     StoryPlanningModule,
     VertexGemini,
-    _DEEP_PLANNING_PROMPT_TEMPLATE,
+    _DEEP_PLANNING_INSTRUCTION_TEMPLATE,
+    _DEEP_PLANNING_TURN_PROMPT_TEMPLATE,
+    PlannerStateSnapshot,
+    PlayerCharacterState,
+    CharacterState,
 )
 
 
@@ -96,6 +102,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             patch("tools.story.story_planning_module.Runner"),
         ):
             canvas = MagicMock(spec=CanvasStateManager)
+            canvas.story = StoryState()
             return StoryPlanningModule(
                 theater=theater,
                 canvas_manager=canvas,
@@ -199,7 +206,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             )
 
         self.assertEqual(len(module.plugins), 1)
-        self.assertIsInstance(module.plugins[0], ReflectAndRetryToolPlugin)
+        self.assertIs(type(module.plugins[0]), ReflectAndRetryToolPlugin)
         self.assertEqual(module.plugins[0].max_retries, 3)
         self.assertTrue(module.plugins[0].throw_exception_if_retry_exceeded)
         # Verify plugins were passed to App
@@ -272,28 +279,62 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertEqual(module.find_image_names("tower"), [{"name": "tower", "alias": "tower"}])
         library.find_image_names.assert_called_once_with("tower")
 
-    def test_instruction_includes_recent_generated_images(self) -> None:
-        library = MagicMock(spec=ImageLibrary)
-        library.get_recent_images.return_value = [
-            {
-                "name": "sunset_1720000000",
-                "alias": "sunset_1720000000",
-                "title": "Crimson Sunset",
-                "description": "Dramatic clouds over the mountain",
-                "created_at": 1720000000.0,
-            }
-        ]
-        module = self._make_module(MagicMock(spec=LoreLibrary))
-        module.image_library = library
+    def test_instruction_maximizes_prefix_and_excludes_state_variables(self) -> None:
+        lore_library = MagicMock(spec=LoreLibrary)
+        lore_library.get_lore_context.return_value = "Lore docs: history.md"
+        module = self._make_module(lore_library)
+        module.style = "Grimdark fantasy"
 
         instruction = module._build_deep_planner_instruction()
-        self.assertIn("Recently generated images (available for sticky note references):", instruction)
-        self.assertIn("Alias: `sunset_1720000000`", instruction)
-        self.assertIn('Title: "Crimson Sunset"', instruction)
-        self.assertIn("Description: Dramatic clouds over the mountain", instruction)
-        library.get_recent_images.assert_called_once_with(
-            limit=module.deep_recent_images_limit, generated_only=True
+        self.assertIn("# Role & Mission", instruction)
+        self.assertIn("# Non-Negotiable Planning Rules", instruction)
+        self.assertIn("# Character, Lore, and Image Tools", instruction)
+        self.assertIn("# Completion", instruction)
+        self.assertIn("# Story-Planning Style\nGrimdark fantasy", instruction)
+        self.assertIn("Available theater lore (top-level documents and directories):\nLore docs: history.md", instruction)
+        # Ensure dynamic state variables are NOT in instructions to maximize prefix caching
+        self.assertNotIn("Recently generated images", instruction)
+        self.assertNotIn("Recent committed story log", instruction)
+        self.assertNotIn("Current Sticky Notes", instruction)
+
+    def test_compute_state_diffs_tracks_changes_accurately(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary))
+        prev_snapshot = PlannerStateSnapshot(
+            stickies={"HUD": "HP: 100", "Old": "Old note"},
+            player_character=PlayerCharacterState(name="Aiden", image_description="Scarred"),
+            characters={"Lyra": CharacterState(name="Lyra", personality="Curious", motivation="Truth", quirk="Hums")},
+            known_image_names={"img1"},
+            deep_plan_revision=1,
         )
+        current_stickies = {"HUD": "HP: 80", "New": "New note"}
+        current_pc = PlayerCharacterState(name="Aiden", image_description="Armored and Scarred")
+        current_chars = {
+            "Lyra": CharacterState(name="Lyra", personality="Curious", motivation="Revenge", quirk="Hums"),
+            "Garrick": CharacterState(name="Garrick", personality="Gruff", motivation="Gold", quirk="Spits"),
+        }
+        recent_images: list[dict[str, object]] = [
+            {"name": "img1", "alias": "img1"},
+            {"name": "img2", "alias": "img2", "title": "Castle"},
+        ]
+
+        sticky_diffs, pc_diff, char_diffs, new_images, dp_diff = module._compute_state_diffs(
+            prev_snapshot,
+            current_stickies,
+            current_pc,
+            current_chars,
+            recent_images,
+            2,
+            5,
+        )
+        self.assertIn("+ Added [New]: New note", sticky_diffs)
+        self.assertIn('~ Updated [HUD]: was "HP: 100" -> now "HP: 80"', sticky_diffs)
+        self.assertIn("- Removed [Old]", sticky_diffs)
+        self.assertIn("Armored and Scarred", pc_diff)
+        self.assertTrue(any("Updated Lyra" in d for d in char_diffs))
+        self.assertTrue(any("Added Garrick" in d for d in char_diffs))
+        self.assertEqual(len(new_images), 1)
+        self.assertEqual(new_images[0]["name"], "img2")
+        self.assertIn("revision advanced from 1 to 2", dp_diff)
 
     def test_recent_images_limit_configuration(self) -> None:
         module = self._make_module(
@@ -309,6 +350,24 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             module._create_deep_planner_agent()
 
         self.assertIn(module.find_image_names, agent_type.call_args.kwargs["tools"])
+
+    def test_run_deep_planner_agent_records_snapshot_at_end_of_turn(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary))
+        self.assertIsNone(module._last_state_snapshot)
+
+        async def fake_run_async(*args: object, **kwargs: object) -> AsyncIterator[object]:
+            if False:
+                yield None
+
+        mock_runner = MagicMock()
+        mock_runner.run_async = fake_run_async
+        with patch.object(module, "_get_or_create_deep_planner_runner", return_value=mock_runner):
+            result = module._run_deep_planner_agent([])
+
+        self.assertEqual(result, {"tool_updates": True})
+        self.assertIsNotNone(module._last_state_snapshot)
+        assert module._last_state_snapshot is not None
+        self.assertEqual(module._last_state_snapshot.deep_plan_revision, 0)
 
     def test_rejects_missing_injected_dependencies(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
@@ -401,6 +460,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         self.theater.theater_id = "planning_theater"
         self.theater.read_planning_schema.return_value = None
         self.canvas = MagicMock(spec=CanvasStateManager)
+        self.canvas.story = StoryState()
         self.session_service = InMemorySessionService()
         self.config = {
             "adventure_mode": True,
@@ -590,12 +650,21 @@ class TestStoryPlanningModuleState(unittest.TestCase):
 
 
 class TestDeepPlanningPromptTemplate(unittest.TestCase):
-    def test_renders_responder_direct_communication_and_high_priority_guidance(self) -> None:
-        rendered = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
-            deep_plan_json="",
-            current_notes=[],
-            structured_sticky_json="",
-            sticky_schema_json="",
+    def test_instruction_template_renders_rules_and_tools(self) -> None:
+        rendered = _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(
+            style="Epic fantasy",
+            sticky_schema_json='{"HUD": {"fields": {"hp": "Hit points"}}}',
+            lore_context="world_lore.md",
+        )
+        self.assertIn("Independent Analysis & Responder Communication", rendered)
+        self.assertIn("DO NOT solely rely on responder signals", rendered)
+        self.assertIn("update_sticky_note", rendered)
+        self.assertIn("# Story-Planning Style\nEpic fantasy", rendered)
+        self.assertIn("# Sticky State Schema Reference", rendered)
+        self.assertIn("# Available Theater Lore", rendered)
+
+    def test_turn_prompt_renders_responder_signals_and_turn_events(self) -> None:
+        rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
             turn_events=[
                 {
                     "turn_id": 1,
@@ -610,16 +679,61 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
                     "die_rolls": [],
                 }
             ],
-            max_sticky_notes=5,
+            is_initial=True,
+            current_notes=[],
         )
-        self.assertIn("Independent Analysis & Responder Communication", rendered)
-        self.assertIn("DO NOT solely rely on responder signals", rendered)
         self.assertIn("Turn responder direct communication & planning signals:", rendered)
         self.assertIn("[STICKY UPDATE: Combat Stats & Synergy] HP restored to 100/100", rendered)
-        self.assertIn("update_sticky_note", rendered)
+
+    def test_turn_prompt_renders_state_diffs_on_subsequent_turns(self) -> None:
+        rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+            turn_events=[],
+            is_initial=False,
+            sticky_diffs=[
+                "+ Added [Inventory]: Sword, Shield",
+                "~ Updated [HUD]: was \"HP: 100\" -> now \"HP: 80\"",
+                "- Removed [OldClue]",
+            ],
+            player_character_diff="Name: Arthur | Visual: Knight in battered armor",
+            character_diffs=[
+                "+ Added Merlin: Personality: Wise | Motivation: Magic | Quirk: Mutters",
+            ],
+            new_images=[
+                {
+                    "alias": "dragon_lair",
+                    "name": "dragon_lair_001",
+                    "title": "Dragon's Den",
+                    "description": "Smoldering cave",
+                }
+            ],
+            deep_plan_diff="Deep plan revision advanced from 1 to 2.",
+        )
+        self.assertIn("# State Diffs (Changes Since Previous Heartbeat)", rendered)
+        self.assertIn("+ Added [Inventory]: Sword, Shield", rendered)
+        self.assertIn("~ Updated [HUD]: was \"HP: 100\" -> now \"HP: 80\"", rendered)
+        self.assertIn("- Removed [OldClue]", rendered)
+        self.assertIn("## Player Character Update", rendered)
+        self.assertIn("Name: Arthur | Visual: Knight in battered armor", rendered)
+        self.assertIn("## Character Updates", rendered)
+        self.assertIn("+ Added Merlin: Personality: Wise", rendered)
+        self.assertIn("## Newly Generated Images", rendered)
+        self.assertIn("Alias: `dragon_lair`", rendered)
+        self.assertIn("## Deep Plan Update", rendered)
+
+    def test_turn_prompt_renders_no_changes_when_diffs_empty(self) -> None:
+        rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+            turn_events=[],
+            is_initial=False,
+            sticky_diffs=[],
+            player_character_diff="",
+            character_diffs=[],
+            new_images=[],
+            deep_plan_diff="",
+        )
+        self.assertIn("(No sticky notes changed since last heartbeat)", rendered)
 
     def test_renders_recently_generated_images_in_prompt(self) -> None:
-        rendered = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
+        rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
             deep_plan_json="",
             current_notes=[],
             structured_sticky_json="",
@@ -646,7 +760,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
             image_description="A grim wanderer with a scarred cheek",
             reference="aiden_portrait",
         )
-        rendered = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
+        rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
             deep_plan_json="",
             current_notes=[],
             structured_sticky_json="",

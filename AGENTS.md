@@ -56,7 +56,7 @@ Never use `hasattr` or `getattr` in Python code unless performing operations tha
   - **Proper Mock Setup in Tests**: When writing unit tests, properly configure test fixtures, stubs, and mocks (`unittest.mock.MagicMock`, `create_autospec`, or explicit dummy classes) with all attributes and methods expected by production code.
 
 
-## Python Development: No `isinstance`, No `Any`, and Mandatory Type Annotations
+## Python Development: No `isinstance`, No `Any`, No `object`, and Mandatory Type Annotations
 
 ### Rules & Guidelines
 

@@ -11,7 +11,7 @@ from pathlib import Path
 import threading
 from threading import Lock
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Callable, Optional
 
 from jinja2 import Template
 from google.adk.agents import Agent
@@ -22,6 +22,12 @@ from google.adk.runners import RunConfig, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from components.canvas.story_state import (
+    CharacterState,
+    PlayerCharacterState,
+    StoryStateDiff,
+    StoryStateSnapshot,
+)
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.story.character_manager import CharacterManager, PlayerCharacter
@@ -52,7 +58,7 @@ MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN = 3
 DEFAULT_DEEP_RECENT_IMAGES_LIMIT = 5
 
 
-_DEEP_PLANNING_PROMPT_TEMPLATE = Template(
+_DEEP_PLANNING_INSTRUCTION_TEMPLATE = Template(
 """# Role & Mission
 You are the deep planner for an interactive adventure. You do not narrate the current scene and you never choose actions, speech, thoughts, or feelings for the player. Take a broad view of the player's accumulated actions, established lore, unresolved setups, off-screen actors, deadlines, and world consequences.
 
@@ -70,29 +76,35 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 - For stickies that track numeric state, ensure you follow the appropriate rules defined in the lore to faithfully update them.
 - For you, accuracy is more important than speed.
 
-# Current Deep Plan
-{% if deep_plan_json -%}
-{{ deep_plan_json }}
-{% else -%}
-(No deep plan exists yet. Bootstrap one from the lore, initial stickies, and committed turn.)
-{% endif -%}
+# Character, Lore, and Image Tools
+You can canonically manage the player character using `update_player_character` (name, visual description, image reference) and query them with `get_player_character_info`. You can canonically create or update NPC records using `update_character` and look up all characters using `_lookup_character`.
+Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an older mounted or generated image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
-# Sticky State Reference
+# Completion
+After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
+{% if style -%}
+
+# Story-Planning Style
+{{ style }}
+{% endif -%}
 {% if sticky_schema_json -%}
+
+# Sticky State Schema Reference
 Each topic below is independently validated by the notepad tool. Do not attempt to publish a complete `sticky_notes` object. Call `check_schema(topic)` immediately before each schema-backed update; for field-backed notes, its `info` argument must be a JSON object encoded as a string.
 {{ sticky_schema_json }}
-
-# Current Structured Sticky State
-{{ structured_sticky_json }}
-{% else -%}
-# Current Sticky Notes
-{% for note in current_notes -%}
-- {{ note.topic }}: {{ note.info }}
-{% else -%}
-(No active sticky notes)
-{% endfor -%}
 {% endif -%}
-# Heartbeat Work
+{% if lore_context -%}
+
+# Available Theater Lore
+Available theater lore (top-level documents and directories):
+{{ lore_context }}
+{% endif -%}
+"""
+)
+
+
+_DEEP_PLANNING_TURN_PROMPT_TEMPLATE = Template(
+"""# Heartbeat Work
 This is one shallow, bounded planning heartbeat. Assimilate only the supplied queue batch, then return a useful complete plan without exhaustive deliberation. Later heartbeats can refine it.
 {% if turn_events -%}
 ## Newly Committed Turn Queue
@@ -126,12 +138,52 @@ This is one shallow, bounded planning heartbeat. Assimilate only the supplied qu
 No new responder events are queued. Use this heartbeat for one conservative refinement of unresolved threads and causal world consequences.
 {% endif -%}
 
-{% if recent_images -%}
-# Recently Generated Images
-The most recent generated images available to reference in sticky notes (newest first):
-{% for img in recent_images -%}
+{% if is_initial is defined and not is_initial -%}
+# State Diffs (Changes Since Previous Heartbeat)
+{% if sticky_diffs -%}
+## Sticky Notes Changes
+{% for diff in sticky_diffs -%}
+- {{ diff }}
+{% endfor -%}
+{% else -%}
+## Sticky Notes Changes
+(No sticky notes changed since last heartbeat)
+{% endif -%}
+
+{% if player_character_diff -%}
+## Player Character Update
+- {{ player_character_diff }}
+
+{% endif -%}
+{% if character_diffs -%}
+## Character Updates
+{% for diff in character_diffs -%}
+- {{ diff }}
+{% endfor -%}
+
+{% endif -%}
+{% if new_images -%}
+## Newly Generated Images
+The following images were generated since the last heartbeat:
+{% for img in new_images -%}
 - Alias: `{{ img.alias }}` | Name: `{{ img.name }}`{% if img.title %} | Title: "{{ img.title }}"{% endif %}{% if img.description and img.description != ('Image ' ~ img.name) and img.description != ('Image ' ~ img.name ~ '.jpg') and img.description != ('Image ' ~ img.name ~ '.png') and img.description != ('Image ' ~ img.name ~ '.webp') %} | Description: {{ img.description }}{% endif %}
 {% endfor -%}
+
+{% endif -%}
+{% if deep_plan_diff -%}
+## Deep Plan Update
+- {{ deep_plan_diff }}
+{% endif -%}
+{% else -%}
+# Current Adventure State
+{% if current_notes -%}
+# Current Sticky Notes
+{% for note in current_notes -%}
+- {{ note.topic }}: {{ note.info }}
+{% endfor -%}
+{% else -%}
+# Current Sticky Notes
+(No active sticky notes)
 {% endif -%}
 
 {% if player_character -%}
@@ -146,14 +198,23 @@ The most recent generated images available to reference in sticky notes (newest 
 {% endfor -%}
 
 {% endif -%}
-# Character, Lore, and Image Tools
-You can canonically manage the player character using `update_player_character` (name, visual description, image reference) and query them with `get_player_character_info`. You can canonically create or update NPC records using `update_character` and look up all characters using `_lookup_character`.
-Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an older mounted or generated image not listed above. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
+{% if recent_images -%}
+# Recently Generated Images
+The most recent generated images available to reference in sticky notes (newest first):
+{% for img in recent_images -%}
+- Alias: `{{ img.alias }}` | Name: `{{ img.name }}`{% if img.title %} | Title: "{{ img.title }}"{% endif %}{% if img.description and img.description != ('Image ' ~ img.name) and img.description != ('Image ' ~ img.name ~ '.jpg') and img.description != ('Image ' ~ img.name ~ '.png') and img.description != ('Image ' ~ img.name ~ '.webp') %} | Description: {{ img.description }}{% endif %}
+{% endfor -%}
 
-# Completion
-After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
+{% endif -%}
+{% if deep_plan_json -%}
+# Current Deep Plan
+{{ deep_plan_json }}
+{% endif -%}
+{% endif -%}
 """
 )
+
+PlannerStateSnapshot = StoryStateSnapshot
 
 
 class StoryPlanningModule:
@@ -170,7 +231,7 @@ class StoryPlanningModule:
         notepad: Notepad,
         story_log_context_fn: Optional[Callable[[], str]] = None,
         image_library: Optional[ImageLibrary] = None,
-    ):
+    ) -> None:
         if theater is None:
             raise ValueError("theater is required.")
         if canvas_manager is None:
@@ -187,7 +248,7 @@ class StoryPlanningModule:
             raise ValueError("notepad is required.")
 
         self.theater = theater
-        self.theater_id = getattr(theater, "theater_id", "")
+        self.theater_id: str = theater.theater_id or ""
         self.canvas_manager = canvas_manager
         self.lore_library = lore_library
         self.image_library = image_library or ImageLibrary(theater)
@@ -206,19 +267,18 @@ class StoryPlanningModule:
         self.style: str = str(configured_style).strip() or DEFAULT_STORY_PLANNING_STYLE
 
         # Deep plan state
-        self._deep_plan: Dict[str, Any] = {}
+        self._deep_plan: dict[str, object] = {}
         self._deep_plan_revision: int = 0
         self._deep_plan_through_turn_id: int = 0
         self._deep_plan_lock = Lock()
-        self._deep_planning_queue: deque[Tuple[int, str, Dict[str, Any]]] = deque()
+        self._deep_planning_queue: deque[tuple[int, str, dict[str, object]]] = deque()
         self._deep_planning_queue_lock = Lock()
         self._deep_planning_worker: Optional[threading.Thread] = None
+        self._last_state_snapshot: Optional[PlannerStateSnapshot] = None
 
         # Configuration for deep planner
-        raw_deep_config = self.config.get("deep_planning", {})
-        self.deep_planning_config: Dict[str, Any] = (
-            raw_deep_config if isinstance(raw_deep_config, dict) else {}
-        )
+        raw_deep_config = self.config.get("deep_planning") or {}
+        self.deep_planning_config: dict[str, object] = dict(raw_deep_config)
         self.deep_planning_enabled: bool = bool(
             self.deep_planning_config.get("enabled", self.adventure_mode)
         )
@@ -249,9 +309,11 @@ class StoryPlanningModule:
             int(raw_deep_budget) if raw_deep_budget is not None else None
         )
         self.deep_max_output_tokens: int = DEFAULT_DEEP_MAX_OUTPUT_TOKENS
+        raw_gcloud = self.config.get("gcloud") or {}
+        gcloud_dict: dict[str, object] = dict(raw_gcloud)
         self.vertex_project: Optional[str] = (
             self.config.get("vertex_project")
-            or self.config.get("gcloud", {}).get("project_id")
+            or gcloud_dict.get("project_id")
             or os.getenv("GOOGLE_CLOUD_PROJECT")
         )
         self.vertex_location: str = str(
@@ -262,7 +324,7 @@ class StoryPlanningModule:
             self._build_run_compression_config()
         )
 
-        self.plugins: List[BasePlugin] = [ReflectAndRetryToolPlugin()]
+        self.plugins: list[BasePlugin] = [ReflectAndRetryToolPlugin()]
 
         self._deep_planner_agent: Agent = self._create_deep_planner_agent()
         self._deep_planner_app: App = App(
@@ -281,12 +343,12 @@ class StoryPlanningModule:
         compaction = self.config.get("compaction")
         if compaction is False:
             return None
-        if compaction is None:
-            compaction = {}
-        compaction_interval = int(compaction.get("compaction_interval", compaction.get("interval", 3)))
-        overlap_size = int(compaction.get("overlap_size", compaction.get("overlap", 1)))
-        token_threshold = compaction.get("token_threshold", compaction.get("trigger_tokens", DEFAULT_COMPACTION_TRIGGER_TOKENS))
-        event_retention_size = compaction.get("event_retention_size", 6)
+        raw_compaction = compaction or {}
+        compaction_dict: dict[str, object] = dict(raw_compaction)
+        compaction_interval = int(compaction_dict.get("compaction_interval", compaction_dict.get("interval", 3)))
+        overlap_size = int(compaction_dict.get("overlap_size", compaction_dict.get("overlap", 1)))
+        token_threshold = compaction_dict.get("token_threshold", compaction_dict.get("trigger_tokens", DEFAULT_COMPACTION_TRIGGER_TOKENS))
+        event_retention_size = compaction_dict.get("event_retention_size", 6)
         if token_threshold is not None and event_retention_size is None:
             event_retention_size = max(1, overlap_size * 2)
         elif event_retention_size is not None and token_threshold is None:
@@ -303,10 +365,10 @@ class StoryPlanningModule:
         compaction = self.config.get("compaction")
         if compaction is False:
             return None
-        if compaction is None:
-            compaction = {}
-        trigger = compaction.get("trigger_tokens", compaction.get("token_threshold", DEFAULT_COMPACTION_TRIGGER_TOKENS))
-        target = compaction.get("target_tokens", DEFAULT_COMPACTION_TARGET_TOKENS)
+        raw_compaction = compaction or {}
+        compaction_dict: dict[str, object] = dict(raw_compaction)
+        trigger = compaction_dict.get("trigger_tokens", compaction_dict.get("token_threshold", DEFAULT_COMPACTION_TRIGGER_TOKENS))
+        target = compaction_dict.get("target_tokens", DEFAULT_COMPACTION_TARGET_TOKENS)
         return types.ContextWindowCompressionConfig(
             trigger_tokens=int(trigger) if trigger is not None else None,
             sliding_window=types.SlidingWindow(target_tokens=int(target)) if target is not None else None,
@@ -375,7 +437,7 @@ class StoryPlanningModule:
         personality: str = "",
         motivation: str = "",
         quirk: str = "",
-        voice_tags: Any = None,
+        voice_tags: Optional[list[str]] = None,
         gender: Optional[str] = None,
         image_reference: str = "",
     ) -> str:
@@ -403,24 +465,22 @@ class StoryPlanningModule:
         """
         return self.image_library.find_image_names(query)
 
-    def _get_recent_images(self) -> list[dict[str, Any]]:
+    def _get_recent_images(self) -> list[dict[str, object]]:
         """Fetch recently generated images safely from the image library."""
-        if not hasattr(self.image_library, "get_recent_images"):
-            return []
         images = self.image_library.get_recent_images(
             limit=self.deep_recent_images_limit, generated_only=True
         )
-        return images if isinstance(images, list) else []
+        return list(images) if images else []
 
-    def _format_recent_images(self, recent_images: list[dict[str, Any]]) -> str:
+    def _format_recent_images(self, recent_images: list[dict[str, object]]) -> str:
         if not recent_images:
             return ""
-        lines = []
+        lines: list[str] = []
         for img in recent_images:
-            desc = img.get("description", "")
-            title = img.get("title", "")
-            name = img.get("name", "")
-            alias = img.get("alias", "")
+            desc = str(img.get("description") or "")
+            title = str(img.get("title") or "")
+            name = str(img.get("name") or "")
+            alias = str(img.get("alias") or "")
             parts = [f"Alias: `{alias}`", f"Name: `{name}`"]
             if title:
                 parts.append(f'Title: "{title}"')
@@ -431,26 +491,29 @@ class StoryPlanningModule:
             lines.append("- " + " | ".join(parts))
         return "\n".join(lines)
 
-    def _build_deep_planner_instruction(self, ctx: Any = None) -> str:
+    def _build_deep_planner_instruction(self, ctx: object = None) -> str:
         lore_context = self.lore_library.get_lore_context()
-        recent_story_log = self._story_log_context_fn()
-        recent_images = self._get_recent_images()
-        recent_images_context = self._format_recent_images(recent_images)
-        images_section = (
-            f"\n\nRecently generated images (available for sticky note references):\n{recent_images_context}"
-            if recent_images_context
+        sticky_schema_json = (
+            json.dumps(
+                {
+                    topic: {
+                        k: v
+                        for k, v in definition.items()
+                        if k in ("description", "fields", "render", "required") and v is not None
+                    }
+                    for topic, definition in self.notepad.sticky_definitions.items()
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            if self.notepad.sticky_definitions
             else ""
         )
-        return (
-            "You maintain the long-horizon plan for one interactive adventure. "
-            "Return only the requested structured deep-plan update.\n\n"
-            f"Story-planning style: {self.style}\n\n"
-            "Available theater lore (top-level documents and directories):\n"
-            f"{lore_context or '(No theater lore is available.)'}\n\n"
-            f"Recent committed story log (up to {STORY_LOG_CONTEXT_LINES} entries):\n"
-            f"{recent_story_log or '(No committed history yet.)'}"
-            f"{images_section}"
-        )
+        return _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(
+            style=self.style,
+            sticky_schema_json=sticky_schema_json,
+            lore_context=lore_context or "",
+        ).strip()
 
     def _create_deep_planner_agent(self) -> Agent:
         generate_content_config = None
@@ -491,6 +554,7 @@ class StoryPlanningModule:
             "[StoryPlanningModule] Resetting deep planner agent for theater=%s",
             self.theater_id,
         )
+        self._last_state_snapshot = None
         self._deep_planner_agent = self._create_deep_planner_agent()
         self._deep_planner_app = App(
             name="narratron_story_deep_planner",
@@ -509,7 +573,7 @@ class StoryPlanningModule:
             self.restart_deep_planner_agent()
         return self._deep_planner_runner
 
-    def get_deep_plan(self) -> Dict[str, Any]:
+    def get_deep_plan(self) -> dict[str, object]:
         with self._deep_plan_lock:
             return dict(self._deep_plan)
 
@@ -530,10 +594,51 @@ class StoryPlanningModule:
                 return False
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
+    def _record_state_snapshot(self) -> None:
+        current_stickies = {
+            note["topic"]: note["info"]
+            for note in self.notepad.get_present_sticky_notes()
+        }
+        current_pc_obj = self.character_manager.get_player_character()
+        current_pc: Optional[PlayerCharacterState] = None
+        if current_pc_obj is not None:
+            current_pc = PlayerCharacterState(
+                name=current_pc_obj.name,
+                image_description=current_pc_obj.image_description,
+                reference=current_pc_obj.reference,
+            )
+        current_chars_list = self.character_manager.get_present_characters()
+        current_chars: dict[str, CharacterState] = {
+            c.name: CharacterState(
+                name=c.name,
+                personality=c.personality,
+                motivation=c.motivation,
+                quirk=c.quirk,
+                image_reference=c.image_reference,
+            )
+            for c in current_chars_list
+        }
+        recent_images = self._get_recent_images()
+        previous_known: set[str] = (
+            self._last_state_snapshot.known_image_names
+            if self._last_state_snapshot is not None
+            else set()
+        )
+        all_known_images = previous_known | {
+            str(img.get("name") or "") for img in recent_images if img.get("name")
+        }
+        self._last_state_snapshot = self.canvas_manager.story.create_snapshot(
+            stickies=current_stickies,
+            player_character=current_pc,
+            characters=current_chars,
+            known_image_names=all_known_images,
+            deep_plan_revision=self._deep_plan_revision,
+        )
+
     def _commit_deep_plan_update(
-        self, turn_id: int, raw_update: Dict[str, Any]
+        self, turn_id: int, raw_update: dict[str, object]
     ) -> bool:
-        if not isinstance(raw_update, dict) or raw_update.get("error"):
+        if not raw_update or raw_update.get("error"):
             return False
         # Tool-driven planning has already applied each accepted update. Keep
         # the replacement path for importing older persisted plans and direct
@@ -548,7 +653,7 @@ class StoryPlanningModule:
                 self._deep_plan_through_turn_id, turn_id
             )
             if raw_update.get("tool_updates"):
-                plan = {
+                plan: dict[str, object] = {
                     "sticky_notes": (
                         self.notepad.get_present_structured_sticky_notes()
                         if self.notepad.sticky_definitions
@@ -569,6 +674,7 @@ class StoryPlanningModule:
                 ]
             self._deep_plan = plan
 
+        self._record_state_snapshot()
 
         logger.info(
             "[StoryPlanningModule] Deep plan revision=%d committed through turn=%d",
@@ -578,7 +684,7 @@ class StoryPlanningModule:
         return True
 
     def queue_deep_planning(
-        self, turn_id: int, action: str, result: Dict[str, Any]
+        self, turn_id: int, action: str, result: dict[str, object]
     ) -> threading.Thread:
         if not self.deep_planning_enabled:
             thread = threading.Thread(target=lambda: None, daemon=True)
@@ -654,15 +760,36 @@ class StoryPlanningModule:
             thread.start()
             return thread
 
+    def _compute_state_diffs(
+        self,
+        previous: StoryStateSnapshot,
+        current_stickies: dict[str, str],
+        current_pc: Optional[PlayerCharacterState],
+        current_chars: dict[str, CharacterState],
+        recent_images: list[dict[str, object]],
+        current_deep_plan_revision: int,
+        current_through_turn: int,
+    ) -> StoryStateDiff:
+        return self.canvas_manager.story.diff(
+            previous=previous,
+            current_stickies=current_stickies,
+            current_pc=current_pc,
+            current_chars=current_chars,
+            recent_images=recent_images,
+            current_deep_plan_revision=current_deep_plan_revision,
+            current_through_turn=current_through_turn,
+        )
+
     def _run_deep_planner_agent(
         self,
-        turn_events: List[Tuple[int, str, Dict[str, Any]]],
-    ) -> Dict[str, Any]:
+        turn_events: list[tuple[int, str, dict[str, object]]],
+    ) -> dict[str, object]:
         self.reset_deep_lore_call_counts()
         runner = self._get_or_create_deep_planner_runner()
         with self._deep_plan_lock:
             deep_plan_json = json.dumps(self._deep_plan, ensure_ascii=False, indent=2)
             current_through_turn = self._deep_plan_through_turn_id
+            current_deep_plan_revision = self._deep_plan_revision
         event_payloads = [
             {
                 "turn_id": turn_id,
@@ -678,36 +805,66 @@ class StoryPlanningModule:
         heartbeat_through_turn = (
             turn_events[-1][0] if turn_events else current_through_turn
         )
-        prompt_input = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
-            deep_plan_json=deep_plan_json if deep_plan_json != "{}" else "",
-            current_notes=self.notepad.get_present_sticky_notes(),
-            structured_sticky_json=json.dumps(
-                self.notepad.get_present_structured_sticky_notes(),
-                ensure_ascii=False,
-                indent=2,
-            ),
-            sticky_schema_json=json.dumps(
-                {
-                    topic: {
-                        k: v
-                        for k, v in definition.items()
-                        if k in ("description", "fields", "render", "required") and v is not None
-                    }
-                    for topic, definition in self.notepad.sticky_definitions.items()
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            if self.notepad.sticky_definitions
-            else "",
-            turn_events=event_payloads,
-            max_sticky_notes=self.notepad.max_sticky_notes,
-            recent_images=self._get_recent_images(),
-            player_character=self.character_manager.get_player_character(),
-            characters=self.character_manager.get_present_characters()
-        ).strip()
 
-        async def run_turn() -> Dict[str, Any]:
+        current_stickies = {
+            note["topic"]: note["info"]
+            for note in self.notepad.get_present_sticky_notes()
+        }
+        current_pc_obj = self.character_manager.get_player_character()
+        current_pc: Optional[PlayerCharacterState] = None
+        if current_pc_obj is not None:
+            current_pc = PlayerCharacterState(
+                name=current_pc_obj.name,
+                image_description=current_pc_obj.image_description,
+                reference=current_pc_obj.reference,
+            )
+        current_chars_list = self.character_manager.get_present_characters()
+        current_chars: dict[str, CharacterState] = {
+            c.name: CharacterState(
+                name=c.name,
+                personality=c.personality,
+                motivation=c.motivation,
+                quirk=c.quirk,
+                image_reference=c.image_reference,
+            )
+            for c in current_chars_list
+        }
+        recent_images = self._get_recent_images()
+
+        is_initial = self._last_state_snapshot is None
+        if is_initial:
+            prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+                is_initial=True,
+                turn_events=event_payloads,
+                current_notes=self.notepad.get_present_sticky_notes(),
+                player_character=current_pc_obj,
+                characters=current_chars_list,
+                recent_images=recent_images,
+                deep_plan_json=deep_plan_json if deep_plan_json != "{}" else "",
+            ).strip()
+        else:
+            prev = self._last_state_snapshot
+            assert prev is not None
+            story_diff = self.canvas_manager.story.diff(
+                previous=prev,
+                current_stickies=current_stickies,
+                current_pc=current_pc,
+                current_chars=current_chars,
+                recent_images=recent_images,
+                current_deep_plan_revision=current_deep_plan_revision,
+                current_through_turn=heartbeat_through_turn,
+            )
+            prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+                is_initial=False,
+                turn_events=event_payloads,
+                sticky_diffs=story_diff.sticky_diffs,
+                player_character_diff=story_diff.player_character_diff,
+                character_diffs=story_diff.character_diffs,
+                new_images=story_diff.new_images,
+                deep_plan_diff=story_diff.deep_plan_diff,
+            ).strip()
+
+        async def run_turn() -> dict[str, object]:
             run_config = (
                 RunConfig(context_window_compression=self._run_compression_config)
                 if self._run_compression_config
@@ -721,6 +878,8 @@ class StoryPlanningModule:
             ):
                 # Sticky writes occur through notepad tools as the agent runs.
                 pass
+            # Record state snapshot at the end of the agent's turn
+            self._record_state_snapshot()
             # A heartbeat that finds nothing to change is still a valid pass.
             return {"tool_updates": True}
 
@@ -743,7 +902,7 @@ class StoryPlanningModule:
             )
             return {"error": f"Deep planner failed: {exc}"}
 
-    def export_planning_state(self) -> Dict[str, Any]:
+    def export_planning_state(self) -> dict[str, object]:
         with self._deep_plan_lock:
             deep_plan = dict(self._deep_plan)
             deep_plan_revision = self._deep_plan_revision
@@ -756,19 +915,16 @@ class StoryPlanningModule:
             "deep_plan_through_turn_id": deep_plan_through_turn_id,
         }
 
-    def import_planning_state(self, state: Dict[str, Any]) -> None:
-        if not isinstance(state, dict):
+    def import_planning_state(self, state: dict[str, object]) -> None:
+        if not state:
             return
 
+        self._last_state_snapshot = None
         self.notepad.import_state(state)
 
         with self._deep_plan_lock:
-            imported_plan = state.get("deep_plan", {})
-            self._deep_plan = (
-                dict(imported_plan)
-                if isinstance(imported_plan, dict)
-                else {}
-            )
+            raw_imported_plan = state.get("deep_plan") or {}
+            self._deep_plan = dict(raw_imported_plan)
             try:
                 self._deep_plan_revision = max(0, int(state.get("deep_plan_revision", 0)))
             except (TypeError, ValueError):

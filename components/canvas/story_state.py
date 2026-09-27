@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import re
 import threading
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -23,6 +24,47 @@ logger = logging.getLogger("components.canvas_state")
 
 MAX_PARALLEL_SCENE_SPEECH = 4
 MAX_SCENE_NARRATION_CHARS = 2_000
+
+
+@dataclass
+class PlayerCharacterState:
+    name: str = ""
+    image_description: str = ""
+    reference: Optional[str] = None
+
+
+@dataclass
+class CharacterState:
+    name: str = ""
+    personality: str = ""
+    motivation: str = ""
+    quirk: str = ""
+    image_reference: Optional[str] = None
+
+
+@dataclass
+class StoryStateSnapshot:
+    stickies: dict[str, str] = field(default_factory=dict)
+    player_character: Optional[PlayerCharacterState] = None
+    characters: dict[str, CharacterState] = field(default_factory=dict)
+    known_image_names: set[str] = field(default_factory=set)
+    deep_plan_revision: int = 0
+
+
+@dataclass
+class StoryStateDiff:
+    sticky_diffs: list[str] = field(default_factory=list)
+    player_character_diff: str = ""
+    character_diffs: list[str] = field(default_factory=list)
+    new_images: list[dict[str, object]] = field(default_factory=list)
+    deep_plan_diff: str = ""
+
+    def __iter__(self) -> Iterator[object]:
+        yield self.sticky_diffs
+        yield self.player_character_diff
+        yield self.character_diffs
+        yield self.new_images
+        yield self.deep_plan_diff
 
 
 def speaker_key(speaker: str) -> str:
@@ -227,6 +269,130 @@ class StoryState:
     def get_sticky_notes(self) -> list[dict[str, str]]:
         """Return active sticky notes."""
         return self.sticky_notes()
+
+    def create_snapshot(
+        self,
+        stickies: Optional[dict[str, str]] = None,
+        player_character: Optional[PlayerCharacterState] = None,
+        characters: Optional[dict[str, CharacterState]] = None,
+        known_image_names: Optional[set[str]] = None,
+        deep_plan_revision: int = 0,
+    ) -> StoryStateSnapshot:
+        """Create a point-in-time snapshot of the story state for diff tracking."""
+        current_stickies = (
+            stickies
+            if stickies is not None
+            else {
+                note.get("topic") or note.get("name", ""): note.get("info") or note.get("content", "")
+                for note in self.get_sticky_notes()
+                if note.get("topic") or note.get("name")
+            }
+        )
+        return StoryStateSnapshot(
+            stickies=dict(current_stickies),
+            player_character=player_character,
+            characters=dict(characters or {}),
+            known_image_names=set(known_image_names or set()),
+            deep_plan_revision=deep_plan_revision,
+        )
+
+    def diff(
+        self,
+        previous: StoryStateSnapshot,
+        current_stickies: Optional[dict[str, str]] = None,
+        current_pc: Optional[PlayerCharacterState] = None,
+        current_chars: Optional[dict[str, CharacterState]] = None,
+        recent_images: Optional[list[dict[str, object]]] = None,
+        current_deep_plan_revision: int = 0,
+        current_through_turn: int = 0,
+        current_snapshot: Optional[StoryStateSnapshot] = None,
+    ) -> StoryStateDiff:
+        """Compute diffs between a previous snapshot and current story state."""
+        if current_snapshot is not None:
+            stickies = current_snapshot.stickies
+            pc = current_snapshot.player_character
+            chars = current_snapshot.characters
+            rev = current_snapshot.deep_plan_revision
+        else:
+            stickies = (
+                current_stickies
+                if current_stickies is not None
+                else {
+                    note.get("topic") or note.get("name", ""): note.get("info") or note.get("content", "")
+                    for note in self.get_sticky_notes()
+                    if note.get("topic") or note.get("name")
+                }
+            )
+            pc = current_pc
+            chars = current_chars if current_chars is not None else {}
+            rev = current_deep_plan_revision
+
+        sticky_diffs: list[str] = []
+        for topic, info in stickies.items():
+            if topic not in previous.stickies:
+                sticky_diffs.append(f"+ Added [{topic}]: {info}")
+        for topic, info in stickies.items():
+            if topic in previous.stickies and previous.stickies[topic] != info:
+                sticky_diffs.append(
+                    f"~ Updated [{topic}]: was \"{previous.stickies[topic]}\" -> now \"{info}\""
+                )
+        for topic in previous.stickies:
+            if topic not in stickies:
+                sticky_diffs.append(f"- Removed [{topic}]")
+
+        pc_diff = ""
+        if pc != previous.player_character:
+            if pc is not None:
+                parts: list[str] = [f"Name: {pc.name or 'Unnamed Explorer'}"]
+                if pc.image_description:
+                    parts.append(f"Visual: {pc.image_description}")
+                if pc.reference:
+                    parts.append(f"Image Reference: {pc.reference}")
+                pc_diff = " | ".join(parts)
+            else:
+                pc_diff = "(Player character removed)"
+
+        character_diffs: list[str] = []
+        for name, c in chars.items():
+            if name not in previous.characters:
+                ref = f" | Image Reference: {c.image_reference}" if c.image_reference else ""
+                character_diffs.append(
+                    f"+ Added {name}: Personality: {c.personality or 'N/A'} | "
+                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}{ref}"
+                )
+        for name, c in chars.items():
+            if name in previous.characters and c != previous.characters[name]:
+                ref = f" | Image Reference: {c.image_reference}" if c.image_reference else ""
+                character_diffs.append(
+                    f"~ Updated {name}: Personality: {c.personality or 'N/A'} | "
+                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}{ref}"
+                )
+        for name in previous.characters:
+            if name not in chars:
+                character_diffs.append(f"- Removed {name}")
+
+        images = recent_images or []
+        new_images: list[dict[str, object]] = [
+            img for img in images
+            if str(img.get("name") or "") not in previous.known_image_names
+        ]
+
+        dp_diff = ""
+        if rev != previous.deep_plan_revision:
+            turn_info = f" (through turn {current_through_turn})" if current_through_turn > 0 else ""
+            dp_diff = (
+                f"Deep plan revision advanced from {previous.deep_plan_revision} "
+                f"to {rev}{turn_info}."
+            )
+
+        return StoryStateDiff(
+            sticky_diffs=sticky_diffs,
+            player_character_diff=pc_diff,
+            character_diffs=character_diffs,
+            new_images=new_images,
+            deep_plan_diff=dp_diff,
+        )
+
     def set_sticky_notes(self, notes: list[dict[str, str]]) -> None:
         """Persist sticky notes to story state and notify canvas clients."""
         self.named_elements = [dict(n) for n in (notes or []) if isinstance(n, dict)]
