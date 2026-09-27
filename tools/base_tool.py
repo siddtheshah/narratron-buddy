@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 _STOP_WORDS: Set[str] = {
     "a", "an", "the", "and", "or", "but", "if", "then", "so", "to", "of",
     "at", "by", "for", "with", "about", "in", "on", "into", "onto", "from",
-    "up", "down", "out", "over", "under", "again", "once", "here",
+    "up", "down", "out", "over", "under", "once", "here",
     "there", "when", "where", "why", "how", "all", "any", "both", "each",
     "few", "more", "most", "other", "some", "such", "no", "nor", "not",
     "only", "own", "same", "than", "too", "very", "can", "will", "just",
@@ -280,6 +280,7 @@ def with_cooldown(
     action_desc: Optional[str] = None,
     duration: Optional[Any] = None,
     tool_name: Optional[str] = None,
+    swallow_duplicates: bool = False,
 ):
     """Decorator annotation for BaseTools methods that enforces cooldown tracking.
 
@@ -308,7 +309,7 @@ def with_cooldown(
                 trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                 if callable(trigger_cb):
                     trigger_cb(cooldown_key)
-                if hasattr(self, "is_duplicate_call") and self.is_duplicate_call(cooldown_key, args, kwargs):
+                if swallow_duplicates and hasattr(self, "is_duplicate_call") and self.is_duplicate_call(cooldown_key, args, kwargs):
                     logger.info(
                         "[%s] Swallowed duplicate call for '%s' during cooldown (args=%s, kwargs=%s)",
                         self.__class__.__name__,
@@ -340,7 +341,7 @@ def with_cooldown(
                     trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                     if callable(trigger_cb):
                         trigger_cb(cooldown_key)
-                    if hasattr(self, "is_duplicate_call") and self.is_duplicate_call(cooldown_key, args, kwargs):
+                    if swallow_duplicates and hasattr(self, "is_duplicate_call") and self.is_duplicate_call(cooldown_key, args, kwargs):
                         logger.info(
                             "[%s] Swallowed duplicate call for '%s' during cooldown (args=%s, kwargs=%s)",
                             self.__class__.__name__,
@@ -470,7 +471,7 @@ class BaseTools:
         self._last_call_args: Dict[str, tuple[Set[str], float]] = {}
         self._duplicate_lock = threading.Lock()
         self._duplicate_jaccard_threshold: float = float(
-            self.config.get("duplicate_jaccard_threshold", 0.70)
+            self.config.get("duplicate_jaccard_threshold", 0.80)
         )
         self._duplicate_window_seconds: float = float(
             self.config.get("duplicate_window_seconds", 30.0)
@@ -648,8 +649,7 @@ class BaseTools:
                     tool_name, pending.get("args", ()), pending.get("kwargs", {})
                 )
                 sim = calculate_jaccard_bow_similarity(incoming_tokens, pending_tokens)
-                if sim >= target_threshold:
-                    return True
+                return sim >= target_threshold
 
             # 2. Compare against last executed / dispatched call
             last_entry = getattr(self, "_last_call_args", {}).get(tool_name)
@@ -658,8 +658,7 @@ class BaseTools:
                 elapsed = time.time() - last_time
                 if elapsed <= target_window:
                     sim = calculate_jaccard_bow_similarity(incoming_tokens, last_tokens)
-                    if sim >= target_threshold:
-                        return True
+                    return sim >= target_threshold
 
         return False
 

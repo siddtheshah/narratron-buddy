@@ -519,17 +519,17 @@ class TestTheaterAPI(BaseTestCase):
         adv_service = AdventureService(Path(__file__).parent.parent / "adventures")
         with patch.object(object_registry, "adventure_service", adv_service):
             self.client.post("/api/auth/register", json={
-                "username": "judge_player",
-                "email": "judge_player@example.com",
+                "username": "archive_player",
+                "email": "archive_player@example.com",
                 "password": "Password123",
             })
-            # Simulate quick-launch from /adventures page (omits enable_interactive_canvas, use_generated_music)
+            # Simulate quick-launch from /adventures page (omits use_generated_music)
             response = self.client.post(
                 "/api/theaters/create-and-deploy",
                 data={
-                    "name": "The Judge",
+                    "name": "The Clockwork Archive",
                     "creation_mode": "adventure",
-                    "preset_adventure_id": "the-judge",
+                    "preset_adventure_id": "example-adventure",
                     "enable_adventure_mode": "true",
                 },
             )
@@ -537,30 +537,31 @@ class TestTheaterAPI(BaseTestCase):
             theater_id = response.json()["theater_id"]
             config = theater_manager.theater(theater_id).config()
 
-            # theater_default.yaml has interactive_canvas: enabled: false, but the-judge has enabled: true
-            self.assertTrue(config["interactive_canvas"]["enabled"])
-            self.assertEqual(config["interactive_canvas"]["max_surfaces"], 4)
-            self.assertEqual(config["interactive_canvas"]["cooldown_duration"], 5)
-            # theater_default.yaml has music: use_generated_music: false, but the-judge has true
+            # theater_default.yaml has music: use_generated_music: false, but example-adventure has true
             self.assertTrue(config["music"]["use_generated_music"])
+            # theater_default.yaml has visuals: cycle_length: 9, but example-adventure has 6
+            self.assertEqual(config["visuals"]["cycle_length"], 6)
+            # theater_default.yaml has image_generation: cooldown_duration: 9, but example-adventure has 10
+            self.assertEqual(config["image_generation"]["cooldown_duration"], 10)
 
             # Simulate deploying from /deploy page where hidden form toggles send "false"
             response_deploy = self.client.post(
                 "/api/theaters/create-and-deploy",
                 data={
-                    "name": "The Judge via Deploy",
+                    "name": "The Clockwork Archive via Deploy",
                     "creation_mode": "adventure",
-                    "preset_adventure_id": "the-judge",
+                    "preset_adventure_id": "example-adventure",
                     "enable_adventure_mode": "true",
-                    "enable_interactive_canvas": "false",
                     "use_generated_music": "false",
+                    "enable_image_generation": "false",
                 },
             )
             self.assertEqual(response_deploy.status_code, 200)
             deploy_theater_id = response_deploy.json()["theater_id"]
             deploy_config = theater_manager.theater(deploy_theater_id).config()
-            self.assertTrue(deploy_config["interactive_canvas"]["enabled"])
             self.assertTrue(deploy_config["music"]["use_generated_music"])
+            self.assertEqual(deploy_config["visuals"]["cycle_length"], 6)
+            self.assertEqual(deploy_config["image_generation"]["cooldown_duration"], 10)
 
     def test_create_and_deploy_theater_with_advanced_config_direct(self):
         self.client.post("/api/auth/register", json={

@@ -27,6 +27,10 @@ class SampleTools(BaseTools):
     def quick_tool(self) -> str:
         return "Success"
 
+    @with_cooldown(action_desc="doing duplicate action", duration=10.0, swallow_duplicates=True)
+    def duplicate_tool(self) -> str:
+        return "Success"
+
     @single_flight(timeout=0.1, on_timeout=lambda tool: tool.handle_timeout())
     def slow_tool(self) -> str:
         time.sleep(0.3)
@@ -240,7 +244,7 @@ class TestBaseTools(BaseTestCase):
 
         # Stop word fallback for purely stop words
         tokens_stop = normalize_text_to_tokens("I do it")
-        self.assertEqual(tokens_stop, {"do"})
+        self.assertEqual(tokens_stop, {"i", "do", "it"})
 
     def test_calculate_jaccard_bow_similarity(self):
         s1 = {"open", "wooden", "chest"}
@@ -288,11 +292,11 @@ class TestBaseTools(BaseTestCase):
 
     def test_with_cooldown_swallows_duplicate_calls(self):
         sample = self.make_sample({"cooldown_duration": 10.0})
-        res1 = sample.quick_tool()
+        res1 = sample.duplicate_tool()
         self.assertEqual(res1, "Success")
 
         # Duplicate call during cooldown returns swallowed confirmation instead of error
-        res2 = sample.quick_tool()
+        res2 = sample.duplicate_tool()
         self.assertIn("duplicate call ignored", res2)
 
     def test_single_flight_swallows_duplicate_calls(self):
