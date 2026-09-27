@@ -10,6 +10,8 @@ import re
 import threading
 from typing import Any
 
+from pydantic import BaseModel
+
 from providers import (
     SpeechProvider,
     SpeechProviderError,
@@ -36,6 +38,20 @@ def without_plot_beats(state: dict[str, Any]) -> dict[str, Any]:
             key: value for key, value in deep_plan.items() if key != "plot_beats"
         }
     return cleaned
+
+
+def normalize_character_models(state: dict[str, Any]) -> dict[str, Any]:
+    """Serialize Pydantic character records at the canvas persistence edge."""
+    normalized = dict(state)
+    characters = normalized.get("characters")
+    if not isinstance(characters, list):
+        return normalized
+    normalized["characters"] = [
+        character.model_dump(exclude_none=True) if isinstance(character, BaseModel) else dict(character)
+        for character in characters
+        if isinstance(character, (BaseModel, dict))
+    ]
+    return normalized
 
 
 class StoryState:
@@ -112,7 +128,7 @@ class StoryState:
 
         planning = data.get("story_planning_state")
         if isinstance(planning, dict):
-            self.story_planning_state = without_plot_beats(planning)
+            self.story_planning_state = without_plot_beats(normalize_character_models(planning))
 
         dialogue = data.get("scene_dialogue")
         if isinstance(dialogue, list):
@@ -238,7 +254,7 @@ class StoryState:
         return without_plot_beats(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
     def set_story_planning_state(self, state: dict[str, Any]) -> None:
         """Persist full story planning state, synchronize sticky notes, and notify canvas clients."""
-        self.story_planning_state = without_plot_beats(state) if isinstance(state, dict) else {}
+        self.story_planning_state = without_plot_beats(normalize_character_models(state)) if isinstance(state, dict) else {}
         if "sticky_notes" in self.story_planning_state and isinstance(self.story_planning_state["sticky_notes"], list):
             self.named_elements = [dict(n) for n in self.story_planning_state["sticky_notes"] if isinstance(n, dict)]
         if self._persist:

@@ -11,7 +11,8 @@ from google.adk.sessions import InMemorySessionService
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from providers import TextResponseProvider
+from providers import ImageProvider, SpeechProvider, TextResponseProvider
+from tools.image.image_library import ImageLibrary
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
@@ -264,9 +265,18 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.provider = MagicMock(spec=TextResponseProvider)
         self.lore_library = LoreLibrary(theater=self.theater)
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+        self.image_library = MagicMock(spec=ImageLibrary)
+        self.image_library.find_image_names.return_value = []
+        self.image_provider = MagicMock(spec=ImageProvider)
+        self.image_provider.generate.side_effect = RuntimeError("not used")
+        self.speech_provider = MagicMock(spec=SpeechProvider)
+        self.speech_provider.select_voice.return_value = "voice_default"
         self.character_manager = CharacterManager(
             text_response_provider=self.provider,
             notepad=self.notepad,
+            image_library=self.image_library,
+            image_provider=self.image_provider,
+            speech_provider=self.speech_provider,
             config=self.config,
         )
         self.module = StoryResponseModule(

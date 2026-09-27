@@ -6,6 +6,14 @@ gcloud:
 visuals:
     model: "hybrid-flux-gemini"
 
+# Dedicated durable-character portrait provider. This intentionally remains
+# independent of scene visuals so character binding never falls back to the
+# slower, quota-sensitive Gemini path.
+character_images:
+    enabled: true
+    model: "flux-klein"
+    model_options: {}
+
 story_planning:
     responder_model: "gemini-3.5-flash-lite"
     planner_model: "gemini-3.5-flash-lite"

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from providers import SpeechProvider, TextResponseProvider
+from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
 from tools.base_tool import BaseTools, with_cycle_cooldown
 from tools.story.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
@@ -55,6 +55,8 @@ class StoryTool(BaseTools):
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
         image_library: Optional[ImageLibrary] = None,
+        image_provider: ImageProvider | None = None,
+        speech_provider: SpeechProvider | None = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
@@ -89,15 +91,34 @@ class StoryTool(BaseTools):
 
         self.lore_library = LoreLibrary(theater=theater)
         self.image_library = image_library or ImageLibrary(theater=theater)
-        scene_speech = getattr(canvas_manager, "story", None)
-        speech_provider = getattr(scene_speech, "speech_provider", None)
-        if not isinstance(speech_provider, SpeechProvider):
-            speech_provider = None
+        character_images = raw_config.get("character_images", {})
+        character_images = character_images if isinstance(character_images, dict) else {}
+        character_image_provider = image_provider
+        if character_image_provider is None and character_images.get("enabled", True):
+            character_image_model = str(character_images.get("model") or "").strip()
+            character_image_options = character_images.get("model_options") or {}
+            if character_image_model and isinstance(character_image_options, dict):
+                try:
+                    character_image_provider = get_image_provider(
+                        character_image_model, character_image_options
+                    )
+                except (ImageProviderError, ValueError) as exc:
+                    logger.warning("[StoryTool] Character image provider unavailable: %s", exc)
+        if speech_provider is None:
+            scene_speech = getattr(canvas_manager, "story", None)
+            candidate = getattr(scene_speech, "speech_provider", None)
+            if isinstance(candidate, SpeechProvider):
+                speech_provider = candidate
+            else:
+                speech_provider = None
         self.character_manager = CharacterManager(
             text_response_provider=text_response_provider,
             notepad=self.notepad,
             config=self.config,
+            image_library=self.image_library,
+            image_provider=character_image_provider,
             speech_provider=speech_provider,
+            character_image_style=str(character_images.get("style") or "").strip(),
         )
         configured_session_id = str(self.config.get("session_id") or "").strip()
         theater_id = getattr(theater, "theater_id", "")
@@ -140,22 +161,32 @@ class StoryTool(BaseTools):
         self.notepad.on_change = self.response_module.save_to_session_state
         self.response_module.on_scene_reaction = self._handle_scene_reaction
         self.notepad.sync_story_state()
-        self.sync_character_voice_tags()
+        self.sync_character_bindings()
 
     def sync_character_voice_tags(self) -> None:
-        """Communicate current character voice lookup tags cleanly to StoryState."""
+        """Backward-compatible alias for synchronizing character bindings."""
+        self.sync_character_bindings()
+
+    def sync_character_bindings(self) -> None:
+        """Publish manager-owned tags and stable voice IDs to StoryState."""
         if not (self.canvas_manager and hasattr(self.canvas_manager, "story")):
             return
         story = self.canvas_manager.story
-        if not hasattr(story, "update_character_voice_tags"):
+        if not story or not hasattr(story, "update_character_voice_tags"):
             return
         characters = self.character_manager.export_characters()
         tag_map = {
-            char["name"]: char.get("voice_tags", [char["gender"]] if char.get("gender") else [])
+            char.name: char.voice_tags or [char.gender]
             for char in characters
-            if "name" in char
+            if hasattr(char, "name") or "name" in char
         }
         story.update_character_voice_tags(tag_map)
+        if hasattr(story, "assign_character_voice"):
+            for character in characters:
+                voice_id = getattr(character, "voice_id", None) or character.get("voice_id")
+                if voice_id:
+                    name = getattr(character, "name", None) or character.get("name")
+                    story.assign_character_voice(name, str(voice_id))
 
     def _load_story_log(self) -> None:
         """Restore the theater log into the shared Notepad store."""
@@ -232,7 +263,7 @@ class StoryTool(BaseTools):
             action = self._pending_actions.pop(0)
             result["deep_plan_revision_used"] = self.planning_module.get_deep_plan().get("revision", 0)
             self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
-        self.sync_character_voice_tags()
+        self.sync_character_bindings()
         if self._on_scene_reaction:
             self._on_scene_reaction(result)
 

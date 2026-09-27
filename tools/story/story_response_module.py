@@ -11,11 +11,11 @@ import re
 import threading
 from threading import Lock
 import time
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from absl import flags
 from jinja2 import Template
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field
 from google.adk.agents import Agent
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.plugins import ReflectAndRetryToolPlugin
@@ -26,7 +26,7 @@ from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.story.character_manager import CharacterManager
+from tools.story.character_manager import Character, CharacterManager
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
 from tools.story.story_models import (
@@ -35,6 +35,10 @@ from tools.story.story_models import (
     DEFAULT_COMPACTION_TARGET_TOKENS,
     DEFAULT_STORY_PLANNING_STYLE,
 )
+
+# Compatibility import path.  The schema itself is owned by
+# CharacterManager, not by this responder module.
+ResponseCharacter = Character
 
 STORY_LOG_CONTEXT_LINES = 200
 
@@ -170,46 +174,11 @@ class ResponseDialogue(BaseModel):
     )
 
 
-class ResponseCharacter(BaseModel):
-    name: str
-    gender: Literal["male", "female", "nonbinary"] = Field(
-        description="Explicit gender of the character: 'male', 'female', or 'nonbinary' to determine voice assignment."
-    )
-    description: Optional[str] = None
-    personality: Optional[str] = None
-    motivation: Optional[str] = None
-    quirk: Optional[str] = None
-    voice_type: Optional[str] = None
-    voice_tags: Optional[List[str]] = None
-
-    @field_validator("gender", mode="before")
-    @classmethod
-    def validate_gender(cls, v: Any) -> str:
-        if not v:
-            raise ValueError("Gender must be explicitly assigned as 'male', 'female', or 'nonbinary'.")
-        norm = str(v).strip().lower().replace("-", "")
-        if norm in ("nb", "nonbinary"):
-            return "nonbinary"
-        if norm in ("male", "man", "m"):
-            return "male"
-        if norm in ("female", "woman", "f"):
-            return "female"
-        raise ValueError(f"Invalid gender '{v}'. Must be 'male', 'female', or 'nonbinary'.")
-
-    @model_validator(mode="after")
-    def populate_voice_tags(self) -> ResponseCharacter:
-        if not self.voice_tags:
-            self.voice_tags = [self.gender]
-        elif self.gender not in self.voice_tags:
-            self.voice_tags.insert(0, self.gender)
-        return self
-
-
 class SceneReaction(BaseModel):
     narration: str = Field(description="Scene narration focusing on visual consequence and immediate narrative outcome.")
     dialogue: List[ResponseDialogue] = Field(default_factory=list, description="At most three NPC lines; never for the player.")
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
-    character_updates: List[ResponseCharacter] = Field(default_factory=list, description="NPCs added or updated.")
+    character_updates: List[Character] = Field(default_factory=list, description="NPCs added or updated.")
     planning_signals: List[str] = Field(default_factory=list, description="Direct internal communication to deep planner, including sticky note update cues.")
     scene_label: Optional[str] = Field(default=None, description="Current scene label/location.")
     reference_images: Optional[List[str]] = Field(default=None, description="Referenced lore images.")
@@ -683,7 +652,7 @@ class StoryResponseModule:
     def max_active_characters(self, value: int) -> None:
         self.character_manager.max_active_characters = value
 
-    def get_present_characters(self) -> list[dict[str, Any]]:
+    def get_present_characters(self) -> list[Character]:
         return self.character_manager.get_present_characters()
 
     def lookup_character(self, query: str = "") -> str:
@@ -996,8 +965,21 @@ class StoryResponseModule:
         except Exception as exc:
             logger.warning("[StoryResponseModule] Failed to publish scene: %s", exc)
 
-    def _apply_character_updates(self, updates: Any) -> List[Dict[str, str]]:
-        return self.character_manager.apply_character_updates(updates)
+    def _apply_character_updates(self, updates: Any) -> List[Character]:
+        characters = self.character_manager.apply_character_updates(updates)
+        # CharacterManager selects and persists the voice before dialogue is
+        # dispatched.  Mirroring that stored ID into StoryState makes scene
+        # speech a consumer, rather than a second voice-selection authority.
+        story = getattr(self.canvas_manager, "story", None)
+        if story and hasattr(story, "assign_character_voice"):
+            for character in characters:
+                voice_id = getattr(character, "voice_id", None) or character.get("voice_id")
+                if voice_id:
+                    name = getattr(character, "name", None) or character.get("name")
+                    story.assign_character_voice(
+                        name, str(voice_id)
+                    )
+        return characters
 
     def process_user_action(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         return self._process_user_action(user_action, nudge=nudge)
@@ -1149,7 +1131,7 @@ class StoryResponseModule:
 
         result = dict(planning_state)
         result.update({
-            "characters": self.character_manager.export_characters(),
+            "characters": [character.model_dump(exclude_none=True) for character in self.character_manager.export_characters()],
             "turn_id": turn_id,
             "last_scene_reaction": dict(self._last_scene_reaction),
         })
@@ -1197,11 +1179,17 @@ class StoryResponseModule:
                 if hasattr(story, "update_character_voice_tags"):
                     characters = self.character_manager.export_characters()
                     tag_map = {
-                        char["name"]: char.get("voice_tags", [char["gender"]] if char.get("gender") else [])
+                        char.name: char.voice_tags or [char.gender]
                         for char in characters
-                        if "name" in char
+                        if hasattr(char, "name") or "name" in char
                     }
                     story.update_character_voice_tags(tag_map)
+                    if hasattr(story, "assign_character_voice"):
+                        for character in characters:
+                            voice_id = getattr(character, "voice_id", None) or character.get("voice_id")
+                            if voice_id:
+                                name = getattr(character, "name", None) or character.get("name")
+                                story.assign_character_voice(name, str(voice_id))
         except Exception as e:
             logger.warning(
                 "[StoryResponseModule] Failed to save story planning state to session state: %s",

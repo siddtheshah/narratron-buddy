@@ -5,6 +5,7 @@ import pytest
 
 from components.canvas.story_state import StoryState, speaker_key
 from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisResult
+from tools.story.character_manager import Character
 
 
 def test_story_state_isolated_from_other_theaters() -> None:
@@ -77,6 +78,19 @@ def test_character_voice_assignment_is_normalized_and_serialized() -> None:
     assert state.get_character_voice("mara venn") == "dacey_en"
     assert state.serialize()["character_voice_assignments"] == {"mara venn": "dacey_en"}
     persist.assert_called_once_with()
+
+
+def test_story_state_serializes_character_models_at_the_persistence_boundary() -> None:
+    state = StoryState()
+    state.set_story_planning_state({
+        "characters": [Character(name="Mara Venn", alias="mara_venn", gender="female")],
+    })
+
+    character = state.get_story_planning_state()["characters"][0]
+    assert character["name"] == "Mara Venn"
+    assert character["alias"] == "mara_venn"
+    assert character["voice_tags"] == ["female"]
+    assert state.get_character_description("Mara Venn") == "Mara Venn"
 
 
 def test_character_voice_tags_and_description_from_planning_state() -> None:

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from providers import TextResponseProvider
+from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from tools.story.story_tool import StoryPlanningTools, StoryResponseTool, StoryTool
 
 
@@ -16,6 +16,8 @@ class TestStoryToolComposition(unittest.TestCase):
         self.theater.theater_id = "boundary_theater"
         self.theater.config.return_value = {"story_planning": {"session_id": "shared-session"}}
         self.canvas = MagicMock(spec=CanvasStateManager)
+        self.canvas.story = MagicMock(spec=StoryState)
+        self.canvas.story.speech_provider = MagicMock(spec=SpeechProvider)
         self.provider = MagicMock(spec=TextResponseProvider)
 
     def test_initializes_modules_with_shared_dependencies(self) -> None:
@@ -37,7 +39,10 @@ class TestStoryToolComposition(unittest.TestCase):
             text_response_provider=self.provider,
             notepad=tool.notepad,
             config={"session_id": "shared-session"},
-            speech_provider=None,
+            image_library=tool.image_library,
+            image_provider=None,
+            speech_provider=self.canvas.story.speech_provider,
+            character_image_style="",
         )
         planning_kwargs = planning_type.call_args.kwargs
         response_kwargs = response_type.call_args.kwargs
@@ -180,10 +185,15 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             },
         }
         self.provider = MagicMock(spec=TextResponseProvider)
+        self.image_provider = MagicMock(spec=ImageProvider)
+        self.speech_provider = MagicMock(spec=SpeechProvider)
+        self.speech_provider.select_voice.return_value = "voice_default"
         self.tool = StoryTool(
             theater=self.theater,
             canvas_manager=self.canvas,
             text_response_provider=self.provider,
+            image_provider=self.image_provider,
+            speech_provider=self.speech_provider,
         )
 
     def test_saves_and_reloads_story_planning_state(self) -> None:
@@ -229,6 +239,8 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             theater=self.theater,
             canvas_manager=self.canvas,
             text_response_provider=self.provider,
+            image_provider=self.image_provider,
+            speech_provider=self.speech_provider,
         )
         reloaded_tool.reload_from_session_state()
 
@@ -269,6 +281,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         speech_provider = MagicMock()
         speech_provider.select_voice.return_value = "voice_female_1"
         self.story_state.enable_scene_speech(speech_provider)
+        self.tool.character_manager.speech_provider = speech_provider
 
         scene_delta = {
             "narration": "A hooded figure emerges from the fog.",
@@ -296,6 +309,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         speech_provider = MagicMock()
         speech_provider.select_voice.return_value = "voice_nb_1"
         self.story_state.enable_scene_speech(speech_provider)
+        self.tool.character_manager.speech_provider = speech_provider
 
         scene_delta = {
             "narration": "A spirit drifts near.",

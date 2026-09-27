@@ -1131,7 +1131,10 @@ class AutoplayLogger:
         periph_str = "\n".join(periph_lines) if periph_lines else "  *(None)*"
 
         beats = state_after.get("plot_beats") or []
-        beat_lines = [f"  - {b.get('plot_beat')}" for b in beats] if beats else ["  *(None)*"]
+        beat_lines = [
+            f"  - {b.get('plot_beat') if isinstance(b, dict) else str(b)}"
+            for b in beats
+        ] if beats else ["  *(None)*"]
         beat_str = "\n".join(beat_lines)
 
         turn_md = [
@@ -1166,7 +1169,10 @@ class AutoplayLogger:
 
         elapsed = time.time() - self.start_time
         beats = final_state.get("plot_beats") or []
-        beat_lines = [f"{i+1}. {b.get('plot_beat')}" for i, b in enumerate(beats)] if beats else ["- None"]
+        beat_lines = [
+            f"{i+1}. {b.get('plot_beat') if isinstance(b, dict) else str(b)}"
+            for i, b in enumerate(beats)
+        ] if beats else ["- None"]
         beat_str = "\n".join(beat_lines)
 
         status_str = "Interrupted by user" if interrupted else "Completed successfully"

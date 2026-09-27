@@ -1,12 +1,18 @@
 """Unit tests for shared character generation and state management."""
 
 from types import SimpleNamespace
+from io import BytesIO
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from providers import SpeechProvider, TextResponseProvider
+from PIL import Image
+
+from providers import ImageGenerationResult, ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider
+from tools.image.image_library import ImageLibrary
 from services.quirk_service import QuirkGeneratorService
-from tools.story.character_manager import CharacterManager, normalize_voice_tags
+from tools.story.character_manager import Character, CharacterManager, normalize_voice_tags
 from tools.story.notepad import Notepad
 
 
@@ -28,9 +34,18 @@ class TestCharacterManager(unittest.TestCase):
         self.notepad.get_present_elements.return_value = [
             {"topic": "Quest", "info": "Recover the starblade"}
         ]
+        self.image_library = MagicMock(spec=ImageLibrary)
+        self.image_library.find_image_names.return_value = []
+        self.image_provider = MagicMock(spec=ImageProvider)
+        self.image_provider.generate.side_effect = ImageProviderError("not used by this test")
+        self.speech_provider = MagicMock(spec=SpeechProvider)
+        self.speech_provider.select_voice.return_value = "voice_default"
         self.manager = CharacterManager(
             text_response_provider=self.provider,
             notepad=self.notepad,
+            image_library=self.image_library,
+            image_provider=self.image_provider,
+            speech_provider=self.speech_provider,
         )
 
     def _create_character(self, name: str, description: str = "") -> str:
@@ -45,14 +60,17 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_requires_text_response_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
-            CharacterManager(None, self.notepad)  # type: ignore[arg-type]
+            CharacterManager(None, self.notepad, self.image_library, self.image_provider, self.speech_provider)  # type: ignore[arg-type]
         with self.assertRaisesRegex(ValueError, "notepad is required"):
-            CharacterManager(self.provider, None)  # type: ignore[arg-type]
+            CharacterManager(self.provider, None, self.image_library, self.image_provider, self.speech_provider)  # type: ignore[arg-type]
 
     def test_loads_and_normalizes_initial_characters(self) -> None:
         manager = CharacterManager(
             self.provider,
             self.notepad,
+            self.image_library,
+            self.image_provider,
+            self.speech_provider,
             config={
                 "initial_characters": {
                     "Kaelen": {
@@ -69,17 +87,20 @@ class TestCharacterManager(unittest.TestCase):
             [
                 {
                     "name": "Kaelen",
+                    "alias": "kaelen",
+                    "gender": "male",
                     "description": "Ranger",
                     "personality": "Stoic",
                     "motivation": "",
                     "quirk": "",
                     "voice_tags": ["male"],
+                    "voice_id": "voice_default",
                 }
             ],
         )
 
     def test_limits_present_characters_without_discarding_history(self) -> None:
-        manager = CharacterManager(self.provider, self.notepad, config={"max_active_characters": 2})
+        manager = CharacterManager(self.provider, self.notepad, self.image_library, self.image_provider, self.speech_provider, config={"max_active_characters": 2})
         for name in ("One", "Two", "Three"):
             manager.generate_character(
                 name=name,
@@ -141,7 +162,7 @@ class TestCharacterManager(unittest.TestCase):
             "gender": ("female", "male", "nonbinary"),
             "persona": ("Narrator",),
         }
-        manager = CharacterManager(self.provider, self.notepad, speech_provider=speech_provider)
+        manager = CharacterManager(self.provider, self.notepad, self.image_library, self.image_provider, speech_provider)
         self.provider.generate.return_value = SimpleNamespace(
             text='{"personality":"Patient","motivation":"Find truth","gender":"female","voice_tags":["gender=female","accent=British","persona=Narrator"]}'
         )
@@ -151,7 +172,7 @@ class TestCharacterManager(unittest.TestCase):
         prompt = self.provider.generate.call_args.args[0].prompt
         self.assertIn("accent: British, General American", prompt)
         self.assertIn("persona: Narrator", prompt)
-        self.assertEqual(profile["voice_tags"], ["gender=female", "accent=British", "persona=Narrator"])
+        self.assertEqual(profile.voice_tags, ["female", "gender=female", "accent=British", "persona=Narrator"])
 
     def test_uses_defaults_when_generation_fails(self) -> None:
         self.provider.generate.side_effect = RuntimeError("provider unavailable")
@@ -197,10 +218,16 @@ class TestCharacterManager(unittest.TestCase):
         self.assertIn("Created character 'Lyra'", result)
         self.assertEqual(self.manager.count(), 1)
 
+    def test_stores_character_models_by_stable_alias(self) -> None:
+        self._create_character("Mara Venn")
+
+        self.assertEqual(list(self.manager._characters), ["mara_venn"])
+        self.assertIsInstance(self.manager._characters["mara_venn"], Character)
+
     def test_empty_character_name_does_not_mutate_or_notify(self) -> None:
         result = self._create_character("   ")
 
-        self.assertEqual(result, "Character name cannot be empty.")
+        self.assertIsNone(result)
         self.assertEqual(self.manager.count(), 0)
 
     def test_applies_at_most_two_character_updates(self) -> None:
@@ -232,8 +259,8 @@ class TestCharacterManager(unittest.TestCase):
     def test_export_is_defensive_and_import_replaces_state(self) -> None:
         self._create_character("Lyra")
         exported = self.manager.export_characters()
-        exported[0]["name"] = "Changed"
-        self.assertEqual(self.manager.get_present_characters()[0]["name"], "Lyra")
+        exported[0].name = "Changed"
+        self.assertEqual(self.manager.get_present_characters()[0].name, "Lyra")
 
         self.manager.import_characters(
             [{"name": "Orin", "description": "Archivist", "voice_tags": "male", "gender": "male"}]
@@ -270,6 +297,55 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(self.manager.get_character_voice_tags("Rowan"), ["nonbinary"])
         self.assertEqual(self.manager.get_character_voice_tags("rowan"), ["nonbinary"])
         self.assertEqual(self.manager.get_character_voice_tags("Unknown"), [])
+
+    def test_character_manager_binds_exact_reference_and_stable_voice(self) -> None:
+        speech_provider = MagicMock(spec=SpeechProvider)
+        speech_provider.select_voice.return_value = "voice_lyra"
+        library = MagicMock(spec=ImageLibrary)
+        library.find_image_names.return_value = [{
+            "name": "lyra_portrait", "alias": "lyra_portrait",
+            "path": "/references/lyra.png",
+        }]
+        manager = CharacterManager(
+            self.provider, self.notepad, library, self.image_provider, speech_provider,
+        )
+
+        manager.generate_character(
+            "Lyra", personality="Curious", motivation="Learn", quirk="Hums",
+            gender="female", image_reference="lyra_portrait",
+        )
+        # A later profile update does not silently replace either identity binding.
+        manager.generate_character("Lyra", personality="Brave", motivation="Learn", quirk="Hums", gender="female")
+
+        character = manager.export_characters()[0]
+        self.assertEqual(character["image_reference"], "lyra_portrait")
+        self.assertEqual(character["image_reference_path"], "/references/lyra.png")
+        self.assertEqual(character["voice_id"], "voice_lyra")
+        speech_provider.select_voice.assert_called_once()
+
+    def test_character_manager_generates_a_dedicated_portrait_without_image_tools(self) -> None:
+        image = Image.new("RGB", (8, 8), "purple")
+        payload = BytesIO()
+        image.save(payload, "PNG")
+        provider = MagicMock(spec=ImageProvider)
+        provider.generate.return_value = ImageGenerationResult(
+            image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
+        )
+        library = MagicMock(spec=ImageLibrary)
+        with tempfile.TemporaryDirectory() as directory:
+            output = str(Path(directory) / "Mira_character.png")
+            library.reference_dir = directory
+            library.find_image_names.side_effect = [[], [{
+                "name": "Mira_character", "alias": "Mira_character", "path": output,
+            }]]
+            manager = CharacterManager(
+                self.provider, self.notepad, library, provider, self.speech_provider,
+            )
+            manager.generate_character("Mira", personality="Alert", motivation="Help", quirk="Hums", gender="female")
+            character = manager.export_characters()[0]
+            self.assertEqual(character["image_reference_path"], output)
+            self.assertTrue(Path(output).is_file())
+        provider.generate.assert_called_once()
 
 
 if __name__ == "__main__":

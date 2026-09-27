@@ -1,6 +1,7 @@
 """Story tool package with an explicit composition root and isolated modules."""
 
 from tools.story.character_manager import (
+    Character,
     CharacterManager,
     DEFAULT_MAX_ACTIVE_CHARACTERS,
     MAX_ACTIVE_CHARACTERS,
@@ -69,6 +70,7 @@ __all__ = [
     "LoreLibrary",
     "Notepad",
     "CharacterManager",
+    "Character",
     "StoryPlanningModule",
     "StoryResponseModule",
     "ReflectAndRetry",
