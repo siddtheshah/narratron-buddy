@@ -372,7 +372,7 @@ Direct the player's behavior, tactical focus, and personality using `--autoplay-
 
 #### Evaluating Autoplay Artifacts
 Logs are saved automatically to `evaluation_result/autoplay_<adventure_id>_<timestamp>.md`. Review the generated log to verify:
-- **Plot Beat Progression**: Check whether beats transition logically and reach satisfying narrative milestones.
+- **Narrative Progression**: Check whether narrative events transition logically and reach satisfying milestones.
 - **Sticky Note Hygiene**: Confirm that existing sticky notes are updated cleanly rather than ballooning into dozens of redundant notes.
 - **Peripheral Staging**: Verify that character visual references (`references/`), background music tracks (`playlists/`), and interactive canvas components trigger when appropriate.
 - **Pacing & Tone**: Assess whether NPC dialogue and narrator responses match the adventure's desired genre and difficulty.

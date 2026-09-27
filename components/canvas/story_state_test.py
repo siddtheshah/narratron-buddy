@@ -382,9 +382,7 @@ def test_get_and_set_story_planning_state_persists_and_notifies() -> None:
     state = StoryState(persist=persist, notify_changed=notify)
 
     planning_data = {
-        "plot_beats": [{"plot_beat": "A door opens."}],
         "deep_plan": {
-            "plot_beats": ["A second door opens."],
             "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
         },
         "sticky_notes": [{"topic": "Key", "info": "Brass key"}],

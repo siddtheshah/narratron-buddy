@@ -812,7 +812,7 @@
       border-radius: 0.5rem;
     }
 
-    .sticky-list, .char-list, .beats-list {
+    .sticky-list, .char-list {
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
@@ -853,27 +853,6 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-    }
-
-    .beat-item {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 0.4rem;
-      padding: 0.6rem 0.75rem;
-      font-size: 0.82rem;
-      display: flex;
-      gap: 0.6rem;
-      align-items: flex-start;
-    }
-
-    .beat-num {
-      background: rgba(155, 135, 245, 0.25);
-      color: var(--accent);
-      font-weight: 700;
-      font-size: 0.7rem;
-      padding: 0.15rem 0.4rem;
-      border-radius: 0.3rem;
-      flex-shrink: 0;
     }
 
     /* Mock Canvas Visualizer */
@@ -1059,16 +1038,6 @@
           </div>
           <div id="chars-list" class="char-list">
             <div class="empty-state">No active characters.</div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-header">
-            <span class="section-title">🎼 Upcoming Plot Beats</span>
-            <span class="badge-count" id="beats-count">0</span>
-          </div>
-          <div id="beats-list" class="beats-list">
-            <div class="empty-state">No upcoming plot beats.</div>
           </div>
         </div>
       </div>
@@ -1821,22 +1790,7 @@
         charsList.innerHTML = '<div class="empty-state">No active characters.</div>';
       }
 
-      // 3. Plot Beats
-      const beats = state.plot_beats || [];
-      $('beats-count').textContent = beats.length;
-      const beatsList = $('beats-list');
-      if (beats.length) {
-        beatsList.innerHTML = beats.map((b, idx) => `
-          <div class="beat-item">
-            <span class="beat-num">Beat ${idx + 1}</span>
-            <span>${escapeHtml(b.plot_beat || JSON.stringify(b))}</span>
-          </div>
-        `).join('');
-      } else {
-        beatsList.innerHTML = '<div class="empty-state">No upcoming plot beats.</div>';
-      }
-
-      // 4. Mock Canvas
+      // 3. Mock Canvas
       $('canvas-img-val').textContent = canvas.current_image || 'No image staged';
       $('canvas-img-sub').textContent = canvas.current_image_prompt || '—';
       $('canvas-img-effect').textContent = canvas.current_image_effect || 'gleam3';

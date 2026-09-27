@@ -495,7 +495,6 @@ def _story_planner_payload(run: dict[str, Any]) -> dict[str, Any]:
         "events": list(run["events"]),
         "state": {
             "characters": tools.get_present_characters(),
-            "plot_beats": [],
             "deep_plan": tools.get_deep_plan(),
             "last_scene_reaction": dict(getattr(tools, "_last_scene_reaction", {})),
         },

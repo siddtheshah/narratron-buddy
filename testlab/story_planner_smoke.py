@@ -63,14 +63,11 @@ def main() -> int:
     result = session["events"][-1]["result"]
     output = {
         "result": result,
-        "characters": session["state"]["characters"],
-        "plot_beats": session["state"]["plot_beats"],
+        "characters": session["state"].get("characters", []),
+        "deep_plan": session["state"].get("deep_plan", {}),
     }
     print(json.dumps(output, indent=2))
     if result.get("error"):
-        return 1
-    if len(output["plot_beats"]) != args.nodes:
-        print("Planner returned a result but did not commit the expected plot beats.", file=sys.stderr)
         return 1
     return 0
 

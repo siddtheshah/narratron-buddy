@@ -743,9 +743,6 @@ class AdventureSession:
             "created_at": self.created_at,
             "sticky_notes": self.story_tool.get_present_sticky_notes(),
             "characters": self.story_tool.get_present_characters(),
-            # Retain the response field for older Test Lab clients. The new
-            # deep planner owns durable state through stickies, not plot beats.
-            "plot_beats": [],
             "deep_plan": self.story_tool.get_deep_plan(),
             "last_scene_reaction": dict(getattr(self.story_tool, "_last_scene_reaction", {})),
             "lore_documents": self.theater_manager.get_lore_documents(self.session_id),
@@ -1101,7 +1098,6 @@ class AutoplayLogger:
             "thought": thought,
             "action": action,
             "turn": turn_result,
-            "plot_beats": state_after.get("plot_beats", []),
         }
         self.turns_data.append(turn_record)
 
@@ -1130,12 +1126,12 @@ class AutoplayLogger:
                 periph_lines.append(f"  - `{tc.get('tool')}`: {tc.get('result')}")
         periph_str = "\n".join(periph_lines) if periph_lines else "  *(None)*"
 
-        beats = state_after.get("plot_beats") or []
-        beat_lines = [
-            f"  - {b.get('plot_beat') if isinstance(b, dict) else str(b)}"
-            for b in beats
-        ] if beats else ["  *(None)*"]
-        beat_str = "\n".join(beat_lines)
+        stickies = state_after.get("sticky_notes") or []
+        sticky_lines = [
+            f"  - **{s.get('topic')}**: {s.get('info')}" if isinstance(s, dict) else f"  - {s}"
+            for s in stickies
+        ] if stickies else ["  *(None)*"]
+        sticky_str = "\n".join(sticky_lines)
 
         turn_md = [
             f"### Turn {turn_index}",
@@ -1152,8 +1148,8 @@ class AutoplayLogger:
             "**Peripherals Staged**:",
             periph_str,
             "",
-            "**Active Plot Beats**:",
-            beat_str,
+            "**Active Sticky Notes**:",
+            sticky_str,
             "",
             "---",
             "",
@@ -1168,12 +1164,12 @@ class AutoplayLogger:
             return
 
         elapsed = time.time() - self.start_time
-        beats = final_state.get("plot_beats") or []
-        beat_lines = [
-            f"{i+1}. {b.get('plot_beat') if isinstance(b, dict) else str(b)}"
-            for i, b in enumerate(beats)
-        ] if beats else ["- None"]
-        beat_str = "\n".join(beat_lines)
+        stickies = final_state.get("sticky_notes") or []
+        sticky_lines = [
+            f"{i+1}. **{s.get('topic')}**: {s.get('info')}" if isinstance(s, dict) else f"{i+1}. {s}"
+            for i, s in enumerate(stickies)
+        ] if stickies else ["- None"]
+        sticky_str = "\n".join(sticky_lines)
 
         status_str = "Interrupted by user" if interrupted else "Completed successfully"
         summary_md = [
@@ -1183,8 +1179,8 @@ class AutoplayLogger:
             f"- **Completed Turns**: {len(self.turns_data)} / {self.max_turns}",
             f"- **Elapsed Time**: {elapsed:.1f} seconds",
             "",
-            "### Ending Plot Beats",
-            beat_str,
+            "### Ending Sticky Notes",
+            sticky_str,
             "",
             "### Final Canvas State",
             f"```json\n{json.dumps(final_state.get('mock_canvas', {}), indent=2)}\n```",
@@ -1472,9 +1468,9 @@ def main() -> int:
         print(f"\n--- Tool Calls ({len(turn['tool_calls'])}) ---")
         for tc in turn["tool_calls"]:
             print(f"  [{tc['tool']}] -> {tc['result']}")
-        print("\n--- Resulting Plot Beats ---")
-        for beat in res["state"]["plot_beats"]:
-            print(f"  [Beat] {beat.get('plot_beat')}")
+        print("\n--- Resulting Sticky Notes ---")
+        for s in res["state"].get("sticky_notes", []):
+            print(f"  [{s.get('topic')}] {s.get('info')}")
         session.cleanup()
         return 0
 

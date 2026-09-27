@@ -547,28 +547,6 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         )
         self.assertEqual(contraband_note["info"], "Quill, Poison Phial")
 
-    def test_commit_deep_plan_update_discards_legacy_plot_beats(self) -> None:
-        committed = self.module._commit_deep_plan_update(
-            1,
-            {
-                "plot_beats": [
-                    "A bat screeches overhead.",
-                    "Water drips from the ceiling.",
-                ],
-                "sticky_notes": [
-                    {"topic": "HUD", "info": "HP: 100 | MP: 50"},
-                    {"topic": "Location", "info": "Deep Cavern"},
-                ],
-            },
-        )
-
-        self.assertTrue(committed)
-        plan = self.module.get_deep_plan()
-        self.assertEqual(plan["revision"], 1)
-        self.assertEqual(plan["through_turn_id"], 1)
-        self.assertNotIn("plot_beats", plan)
-        self.assertNotIn("plot_beats", self.module.export_planning_state())
-
     def test_tool_driven_commit_keeps_unmodified_stickies(self) -> None:
         self.module.notepad.update_sticky_note("Quest", "The relic is now guarded")
 

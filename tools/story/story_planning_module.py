@@ -694,11 +694,7 @@ class StoryPlanningModule:
         with self._deep_plan_lock:
             imported_plan = state.get("deep_plan", {})
             self._deep_plan = (
-                {
-                    key: value
-                    for key, value in imported_plan.items()
-                    if key != "plot_beats"
-                }
+                dict(imported_plan)
                 if isinstance(imported_plan, dict)
                 else {}
             )

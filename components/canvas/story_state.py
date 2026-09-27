@@ -29,17 +29,6 @@ def speaker_key(speaker: str) -> str:
     return re.sub(r"\s+", " ", str(speaker or "Narrator").strip()).casefold()[:80] or "narrator"
 
 
-def without_plot_beats(state: dict[str, Any]) -> dict[str, Any]:
-    """Return planning state with obsolete plot-beat data removed."""
-    cleaned = {key: value for key, value in state.items() if key != "plot_beats"}
-    deep_plan = cleaned.get("deep_plan")
-    if isinstance(deep_plan, dict):
-        cleaned["deep_plan"] = {
-            key: value for key, value in deep_plan.items() if key != "plot_beats"
-        }
-    return cleaned
-
-
 def normalize_character_models(state: dict[str, Any]) -> dict[str, Any]:
     """Serialize Pydantic character records at the canvas persistence edge."""
     normalized = dict(state)
@@ -128,7 +117,7 @@ class StoryState:
 
         planning = data.get("story_planning_state")
         if isinstance(planning, dict):
-            self.story_planning_state = without_plot_beats(normalize_character_models(planning))
+            self.story_planning_state = normalize_character_models(planning)
 
         dialogue = data.get("scene_dialogue")
         if isinstance(dialogue, list):
@@ -162,7 +151,7 @@ class StoryState:
     def serialize(self) -> dict[str, object]:
         return {
             "named_elements": self.named_elements,
-            "story_planning_state": without_plot_beats(self.story_planning_state),
+            "story_planning_state": self.story_planning_state,
             "scene_dialogue": self.scene_dialogue,
             "narration": self.narration,
             "narration_spans": self.narration_spans,
@@ -243,7 +232,6 @@ class StoryState:
         self.named_elements = [dict(n) for n in (notes or []) if isinstance(n, dict)]
         if not isinstance(self.story_planning_state, dict):
             self.story_planning_state = {}
-        self.story_planning_state = without_plot_beats(self.story_planning_state)
         self.story_planning_state["sticky_notes"] = list(self.named_elements)
         if self._persist:
             self._persist()
@@ -251,10 +239,10 @@ class StoryState:
             self._notify_changed("latest")
     def get_story_planning_state(self) -> dict[str, Any]:
         """Return a snapshot of full story planning state."""
-        return without_plot_beats(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
+        return dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
     def set_story_planning_state(self, state: dict[str, Any]) -> None:
         """Persist full story planning state, synchronize sticky notes, and notify canvas clients."""
-        self.story_planning_state = without_plot_beats(normalize_character_models(state)) if isinstance(state, dict) else {}
+        self.story_planning_state = normalize_character_models(state) if isinstance(state, dict) else {}
         if "sticky_notes" in self.story_planning_state and isinstance(self.story_planning_state["sticky_notes"], list):
             self.named_elements = [dict(n) for n in self.story_planning_state["sticky_notes"] if isinstance(n, dict)]
         if self._persist:

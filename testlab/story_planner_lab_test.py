@@ -24,7 +24,6 @@ def test_story_planner_lab_routes_create_isolated_session():
     payload = created.json()
     assert payload["events"] == []
     assert payload["state"]["characters"] == []
-    assert payload["state"]["plot_beats"] == []
 
     fetched = client.get(f"/api/story-planner/sessions/{payload['id']}")
     assert fetched.status_code == 200
@@ -76,8 +75,5 @@ def test_story_planner_lab_submits_action_and_records_event():
 
         assert len(data["events"]) == 1
         assert data["events"][0]["result"]["narration"] == mock_reaction["narration"]
-        # Foreground responder beats are compatibility input only; the deep
-        # planner is the sole owner of committed plot beats.
-        assert data["state"]["plot_beats"] == []
         mock_run.assert_called_once_with("I step into the hallway.", nudge="An ominous chill fills the air")
 

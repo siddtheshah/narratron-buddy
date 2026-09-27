@@ -205,7 +205,6 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
 
                 # Check updated state
                 state = res["state"]
-                assert state["plot_beats"] == []
                 assert session.mock_canvas.current_music == "groove_alpha"
                 assert session.mock_canvas.music_status == "playing"
     finally:
@@ -539,7 +538,7 @@ def test_autoplay_logger_incremental_markdown_and_summary(tmp_path):
         "tool_calls": [{"tool": "play_music", "result": "Playing eerie_notes"}],
     }
     state_after_1 = {
-        "plot_beats": [{"plot_beat": "The secret safe is revealed."}],
+        "sticky_notes": [{"topic": "Secret Safe", "info": "The secret safe is revealed."}],
     }
     logger.log_turn(1, "Testing painting mechanism", "I tap the painting three times.", turn_1, state_after_1)
     content_turn1 = log_file.read_text(encoding="utf-8")
@@ -552,7 +551,7 @@ def test_autoplay_logger_incremental_markdown_and_summary(tmp_path):
 
     # 3. Finalize
     final_state = {
-        "plot_beats": [{"plot_beat": "The secret safe is revealed."}],
+        "sticky_notes": [{"topic": "Secret Safe", "info": "The secret safe is revealed."}],
         "mock_canvas": {"current_music": "eerie_notes"},
     }
     logger.finalize(final_state, interrupted=False)
