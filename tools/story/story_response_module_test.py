@@ -13,7 +13,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from tools.image.image_library import ImageLibrary
-from tools.story.character_manager import CharacterManager
+from tools.story.character_manager import CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
 from tools.story.story_response_module import (
@@ -371,12 +371,42 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.module.clear_scene()
         self.assertEqual(self.module.get_present_characters(), [])
 
+    def test_module_create_or_update_character_upsert_and_persists_to_session_state(self) -> None:
+        profile = self.module.create_or_update_character(
+            name="Cedric",
+            description="Knight of the Realm",
+            personality="Brave and dutiful",
+            motivation="Protect the innocent",
+            quirk="Polishes visor constantly",
+            gender="male",
+        )
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile["name"], "Cedric")
+        self.assertEqual(profile["description"], "Knight of the Realm")
+        self.assertEqual(profile["personality"], "Brave and dutiful")
+        # Ensure session state persistence was triggered
+        self.story_state.set_story_planning_state.assert_called()
+
+        # Perform upsert on existing character
+        updated = self.module.create_or_update_character(
+            name="Cedric",
+            description="Knight Commander of the Realm",
+        )
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated["description"], "Knight Commander of the Realm")
+        self.assertEqual(updated["personality"], "Brave and dutiful")
+        self.assertEqual(updated["motivation"], "Protect the innocent")
+        self.assertEqual(updated["quirk"], "Polishes visor constantly")
+
+        # Backwards compatibility check
+        via_alias = self.module.generate_character_profile(name="Cedric", description="Grand Marshal")
+        self.assertEqual(via_alias["description"], "Grand Marshal")
+
     def test_resolves_user_action_does_not_coordinate_planning(self) -> None:
         scene_delta = {
             "narration": "You slip through the shadowy arches of the ruined shrine.",
             "dialogue": [{"speaker": "Kaelen", "text": "Stay quiet."}],
             "manifested_characters": ["Kaelen"],
-            "character_updates": [],
             "planning_signals": ["Shrine discovered", "Kaelen scouted"],
             "scene_label": "Ruined Shrine",
         }
@@ -429,7 +459,6 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "narration": "A newcomer approaches.",
             "dialogue": [{"speaker": "Rowan", "text": "Greetings."}],
             "manifested_characters": ["Rowan"],
-            "character_updates": [{"name": "Rowan", "gender": "nonbinary"}],
             "planning_signals": [],
             "scene_label": "Town Square",
         }
@@ -489,6 +518,85 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
         )
         self.assertEqual(len(reaction.planning_signals), 2)
         self.assertIn("[STICKY UPDATE: Combat Stats & Synergy]", reaction.planning_signals[0])
+
+    def test_scene_reaction_schema_fields(self) -> None:
+        fields = set(SceneReaction.model_fields.keys())
+        self.assertEqual(
+            fields,
+            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_label"},
+        )
+        self.assertNotIn("character_updates", fields)
+        self.assertNotIn("player_character_update", fields)
+        self.assertNotIn("reference_images", fields)
+
+
+class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
+    def setUp(self) -> None:
+        self.theater = MagicMock(spec=Theater)
+        self.theater.theater_id = "test_player_theater"
+        self.theater.config.return_value = {"story_planning": {"adventure_mode": True}}
+        self.canvas = MagicMock(spec=CanvasStateManager)
+        self.lore_library = MagicMock(spec=LoreLibrary)
+        self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+        self.session_service = MagicMock(spec=InMemorySessionService)
+        self.character_manager = MagicMock(spec=CharacterManager)
+        self.module = StoryResponseModule(
+            theater=self.theater,
+            canvas_manager=self.canvas,
+            notepad=self.notepad,
+            lore_library=self.lore_library,
+            character_manager=self.character_manager,
+            session_service=self.session_service,
+            session_id="test_session",
+        )
+
+    def test_delegates_player_character_management(self) -> None:
+        self.character_manager.get_player_character.return_value = PlayerCharacter(
+            name="Valen", image_description="Armored knight", reference="valen_img"
+        )
+        self.character_manager.get_player_reference.return_value = "valen_img"
+        self.character_manager.update_player_character.return_value = PlayerCharacter(
+            name="Valen", image_description="Armored knight", reference="valen_img"
+        )
+
+        player = self.module.get_player_character()
+        self.assertEqual(player.name, "Valen")
+        self.assertEqual(self.module.get_player_reference(), "valen_img")
+
+        res = self.module.update_player_character(name="Valen", image_description="Armored knight")
+        self.assertIn("Valen", res)
+        self.character_manager.update_player_character.assert_called_once()
+
+    def test_build_story_context_prompt_includes_player_character(self) -> None:
+        player = PlayerCharacter(
+            name="Kael",
+            image_description="Young archer in green cloak",
+            reference="kael_ref",
+        )
+        prompt = build_story_context_prompt(
+            elements=[{"topic": "Quest", "info": "Find the orb"}],
+            characters=[],
+            player_character=player,
+        )
+        self.assertIn("Canonical player character:", prompt)
+        self.assertIn("Kael", prompt)
+        self.assertIn("Young archer in green cloak", prompt)
+        self.assertIn("kael_ref", prompt)
+
+
+    def test_delegates_create_or_update_character(self) -> None:
+        self.character_manager.create_or_update_character.return_value = {"name": "Cedric", "gender": "male"}
+        res = self.module.create_or_update_character(name="Cedric", gender="male")
+        self.assertEqual(res["name"], "Cedric")
+        self.character_manager.create_or_update_character.assert_called_once_with(
+            name="Cedric",
+            description="",
+            personality="",
+            motivation="",
+            quirk="",
+            voice_tags=None,
+            gender="male",
+        )
 
 
 if __name__ == "__main__":

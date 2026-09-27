@@ -26,7 +26,7 @@ from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.story.character_manager import Character, CharacterManager
+from tools.story.character_manager import Character, CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
 from tools.story.story_models import (
@@ -90,6 +90,11 @@ Active characters, personalities, motivations & distinct quirks:
 {% endif -%}
 {% endif -%}
 
+{% if player_character -%}
+Canonical player character:
+- Name: {{ player_character.name or 'Unnamed Explorer' }}{% if player_character.image_description %} | Visual: {{ player_character.image_description }}{% endif %}{% if player_character.reference %} | Image Reference: {{ player_character.reference }}{% endif %}
+
+{% endif -%}
 """
 )
 
@@ -141,14 +146,14 @@ No lore documents are available for this theater. Invent the lore, world details
   - **Player Reactionary Rolls (`procedural=False`, default)**: Use for resolving player actions, skill checks, contests, or direct consequences of player decisions. These rolls are visibly animated and displayed on the canvas for the player.
   - **Procedural Rolls (`procedural=True`)**: Use for background procedural generation, random encounter tables, weather, NPC demeanor, or hidden world checks. These rolls are hidden from the canvas.
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
-- **Character Generation (`generate_character_profile`)**: You may call generate_character_profile to enrich a proposed NPC, then include its returned profile in character_updates.
-- Those tools only provide information: the scene delta is the sole source of changes.
+- **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated.
+- **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name, visual appearance description, or image reference when established or clarified.
 
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
 - **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character. For each spoken line, include a concise `voice_instruction` that describes its sustained delivery (emotion, pace, volume, accent, or prosody). Do not put stage directions in `text`; use inline vocal tags such as `<sigh>` or `<short pause>` there only when an audible, momentary event belongs in the transcript.
+- **Manifested Characters**: List names of NPCs that entered or became prominent in this turn.
 - **Planning Signals (Direct Communication to Deep Planner)**: These signals are internal communication directed solely to the deep planner (never shown to the player). You MUST use this channel to ensure high recall of sticky note updates: explicitly review your active sticky notes and call out any topics that need an update based on this turn's resolution (e.g. `[STICKY UPDATE: <Exact Topic Name>] <what changed or new value>` for stat changes, inventory items gained/lost, location shifts, quest progress, combat status, enemy stats, or lasting effects), followed by factual story fallout and thread consequences for background planning. Do not invent future player events; describe what was established this turn.
-- **Character Updates**: Character updates are for NPCs only. Include character_updates only for NPCs that should enter or materially change; never create or update the player-controlled character. When creating or updating characters, you MUST assign an explicit gender ('male', 'female', or 'nonbinary') and voice_tags to guide speech synthesis.
 
 # Character Generation
 Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
@@ -157,9 +162,6 @@ Every generated character must have an explicit gender assignment ('male', 'fema
 
 # Scene Labeling
 Ensure the scene has a label. The location name is generally a good choice. Keep using that label until a major shift occurs.
-
-# Reference Usage
-If the lore documents mention reference images for characters and images, communicate them via the reference_images field.
 """
 )
 
@@ -178,10 +180,8 @@ class SceneReaction(BaseModel):
     narration: str = Field(description="Scene narration focusing on visual consequence and immediate narrative outcome.")
     dialogue: List[ResponseDialogue] = Field(default_factory=list, description="At most three NPC lines; never for the player.")
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
-    character_updates: List[Character] = Field(default_factory=list, description="NPCs added or updated.")
     planning_signals: List[str] = Field(default_factory=list, description="Direct internal communication to deep planner, including sticky note update cues.")
     scene_label: Optional[str] = Field(default=None, description="Current scene label/location.")
-    reference_images: Optional[List[str]] = Field(default=None, description="Referenced lore images.")
 
 
 class StoryLogDieRoll(BaseModel):
@@ -209,12 +209,14 @@ def build_story_context_prompt(
     characters: list[dict[str, Any]],
     total_characters: Optional[int] = None,
     changed_topics: frozenset[str] = frozenset(),
+    player_character: Optional[PlayerCharacter] = None,
 ) -> str:
     return _STORY_CONTEXT_PROMPT_TEMPLATE.render(
         elements=elements,
         characters=characters,
         total_characters=total_characters,
         changed_topics=changed_topics,
+        player_character=player_character,
     ).strip()
 
 
@@ -266,6 +268,8 @@ class StoryResponseModule:
 
         self.lore_library = lore_library
         self.character_manager = character_manager
+        if self.character_manager.story_state is None and self.canvas_manager is not None:
+            self.character_manager.story_state = self.canvas_manager.story
 
         # Lore budgets and activity belong to the immediate-response turn.
         self._read_lore_calls_this_turn = 0
@@ -658,7 +662,7 @@ class StoryResponseModule:
     def lookup_character(self, query: str = "") -> str:
         return self.character_manager.lookup_character(query)
 
-    def generate_character_profile(
+    def create_or_update_character(
         self,
         name: str,
         description: str = "",
@@ -667,9 +671,16 @@ class StoryResponseModule:
         quirk: str = "",
         voice_tags: list[str] = None,
         gender: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Generate a complete NPC profile with an explicit gender ('male', 'female', or 'nonbinary')."""
-        return self.character_manager.generate_character_profile(
+    ) -> Optional[Character]:
+        """Create or update an NPC profile with an explicit gender ('male', 'female', or 'nonbinary').
+
+        Acts as an upsert: if the character already exists, updates all specified fields.
+        If the character is to be created per the story module's views, prioritizes traits
+        assigned in serialized story state so the character remains consistent across initializations.
+        """
+        if self.character_manager.story_state is None and self.canvas_manager is not None:
+            self.character_manager.story_state = self.canvas_manager.story
+        profile = self.character_manager.create_or_update_character(
             name=name,
             description=description,
             personality=personality,
@@ -678,6 +689,12 @@ class StoryResponseModule:
             voice_tags=voice_tags,
             gender=gender,
         )
+        if profile is not None:
+            self.save_to_session_state()
+        return profile
+
+    # Backwards compatibility alias
+    generate_character_profile = create_or_update_character
 
     def generate_character(
         self,
@@ -688,7 +705,7 @@ class StoryResponseModule:
         quirk: str = "",
         voice_tags: Any = None,
         gender: Optional[str] = None,
-    ) -> str:
+    ) -> Optional[Character]:
         return self.character_manager.generate_character(
             name=name,
             description=description,
@@ -708,6 +725,52 @@ class StoryResponseModule:
             self.theater_id or "default",
         )
         return f"Cleared {char_count} character(s) from the scene; sticky notes and story context were preserved."
+
+    def get_player_character(self) -> PlayerCharacter | None:
+        """Return the canonical persisted identity and visual reference for the player character."""
+        return self.character_manager.get_player_character()
+
+    def get_player_reference(self) -> str | None:
+        """Return the canonical image reference identifier for the player character."""
+        return self.character_manager.get_player_reference()
+
+    def update_player_character(
+        self,
+        name: str = "",
+        image_description: str = "",
+        reference: str = "",
+    ) -> str:
+        """Canonically manage or update the player character's name, visual description, or image reference."""
+        player = self.character_manager.update_player_character(
+            name=name,
+            image_description=image_description,
+            reference=reference or None,
+        )
+        ref_info = f" Image reference: {player.reference}." if player.reference else ""
+        return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}.{ref_info}"
+
+    def update_character(
+        self,
+        name: str,
+        description: str = "",
+        personality: str = "",
+        motivation: str = "",
+        quirk: str = "",
+        voice_tags: Any = None,
+        gender: Optional[str] = None,
+        image_reference: str = "",
+    ) -> Character | None:
+        """Canonically create or update an NPC record in the session."""
+        return self.character_manager.generate_character(
+            name=name,
+            description=description,
+            personality=personality,
+            motivation=motivation,
+            quirk=quirk,
+            voice_tags=voice_tags,
+            gender=gender,
+            image_reference=image_reference,
+        )
 
     # ADK Responder Agent
     def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
@@ -755,11 +818,13 @@ class StoryResponseModule:
             "style": self.style,
         }
         lore_context = self._get_lore_context()
+        player_char = self.character_manager.get_player_character()
         responder_context = build_story_context_prompt(
             elements=snapshot["elements"],
             characters=snapshot["characters"],
             total_characters=snapshot["total_characters"],
             changed_topics=changed_topics,
+            player_character=player_char,
         )
         return build_scene_reaction_prompt(
             context=responder_context,
@@ -808,7 +873,8 @@ class StoryResponseModule:
                 self.search_lore,
                 self.read_lore,
                 self.lookup_character,
-                self.generate_character_profile,
+                self.update_player_character,
+                self.create_or_update_character,
                 self.roll_dice,
             ],
             output_schema=SceneReaction,
@@ -960,26 +1026,12 @@ class StoryResponseModule:
 
     def _publish_scene(self, narration: str, dialogue: List[Dict[str, str]]) -> None:
         try:
-            if self.canvas_manager and hasattr(self.canvas_manager, "story"):
+            if self.canvas_manager is not None and self.canvas_manager.story is not None:
                 self.canvas_manager.story.set_scene(narration, dialogue)
         except Exception as exc:
             logger.warning("[StoryResponseModule] Failed to publish scene: %s", exc)
 
-    def _apply_character_updates(self, updates: Any) -> List[Character]:
-        characters = self.character_manager.apply_character_updates(updates)
-        # CharacterManager selects and persists the voice before dialogue is
-        # dispatched.  Mirroring that stored ID into StoryState makes scene
-        # speech a consumer, rather than a second voice-selection authority.
-        story = getattr(self.canvas_manager, "story", None)
-        if story and hasattr(story, "assign_character_voice"):
-            for character in characters:
-                voice_id = getattr(character, "voice_id", None) or character.get("voice_id")
-                if voice_id:
-                    name = getattr(character, "name", None) or character.get("name")
-                    story.assign_character_voice(
-                        name, str(voice_id)
-                    )
-        return characters
+
 
     def process_user_action(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         return self._process_user_action(user_action, nudge=nudge)
@@ -1062,7 +1114,11 @@ class StoryResponseModule:
         if "error" in parsed:
             return parsed
 
-        manifested_characters = self._apply_character_updates(parsed.get("character_updates"))
+        manifested_characters = [
+            str(name).strip()
+            for name in (parsed.get("manifested_characters") or [])
+            if str(name).strip()
+        ]
         narration = str(
             parsed.get("narration") or "The scene shifts in response to your action."
         ).strip()[:MAX_NARRATION_CHARS]
@@ -1079,7 +1135,6 @@ class StoryResponseModule:
 
         deep_plan_revision_used = 0
         scene_name = str(parsed.get("scene_label") or "").strip()
-        reference_images = parsed.get("reference_images") or []
         result = {
             "turn_id": turn_id,
             "deep_plan_revision_used": deep_plan_revision_used,
@@ -1088,19 +1143,19 @@ class StoryResponseModule:
             "manifested_characters": manifested_characters,
             "planning_signals": planning_signals,
             "scene_label": scene_name,
-            "reference_images": reference_images,
             "lore_activity": self.get_lore_activity_this_turn(),
             "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),
             "die_rolls": die_rolls,
         }
+        player_char = self.character_manager.get_player_character()
+        result["player_character"] = player_char.model_dump(exclude_none=True) if player_char else None
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
         self.save_to_session_state()
         self._publish_scene(narration, dialogue)
         logger.debug(
-            "[StoryResponseModule] Scene name: %s | Reference images: %s",
+            "[StoryResponseModule] Scene name: %s",
             scene_name or "(unspecified)",
-            reference_images,
         )
         callback = self.on_story_response_completed
         if callback:
@@ -1130,11 +1185,13 @@ class StoryResponseModule:
             turn_id = self._turn_id
 
         result = dict(planning_state)
+        player_char = self.character_manager.export_player_character()
         result.update({
             "characters": [character.model_dump(exclude_none=True) for character in self.character_manager.export_characters()],
             "turn_id": turn_id,
             "last_scene_reaction": dict(self._last_scene_reaction),
         })
+        result["player_character"] = player_char.model_dump(exclude_none=True) if player_char else None
         return result
 
     def import_response_state(self, state: Dict[str, Any]) -> None:
@@ -1142,7 +1199,24 @@ class StoryResponseModule:
             return
 
         self.notepad.import_state(state)
-        self.character_manager.import_characters(state.get("characters", []))
+        raw_characters = state.get("characters")
+        if raw_characters:
+            try:
+                characters = [Character.model_validate(c) for c in raw_characters]
+                self.character_manager.import_characters(characters)
+            except Exception as exc:
+                logger.warning("[StoryResponseModule] Error importing characters from response state: %s", exc)
+                self.character_manager.import_characters([])
+        else:
+            self.character_manager.import_characters([])
+
+        raw_player = state.get("player_character")
+        if raw_player:
+            try:
+                player_model = PlayerCharacter.model_validate(raw_player)
+                self.character_manager.import_player_character(player_model)
+            except Exception as exc:
+                logger.warning("[StoryResponseModule] Error importing player character from response state: %s", exc)
 
         with self._turn_id_lock:
             try:
@@ -1153,7 +1227,7 @@ class StoryResponseModule:
 
     def reload_from_session_state(self) -> None:
         try:
-            if not self.canvas_manager or not hasattr(self.canvas_manager, "story"):
+            if not self.canvas_manager or self.canvas_manager.story is None:
                 return
             sp_state = self.canvas_manager.story.get_story_planning_state()
             if sp_state:
@@ -1173,28 +1247,20 @@ class StoryResponseModule:
 
     def save_to_session_state(self) -> None:
         try:
-            if self.canvas_manager and hasattr(self.canvas_manager, "story"):
-                story = self.canvas_manager.story
-                story.set_story_planning_state(self.export_response_state())
-                if hasattr(story, "update_character_voice_tags"):
-                    characters = self.character_manager.export_characters()
-                    tag_map = {
-                        char.name: char.voice_tags or [char.gender]
-                        for char in characters
-                        if hasattr(char, "name") or "name" in char
-                    }
-                    story.update_character_voice_tags(tag_map)
-                    if hasattr(story, "assign_character_voice"):
-                        for character in characters:
-                            voice_id = getattr(character, "voice_id", None) or character.get("voice_id")
-                            if voice_id:
-                                name = getattr(character, "name", None) or character.get("name")
-                                story.assign_character_voice(name, str(voice_id))
+            story = self.canvas_manager.story
+            story.set_story_planning_state(self.export_response_state())
+            characters = self.character_manager.export_characters()
+            tag_map = {
+                char.name: char.voice_tags or [char.gender]
+                for char in characters
+            }
+            story.update_character_voice_tags(tag_map)
+            for character in characters:
+                if character.voice_id:
+                    story.assign_character_voice(character.name, str(character.voice_id))
         except Exception as e:
             logger.warning(
                 "[StoryResponseModule] Failed to save story planning state to session state: %s",
                 e,
             )
 
-
-# Backward-compatible alias

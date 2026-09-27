@@ -3,6 +3,7 @@
 from tools.story.character_manager import (
     Character,
     CharacterManager,
+    PlayerCharacter,
     DEFAULT_MAX_ACTIVE_CHARACTERS,
     MAX_ACTIVE_CHARACTERS,
     SUPPORTED_VOICE_TAGS,
@@ -71,6 +72,7 @@ __all__ = [
     "Notepad",
     "CharacterManager",
     "Character",
+    "PlayerCharacter",
     "StoryPlanningModule",
     "StoryResponseModule",
     "ReflectAndRetry",

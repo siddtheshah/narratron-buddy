@@ -287,12 +287,15 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             "narration": "A hooded figure emerges from the fog.",
             "dialogue": [{"speaker": "Vesper", "text": "Who goes there?"}],
             "manifested_characters": ["Vesper"],
-            "character_updates": [{"name": "Vesper", "gender": "female"}],
             "planning_signals": [],
             "scene_label": "Foggy Crossroads",
         }
 
-        with patch.object(self.tool.response_module, "_run_responder_agent", return_value=scene_delta):
+        def fake_run(action: str, nudge: str = "") -> dict[str, object]:
+            self.tool.create_or_update_character(name="Vesper", gender="female")
+            return scene_delta
+
+        with patch.object(self.tool.response_module, "_run_responder_agent", side_effect=fake_run):
             self.tool.response_module._resolve_user_action("I call out.")
 
         # Vesper's voice was assigned using female tag
@@ -315,12 +318,15 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             "narration": "A spirit drifts near.",
             "dialogue": [{"speaker": "Echo", "text": "Listen closely."}],
             "manifested_characters": ["Echo"],
-            "character_updates": [{"name": "Echo", "gender": "nonbinary"}],
             "planning_signals": [],
             "scene_label": "Spirit Grove",
         }
 
-        with patch.object(self.tool.response_module, "_run_responder_agent", return_value=scene_delta):
+        def fake_run(action: str, nudge: str = "") -> dict[str, object]:
+            self.tool.create_or_update_character(name="Echo", gender="nonbinary")
+            return scene_delta
+
+        with patch.object(self.tool.response_module, "_run_responder_agent", side_effect=fake_run):
             self.tool.response_module._resolve_user_action("I listen.")
 
         speech_provider.select_voice.assert_called_once_with(

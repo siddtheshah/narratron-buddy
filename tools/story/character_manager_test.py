@@ -12,7 +12,7 @@ from PIL import Image
 from providers import ImageGenerationResult, ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider
 from tools.image.image_library import ImageLibrary
 from services.quirk_service import QuirkGeneratorService
-from tools.story.character_manager import Character, CharacterManager, normalize_voice_tags
+from tools.story.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
 from tools.story.notepad import Notepad
 
 
@@ -346,6 +346,266 @@ class TestCharacterManager(unittest.TestCase):
             self.assertEqual(character["image_reference_path"], output)
             self.assertTrue(Path(output).is_file())
         provider.generate.assert_called_once()
+
+    def test_player_character_schema_and_aliases(self) -> None:
+        player = PlayerCharacter(
+            name="Aiden",
+            reference="hero_ref",
+            image_description="A weary wanderer in leather armor",
+        )
+        self.assertEqual(player.name, "Aiden")
+        self.assertEqual(player.reference, "hero_ref")
+        self.assertEqual(player.image_description, "A weary wanderer in leather armor")
+        self.assertEqual(player.description, "A weary wanderer in leather armor")
+        self.assertEqual(player.image_reference, "hero_ref")
+        self.assertEqual(player["name"], "Aiden")
+        self.assertEqual(player["reference"], "hero_ref")
+
+        # Test alias coercion from dict
+        player2 = PlayerCharacter.model_validate({
+            "name": "Rowan",
+            "description": "Silver-haired mage",
+            "image_reference": "rowan_portrait",
+        })
+        self.assertEqual(player2.name, "Rowan")
+        self.assertEqual(player2.image_description, "Silver-haired mage")
+        self.assertEqual(player2.reference, "rowan_portrait")
+
+    def test_character_manager_manages_player_character_and_binds_reference(self) -> None:
+        library = MagicMock(spec=ImageLibrary)
+        library.find_image_names.return_value = [{
+            "name": "hero_portrait", "alias": "hero_alias",
+            "path": "/references/hero.png",
+        }]
+        manager = CharacterManager(
+            self.provider, self.notepad, library, self.image_provider, self.speech_provider,
+        )
+
+        self.assertIsNone(manager.get_player_character())
+        self.assertIsNone(manager.get_player_reference())
+
+        player = manager.update_player_character(
+            name="Valen",
+            reference="hero_portrait",
+            image_description="Tall knight in etched plate armor",
+        )
+        self.assertEqual(player.name, "Valen")
+        self.assertEqual(player.reference, "hero_alias")
+        self.assertEqual(player.reference_path, "/references/hero.png")
+        self.assertEqual(player.reference_source, "existing")
+        self.assertEqual(manager.get_player_reference(), "hero_alias")
+
+        # Calling update again preserves bindings unless reference is updated
+        updated = manager.update_player_character(image_description="Armor now tarnished")
+        self.assertEqual(updated.image_description, "Armor now tarnished")
+        self.assertEqual(updated.reference, "hero_alias")
+        self.assertEqual(updated.reference_path, "/references/hero.png")
+
+    def test_character_manager_generates_player_portrait_when_missing(self) -> None:
+        image = Image.new("RGB", (8, 8), "blue")
+        payload = BytesIO()
+        image.save(payload, "PNG")
+        provider = MagicMock(spec=ImageProvider)
+        provider.generate.return_value = ImageGenerationResult(
+            image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
+        )
+        library = MagicMock(spec=ImageLibrary)
+        with tempfile.TemporaryDirectory() as directory:
+            output = str(Path(directory) / "Valen_player_character.png")
+            library.reference_dir = directory
+            library.find_image_names.side_effect = [[], [{
+                "name": "Valen_player_character", "alias": "Valen_player_character", "path": output,
+            }]]
+            manager = CharacterManager(
+                self.provider, self.notepad, library, provider, self.speech_provider,
+            )
+            player = manager.update_player_character(
+                name="Valen",
+                image_description="Cloaked rogue with twin daggers",
+            )
+            self.assertEqual(player.reference_path, output)
+            self.assertEqual(player.reference_source, "generated")
+            self.assertTrue(Path(output).is_file())
+        provider.generate.assert_called_once()
+
+    def test_player_character_export_and_import(self) -> None:
+        manager = CharacterManager(
+            self.provider, self.notepad, self.image_library, self.image_provider, self.speech_provider,
+        )
+        manager.update_player_character(
+            name="Cora",
+            reference="cora_portrait",
+            image_description="Alchemist with goggles",
+        )
+        exported = manager.export_player_character()
+        self.assertIsNotNone(exported)
+        self.assertEqual(exported["name"], "Cora")
+        self.assertEqual(exported["image_description"], "Alchemist with goggles")
+
+        manager2 = CharacterManager(
+            self.provider, self.notepad, self.image_library, self.image_provider, self.speech_provider,
+        )
+        manager2.import_player_character(exported)
+        player2 = manager2.get_player_character()
+        self.assertIsNotNone(player2)
+        self.assertEqual(player2.name, "Cora")
+
+    def test_lookup_character_includes_player_character(self) -> None:
+        self.manager.update_player_character(
+            name="Aiden",
+            reference="aiden_img",
+            image_description="A battle-tested paladin",
+        )
+        self._create_character("Lyra", "A mystic scholar")
+
+        listing = self.manager.lookup_character()
+        self.assertIn("Characters encountered (2 total):", listing)
+        self.assertIn("[Player Character] Aiden:", listing)
+        self.assertIn("Lyra", listing)
+
+        match_player = self.manager.lookup_character("paladin")
+        self.assertIn("Aiden", match_player)
+        self.assertNotIn("Lyra", match_player)
+
+    def test_generate_character_profile_upsert_existing_updates_only_specified_fields(self) -> None:
+        self.manager.generate_character(
+            name="Orin",
+            description="An archivist",
+            personality="Patient",
+            motivation="Find truth",
+            quirk="Polishes a brass key",
+            gender="male",
+            voice_tags=["male"],
+        )
+        self.provider.generate.reset_mock()
+
+        # Update description and personality only; leave motivation, quirk, gender, voice unspecified
+        updated = self.manager.generate_character_profile(
+            name="Orin",
+            description="Chief Archivist of the High Library",
+            personality="Obsessive and perfectionist",
+        )
+
+        self.assertIsNotNone(updated)
+        self.provider.generate.assert_not_called()
+        self.assertEqual(updated.description, "Chief Archivist of the High Library")
+        self.assertEqual(updated.personality, "Obsessive and perfectionist")
+        self.assertEqual(updated.motivation, "Find truth")
+        self.assertEqual(updated.quirk, "Polishes a brass key")
+        self.assertEqual(updated.gender, "male")
+        self.assertEqual(updated.voice_tags, ["male"])
+        self.assertEqual(self.manager.count(), 1)
+
+    def test_generate_character_profile_upsert_updates_gender_and_voice_tags(self) -> None:
+        self.manager.generate_character(
+            name="Rowan",
+            description="A wandering healer",
+            personality="Empathetic",
+            motivation="Heal the afflicted",
+            quirk="Collects herbs in pockets",
+            gender="female",
+            voice_tags=["female"],
+        )
+        self.provider.generate.reset_mock()
+
+        updated = self.manager.generate_character_profile(
+            name="Rowan",
+            gender="nonbinary",
+        )
+
+        self.assertIsNotNone(updated)
+        self.provider.generate.assert_not_called()
+        self.assertEqual(updated.gender, "nonbinary")
+        self.assertIn("nonbinary", updated.voice_tags)
+        self.assertNotIn("female", updated.voice_tags)
+        self.assertEqual(updated.personality, "Empathetic")
+
+    def test_generate_character_profile_prioritizes_serialized_story_state_across_initializations(self) -> None:
+        # Simulate serialized story state loaded from previous session/persistence
+        serialized_story_state = {
+            "story_planning_state": {
+                "characters": [
+                    {
+                        "name": "Boran",
+                        "alias": "boran",
+                        "gender": "male",
+                        "description": "Veteran gatekeeper of Ironhold",
+                        "personality": "Stoic and unwavering",
+                        "motivation": "Protect the city gates",
+                        "quirk": "Chews dried mint leaves",
+                        "voice_tags": ["male"],
+                        "voice_id": "voice_boran_unique",
+                        "image_reference": "boran_face_ref",
+                    }
+                ]
+            }
+        }
+        self.manager.story_state = serialized_story_state
+        self.assertEqual(self.manager.count(), 0)
+        self.provider.generate.reset_mock()
+
+        # Story module views propose creating Boran with contradictory traits
+        profile = self.manager.generate_character_profile(
+            name="Boran",
+            description="A young, timid sentry",
+            personality="Cowardly and easily frightened",
+            motivation="Flee from danger",
+            quirk="Fidgets nervously",
+            gender="female",
+        )
+
+        self.assertIsNotNone(profile)
+        # LLM text provider shouldn't need to generate missing traits
+        self.provider.generate.assert_not_called()
+
+        # Serialized traits must take priority over story module's views for consistency
+        self.assertEqual(profile.gender, "male")
+        self.assertEqual(profile.personality, "Stoic and unwavering")
+        self.assertEqual(profile.motivation, "Protect the city gates")
+        self.assertEqual(profile.quirk, "Chews dried mint leaves")
+        self.assertEqual(profile.description, "Veteran gatekeeper of Ironhold")
+        self.assertEqual(profile.voice_id, "voice_boran_unique")
+        self.assertEqual(profile.image_reference, "boran_face_ref")
+        self.assertEqual(self.manager.count(), 1)
+
+    def test_generate_character_profile_partial_serialized_fills_missing_from_views_or_generation(self) -> None:
+        serialized_story_state = {
+            "story_planning_state": {
+                "characters": [
+                    {
+                        "name": "Kael",
+                        "alias": "kael",
+                        "gender": "nonbinary",
+                        "voice_tags": ["nonbinary"],
+                        "personality": "Stealthy rogue",
+                    }
+                ]
+            }
+        }
+        self.manager.story_state = serialized_story_state
+        quirk_service = MagicMock(spec=QuirkGeneratorService)
+        quirk_service.get_random_quirk.return_value = "Always counts coins twice"
+
+        # Story module specifies motivation, but quirk is missing in both
+        with patch(
+            "tools.story.character_manager.get_quirk_generator_service",
+            return_value=quirk_service,
+        ):
+            profile = self.manager.generate_character_profile(
+                name="Kael",
+                description="Shadow operative",
+                motivation="Recover the stolen ledger",
+            )
+
+        self.assertIsNotNone(profile)
+        # Serialized traits prioritized
+        self.assertEqual(profile.gender, "nonbinary")
+        self.assertEqual(profile.personality, "Stealthy rogue")
+        # Missing from serialized filled by story module view
+        self.assertEqual(profile.motivation, "Recover the stolen ledger")
+        self.assertEqual(profile.description, "Shadow operative")
+        # Missing quirk generated
+        self.assertEqual(profile.quirk, "Always counts coins twice")
 
 
 if __name__ == "__main__":

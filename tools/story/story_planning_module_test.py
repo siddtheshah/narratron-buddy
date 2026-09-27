@@ -7,7 +7,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
-from tools.story.character_manager import CharacterManager
+from tools.story.character_manager import Character, CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
 from tools.image.image_library import ImageLibrary
 from tools.story.notepad import Notepad
@@ -144,6 +144,35 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         character_manager.lookup_character.return_value = "Lyra: Mystic scholar"
         self.assertEqual(module._lookup_character("Lyra"), "Lyra: Mystic scholar")
         character_manager.lookup_character.assert_called_once_with("Lyra")
+
+    def test_delegates_player_and_character_management(self) -> None:
+        lore_library = MagicMock(spec=LoreLibrary)
+        character_manager = MagicMock(spec=CharacterManager)
+        character_manager.get_player_character.return_value = PlayerCharacter(
+            name="Valen", image_description="Armored knight", reference="valen_img"
+        )
+        character_manager.update_player_character.return_value = PlayerCharacter(
+            name="Valen", image_description="Armored knight", reference="valen_img"
+        )
+        character_manager.generate_character.return_value = Character(
+            name="Soran", alias="soran", gender="male", personality="Brave"
+        )
+        module = self._make_module(lore_library)
+        module.character_manager = character_manager
+
+        player = module.get_player_character()
+        self.assertEqual(player.name, "Valen")
+
+        info = module.get_player_character_info()
+        self.assertIn("Valen", info)
+
+        update_msg = module.update_player_character(name="Valen", image_description="Armored knight")
+        self.assertIn("Valen", update_msg)
+        character_manager.update_player_character.assert_called_once()
+
+        char_msg = module.update_character(name="Soran", personality="Brave")
+        self.assertIn("Soran", char_msg)
+        character_manager.generate_character.assert_called_once()
 
     def test_initializes_with_reflect_and_retry_plugin_by_default(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
@@ -611,6 +640,30 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         self.assertIn('Title: "The Iron Gate"', rendered)
         self.assertIn("Description: Ancient runes glowing blue", rendered)
 
+    def test_renders_player_character_and_characters_in_prompt(self) -> None:
+        player = PlayerCharacter(
+            name="Aiden",
+            image_description="A grim wanderer with a scarred cheek",
+            reference="aiden_portrait",
+        )
+        rendered = _DEEP_PLANNING_PROMPT_TEMPLATE.render(
+            deep_plan_json="",
+            current_notes=[],
+            structured_sticky_json="",
+            sticky_schema_json="",
+            turn_events=[],
+            max_sticky_notes=5,
+            recent_images=[],
+            player_character=player,
+            characters=[
+                Character(name="Lyra", personality="Curious", motivation="Truth", quirk="Hums", gender="female", image_reference="lyra_portrait")
+            ],
+        )
+        self.assertIn("# Canonical Player Character", rendered)
+        self.assertIn("Aiden", rendered)
+        self.assertIn("aiden_portrait", rendered)
+        self.assertIn("# Canonical Active Characters", rendered)
+        self.assertIn("Lyra", rendered)
 
 
 if __name__ == "__main__":

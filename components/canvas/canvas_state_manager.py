@@ -20,6 +20,18 @@ MAX_AGENT_THOUGHT_LENGTH = 360
 
 
 class CanvasStateManager:
+    theater: Optional[Theater] = None
+    theater_id: Optional[str] = None
+    theater_manager: Optional[object] = None
+    connections: Optional[ConnectionState] = None
+    visual: Optional[VisualState] = None
+    audio: Optional[AudioState] = None
+    doodles: Optional[DoodleState] = None
+    ui: Optional[UIState] = None
+    tool_response: Optional[ToolResponseState] = None
+    story: Optional[StoryState] = None
+    chat: Optional[ChatManager] = None
+
     def __init__(self, theater: Theater) -> None:
         self.theater = theater
         self.theater_id = theater.theater_id

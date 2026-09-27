@@ -24,6 +24,10 @@ class ImageLibrary:
     agent can later pass that identifier to ``show_image``.
     """
 
+    reference_dir: str = ""
+    output_dir: str = ""
+    references_manifest: dict[str, dict[str, str]] = {}
+
     def __init__(self, theater: Theater) -> None:
         self.theater = theater
         self.reference_dir = str(theater.references_dir())

@@ -24,7 +24,7 @@ from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.story.character_manager import CharacterManager
+from tools.story.character_manager import CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
 from tools.image.image_library import ImageLibrary
 from tools.story.notepad import (
@@ -134,7 +134,20 @@ The most recent generated images available to reference in sticky notes (newest 
 {% endfor -%}
 {% endif -%}
 
-# Lore and Image Tools
+{% if player_character -%}
+# Canonical Player Character
+- Name: {{ player_character.name or 'Unnamed Explorer' }}{% if player_character.image_description %} | Visual: {{ player_character.image_description }}{% endif %}{% if player_character.reference %} | Image Reference: {{ player_character.reference }}{% endif %}
+
+{% endif -%}
+{% if characters -%}
+# Canonical Active Characters
+{% for char in characters -%}
+- {{ char.name }}: Personality: {{ char.personality or 'N/A' }} | Motivation: {{ char.motivation or 'N/A' }} | Quirk: {{ char.quirk or 'N/A' }}{% if char.image_reference %} | Image Reference: {{ char.image_reference }}{% endif %}
+{% endfor -%}
+
+{% endif -%}
+# Character, Lore, and Image Tools
+You can canonically manage the player character using `update_player_character` (name, visual description, image reference) and query them with `get_player_character_info`. You can canonically create or update NPC records using `update_character` and look up all characters using `_lookup_character`.
 Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an older mounted or generated image not listed above. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
@@ -329,6 +342,59 @@ class StoryPlanningModule:
     def _lookup_character(self, query: str = "") -> str:
         return self.character_manager.lookup_character(query)
 
+    def get_player_character(self) -> PlayerCharacter | None:
+        """Return the canonical persisted identity and visual reference for the player character."""
+        return self.character_manager.get_player_character()
+
+    def get_player_character_info(self) -> str:
+        """Retrieve the canonical player character identity and visual reference."""
+        player = self.character_manager.get_player_character()
+        if not player:
+            return "No player character has been canonically established yet."
+        return player.describe()
+
+    def update_player_character(
+        self,
+        name: str = "",
+        image_description: str = "",
+        reference: str = "",
+    ) -> str:
+        """Canonically manage or update the player character's name, visual description, or image reference."""
+        player = self.character_manager.update_player_character(
+            name=name,
+            image_description=image_description,
+            reference=reference or None,
+        )
+        ref_info = f" Image reference: {player.reference}." if player.reference else ""
+        return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}.{ref_info}"
+
+    def update_character(
+        self,
+        name: str,
+        description: str = "",
+        personality: str = "",
+        motivation: str = "",
+        quirk: str = "",
+        voice_tags: Any = None,
+        gender: Optional[str] = None,
+        image_reference: str = "",
+    ) -> str:
+        """Canonically create or update an NPC record in the character manager."""
+        char = self.character_manager.generate_character(
+            name=name,
+            description=description,
+            personality=personality,
+            motivation=motivation,
+            quirk=quirk,
+            voice_tags=voice_tags,
+            gender=gender,
+            image_reference=image_reference,
+        )
+        if not char:
+            return f"Failed to update character '{name}'."
+        ref_info = f" Image reference: {char.image_reference}." if char.image_reference else ""
+        return f"Canonically updated character '{char.name}' (alias: {char.alias}).{ref_info}"
+
     def find_image_names(self, query: str = "") -> list[dict[str, str]]:
         """Find available image aliases and names for use in sticky notes.
 
@@ -408,6 +474,9 @@ class StoryPlanningModule:
                 self.deep_search_lore,
                 self.deep_read_lore,
                 self._lookup_character,
+                self.get_player_character_info,
+                self.update_player_character,
+                self.update_character,
                 self.find_image_names,
                 self.notepad.check_schema,
                 self.notepad.update_sticky_note,
@@ -634,6 +703,8 @@ class StoryPlanningModule:
             turn_events=event_payloads,
             max_sticky_notes=self.notepad.max_sticky_notes,
             recent_images=self._get_recent_images(),
+            player_character=self.character_manager.get_player_character(),
+            characters=self.character_manager.get_present_characters()
         ).strip()
 
         async def run_turn() -> Dict[str, Any]:

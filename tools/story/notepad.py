@@ -149,6 +149,8 @@ class Notepad:
     narration sessions.
     """
 
+    canvas_manager: Optional[CanvasStateManager] = None
+
     def __init__(
         self,
         theater: Theater,
