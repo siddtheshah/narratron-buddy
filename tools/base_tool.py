@@ -3,6 +3,7 @@ import concurrent.futures
 import functools
 import inspect
 import logging
+import re
 import threading
 import time
 from typing import Any, Callable, Dict, Optional, Set
@@ -11,6 +12,94 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 
 logger = logging.getLogger(__name__)
+
+
+# Common lightweight stop words for Jaccard BoW argument comparison
+_STOP_WORDS: Set[str] = {
+    "a", "an", "the", "and", "or", "but", "if", "then", "so", "to", "of",
+    "at", "by", "for", "with", "about", "in", "on", "into", "onto", "from",
+    "up", "down", "out", "over", "under", "again", "once", "here",
+    "there", "when", "where", "why", "how", "all", "any", "both", "each",
+    "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+    "only", "own", "same", "than", "too", "very", "can", "will", "just",
+    "should", "now", "i", "me", "my", "myself", "we", "our", "ours",
+    "ourselves", "you", "your", "yours", "yourself", "yourselves", "he",
+    "him", "his", "himself", "she", "her", "hers", "herself", "it", "its",
+    "itself", "they", "them", "their", "theirs", "themselves", "what",
+    "which", "who", "whom", "this", "that", "these", "those", "am", "is",
+    "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "having", "do", "does", "did", "doing", "would"
+}
+
+
+def normalize_text_to_tokens(text: str, filter_stop_words: bool = True) -> Set[str]:
+    """Tokenize and normalize text into a normalized set of word stems for fast BoW comparison."""
+    if not text:
+        return set()
+    cleaned = re.sub(r"[^\w\s]", " ", text.lower()).replace("_", " ")
+    raw_tokens = cleaned.split()
+    if not raw_tokens:
+        return set()
+
+    normalized: Set[str] = set()
+    for tok in raw_tokens:
+        if not tok:
+            continue
+        # Basic suffix normalization if token is long enough
+        if len(tok) > 4:
+            if tok.endswith("ing"):
+                tok = tok[:-3]
+            elif tok.endswith("ed"):
+                tok = tok[:-2]
+            elif tok.endswith("es"):
+                tok = tok[:-2]
+            elif tok.endswith("s") and not tok.endswith("ss"):
+                tok = tok[:-1]
+        normalized.add(tok)
+
+    if filter_stop_words:
+        filtered = normalized - _STOP_WORDS
+        if filtered:
+            return filtered
+    return normalized
+
+
+def extract_argument_tokens(args: tuple, kwargs: dict) -> Set[str]:
+    """Extract all normalized text tokens from tool args and kwargs for comparison."""
+    tokens: Set[str] = set()
+
+    def _collect(val: Any) -> None:
+        if isinstance(val, str):
+            tokens.update(normalize_text_to_tokens(val))
+        elif isinstance(val, (int, float, bool)):
+            tokens.add(f"val_{val}")
+        elif isinstance(val, (list, tuple, set)):
+            for item in val:
+                _collect(item)
+        elif isinstance(val, dict):
+            for k, v in val.items():
+                if isinstance(k, str):
+                    _collect(k)
+                _collect(v)
+
+    for arg in args:
+        _collect(arg)
+    for kwarg_val in kwargs.values():
+        _collect(kwarg_val)
+
+    return tokens
+
+
+def calculate_jaccard_bow_similarity(tokens1: Set[str], tokens2: Set[str]) -> float:
+    """Calculate the Jaccard similarity coefficient between two token sets."""
+    if not tokens1 and not tokens2:
+        return 1.0
+    if not tokens1 or not tokens2:
+        return 0.0
+    intersection_len = len(tokens1 & tokens2)
+    union_len = len(tokens1 | tokens2)
+    return float(intersection_len / union_len) if union_len > 0 else 0.0
+
 
 
 CANVAS_PINNED_MESSAGE = (
@@ -98,8 +187,19 @@ def single_flight(
                 tool_name = fn.__name__
                 if hasattr(self, "acquire_in_flight"):
                     if not self.acquire_in_flight(tool_name):
+                        if hasattr(self, "is_duplicate_call") and self.is_duplicate_call(tool_name, args, kwargs):
+                            logger.info(
+                                "[%s] Swallowed duplicate call for in-flight tool '%s' (args=%s, kwargs=%s)",
+                                self.__class__.__name__,
+                                tool_name,
+                                args,
+                                kwargs,
+                            )
+                            return f"Tool '{tool_name}' duplicate call ignored; action already in progress."
                         msg = error_message or f"{tool_name} is already in progress. Please wait for it to complete."
                         return msg
+                if hasattr(self, "record_call_args"):
+                    self.record_call_args(tool_name, args, kwargs)
 
                 resolved_timeout = timeout
                 if resolved_timeout is None and hasattr(self, "user_action_timeout_seconds"):
@@ -130,8 +230,19 @@ def single_flight(
                 tool_name = fn.__name__
                 if hasattr(self, "acquire_in_flight"):
                     if not self.acquire_in_flight(tool_name):
+                        if hasattr(self, "is_duplicate_call") and self.is_duplicate_call(tool_name, args, kwargs):
+                            logger.info(
+                                "[%s] Swallowed duplicate call for in-flight tool '%s' (args=%s, kwargs=%s)",
+                                self.__class__.__name__,
+                                tool_name,
+                                args,
+                                kwargs,
+                            )
+                            return f"Tool '{tool_name}' duplicate call ignored; action already in progress."
                         msg = error_message or f"{tool_name} is already in progress. Please wait for it to complete."
                         return msg
+                if hasattr(self, "record_call_args"):
+                    self.record_call_args(tool_name, args, kwargs)
 
                 resolved_timeout = timeout
                 if resolved_timeout is None and hasattr(self, "user_action_timeout_seconds"):
@@ -197,8 +308,19 @@ def with_cooldown(
                 trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                 if callable(trigger_cb):
                     trigger_cb(cooldown_key)
+                if hasattr(self, "is_duplicate_call") and self.is_duplicate_call(cooldown_key, args, kwargs):
+                    logger.info(
+                        "[%s] Swallowed duplicate call for '%s' during cooldown (args=%s, kwargs=%s)",
+                        self.__class__.__name__,
+                        cooldown_key,
+                        args,
+                        kwargs,
+                    )
+                    return f"Tool '{cooldown_key}' duplicate call ignored; action already in progress or completed."
                 return cooldown_err
 
+            if hasattr(self, "record_call_args"):
+                self.record_call_args(cooldown_key, args, kwargs)
             result = func(self, *args, **kwargs)
             if not _is_error_result(result):
                 self.record_tool_call(cooldown_key, duration=duration)
@@ -218,8 +340,19 @@ def with_cooldown(
                     trigger_cb = getattr(self, "_trigger_after_tool_call", None)
                     if callable(trigger_cb):
                         trigger_cb(cooldown_key)
+                    if hasattr(self, "is_duplicate_call") and self.is_duplicate_call(cooldown_key, args, kwargs):
+                        logger.info(
+                            "[%s] Swallowed duplicate call for '%s' during cooldown (args=%s, kwargs=%s)",
+                            self.__class__.__name__,
+                            cooldown_key,
+                            args,
+                            kwargs,
+                        )
+                        return f"Tool '{cooldown_key}' duplicate call ignored; action already in progress or completed."
                     return cooldown_err
 
+                if hasattr(self, "record_call_args"):
+                    self.record_call_args(cooldown_key, args, kwargs)
                 result = func(self, *args, **kwargs)
                 if not _is_error_result(result):
                     self.record_tool_call(cooldown_key, duration=duration)
@@ -258,6 +391,8 @@ def with_cycle_cooldown(
                     return msg
 
                 self._last_call_times[cooldown_key] = time.time()
+                if hasattr(self, "record_call_args"):
+                    self.record_call_args(cooldown_key, args, kwargs)
                 try:
                     result = await func(self, *args, **kwargs)
                     if not _is_error_result(result):
@@ -285,6 +420,8 @@ def with_cycle_cooldown(
                     return msg
 
                 self._last_call_times[cooldown_key] = time.time()
+                if hasattr(self, "record_call_args"):
+                    self.record_call_args(cooldown_key, args, kwargs)
                 try:
                     result = func(self, *args, **kwargs)
                     if not _is_error_result(result):
@@ -328,6 +465,16 @@ class BaseTools:
         self._cycle_cooldown_lock = threading.Lock()
         self._in_flight_tools: Set[str] = set()
         self._in_flight_lock = threading.Lock()
+
+        # Duplicate detection tracking (Normalized Jaccard BoW)
+        self._last_call_args: Dict[str, tuple[Set[str], float]] = {}
+        self._duplicate_lock = threading.Lock()
+        self._duplicate_jaccard_threshold: float = float(
+            self.config.get("duplicate_jaccard_threshold", 0.70)
+        )
+        self._duplicate_window_seconds: float = float(
+            self.config.get("duplicate_window_seconds", 30.0)
+        )
 
         # Determine cooldown duration directly from tool subconfig
         self.cooldown_duration: float = float(self.config.get("cooldown_duration", 0.0))
@@ -428,6 +575,18 @@ class BaseTools:
             if remaining <= 0.0:
                 return (False, None)
 
+            # Check if this call is a duplicate of the currently executing or pending cycle call
+            if self.is_duplicate_call(tool_name, args, kwargs):
+                logger.info(
+                    "[%s] Swallowed duplicate cycle call for '%s' (args=%s, kwargs=%s)",
+                    self.__class__.__name__,
+                    tool_name,
+                    args,
+                    kwargs,
+                )
+                msg = f"Tool '{tool_name}' duplicate call ignored; action already in progress or completed."
+                return (True, msg)
+
             is_update = tool_name in self._pending_cycle_calls
             self._pending_cycle_calls[tool_name] = {
                 "func": func,
@@ -456,6 +615,83 @@ class BaseTools:
         with lock:
             pending = getattr(self, "_pending_cycle_calls", {}).get(tool_name)
             return dict(pending) if pending else None
+
+    def get_argument_tokens(self, tool_name: str, args: tuple, kwargs: dict) -> Set[str]:
+        """Convert public tool call arguments to a normalized set of word tokens."""
+        return extract_argument_tokens(args, kwargs)
+
+    def is_duplicate_call(
+        self,
+        tool_name: str,
+        args: tuple,
+        kwargs: dict,
+        *,
+        threshold: Optional[float] = None,
+        window_seconds: Optional[float] = None,
+    ) -> bool:
+        """Check if incoming (args, kwargs) is a duplicate of a recent call or pending cycle call using Jaccard BoW."""
+        lock = getattr(self, "_duplicate_lock", None)
+        if lock is None:
+            self._duplicate_lock = threading.Lock()
+            self._last_call_args = {}
+            lock = self._duplicate_lock
+
+        target_threshold = self._duplicate_jaccard_threshold if threshold is None else threshold
+        target_window = self._duplicate_window_seconds if window_seconds is None else window_seconds
+        incoming_tokens = self.get_argument_tokens(tool_name, args, kwargs)
+
+        with lock:
+            # 1. Compare against currently pending cycle call, if any
+            pending = getattr(self, "_pending_cycle_calls", {}).get(tool_name)
+            if pending:
+                pending_tokens = self.get_argument_tokens(
+                    tool_name, pending.get("args", ()), pending.get("kwargs", {})
+                )
+                sim = calculate_jaccard_bow_similarity(incoming_tokens, pending_tokens)
+                if sim >= target_threshold:
+                    return True
+
+            # 2. Compare against last executed / dispatched call
+            last_entry = getattr(self, "_last_call_args", {}).get(tool_name)
+            if last_entry:
+                last_tokens, last_time = last_entry
+                elapsed = time.time() - last_time
+                if elapsed <= target_window:
+                    sim = calculate_jaccard_bow_similarity(incoming_tokens, last_tokens)
+                    if sim >= target_threshold:
+                        return True
+
+        return False
+
+    def record_call_args(self, tool_name: str, args: tuple, kwargs: dict) -> None:
+        """Record argument tokens and timestamp for low-latency duplicate detection."""
+        tokens = self.get_argument_tokens(tool_name, args, kwargs)
+        lock = getattr(self, "_duplicate_lock", None)
+        if lock is None:
+            self._duplicate_lock = threading.Lock()
+            self._last_call_args = {}
+            lock = self._duplicate_lock
+
+        with lock:
+            if not hasattr(self, "_last_call_args"):
+                self._last_call_args = {}
+            self._last_call_args[tool_name] = (tokens, time.time())
+
+    def clear_duplicate_history(self, tool_name: Optional[str] = None) -> None:
+        """Clear recorded duplicate call history."""
+        lock = getattr(self, "_duplicate_lock", None)
+        if lock is None:
+            self._duplicate_lock = threading.Lock()
+            self._last_call_args = {}
+            return
+
+        with lock:
+            if not hasattr(self, "_last_call_args"):
+                self._last_call_args = {}
+            if tool_name:
+                self._last_call_args.pop(tool_name, None)
+            else:
+                self._last_call_args.clear()
 
     def cancel_pending_cycle_call(self, tool_name: str) -> bool:
         """Cancel any pending cycle call for tool_name. Returns True if cancelled."""
@@ -495,6 +731,8 @@ class BaseTools:
             kwargs,
         )
         self._last_call_times[tool_name] = time.time()
+        if hasattr(self, "record_call_args"):
+            self.record_call_args(tool_name, args, kwargs)
         try:
             self.log_tool_call(tool_name, _tool_call_arguments(func, args, kwargs))
             if asyncio.iscoroutinefunction(func):

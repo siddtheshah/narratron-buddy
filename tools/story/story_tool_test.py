@@ -122,6 +122,30 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertEqual(pending["args"], ("Third action",))
         self.assertEqual(pending["kwargs"], {"nudge": "look closely"})
 
+    def test_process_user_action_swallows_duplicate_calls(self) -> None:
+        with (
+            patch("tools.story.story_tool.CharacterManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule") as response_type,
+        ):
+            response_type.return_value.process_user_action.return_value = {"narration": "Done"}
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+
+        # First call executes immediately
+        res1 = tool.process_user_action("Open the ancient door")
+        self.assertEqual(res1, {"narration": "Done"})
+        response_type.return_value.process_user_action.assert_called_once_with("Open the ancient door")
+
+        # Second call with slightly different phrasing / casing / punctuation is swallowed
+        res2 = tool.process_user_action("I open the ancient door.")
+        self.assertIn("duplicate call ignored", res2)
+
+        # Verify it was NOT enqueued for next cycle
+        pending = tool.get_pending_cycle_call("process_user_action")
+        self.assertIsNone(pending)
+
+
     def test_requires_text_response_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
             StoryTool(self.theater, self.canvas, None)  # type: ignore[arg-type]

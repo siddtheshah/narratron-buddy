@@ -4,7 +4,14 @@ import unittest
 from unittest.mock import MagicMock
 
 from testing.base import BaseTestCase
-from tools.base_tool import BaseTools, with_cooldown, with_cycle_cooldown, single_flight
+from tools.base_tool import (
+    BaseTools,
+    calculate_jaccard_bow_similarity,
+    normalize_text_to_tokens,
+    single_flight,
+    with_cooldown,
+    with_cycle_cooldown,
+)
 
 
 class SampleTools(BaseTools):
@@ -224,6 +231,79 @@ class TestBaseTools(BaseTestCase):
         res = sample.cycle_tool_dict_error(True)
         self.assertEqual(res, {"status": "ok"})
 
+    def test_normalize_text_to_tokens(self):
+        tokens1 = normalize_text_to_tokens("I open the wooden chest.")
+        self.assertEqual(tokens1, {"open", "wooden", "chest"})
+
+        tokens2 = normalize_text_to_tokens("Open the wooden chests!")
+        self.assertEqual(tokens2, {"open", "wooden", "chest"})
+
+        # Stop word fallback for purely stop words
+        tokens_stop = normalize_text_to_tokens("I do it")
+        self.assertEqual(tokens_stop, {"do"})
+
+    def test_calculate_jaccard_bow_similarity(self):
+        s1 = {"open", "wooden", "chest"}
+        s2 = {"open", "wooden", "chest"}
+        self.assertEqual(calculate_jaccard_bow_similarity(s1, s2), 1.0)
+
+        s3 = {"open", "wooden", "door"}
+        # Intersection: {"open", "wooden"} (2), Union: {"open", "wooden", "chest", "door"} (4)
+        self.assertEqual(calculate_jaccard_bow_similarity(s1, s3), 0.5)
+
+        self.assertEqual(calculate_jaccard_bow_similarity(set(), set()), 1.0)
+        self.assertEqual(calculate_jaccard_bow_similarity(s1, set()), 0.0)
+
+    def test_with_cycle_cooldown_swallows_duplicate_calls(self):
+        sample = self.make_sample({})
+        # First call executes immediately
+        res1 = sample.cycle_tool("Open the treasure chest")
+        self.assertEqual(res1, "Ran Open the treasure chest")
+        self.assertEqual(sample.cycle_calls, ["Open the treasure chest"])
+
+        # Second call within cooldown with basically identical text is swallowed
+        res2 = sample.cycle_tool("I open the treasure chest.")
+        self.assertIn("duplicate call ignored", res2)
+        # Should NOT be queued for next cycle
+        self.assertIsNone(sample.get_pending_cycle_call("cycle_tool"))
+        self.assertEqual(sample.cycle_calls, ["Open the treasure chest"])
+
+        # Third call with genuinely different parameters is scheduled
+        res3 = sample.cycle_tool("Cast a protective shield spell")
+        self.assertEqual(res3, "Tool 'cycle_tool' scheduled for next cycle when cooldown expires.")
+        self.assertIsNotNone(sample.get_pending_cycle_call("cycle_tool"))
+
+        # Fourth call that duplicates the pending call is also swallowed
+        res4 = sample.cycle_tool("cast protective shield spell")
+        self.assertIn("duplicate call ignored", res4)
+        pending = sample.get_pending_cycle_call("cycle_tool")
+        self.assertEqual(pending["args"], ("Cast a protective shield spell",))
+
+        # Wait for cooldown to expire and verify only the genuinely new call executed
+        time.sleep(0.25)
+        self.assertEqual(
+            sample.cycle_calls,
+            ["Open the treasure chest", "Cast a protective shield spell"],
+        )
+
+    def test_with_cooldown_swallows_duplicate_calls(self):
+        sample = self.make_sample({"cooldown_duration": 10.0})
+        res1 = sample.quick_tool()
+        self.assertEqual(res1, "Success")
+
+        # Duplicate call during cooldown returns swallowed confirmation instead of error
+        res2 = sample.quick_tool()
+        self.assertIn("duplicate call ignored", res2)
+
+    def test_single_flight_swallows_duplicate_calls(self):
+        sample = self.make_sample({})
+        sample.acquire_in_flight("fast_single_flight")
+        # In-flight duplicate call is swallowed cleanly
+        sample.record_call_args("fast_single_flight", (), {})
+        res = sample.fast_single_flight()
+        self.assertIn("duplicate call ignored", res)
+
 
 if __name__ == "__main__":
     unittest.main()
+
