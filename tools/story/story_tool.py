@@ -98,26 +98,21 @@ class StoryTool(BaseTools):
         if character_manager is not None:
             self.character_manager = character_manager
         else:
-            character_images = raw_config.get("character_images", {})
-            character_images = character_images if isinstance(character_images, dict) else {}
+            visuals_config = raw_config.get("visuals", {})
+            visuals_config = visuals_config if type(visuals_config) is dict else {}
             character_image_provider = image_provider
-            if character_image_provider is None and character_images.get("enabled", True):
-                character_image_model = str(character_images.get("model") or "").strip()
-                character_image_options = character_images.get("model_options") or {}
-                if character_image_model and isinstance(character_image_options, dict):
+            if character_image_provider is None:
+                character_image_model = str(visuals_config.get("model") or "").strip()
+                character_image_options = visuals_config.get("model_options") or {}
+                if character_image_model and type(character_image_options) is dict:
                     try:
                         character_image_provider = get_image_provider(
                             character_image_model, character_image_options
                         )
                     except (ImageProviderError, ValueError) as exc:
                         logger.warning("[StoryTool] Character image provider unavailable: %s", exc)
-            if speech_provider is None:
-                scene_speech = getattr(canvas_manager, "story", None)
-                candidate = getattr(scene_speech, "speech_provider", None)
-                if isinstance(candidate, SpeechProvider):
-                    speech_provider = candidate
-                else:
-                    speech_provider = None
+            if speech_provider is None and canvas_manager.story is not None:
+                speech_provider = canvas_manager.story.speech_provider
             story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
             self.character_manager = CharacterManager(
                 text_response_provider=text_response_provider,
@@ -126,7 +121,7 @@ class StoryTool(BaseTools):
                 image_library=self.image_library,
                 image_provider=character_image_provider,
                 speech_provider=speech_provider,
-                character_image_style=str(character_images.get("style") or "").strip(),
+                character_image_style=str(visuals_config.get("style") or "").strip(),
             )
         configured_session_id = str(self.config.get("session_id") or "").strip()
         theater_id = getattr(theater, "theater_id", "")

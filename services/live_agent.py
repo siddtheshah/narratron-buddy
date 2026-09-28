@@ -371,19 +371,18 @@ def create_tool_bundle_for_session(theater: Theater) -> ToolBundle:
             str(story_planning_config.get("text_provider", "gemini-3")),
             {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
         )
-        character_images = config.get("character_images", {})
-        character_images = character_images if isinstance(character_images, dict) else {}
+        visuals_config = config.get("visuals", {})
+        visuals_config = visuals_config if type(visuals_config) is dict else {}
         character_image_provider = None
-        if character_images.get("enabled", True):
-            character_image_model = str(character_images.get("model") or "").strip()
-            character_image_options = character_images.get("model_options") or {}
-            if character_image_model and isinstance(character_image_options, dict):
-                try:
-                    character_image_provider = get_image_provider(
-                        character_image_model, character_image_options
-                    )
-                except (ImageProviderError, ValueError) as exc:
-                    logger.warning("[create_tool_bundle_for_session] Character image provider unavailable: %s", exc)
+        character_image_model = str(visuals_config.get("model") or "").strip()
+        character_image_options = visuals_config.get("model_options") or {}
+        if character_image_model and type(character_image_options) is dict:
+            try:
+                character_image_provider = get_image_provider(
+                    character_image_model, character_image_options
+                )
+            except (ImageProviderError, ValueError) as exc:
+                logger.warning("[create_tool_bundle_for_session] Character image provider unavailable: %s", exc)
         speech_provider = None
         if canvas_manager.story is not None:
             speech_provider = canvas_manager.story.speech_provider
@@ -395,7 +394,7 @@ def create_tool_bundle_for_session(theater: Theater) -> ToolBundle:
             image_library=image_library,
             image_provider=character_image_provider,
             speech_provider=speech_provider,
-            character_image_style=str(character_images.get("style") or "").strip(),
+            character_image_style=str(visuals_config.get("style") or "").strip(),
         )
 
     # Initialize tools reusing intermediate components across them

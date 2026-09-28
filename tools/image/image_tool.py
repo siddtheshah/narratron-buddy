@@ -11,6 +11,7 @@ from PIL import Image
 
 from providers import (
     ImageGenerationRequest,
+    ImageProvider,
     ImageProviderError,
     ImageReference,
     get_image_provider,
@@ -67,7 +68,7 @@ class ImageTools(BaseTools):
         if not isinstance(provider_options, dict):
             raise ValueError("visuals.model_options must be a mapping.")
         self.image_provider_options = dict(provider_options)
-        self._image_provider = None
+        self._image_provider: Optional[ImageProvider] = None
         self.on_image_created: Optional[Callable] = None
 
         self.adventure_mode = bool(adventure_mode)
@@ -417,11 +418,16 @@ class ImageTools(BaseTools):
 
         return f"Image generation started in background with alias '{image_name}' for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
 
-    def _get_image_provider(self):
+    def _get_image_provider(self) -> ImageProvider:
         """Build the configured provider once per session-scoped tool instance."""
         if self._image_provider is None:
             self._image_provider = get_image_provider(self.image_model, self.image_provider_options)
         return self._image_provider
+
+    @property
+    def image_provider(self) -> ImageProvider:
+        """The configured image provider instance."""
+        return self._get_image_provider()
 
     @blocked_when_canvas_pinned
     @with_cycle_cooldown(action_desc="showing another image")
