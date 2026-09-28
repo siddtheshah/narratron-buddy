@@ -57,6 +57,8 @@ export function createImageRenderer({
     let imageEffectController = null;
     let currentImageEffect = "none";
     let layeredAnimationRequest = null;
+    let currentSequenceFrames = [];
+    let currentLayeredFrames = [];
 
     function areImageEffectsEnabled() {
         return typeof imageEffectsEnabled === "function"
@@ -224,6 +226,28 @@ export function createImageRenderer({
             } catch (e) {}
             currentVideo = null;
         }
+        if (currentSequenceFrames && currentSequenceFrames.length > 0) {
+            currentSequenceFrames.forEach((frame) => {
+                try {
+                    frame.onload = null;
+                    frame.onerror = null;
+                    frame.src = "";
+                } catch (e) {}
+            });
+            currentSequenceFrames = [];
+        }
+        if (currentLayeredFrames && currentLayeredFrames.length > 0) {
+            currentLayeredFrames.forEach((layer) => {
+                try {
+                    if (layer.source) {
+                        layer.source.onload = null;
+                        layer.source.onerror = null;
+                        layer.source.src = "";
+                    }
+                } catch (e) {}
+            });
+            currentLayeredFrames = [];
+        }
     }
 
     async function applyTransition(imageUrl, transition = "crossfade", effect = "gleam3") {
@@ -339,7 +363,17 @@ export function createImageRenderer({
             }
             return frame;
         }));
-        if (generation !== sequenceGeneration || frames.some((frame) => !frame.naturalWidth)) return;
+        if (generation !== sequenceGeneration || frames.some((frame) => !frame.naturalWidth)) {
+            frames.forEach((frame) => {
+                try {
+                    frame.onload = null;
+                    frame.onerror = null;
+                    frame.src = "";
+                } catch (e) {}
+            });
+            return;
+        }
+        currentSequenceFrames = frames;
 
         const oldSnapshot = captureCanvasSnapshot();
         const sequenceStartTime = performance.now();
@@ -440,7 +474,19 @@ export function createImageRenderer({
             try { await source.decode(); } catch { await new Promise(resolve => { source.onload = resolve; source.onerror = resolve; }); }
             return { ...layer, source };
         }));
-        if (generation !== sequenceGeneration || prepared.some(layer => !layer.source.naturalWidth)) return;
+        if (generation !== sequenceGeneration || prepared.some(layer => !layer.source.naturalWidth)) {
+            prepared.forEach((layer) => {
+                try {
+                    if (layer.source) {
+                        layer.source.onload = null;
+                        layer.source.onerror = null;
+                        layer.source.src = "";
+                    }
+                } catch (e) {}
+            });
+            return;
+        }
+        currentLayeredFrames = prepared;
 
         const oldSnapshot = captureCanvasSnapshot();
         const crossfadeDuration = typeof options === "number"

@@ -3,7 +3,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_canvas_contains_configurable_text_hotkey_controls():
+def test_canvas_contains_configurable_text_hotkey_controls() -> None:
     content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
 
     # Check button and display elements exist under microphone controls modal
@@ -18,7 +18,7 @@ def test_canvas_contains_configurable_text_hotkey_controls():
     assert 'id="menu-item-text-hotkey"' in mic_modal_snippet
 
 
-def test_canvas_contains_text_hotkey_rebinding_and_storage_logic():
+def test_canvas_contains_text_hotkey_rebinding_and_storage_logic() -> None:
     content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
 
     # Storage key for text hotkey preference
@@ -40,7 +40,17 @@ def test_canvas_contains_text_hotkey_rebinding_and_storage_logic():
     assert "openOratorCommand();" in content
 
 
-def test_orator_howto_modal_documents_text_input_and_configuration():
+def test_canvas_text_hotkey_can_dismiss_orator_command() -> None:
+    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+
+    # Both open and close paths are supported when hotkey is triggered
+    assert "if (isOratorCommandOpen()) {" in content
+    assert "closeOratorCommand();" in content
+    assert "isTextHotkeyEvent" in content
+    assert 'id="orator-command-dismiss-hotkey"' in content
+
+
+def test_orator_howto_modal_documents_text_input_and_configuration() -> None:
     content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
 
     howto_snippet = content.split('id="orator-howto-modal"', 1)[1].split('id="howto-ack-btn"', 1)[0]
@@ -52,3 +62,4 @@ def test_orator_howto_modal_documents_text_input_and_configuration():
     # Documents how to customize hotkeys in Microphone Configuration
     assert "Microphone Configuration" in howto_snippet
     assert 'id="howto-tip-text-hotkey"' in howto_snippet
+

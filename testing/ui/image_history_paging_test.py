@@ -181,3 +181,12 @@ class TestImageHistoryPaging(UITestCase):
         # Ensure prompt button reads original animation prompt
         self.assertIn("item.prompt || (item.animation && item.animation.scene_prompt)", canvas)
 
+    def test_canvas_unloads_history_images_outside_sliding_window(self) -> None:
+        canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+        self.assertIn("const HISTORY_WINDOW_RADIUS = 5;", canvas)
+        self.assertIn("const loadedHistoryResources = new Map();", canvas)
+        self.assertIn("function unloadHistoryResource(resource)", canvas)
+        self.assertIn("function pruneHistoryResources(centerIndex)", canvas)
+        self.assertIn("function trackHistoryResource(index, resource)", canvas)
+        self.assertIn("pruneHistoryResources(currentViewIndex);", canvas)
+

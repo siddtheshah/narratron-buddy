@@ -2737,7 +2737,7 @@
                         placeholder="Tell Narratron what to do…" aria-describedby="orator-command-hint">
                     <div id="orator-command-hint"
                         style="display: flex; justify-content: space-between; gap: 1rem; margin-top: 0.75rem; color: #94a3b8; font-size: 0.78rem;">
-                        <span>Enter to send · Esc to cancel</span>
+                        <span id="orator-command-hint-text">Enter to send · Esc or <span id="orator-command-dismiss-hotkey">Shift + Space</span> to dismiss</span>
                         <span id="orator-command-status" aria-live="polite"></span>
                     </div>
                 </form>
@@ -3746,8 +3746,16 @@
             requestAnimationFrame(() => oratorCommandInput.focus());
         }
 
+        function isTextHotkeyEvent(event) {
+            if (typeof currentTextHotkey === 'undefined' || !currentTextHotkey) return false;
+            return event.code === currentTextHotkey.code &&
+                !!event.altKey === !!currentTextHotkey.altKey &&
+                !!event.ctrlKey === !!currentTextHotkey.ctrlKey &&
+                !!event.shiftKey === !!currentTextHotkey.shiftKey;
+        }
+
         oratorCommandInput?.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
+            if (event.key === 'Escape' || isTextHotkeyEvent(event)) {
                 event.preventDefault();
                 event.stopPropagation();
                 closeOratorCommand();
@@ -4311,6 +4319,81 @@
         let hasNewHeadWhilePagedBack = false;
         let lastAnimationSignature = '';
 
+        const HISTORY_WINDOW_RADIUS = 5;
+        const loadedHistoryResources = new Map();
+
+        function unloadHistoryResource(resource) {
+            if (!resource) return;
+            if (resource.img) {
+                try {
+                    resource.img.onload = null;
+                    resource.img.onerror = null;
+                    resource.img.src = '';
+                } catch (e) {}
+                resource.img = null;
+            }
+            if (Array.isArray(resource.frames)) {
+                resource.frames.forEach((frame) => {
+                    if (frame) {
+                        try {
+                            frame.onload = null;
+                            frame.onerror = null;
+                            frame.src = '';
+                        } catch (e) {}
+                    }
+                });
+                resource.frames = [];
+            }
+            if (resource.video) {
+                try {
+                    resource.video.pause();
+                    resource.video.removeAttribute('src');
+                    resource.video.load();
+                } catch (e) {}
+                resource.video = null;
+            }
+        }
+
+        function pruneHistoryResources(centerIndex) {
+            if (typeof centerIndex !== 'number' || centerIndex < 0) return;
+            const minIndex = centerIndex - HISTORY_WINDOW_RADIUS;
+            const maxIndex = centerIndex + HISTORY_WINDOW_RADIUS;
+            for (const [index, resource] of loadedHistoryResources.entries()) {
+                if (index < minIndex || index > maxIndex) {
+                    unloadHistoryResource(resource);
+                    loadedHistoryResources.delete(index);
+                }
+            }
+        }
+
+        function trackHistoryResource(index, resource) {
+            if (index < 0) return;
+            if (loadedHistoryResources.has(index)) {
+                const prev = loadedHistoryResources.get(index);
+                if (prev !== resource) {
+                    unloadHistoryResource(prev);
+                }
+            }
+            loadedHistoryResources.set(index, resource);
+            pruneHistoryResources(currentViewIndex >= 0 ? currentViewIndex : index);
+        }
+
+        function preloadHistoryNeighbor(index) {
+            if (index < 0 || index >= imageHistory.length || loadedHistoryResources.has(index)) return;
+            const item = imageHistory[index];
+            if (!item || !item.url || item.animation) return;
+            const img = new Image();
+            img.src = item.url;
+            trackHistoryResource(index, { type: 'image', img });
+        }
+
+        window.__historyResourceManager = {
+            loadedHistoryResources,
+            pruneHistoryResources,
+            unloadHistoryResource,
+            HISTORY_WINDOW_RADIUS,
+        };
+
         initializeStoryLogInspector(theaterId);
 
         function getAnimationSignature(animation) {
@@ -4403,6 +4486,8 @@
                 hasNewHeadWhilePagedBack = false;
             }
 
+            pruneHistoryResources(currentViewIndex);
+
             const item = imageHistory[currentViewIndex];
             if (!item || (!item.url && !item.animation)) return;
 
@@ -4420,10 +4505,23 @@
             const animSignature = getAnimationSignature(item.animation);
             if (animSignature) {
                 playAnimation(item.animation);
+                trackHistoryResource(currentViewIndex, {
+                    type: 'animation',
+                    animation: item.animation,
+                });
             } else if (item.url) {
                 const imgUrl = item.url + (item.url.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
                 applyImageTransition(imgUrl, transition, item.effect || 'gleam3');
+                const cachedImg = new Image();
+                cachedImg.src = imgUrl;
+                trackHistoryResource(currentViewIndex, {
+                    type: 'image',
+                    img: cachedImg,
+                });
             }
+
+            preloadHistoryNeighbor(currentViewIndex - 1);
+            preloadHistoryNeighbor(currentViewIndex + 1);
 
             updatePagingControlsUI();
         }
@@ -4514,6 +4612,7 @@
                         animation: data.animation || null
                     }];
                 }
+                pruneHistoryResources(currentViewIndex >= 0 ? currentViewIndex : imageHistory.length - 1);
 
                 const currentImageEffect = data.effect || 'gleam3';
                 const animationSignature = getAnimationSignature(data.animation);
@@ -4531,6 +4630,7 @@
                     currentViewIndex = imageHistory.length - 1;
                     isPagedBack = false;
                     hasNewHeadWhilePagedBack = false;
+                    pruneHistoryResources(currentViewIndex);
                     if (data.latest || animationSignature) {
                         lastTime = data.time;
                         lastImageRawUrl = data.latest;
@@ -4538,9 +4638,19 @@
                         lastAnimationSignature = animationSignature;
                         if (animationSignature) {
                             playAnimation(data.animation);
+                            trackHistoryResource(currentViewIndex, {
+                                type: 'animation',
+                                animation: data.animation,
+                            });
                         } else {
                             const newImgUrl = data.latest + "?t=" + new Date().getTime();
                             applyImageTransition(newImgUrl, 'none', currentImageEffect);
+                            const cachedImg = new Image();
+                            cachedImg.src = newImgUrl;
+                            trackHistoryResource(currentViewIndex, {
+                                type: 'image',
+                                img: cachedImg,
+                            });
                         }
                         const activePrompt = data.prompt || (data.animation && data.animation.scene_prompt) || "";
                         if (activePrompt) {
@@ -4561,6 +4671,7 @@
                         currentViewIndex = imageHistory.length - 1;
                         isPagedBack = false;
                         hasNewHeadWhilePagedBack = false;
+                        pruneHistoryResources(currentViewIndex);
 
                         doodleActions = [];
                         redrawAllDoodles();
@@ -4574,6 +4685,10 @@
                             promptBtn.style.display = 'none';
                             promptPinned = false;
                             playAnimation(data.animation);
+                            trackHistoryResource(currentViewIndex, {
+                                type: 'animation',
+                                animation: data.animation,
+                            });
                             if (activePrompt) {
                                 promptTextSpan.textContent = activePrompt;
                                 promptBtn.style.display = 'flex';
@@ -4593,6 +4708,10 @@
                             promptPinned = false;
 
                             applyImageTransition(newImgUrl, transition, currentImageEffect);
+                            trackHistoryResource(currentViewIndex, {
+                                type: 'image',
+                                img: tempImage,
+                            });
 
                             if (activePrompt) {
                                 promptTextSpan.textContent = activePrompt;
@@ -4615,6 +4734,8 @@
                     if (currentImage) currentImage.classList.remove('loaded');
                     if (ghostImage) { ghostImage.src = ''; ghostImage.style.opacity = '0'; }
                     if (promptBtn) promptBtn.style.display = 'none';
+                    loadedHistoryResources.forEach((res) => unloadHistoryResource(res));
+                    loadedHistoryResources.clear();
                     updatePagingControlsUI();
                 } else {
                     updatePagingControlsUI();
@@ -6480,6 +6601,10 @@
             if (howtoTipTextDisplay) {
                 howtoTipTextDisplay.textContent = formatHotkeyLabel(currentTextHotkey);
             }
+            const dismissHotkeyDisplay = document.getElementById('orator-command-dismiss-hotkey');
+            if (dismissHotkeyDisplay) {
+                dismissHotkeyDisplay.textContent = formatHotkeyLabel(currentTextHotkey);
+            }
         }
 
         updateHotkeyUI();
@@ -6551,8 +6676,6 @@
         // Global Keydown Listener for Hotkey
         window.addEventListener('keydown', (e) => {
             if (!isCurrentOrator()) return;
-
-            if (isOratorCommandOpen()) return;
 
             // Rebinding text hotkey state
             if (isRebindingTextHotkey) {
@@ -6664,14 +6787,8 @@
                 return;
             }
 
-            // Normal hotkey listening for toggling mic
+            // Normal hotkey listening for toggling mic or text command
             if (e.repeat) return;
-
-            // Do not trigger hotkey if typing in input or textarea
-            const activeEl = document.activeElement;
-            if (activeEl && (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) || activeEl.isContentEditable)) {
-                return;
-            }
 
             // Match configurable text input hotkey
             const matchTextCode = e.code === currentTextHotkey.code;
@@ -6681,7 +6798,24 @@
 
             if (matchTextCode && matchTextAlt && matchTextCtrl && matchTextShift) {
                 e.preventDefault();
-                openOratorCommand();
+                if (isOratorCommandOpen()) {
+                    closeOratorCommand();
+                } else {
+                    const activeEl = document.activeElement;
+                    if (activeEl && (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) || activeEl.isContentEditable)) {
+                        return;
+                    }
+                    openOratorCommand();
+                }
+                return;
+            }
+
+            // Do not trigger other hotkeys if orator command is currently open
+            if (isOratorCommandOpen()) return;
+
+            // Do not trigger hotkey if typing in input or textarea
+            const activeEl = document.activeElement;
+            if (activeEl && (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) || activeEl.isContentEditable)) {
                 return;
             }
 
