@@ -15,6 +15,8 @@ class ToolBundle:
     callback methods for system re-injection.
     """
 
+    tools: List[BaseTool]
+
     def __init__(
         self,
         tools: Sequence[Union[BaseTool, Callable, Any]],
@@ -23,7 +25,7 @@ class ToolBundle:
             raise TypeError(
                 f"Parameter 'tools' must be a sequence of ADK BaseTool objects or callables, got {type(tools).__name__}."
             )
-        self.tools: List[BaseTool] = []
+        self.tools = []
         for item in tools:
             if isinstance(item, BaseTool):
                 self.tools.append(item)

@@ -58,6 +58,9 @@ class StoryTool(BaseTools):
         image_library: Optional[ImageLibrary] = None,
         image_provider: ImageProvider | None = None,
         speech_provider: SpeechProvider | None = None,
+        character_manager: Optional[CharacterManager] = None,
+        notepad: Optional[Notepad] = None,
+        lore_library: Optional[LoreLibrary] = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
@@ -79,7 +82,7 @@ class StoryTool(BaseTools):
         self.action_cooldown_words_per_second = max(1.0, float(self.config.get("action_cooldown_words_per_second", 5.0)))
         self.action_cooldown_max_seconds = max(self.action_cooldown_base_seconds, float(self.config.get("action_cooldown_max_seconds", 30.0)))
         # This is the single note collection for both story modules.
-        self.notepad = Notepad(
+        self.notepad = notepad if notepad is not None else Notepad(
             theater,
             canvas_manager=canvas_manager,
             # Adventure planning defaults to strict per-sticky contracts, but
@@ -90,38 +93,41 @@ class StoryTool(BaseTools):
         self._pending_actions: list[str] = []
         self._load_story_log()
 
-        self.lore_library = LoreLibrary(theater=theater)
-        self.image_library = image_library or ImageLibrary(theater=theater)
-        character_images = raw_config.get("character_images", {})
-        character_images = character_images if isinstance(character_images, dict) else {}
-        character_image_provider = image_provider
-        if character_image_provider is None and character_images.get("enabled", True):
-            character_image_model = str(character_images.get("model") or "").strip()
-            character_image_options = character_images.get("model_options") or {}
-            if character_image_model and isinstance(character_image_options, dict):
-                try:
-                    character_image_provider = get_image_provider(
-                        character_image_model, character_image_options
-                    )
-                except (ImageProviderError, ValueError) as exc:
-                    logger.warning("[StoryTool] Character image provider unavailable: %s", exc)
-        if speech_provider is None:
-            scene_speech = getattr(canvas_manager, "story", None)
-            candidate = getattr(scene_speech, "speech_provider", None)
-            if isinstance(candidate, SpeechProvider):
-                speech_provider = candidate
-            else:
-                speech_provider = None
-        story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
-        self.character_manager = CharacterManager(
-            text_response_provider=text_response_provider,
-            notepad=self.notepad,
-            story_state=story_state,
-            image_library=self.image_library,
-            image_provider=character_image_provider,
-            speech_provider=speech_provider,
-            character_image_style=str(character_images.get("style") or "").strip(),
-        )
+        self.lore_library = lore_library if lore_library is not None else LoreLibrary(theater=theater)
+        self.image_library = image_library if image_library is not None else ImageLibrary(theater=theater)
+        if character_manager is not None:
+            self.character_manager = character_manager
+        else:
+            character_images = raw_config.get("character_images", {})
+            character_images = character_images if isinstance(character_images, dict) else {}
+            character_image_provider = image_provider
+            if character_image_provider is None and character_images.get("enabled", True):
+                character_image_model = str(character_images.get("model") or "").strip()
+                character_image_options = character_images.get("model_options") or {}
+                if character_image_model and isinstance(character_image_options, dict):
+                    try:
+                        character_image_provider = get_image_provider(
+                            character_image_model, character_image_options
+                        )
+                    except (ImageProviderError, ValueError) as exc:
+                        logger.warning("[StoryTool] Character image provider unavailable: %s", exc)
+            if speech_provider is None:
+                scene_speech = getattr(canvas_manager, "story", None)
+                candidate = getattr(scene_speech, "speech_provider", None)
+                if isinstance(candidate, SpeechProvider):
+                    speech_provider = candidate
+                else:
+                    speech_provider = None
+            story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
+            self.character_manager = CharacterManager(
+                text_response_provider=text_response_provider,
+                notepad=self.notepad,
+                story_state=story_state,
+                image_library=self.image_library,
+                image_provider=character_image_provider,
+                speech_provider=speech_provider,
+                character_image_style=str(character_images.get("style") or "").strip(),
+            )
         configured_session_id = str(self.config.get("session_id") or "").strip()
         theater_id = getattr(theater, "theater_id", "")
         self.planning_session_service = InMemorySessionService()

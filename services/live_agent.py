@@ -11,8 +11,13 @@ from google.adk.sessions.base_session_service import GetSessionConfig
 from google.genai import types
 from jinja2 import StrictUndefined, Template
 
-from components.canvas.canvas_state_service import CanvasStateService
-from components.theater_manager import TheaterManager
+from components.canvas.canvas_state_manager import CanvasStateManager
+from components.canvas.story_state import StoryState
+from components.character_manager import CharacterManager
+from components.image_library import ImageLibrary
+from components.lore_library import LoreLibrary
+from components.notepad import Notepad
+from components.theater_manager import Theater, TheaterManager
 from tools.chat_tool import ChatTools
 from tools.image import ImageTools
 from tools.animation_tool import AnimationTools
@@ -24,8 +29,13 @@ from tools.story import StoryTool
 from tools.notepad_tool import NotepadTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
-from providers import get_text_response_provider, get_video_provider
-from utils.config_loader import get_app_config, get_theater_config
+from providers import (
+    ImageProviderError,
+    get_image_provider,
+    get_text_response_provider,
+    get_video_provider,
+)
+from utils.config_loader import get_app_config
 
 logger = logging.getLogger(__name__)
 
@@ -336,29 +346,66 @@ def get_playlists_context(theater: Any) -> str:
         return f"Error loading playlists context: {e}"
 
 
-def create_tool_bundle_for_session(
-    theater_id: str,
-    config: dict,
-    canvas_state_service: Optional[Any] = None,
-    theater_manager: Optional[TheaterManager] = None,
-    database_manager: Optional[Any] = None,
-    music_catalog: Optional[MusicCatalog] = None,
-) -> ToolBundle:
+def create_tool_bundle_for_session(theater: Theater) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
-    theater_manager = theater_manager or TheaterManager()
-    canvas_state_service = canvas_state_service or CanvasStateService(theater_manager)
-    theater = theater_manager.theater(theater_id)
-    canvas_manager = canvas_state_service.get(theater_id)
+    config = theater.config()
     story_planning_config = config.get("story_planning", {})
     adventure_mode = bool(story_planning_config.get("adventure_mode", False))
     image_config = config.get("image_generation", {})
     image_generation_enabled = bool(image_config.get("enabled", True))
 
+    # Create intermediate components from components/ first
+    canvas_manager = CanvasStateManager(theater)
+    image_library = ImageLibrary(theater)
+    lore_library = LoreLibrary(theater=theater)
+    notepad = Notepad(
+        theater,
+        canvas_manager=canvas_manager,
+        enforce_structured=bool(story_planning_config.get("enforce_structured", True)) if adventure_mode else False,
+    )
+
+    character_manager: Optional[CharacterManager] = None
+    story_planning_text_provider = None
+    if adventure_mode:
+        story_planning_text_provider = get_text_response_provider(
+            str(story_planning_config.get("text_provider", "gemini-3")),
+            {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
+        )
+        character_images = config.get("character_images", {})
+        character_images = character_images if isinstance(character_images, dict) else {}
+        character_image_provider = None
+        if character_images.get("enabled", True):
+            character_image_model = str(character_images.get("model") or "").strip()
+            character_image_options = character_images.get("model_options") or {}
+            if character_image_model and isinstance(character_image_options, dict):
+                try:
+                    character_image_provider = get_image_provider(
+                        character_image_model, character_image_options
+                    )
+                except (ImageProviderError, ValueError) as exc:
+                    logger.warning("[create_tool_bundle_for_session] Character image provider unavailable: %s", exc)
+        speech_provider = None
+        if canvas_manager.story is not None:
+            speech_provider = canvas_manager.story.speech_provider
+        story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
+        character_manager = CharacterManager(
+            text_response_provider=story_planning_text_provider,
+            notepad=notepad,
+            story_state=story_state,
+            image_library=image_library,
+            image_provider=character_image_provider,
+            speech_provider=speech_provider,
+            character_image_style=str(character_images.get("style") or "").strip(),
+        )
+
+    # Initialize tools reusing intermediate components across them
     tools = []
     image_tools = ImageTools(
         theater,
         canvas_manager=canvas_manager,
         adventure_mode=adventure_mode,
+        character_manager=character_manager,
+        image_library=image_library,
     )
     tools.extend([
         image_tools.list_references,
@@ -370,11 +417,7 @@ def create_tool_bundle_for_session(
     chat_tools = ChatTools(theater, canvas_manager)
     tools.append(chat_tools.send_chat_message)
 
-    if music_catalog is None:
-        music_catalog = MusicCatalog.from_config(
-            config=config,
-            database_manager=database_manager,
-        )
+    music_catalog = MusicCatalog.from_config(config=config)
     music_tools = MusicTools(
         theater,
         canvas_manager,
@@ -390,20 +433,22 @@ def create_tool_bundle_for_session(
         tools.append(image_tools.create_image)
 
     if adventure_mode:
-        story_planning_text_provider = get_text_response_provider(
-            str(story_planning_config.get("text_provider", "gemini-3")),
-            {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
-        )
         story_planning_tools = StoryTool(
             theater,
             canvas_manager=canvas_manager,
             text_response_provider=story_planning_text_provider,
-            image_library=image_tools.image_library,
+            image_library=image_library,
+            character_manager=character_manager,
+            notepad=notepad,
+            lore_library=lore_library,
         )
         tools.append(story_planning_tools.process_user_action)
-        image_tools.character_manager = story_planning_tools.character_manager
     else:
-        notepad_tools = NotepadTool(theater, canvas_manager=canvas_manager)
+        notepad_tools = NotepadTool(
+            theater,
+            canvas_manager=canvas_manager,
+            notepad=notepad,
+        )
         tools.append(notepad_tools.update_sticky_note)
 
     interactive_canvas_config = config.get("interactive_canvas", {})
@@ -443,78 +488,66 @@ def create_tool_bundle_for_session(
             video_provider=get_video_provider(
                 str(animation_config.get("video_provider", "fal-minimax-h3-turbo"))
             ),
+            character_manager=character_manager,
         )
-        if adventure_mode:
-            animation_tools.character_manager = story_planning_tools.character_manager
         tools.extend([
             animation_tools.create_animation,
             animation_tools.play_animation,
             animation_tools.browse_animations,
         ])
     observability_config = config.get("observability_tool", {})
-    if isinstance(observability_config, dict) and observability_config.get("enabled", False):
+    if observability_config and observability_config.get("enabled", False):
         observability_tools = ObservabilityTools(theater, canvas_manager)
         tools.append(observability_tools.request_canvas_observability)
     return ToolBundle(tools)
 
 
-def get_references_context(tool_bundle: Any) -> str:
+def get_references_context(tool_bundle: ToolBundle) -> str:
     """Return preloaded reference images context for inclusion in the agent's startup prompt.
 
     Args:
-        tool_bundle: ToolBundle or object with tools list.
+        tool_bundle: ToolBundle containing tools.
 
     Returns:
         Formatted string of preloaded reference images or fallback message.
     """
-    if tool_bundle and hasattr(tool_bundle, "tools"):
-        for tool in tool_bundle.tools:
-            name = str(getattr(tool, "name", ""))
-            function = getattr(tool, "func", None)
-            if "list_references" in name or "list_references" in str(function):
-                references = function() if callable(function) else None
-                if references:
-                    lines = [
-                        f"- {item.get('name', '')} (alias: {item.get('alias', '')}): {item.get('description', '')} [path: {item.get('path', '')}]"
-                        for item in references
-                    ]
-                    return "\n".join(lines)
-                break
+    for tool in tool_bundle.tools:
+        name = str(getattr(tool, "name", ""))
+        function = getattr(tool, "func", None)
+        if "list_references" in name or "list_references" in str(function):
+            references = function() if callable(function) else None
+            if references:
+                lines = [
+                    f"- {item.get('name', '')} (alias: {item.get('alias', '')}): {item.get('description', '')} [path: {item.get('path', '')}]"
+                    for item in references
+                ]
+                return "\n".join(lines)
+            break
     return "No preloaded reference images found."
 
 
 def create_agent(
     theater_id: str,
     config: Optional[dict] = None,
-    canvas_state_service: Optional[Any] = None,
     tool_bundle: Optional[ToolBundle] = None,
     theater_manager: Optional[TheaterManager] = None,
-    database_manager: Optional[Any] = None,
-    music_catalog: Optional[MusicCatalog] = None,
 ) -> Agent:
-    """Create a session-scoped agent whose tools write through canvas state service."""
+    """Create a session-scoped agent."""
+    theater_manager = theater_manager or TheaterManager()
+    theater = theater_manager.theater(theater_id, custom_config=config)
     if config is None:
-        config = get_theater_config(theater_id, theater_manager=theater_manager)
+        config = theater.config()
     if tool_bundle is None:
-        tool_bundle = create_tool_bundle_for_session(
-            theater_id,
-            config,
-            canvas_state_service,
-            theater_manager,
-            database_manager,
-            music_catalog=music_catalog,
-        )
+        tool_bundle = create_tool_bundle_for_session(theater)
 
     references = get_references_context(tool_bundle)
-    if not isinstance(references, str) or not references.strip():
+    if not references.strip():
         references = "No preloaded reference images found."
     ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
-    theater_manager = theater_manager or TheaterManager()
-    theater = theater_manager.theater(theater_id)
     theater_metadata = theater.metadata
     playlists = get_playlists_context(theater)
-    if not isinstance(playlists, str) or not playlists.strip():
+    if not playlists.strip():
         playlists = "No preloaded music playlists found."
     playlist_context = "\n\n## Preloaded Music Playlists Context (Loaded at Agent Init)\n" + playlists
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
@@ -13,14 +13,23 @@ from components.notepad import Notepad
 class NotepadTool(BaseTools):
     """Expose a lightweight note pad without starting adventure planners."""
 
-    def __init__(self, theater: Theater, canvas_manager: CanvasStateManager) -> None:
+    def __init__(
+        self,
+        theater: Theater,
+        canvas_manager: CanvasStateManager,
+        notepad: Optional[Notepad] = None,
+    ) -> None:
         super().__init__(theater=theater, canvas_manager=canvas_manager)
-        self.notepad = Notepad(
-            theater,
-            on_change=self.save_to_session_state,
-            canvas_manager=canvas_manager,
-            enforce_structured=False,
-        )
+        if notepad is not None:
+            self.notepad = notepad
+            self.notepad.on_change = self.save_to_session_state
+        else:
+            self.notepad = Notepad(
+                theater,
+                on_change=self.save_to_session_state,
+                canvas_manager=canvas_manager,
+                enforce_structured=False,
+            )
         self.reload_from_session_state()
         self.notepad.sync_story_state()
 

@@ -3,10 +3,29 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Optional
 from unittest.mock import ANY, MagicMock, patch
 
-from components.theater_manager import TheaterManager
+from components.theater_manager import Theater, TheaterManager
 from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, DeveloperLiveGemini, create_agent
+
+
+def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = None) -> MagicMock:
+    theater = MagicMock(spec=Theater)
+    theater.theater_id = theater_id
+    theater.config.return_value = config
+    base_dir = tmp_path or Path("/tmp")
+    theater.directory.return_value = base_dir / "theater"
+    theater.output_dir.return_value = base_dir / "output"
+    theater.references_dir.return_value = base_dir / "references"
+    theater.image_artifacts_dir.return_value = base_dir / "images"
+    theater.music_artifacts_dir.return_value = base_dir / "music"
+    theater.playlists_dir.return_value = base_dir / "playlists"
+    theater.artifacts_dir.return_value = base_dir / "artifacts"
+    theater.references.return_value = []
+    theater.playlists.return_value = {}
+    theater.lore_documents.return_value = []
+    return theater
 
 
 class TestCreateAgent(unittest.TestCase):
@@ -144,7 +163,6 @@ class TestCreateAgent(unittest.TestCase):
         self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
     ):
         mock_image_cls.return_value.list_references.return_value = []
-        canvas_state_service = MagicMock()
         config = {
             "agent": {"model_id": "test-model"},
             "story_planning": {"adventure_mode": True},
@@ -153,13 +171,16 @@ class TestCreateAgent(unittest.TestCase):
         create_agent(
             theater_id="test_agent_theater",
             config=config,
-            canvas_state_service=canvas_state_service,
         )
 
         expected_theater = mock_image_cls.call_args.args[0]
         expected_canvas = mock_image_cls.call_args.kwargs["canvas_manager"]
         mock_image_cls.assert_called_once_with(
-            expected_theater, canvas_manager=expected_canvas, adventure_mode=True
+            expected_theater,
+            canvas_manager=expected_canvas,
+            adventure_mode=True,
+            character_manager=ANY,
+            image_library=ANY,
         )
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(expected_theater, expected_canvas)
@@ -167,7 +188,10 @@ class TestCreateAgent(unittest.TestCase):
             expected_theater,
             canvas_manager=expected_canvas,
             text_response_provider=ANY,
-            image_library=mock_image_cls.return_value.image_library,
+            image_library=ANY,
+            character_manager=ANY,
+            notepad=ANY,
+            lore_library=ANY,
         )
         mock_music_cls.assert_called_once_with(
             expected_theater,
@@ -196,6 +220,7 @@ class TestCreateAgent(unittest.TestCase):
             mock_get_text_provider.return_value,
             ANY,
             video_provider=ANY,
+            character_manager=ANY,
         )
 
     @patch("services.live_agent.create_tool_bundle_for_session")
@@ -268,12 +293,14 @@ class TestCreateAgent(unittest.TestCase):
         from services.live_agent import create_tool_bundle_for_session
         music_inst = mock_music_cls.return_value
         music_inst.use_generated_music = False
-        bundle = create_tool_bundle_for_session("test_t", config={"music": {"use_generated_music": False}})
+        theater = make_test_theater("test_t", {"music": {"use_generated_music": False}})
+        bundle = create_tool_bundle_for_session(theater)
         tool_funcs = [getattr(t, "func", t) for t in bundle.tools]
         self.assertNotIn(music_inst.create_music, tool_funcs)
 
         music_inst.use_generated_music = True
-        bundle_enabled = create_tool_bundle_for_session("test_t", config={"music": {"use_generated_music": True}})
+        theater_enabled = make_test_theater("test_t", {"music": {"use_generated_music": True}})
+        bundle_enabled = create_tool_bundle_for_session(theater_enabled)
         tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
 
@@ -281,15 +308,16 @@ class TestCreateAgent(unittest.TestCase):
     def test_create_tool_bundle_omits_image_creation_when_disabled(self, mock_get_text_provider):
         from services.live_agent import create_tool_bundle_for_session
 
-        bundle = create_tool_bundle_for_session(
+        theater = make_test_theater(
             "assets_only_theater",
-            config={
+            {
                 "visuals": {"model": "hybrid-flux-gemini"},
                 "image_generation": {"enabled": False},
                 "music": {"provider": "lyria"},
                 "animation": {"enabled": True},
             },
         )
+        bundle = create_tool_bundle_for_session(theater)
         tool_names = [tool.name for tool in bundle.tools]
         self.assertNotIn("create_image", tool_names)
         self.assertIn("show_image", tool_names)
@@ -304,12 +332,10 @@ class TestCreateAgent(unittest.TestCase):
             "music": {"provider": "lyria"},
         }
         disabled = create_tool_bundle_for_session(
-            "test_t",
-            config={**base_config, "observability_tool": {"enabled": False}},
+            make_test_theater("test_t", {**base_config, "observability_tool": {"enabled": False}})
         )
         enabled = create_tool_bundle_for_session(
-            "test_t",
-            config={**base_config, "observability_tool": {"enabled": True}},
+            make_test_theater("test_t", {**base_config, "observability_tool": {"enabled": True}})
         )
 
         disabled_names = [tool.name for tool in disabled.tools]
@@ -328,14 +354,12 @@ class TestCreateAgent(unittest.TestCase):
             "visuals": {"model": "hybrid-flux-gemini"},
             "music": {"provider": "lyria"},
         }
-        absent = create_tool_bundle_for_session("a2ui_absent", config=base_config)
+        absent = create_tool_bundle_for_session(make_test_theater("a2ui_absent", base_config))
         disabled = create_tool_bundle_for_session(
-            "a2ui_disabled",
-            config={**base_config, "interactive_canvas": {"enabled": False}},
+            make_test_theater("a2ui_disabled", {**base_config, "interactive_canvas": {"enabled": False}})
         )
         enabled = create_tool_bundle_for_session(
-            "a2ui_enabled",
-            config={**base_config, "interactive_canvas": {"enabled": True}},
+            make_test_theater("a2ui_enabled", {**base_config, "interactive_canvas": {"enabled": True}})
         )
 
         for bundle in (absent, disabled):
@@ -347,6 +371,83 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("create_interactive_canvas", enabled_names)
         self.assertIn("update_interactive_canvas", enabled_names)
         self.assertIn("clear_interactive_canvas", enabled_names)
+
+    @patch("services.live_agent.AnimationTools")
+    @patch("services.live_agent.StoryTool")
+    @patch("services.live_agent.ImageTools")
+    @patch("services.live_agent.CharacterManager")
+    @patch("services.live_agent.Notepad")
+    @patch("services.live_agent.LoreLibrary")
+    @patch("services.live_agent.ImageLibrary")
+    @patch("services.live_agent.CanvasStateManager")
+    @patch("services.live_agent.MusicCatalog.from_config")
+    @patch("services.live_agent.get_video_provider")
+    @patch("services.live_agent.get_text_response_provider")
+    def test_create_tool_bundle_creates_intermediate_components_first_and_reuses_them(
+        self,
+        mock_get_text_provider,
+        mock_get_video_provider,
+        mock_music_catalog_from_config,
+        mock_canvas_mgr_cls,
+        mock_img_lib_cls,
+        mock_lore_lib_cls,
+        mock_notepad_cls,
+        mock_char_mgr_cls,
+        mock_image_tools_cls,
+        mock_story_tool_cls,
+        mock_animation_tools_cls,
+    ):
+        from services.live_agent import create_tool_bundle_for_session
+
+        theater = make_test_theater(
+            "adv_theater",
+            {
+                "story_planning": {
+                    "adventure_mode": True,
+                    "text_provider": "gemini-3",
+                    "planner_model": "gemini-3.7-flash",
+                },
+                "animation": {"enabled": True},
+            },
+        )
+
+        canvas_mgr = mock_canvas_mgr_cls.return_value
+        image_lib = mock_img_lib_cls.return_value
+        lore_lib = mock_lore_lib_cls.return_value
+        notepad = mock_notepad_cls.return_value
+        char_mgr = mock_char_mgr_cls.return_value
+
+        bundle = create_tool_bundle_for_session(theater)
+        self.assertIsNotNone(bundle)
+
+        mock_canvas_mgr_cls.assert_called_once_with(theater)
+        mock_img_lib_cls.assert_called_once_with(theater)
+        mock_lore_lib_cls.assert_called_once_with(theater=theater)
+        mock_notepad_cls.assert_called_once_with(
+            theater, canvas_manager=canvas_mgr, enforce_structured=True
+        )
+        mock_char_mgr_cls.assert_called_once()
+        self.assertIs(mock_char_mgr_cls.call_args.kwargs["notepad"], notepad)
+        self.assertIs(mock_char_mgr_cls.call_args.kwargs["image_library"], image_lib)
+
+        mock_image_tools_cls.assert_called_once_with(
+            theater,
+            canvas_manager=canvas_mgr,
+            adventure_mode=True,
+            character_manager=char_mgr,
+            image_library=image_lib,
+        )
+        mock_story_tool_cls.assert_called_once_with(
+            theater,
+            canvas_manager=canvas_mgr,
+            text_response_provider=mock_get_text_provider.return_value,
+            image_library=image_lib,
+            character_manager=char_mgr,
+            notepad=notepad,
+            lore_library=lore_lib,
+        )
+        mock_animation_tools_cls.assert_called_once()
+        self.assertIs(mock_animation_tools_cls.call_args.kwargs["character_manager"], char_mgr)
 
     def test_get_references_context_with_references(self):
         from services.live_agent import get_references_context

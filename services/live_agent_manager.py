@@ -927,9 +927,9 @@ class LiveAgentSession:
 
     def record_story_plan_completed(self):
         """Record a successfully resolved story-planning turn and flush it for billing."""
-        if self.image_tools and hasattr(self.image_tools, "record_story_plan_completed"):
+        if self.image_tools:
             self.image_tools.record_story_plan_completed()
-        if self.interactive_canvas_tools and hasattr(self.interactive_canvas_tools, "record_story_plan_completed"):
+        if self.interactive_canvas_tools:
             self.interactive_canvas_tools.record_story_plan_completed()
         self.story_plans_count += 1
         self.unbilled_story_plans += 1
@@ -1206,26 +1206,17 @@ class LiveAgentSessionManager:
                 canvas_mgr.story.enable_scene_speech(
                     get_speech_provider(provider_id, speech_config)
                 )
-        tool_bundle = create_tool_bundle_for_session(
-            theater_id=theater_id,
-            config=theater_config,
-            canvas_state_service=canvas_state_service,
-            theater_manager=self.theater_manager,
-            database_manager=self.database_manager,
-            music_catalog=self.music_catalog,
-        )
+        theater = self.theater_manager.theater(theater_id)
+        tool_bundle = create_tool_bundle_for_session(theater)
 
         session_agent = create_agent(
             theater_id=theater_id,
             config=theater_config,
-            canvas_state_service=canvas_state_service,
             tool_bundle=tool_bundle,
             theater_manager=self.theater_manager,
-            database_manager=self.database_manager,
-            music_catalog=self.music_catalog,
         )
 
-        disk_service_path = self.theater_manager.theater(theater_id).artifacts_dir()
+        disk_service_path = theater.artifacts_dir()
         if use_in_memory_artifacts:
             artifact_service = PreloadedInMemoryArtifactService()
             test_data_dir = Path(__file__).parent.parent / "testing" / "testdata"

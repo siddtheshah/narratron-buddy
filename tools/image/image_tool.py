@@ -37,6 +37,7 @@ class ImageTools(BaseTools):
         canvas_manager: CanvasStateManager,
         adventure_mode: bool = False,
         character_manager: Optional[CharacterManager] = None,
+        image_library: Optional[ImageLibrary] = None,
     ):
         super().__init__(
             theater=theater,
@@ -53,7 +54,7 @@ class ImageTools(BaseTools):
         self.adventure_mode = bool(adventure_mode)
 
         self.default_style = str(self.visuals_config.get("style", "")).strip()
-        self.image_library = ImageLibrary(theater)
+        self.image_library = image_library if image_library is not None else ImageLibrary(theater)
         self.output_dir = self.image_library.output_dir
         self.reference_dir = self.image_library.reference_dir
         os.makedirs(self.output_dir, exist_ok=True)
