@@ -10,8 +10,8 @@ from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
 from components.character_manager import Character, CharacterManager, PlayerCharacter
-from tools.story.lore_library import LoreLibrary
-from tools.image.image_library import ImageLibrary
+from components.lore_library import LoreLibrary
+from components.image_library import ImageLibrary
 from components.notepad import Notepad
 from tools.story.story_planning_module import (
     StoryPlanningModule,

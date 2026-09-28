@@ -12,9 +12,9 @@ from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
-from tools.image.image_library import ImageLibrary
+from components.image_library import ImageLibrary
 from components.character_manager import Character, CharacterManager, PlayerCharacter
-from tools.story.lore_library import LoreLibrary
+from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_response_module import (
     ResponseCharacter,

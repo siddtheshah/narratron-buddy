@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from components.theater_manager import Theater
-from tools.story.lore_library import LoreLibrary
+from components.lore_library import LoreLibrary
 
 
 class TestLoreLibrary(unittest.TestCase):
@@ -47,7 +47,7 @@ class TestLoreLibrary(unittest.TestCase):
     def test_limits_document_listing_without_limiting_calls(self) -> None:
         self.theater.lore_documents.return_value = [f"doc-{index}.txt" for index in range(5)]
 
-        with patch("tools.story.lore_library.MAX_LORE_DOCUMENTS_LISTED", 2):
+        with patch("components.lore_library.MAX_LORE_DOCUMENTS_LISTED", 2):
             first = self.library.read_lore()
             second = self.library.read_lore()
 
@@ -79,7 +79,7 @@ class TestLoreLibrary(unittest.TestCase):
     def test_truncates_long_document_content(self) -> None:
         self.contents["bestiary.txt"] = "abcdefghij"
 
-        with patch("tools.story.lore_library.MAX_LORE_DOCUMENT_CONTEXT_CHARS", 5):
+        with patch("components.lore_library.MAX_LORE_DOCUMENT_CONTEXT_CHARS", 5):
             result = self.library.read_lore("bestiary.txt")
 
         self.assertIn("abcde", result)

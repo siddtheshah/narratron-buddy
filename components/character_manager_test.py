@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from providers import ImageGenerationResult, ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider
-from tools.image.image_library import ImageLibrary
+from components.image_library import ImageLibrary
 from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
 from components.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags

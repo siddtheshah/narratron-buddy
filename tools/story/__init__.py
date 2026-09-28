@@ -9,7 +9,7 @@ from components.character_manager import (
     SUPPORTED_VOICE_TAGS,
     normalize_voice_tags,
 )
-from tools.story.lore_library import (
+from components.lore_library import (
     MAX_LORE_DOCUMENT_CONTEXT_CHARS,
     MAX_LORE_DOCUMENTS_LISTED,
     LoreLibrary,
@@ -95,6 +95,7 @@ __all__ = [
     "render_structured_sticky",
     "normalize_voice_tags",
     "build_story_context_prompt",
+    "build_responder_instructions",
     "build_responder_turn_prompt",
     "DEFAULT_COMPACTION_TRIGGER_TOKENS",
     "DEFAULT_COMPACTION_TARGET_TOKENS",

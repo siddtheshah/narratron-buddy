@@ -29,7 +29,7 @@ from google.genai import types
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from components.character_manager import Character, CharacterManager, PlayerCharacter
-from tools.story.lore_library import LoreLibrary
+from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_models import (
     VertexGemini,

@@ -5,7 +5,7 @@ import tempfile
 from PIL import Image, PngImagePlugin
 
 from components.theater_manager import TheaterManager
-from tools.image.image_library import ImageLibrary
+from components.image_library import ImageLibrary
 
 
 class TestImageLibrary:

@@ -31,8 +31,8 @@ from components.canvas.story_state import (
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from components.character_manager import CharacterManager, PlayerCharacter
-from tools.story.lore_library import LoreLibrary
-from tools.image.image_library import ImageLibrary
+from components.lore_library import LoreLibrary
+from components.image_library import ImageLibrary
 from components.notepad import (
     Notepad,
 )

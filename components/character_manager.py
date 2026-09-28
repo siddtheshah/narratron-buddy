@@ -24,7 +24,7 @@ from providers import (
 )
 from components.canvas.story_state import StoryState
 from services.quirk_service import get_quirk_generator_service
-from tools.image.image_library import ImageLibrary
+from components.image_library import ImageLibrary
 from components.notepad import Notepad
 from utils.image_utils import embed_image_metadata
 

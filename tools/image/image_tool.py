@@ -25,7 +25,7 @@ from utils.image_utils import (
 from components.canvas_state import CanvasStateManager
 from components.canvas.visual_state import VisualState, PRIORITY_SHOW, PRIORITY_CREATE
 from components.theater_manager import Theater
-from tools.image.image_library import ImageLibrary
+from components.image_library import ImageLibrary
 from components.character_manager import CharacterManager
 
 logger = logging.getLogger(__name__)
