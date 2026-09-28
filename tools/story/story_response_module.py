@@ -11,12 +11,14 @@ import re
 import threading
 from threading import Lock
 import time
+from collections.abc import Sequence
 from typing import Any, Callable, Dict, List, Optional
 
 from absl import flags
 from jinja2 import Template
 from pydantic import BaseModel, Field
 from google.adk.agents import Agent
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.plugins.base_plugin import BasePlugin
@@ -98,20 +100,13 @@ Canonical player character:
 """
 )
 
-_SCENE_REACTION_PROMPT_TEMPLATE = Template(
+_RESPONDER_INSTRUCTION_TEMPLATE = Template(
 """# Role & Mission
 You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
 A separate deep-planning agent owns long-term continuity and is the sole agent that directly modifies sticky notes. Treat active notes as authoritative planning guidance, but never modify them directly or create a competing long-term plan during this turn.
 Crucially, you are the front-line observer of all immediate turn fallout. While your other half commits sticky note updates, you MUST explicitly communicate to the planner via `planning_signals` with direct instructions directed only to it. You are responsible for ensuring high recall of sticky note updates by explicitly flagging any active sticky notes that require updating based on this turn's resolution so the planner does not miss them.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
-
-
-# Story-Planning Style (User Specified)
-{{ style }}
-- Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction.
-- Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes.
-- Follow the 'yes, and' posture from your system instruction.
 
 # Core Improv & Player Agency Principles
 - Use a 'yes, and' improv posture: accept the player's attempted action as meaningful, preserve its premise when it fits the established fiction, and move the story forward with an interesting consequence, opportunity, complication, or escalation.
@@ -124,30 +119,19 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Player Death, Lethal Consequences, Death Hints & Restarts
 - Player death, lethal consequences, execution, disintegration, and fatal outcomes ARE EXPLICITLY PERMITTED when the player's choices, suicidal recklessness, combat defeat, or deliberate provocation warrant it under the fiction, lore, or rules.
-- Do NOT protect the player with artificial plot armor, contrived near-misses, or miraculous rescues when their actions call for a fatal outcome. If a player drinks lethal poison, provokes a deadly warlord point-blank, or fails an unescapable ultimatum, execute the consequence faithfully.
+- Do not protect the player with artificial plot armor, contrived near-misses, or miraculous rescues when their actions call for a fatal outcome. If a player drinks lethal poison, provokes a deadly warlord point-blank, or fails an unescapable ultimatum, execute the consequence faithfully.
 - When player death or a fatal loss state occurs, clearly narrate the demise as a definitive end.
 - **Death Hint**: When player death occurs, provide a subtle, witty, or possibly cryptic hint (in the narration, NPC parting words, or environmental fallout) hinting at why they died or what tactical/leverage mistake triggered it if it wasn't obvious. The player should feel that death was a fair, foreseeable possibility rooted in the world's rules and learn a valuable lesson for their next attempt.
 - If the player wishes to continue playing after death, it is a restart of the adventure from the beginning (e.g., as a fresh reset, a new incarnation, or the next candidate).
-
-# Current Story Context
-{{ context }}
-
-{% if lore_context -%}
-## Available theater lore (top-level documents and directories):
-{{ lore_context }}
-{% else -%}
-## Theater Lore
-No lore documents are available for this theater. Invent the lore, world details, setting, factions, and backstory as needed to support the story.
-{% endif -%}
 
 # Tool Usage Guidelines
 - **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
   - **Player Reactionary Rolls (`procedural=False`, default)**: Use for resolving player actions, skill checks, contests, or direct consequences of player decisions. These rolls are visibly animated and displayed on the canvas for the player.
   - **Procedural Rolls (`procedural=True`)**: Use for background procedural generation, random encounter tables, weather, NPC demeanor, or hidden world checks. These rolls are hidden from the canvas.
-- **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
-- **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated.
-- **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name, visual appearance description, or image reference when established or clarified.
+  - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
+  - **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated.
+  - **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name, visual appearance description, or image reference when established or clarified.
 
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
@@ -162,6 +146,40 @@ Every generated character must have an explicit gender assignment ('male', 'fema
 
 # Scene Labeling
 Ensure the scene has a label. The location name is generally a good choice. Keep using that label until a major shift occurs.
+{% if style -%}
+
+# Story-Planning Style (User Specified)
+{{ style }}
+- Apply the stated style to pacing, narration, opposition, and consequences, while still following every system instruction.
+- Style is not permission to take over player agency, negate meaningful actions, or force arbitrary outcomes.
+- Follow the 'yes, and' posture from your system instruction.
+{% endif -%}
+{% if lore_context -%}
+
+## Available theater lore (top-level documents and directories):
+{{ lore_context }}
+{% else -%}
+
+## Theater Lore
+No lore documents are available for this theater. Invent the lore, world details, setting, factions, and backstory as needed to support the story.
+{% endif -%}
+{% if context -%}
+
+# Current Story Context
+{{ context }}
+{% endif -%}
+"""
+)
+
+
+_RESPONDER_TURN_PROMPT_TEMPLATE = Template(
+"""# Current Story State
+{{ story_state }}
+
+# Player Action
+{{ user_action }}{% if nudge %}
+
+[Live Agent Nudge to Accommodate]: {{ nudge }}{% endif %}
 """
 )
 
@@ -206,7 +224,7 @@ class StoryLogDieRoll(BaseModel):
 
 def build_story_context_prompt(
     elements: list[dict[str, str]],
-    characters: list[dict[str, Any]],
+    characters: Sequence[Character | dict[str, str]],
     total_characters: Optional[int] = None,
     changed_topics: frozenset[str] = frozenset(),
     player_character: Optional[PlayerCharacter] = None,
@@ -220,17 +238,29 @@ def build_story_context_prompt(
     ).strip()
 
 
-def build_scene_reaction_prompt(
-    context: str,
-    style: str,
+def build_responder_instructions(
+    context: str = "",
+    style: str = "",
     lore_context: str = "",
     max_sticky_notes: int = 5,
 ) -> str:
-    return _SCENE_REACTION_PROMPT_TEMPLATE.render(
+    return _RESPONDER_INSTRUCTION_TEMPLATE.render(
         context=context,
         style=style,
         lore_context=lore_context,
         max_sticky_notes=max_sticky_notes,
+    ).strip()
+
+
+def build_responder_turn_prompt(
+    story_state: str,
+    user_action: str,
+    nudge: str = "",
+) -> str:
+    return _RESPONDER_TURN_PROMPT_TEMPLATE.render(
+        story_state=story_state,
+        user_action=user_action,
+        nudge=nudge,
     ).strip()
 
 
@@ -808,29 +838,31 @@ class StoryResponseModule:
             sliding_window=types.SlidingWindow(target_tokens=int(target)) if target is not None else None,
         )
 
-    def _build_responder_instruction(self, ctx: Any = None) -> str:
-        changed_topics = self.notepad.get_recently_changed_topics()
-        self.notepad.mark_stickies_read()
-        snapshot = {
-            "elements": self.notepad.get_present_elements(),
-            "characters": self.get_present_characters(),
-            "total_characters": self.character_manager.count(),
-            "style": self.style,
-        }
+    def _build_responder_instruction(
+        self, ctx: Optional[ReadonlyContext] = None
+    ) -> str:
         lore_context = self._get_lore_context()
-        player_char = self.character_manager.get_player_character()
-        responder_context = build_story_context_prompt(
-            elements=snapshot["elements"],
-            characters=snapshot["characters"],
-            total_characters=snapshot["total_characters"],
-            changed_topics=changed_topics,
-            player_character=player_char,
-        )
-        return build_scene_reaction_prompt(
-            context=responder_context,
+        return build_responder_instructions(
+            context="",
             style=self.style,
             lore_context=lore_context,
             max_sticky_notes=self.notepad.max_sticky_notes,
+        )
+
+    def _build_responder_turn_prompt(self, user_action: str, nudge: str = "") -> str:
+        changed_topics = self.notepad.get_recently_changed_topics()
+        self.notepad.mark_stickies_read()
+        story_state = build_story_context_prompt(
+            elements=self.notepad.get_present_elements(),
+            characters=self.get_present_characters(),
+            total_characters=self.character_manager.count(),
+            changed_topics=changed_topics,
+            player_character=self.character_manager.get_player_character(),
+        )
+        return build_responder_turn_prompt(
+            story_state=story_state,
+            user_action=user_action,
+            nudge=nudge,
         )
 
     def _create_responder_agent(self) -> Agent:
@@ -928,9 +960,7 @@ class StoryResponseModule:
                 if self._run_compression_config
                 else None
             )
-            prompt_input = user_action
-            if nudge:
-                prompt_input = f"{user_action}\n\n[Live Agent Nudge to Accommodate]: {nudge}"
+            prompt_input = self._build_responder_turn_prompt(user_action, nudge=nudge)
 
             previous_session = await self.session_service.get_session(
                 app_name="narratron_story_responder",
@@ -992,7 +1022,7 @@ class StoryResponseModule:
                 self.user_action_timeout_seconds,
                 user_action,
             )
-            if self.canvas_manager and hasattr(self.canvas_manager, "tool_response"):
+            if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
                 self.canvas_manager.tool_response.set_activity("user_action", active=False)
             self.restart_responder_agent()
             return {
@@ -1088,7 +1118,7 @@ class StoryResponseModule:
                 result = {"error": f"Story responder failed: {exc}"}
             finally:
                 self.release_in_flight("process_user_action")
-                if self.canvas_manager and hasattr(self.canvas_manager, "tool_response"):
+                if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
                     self.canvas_manager.tool_response.set_activity("user_action", active=False)
 
             callback = self.on_scene_reaction
@@ -1098,7 +1128,7 @@ class StoryResponseModule:
                 except Exception:
                     logger.exception("[StoryResponseModule] Scene reaction callback failed")
 
-        if self.canvas_manager and hasattr(self.canvas_manager, "tool_response"):
+        if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
             self.canvas_manager.tool_response.set_activity("user_action", active=True)
 
         threading.Thread(target=resolve_and_notify, daemon=True).start()

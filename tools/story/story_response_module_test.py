@@ -13,7 +13,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from tools.image.image_library import ImageLibrary
-from tools.story.character_manager import CharacterManager, PlayerCharacter
+from tools.story.character_manager import Character, CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
 from tools.story.notepad import Notepad
 from tools.story.story_response_module import (
@@ -21,7 +21,8 @@ from tools.story.story_response_module import (
     ResponseDialogue,
     SceneReaction,
     StoryResponseModule,
-    build_scene_reaction_prompt,
+    build_responder_turn_prompt,
+    build_responder_instructions,
     build_story_context_prompt,
 )
 
@@ -498,7 +499,7 @@ class TestBuildStoryContextPrompt(unittest.TestCase):
 
 class TestBuildSceneReactionPrompt(unittest.TestCase):
     def test_instructs_planner_communication_and_sticky_note_recall(self) -> None:
-        prompt = build_scene_reaction_prompt(
+        prompt = build_responder_instructions(
             context="Your sticky notes:\n- HUD: HP: 100/100",
             style="heroic fantasy",
             lore_context="",
@@ -597,6 +598,104 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
             voice_tags=None,
             gender="male",
         )
+
+
+class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
+    def setUp(self) -> None:
+        self.theater = MagicMock(spec=Theater)
+        self.theater.theater_id = "test_prompt_theater"
+        self.theater.lore_documents.return_value = ["lore.md"]
+        self.theater.config.return_value = {
+            "story_planning": {
+                "adventure_mode": True,
+                "style": "Mythic space opera",
+            }
+        }
+        self.canvas = MagicMock(spec=CanvasStateManager)
+        self.lore_library = MagicMock(spec=LoreLibrary)
+        self.lore_library.get_lore_context.return_value = "Lore docs: space_history.md"
+        self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+        self.session_service = MagicMock(spec=InMemorySessionService)
+        self.character_manager = MagicMock(spec=CharacterManager)
+        self.module = StoryResponseModule(
+            theater=self.theater,
+            canvas_manager=self.canvas,
+            notepad=self.notepad,
+            lore_library=self.lore_library,
+            character_manager=self.character_manager,
+            session_service=self.session_service,
+            session_id="prompt_test_session",
+        )
+
+    def test_instruction_maximizes_prefix_and_excludes_state_variables(self) -> None:
+        instruction = self.module._build_responder_instruction()
+        self.assertIn("# Role & Mission", instruction)
+        self.assertIn("# Core Improv & Player Agency Principles", instruction)
+        self.assertIn("# Player Death, Lethal Consequences, Death Hints & Restarts", instruction)
+        self.assertIn("# Tool Usage Guidelines", instruction)
+        self.assertIn("# Scene Reaction Output Requirements", instruction)
+        self.assertIn("# Character Generation", instruction)
+        self.assertIn("# Scene Labeling", instruction)
+
+        # Style and lore variable values are placed at the end to maximize prefix caching
+        self.assertIn("# Story-Planning Style (User Specified)\nMythic space opera", instruction)
+        self.assertIn("Available theater lore (top-level documents and directories):\nLore docs: space_history.md", instruction)
+
+        role_idx = instruction.index("# Role & Mission")
+        output_idx = instruction.index("# Scene Reaction Output Requirements")
+        style_idx = instruction.index("# Story-Planning Style")
+        lore_idx = instruction.index("Available theater lore")
+        self.assertLess(role_idx, output_idx)
+        self.assertLess(output_idx, style_idx)
+        self.assertLess(style_idx, lore_idx)
+
+        # Ensure dynamic state variables are NOT in instructions to maximize prefix caching
+        self.assertNotIn("Your sticky notes", instruction)
+        self.assertNotIn("Canonical player character", instruction)
+        self.assertNotIn("Active characters, personalities", instruction)
+        self.assertNotIn("[↑ UPDATED]", instruction)
+
+    def test_turn_prompt_includes_current_story_state_and_puts_action_at_end(self) -> None:
+        self.notepad.update_sticky_note("HUD", "HP: 45/100")
+        self.notepad.update_sticky_note("Mission", "Reach the bridge")
+
+        player = PlayerCharacter(name="Zara", image_description="Cybernetic pilot", reference="zara_ref")
+        self.character_manager.get_player_character.return_value = player
+        char = Character(name="Kaelen", personality="Stoic", motivation="Survive", quirk="Tinkers with gadgets", voice_tags=["male"])
+        self.character_manager.get_present_characters.return_value = [char]
+        self.character_manager.count.return_value = 1
+
+        prompt = self.module._build_responder_turn_prompt("I slice the security console.", nudge="Alert nearby guards")
+
+        self.assertIn("# Current Story State", prompt)
+        self.assertIn("HUD [↑ UPDATED]: HP: 45/100", prompt)
+        self.assertIn("Mission [↑ UPDATED]: Reach the bridge", prompt)
+        self.assertIn("Zara", prompt)
+        self.assertIn("Kaelen", prompt)
+
+        self.assertIn("# Player Action", prompt)
+        self.assertIn("I slice the security console.", prompt)
+        self.assertIn("[Live Agent Nudge to Accommodate]: Alert nearby guards", prompt)
+
+        # Story state is prefix; variable player action and nudge are at the end
+        state_idx = prompt.index("# Current Story State")
+        action_idx = prompt.index("# Player Action")
+        nudge_idx = prompt.index("[Live Agent Nudge to Accommodate]: Alert nearby guards")
+        self.assertLess(state_idx, action_idx)
+        self.assertLess(action_idx, nudge_idx)
+
+        # mark_stickies_read should have been called during turn prompt building
+        next_prompt = self.module._build_responder_turn_prompt("I wait.")
+        self.assertNotIn("[↑ UPDATED]", next_prompt)
+
+    def test_build_responder_turn_prompt_function(self) -> None:
+        prompt = build_responder_turn_prompt(
+            story_state="Your sticky notes:\n- HUD: HP: 100",
+            user_action="I look north.",
+            nudge="Fog rolls in.",
+        )
+        self.assertTrue(prompt.startswith("# Current Story State\nYour sticky notes:\n- HUD: HP: 100"))
+        self.assertIn("# Player Action\nI look north.\n\n[Live Agent Nudge to Accommodate]: Fog rolls in.", prompt)
 
 
 if __name__ == "__main__":
