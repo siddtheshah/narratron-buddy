@@ -219,6 +219,33 @@ class TestLiveAgentSessionManager(unittest.TestCase):
     @patch("services.live_agent_manager.create_tool_bundle_for_session")
     @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
     @patch("services.live_agent_manager.create_agent")
+    def test_get_or_create_session_passes_canvas_manager_to_tool_bundle(
+        self,
+        mock_create_agent: MagicMock,
+        mock_tasks: MagicMock,
+        mock_create_bundle: MagicMock,
+    ) -> None:
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_create_agent.return_value = mock_agent
+
+        canvas_mgr = MagicMock()
+        canvas_service = MagicMock()
+        canvas_service.get.return_value = canvas_mgr
+
+        manager = LiveAgentSessionManager(
+            theater_manager=TheaterManager(),
+            database_manager=MagicMock(),
+            canvas_state_service=canvas_service,
+        )
+        manager.get_or_create_session(theater_id="test_canvas_prop")
+
+        mock_create_bundle.assert_called_once()
+        self.assertIs(mock_create_bundle.call_args.kwargs["canvas_manager"], canvas_mgr)
+
+    @patch("services.live_agent_manager.create_tool_bundle_for_session")
+    @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
+    @patch("services.live_agent_manager.create_agent")
     def test_character_voicing_uses_configured_speech_provider(
         self,
         mock_create_agent,

@@ -348,7 +348,11 @@ def get_playlists_context(theater: Any) -> str:
         return f"Error loading playlists context: {e}"
 
 
-def create_tool_bundle_for_session(theater: Theater) -> ToolBundle:
+def create_tool_bundle_for_session(
+    theater: Theater,
+    canvas_manager: Optional[CanvasStateManager] = None,
+    music_catalog: Optional[MusicCatalog] = None,
+) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
     config = theater.config()
     story_planning_config = config.get("story_planning", {})
@@ -357,7 +361,8 @@ def create_tool_bundle_for_session(theater: Theater) -> ToolBundle:
     image_generation_enabled = bool(image_config.get("enabled", True))
 
     # Create intermediate components from components/ first
-    canvas_manager = CanvasStateManager(theater)
+    if canvas_manager is None:
+        canvas_manager = CanvasStateManager(theater)
     image_library = ImageLibrary(theater)
     lore_library = LoreLibrary(theater=theater)
     notepad = Notepad(
@@ -418,7 +423,8 @@ def create_tool_bundle_for_session(theater: Theater) -> ToolBundle:
     chat_tools = ChatTools(theater, canvas_manager)
     tools.append(chat_tools.send_chat_message)
 
-    music_catalog = MusicCatalog.from_config(config=config)
+    if music_catalog is None:
+        music_catalog = MusicCatalog.from_config(config=config)
     music_tools = MusicTools(
         theater,
         canvas_manager,

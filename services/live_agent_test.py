@@ -466,6 +466,47 @@ class TestCreateAgent(unittest.TestCase):
         mock_animation_tools_cls.assert_called_once()
         self.assertIs(mock_animation_tools_cls.call_args.kwargs["character_manager"], char_mgr)
 
+    @patch("services.live_agent.AnimationTools")
+    @patch("services.live_agent.StoryTool")
+    @patch("services.live_agent.ImageTools")
+    @patch("services.live_agent.CharacterManager")
+    @patch("services.live_agent.Notepad")
+    @patch("services.live_agent.LoreLibrary")
+    @patch("services.live_agent.ImageLibrary")
+    @patch("services.live_agent.CanvasStateManager")
+    @patch("services.live_agent.MusicCatalog.from_config")
+    @patch("services.live_agent.get_video_provider")
+    @patch("services.live_agent.get_text_response_provider")
+    def test_create_tool_bundle_uses_provided_canvas_manager(
+        self,
+        mock_get_text_provider: MagicMock,
+        mock_get_video_provider: MagicMock,
+        mock_music_catalog_from_config: MagicMock,
+        mock_canvas_mgr_cls: MagicMock,
+        mock_img_lib_cls: MagicMock,
+        mock_lore_lib_cls: MagicMock,
+        mock_notepad_cls: MagicMock,
+        mock_char_mgr_cls: MagicMock,
+        mock_image_tools_cls: MagicMock,
+        mock_story_tool_cls: MagicMock,
+        mock_animation_tools_cls: MagicMock,
+    ) -> None:
+        from services.live_agent import create_tool_bundle_for_session
+
+        theater = make_test_theater("adv_theater", {})
+        provided_canvas = MagicMock()
+
+        bundle = create_tool_bundle_for_session(theater, canvas_manager=provided_canvas)
+        self.assertIsNotNone(bundle)
+        mock_canvas_mgr_cls.assert_not_called()
+        mock_image_tools_cls.assert_called_once_with(
+            theater,
+            canvas_manager=provided_canvas,
+            adventure_mode=False,
+            character_manager=None,
+            image_library=mock_img_lib_cls.return_value,
+        )
+
     def test_get_references_context_with_references(self):
         from services.live_agent import get_references_context
         mock_tool = MagicMock()

@@ -5,7 +5,6 @@ Keeping construction here ensures the HTTP routes, agent runtime, and test
 configuration all operate on the same instances.
 """
 
-from google.adk.auth import oauth2_discovery
 import atexit
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -133,6 +132,7 @@ live_agent_manager = LiveAgentSessionManager(
     theater_manager=theater_manager,
     database_manager=db,
     music_catalog=music_catalog,
+    canvas_state_service=canvas_states,
 )
 suggestion_service = SuggestionService(config=config)
 adventure_service = AdventureService(ensure_adventures_root())
