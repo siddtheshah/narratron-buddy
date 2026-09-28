@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Optional, Union
 from google.adk.sessions import InMemorySessionService
 from pydantic import BaseModel, Field
 
+from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
@@ -111,10 +112,11 @@ class StoryTool(BaseTools):
                 speech_provider = candidate
             else:
                 speech_provider = None
+        story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
         self.character_manager = CharacterManager(
             text_response_provider=text_response_provider,
             notepad=self.notepad,
-            config=self.config,
+            story_state=story_state,
             image_library=self.image_library,
             image_provider=character_image_provider,
             speech_provider=speech_provider,

@@ -275,10 +275,10 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.character_manager = CharacterManager(
             text_response_provider=self.provider,
             notepad=self.notepad,
+            story_state=self.story_state,
             image_library=self.image_library,
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
-            config=self.config,
         )
         self.module = StoryResponseModule(
             theater=self.theater,

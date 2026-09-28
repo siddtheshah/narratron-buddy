@@ -11,6 +11,7 @@ from PIL import Image
 
 from providers import ImageGenerationResult, ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider
 from tools.image.image_library import ImageLibrary
+from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
 from tools.story.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
 from tools.story.notepad import Notepad
@@ -40,9 +41,11 @@ class TestCharacterManager(unittest.TestCase):
         self.image_provider.generate.side_effect = ImageProviderError("not used by this test")
         self.speech_provider = MagicMock(spec=SpeechProvider)
         self.speech_provider.select_voice.return_value = "voice_default"
+        self.story_state = StoryState()
         self.manager = CharacterManager(
             text_response_provider=self.provider,
             notepad=self.notepad,
+            story_state=self.story_state,
             image_library=self.image_library,
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
@@ -58,29 +61,23 @@ class TestCharacterManager(unittest.TestCase):
             voice_tags=["female"],
         )
 
-    def test_requires_text_response_provider(self) -> None:
-        with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
-            CharacterManager(None, self.notepad, self.image_library, self.image_provider, self.speech_provider)  # type: ignore[arg-type]
-        with self.assertRaisesRegex(ValueError, "notepad is required"):
-            CharacterManager(self.provider, None, self.image_library, self.image_provider, self.speech_provider)  # type: ignore[arg-type]
-
     def test_loads_and_normalizes_initial_characters(self) -> None:
         manager = CharacterManager(
             self.provider,
             self.notepad,
+            self.story_state,
             self.image_library,
             self.image_provider,
             self.speech_provider,
-            config={
-                "initial_characters": {
-                    "Kaelen": {
-                        "description": "Ranger",
-                        "personality": "Stoic",
-                        "voice_type": "MALE, unsupported",
-                    }
-                }
-            },
         )
+        characters = manager._parse_initial_characters({
+            "Kaelen": {
+                "description": "Ranger",
+                "personality": "Stoic",
+                "voice_type": "MALE, unsupported",
+            }
+        })
+        manager.import_characters(characters)
 
         self.assertEqual(
             manager.get_present_characters(),
@@ -100,7 +97,15 @@ class TestCharacterManager(unittest.TestCase):
         )
 
     def test_limits_present_characters_without_discarding_history(self) -> None:
-        manager = CharacterManager(self.provider, self.notepad, self.image_library, self.image_provider, self.speech_provider, config={"max_active_characters": 2})
+        manager = CharacterManager(
+            self.provider,
+            self.notepad,
+            self.story_state,
+            self.image_library,
+            self.image_provider,
+            self.speech_provider,
+        )
+        manager.max_active_characters = 2
         for name in ("One", "Two", "Three"):
             manager.generate_character(
                 name=name,
@@ -162,7 +167,7 @@ class TestCharacterManager(unittest.TestCase):
             "gender": ("female", "male", "nonbinary"),
             "persona": ("Narrator",),
         }
-        manager = CharacterManager(self.provider, self.notepad, self.image_library, self.image_provider, speech_provider)
+        manager = CharacterManager(self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, speech_provider)
         self.provider.generate.return_value = SimpleNamespace(
             text='{"personality":"Patient","motivation":"Find truth","gender":"female","voice_tags":["gender=female","accent=British","persona=Narrator"]}'
         )
@@ -307,7 +312,7 @@ class TestCharacterManager(unittest.TestCase):
             "path": "/references/lyra.png",
         }]
         manager = CharacterManager(
-            self.provider, self.notepad, library, self.image_provider, speech_provider,
+            self.provider, self.notepad, self.story_state, library, self.image_provider, speech_provider,
         )
 
         manager.generate_character(
@@ -339,7 +344,7 @@ class TestCharacterManager(unittest.TestCase):
                 "name": "Mira_character", "alias": "Mira_character", "path": output,
             }]]
             manager = CharacterManager(
-                self.provider, self.notepad, library, provider, self.speech_provider,
+                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
             )
             manager.generate_character("Mira", personality="Alert", motivation="Help", quirk="Hums", gender="female")
             character = manager.export_characters()[0]
@@ -378,7 +383,7 @@ class TestCharacterManager(unittest.TestCase):
             "path": "/references/hero.png",
         }]
         manager = CharacterManager(
-            self.provider, self.notepad, library, self.image_provider, self.speech_provider,
+            self.provider, self.notepad, self.story_state, library, self.image_provider, self.speech_provider,
         )
 
         self.assertIsNone(manager.get_player_character())
@@ -417,7 +422,7 @@ class TestCharacterManager(unittest.TestCase):
                 "name": "Valen_player_character", "alias": "Valen_player_character", "path": output,
             }]]
             manager = CharacterManager(
-                self.provider, self.notepad, library, provider, self.speech_provider,
+                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
             )
             player = manager.update_player_character(
                 name="Valen",
@@ -430,7 +435,7 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_player_character_export_and_import(self) -> None:
         manager = CharacterManager(
-            self.provider, self.notepad, self.image_library, self.image_provider, self.speech_provider,
+            self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, self.speech_provider,
         )
         manager.update_player_character(
             name="Cora",
@@ -443,7 +448,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(exported["image_description"], "Alchemist with goggles")
 
         manager2 = CharacterManager(
-            self.provider, self.notepad, self.image_library, self.image_provider, self.speech_provider,
+            self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, self.speech_provider,
         )
         manager2.import_player_character(exported)
         player2 = manager2.get_player_character()
@@ -540,7 +545,9 @@ class TestCharacterManager(unittest.TestCase):
                 ]
             }
         }
-        self.manager.story_state = serialized_story_state
+        story_state = StoryState()
+        story_state.load(serialized_story_state)
+        self.manager.story_state = story_state
         self.assertEqual(self.manager.count(), 0)
         self.provider.generate.reset_mock()
 
@@ -582,7 +589,9 @@ class TestCharacterManager(unittest.TestCase):
                 ]
             }
         }
-        self.manager.story_state = serialized_story_state
+        story_state = StoryState()
+        story_state.load(serialized_story_state)
+        self.manager.story_state = story_state
         quirk_service = MagicMock(spec=QuirkGeneratorService)
         quirk_service.get_random_quirk.return_value = "Always counts coins twice"
 

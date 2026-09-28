@@ -38,7 +38,7 @@ class TestStoryToolComposition(unittest.TestCase):
         character_type.assert_called_once_with(
             text_response_provider=self.provider,
             notepad=tool.notepad,
-            config={"session_id": "shared-session"},
+            story_state=self.canvas.story,
             image_library=tool.image_library,
             image_provider=None,
             speech_provider=self.canvas.story.speech_provider,

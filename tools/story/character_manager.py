@@ -7,7 +7,7 @@ import re
 from threading import Lock
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, Literal, Mapping, Optional, Sequence
+from typing import Any, Literal, Mapping, Optional, Sequence
 
 from PIL import Image
 
@@ -30,7 +30,7 @@ from utils.image_utils import embed_image_metadata
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_ACTIVE_CHARACTERS = 3
+DEFAULT_MAX_ACTIVE_CHARACTERS = 5
 MAX_ACTIVE_CHARACTERS = 10
 SUPPORTED_VOICE_TAGS = {"male", "female", "nonbinary"}
 
@@ -323,48 +323,24 @@ class CharacterManager:
         self,
         text_response_provider: TextResponseProvider,
         notepad: Notepad,
+        story_state: StoryState,
         image_library: Optional[ImageLibrary] = None,
         image_provider: Optional[ImageProvider] = None,
         speech_provider: Optional[SpeechProvider] = None,
-        config: Optional[Dict[str, Any]] = None,
         character_image_style: str = "",
-        story_state: Optional[StoryState] = None,
     ) -> None:
-        if text_response_provider is None:
-            raise ValueError("text_response_provider is required.")
-        if notepad is None:
-            raise ValueError("notepad is required.")
-
         self.text_response_provider = text_response_provider
         self.notepad = notepad
-        self.config = config or {}
+        self._story_state = story_state
         self.image_library: Optional[ImageLibrary] = image_library
         self.image_provider: Optional[ImageProvider] = image_provider
         self.speech_provider: Optional[SpeechProvider] = speech_provider
         self.character_image_style = str(character_image_style or "").strip()
-        self._story_state = story_state
-        self.max_active_characters = max(
-            1,
-            min(
-                int(
-                    self.config.get(
-                        "max_active_characters", DEFAULT_MAX_ACTIVE_CHARACTERS
-                    )
-                ),
-                MAX_ACTIVE_CHARACTERS,
-            ),
-        )
+        self.max_active_characters = DEFAULT_MAX_ACTIVE_CHARACTERS
         self._characters: dict[str, Character] = {}
         self._characters_lock = Lock()
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
-        self.import_characters(self._parse_initial_characters(self.config.get("initial_characters")))
-        initial_player = self.config.get("player_character") or self.config.get("initial_player_character")
-        if initial_player:
-            try:
-                self.import_player_character(PlayerCharacter.model_validate(initial_player))
-            except Exception as exc:
-                logger.warning("[CharacterManager] Skipping invalid initial player character: %s (%s)", initial_player, exc)
 
     def _parse_initial_characters(self, raw: object) -> list[Character]:
         if not raw:
@@ -393,15 +369,13 @@ class CharacterManager:
         return characters
 
     @property
-    def story_state(self) -> Optional[StoryState]:
-        if self._story_state is not None:
-            return self._story_state
-        if self.notepad is not None and self.notepad.canvas_manager is not None:
-            return self.notepad.canvas_manager.story
-        return None
+    def story_state(self) -> StoryState:
+        return self._story_state
 
     @story_state.setter
-    def story_state(self, value: Optional[StoryState] | object) -> None:
+    def story_state(self, value: StoryState) -> None:
+        if value is None:
+            raise ValueError("story_state cannot be None.")
         self._story_state = value
 
     @staticmethod
@@ -427,60 +401,50 @@ class CharacterManager:
     def _serialized_character(self, name_or_alias: str) -> Character | None:
         key = self._character_key(name_or_alias)
         story_state = self.story_state
-        if story_state is None:
-            return None
 
         # Check characters in story planning state
-        if isinstance(story_state, StoryState):
-            planning = story_state.get_story_planning_state()
-            raw_characters = planning.get("characters", []) if isinstance(planning, dict) else []
-        elif isinstance(story_state, dict):
-            planning = story_state.get("story_planning_state", story_state)
-            raw_characters = planning.get("characters", []) if isinstance(planning, dict) else []
-        else:
-            raw_characters = []
+        planning = story_state.get_story_planning_state()
+        raw_characters = planning.get("characters", [])
 
-        if isinstance(raw_characters, list):
-            for item in raw_characters:
-                try:
-                    character = item if isinstance(item, Character) else Character.model_validate(item)
-                    if self._character_key(character.name) == key or (
-                        character.alias and self._character_key(character.alias) == key
-                    ):
-                        return character
-                except Exception:
-                    continue
+        for item in (raw_characters or ()):
+            try:
+                character = Character.model_validate(item)
+                if self._character_key(character.name) == key or (
+                    character.alias and self._character_key(character.alias) == key
+                ):
+                    return character
+            except Exception:
+                continue
 
         # Check canvas story_state._character
-        if isinstance(story_state, StoryState):
-            raw_char = story_state._character(name_or_alias)
-            if raw_char is not None:
-                try:
-                    return raw_char if isinstance(raw_char, Character) else Character.model_validate(raw_char)
-                except Exception:
-                    pass
+        raw_char = story_state._character(name_or_alias)
+        if raw_char is not None:
+            try:
+                return Character.model_validate(raw_char)
+            except Exception:
+                pass
 
-            tags_res = story_state.get_character_voice_tags(name_or_alias)
-            voice_tags = [str(t) for t in tags_res] if isinstance(tags_res, (list, tuple)) else []
-            tag_gender = _voice_tag_gender(voice_tags)
+        tags_res = story_state.get_character_voice_tags(name_or_alias)
+        voice_tags = [str(t) for t in tags_res]
+        tag_gender = _voice_tag_gender(voice_tags)
 
-            voice_res = story_state.get_character_voice(name_or_alias)
-            voice_id = str(voice_res).strip() if isinstance(voice_res, (str, int)) and str(voice_res).strip() else None
+        voice_res = story_state.get_character_voice(name_or_alias)
+        voice_id = str(voice_res).strip() if voice_res and str(voice_res).strip() else None
 
-            desc_res = story_state.get_character_description(name_or_alias)
-            description = desc_res.strip() if isinstance(desc_res, str) and desc_res.strip() and desc_res.strip().lower() != key else ""
+        desc_res = story_state.get_character_description(name_or_alias)
+        description = desc_res.strip() if desc_res and desc_res.strip().lower() != key else ""
 
-            if voice_tags or voice_id or description:
-                try:
-                    return Character.model_validate({
-                        "name": name_or_alias,
-                        "gender": tag_gender or "female",
-                        "description": description,
-                        "voice_tags": voice_tags,
-                        "voice_id": voice_id,
-                    })
-                except Exception:
-                    pass
+        if voice_tags or voice_id or description:
+            try:
+                return Character.model_validate({
+                    "name": name_or_alias,
+                    "gender": tag_gender or "female",
+                    "description": description,
+                    "voice_tags": voice_tags,
+                    "voice_id": voice_id,
+                })
+            except Exception:
+                pass
 
         return None
 
@@ -953,7 +917,7 @@ class CharacterManager:
             )
             try:
                 response = self.text_response_provider.generate(request)
-                raw_text = response.text.strip() if response and isinstance(response.text, str) else "{}"
+                raw_text = response.text.strip()
                 if raw_text.startswith("```"):
                     raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
                     raw_text = re.sub(r"\s*```$", "", raw_text)
