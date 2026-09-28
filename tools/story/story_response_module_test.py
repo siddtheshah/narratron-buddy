@@ -366,8 +366,11 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertEqual(len(characters), 1)
         self.assertEqual(characters[0]["name"], "Kaelen")
         self.assertEqual(characters[0]["voice_tags"], ["male"])
-        self.assertIn("Kaelen", self.module.lookup_character("ranger"))
-        self.assertIn("Taciturn", self.module.lookup_character("ranger"))
+        lookup_result = self.module.lookup_character("ranger")
+        self.assertEqual(len(lookup_result.characters), 1)
+        self.assertEqual(lookup_result.characters[0].name, "Kaelen")
+        self.assertIn("Kaelen", lookup_result)
+        self.assertIn("Taciturn", lookup_result)
 
         self.module.clear_scene()
         self.assertEqual(self.module.get_present_characters(), [])

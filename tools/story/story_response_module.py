@@ -28,7 +28,7 @@ from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from components.character_manager import Character, CharacterManager, PlayerCharacter
+from components.character_manager import Character, CharacterLookupResult, CharacterManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_models import (
@@ -689,7 +689,8 @@ class StoryResponseModule:
     def get_present_characters(self) -> list[Character]:
         return self.character_manager.get_present_characters()
 
-    def lookup_character(self, query: str = "") -> str:
+    def lookup_character(self, query: str = "") -> CharacterLookupResult:
+        """List all session characters or search by name or trait."""
         return self.character_manager.lookup_character(query)
 
     def create_or_update_character(

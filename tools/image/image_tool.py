@@ -219,7 +219,9 @@ class ImageTools(BaseTools):
         """Generates an image from a prompt with a required stable alias.
 
         Args:
-            image_prompt: The prompt describing the image to generate.
+            image_prompt: The prompt describing the image to generate. Always use the explicit
+                Character Name when describing characters or actions so character manager
+                references are automatically pulled in.
             image_name: Required friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
             display: Whether to automatically display the image on the canvas upon creation (default True).
@@ -280,14 +282,14 @@ class ImageTools(BaseTools):
                     return res
 
         if self.character_manager is not None:
-            char_refs = self.character_manager.get_character_references()
-            for ref in char_refs:
+            lookup_result = self.character_manager.lookup_character(image_prompt, name_only=True)
+            for ref in lookup_result.get_character_references():
                 ref_clean = str(ref).strip()
                 ref_key = ref_clean.casefold()
                 if not ref_key or ref_key in seen_keys:
                     continue
-                ref_path = self.visual.resolve_image_path(ref_clean) if self.visual else None
-                if ref_path:
+                ref_path = self.visual.resolve_image_path(ref_clean) if self.visual is not None else None
+                if ref_path is not None:
                     norm_path = os.path.normcase(os.path.abspath(ref_path))
                     if norm_path not in seen_paths:
                         seen_keys.add(ref_key)

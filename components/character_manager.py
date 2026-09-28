@@ -239,6 +239,72 @@ class GeneratedCharacterProfile(BaseModel):
     voice_tags: list[str] = Field(default_factory=list)
 
 
+class CharacterLookupResult(BaseModel):
+    """Structured result returned by character lookup queries."""
+
+    query: str = ""
+    characters: list[Character] = Field(default_factory=list)
+    player: PlayerCharacter | None = None
+
+    @property
+    def total_count(self) -> int:
+        return len(self.characters) + (1 if self.player is not None else 0)
+
+    def get_character_references(self) -> list[str]:
+        """Return unique image references for all matched characters and player."""
+        references: list[str] = []
+        if self.player is not None:
+            if self.player.reference and str(self.player.reference).strip():
+                references.append(str(self.player.reference).strip())
+            if self.player.reference_path and str(self.player.reference_path).strip():
+                references.append(str(self.player.reference_path).strip())
+
+        for character in self.characters:
+            if character.image_reference and str(character.image_reference).strip():
+                references.append(str(character.image_reference).strip())
+            if character.image_reference_path and str(character.image_reference_path).strip():
+                references.append(str(character.image_reference_path).strip())
+        return references
+
+    def describe(self) -> str:
+        """Formatted human-readable description of lookup results."""
+        if not self.characters and self.player is None:
+            if self.query:
+                return f"No characters matching '{self.query}' found in known session characters."
+            return "No characters have been encountered or introduced in this story yet."
+
+        heading = (
+            f"Characters matching '{self.query}':"
+            if self.query
+            else f"Characters encountered ({self.total_count} total):"
+        )
+        lines: list[str] = [heading]
+        if self.player is not None:
+            ref_info = f" [Image Reference: {self.player.reference}]" if self.player.reference else ""
+            vis_info = f" Visual: {self.player.image_description}" if self.player.image_description else ""
+            lines.append(f"- [Player Character] {self.player.name or 'Unnamed Explorer'}:{vis_info}{ref_info}")
+        for character in self.characters:
+            tags = (
+                f" [Voice: {', '.join(character.voice_tags)}]"
+                if character.voice_tags
+                else ""
+            )
+            description = (
+                f" ({character.description})" if character.description else ""
+            )
+            lines.append(
+                f"- {character.name}{description}: Personality: {character.personality or 'N/A'}, "
+                f"Motivation: {character.motivation or 'N/A'}, Quirk: {character.quirk or 'N/A'}{tags}"
+            )
+        return "\n".join(lines)
+
+    def __str__(self) -> str:
+        return self.describe()
+
+    def __contains__(self, item: str) -> bool:
+        return item in self.describe()
+
+
 _CHARACTER_GEN_PROMPT_TEMPLATE = Template(
     """Character name: {{ name }}
 {% if gender -%}
@@ -595,65 +661,77 @@ class CharacterManager:
                 for character in list(self._characters.values())[-self.max_active_characters :]
             ]
 
-    def lookup_character(self, query: str = "") -> str:
-        """List all session characters or search by name or trait."""
+    def lookup_character(self, query: str = "", name_only: bool = False) -> CharacterLookupResult:
+        """List all session characters or search by name or trait.
+
+        Args:
+            query: Search query or prompt to match against session characters.
+            name_only: If True, matches characters solely by their canonical name.
+
+        Returns:
+            CharacterLookupResult containing matched characters and player.
+        """
         with self._characters_lock:
             characters = list(self._characters.values())
         player = self.get_player_character()
 
-        if not characters and not player:
-            return "No characters have been encountered or introduced in this story yet."
+        if not characters and player is None:
+            return CharacterLookupResult(query=query, characters=[], player=None)
 
         clean_query = str(query or "").strip().lower()
-        matches = characters
+        matches: list[Character] = characters
         player_matches = False
         if clean_query:
-            terms = re.findall(r"\w+", clean_query)
-            matches = []
-            for character in characters:
-                searchable = " ".join(
-                    [
-                        character.name, character.description, character.personality,
-                        character.motivation, character.quirk, " ".join(character.voice_tags),
-                    ]
-                ).lower()
-                if any(term in searchable for term in terms):
-                    matches.append(character)
-            if player:
-                player_searchable = " ".join(
-                    [player.name, player.image_description, player.reference or ""]
-                ).lower()
-                if any(term in player_searchable for term in terms) or "player" in clean_query:
-                    player_matches = True
-            if not matches and not player_matches:
-                return f"No characters matching '{query}' found in known session characters."
+            if name_only:
+                matches = []
+                for character in characters:
+                    char_name = character.name.strip().lower()
+                    if not char_name:
+                        continue
+                    if len(char_name) == 1:
+                        if clean_query == char_name:
+                            matches.append(character)
+                    else:
+                        if (
+                            re.search(r"\b" + re.escape(char_name) + r"\b", clean_query)
+                            or (len(clean_query) >= 2 and re.search(r"\b" + re.escape(clean_query) + r"\b", char_name))
+                        ):
+                            matches.append(character)
+                if player is not None:
+                    player_name = (player.name or "").strip().lower()
+                    if len(player_name) == 1:
+                        player_matches = (clean_query == player_name)
+                    elif len(player_name) >= 2:
+                        player_matches = bool(
+                            re.search(r"\b" + re.escape(player_name) + r"\b", clean_query)
+                            or (len(clean_query) >= 2 and re.search(r"\b" + re.escape(clean_query) + r"\b", player_name))
+                        )
+            else:
+                terms = re.findall(r"\w+", clean_query)
+                matches = []
+                for character in characters:
+                    searchable = " ".join(
+                        [
+                            character.name, character.description, character.personality,
+                            character.motivation, character.quirk, " ".join(character.voice_tags),
+                        ]
+                    ).lower()
+                    if any(term in searchable for term in terms):
+                        matches.append(character)
+                if player is not None:
+                    player_searchable = " ".join(
+                        [player.name, player.image_description, player.reference or ""]
+                    ).lower()
+                    if any(term in player_searchable for term in terms) or "player" in clean_query:
+                        player_matches = True
         else:
             player_matches = player is not None
 
-        heading = (
-            f"Characters matching '{query}':"
-            if clean_query
-            else f"Characters encountered ({len(characters) + (1 if player else 0)} total):"
+        return CharacterLookupResult(
+            query=query,
+            characters=matches,
+            player=player if player_matches else None,
         )
-        lines = [heading]
-        if player_matches and player:
-            ref_info = f" [Image Reference: {player.reference}]" if player.reference else ""
-            vis_info = f" Visual: {player.image_description}" if player.image_description else ""
-            lines.append(f"- [Player Character] {player.name or 'Unnamed Explorer'}:{vis_info}{ref_info}")
-        for character in matches:
-            tags = (
-                f" [Voice: {', '.join(character.voice_tags)}]"
-                if character.voice_tags
-                else ""
-            )
-            description = (
-                f" ({character.description})" if character.description else ""
-            )
-            lines.append(
-                f"- {character.name}{description}: Personality: {character.personality or 'N/A'}, "
-                f"Motivation: {character.motivation or 'N/A'}, Quirk: {character.quirk or 'N/A'}{tags}"
-            )
-        return "\n".join(lines)
 
     def get_player_character(self) -> PlayerCharacter | None:
         """Return the canonical persisted identity and visual reference for the player character."""

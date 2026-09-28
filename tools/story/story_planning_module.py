@@ -30,7 +30,7 @@ from components.canvas.story_state import (
 )
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from components.character_manager import CharacterManager, PlayerCharacter
+from components.character_manager import CharacterLookupResult, CharacterManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.image_library import ImageLibrary
 from components.notepad import (
@@ -401,7 +401,8 @@ class StoryPlanningModule:
             self._deep_read_lore_calls_this_run = 0
             self._deep_search_lore_calls_this_run = 0
 
-    def _lookup_character(self, query: str = "") -> str:
+    def _lookup_character(self, query: str = "") -> CharacterLookupResult:
+        """List all session characters or search by name or trait."""
         return self.character_manager.lookup_character(query)
 
     def get_player_character(self) -> PlayerCharacter | None:

@@ -128,10 +128,49 @@ class TestCharacterManager(unittest.TestCase):
         listing = self.manager.lookup_character()
         match = self.manager.lookup_character("scholar")
 
+        self.assertEqual(listing.total_count, 2)
+        self.assertEqual(len(listing.characters), 2)
         self.assertIn("Characters encountered (2 total):", listing)
+        self.assertEqual(match.total_count, 1)
+        self.assertEqual(match.characters[0].name, "Lyra")
         self.assertIn("Lyra", match)
         self.assertNotIn("Kaelen", match)
-        self.assertIn("No characters matching", self.manager.lookup_character("pirate"))
+        pirate = self.manager.lookup_character("pirate")
+        self.assertEqual(pirate.total_count, 0)
+        self.assertEqual(len(pirate.characters), 0)
+        self.assertIn("No characters matching", pirate)
+
+    def test_lookup_character_name_only(self) -> None:
+        self._create_character("Lyra", "A mystic scholar")
+        self._create_character("Kaelen", "A forest ranger")
+        self.manager.update_player_character(
+            name="Aiden",
+            reference="aiden_img",
+            image_description="A battle-tested paladin",
+        )
+
+        # Prompt contains Lyra by name -> matches
+        res = self.manager.lookup_character("Lyra casts a protective ward", name_only=True)
+        self.assertEqual(len(res.characters), 1)
+        self.assertEqual(res.characters[0].name, "Lyra")
+        self.assertIsNone(res.player)
+
+        # Prompt contains character description/trait ('scholar'), but name_only is True -> no match
+        res_trait = self.manager.lookup_character("A mystic scholar reads a dusty book", name_only=True)
+        self.assertEqual(len(res_trait.characters), 0)
+        self.assertIsNone(res_trait.player)
+
+        # Prompt mentions both Kaelen and Aiden by name -> matches both NPC and player
+        res_multi = self.manager.lookup_character("Kaelen and Aiden enter the dense forest", name_only=True)
+        self.assertEqual(len(res_multi.characters), 1)
+        self.assertEqual(res_multi.characters[0].name, "Kaelen")
+        self.assertIsNotNone(res_multi.player)
+        if res_multi.player is not None:
+            self.assertEqual(res_multi.player.name, "Aiden")
+
+        # Prompt mentions 'paladin' description -> does NOT match player when name_only is True
+        res_paladin = self.manager.lookup_character("The paladin raises their shield", name_only=True)
+        self.assertIsNone(res_paladin.player)
 
     def test_generates_missing_profile_fields_from_provider_and_planning_elements(self) -> None:
         self.provider.generate.return_value = SimpleNamespace(
@@ -464,11 +503,21 @@ class TestCharacterManager(unittest.TestCase):
         self._create_character("Lyra", "A mystic scholar")
 
         listing = self.manager.lookup_character()
+        self.assertEqual(listing.total_count, 2)
+        self.assertEqual(len(listing.characters), 1)
+        self.assertIsNotNone(listing.player)
+        if listing.player is not None:
+            self.assertEqual(listing.player.name, "Aiden")
         self.assertIn("Characters encountered (2 total):", listing)
         self.assertIn("[Player Character] Aiden:", listing)
         self.assertIn("Lyra", listing)
 
         match_player = self.manager.lookup_character("paladin")
+        self.assertEqual(match_player.total_count, 1)
+        self.assertIsNotNone(match_player.player)
+        if match_player.player is not None:
+            self.assertEqual(match_player.player.name, "Aiden")
+        self.assertEqual(len(match_player.characters), 0)
         self.assertIn("Aiden", match_player)
         self.assertNotIn("Lyra", match_player)
 

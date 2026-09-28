@@ -53,6 +53,12 @@ class TestCreateAgent(unittest.TestCase):
             AGENT_INSTRUCTION_TEMPLATE,
         )
 
+    def test_image_tool_character_naming_instruction_informs_agent(self):
+        self.assertIn(
+            'When using image_tool (`create_image`), always use a "Character Name" when describing actions so that the character manager reference will be automatically pulled in.',
+            AGENT_INSTRUCTION_TEMPLATE,
+        )
+
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
     def test_create_agent_calls_list_references_on_init(

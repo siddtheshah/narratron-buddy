@@ -9,7 +9,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
-from components.character_manager import Character, CharacterManager, PlayerCharacter
+from components.character_manager import Character, CharacterLookupResult, CharacterManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.image_library import ImageLibrary
 from components.notepad import Notepad
@@ -148,8 +148,11 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         theater.config.assert_called_once_with()
         create_agent.assert_called_once_with()
 
-        character_manager.lookup_character.return_value = "Lyra: Mystic scholar"
-        self.assertEqual(module._lookup_character("Lyra"), "Lyra: Mystic scholar")
+        mock_result = CharacterLookupResult(
+            characters=[Character(name="Lyra", gender="female", description="Mystic scholar")]
+        )
+        character_manager.lookup_character.return_value = mock_result
+        self.assertEqual(module._lookup_character("Lyra"), mock_result)
         character_manager.lookup_character.assert_called_once_with("Lyra")
 
     def test_delegates_player_and_character_management(self) -> None:
