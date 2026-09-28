@@ -13,8 +13,8 @@ from providers import ImageGenerationResult, ImageProvider, ImageProviderError, 
 from tools.image.image_library import ImageLibrary
 from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
-from tools.components.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
-from tools.components.notepad import Notepad
+from components.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
+from components.notepad import Notepad
 
 
 class TestNormalizeVoiceTags(unittest.TestCase):
@@ -146,7 +146,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Polishes a brass key"
 
         with patch(
-            "tools.components.character_manager.get_quirk_generator_service",
+            "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile("Orin", "An archivist")
@@ -185,7 +185,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Checks the exits"
 
         with patch(
-            "tools.components.character_manager.get_quirk_generator_service",
+            "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile("Mira")
@@ -202,7 +202,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Checks the exits"
 
         with patch(
-            "tools.components.character_manager.get_quirk_generator_service",
+            "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile(
@@ -279,7 +279,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Plays with a coin"
 
         with patch(
-            "tools.components.character_manager.get_quirk_generator_service",
+            "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             # Explicit male
@@ -597,7 +597,7 @@ class TestCharacterManager(unittest.TestCase):
 
         # Story module specifies motivation, but quirk is missing in both
         with patch(
-            "tools.components.character_manager.get_quirk_generator_service",
+            "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile(

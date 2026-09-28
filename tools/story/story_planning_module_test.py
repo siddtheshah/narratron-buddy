@@ -9,10 +9,10 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
-from tools.components.character_manager import Character, CharacterManager, PlayerCharacter
+from components.character_manager import Character, CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
 from tools.image.image_library import ImageLibrary
-from tools.components.notepad import Notepad
+from components.notepad import Notepad
 from tools.story.story_planning_module import (
     StoryPlanningModule,
     VertexGemini,

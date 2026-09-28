@@ -7,7 +7,7 @@ from typing import Any, Dict
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, logged_tool_call
-from tools.components.notepad import Notepad
+from components.notepad import Notepad
 
 
 class NotepadTool(BaseTools):

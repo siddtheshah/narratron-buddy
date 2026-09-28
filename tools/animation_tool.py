@@ -33,7 +33,7 @@ from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_c
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
-from tools.components.character_manager import CharacterManager
+from components.character_manager import CharacterManager
 
 
 logger = logging.getLogger(__name__)

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, Mock
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.components.notepad import Notepad
+from components.notepad import Notepad
 
 
 class TestNotepad(unittest.TestCase):

@@ -14,7 +14,7 @@ from providers import ImageGenerationResult
 from testing.base import BaseTestCase
 from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
-from tools.components.character_manager import CharacterManager
+from components.character_manager import CharacterManager
 
 
 def create_fake_image_bytes() -> bytes:

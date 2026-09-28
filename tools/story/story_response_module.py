@@ -28,9 +28,9 @@ from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.components.character_manager import Character, CharacterManager, PlayerCharacter
+from components.character_manager import Character, CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
-from tools.components.notepad import Notepad
+from components.notepad import Notepad
 from tools.story.story_models import (
     VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
