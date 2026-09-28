@@ -14,6 +14,7 @@ from providers import ImageGenerationResult
 from testing.base import BaseTestCase
 from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
+from tools.components.character_manager import CharacterManager
 
 
 def create_fake_image_bytes() -> bytes:
@@ -611,5 +612,63 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(pending["args"], ("scene three",))
         self.assertEqual(pending["kwargs"], {"image_name": "img3", "display": False})
         tools.join_generation()
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_auto_adds_character_manager_references(self, mock_get_provider) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr.get_character_references.return_value = ["hero"]
+
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="cm_auto_ref",
+            theater_manager=self.manager,
+            character_manager=mock_char_mgr,
+        )
+        ref_path = os.path.join(tools.reference_dir, "hero.png")
+        Image.new("RGB", (10, 10), color="green").save(ref_path)
+        tools._load_references()
+
+        # Caller provides no reference_images; CharacterManager provides 'hero'
+        tools.create_image("a forest path", image_name="forest_path", display=False)
+        tools.join_generation()
+
+        references = provider.generate.call_args.args[0].references
+        self.assertEqual(len(references), 1)
+        self.assertEqual(references[0].name, "hero.png")
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_deduplicates_character_manager_references(self, mock_get_provider) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr.get_character_references.return_value = ["hero"]
+
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="cm_dedup_ref",
+            theater_manager=self.manager,
+            character_manager=mock_char_mgr,
+        )
+        ref_path = os.path.join(tools.reference_dir, "hero.png")
+        Image.new("RGB", (10, 10), color="green").save(ref_path)
+        tools._load_references()
+
+        # Caller provides 'hero' by alias; CharacterManager also provides 'hero' -> should deduplicate
+        tools.create_image("a forest path", image_name="forest_path1", reference_images="hero", display=False)
+        tools.join_generation()
+
+        references = provider.generate.call_args.args[0].references
+        self.assertEqual(len(references), 1)
+        self.assertEqual(references[0].name, "hero.png")
+
+        # Caller provides file path directly; CharacterManager provides 'hero' -> should deduplicate by resolved path
+        tools.create_image("a forest path", image_name="forest_path2", reference_images=ref_path, display=False)
+        tools.join_generation()
+
+        references2 = provider.generate.call_args.args[0].references
+        self.assertEqual(len(references2), 1)
+        self.assertEqual(references2[0].name, "hero.png")
 
 

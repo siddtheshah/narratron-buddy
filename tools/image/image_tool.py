@@ -26,6 +26,7 @@ from components.canvas_state import CanvasStateManager
 from components.canvas.visual_state import VisualState, PRIORITY_SHOW, PRIORITY_CREATE
 from components.theater_manager import Theater
 from tools.image.image_library import ImageLibrary
+from tools.components.character_manager import CharacterManager
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +36,13 @@ class ImageTools(BaseTools):
         theater: Theater,
         canvas_manager: CanvasStateManager,
         adventure_mode: bool = False,
+        character_manager: Optional[CharacterManager] = None,
     ):
         super().__init__(
             theater=theater,
             canvas_manager=canvas_manager,
         )
+        self.character_manager: Optional[CharacterManager] = character_manager
 
         image_config = self.config.get("image_generation", {})
         visuals_config = self.config.get("visuals", {})
@@ -247,22 +250,49 @@ class ImageTools(BaseTools):
                 self._trigger_after_tool_call("create_image")
                 return res
         
-        resolved_refs = []
+        resolved_refs: list[tuple[str, str]] = []
+        seen_keys: set[str] = set()
+        seen_paths: set[str] = set()
+
         if reference_images:
-            if isinstance(reference_images, str):
+            if type(reference_images) is str:
                 ref_list = [r.strip() for r in reference_images.split(",") if r.strip()]
             else:
-                ref_list = reference_images
+                ref_list = [str(r).strip() for r in reference_images if str(r).strip()]
             
             for ref in ref_list:
+                ref_key = ref.casefold()
+                if ref_key in seen_keys:
+                    continue
                 ref_path = self.visual.resolve_image_path(ref) if self.visual else None
                 if ref_path:
-                    resolved_refs.append((ref, ref_path))
+                    norm_path = os.path.normcase(os.path.abspath(ref_path))
+                    if norm_path not in seen_paths:
+                        seen_keys.add(ref_key)
+                        seen_paths.add(norm_path)
+                        resolved_refs.append((ref, ref_path))
                 else:
                     logger.error(f"[ImageTools] Reference image '{ref}' not found.")
                     res = f"Error: Reference image '{ref}' not found."
                     self._trigger_after_tool_call("create_image")
                     return res
+
+        if self.character_manager is not None:
+            char_refs = self.character_manager.get_character_references()
+            for ref in char_refs:
+                ref_clean = str(ref).strip()
+                ref_key = ref_clean.casefold()
+                if not ref_key or ref_key in seen_keys:
+                    continue
+                ref_path = self.visual.resolve_image_path(ref_clean) if self.visual else None
+                if ref_path:
+                    norm_path = os.path.normcase(os.path.abspath(ref_path))
+                    if norm_path not in seen_paths:
+                        seen_keys.add(ref_key)
+                        seen_paths.add(norm_path)
+                        resolved_refs.append((ref_clean, ref_path))
+                else:
+                    logger.debug(f"[ImageTools] Character reference '{ref_clean}' could not be resolved; skipping.")
 
         provider_references = []
         if resolved_refs:

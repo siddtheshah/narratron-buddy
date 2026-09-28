@@ -16,9 +16,9 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
 from tools.base_tool import BaseTools, with_cycle_cooldown
-from tools.story.character_manager import CharacterManager
+from tools.components.character_manager import CharacterManager
 from tools.story.lore_library import LoreLibrary
-from tools.story.notepad import Notepad
+from tools.components.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule
 from tools.story.story_response_module import StoryResponseModule
 from tools.image.image_library import ImageLibrary

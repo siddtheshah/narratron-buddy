@@ -13,8 +13,8 @@ from providers import ImageGenerationResult, ImageProvider, ImageProviderError, 
 from tools.image.image_library import ImageLibrary
 from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
-from tools.story.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
-from tools.story.notepad import Notepad
+from tools.components.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
+from tools.components.notepad import Notepad
 
 
 class TestNormalizeVoiceTags(unittest.TestCase):
@@ -146,7 +146,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Polishes a brass key"
 
         with patch(
-            "tools.story.character_manager.get_quirk_generator_service",
+            "tools.components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile("Orin", "An archivist")
@@ -185,7 +185,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Checks the exits"
 
         with patch(
-            "tools.story.character_manager.get_quirk_generator_service",
+            "tools.components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile("Mira")
@@ -202,7 +202,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Checks the exits"
 
         with patch(
-            "tools.story.character_manager.get_quirk_generator_service",
+            "tools.components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile(
@@ -279,7 +279,7 @@ class TestCharacterManager(unittest.TestCase):
         quirk_service.get_random_quirk.return_value = "Plays with a coin"
 
         with patch(
-            "tools.story.character_manager.get_quirk_generator_service",
+            "tools.components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             # Explicit male
@@ -597,7 +597,7 @@ class TestCharacterManager(unittest.TestCase):
 
         # Story module specifies motivation, but quirk is missing in both
         with patch(
-            "tools.story.character_manager.get_quirk_generator_service",
+            "tools.components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
             profile = self.manager.generate_character_profile(
@@ -615,6 +615,31 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(profile.description, "Shadow operative")
         # Missing quirk generated
         self.assertEqual(profile.quirk, "Always counts coins twice")
+
+    def test_get_character_references(self) -> None:
+        manager = CharacterManager(
+            self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, self.speech_provider
+        )
+        self.assertEqual(manager.get_character_references(), [])
+
+        manager.set_player_character(
+            PlayerCharacter(name="Aiden", reference="hero_portrait", reference_path="/references/hero.png")
+        )
+        self.assertEqual(manager.get_character_references(), ["hero_portrait", "/references/hero.png"])
+
+        manager.generate_character(
+            "Lyra",
+            personality="Curious",
+            motivation="Explore",
+            quirk="Hums",
+            gender="female",
+            image_reference="lyra_portrait",
+        )
+        # Lyra portrait alias and deduplication
+        refs = manager.get_character_references()
+        self.assertIn("hero_portrait", refs)
+        self.assertIn("lyra_portrait", refs)
+        self.assertEqual(len(refs), len(set(r.casefold() for r in refs)))
 
 
 if __name__ == "__main__":

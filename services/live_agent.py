@@ -401,6 +401,7 @@ def create_tool_bundle_for_session(
             image_library=image_tools.image_library,
         )
         tools.append(story_planning_tools.process_user_action)
+        image_tools.character_manager = story_planning_tools.character_manager
     else:
         notepad_tools = NotepadTool(theater, canvas_manager=canvas_manager)
         tools.append(notepad_tools.update_sticky_note)
@@ -443,6 +444,8 @@ def create_tool_bundle_for_session(
                 str(animation_config.get("video_provider", "fal-minimax-h3-turbo"))
             ),
         )
+        if adventure_mode:
+            animation_tools.character_manager = story_planning_tools.character_manager
         tools.extend([
             animation_tools.create_animation,
             animation_tools.play_animation,

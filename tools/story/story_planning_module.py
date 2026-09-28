@@ -30,10 +30,10 @@ from components.canvas.story_state import (
 )
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from tools.story.character_manager import CharacterManager, PlayerCharacter
+from tools.components.character_manager import CharacterManager, PlayerCharacter
 from tools.story.lore_library import LoreLibrary
 from tools.image.image_library import ImageLibrary
-from tools.story.notepad import (
+from tools.components.notepad import (
     Notepad,
 )
 from tools.story.story_models import (

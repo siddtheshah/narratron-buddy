@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import os
 import json
-from pathlib import Path
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
-if TYPE_CHECKING:
-    from components.theater_manager import Theater
+from components.theater_manager import Theater
 
 
 class ChatManager:

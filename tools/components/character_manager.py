@@ -25,7 +25,7 @@ from providers import (
 from components.canvas.story_state import StoryState
 from services.quirk_service import get_quirk_generator_service
 from tools.image.image_library import ImageLibrary
-from tools.story.notepad import Notepad
+from tools.components.notepad import Notepad
 from utils.image_utils import embed_image_metadata
 
 logger = logging.getLogger(__name__)
@@ -664,6 +664,31 @@ class CharacterManager:
         """Return the canonical image reference identifier for the player character."""
         with self._player_character_lock:
             return self._player_character.reference if self._player_character else None
+
+    def get_character_references(self) -> list[str]:
+        """Return unique image references for active characters and player."""
+        references: list[str] = []
+        player = self.get_player_character()
+        if player is not None:
+            if player.reference and str(player.reference).strip():
+                references.append(str(player.reference).strip())
+            if player.reference_path and str(player.reference_path).strip():
+                references.append(str(player.reference_path).strip())
+
+        for character in self.get_present_characters():
+            if character.image_reference and str(character.image_reference).strip():
+                references.append(str(character.image_reference).strip())
+            if character.image_reference_path and str(character.image_reference_path).strip():
+                references.append(str(character.image_reference_path).strip())
+
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for r in references:
+            key = r.casefold()
+            if key not in seen:
+                seen.add(key)
+                deduped.append(r)
+        return deduped
 
     def set_player_character(
         self, player: PlayerCharacter | None

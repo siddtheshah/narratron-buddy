@@ -18,6 +18,7 @@ from testing.base import BaseTestCase
 from tools.animation_tool import AnimationTools
 from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
+from tools.components.character_manager import CharacterManager
 
 
 def fake_image_bytes() -> bytes:
@@ -1267,5 +1268,114 @@ class TestAnimationTools(BaseTestCase):
         self.assertIsNotNone(pending)
         self.assertEqual(pending["args"], ("third animation", "anim_third"))
         tools.join_generation()
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_animation_auto_adds_character_manager_references(self, mock_get_provider) -> None:
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(),
+            mime_type="image/jpeg",
+            provider="mock-image",
+            model="mock-v1",
+        )
+        text_provider = MagicMock()
+        technique_resp = MagicMock(parsed={"technique": "triframe", "reasoning": "motion"}, provider="p", model="m", request_id="1", usage={})
+        triframe_resp = MagicMock(
+            parsed={
+                "base_frame": "A hero stands in a courtyard.",
+                "second_frame_change": "The hero lifts a hand.",
+                "third_frame_change": "The hero lowers the hand.",
+            },
+            provider="p", model="m", request_id="2", usage={}
+        )
+        text_provider.generate.side_effect = [technique_resp, triframe_resp]
+
+        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr.get_character_references.return_value = ["hero"]
+
+        image_tools = self.make_image_tools(self.config, "tri_frame_cm_auto", self.manager)
+        reference_path = os.path.join(image_tools.reference_dir, "hero.png")
+        Image.new("RGB", (10, 10), color="red").save(reference_path)
+        image_tools._load_references()
+
+        animation_tools = self.make_animation_tools(
+            image_tools,
+            image_provider,
+            text_provider,
+            MagicMock(),
+            character_manager=mock_char_mgr,
+        )
+
+        # Caller provides no reference_images; CharacterManager provides 'hero'
+        animation_tools.create_animation("A hero stands in a courtyard.", "hero_stand")
+        animation_tools.join_generation()
+
+        requests = [call.args[0] for call in image_provider.generate.call_args_list]
+        self.assertEqual(requests[0].references[0].name, "hero.png")
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_animation_deduplicates_character_manager_references(self, mock_get_provider) -> None:
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(),
+            mime_type="image/jpeg",
+            provider="mock-image",
+            model="mock-v1",
+        )
+        text_provider = MagicMock()
+        technique_resp1 = MagicMock(parsed={"technique": "triframe", "reasoning": "motion"}, provider="p", model="m", request_id="1", usage={})
+        triframe_resp1 = MagicMock(
+            parsed={
+                "base_frame": "A hero stands in a courtyard.",
+                "second_frame_change": "The hero lifts a hand.",
+                "third_frame_change": "The hero lowers the hand.",
+            },
+            provider="p", model="m", request_id="2", usage={}
+        )
+        technique_resp2 = MagicMock(parsed={"technique": "triframe", "reasoning": "motion"}, provider="p", model="m", request_id="3", usage={})
+        triframe_resp2 = MagicMock(
+            parsed={
+                "base_frame": "A hero stands in a courtyard.",
+                "second_frame_change": "The hero lifts a hand.",
+                "third_frame_change": "The hero lowers the hand.",
+            },
+            provider="p", model="m", request_id="4", usage={}
+        )
+        text_provider.generate.side_effect = [technique_resp1, triframe_resp1, technique_resp2, triframe_resp2]
+
+        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr.get_character_references.return_value = ["hero"]
+
+        image_tools = self.make_image_tools(self.config, "tri_frame_cm_dedup", self.manager)
+        reference_path = os.path.join(image_tools.reference_dir, "hero.png")
+        Image.new("RGB", (10, 10), color="red").save(reference_path)
+        image_tools._load_references()
+
+        animation_tools = self.make_animation_tools(
+            image_tools,
+            image_provider,
+            text_provider,
+            MagicMock(),
+            character_manager=mock_char_mgr,
+        )
+
+        # 1. Caller provides 'hero' by alias -> should deduplicate
+        animation_tools.create_animation("A hero stands in a courtyard.", "hero_stand1", reference_images="hero")
+        animation_tools.join_generation()
+
+        requests1 = [call.args[0] for call in image_provider.generate.call_args_list]
+        # Frame 1 has no previous frame, only the deduplicated provider references
+        self.assertEqual(len(requests1[0].references), 1)
+        self.assertEqual(requests1[0].references[0].name, "hero.png")
+
+        image_provider.generate.reset_mock()
+
+        # 2. Caller provides direct path -> should deduplicate by resolved path
+        animation_tools.create_animation("A hero stands in a courtyard.", "hero_stand2", reference_images=reference_path)
+        animation_tools.join_generation()
+
+        requests2 = [call.args[0] for call in image_provider.generate.call_args_list]
+        self.assertEqual(len(requests2[0].references), 1)
+        self.assertEqual(requests2[0].references[0].name, "hero.png")
 
 

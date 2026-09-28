@@ -33,6 +33,7 @@ from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_c
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
+from tools.components.character_manager import CharacterManager
 
 
 logger = logging.getLogger(__name__)
@@ -91,11 +92,13 @@ class AnimationTools(BaseTools):
         layered_provider: FalQwenLayeredProvider,
         image_provider: Optional[ImageProvider] = None,
         video_provider: Optional[VideoProvider] = None,
+        character_manager: Optional[CharacterManager] = None,
     ):
         super().__init__(
             theater=theater,
             canvas_manager=canvas_manager,
         )
+        self.character_manager: Optional[CharacterManager] = character_manager
         animation_config = self.config.get("animation", {})
         visuals_config = self.config.get("visuals", {})
         self.animation_config = animation_config if isinstance(animation_config, dict) else {}
@@ -731,22 +734,52 @@ class AnimationTools(BaseTools):
     def _resolve_provider_references(
         self, reference_images: Union[list[str], str, None]
     ) -> tuple[list[ImageReference], Optional[str]]:
-        if not reference_images:
-            return [], None
-        reference_names = (
-            [item.strip() for item in reference_images.split(",") if item.strip()]
-            if isinstance(reference_images, str)
-            else reference_images
-        )
-        resolved_references = []
-        for reference_name in reference_names:
-            reference_path = self.visual.resolve_image_path(reference_name) if self.visual else None
-            if not reference_path:
-                return [], f"Error: Reference image '{reference_name}' not found."
+        resolved_references: list[ImageReference] = []
+        resolved_refs: list[tuple[str, str]] = []
+        seen_keys: set[str] = set()
+        seen_paths: set[str] = set()
+
+        if reference_images:
+            reference_names = (
+                [item.strip() for item in reference_images.split(",") if item.strip()]
+                if type(reference_images) is str
+                else [str(item).strip() for item in reference_images if str(item).strip()]
+            )
+            for reference_name in reference_names:
+                ref_key = reference_name.casefold()
+                if ref_key in seen_keys:
+                    continue
+                reference_path = self.visual.resolve_image_path(reference_name) if self.visual else None
+                if not reference_path:
+                    return [], f"Error: Reference image '{reference_name}' not found."
+                norm_path = os.path.normcase(os.path.abspath(reference_path))
+                if norm_path not in seen_paths:
+                    seen_keys.add(ref_key)
+                    seen_paths.add(norm_path)
+                    resolved_refs.append((reference_name, reference_path))
+
+        if self.character_manager is not None:
+            char_refs = self.character_manager.get_character_references()
+            for ref in char_refs:
+                ref_clean = str(ref).strip()
+                ref_key = ref_clean.casefold()
+                if not ref_key or ref_key in seen_keys:
+                    continue
+                reference_path = self.visual.resolve_image_path(ref_clean) if self.visual else None
+                if reference_path:
+                    norm_path = os.path.normcase(os.path.abspath(reference_path))
+                    if norm_path not in seen_paths:
+                        seen_keys.add(ref_key)
+                        seen_paths.add(norm_path)
+                        resolved_refs.append((ref_clean, reference_path))
+                else:
+                    logger.debug(f"[AnimationTools] Character reference '{ref_clean}' could not be resolved; skipping.")
+
+        for ref_name, reference_path in resolved_refs:
             try:
                 data = Path(reference_path).read_bytes()
             except OSError as exc:
-                return [], f"Error loading reference image '{reference_name}': {exc}"
+                return [], f"Error loading reference image '{ref_name}': {exc}"
             suffix = Path(reference_path).suffix.lower()
             mime_type = "image/png" if suffix == ".png" else "image/webp" if suffix == ".webp" else "image/jpeg"
             resolved_references.append(

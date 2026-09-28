@@ -1,6 +1,6 @@
 """Story tool package with an explicit composition root and isolated modules."""
 
-from tools.story.character_manager import (
+from tools.components.character_manager import (
     Character,
     CharacterManager,
     PlayerCharacter,
@@ -10,11 +10,11 @@ from tools.story.character_manager import (
     normalize_voice_tags,
 )
 from tools.story.lore_library import (
-    LoreLibrary,
     MAX_LORE_DOCUMENT_CONTEXT_CHARS,
     MAX_LORE_DOCUMENTS_LISTED,
+    LoreLibrary,
 )
-from tools.story.notepad import (
+from tools.components.notepad import (
     DEFAULT_MAX_STICKY_NOTES,
     MAX_STICKY_NOTE_INFO_CHARS,
     MAX_STICKY_NOTE_TOPIC_CHARS,
