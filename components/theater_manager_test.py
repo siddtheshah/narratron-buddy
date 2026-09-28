@@ -169,3 +169,7 @@ class TestTheaterManager(unittest.TestCase):
             theater.read_output_file_lines("../forbidden.txt")
         with self.assertRaises(ValueError):
             theater.append_output_file("", "data")
+
+    def test_theater_does_not_accept_custom_config(self):
+        with self.assertRaises(TypeError):
+            self.manager.theater("out_test", custom_config={"key": "val"})  # type: ignore

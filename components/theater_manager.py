@@ -71,7 +71,6 @@ class Theater:
 
     manager: "TheaterManager"
     theater_id: str = ""
-    custom_config: Optional[Dict[str, Any]] = None
 
     def directory(self) -> Path:
         return self.manager._get_theater_dir(self.theater_id)
@@ -104,8 +103,6 @@ class Theater:
 
     def config(self) -> Dict[str, Any]:
         """Retrieve and merge configuration for this theater."""
-        if self.custom_config is not None:
-            return deepcopy(self.custom_config)
         return self.manager.get_theater_config(self.theater_id)
 
     def get_config(self) -> Dict[str, Any]:
@@ -231,9 +228,9 @@ class TheaterManager:
     def _get_theater_dir(self, theater_id: str) -> Path:
         return self.base_dir / theater_id
 
-    def theater(self, theater_id: str, custom_config: Optional[Dict[str, Any]] = None) -> Theater:
+    def theater(self, theater_id: str) -> Theater:
         """Return a theater-bound interface without creating its workspace."""
-        return Theater(manager=self, theater_id=theater_id, custom_config=custom_config)
+        return Theater(manager=self, theater_id=theater_id)
 
     def _get_theater_reference_dir(self, theater_id: str) -> Path:
         return self._get_theater_dir(theater_id) / "references"

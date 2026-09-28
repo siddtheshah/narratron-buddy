@@ -17,7 +17,7 @@ from components.character_manager import CharacterManager
 from components.image_library import ImageLibrary
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
-from components.theater_manager import Theater, TheaterManager
+from components.theater_manager import Theater
 from tools.chat_tool import ChatTools
 from tools.image import ImageTools
 from tools.animation_tool import AnimationTools
@@ -527,26 +527,15 @@ def get_references_context(tool_bundle: ToolBundle) -> str:
     return "No preloaded reference images found."
 
 
-def create_agent(
-    theater_id: str,
-    config: Optional[dict] = None,
-    tool_bundle: Optional[ToolBundle] = None,
-    theater_manager: Optional[TheaterManager] = None,
-) -> Agent:
+def create_agent(theater: Theater, tool_bundle: ToolBundle) -> Agent:
     """Create a session-scoped agent."""
-    theater_manager = theater_manager or TheaterManager()
-    theater = theater_manager.theater(theater_id, custom_config=config)
-    if config is None:
-        config = theater.config()
-    if tool_bundle is None:
-        tool_bundle = create_tool_bundle_for_session(theater)
+    config = theater.config()
 
     references = get_references_context(tool_bundle)
     if not references.strip():
         references = "No preloaded reference images found."
     ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
-    theater_metadata = theater.metadata
     playlists = get_playlists_context(theater)
     if not playlists.strip():
         playlists = "No preloaded music playlists found."
@@ -565,9 +554,6 @@ def create_agent(
         use_generated_music=bool(config.get("music", {}).get("use_generated_music", False)),
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
-        theater_id=theater_id,
-        theater_name=theater_metadata.name if theater_metadata else theater_id,
-        config=config,
         agent=config.get("live_agent", {}),
     ).strip()
     app_internal = get_app_config().get("live_agent", {})

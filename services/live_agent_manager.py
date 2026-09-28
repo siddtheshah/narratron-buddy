@@ -1209,12 +1209,7 @@ class LiveAgentSessionManager:
         theater = self.theater_manager.theater(theater_id)
         tool_bundle = create_tool_bundle_for_session(theater)
 
-        session_agent = create_agent(
-            theater_id=theater_id,
-            config=theater_config,
-            tool_bundle=tool_bundle,
-            theater_manager=self.theater_manager,
-        )
+        session_agent = create_agent(theater, tool_bundle=tool_bundle)
 
         disk_service_path = theater.artifacts_dir()
         if use_in_memory_artifacts:

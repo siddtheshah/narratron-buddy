@@ -7,7 +7,12 @@ from typing import Optional
 from unittest.mock import ANY, MagicMock, patch
 
 from components.theater_manager import Theater, TheaterManager
-from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, DeveloperLiveGemini, create_agent
+from services.live_agent import (
+    AGENT_INSTRUCTION_TEMPLATE,
+    DeveloperLiveGemini,
+    create_agent,
+    create_tool_bundle_for_session,
+)
 
 
 def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = None) -> MagicMock:
@@ -80,7 +85,8 @@ class TestCreateAgent(unittest.TestCase):
         mock_bundle.tools = [mock_tool]
         mock_bundle_fn.return_value = mock_bundle
 
-        agent_inst = create_agent(theater_id="test_agent_theater")
+        theater = make_test_theater("test_agent_theater", {})
+        agent_inst = create_agent(theater, tool_bundle=mock_bundle)
 
         mock_image_tools.list_references.assert_called_once()
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
@@ -105,9 +111,8 @@ class TestCreateAgent(unittest.TestCase):
         mock_playlists_fn.return_value = (
             "- Playlist: 'moonlit forest'\n  Description: Quiet, mysterious woodland ambience.\n  Tracks: dusk.mp3"
         )
-        mock_bundle_fn.return_value = mock_bundle
-
-        create_agent(theater_id="music_context_theater", config={"music": {"use_generated_music": False}})
+        theater = make_test_theater("music_context_theater", {"music": {"use_generated_music": False}})
+        create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("Preloaded Music Playlists Context", instruction)
@@ -115,8 +120,15 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("* list_playlists:", instruction)
         self.assertNotIn("create_music", instruction)
 
+    @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
-    def test_create_agent_reads_playlists_from_theater_filesystem(self, mock_agent_cls):
+    def test_create_agent_reads_playlists_from_theater_filesystem(
+        self, mock_agent_cls, mock_bundle_fn
+    ):
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+        mock_bundle_fn.return_value = mock_bundle
+
         with TemporaryDirectory() as temp_dir:
             theater_manager = TheaterManager(base_theaters_dir=temp_dir)
             playlist_dir = Path(temp_dir) / "music_context_theater" / "playlists" / "moonlit_forest"
@@ -125,15 +137,9 @@ class TestCreateAgent(unittest.TestCase):
                 "Quiet, mysterious woodland ambience.", encoding="utf-8"
             )
             (playlist_dir / "dusk.mp3").write_bytes(b"audio")
-            tool_bundle = MagicMock()
-            tool_bundle.tools = []
 
-            create_agent(
-                theater_id="music_context_theater",
-                config={"music": {"use_generated_music": False}},
-                tool_bundle=tool_bundle,
-                theater_manager=theater_manager,
-            )
+            theater = theater_manager.theater("music_context_theater")
+            create_agent(theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("Music ID: 'moonlit_forest'", instruction)
@@ -152,7 +158,8 @@ class TestCreateAgent(unittest.TestCase):
         mock_bundle_fn.return_value = mock_bundle
         mock_playlists_fn.return_value = "No music playlists or generated tracks found."
 
-        create_agent(theater_id="music_enabled", config={"music": {"use_generated_music": True}})
+        theater = make_test_theater("music_enabled", {"music": {"use_generated_music": True}})
+        create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("create_music", instruction)
@@ -174,10 +181,9 @@ class TestCreateAgent(unittest.TestCase):
             "story_planning": {"adventure_mode": True},
         }
 
-        create_agent(
-            theater_id="test_agent_theater",
-            config=config,
-        )
+        theater = make_test_theater("test_agent_theater", config)
+        tool_bundle = create_tool_bundle_for_session(theater)
+        create_agent(theater, tool_bundle=tool_bundle)
 
         expected_theater = mock_image_cls.call_args.args[0]
         expected_canvas = mock_image_cls.call_args.kwargs["canvas_manager"]
@@ -218,7 +224,9 @@ class TestCreateAgent(unittest.TestCase):
         mock_image_cls.return_value.list_references.return_value = []
         config = {"animation": {"enabled": True}}
 
-        create_agent(theater_id="animated_theater", config=config)
+        theater = make_test_theater("animated_theater", config)
+        tool_bundle = create_tool_bundle_for_session(theater)
+        create_agent(theater, tool_bundle=tool_bundle)
 
         mock_animation_cls.assert_called_once_with(
             ANY,
@@ -237,7 +245,8 @@ class TestCreateAgent(unittest.TestCase):
         mock_bundle.preloaded_playlists_context = "No playlists."
         mock_bundle_fn.return_value = mock_bundle
 
-        create_agent(theater_id="animated_prompt", config={"animation": {"enabled": True}})
+        theater = make_test_theater("animated_prompt", {"animation": {"enabled": True}})
+        create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Animation", instruction)
@@ -260,10 +269,11 @@ class TestCreateAgent(unittest.TestCase):
         mock_bundle.tools = [reference_tool]
         mock_bundle_fn.return_value = mock_bundle
 
-        create_agent(
-            theater_id="templated_theater",
-            config={"live_agent": {"special_instructions": "Keep the story suspenseful."}},
+        theater = make_test_theater(
+            "templated_theater",
+            {"live_agent": {"special_instructions": "Keep the story suspenseful."}},
         )
+        create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertLess(instruction.index("# Objective"), instruction.index("## Preloaded References Context"))
@@ -281,7 +291,8 @@ class TestCreateAgent(unittest.TestCase):
         mock_bundle.tools = []
         mock_bundle_fn.return_value = mock_bundle
 
-        create_agent(theater_id="no_special_instructions", config={"live_agent": {}})
+        theater = make_test_theater("no_special_instructions", {"live_agent": {}})
+        create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertNotIn("## SPECIAL INSTRUCTIONS", instruction)
@@ -526,7 +537,8 @@ class TestCreateAgent(unittest.TestCase):
         config = {
             "story_planning": {"adventure_mode": True}
         }
-        create_agent(theater_id="adv_agent_theater", config=config)
+        theater = make_test_theater("adv_agent_theater", config)
+        create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Adventure Mode", instruction)
@@ -535,6 +547,17 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
         self.assertIn("AFTER the user action is processed", instruction)
         self.assertIn("In Adventure Mode, you can only (and should) use `create_image` or `show_image` AFTER the user action is processed", instruction)
+
+    def test_create_agent_requires_theater_and_tool_bundle(self):
+        theater = make_test_theater("test_agent_theater", {})
+        bundle = MagicMock()
+        with self.assertRaises(TypeError):
+            create_agent(theater)  # type: ignore
+        with self.assertRaises(TypeError):
+            create_agent(tool_bundle=bundle)  # type: ignore
+        with patch("services.live_agent.Agent"):
+            agent = create_agent(theater, bundle)
+            self.assertIsNotNone(agent)
 
 
 class TestBuildRunConfig(unittest.TestCase):
