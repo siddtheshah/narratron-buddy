@@ -413,6 +413,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "manifested_characters": ["Kaelen"],
             "planning_signals": ["Shrine discovered", "Kaelen scouted"],
             "scene_label": "Ruined Shrine",
+            "scene_reference": "references/ruined_shrine.png",
         }
 
         with patch.object(
@@ -424,6 +425,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
 
         self.assertEqual(result["narration"], scene_delta["narration"])
         self.assertEqual(result["scene_label"], "Ruined Shrine")
+        self.assertEqual(result["scene_reference"], "references/ruined_shrine.png")
         self.story_state.set_scene.assert_called_once_with(
             scene_delta["narration"],
             [{"speaker": "Kaelen", "text": "Stay quiet.", "kind": "speech"}],
@@ -511,6 +513,7 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
         self.assertIn("STICKY UPDATE", prompt)
         self.assertIn("sole agent that directly modifies sticky notes", prompt)
         self.assertIn("high recall of sticky note updates", prompt)
+        self.assertIn("scene_reference", prompt)
 
     def test_scene_reaction_model_validates_sticky_update_signals(self) -> None:
         reaction = SceneReaction(
@@ -527,11 +530,20 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
         fields = set(SceneReaction.model_fields.keys())
         self.assertEqual(
             fields,
-            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_label"},
+            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_label", "scene_reference"},
         )
         self.assertNotIn("character_updates", fields)
         self.assertNotIn("player_character_update", fields)
         self.assertNotIn("reference_images", fields)
+
+    def test_scene_reaction_model_validates_scene_reference(self) -> None:
+        reaction = SceneReaction(
+            narration="You enter the quiet valley under the twin moons.",
+            scene_label="Quiet Valley",
+            scene_reference="references/quiet_valley.png",
+        )
+        self.assertEqual(reaction.scene_reference, "references/quiet_valley.png")
+        self.assertEqual(reaction.scene_label, "Quiet Valley")
 
 
 class TestStoryResponseModulePlayerCharacter(unittest.TestCase):

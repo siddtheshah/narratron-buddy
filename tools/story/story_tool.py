@@ -31,6 +31,7 @@ class StoryResponseOutput(BaseModel):
     narration: str = ""
     dialogue: list[Dict[str, Any]] = Field(default_factory=list)
     die_rolls: list[Dict[str, Any]] = Field(default_factory=list)
+    scene_reference: Optional[str] = None
 
 
 class StoryLogEntry(BaseModel):
@@ -258,10 +259,13 @@ class StoryTool(BaseTools):
     def _handle_scene_reaction(self, result: Dict[str, Any]) -> None:
         entry: Dict[str, Any] = {"type": "story_response"}
         if "error" not in result:
+            raw_scene_ref = result.get("scene_reference")
+            clean_scene_ref = str(raw_scene_ref).strip() if raw_scene_ref else None
             entry["output"] = {
                 "narration": str(result.get("narration") or "").strip(),
                 "dialogue": result.get("dialogue") if type(result.get("dialogue")) is list else [],
                 "die_rolls": result.get("die_rolls") if type(result.get("die_rolls")) is list else [],
+                **({"scene_reference": clean_scene_ref} if clean_scene_ref else {}),
             }
         else:
             self.record_tool_failure("process_user_action")

@@ -144,8 +144,9 @@ Do not expose secret character information via the character name when creating 
 If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
 Every generated character must have an explicit gender assignment ('male', 'female', or 'nonbinary') to ensure appropriate voice synthesis.
 
-# Scene Labeling
-Ensure the scene has a label. The location name is generally a good choice. Keep using that label until a major shift occurs.
+# Scene Labeling & Reference
+- **Scene Labeling**: Ensure the scene has a label (`scene_label`). The location name is generally a good choice. Keep using that label until a major shift occurs.
+- **Scene Reference**: If established in lore or reference assets for the current location or background scenery, provide the reference image identifier or path in `scene_reference` to signal the live agent which reference image to use for background scenery. If no specific reference image exists for this scenery, set it to null.
 {% if style -%}
 
 # Story-Planning Style (User Specified)
@@ -200,6 +201,10 @@ class SceneReaction(BaseModel):
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
     planning_signals: List[str] = Field(default_factory=list, description="Direct internal communication to deep planner, including sticky note update cues.")
     scene_label: Optional[str] = Field(default=None, description="Current scene label/location.")
+    scene_reference: Optional[str] = Field(
+        default=None,
+        description="Reference image identifier or path for background scenery, signaling the live agent which reference image to use.",
+    )
 
 
 class StoryLogDieRoll(BaseModel):
@@ -1179,6 +1184,8 @@ class StoryResponseModule:
 
         deep_plan_revision_used = 0
         scene_name = str(parsed.get("scene_label") or "").strip()
+        raw_scene_reference = parsed.get("scene_reference")
+        scene_reference = str(raw_scene_reference).strip() if raw_scene_reference else None
         result = {
             "turn_id": turn_id,
             "deep_plan_revision_used": deep_plan_revision_used,
@@ -1187,6 +1194,7 @@ class StoryResponseModule:
             "manifested_characters": manifested_characters,
             "planning_signals": planning_signals,
             "scene_label": scene_name,
+            "scene_reference": scene_reference,
             "lore_activity": self.get_lore_activity_this_turn(),
             "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),
             "die_rolls": die_rolls,
