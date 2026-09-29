@@ -129,9 +129,9 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
   - **Player Reactionary Rolls (`procedural=False`, default)**: Use for resolving player actions, skill checks, contests, or direct consequences of player decisions. These rolls are visibly animated and displayed on the canvas for the player.
   - **Procedural Rolls (`procedural=True`)**: Use for background procedural generation, random encounter tables, weather, NPC demeanor, or hidden world checks. These rolls are hidden from the canvas.
-  - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
-  - **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated.
-  - **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name, visual appearance description, or image reference when established or clarified.
+- **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
+- **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated. If lore specifies an image reference file, ensure it is used in this function.
+- **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name, visual appearance description, or image reference when established or clarified.
 
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
@@ -724,9 +724,6 @@ class StoryResponseModule:
         if profile is not None:
             self.save_to_session_state()
         return profile
-
-    # Backwards compatibility alias
-    generate_character_profile = create_or_update_character
 
     def generate_character(
         self,

@@ -188,7 +188,7 @@ class TestCharacterManager(unittest.TestCase):
             "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
-            profile = self.manager.generate_character_profile("Orin", "An archivist")
+            profile = self.manager.create_or_update_character("Orin", "An archivist")
 
         self.assertEqual(profile["personality"], "Patient")
         self.assertEqual(profile["motivation"], "Find truth")
@@ -211,7 +211,7 @@ class TestCharacterManager(unittest.TestCase):
             text='{"personality":"Patient","motivation":"Find truth","gender":"female","voice_tags":["gender=female","accent=British","persona=Narrator"]}'
         )
 
-        profile = manager.generate_character_profile("Orin")
+        profile = manager.create_or_update_character("Orin")
 
         prompt = self.provider.generate.call_args.args[0].prompt
         self.assertIn("accent: British, General American", prompt)
@@ -227,7 +227,7 @@ class TestCharacterManager(unittest.TestCase):
             "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
-            profile = self.manager.generate_character_profile("Mira")
+            profile = self.manager.create_or_update_character("Mira")
 
         self.assertEqual(profile["personality"], "Enigmatic and watchful.")
         self.assertEqual(profile["motivation"], "Survive and prosper in the current scene.")
@@ -244,7 +244,7 @@ class TestCharacterManager(unittest.TestCase):
             "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
-            profile = self.manager.generate_character_profile(
+            profile = self.manager.create_or_update_character(
                 "Mira",
                 personality="Watchful",
                 motivation="Keep everyone safe",
@@ -313,7 +313,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(self.manager.export_characters()[0]["voice_tags"], ["male"])
         self.assertEqual(self.manager.export_characters()[0]["gender"], "male")
 
-    def test_generate_character_profile_with_explicit_gender_and_nonbinary(self) -> None:
+    def test_create_or_update_character_with_explicit_gender_and_nonbinary(self) -> None:
         quirk_service = MagicMock(spec=QuirkGeneratorService)
         quirk_service.get_random_quirk.return_value = "Plays with a coin"
 
@@ -322,17 +322,17 @@ class TestCharacterManager(unittest.TestCase):
             return_value=quirk_service,
         ):
             # Explicit male
-            male_prof = self.manager.generate_character_profile("Cedric", gender="male")
+            male_prof = self.manager.create_or_update_character("Cedric", gender="male")
             self.assertEqual(male_prof["gender"], "male")
             self.assertIn("male", male_prof["voice_tags"])
 
             # Explicit nonbinary
-            nb_prof = self.manager.generate_character_profile("Rowan", gender="nonbinary")
+            nb_prof = self.manager.create_or_update_character("Rowan", gender="nonbinary")
             self.assertEqual(nb_prof["gender"], "nonbinary")
             self.assertIn("nonbinary", nb_prof["voice_tags"])
 
             # Alias nb
-            nb_alias = self.manager.generate_character_profile("Ash", gender="nb")
+            nb_alias = self.manager.create_or_update_character("Ash", gender="nb")
             self.assertEqual(nb_alias["gender"], "nonbinary")
             self.assertIn("nonbinary", nb_alias["voice_tags"])
 
@@ -521,7 +521,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertIn("Aiden", match_player)
         self.assertNotIn("Lyra", match_player)
 
-    def test_generate_character_profile_upsert_existing_updates_only_specified_fields(self) -> None:
+    def test_create_or_update_character_upsert_existing_updates_only_specified_fields(self) -> None:
         self.manager.generate_character(
             name="Orin",
             description="An archivist",
@@ -534,7 +534,7 @@ class TestCharacterManager(unittest.TestCase):
         self.provider.generate.reset_mock()
 
         # Update description and personality only; leave motivation, quirk, gender, voice unspecified
-        updated = self.manager.generate_character_profile(
+        updated = self.manager.create_or_update_character(
             name="Orin",
             description="Chief Archivist of the High Library",
             personality="Obsessive and perfectionist",
@@ -550,7 +550,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(updated.voice_tags, ["male"])
         self.assertEqual(self.manager.count(), 1)
 
-    def test_generate_character_profile_upsert_updates_gender_and_voice_tags(self) -> None:
+    def test_create_or_update_character_upsert_updates_gender_and_voice_tags(self) -> None:
         self.manager.generate_character(
             name="Rowan",
             description="A wandering healer",
@@ -562,7 +562,7 @@ class TestCharacterManager(unittest.TestCase):
         )
         self.provider.generate.reset_mock()
 
-        updated = self.manager.generate_character_profile(
+        updated = self.manager.create_or_update_character(
             name="Rowan",
             gender="nonbinary",
         )
@@ -574,7 +574,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertNotIn("female", updated.voice_tags)
         self.assertEqual(updated.personality, "Empathetic")
 
-    def test_generate_character_profile_prioritizes_serialized_story_state_across_initializations(self) -> None:
+    def test_create_or_update_character_prioritizes_serialized_story_state_across_initializations(self) -> None:
         # Simulate serialized story state loaded from previous session/persistence
         serialized_story_state = {
             "story_planning_state": {
@@ -601,7 +601,7 @@ class TestCharacterManager(unittest.TestCase):
         self.provider.generate.reset_mock()
 
         # Story module views propose creating Boran with contradictory traits
-        profile = self.manager.generate_character_profile(
+        profile = self.manager.create_or_update_character(
             name="Boran",
             description="A young, timid sentry",
             personality="Cowardly and easily frightened",
@@ -624,7 +624,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(profile.image_reference, "boran_face_ref")
         self.assertEqual(self.manager.count(), 1)
 
-    def test_generate_character_profile_partial_serialized_fills_missing_from_views_or_generation(self) -> None:
+    def test_create_or_update_character_partial_serialized_fills_missing_from_views_or_generation(self) -> None:
         serialized_story_state = {
             "story_planning_state": {
                 "characters": [
@@ -649,7 +649,7 @@ class TestCharacterManager(unittest.TestCase):
             "components.character_manager.get_quirk_generator_service",
             return_value=quirk_service,
         ):
-            profile = self.manager.generate_character_profile(
+            profile = self.manager.create_or_update_character(
                 name="Kael",
                 description="Shadow operative",
                 motivation="Recover the stolen ledger",

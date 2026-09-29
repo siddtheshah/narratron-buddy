@@ -1116,8 +1116,6 @@ class CharacterManager:
         self._sync_story_state()
         return character
 
-    generate_character_profile = create_or_update_character
-
     def _supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:
         if self.speech_provider is None:
             return {"gender": ("female", "male", "nonbinary")}

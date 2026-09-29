@@ -403,7 +403,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertEqual(updated["quirk"], "Polishes visor constantly")
 
         # Backwards compatibility check
-        via_alias = self.module.generate_character_profile(name="Cedric", description="Grand Marshal")
+        via_alias = self.module.create_or_update_character(name="Cedric", description="Grand Marshal")
         self.assertEqual(via_alias["description"], "Grand Marshal")
 
     def test_resolves_user_action_does_not_coordinate_planning(self) -> None:
