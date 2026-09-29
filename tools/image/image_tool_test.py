@@ -696,4 +696,69 @@ class TestImageTools(BaseTestCase):
         references = provider.generate.call_args.args[0].references
         self.assertEqual(len(references), 0)
 
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_character_manager_reference_overrides_caller_reference(self, mock_get_provider) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr.lookup_character.return_value = CharacterLookupResult(
+            characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
+        )
+        mock_char_mgr.get_character_references.return_value = ["hero", "villain"]
+
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="cm_override_ref",
+            theater_manager=self.manager,
+            character_manager=mock_char_mgr,
+        )
+        hero_path = os.path.join(tools.reference_dir, "hero.png")
+        other_path = os.path.join(tools.reference_dir, "villain.png")
+        Image.new("RGB", (10, 10), color="green").save(hero_path)
+        Image.new("RGB", (10, 10), color="purple").save(other_path)
+        tools._load_references()
+
+        # Caller provides 'villain'; CharacterManager matches 'hero' from prompt -> 'hero' overrides 'villain'
+        tools.create_image("hero on a forest path", image_name="forest_path3", reference_images="villain", display=False)
+        tools.join_generation()
+
+        references = provider.generate.call_args.args[0].references
+        self.assertEqual(len(references), 1)
+        self.assertEqual(references[0].name, "hero.png")
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_preserves_location_reference_when_character_acquired(self, mock_get_provider) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr.lookup_character.return_value = CharacterLookupResult(
+            characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
+        )
+        mock_char_mgr.get_character_references.return_value = ["hero"]
+
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="cm_preserve_location",
+            theater_manager=self.manager,
+            character_manager=mock_char_mgr,
+        )
+        hero_path = os.path.join(tools.reference_dir, "hero.png")
+        castle_path = os.path.join(tools.reference_dir, "castle_courtyard.png")
+        Image.new("RGB", (10, 10), color="green").save(hero_path)
+        Image.new("RGB", (10, 10), color="blue").save(castle_path)
+        tools._load_references()
+
+        # Prompt acquires 'hero'; caller supplies 'hero' (char ref) AND 'castle_courtyard' (location ref)
+        # -> 'hero' is overridden/deduplicated by CharacterManager, 'castle_courtyard' is preserved!
+        tools.create_image("hero in the castle courtyard", image_name="hero_castle", reference_images=["hero", "castle_courtyard"], display=False)
+        tools.join_generation()
+
+        references = provider.generate.call_args.args[0].references
+        self.assertEqual(len(references), 2)
+        ref_names = [r.name for r in references]
+        self.assertIn("hero.png", ref_names)
+        self.assertIn("castle_courtyard.png", ref_names)
+
+
+
 

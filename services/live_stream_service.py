@@ -1,33 +1,51 @@
+from __future__ import annotations
+
 import base64
 import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Protocol, TYPE_CHECKING
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
+from components.character_manager import Character
 from services.audio_codecs import LiveAudioDecoder
+
+if TYPE_CHECKING:
+    from services.live_agent_manager import LiveAgentSessionManager
+    from components.canvas.canvas_state_service import CanvasStateService
 
 logger = logging.getLogger(__name__)
 
+
+class StoryPlanningProvider(Protocol):
+    def get_present_elements(self) -> list[dict[str, str]]:
+        ...
+
+    def get_present_characters(self) -> list[Character]:
+        ...
+
+
 def format_canvas_state(
     canvas_state_manager: Optional[CanvasStateManager],
-    story_planning_tools: Optional[Any] = None,
+    story_planning_tools: Optional[StoryPlanningProvider] = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
-    visual = canvas_state_manager.visual if canvas_state_manager else None
-    audio = canvas_state_manager.audio if canvas_state_manager else None
-    ui = canvas_state_manager.ui if canvas_state_manager else None
-    chat = canvas_state_manager.chat if canvas_state_manager else None
-    image_path = visual.shown_image_path if visual else None
-    image_name = Path(image_path).name if image_path else "none"
-    image_prompt = visual.shown_image_prompt if visual and visual.shown_image_prompt else "none"
-    playlist = audio.current_playlist if audio and audio.current_playlist else "none"
+    visual = canvas_state_manager.visual if canvas_state_manager is not None else None
+    audio = canvas_state_manager.audio if canvas_state_manager is not None else None
+    ui = canvas_state_manager.ui if canvas_state_manager is not None else None
+    chat = canvas_state_manager.chat if canvas_state_manager is not None else None
+    story = canvas_state_manager.story if canvas_state_manager is not None else None
+
+    image_path = visual.shown_image_path if visual is not None else None
+    image_name = Path(image_path).name if image_path is not None else "none"
+    image_prompt = visual.shown_image_prompt if visual is not None and visual.shown_image_prompt else "none"
+    playlist = audio.current_playlist if audio is not None and audio.current_playlist else "none"
     parts = [f"[Canvas Image]: {image_name}, {image_prompt}", f"[Canvas music]: {playlist}"]
-    if visual and visual.pinned:
+    if visual is not None and visual.pinned:
         parts.append(
             "[Canvas Pin]: The orator has pinned the current canvas. Do not request image or "
             "animation changes until it is unpinned; those tools will decline while pinned."
@@ -37,37 +55,68 @@ def format_canvas_state(
     # disabled, a canvas pulse must be read-only so audience work is retained
     # until collaboration is enabled again.
     collaboration_enabled = bool(
-        ui and ui.viewer_collab_enabled
+        ui is not None and ui.viewer_collab_enabled
     )
-    if collaboration_enabled:
-        suggestion = chat.consume_top_suggestion() if chat else None
+    if collaboration_enabled and chat is not None:
+        suggestion = chat.consume_top_suggestion()
         if suggestion:
             parts.append(
                 f"[Viewer Suggestion]: {suggestion['text']} "
                 f"(by {suggestion['author']}, {suggestion['upvote_count']} upvotes)"
             )
 
-    elements = (
-        story_planning_tools.get_present_elements()
-        if story_planning_tools and hasattr(story_planning_tools, "get_present_elements")
-        else []
-    )
+    elements: list[dict[str, str]] = []
+    if story_planning_tools is not None:
+        elements = story_planning_tools.get_present_elements()
+    elif story is not None:
+        elements = story.get_sticky_notes()
+
     if elements:
         rendered_elements = "; ".join(
             f"{element['name']}: {element['content']}" for element in elements
         )
         parts.append(f"[Present Scene Elements]: {rendered_elements}")
-    characters = (
-        story_planning_tools.get_present_characters()
-        if story_planning_tools and hasattr(story_planning_tools, "get_present_characters")
-        else []
-    )
+
+    player = story.get_player_character() if story is not None else None
+    if player is not None:
+        player_ref = player.reference
+        if player_ref and str(player_ref).strip():
+            player_name = player.name or "Player"
+            player_details = [f"Image Reference: {str(player_ref).strip()}"]
+            if player.image_description and str(player.image_description).strip():
+                player_details.insert(0, f"Visual: {str(player.image_description).strip()}")
+            parts.append(f"[Player Character]: {player_name} ({', '.join(player_details)})")
+
+    characters = []
+    if story is not None:
+        characters = story.get_present_characters()
+    if not characters and story_planning_tools is not None:
+        characters = story_planning_tools.get_present_characters()
+
     if characters:
-        rendered_chars = "; ".join(
-            f"{c['name']} (Personality: {c.get('personality', 'N/A')}, Motivation: {c.get('motivation', 'N/A')}, Quirk: {c.get('quirk', 'N/A')})"
-            for c in characters
-        )
-        parts.append(f"[Active Characters]: {rendered_chars}")
+        rendered_char_list: list[str] = []
+        for c in characters:
+            desc = f"{c['name']} (Personality: {c.get('personality', 'N/A')}, Motivation: {c.get('motivation', 'N/A')}, Quirk: {c.get('quirk', 'N/A')}"
+            img_ref = c.get("image_reference")
+            if img_ref and str(img_ref).strip():
+                desc += f", Image Reference: {str(img_ref).strip()}"
+            desc += ")"
+            rendered_char_list.append(desc)
+        parts.append(f"[Active Characters]: {'; '.join(rendered_char_list)}")
+
+    char_refs: list[str] = []
+    if story is not None:
+        raw_refs = story.get_character_references()
+        char_refs = [str(r).strip() for r in raw_refs if str(r).strip()]
+
+    if not char_refs and characters:
+        for c in characters:
+            ref = c.get("image_reference")
+            if ref and str(ref).strip() and str(ref).strip() not in char_refs:
+                char_refs.append(str(ref).strip())
+
+    if char_refs:
+        parts.append(f"[Character Image References]: {', '.join(char_refs)}")
 
     return "\n".join(parts)
 
@@ -88,10 +137,10 @@ def get_bound_tool_instance(agent: object, tool_name: str) -> object:
 async def handle_live_websocket_connection(
     websocket: WebSocket,
     theater_id: str,
-    live_agent_manager: Any,
+    live_agent_manager: LiveAgentSessionManager,
     user_id: Optional[int] = None,
     send_setup_complete_immediately: bool = True,
-    canvas_state_service: Optional[Any] = None,
+    canvas_state_service: Optional[CanvasStateService] = None,
 ) -> None:
     """Handles WebSocket attachment and upstream audio/text/image frames forwarding to LiveAgentSession."""
     await websocket.accept()

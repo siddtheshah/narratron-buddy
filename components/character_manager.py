@@ -22,7 +22,7 @@ from providers import (
     TextResponseProvider,
     TextResponseRequest,
 )
-from components.canvas.story_state import StoryState
+from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
 from services.quirk_service import get_quirk_generator_service
 from components.image_library import ImageLibrary
 from components.notepad import Notepad
@@ -407,6 +407,7 @@ class CharacterManager:
         self._characters_lock = Lock()
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
+        self._sync_story_state()
 
     def _parse_initial_characters(self, raw: object) -> list[Character]:
         if not raw:
@@ -443,6 +444,38 @@ class CharacterManager:
         if value is None:
             raise ValueError("story_state cannot be None.")
         self._story_state = value
+        self._sync_story_state()
+
+    def _sync_story_state(self) -> None:
+        if self._story_state is None:
+            return
+
+        pc = self.get_player_character()
+        pc_state: Optional[PlayerCharacterState] = None
+        if pc is not None:
+            pc_state = PlayerCharacterState(
+                name=pc.name,
+                image_description=pc.image_description,
+                reference=pc.reference,
+            )
+
+        chars = self.get_present_characters()
+        chars_state: dict[str, CharacterState] = {
+            c.name: CharacterState(
+                name=c.name,
+                personality=c.personality,
+                motivation=c.motivation,
+                quirk=c.quirk,
+                image_reference=c.image_reference,
+            )
+            for c in chars
+        }
+
+        refs = self.get_character_references()
+
+        self._story_state.set_player_character(pc_state)
+        self._story_state.set_characters(chars_state)
+        self._story_state.set_character_references(refs)
 
     @staticmethod
     def _character_key(name: str) -> str:
@@ -775,6 +808,7 @@ class CharacterManager:
         with self._player_character_lock:
             if player is None:
                 self._player_character = None
+                self._sync_story_state()
                 return None
             try:
                 p = PlayerCharacter.model_validate(player).model_copy(deep=True)
@@ -782,7 +816,9 @@ class CharacterManager:
                 raise ValueError(f"player must be a PlayerCharacter or valid player data: {exc}") from exc
             self._bind_player_image(p)
             self._player_character = p
-            return p.model_copy(deep=True)
+            result = p.model_copy(deep=True)
+        self._sync_story_state()
+        return result
 
     def update_player_character(
         self,
@@ -832,7 +868,9 @@ class CharacterManager:
             )
             self._bind_player_image(player)
             self._player_character = player
-            return player.model_copy(deep=True)
+            result = player.model_copy(deep=True)
+        self._sync_story_state()
+        return result
 
     def export_player_character(self) -> PlayerCharacter | None:
         """Export canonical player character state for persistence."""
@@ -945,6 +983,7 @@ class CharacterManager:
             self._ensure_character_bindings(existing)
             with self._characters_lock:
                 self._characters[existing.alias] = existing
+            self._sync_story_state()
             return existing
 
         # 2. Character does not exist yet in memory.
@@ -1074,6 +1113,7 @@ class CharacterManager:
         self._ensure_character_bindings(character)
         with self._characters_lock:
             self._characters[character.alias] = character
+        self._sync_story_state()
         return character
 
     generate_character_profile = create_or_update_character
@@ -1123,6 +1163,7 @@ class CharacterManager:
             self._ensure_character_bindings(character)
             with self._characters_lock:
                 self._characters[character.alias] = character
+            self._sync_story_state()
         return character
 
     def apply_character_updates(
@@ -1157,6 +1198,7 @@ class CharacterManager:
         with self._characters_lock:
             count = len(self._characters)
             self._characters.clear()
+        self._sync_story_state()
         return count
 
     def export_characters(self) -> list[Character]:
@@ -1171,6 +1213,7 @@ class CharacterManager:
         if not characters:
             with self._characters_lock:
                 self._characters.clear()
+            self._sync_story_state()
             return
 
         imported: dict[str, Character] = {}
@@ -1188,6 +1231,7 @@ class CharacterManager:
 
         with self._characters_lock:
             self._characters = imported
+        self._sync_story_state()
 
     def get_character_voice_tags(self, name: str) -> list[str]:
         """Look up normalized voice tags for a character by name."""

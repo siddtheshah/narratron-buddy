@@ -7,6 +7,8 @@ from google.genai import types
 
 from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
 from tools.story import StoryTool
+from components.character_manager import PlayerCharacter
+from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
 
 
 @dataclass
@@ -33,6 +35,7 @@ class CanvasFixture:
     ui: CanvasUIFixture = field(default_factory=CanvasUIFixture)
     chat: MagicMock = field(default_factory=MagicMock)
     doodles: list[dict] = field(default_factory=list)
+    story: StoryState | None = None
 
 
 def test_format_canvas_state_includes_present_scene_elements():
@@ -70,6 +73,81 @@ def test_format_canvas_state_includes_active_characters():
     )
 
     assert "[Active Characters]: Vaelen (Personality: Brave, Motivation: Find the talisman, Quirk: Flips a coin on choices)" in state
+    assert "[Character Image References]:" not in state
+
+
+def test_format_canvas_state_includes_character_manager_image_references_for_npcs() -> None:
+    canvas = CanvasFixture(story=StoryState())
+    theater = MagicMock(theater_id="stage_char_refs")
+    theater.config = MagicMock(return_value={"adventure_mode": True})
+    elements = StoryTool(
+        theater,
+        canvas_manager=canvas,
+        text_response_provider=MagicMock(),
+    )
+    elements.character_manager.create_or_update_character(
+        name="Lyra",
+        gender="female",
+        personality="Curious",
+        motivation="Truth",
+        quirk="Hums melodies",
+        image_reference="lyra_portrait",
+    )
+
+    state = format_canvas_state(canvas)
+
+    assert "[Active Characters]: Lyra (Personality: Curious, Motivation: Truth, Quirk: Hums melodies, Image Reference: lyra_portrait)" in state
+    assert "[Character Image References]: lyra_portrait" in state
+
+
+def test_format_canvas_state_includes_character_manager_image_references_for_player() -> None:
+    canvas = CanvasFixture(story=StoryState())
+    theater = MagicMock(theater_id="stage_player_refs")
+    theater.config = MagicMock(return_value={"adventure_mode": True})
+    elements = StoryTool(
+        theater,
+        canvas_manager=canvas,
+        text_response_provider=MagicMock(),
+    )
+    elements.character_manager.set_player_character(
+        PlayerCharacter(
+            name="Valen",
+            reference="valen_img",
+            image_description="A dashing space rogue",
+        )
+    )
+
+    state = format_canvas_state(canvas)
+
+    assert "[Player Character]: Valen (Visual: A dashing space rogue, Image Reference: valen_img)" in state
+    assert "[Character Image References]: valen_img" in state
+
+
+def test_format_canvas_state_includes_character_info_from_story_state() -> None:
+    story = StoryState()
+    story.set_player_character(
+        PlayerCharacterState(
+            name="Mara",
+            reference="mara_portrait",
+        )
+    )
+    story.set_characters({
+        "Cedric": CharacterState(
+            name="Cedric",
+            personality="Loyal",
+            motivation="Honor",
+            quirk="Polishes sword",
+            image_reference="cedric_img",
+        )
+    })
+    story.set_character_references(["mara_portrait", "cedric_img"])
+
+    canvas = CanvasFixture(story=story)
+    state = format_canvas_state(canvas)
+
+    assert "[Player Character]: Mara (Image Reference: mara_portrait)" in state
+    assert "[Active Characters]: Cedric (Personality: Loyal, Motivation: Honor, Quirk: Polishes sword, Image Reference: cedric_img)" in state
+    assert "[Character Image References]: mara_portrait, cedric_img" in state
 
 
 def test_canvas_observability_preserves_collaboration_data_when_disabled():

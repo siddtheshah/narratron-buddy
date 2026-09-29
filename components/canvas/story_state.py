@@ -41,6 +41,32 @@ class CharacterState:
     quirk: str = ""
     image_reference: Optional[str] = None
 
+    def __getitem__(self, key: str) -> str | None:
+        if key == "name":
+            return self.name
+        if key == "personality":
+            return self.personality
+        if key == "motivation":
+            return self.motivation
+        if key == "quirk":
+            return self.quirk
+        if key == "image_reference":
+            return self.image_reference
+        raise KeyError(key)
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        if key == "name":
+            return self.name
+        if key == "personality":
+            return self.personality
+        if key == "motivation":
+            return self.motivation
+        if key == "quirk":
+            return self.quirk
+        if key == "image_reference":
+            return self.image_reference
+        return default
+
 
 @dataclass
 class StoryStateSnapshot:
@@ -115,6 +141,9 @@ class StoryState:
         # canvas payload. Clients may play audio only for this generation.
         self.committed_scene_speech_generation = 0
         self.last_die_roll: dict[str, Any] | None = None
+        self.player_character: Optional[PlayerCharacterState] = None
+        self.characters: dict[str, CharacterState] = {}
+        self.character_references: list[str] = []
     @property
     def text_beautifier(self) -> Any:
         if self._text_beautifier is not None:
@@ -190,8 +219,32 @@ class StoryState:
             self.committed_scene_speech_generation = generation
             with self._speech_lock:
                 self._active_speech_generation = max(self._active_speech_generation, generation)
+
+        if "player_character" in data and isinstance(data["player_character"], dict):
+            pc_data = data["player_character"]
+            self.player_character = PlayerCharacterState(
+                name=str(pc_data.get("name") or ""),
+                image_description=str(pc_data.get("image_description") or ""),
+                reference=pc_data.get("reference"),
+            )
+        if "characters" in data and isinstance(data["characters"], dict):
+            chars_data = data["characters"]
+            self.characters = {
+                name: CharacterState(
+                    name=str(c.get("name") or name),
+                    personality=str(c.get("personality") or ""),
+                    motivation=str(c.get("motivation") or ""),
+                    quirk=str(c.get("quirk") or ""),
+                    image_reference=c.get("image_reference"),
+                )
+                for name, c in chars_data.items()
+                if isinstance(c, dict)
+            }
+        if "character_references" in data and isinstance(data["character_references"], list):
+            self.character_references = [str(r) for r in data["character_references"]]
+
     def serialize(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "named_elements": self.named_elements,
             "story_planning_state": self.story_planning_state,
             "scene_dialogue": self.scene_dialogue,
@@ -201,6 +254,26 @@ class StoryState:
             "character_voice_tags": self.character_voice_tags,
             "committed_scene_speech_generation": self.committed_scene_speech_generation,
         }
+        if self.player_character is not None:
+            result["player_character"] = {
+                "name": self.player_character.name,
+                "image_description": self.player_character.image_description,
+                "reference": self.player_character.reference,
+            }
+        if self.characters:
+            result["characters"] = {
+                name: {
+                    "name": c.name,
+                    "personality": c.personality,
+                    "motivation": c.motivation,
+                    "quirk": c.quirk,
+                    "image_reference": c.image_reference,
+                }
+                for name, c in self.characters.items()
+            }
+        if self.character_references:
+            result["character_references"] = list(self.character_references)
+        return result
     payload = serialize
     def set_scene(self, narration: str, dialogue: list[dict[str, Any]]) -> None:
         """Commit a fully beautified scene and notify canvas clients once.
@@ -290,8 +363,8 @@ class StoryState:
         )
         return StoryStateSnapshot(
             stickies=dict(current_stickies),
-            player_character=player_character,
-            characters=dict(characters or {}),
+            player_character=player_character if player_character is not None else self.player_character,
+            characters=dict(characters if characters is not None else self.characters),
             known_image_names=set(known_image_names or set()),
             deep_plan_revision=deep_plan_revision,
         )
@@ -415,6 +488,39 @@ class StoryState:
             self._persist()
         if self._notify_changed:
             self._notify_changed("latest")
+
+    def set_player_character(self, player: Optional[PlayerCharacterState]) -> None:
+        self.player_character = player
+
+    def get_player_character(self) -> Optional[PlayerCharacterState]:
+        return self.player_character
+
+    def set_characters(self, characters: dict[str, CharacterState]) -> None:
+        self.characters = dict(characters)
+
+    def get_characters(self) -> dict[str, CharacterState]:
+        return dict(self.characters)
+
+    def get_present_characters(self) -> list[CharacterState]:
+        return list(self.characters.values())
+
+    def set_character_references(self, refs: list[str]) -> None:
+        self.character_references = list(refs)
+
+    def get_character_references(self) -> list[str]:
+        if self.character_references:
+            return list(self.character_references)
+        refs: list[str] = []
+        if self.player_character is not None and self.player_character.reference:
+            clean_ref = str(self.player_character.reference).strip()
+            if clean_ref and clean_ref not in refs:
+                refs.append(clean_ref)
+        for char in self.characters.values():
+            if char.image_reference:
+                clean_ref = str(char.image_reference).strip()
+                if clean_ref and clean_ref not in refs:
+                    refs.append(clean_ref)
+        return refs
     def get_character_voice(self, speaker: str) -> str | None:
         return self.character_voice_assignments.get(speaker_key(speaker))
     def assign_character_voice(self, speaker: str, voice: str) -> None:
