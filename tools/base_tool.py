@@ -8,7 +8,7 @@ import logging
 import re
 import threading
 import time
-from typing import Any, Callable, Dict, Optional, Set, TypeVar, Union
+from typing import Any, Callable, Dict, Generic, Optional, Set, TypedDict, TypeVar, Union
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
@@ -17,6 +17,15 @@ logger = logging.getLogger(__name__)
 
 ReturnT = TypeVar("ReturnT")
 ArgT = TypeVar("ArgT")
+CallResultT = TypeVar("CallResultT")
+CallArgT = TypeVar("CallArgT")
+
+
+class PendingCycleCall(TypedDict, Generic[CallResultT, CallArgT]):
+    func: Callable[..., CallResultT]
+    args: tuple[CallArgT, ...]
+    kwargs: dict[str, CallArgT]
+    duration: Optional[Union[float, int, Callable[[BaseTools], float]]]
 
 
 # Common lightweight stop words for Jaccard BoW argument comparison
@@ -383,10 +392,11 @@ def with_cycle_cooldown(
 ]:
     """Decorator annotation for BaseTools methods that schedules calls on cooldown instead of blocking.
 
-    If invoked while on cooldown, the call is scheduled to execute automatically
-    as soon as the cooldown finishes. If another call arrives before the cycle
-    finishes, it updates the parameters of the scheduled call without enqueuing
-    an additional call (matching visual cycle behavior).
+    If invoked while on cooldown or while another call of the same kind is active,
+    the next call is deferred to the completion of the current call, or the cooldown
+    time, whichever is later. This ensures only one tool call of a particular kind
+    is active at once. If another call arrives before the cycle finishes, it updates
+    the parameters of the scheduled call without enqueuing an additional call.
     """
     desc: Optional[str] = (
         action_desc if callable(func_or_desc) else (func_or_desc or action_desc)
@@ -411,16 +421,21 @@ def with_cycle_cooldown(
 
                 self._last_call_times[cooldown_key] = time.time()
                 self.record_call_args(cooldown_key, args, kwargs)
+                cooldown_dur = self._resolve_cooldown_duration(duration)
+                self._active_cooldown_durations[cooldown_key] = cooldown_dur
+                self._schedule_cooldown_timer(cooldown_key, cooldown_dur)
                 try:
                     result = await func(self, *args, **kwargs)
                     if not _is_error_result(result):
-                        self.record_tool_call(cooldown_key, duration=duration)
+                        self._last_call_failed[cooldown_key] = False
                     else:
                         self.record_tool_failure(cooldown_key)
                     return result
                 except Exception:
                     self.record_tool_failure(cooldown_key)
                     raise
+                finally:
+                    self._on_cycle_tool_completed(cooldown_key)
 
             return async_wrapper
         else:
@@ -439,16 +454,21 @@ def with_cycle_cooldown(
 
                 self._last_call_times[cooldown_key] = time.time()
                 self.record_call_args(cooldown_key, args, kwargs)
+                cooldown_dur = self._resolve_cooldown_duration(duration)
+                self._active_cooldown_durations[cooldown_key] = cooldown_dur
+                self._schedule_cooldown_timer(cooldown_key, cooldown_dur)
                 try:
                     result = func(self, *args, **kwargs)
                     if not _is_error_result(result):
-                        self.record_tool_call(cooldown_key, duration=duration)
+                        self._last_call_failed[cooldown_key] = False
                     else:
                         self.record_tool_failure(cooldown_key)
                     return result
                 except Exception:
                     self.record_tool_failure(cooldown_key)
                     raise
+                finally:
+                    self._on_cycle_tool_completed(cooldown_key)
 
             return wrapper
 
@@ -478,7 +498,7 @@ class BaseTools:
         self._last_call_times: Dict[str, float] = {}
         self._cooldown_timers: Dict[str, threading.Timer] = {}
         self._active_cooldown_durations: Dict[str, float] = {}
-        self._pending_cycle_calls: Dict[str, Dict[str, Any]] = {}
+        self._pending_cycle_calls: Dict[str, PendingCycleCall[ReturnT, ArgT]] = {}
         self._cycle_cooldown_lock = threading.Lock()
         self._in_flight_tools: Set[str] = set()
         self._in_flight_lock = threading.Lock()
@@ -589,17 +609,13 @@ class BaseTools:
         duration: Optional[Union[float, int, Callable[[BaseTools], float]]] = None,
         action_desc: Optional[str] = None,
     ) -> tuple[bool, Optional[str]]:
-        """Check cooldown and either schedule/update for next cycle or indicate immediate run."""
-        lock = self._cycle_cooldown_lock
-        if lock is None:
-            self._cycle_cooldown_lock = threading.Lock()
-            self._pending_cycle_calls = {}
-            self._active_cooldown_durations = {}
-            lock = self._cycle_cooldown_lock
-
-        with lock:
+        """Check in-flight and cooldown, and either schedule/update for next cycle or indicate immediate run."""
+        with self._cycle_cooldown_lock:
+            in_flight = self.is_in_flight(tool_name)
             remaining = self.get_cooldown_remaining(tool_name, duration=duration)
-            if remaining <= 0.0:
+            has_pending = tool_name in self._pending_cycle_calls
+            if not in_flight and remaining <= 0.0 and not has_pending:
+                self.acquire_in_flight(tool_name)
                 return (False, None)
 
             # Check if this call is a duplicate of the currently executing or pending cycle call
@@ -613,7 +629,7 @@ class BaseTools:
                 )
                 remaining_desc = f"{remaining:.1f}s"
                 desc_suffix = f" ({action_desc})" if action_desc else ""
-                is_pending = bool(self._pending_cycle_calls.get(tool_name))
+                is_pending = tool_name in self._pending_cycle_calls
                 if is_pending:
                     msg = (
                         f"Tool '{tool_name}' duplicate call ignored; action{desc_suffix} is already queued and scheduled for the next cycle. "
@@ -634,9 +650,10 @@ class BaseTools:
                 "duration": duration,
             }
 
-            existing_timer = self._cooldown_timers.get(tool_name)
-            if not existing_timer or not existing_timer.is_alive():
-                self._schedule_cooldown_timer(tool_name, remaining)
+            if not in_flight:
+                existing_timer = self._cooldown_timers.get(tool_name)
+                if not existing_timer or not existing_timer.is_alive():
+                    self._schedule_cooldown_timer(tool_name, remaining)
 
             if is_update:
                 msg = f"Tool '{tool_name}' parameters updated for next cycle."
@@ -646,13 +663,10 @@ class BaseTools:
             logger.info("[%s] %s", self.__class__.__name__, msg)
             return (True, msg)
 
-    def get_pending_cycle_call(self, tool_name: str) -> Optional[Dict[str, Any]]:
+    def get_pending_cycle_call(self, tool_name: str) -> Optional[PendingCycleCall[ReturnT, ArgT]]:
         """Return the currently pending cycle call details for tool_name, if any."""
-        lock = getattr(self, "_cycle_cooldown_lock", None)
-        if lock is None:
-            return None
-        with lock:
-            pending = getattr(self, "_pending_cycle_calls", {}).get(tool_name)
+        with self._cycle_cooldown_lock:
+            pending = self._pending_cycle_calls.get(tool_name)
             return dict(pending) if pending else None
 
     def get_argument_tokens(self, tool_name: str, args: tuple, kwargs: dict) -> Set[str]:
@@ -735,27 +749,62 @@ class BaseTools:
 
     def cancel_pending_cycle_call(self, tool_name: str) -> bool:
         """Cancel any pending cycle call for tool_name. Returns True if cancelled."""
-        lock = getattr(self, "_cycle_cooldown_lock", None)
-        if lock is None:
-            return False
-        with lock:
-            pending_calls = getattr(self, "_pending_cycle_calls", None)
-            if pending_calls is not None:
-                return pending_calls.pop(tool_name, None) is not None
-            return False
+        with self._cycle_cooldown_lock:
+            return self._pending_cycle_calls.pop(tool_name, None) is not None
+
+    def _dispatch_pending_cycle_call(self, tool_name: str) -> None:
+        """Dispatch execution of the pending cycle call in a background daemon thread."""
+        thread = threading.Thread(
+            target=self._execute_pending_cycle_call,
+            args=(tool_name,),
+            daemon=True,
+            name=f"cycle_call_{tool_name}",
+        )
+        thread.start()
+
+    def _trigger_cooldown_expired(self, tool_name: str) -> None:
+        """Invoke on_cooldown_expired callback if configured and previous call didn't fail."""
+        if not self._last_call_failed.get(tool_name, False):
+            cb_expired = self.on_cooldown_expired
+            if cb_expired is not None:
+                try:
+                    cb_expired(tool_name)
+                except Exception as e:
+                    logger.error(
+                        "[%s] Exception in on_cooldown_expired callback: %s",
+                        self.__class__.__name__,
+                        e,
+                    )
+
+    def _on_cycle_tool_completed(self, tool_name: str) -> None:
+        """Handle completion of a cycle tool call.
+
+        Releases in-flight state and checks if a pending call should now execute
+        or if cooldown expiration callbacks should fire.
+        """
+        with self._cycle_cooldown_lock:
+            self.release_in_flight(tool_name)
+            remaining = self.get_cooldown_remaining(tool_name)
+            if remaining <= 0.0:
+                timer = self._cooldown_timers.pop(tool_name, None)
+                if timer is not None:
+                    timer.cancel()
+                if tool_name in self._pending_cycle_calls:
+                    self.acquire_in_flight(tool_name)
+                    self._dispatch_pending_cycle_call(tool_name)
+                else:
+                    self._trigger_cooldown_expired(tool_name)
+            else:
+                existing_timer = self._cooldown_timers.get(tool_name)
+                if not existing_timer or not existing_timer.is_alive():
+                    self._schedule_cooldown_timer(tool_name, remaining)
 
     def _execute_pending_cycle_call(self, tool_name: str) -> bool:
         """Execute the scheduled cycle call if one exists. Returns True if executed."""
-        lock = getattr(self, "_cycle_cooldown_lock", None)
-        if lock is None:
-            return False
-
-        with lock:
-            pending_calls = getattr(self, "_pending_cycle_calls", None)
-            if not pending_calls:
-                return False
-            pending = pending_calls.pop(tool_name, None)
+        with self._cycle_cooldown_lock:
+            pending = self._pending_cycle_calls.pop(tool_name, None)
             if not pending:
+                self.release_in_flight(tool_name)
                 return False
 
         func = pending["func"]
@@ -771,8 +820,11 @@ class BaseTools:
             kwargs,
         )
         self._last_call_times[tool_name] = time.time()
-        if hasattr(self, "record_call_args"):
-            self.record_call_args(tool_name, args, kwargs)
+        self.record_call_args(tool_name, args, kwargs)
+        cooldown_dur = self._resolve_cooldown_duration(duration)
+        self._active_cooldown_durations[tool_name] = cooldown_dur
+        self._schedule_cooldown_timer(tool_name, cooldown_dur)
+
         try:
             self.log_tool_call(tool_name, _tool_call_arguments(func, args, kwargs))
             if asyncio.iscoroutinefunction(func):
@@ -780,7 +832,7 @@ class BaseTools:
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
                     loop = None
-                if loop and loop.is_running():
+                if loop is not None and loop.is_running():
                     future = asyncio.run_coroutine_threadsafe(func(self, *args, **kwargs), loop)
                     result = future.result()
                 else:
@@ -789,13 +841,11 @@ class BaseTools:
                 result = func(self, *args, **kwargs)
 
             if not _is_error_result(result):
-                self.record_tool_call(tool_name, duration=duration)
+                self._last_call_failed[tool_name] = False
             else:
                 self.record_tool_failure(tool_name)
 
-            trigger_cb = getattr(self, "_trigger_after_tool_call", None)
-            if callable(trigger_cb):
-                trigger_cb(tool_name)
+            self._trigger_after_tool_call(tool_name)
             return True
         except Exception as e:
             self.record_tool_failure(tool_name)
@@ -807,6 +857,8 @@ class BaseTools:
                 exc_info=True,
             )
             return False
+        finally:
+            self._on_cycle_tool_completed(tool_name)
 
     def check_cooldown(
         self,
@@ -860,16 +912,22 @@ class BaseTools:
             tool_name,
         )
 
-    def record_tool_call(self, tool_name: str, duration: Optional[float] = None) -> None:
+    def record_tool_call(
+        self,
+        tool_name: str,
+        duration: Optional[Union[float, int, Callable[[BaseTools], float]]] = None,
+    ) -> None:
         """Records the timestamp of a successful tool call and schedules the expiration timer."""
         self._last_call_failed[tool_name] = False
         cooldown_duration = self._resolve_cooldown_duration(duration)
-        if hasattr(self, "_active_cooldown_durations"):
-            self._active_cooldown_durations[tool_name] = cooldown_duration
+        self._active_cooldown_durations[tool_name] = cooldown_duration
         self._last_call_times[tool_name] = time.time()
         self._schedule_cooldown_timer(tool_name, cooldown_duration)
 
-    def _resolve_cooldown_duration(self, duration: Optional[Any]) -> float:
+    def _resolve_cooldown_duration(
+        self,
+        duration: Optional[Union[float, int, Callable[[BaseTools], float]]],
+    ) -> float:
         """Resolve a fixed or tool-suite-specific cooldown duration safely."""
         configured_duration = self.cooldown_duration if duration is None else duration
         if callable(configured_duration):
@@ -877,21 +935,27 @@ class BaseTools:
         try:
             return max(0.0, float(configured_duration))
         except (TypeError, ValueError):
-            logger.warning("[%s] Invalid cooldown duration %r; using 0 seconds.", self.__class__.__name__, configured_duration)
+            logger.warning(
+                "[%s] Invalid cooldown duration %r; using 0 seconds.",
+                self.__class__.__name__,
+                configured_duration,
+            )
             return 0.0
 
     def _schedule_cooldown_timer(self, tool_name: str, remaining_seconds: float) -> None:
         """Schedules a background timer to invoke callbacks when a tool's cooldown expires."""
-        def _timer_callback():
-            logger.debug(f"[{self.__class__.__name__}] Cooldown for '{tool_name}' has expired.")
-            executed = self._execute_pending_cycle_call(tool_name)
-            if not executed:
-                cb_expired = getattr(self, "on_cooldown_expired", None)
-                if cb_expired:
-                    try:
-                        cb_expired(tool_name)
-                    except Exception as e:
-                        logger.error(f"[{self.__class__.__name__}] Exception in on_cooldown_expired callback: {e}")
+        def _timer_callback() -> None:
+            logger.debug("[%s] Cooldown for '%s' has expired.", self.__class__.__name__, tool_name)
+            with self._cycle_cooldown_lock:
+                if self.is_in_flight(tool_name):
+                    # Current call is still executing. Deferred until completion.
+                    return
+                self._cooldown_timers.pop(tool_name, None)
+                if tool_name in self._pending_cycle_calls:
+                    self.acquire_in_flight(tool_name)
+                    self._dispatch_pending_cycle_call(tool_name)
+                else:
+                    self._trigger_cooldown_expired(tool_name)
 
         delay = max(0.01, remaining_seconds + 0.05)
 

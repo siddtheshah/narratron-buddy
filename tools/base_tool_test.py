@@ -1,8 +1,11 @@
 import asyncio
+import threading
 import time
 import unittest
 from unittest.mock import MagicMock
 
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
 from testing.base import BaseTestCase
 from tools.base_tool import (
     BaseTools,
@@ -15,6 +18,15 @@ from tools.base_tool import (
 
 
 class SampleTools(BaseTools):
+    def __init__(self, theater: Theater, canvas_manager: CanvasStateManager) -> None:
+        super().__init__(theater, canvas_manager)
+        self.cycle_calls: list[str] = []
+        self.async_cycle_calls: list[str] = []
+        self.slow_cycle_calls: list[str] = []
+        self.active_executions: int = 0
+        self.max_concurrent: int = 0
+        self.timeout_called: bool = False
+
     @with_cooldown(action_desc="showing a sample image", duration=0)
     def show_sample_image(self, file_path: str, transition: str = "crossfade") -> str:
         return "Success"
@@ -47,17 +59,25 @@ class SampleTools(BaseTools):
 
     @with_cycle_cooldown(action_desc="cycle tool", duration=0.1)
     def cycle_tool(self, value: str) -> str:
-        if not hasattr(self, "cycle_calls"):
-            self.cycle_calls = []
         self.cycle_calls.append(value)
         return f"Ran {value}"
 
     @with_cycle_cooldown(duration=0.1)
     async def async_cycle_tool(self, value: str) -> str:
-        if not hasattr(self, "async_cycle_calls"):
-            self.async_cycle_calls = []
         self.async_cycle_calls.append(value)
         return f"Async ran {value}"
+
+    @with_cycle_cooldown(duration=0.05)
+    def slow_cycle_tool(self, value: str, sleep_s: float = 0.15) -> str:
+        self.active_executions += 1
+        if self.active_executions > self.max_concurrent:
+            self.max_concurrent = self.active_executions
+        try:
+            time.sleep(sleep_s)
+            self.slow_cycle_calls.append(value)
+            return f"Slow ran {value}"
+        finally:
+            self.active_executions -= 1
 
     @with_cycle_cooldown(duration=10.0)
     def cycle_tool_dict_error(self, succeed: bool) -> dict:
@@ -65,7 +85,7 @@ class SampleTools(BaseTools):
             return {"error": "Something went wrong"}
         return {"status": "ok"}
 
-    def handle_timeout(self):
+    def handle_timeout(self) -> None:
         self.timeout_called = True
 
 
@@ -227,7 +247,7 @@ class TestBaseTools(BaseTestCase):
         time.sleep(0.25)
         self.assertEqual(sample.async_cycle_calls, ["A", "B"])
 
-    def test_with_cycle_cooldown_dict_error_clears_cooldown(self):
+    def test_with_cycle_cooldown_dict_error_clears_cooldown(self) -> None:
         sample = self.make_sample({})
         err = sample.cycle_tool_dict_error(False)
         self.assertEqual(err, {"error": "Something went wrong"})
@@ -235,7 +255,63 @@ class TestBaseTools(BaseTestCase):
         res = sample.cycle_tool_dict_error(True)
         self.assertEqual(res, {"status": "ok"})
 
-    def test_normalize_text_to_tokens(self):
+    def test_with_cycle_cooldown_defers_to_call_completion_when_longer_than_cooldown(self) -> None:
+        sample = self.make_sample({})
+        t1 = threading.Thread(target=sample.slow_cycle_tool, args=("A", 0.15))
+        t1.start()
+
+        time.sleep(0.02)
+        self.assertTrue(sample.is_in_flight("slow_cycle_tool"))
+
+        res_b = sample.slow_cycle_tool("B", 0.01)
+        self.assertEqual(
+            res_b, "Tool 'slow_cycle_tool' scheduled for next cycle when cooldown expires."
+        )
+
+        time.sleep(0.06)
+        self.assertEqual(sample.slow_cycle_calls, [])
+        self.assertTrue(sample.is_in_flight("slow_cycle_tool"))
+
+        t1.join()
+        time.sleep(0.06)
+        self.assertEqual(sample.slow_cycle_calls, ["A", "B"])
+        self.assertEqual(sample.max_concurrent, 1)
+
+    def test_with_cycle_cooldown_defers_to_cooldown_when_longer_than_call_completion(self) -> None:
+        sample = self.make_sample({})
+        res_a = sample.cycle_tool("A")
+        self.assertEqual(res_a, "Ran A")
+        self.assertEqual(sample.cycle_calls, ["A"])
+
+        res_b = sample.cycle_tool("B")
+        self.assertEqual(
+            res_b, "Tool 'cycle_tool' scheduled for next cycle when cooldown expires."
+        )
+
+        time.sleep(0.03)
+        self.assertEqual(sample.cycle_calls, ["A"])
+
+        # Wait for cooldown (0.1s + 0.05s buffer) to elapse
+        time.sleep(0.20)
+        self.assertEqual(sample.cycle_calls, ["A", "B"])
+
+    def test_with_cycle_cooldown_assures_only_one_tool_call_active_at_once(self) -> None:
+        sample = self.make_sample({})
+        t1 = threading.Thread(target=sample.slow_cycle_tool, args=("A", 0.1))
+        t1.start()
+
+        time.sleep(0.02)
+        self.assertTrue(sample.is_in_flight("slow_cycle_tool"))
+
+        res_b = sample.slow_cycle_tool("B", 0.05)
+        self.assertIn("scheduled for next cycle", res_b)
+
+        t1.join()
+        time.sleep(0.1)
+        self.assertEqual(sample.slow_cycle_calls, ["A", "B"])
+        self.assertEqual(sample.max_concurrent, 1)
+
+    def test_normalize_text_to_tokens(self) -> None:
         tokens1 = normalize_text_to_tokens("I open the wooden chest.")
         self.assertEqual(tokens1, {"open", "wooden", "chest"})
 
