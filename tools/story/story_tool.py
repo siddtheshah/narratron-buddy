@@ -5,7 +5,6 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timezone
 import logging
-import math
 from typing import Any, Callable, Dict, Optional, Union
 
 from google.adk.sessions import InMemorySessionService
@@ -76,11 +75,13 @@ class StoryTool(BaseTools):
             else raw_config
         )
         self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
-        self.action_cooldown_base_seconds = max(
-            0.0, float(self.config.get("action_cooldown_base_seconds", self.cooldown_duration or 10.0))
+        self.cooldown_duration = float(
+            self.config.get(
+                "cooldown_duration",
+                self.config.get("action_cooldown_base_seconds", 15.0),
+            )
         )
-        self.action_cooldown_words_per_second = max(1.0, float(self.config.get("action_cooldown_words_per_second", 5.0)))
-        self.action_cooldown_max_seconds = max(self.action_cooldown_base_seconds, float(self.config.get("action_cooldown_max_seconds", 30.0)))
+        self.action_cooldown_base_seconds = self.cooldown_duration
         # This is the single note collection for both story modules.
         self.notepad = notepad if notepad is not None else Notepad(
             theater,
@@ -286,16 +287,9 @@ class StoryTool(BaseTools):
                 pass
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
-    def get_user_action_cooldown_seconds(self) -> float:
-        try:
-            words = max(0, int(self.response_module._last_action_response_word_count))
-        except (TypeError, ValueError):
-            words = 0
-        return min(self.action_cooldown_max_seconds, self.action_cooldown_base_seconds + math.ceil(words / self.action_cooldown_words_per_second))
 
     @with_cycle_cooldown(
         action_desc="resolving story update",
-        duration=lambda tools: tools.get_user_action_cooldown_seconds(),
         tool_name="process_user_action",
     )
     def process_user_action(self, user_action: str, nudge: str = "") -> Union[Dict[str, Any], str]:

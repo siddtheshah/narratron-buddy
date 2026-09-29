@@ -41,8 +41,6 @@ story_planning:
     style: "thoughtful mystery emphasizing puzzle-solving, mechanical deductions, and emergent lore discovery"
     cooldown_duration: 8
     require_user_input: true
-    action_cooldown_words_per_second: 20
-    action_cooldown_max_seconds: 25
 
     # Maximum number of persistent stickies tracked on the board
     max_named_elements: 5

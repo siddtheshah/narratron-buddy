@@ -129,8 +129,6 @@ story_planning:
 
     cooldown_duration: 10
     require_user_input: true
-    action_cooldown_words_per_second: 20
-    action_cooldown_max_seconds: 25
 
 chat:
     cooldown_duration: 20
