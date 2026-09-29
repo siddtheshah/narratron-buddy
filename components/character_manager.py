@@ -388,16 +388,16 @@ class CharacterManager:
     def __init__(
         self,
         text_response_provider: TextResponseProvider,
-        notepad: Notepad,
-        story_state: StoryState,
+        notepad: Optional[Notepad] = None,
+        story_state: Optional[StoryState] = None,
         image_library: Optional[ImageLibrary] = None,
         image_provider: Optional[ImageProvider] = None,
         speech_provider: Optional[SpeechProvider] = None,
         character_image_style: str = "",
     ) -> None:
         self.text_response_provider = text_response_provider
-        self.notepad = notepad
-        self._story_state = story_state
+        self.notepad: Optional[Notepad] = notepad
+        self._story_state = story_state if story_state is not None else StoryState()
         self.image_library: Optional[ImageLibrary] = image_library
         self.image_provider: Optional[ImageProvider] = image_provider
         self.speech_provider: Optional[SpeechProvider] = speech_provider
@@ -1043,7 +1043,7 @@ class CharacterManager:
 
         # 3. If any traits are still missing, generate them via text provider.
         if not clean_personality or not clean_motivation or not clean_tags or not clean_gender:
-            elements = self.notepad.get_present_elements()
+            elements = self.notepad.get_present_elements() if self.notepad is not None else []
             request = TextResponseRequest(
                 prompt=_CHARACTER_GEN_PROMPT_TEMPLATE.render(
                     name=clean_name,

@@ -160,6 +160,10 @@ class LiveAgentSession:
             self.agent,
             "update_interactive_canvas",
         )
+        self.character_tools = get_bound_tool_instance(
+            self.agent,
+            "update_character",
+        )
 
         self.run_config = build_run_config(
             agent=self.agent,

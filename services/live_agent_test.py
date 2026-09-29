@@ -503,7 +503,7 @@ class TestCreateAgent(unittest.TestCase):
             theater,
             canvas_manager=provided_canvas,
             adventure_mode=False,
-            character_manager=None,
+            character_manager=mock_char_mgr_cls.return_value,
             image_library=mock_img_lib_cls.return_value,
         )
 
@@ -584,10 +584,65 @@ class TestCreateAgent(unittest.TestCase):
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Adventure Mode", instruction)
         self.assertNotIn("* generate_character", instruction)
+        self.assertNotIn("## Character Management", instruction)
+        self.assertNotIn("* update_character", instruction)
         self.assertIn("process_user_action", instruction)
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
         self.assertIn("AFTER the user action is processed", instruction)
         self.assertIn("In Adventure Mode, you can only (and should) use `create_image` or `show_image` AFTER the user action is processed", instruction)
+
+    @patch("services.live_agent.Agent")
+    def test_create_agent_non_adventure_mode_character_instructions(self, mock_agent_cls: MagicMock) -> None:
+        from services.live_agent import create_agent
+
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+
+        theater = make_test_theater("non_adv_theater", {"story_planning": {"adventure_mode": False}})
+        create_agent(theater=theater, tool_bundle=mock_bundle)
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("## Character Management", instruction)
+        self.assertIn("* update_character", instruction)
+        self.assertIn("* lookup_character", instruction)
+        self.assertIn("* clear_characters", instruction)
+        self.assertNotIn("process_user_action", instruction)
+
+    @patch("services.live_agent.get_text_response_provider")
+    def test_create_tool_bundle_character_tool_conditional_on_adventure_mode(
+        self, mock_get_text_provider: MagicMock
+    ) -> None:
+        from services.live_agent import create_tool_bundle_for_session
+
+        non_adv_theater = make_test_theater(
+            "non_adv_theater",
+            {
+                "story_planning": {"adventure_mode": False},
+                "visuals": {"model": "hybrid-flux-gemini"},
+                "music": {"provider": "lyria"},
+            },
+        )
+        non_adv_bundle = create_tool_bundle_for_session(non_adv_theater)
+        non_adv_names = [tool.name for tool in non_adv_bundle.tools]
+        self.assertIn("update_character", non_adv_names)
+        self.assertIn("lookup_character", non_adv_names)
+        self.assertIn("clear_characters", non_adv_names)
+        self.assertNotIn("process_user_action", non_adv_names)
+
+        adv_theater = make_test_theater(
+            "adv_theater",
+            {
+                "story_planning": {"adventure_mode": True},
+                "visuals": {"model": "hybrid-flux-gemini"},
+                "music": {"provider": "lyria"},
+            },
+        )
+        adv_bundle = create_tool_bundle_for_session(adv_theater)
+        adv_names = [tool.name for tool in adv_bundle.tools]
+        self.assertNotIn("update_character", adv_names)
+        self.assertNotIn("lookup_character", adv_names)
+        self.assertNotIn("clear_characters", adv_names)
+        self.assertIn("process_user_action", adv_names)
 
     def test_create_agent_requires_theater_and_tool_bundle(self):
         theater = make_test_theater("test_agent_theater", {})

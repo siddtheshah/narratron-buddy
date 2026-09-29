@@ -27,6 +27,7 @@ from services.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
 from tools.story import StoryTool
 from tools.notepad_tool import NotepadTool
+from tools.character_tool import CharacterTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from providers import (
@@ -187,6 +188,13 @@ Besides greeting the orator initially, use this in tandem with show_image to sho
 In order to maintain coherency, you must use these tools to keep track of the scene state. 
 
 * update_sticky_note <topic> <info>: Add a sticky note to current context or update the existing note with that topic.
+
+## Character Management
+Track and maintain recurring characters in the story. When you introduce or meet a new character or learn more about them, update their details so that their appearance, personality, voice, and visual references remain consistent across the narrative.
+
+* update_character <name> [description] [personality] [motivation] [quirk] [gender] [voice_tags] [image_reference]: Add or update a character. Use this whenever a new character enters the scene or an existing character is developed. Their reference image will automatically be generated and pulled into subsequent `create_image` calls when you mention their name.
+* lookup_character [query]: Search for known characters by name or trait, or list all characters currently in the session if query is omitted.
+* clear_characters: Clear all active characters from the scene when transitioning to an entirely new setting or story.
 {% endif %}
 {% if adventure_mode %}
 ## Running the Adventure
@@ -371,38 +379,35 @@ def create_tool_bundle_for_session(
         enforce_structured=bool(story_planning_config.get("enforce_structured", True)) if adventure_mode else False,
     )
 
-    character_manager: Optional[CharacterManager] = None
-    story_planning_text_provider = None
-    if adventure_mode:
-        story_planning_text_provider = get_text_response_provider(
-            str(story_planning_config.get("text_provider", "gemini-3")),
-            {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
-        )
-        visuals_config = config.get("visuals", {})
-        visuals_config = visuals_config if type(visuals_config) is dict else {}
-        character_image_provider = None
-        character_image_model = str(visuals_config.get("model") or "").strip()
-        character_image_options = visuals_config.get("model_options") or {}
-        if character_image_model and type(character_image_options) is dict:
-            try:
-                character_image_provider = get_image_provider(
-                    character_image_model, character_image_options
-                )
-            except (ImageProviderError, ValueError) as exc:
-                logger.warning("[create_tool_bundle_for_session] Character image provider unavailable: %s", exc)
-        speech_provider = None
-        if canvas_manager.story is not None:
-            speech_provider = canvas_manager.story.speech_provider
-        story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
-        character_manager = CharacterManager(
-            text_response_provider=story_planning_text_provider,
-            notepad=notepad,
-            story_state=story_state,
-            image_library=image_library,
-            image_provider=character_image_provider,
-            speech_provider=speech_provider,
-            character_image_style=str(visuals_config.get("style") or "").strip(),
-        )
+    story_planning_text_provider = get_text_response_provider(
+        str(story_planning_config.get("text_provider", "gemini-3")),
+        {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
+    )
+    visuals_config = config.get("visuals", {})
+    visuals_config = visuals_config if type(visuals_config) is dict else {}
+    character_image_provider = None
+    character_image_model = str(visuals_config.get("model") or "").strip()
+    character_image_options = visuals_config.get("model_options") or {}
+    if character_image_model and type(character_image_options) is dict:
+        try:
+            character_image_provider = get_image_provider(
+                character_image_model, character_image_options
+            )
+        except (ImageProviderError, ValueError) as exc:
+            logger.warning("[create_tool_bundle_for_session] Character image provider unavailable: %s", exc)
+    speech_provider = None
+    if canvas_manager.story is not None:
+        speech_provider = canvas_manager.story.speech_provider
+    story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
+    character_manager = CharacterManager(
+        text_response_provider=story_planning_text_provider,
+        notepad=notepad,
+        story_state=story_state,
+        image_library=image_library,
+        image_provider=character_image_provider,
+        speech_provider=speech_provider,
+        character_image_style=str(visuals_config.get("style") or "").strip(),
+    )
 
     # Initialize tools reusing intermediate components across them
     tools = []
@@ -457,6 +462,16 @@ def create_tool_bundle_for_session(
             notepad=notepad,
         )
         tools.append(notepad_tools.update_sticky_note)
+        character_tools = CharacterTool(
+            theater,
+            character_manager=character_manager,
+            canvas_manager=canvas_manager,
+        )
+        tools.extend([
+            character_tools.update_character,
+            character_tools.lookup_character,
+            character_tools.clear_characters,
+        ])
 
     interactive_canvas_config = config.get("interactive_canvas", {})
     if interactive_canvas_config.get("enabled", False):
