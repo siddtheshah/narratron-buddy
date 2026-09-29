@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import concurrent.futures
 import functools
@@ -6,12 +8,15 @@ import logging
 import re
 import threading
 import time
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set, TypeVar, Union
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 
 logger = logging.getLogger(__name__)
+
+ReturnT = TypeVar("ReturnT")
+ArgT = TypeVar("ArgT")
 
 
 # Common lightweight stop words for Jaccard BoW argument comparison
@@ -325,6 +330,8 @@ def with_cooldown(
             result = func(self, *args, **kwargs)
             if not _is_error_result(result):
                 self.record_tool_call(cooldown_key, duration=duration)
+            else:
+                self.record_tool_failure(cooldown_key)
             return result
 
         return wrapper
@@ -357,6 +364,8 @@ def with_cooldown(
                 result = func(self, *args, **kwargs)
                 if not _is_error_result(result):
                     self.record_tool_call(cooldown_key, duration=duration)
+                else:
+                    self.record_tool_failure(cooldown_key)
                 return result
             return wrapper
 
@@ -364,11 +373,14 @@ def with_cooldown(
 
 
 def with_cycle_cooldown(
-    func_or_desc=None,
+    func_or_desc: Optional[Union[Callable[..., ReturnT], str]] = None,
     action_desc: Optional[str] = None,
-    duration: Optional[Any] = None,
+    duration: Optional[Union[float, int, Callable[[BaseTools], float]]] = None,
     tool_name: Optional[str] = None,
-):
+) -> Union[
+    Callable[[Callable[..., ReturnT]], Callable[..., Union[ReturnT, str]]],
+    Callable[..., Union[ReturnT, str]],
+]:
     """Decorator annotation for BaseTools methods that schedules calls on cooldown instead of blocking.
 
     If invoked while on cooldown, the call is scheduled to execute automatically
@@ -376,62 +388,66 @@ def with_cycle_cooldown(
     finishes, it updates the parameters of the scheduled call without enqueuing
     an additional call (matching visual cycle behavior).
     """
-    def _create_wrapper(func: Callable):
+    desc: Optional[str] = (
+        action_desc if callable(func_or_desc) else (func_or_desc or action_desc)
+    )
+
+    def _create_wrapper(
+        func: Callable[..., ReturnT],
+    ) -> Callable[..., Union[ReturnT, str]]:
         if asyncio.iscoroutinefunction(func):
             @functools.wraps(func)
-            async def async_wrapper(self, *args, **kwargs):
+            async def async_wrapper(
+                self: BaseTools, *args: ArgT, **kwargs: ArgT
+            ) -> Union[ReturnT, str]:
                 cooldown_key = tool_name or func.__name__
                 self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
                 is_scheduled, msg = self.handle_cycle_call(
-                    cooldown_key, func, args, kwargs, duration=duration
+                    cooldown_key, func, args, kwargs, duration=duration, action_desc=desc
                 )
                 if is_scheduled:
-                    trigger_cb = getattr(self, "_trigger_after_tool_call", None)
-                    if callable(trigger_cb):
-                        trigger_cb(cooldown_key)
-                    return msg
+                    self._trigger_after_tool_call(cooldown_key)
+                    return msg or ""
 
                 self._last_call_times[cooldown_key] = time.time()
-                if hasattr(self, "record_call_args"):
-                    self.record_call_args(cooldown_key, args, kwargs)
+                self.record_call_args(cooldown_key, args, kwargs)
                 try:
                     result = await func(self, *args, **kwargs)
                     if not _is_error_result(result):
                         self.record_tool_call(cooldown_key, duration=duration)
                     else:
-                        self._last_call_times.pop(cooldown_key, None)
+                        self.record_tool_failure(cooldown_key)
                     return result
                 except Exception:
-                    self._last_call_times.pop(cooldown_key, None)
+                    self.record_tool_failure(cooldown_key)
                     raise
 
             return async_wrapper
         else:
             @functools.wraps(func)
-            def wrapper(self, *args, **kwargs):
+            def wrapper(
+                self: BaseTools, *args: ArgT, **kwargs: ArgT
+            ) -> Union[ReturnT, str]:
                 cooldown_key = tool_name or func.__name__
                 self.log_tool_call(cooldown_key, _tool_call_arguments(func, args, kwargs))
                 is_scheduled, msg = self.handle_cycle_call(
-                    cooldown_key, func, args, kwargs, duration=duration
+                    cooldown_key, func, args, kwargs, duration=duration, action_desc=desc
                 )
                 if is_scheduled:
-                    trigger_cb = getattr(self, "_trigger_after_tool_call", None)
-                    if callable(trigger_cb):
-                        trigger_cb(cooldown_key)
-                    return msg
+                    self._trigger_after_tool_call(cooldown_key)
+                    return msg or ""
 
                 self._last_call_times[cooldown_key] = time.time()
-                if hasattr(self, "record_call_args"):
-                    self.record_call_args(cooldown_key, args, kwargs)
+                self.record_call_args(cooldown_key, args, kwargs)
                 try:
                     result = func(self, *args, **kwargs)
                     if not _is_error_result(result):
                         self.record_tool_call(cooldown_key, duration=duration)
                     else:
-                        self._last_call_times.pop(cooldown_key, None)
+                        self.record_tool_failure(cooldown_key)
                     return result
                 except Exception:
-                    self._last_call_times.pop(cooldown_key, None)
+                    self.record_tool_failure(cooldown_key)
                     raise
 
             return wrapper
@@ -466,6 +482,7 @@ class BaseTools:
         self._cycle_cooldown_lock = threading.Lock()
         self._in_flight_tools: Set[str] = set()
         self._in_flight_lock = threading.Lock()
+        self._last_call_failed: Dict[str, bool] = {}
 
         # Duplicate detection tracking (Normalized Jaccard BoW)
         self._last_call_args: Dict[str, tuple[Set[str], float]] = {}
@@ -505,6 +522,14 @@ class BaseTools:
         """Release the in-flight status for a tool."""
         with self._in_flight_lock:
             self._in_flight_tools.discard(tool_name)
+
+    def _trigger_after_tool_call(self, tool_name: str) -> None:
+        """Invoke on_after_tool_call callback if configured."""
+        if self.on_after_tool_call is not None:
+            try:
+                self.on_after_tool_call(tool_name, {})
+            except Exception as exc:
+                logger.error("[%s] Error in on_after_tool_call: %s", self.__class__.__name__, exc)
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("last_") and name.endswith("_time"):
@@ -558,13 +583,14 @@ class BaseTools:
     def handle_cycle_call(
         self,
         tool_name: str,
-        func: Callable,
-        args: tuple,
-        kwargs: dict,
-        duration: Optional[Any] = None,
-    ) -> tuple[bool, Any]:
+        func: Callable[..., ReturnT],
+        args: tuple[ArgT, ...],
+        kwargs: dict[str, ArgT],
+        duration: Optional[Union[float, int, Callable[[BaseTools], float]]] = None,
+        action_desc: Optional[str] = None,
+    ) -> tuple[bool, Optional[str]]:
         """Check cooldown and either schedule/update for next cycle or indicate immediate run."""
-        lock = getattr(self, "_cycle_cooldown_lock", None)
+        lock = self._cycle_cooldown_lock
         if lock is None:
             self._cycle_cooldown_lock = threading.Lock()
             self._pending_cycle_calls = {}
@@ -585,7 +611,19 @@ class BaseTools:
                     args,
                     kwargs,
                 )
-                msg = f"Tool '{tool_name}' duplicate call ignored; action already in progress or completed."
+                remaining_desc = f"{remaining:.1f}s"
+                desc_suffix = f" ({action_desc})" if action_desc else ""
+                is_pending = bool(self._pending_cycle_calls.get(tool_name))
+                if is_pending:
+                    msg = (
+                        f"Tool '{tool_name}' duplicate call ignored; action{desc_suffix} is already queued and scheduled for the next cycle. "
+                        f"Do not call '{tool_name}' again for this action—please wait for the scheduled cycle to execute ({remaining_desc} remaining)."
+                    )
+                else:
+                    msg = (
+                        f"Tool '{tool_name}' duplicate call ignored; action{desc_suffix} already in progress or completed. "
+                        f"Do not call '{tool_name}' again for this action—please wait for the current action to resolve ({remaining_desc} cooldown remaining)."
+                    )
                 return (True, msg)
 
             is_update = tool_name in self._pending_cycle_calls
@@ -596,7 +634,7 @@ class BaseTools:
                 "duration": duration,
             }
 
-            existing_timer = getattr(self, "_cooldown_timers", {}).get(tool_name)
+            existing_timer = self._cooldown_timers.get(tool_name)
             if not existing_timer or not existing_timer.is_alive():
                 self._schedule_cooldown_timer(tool_name, remaining)
 
@@ -631,6 +669,9 @@ class BaseTools:
         window_seconds: Optional[float] = None,
     ) -> bool:
         """Check if incoming (args, kwargs) is a duplicate of a recent call or pending cycle call using Jaccard BoW."""
+        if self._last_call_failed.get(tool_name, False):
+            return False
+
         lock = getattr(self, "_duplicate_lock", None)
         if lock is None:
             self._duplicate_lock = threading.Lock()
@@ -750,14 +791,14 @@ class BaseTools:
             if not _is_error_result(result):
                 self.record_tool_call(tool_name, duration=duration)
             else:
-                self._last_call_times.pop(tool_name, None)
+                self.record_tool_failure(tool_name)
 
             trigger_cb = getattr(self, "_trigger_after_tool_call", None)
             if callable(trigger_cb):
                 trigger_cb(tool_name)
             return True
         except Exception as e:
-            self._last_call_times.pop(tool_name, None)
+            self.record_tool_failure(tool_name)
             logger.error(
                 "[%s] Exception executing scheduled cycle tool call '%s': %s",
                 self.__class__.__name__,
@@ -805,8 +846,23 @@ class BaseTools:
             arguments or {},
         )
 
+    def record_tool_failure(self, tool_name: str) -> None:
+        """Mark that a tool call ended in failure, disabling duplicate swallowing and clearing cooldown."""
+        self._last_call_failed[tool_name] = True
+        self.clear_duplicate_history(tool_name)
+        self._last_call_times.pop(tool_name, None)
+        timer = self._cooldown_timers.pop(tool_name, None)
+        if timer is not None:
+            timer.cancel()
+        logger.info(
+            "[%s] Tool '%s' call marked as failure; duplicate swallowing disabled and cooldown reset.",
+            self.__class__.__name__,
+            tool_name,
+        )
+
     def record_tool_call(self, tool_name: str, duration: Optional[float] = None) -> None:
         """Records the timestamp of a successful tool call and schedules the expiration timer."""
+        self._last_call_failed[tool_name] = False
         cooldown_duration = self._resolve_cooldown_duration(duration)
         if hasattr(self, "_active_cooldown_durations"):
             self._active_cooldown_durations[tool_name] = cooldown_duration

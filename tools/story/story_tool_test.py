@@ -145,10 +145,44 @@ class TestStoryToolComposition(unittest.TestCase):
         # Second call with slightly different phrasing / casing / punctuation is swallowed
         res2 = tool.process_user_action("I open the ancient door.")
         self.assertIn("duplicate call ignored", res2)
+        self.assertIn("Do not call 'process_user_action' again for this action", res2)
+        self.assertIn("resolving story update", res2)
 
         # Verify it was NOT enqueued for next cycle
         pending = tool.get_pending_cycle_call("process_user_action")
         self.assertIsNone(pending)
+
+    def test_process_user_action_timeout_failure_disables_swallowing(self) -> None:
+        with (
+            patch("tools.story.story_tool.CharacterManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule") as response_type,
+        ):
+            response_type.return_value.process_user_action.return_value = {"status": "processing"}
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+
+        # First call starts processing
+        res1 = tool.process_user_action("Open the ancient door")
+        self.assertEqual(res1, {"status": "processing"})
+
+        # Background resolution times out and notifies scene reaction with error
+        tool._handle_scene_reaction({
+            "error": "Story responder timed out after 35.0 seconds. The story responder agent was killed and restarted."
+        })
+
+        # Retry call with identical action must NOT be swallowed because the previous call failed
+        res2 = tool.process_user_action("Open the ancient door")
+        self.assertEqual(res2, {"status": "processing"})
+        self.assertEqual(response_type.return_value.process_user_action.call_count, 2)
+
+        # Now simulate success
+        tool._handle_scene_reaction({"narration": "The ancient door creaks open."})
+
+        # Subsequent call with identical action SHOULD now be swallowed
+        res3 = tool.process_user_action("Open the ancient door")
+        self.assertIn("duplicate call ignored", res3)
+        self.assertEqual(response_type.return_value.process_user_action.call_count, 2)
 
 
     def test_requires_text_response_provider(self) -> None:

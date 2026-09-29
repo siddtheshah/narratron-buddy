@@ -268,6 +268,8 @@ class TestBaseTools(BaseTestCase):
         # Second call within cooldown with basically identical text is swallowed
         res2 = sample.cycle_tool("I open the treasure chest.")
         self.assertIn("duplicate call ignored", res2)
+        self.assertIn("Do not call 'cycle_tool' again for this action", res2)
+        self.assertIn("already in progress or completed", res2)
         # Should NOT be queued for next cycle
         self.assertIsNone(sample.get_pending_cycle_call("cycle_tool"))
         self.assertEqual(sample.cycle_calls, ["Open the treasure chest"])
@@ -280,6 +282,8 @@ class TestBaseTools(BaseTestCase):
         # Fourth call that duplicates the pending call is also swallowed
         res4 = sample.cycle_tool("cast protective shield spell")
         self.assertIn("duplicate call ignored", res4)
+        self.assertIn("Do not call 'cycle_tool' again for this action", res4)
+        self.assertIn("already queued and scheduled", res4)
         pending = sample.get_pending_cycle_call("cycle_tool")
         self.assertEqual(pending["args"], ("Cast a protective shield spell",))
 
@@ -306,6 +310,24 @@ class TestBaseTools(BaseTestCase):
         sample.record_call_args("fast_single_flight", (), {})
         res = sample.fast_single_flight()
         self.assertIn("duplicate call ignored", res)
+
+    def test_with_cycle_cooldown_failure_disables_swallowing(self):
+        sample = self.make_sample({"cooldown_duration": 10.0})
+        # Initial call fails
+        err1 = sample.cycle_tool_dict_error(False)
+        self.assertEqual(err1, {"error": "Something went wrong"})
+
+        # Subsequent call with identical arguments must NOT be swallowed because previous call failed
+        err2 = sample.cycle_tool_dict_error(False)
+        self.assertEqual(err2, {"error": "Something went wrong"})
+
+        # Successful call
+        res1 = sample.cycle_tool_dict_error(True)
+        self.assertEqual(res1, {"status": "ok"})
+
+        # Call with identical arguments after a successful call SHOULD be swallowed
+        res2 = sample.cycle_tool_dict_error(True)
+        self.assertIn("duplicate call ignored", res2)
 
 
 if __name__ == "__main__":

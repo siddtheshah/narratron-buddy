@@ -326,6 +326,7 @@ class StoryResponseModule:
         self._last_voice_input_log_time: float = -float("inf")
 
         self.user_action_timeout_seconds: float = USER_ACTION_TIMEOUT_SECONDS
+        self.on_failure: Optional[Callable[[], None]] = None
 
         # Session & ADK
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
@@ -1026,6 +1027,11 @@ class StoryResponseModule:
             if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
                 self.canvas_manager.tool_response.set_activity("user_action", active=False)
             self.restart_responder_agent()
+            if self.on_failure is not None:
+                try:
+                    self.on_failure()
+                except Exception:
+                    logger.exception("[StoryResponseModule] on_failure callback failed")
             return {
                 "error": (
                     f"Story responder timed out after {self.user_action_timeout_seconds} seconds. "
@@ -1114,9 +1120,19 @@ class StoryResponseModule:
             result = None
             try:
                 result = self._resolve_user_action(action, nudge=clean_nudge)
+                if type(result) is dict and "error" in result and self.on_failure is not None:
+                    try:
+                        self.on_failure()
+                    except Exception:
+                        logger.exception("[StoryResponseModule] on_failure callback failed")
             except Exception as exc:
                 logger.exception("[StoryResponseModule] Scene reaction failed")
                 result = {"error": f"Story responder failed: {exc}"}
+                if self.on_failure is not None:
+                    try:
+                        self.on_failure()
+                    except Exception:
+                        logger.exception("[StoryResponseModule] on_failure callback failed")
             finally:
                 self.release_in_flight("process_user_action")
                 if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:

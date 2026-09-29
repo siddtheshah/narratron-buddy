@@ -164,6 +164,7 @@ class StoryTool(BaseTools):
         # both modules have been initialized.
         self.notepad.on_change = self.response_module.save_to_session_state
         self.response_module.on_scene_reaction = self._handle_scene_reaction
+        self.response_module.on_failure = lambda: self.record_tool_failure("process_user_action")
         self.notepad.sync_story_state()
         self.sync_character_bindings()
 
@@ -259,14 +260,17 @@ class StoryTool(BaseTools):
         if "error" not in result:
             entry["output"] = {
                 "narration": str(result.get("narration") or "").strip(),
-                "dialogue": result.get("dialogue") if isinstance(result.get("dialogue"), list) else [],
-                "die_rolls": result.get("die_rolls") if isinstance(result.get("die_rolls"), list) else [],
+                "dialogue": result.get("dialogue") if type(result.get("dialogue")) is list else [],
+                "die_rolls": result.get("die_rolls") if type(result.get("die_rolls")) is list else [],
             }
+        else:
+            self.record_tool_failure("process_user_action")
         self.append_story_log_entry(entry)
         if self._pending_actions:
             action = self._pending_actions.pop(0)
-            result["deep_plan_revision_used"] = self.planning_module.get_deep_plan().get("revision", 0)
-            self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
+            if "error" not in result:
+                result["deep_plan_revision_used"] = self.planning_module.get_deep_plan().get("revision", 0)
+                self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
         self.sync_character_bindings()
         if self._on_scene_reaction:
             self._on_scene_reaction(result)
@@ -297,8 +301,14 @@ class StoryTool(BaseTools):
         self.append_story_log_entry({"type": "user_action", "action": str(user_action).strip()})
         self._pending_actions.append(str(user_action).strip())
         if nudge:
-            return self.response_module.process_user_action(user_action, nudge=nudge)
-        return self.response_module.process_user_action(user_action)
+            res = self.response_module.process_user_action(user_action, nudge=nudge)
+        else:
+            res = self.response_module.process_user_action(user_action)
+        if type(res) is dict and "error" in res:
+            self.record_tool_failure("process_user_action")
+            if self._pending_actions:
+                self._pending_actions.pop()
+        return res
 
     def get_tools(self) -> list[Any]:
         return [self.process_user_action]
