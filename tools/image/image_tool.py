@@ -13,7 +13,6 @@ from providers import (
     ImageGenerationRequest,
     ImageProvider,
     ImageProviderError,
-    ImageReference,
     get_image_provider,
 )
 from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
@@ -28,6 +27,7 @@ from components.canvas.visual_state import VisualState, PRIORITY_SHOW, PRIORITY_
 from components.theater_manager import Theater
 from components.image_library import ImageLibrary
 from components.character_manager import CharacterLookupResult, CharacterManager
+from tools.reference_utils import is_character_reference, resolve_provider_references
 
 logger = logging.getLogger(__name__)
 
@@ -213,63 +213,12 @@ class ImageTools(BaseTools):
         lookup_result: Optional[CharacterLookupResult] = None,
     ) -> bool:
         """Return True if ref is identified as a character reference."""
-        if self.character_manager is None:
-            return False
-
-        ref_clean = str(ref).strip()
-        if not ref_clean:
-            return False
-        ref_norm = ref_clean.lower()
-        ref_stem = Path(ref_clean).stem.lower()
-
-        # 1. Check against acquired characters and player from lookup_result
-        if lookup_result is not None:
-            for char in lookup_result.characters:
-                char_name = char.name.strip().lower()
-                char_alias = char.alias.strip().lower()
-                char_img_ref = (char.image_reference or "").strip().lower()
-                char_path = (char.image_reference_path or "").strip().lower()
-                if ref_norm in (char_name, char_alias, char_img_ref, char_path):
-                    return True
-                if ref_stem in (char_alias, Path(char_img_ref).stem.lower(), Path(char_path).stem.lower()):
-                    return True
-                if len(char_name) >= 2:
-                    ref_words = ref_norm.replace("_", " ").replace("-", " ")
-                    if re.search(r"\b" + re.escape(char_name) + r"\b", ref_words):
-                        return True
-
-            if lookup_result.player is not None:
-                player = lookup_result.player
-                player_name = (player.name or "").strip().lower()
-                player_ref = (player.reference or "").strip().lower()
-                player_path = (player.reference_path or "").strip().lower()
-                if ref_norm in (player_name, player_ref, player_path):
-                    return True
-                if ref_stem in (Path(player_ref).stem.lower(), Path(player_path).stem.lower()):
-                    return True
-                if len(player_name) >= 2:
-                    ref_words = ref_norm.replace("_", " ").replace("-", " ")
-                    if re.search(r"\b" + re.escape(player_name) + r"\b", ref_words):
-                        return True
-
-        # 2. Check against all known character references from character_manager
-        all_char_refs = self.character_manager.get_character_references()
-        if type(all_char_refs) is list:
-            for c_ref in all_char_refs:
-                c_clean = str(c_ref).strip().lower()
-                if ref_norm == c_clean or ref_stem == Path(c_clean).stem.lower():
-                    return True
-                if resolved_path is not None and os.path.isabs(c_clean):
-                    norm_c = os.path.normcase(os.path.abspath(c_clean))
-                    norm_p = os.path.normcase(os.path.abspath(resolved_path))
-                    if norm_c == norm_p:
-                        return True
-
-        # 3. Check explicit character naming tags in filename
-        if re.search(r"(^|[_-])(character|player_character|portrait)($|[._-])", ref_norm):
-            return True
-
-        return False
+        return is_character_reference(
+            ref=ref,
+            character_manager=self.character_manager,
+            resolved_path=resolved_path,
+            lookup_result=lookup_result,
+        )
 
     @blocked_when_canvas_pinned
     @with_cycle_cooldown(action_desc="generating another image")
@@ -319,76 +268,16 @@ class ImageTools(BaseTools):
                 self._trigger_after_tool_call("create_image")
                 return res
         
-        char_resolved_refs: list[tuple[str, str]] = []
-        char_seen_keys: set[str] = set()
-        char_seen_paths: set[str] = set()
-        lookup_result: Optional[CharacterLookupResult] = None
-
-        if self.character_manager is not None:
-            lookup_result = self.character_manager.lookup_character(image_prompt, name_only=True)
-            for ref in lookup_result.get_character_references():
-                ref_clean = str(ref).strip()
-                ref_key = ref_clean.casefold()
-                if not ref_key or ref_key in char_seen_keys:
-                    continue
-                ref_path = self.visual.resolve_image_path(ref_clean) if self.visual is not None else None
-                if ref_path is not None:
-                    norm_path = os.path.normcase(os.path.abspath(ref_path))
-                    if norm_path not in char_seen_paths:
-                        char_seen_keys.add(ref_key)
-                        char_seen_paths.add(norm_path)
-                        char_resolved_refs.append((ref_clean, ref_path))
-                else:
-                    logger.debug(f"[ImageTools] Character reference '{ref_clean}' could not be resolved; skipping.")
-
-        resolved_refs: list[tuple[str, str]] = list(char_resolved_refs)
-        seen_keys: set[str] = set(char_seen_keys)
-        seen_paths: set[str] = set(char_seen_paths)
-
-        if reference_images is not None:
-            if type(reference_images) is str:
-                ref_list = [r.strip() for r in reference_images.split(",") if r.strip()]
-            else:
-                ref_list = [str(r).strip() for r in reference_images if str(r).strip()]
-            
-            for ref in ref_list:
-                ref_key = ref.casefold()
-                ref_path = self.visual.resolve_image_path(ref) if self.visual is not None else None
-                if ref_path is None:
-                    if char_resolved_refs and self._is_character_reference(ref, lookup_result=lookup_result):
-                        continue
-                    logger.error(f"[ImageTools] Reference image '{ref}' not found.")
-                    res = f"Error: Reference image '{ref}' not found."
-                    self._trigger_after_tool_call("create_image")
-                    return res
-
-                norm_path = os.path.normcase(os.path.abspath(ref_path))
-                if norm_path in seen_paths or ref_key in seen_keys:
-                    continue
-
-                if char_resolved_refs and self._is_character_reference(ref, resolved_path=ref_path, lookup_result=lookup_result):
-                    logger.debug(f"[ImageTools] Caller character reference '{ref}' overridden by character_manager.")
-                    continue
-
-                seen_keys.add(ref_key)
-                seen_paths.add(norm_path)
-                resolved_refs.append((ref, ref_path))
-
-        provider_references = []
-        if resolved_refs:
-            for ref_key, ref_path in resolved_refs:
-                try:
-                    with open(ref_path, "rb") as f:
-                        img_bytes = f.read()
-                    mime_type = "image/png" if ref_path.lower().endswith(".png") else "image/jpeg"
-                    provider_references.append(ImageReference(name=Path(ref_path).name, data=img_bytes, mime_type=mime_type))
-                except Exception as e:
-                    logger.error(f"[ImageTools] Error loading reference image {ref_path}: {e}")
-                    res = f"Error loading reference image '{ref_key}': {e}"
-                    self._trigger_after_tool_call("create_image")
-                    return res
-            
-            logger.debug(f"[ImageTools] Adapted prompt with {len(resolved_refs)} reference images by bytes.")
+        provider_references, ref_error = resolve_provider_references(
+            reference_images=reference_images,
+            prompt=image_prompt,
+            character_manager=self.character_manager,
+            visual=self.visual,
+            caller_label="ImageTools",
+        )
+        if ref_error is not None:
+            self._trigger_after_tool_call("create_image")
+            return ref_error
 
         with self._story_plan_lock:
             if self.adventure_mode:
