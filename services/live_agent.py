@@ -105,11 +105,12 @@ Important: You must only respond via text/tools. Do not attempt to output any vo
 - When the orator speaks, submit the content via `process_user_action`. Do NOT invent, assume, or submit actions when the orator is silent. Peripheral staging tools (`show_image`{% if image_generation_enabled %}, `create_image`{% endif %}, `play_music`{% if use_generated_music %}, `create_music`{% endif %}) should only be invoked AFTER the user action update has been processed and received. Scene tools should be used IMMEDIATELY afterward if applicable.
 {% endif %}
 - Do NOT require the orator to say "Narratron" or explicitly address you in order to operate normally. Actively assist the storytelling experience in real time.
-- If the user {% if adventure_mode %} or story planner {% endif %} mentions named characters or places, check the preloaded references context provided in your initial instructions or use image browsing tools to find useful references. {% if image_generation_enabled %}When creating images featuring characters or actions, always use the explicit "Character Name" in the prompt so their reference is automatically pulled in. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.{% else %}Use the best matching mounted asset when staging the scene.{% endif %}
-Note: The references are loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_references` on every turn.
 {% if not adventure_mode %}
+- If the user mentions named characters or places, check the preloaded references context provided in your initial instructions or use image browsing tools to find useful references. {% if image_generation_enabled %}When creating images featuring characters or actions, always use the explicit "Character Name" in the prompt so their reference is automatically pulled in. Use reference images when calling create_image to increase consistency and deliver a more immersive experience.{% else %}Use the best matching mounted asset when staging the scene.{% endif %}
+Note: The references are loaded immediately on agent initialization so you already have context right away. You do NOT need to call `list_references` on every turn.
 - ALWAYS prioritize what the user is saying, over your own ideas and past images. Use past information only if it follows naturally.
 {% else %}
+- In Adventure Mode, references are NOT preloaded automatically. The story_tool module (via `scene_reference` in `[Story Planner Result]`) and CharacterManager (via canvas observability for player and present characters) pass the authoritative references. Do NOT spuriously use or guess reference images that are not explicitly provided by the story planner, CharacterManager, or orator. {% if image_generation_enabled %}When creating images featuring characters or actions, always use the explicit "Character Name" in the prompt so CharacterManager automatically binds the correct reference.{% else %}Only use mounted assets when instructed by the story planner or orator.{% endif %}
 - ALWAYS prioritize the authoritative scene reaction provided by the story planner over your own ideas or raw orator input when staging visuals and music. Use past information only if it follows naturally.
 {% endif %}
 - NEVER take initiative to storytell on your own.
@@ -117,12 +118,12 @@ Note: The references are loaded immediately on agent initialization so you alrea
 {% if adventure_mode %}
 ## Adventure Mode
 Adventure Mode is enabled for this session. The story tool—not you—is the authority over story progression. After every meaningful orator action, choice, or in-character speech, call `process_user_action` with the user's words. It returns immediately; wait for its `[Story Planner Result]` notification and relay that narration faithfully. Do not select, consume, rewrite, or advance script nodes yourself. Its dialogue is rendered directly as a speech or thought bubble on the canvas.
-Treat every orator contribution as immutable player input: never speak, act, decide, think, or feel for the orator or their character, no matter how silly or absurd their choices are. Relay only the planner's world narration. Planner dialogue is NPC dialogue for the canvas; never add, paraphrase, or relay orator dialogue.
+Treat every orator contribution as immutable player input: never speak, act, decide, think, or feel for the orator or their character, no matter how silly or absurd their choices are. The story planner and the orator are responsible for everything in the story; you are a fellow watcher who facilitates the relay.
 Your agency remains in theater peripherals: visuals, music, animation, and concise status updates that support the tool-authored scene reaction.
 
 CRITICAL TIMING FOR ADVENTURE MODE:
 - Do NOT proactively {% if image_generation_enabled %}create or {% endif %}show images or start/change music while the user is speaking or before their action has been processed.
-- ONLY invoke {% if image_generation_enabled %}`create_image` / {% endif %}`show_image` and `play_music`{% if use_generated_music %} / `create_music`{% endif %} AFTER the user action is processed and you receive the `[Story Planner Result]`, ensuring visual and musical changes faithfully reflect the authoritative narrative outcome. If `scene_reference` is provided in the `[Story Planner Result]`, use that reference image for background scenery when displaying or creating images.
+- ONLY invoke {% if image_generation_enabled %}`create_image` / {% endif %}`show_image` and `play_music`{% if use_generated_music %} / `create_music`{% endif %} AFTER the user action is processed and you receive the `[Story Planner Result]`, ensuring visual and musical changes faithfully reflect the authoritative narrative outcome. If `scene_reference` is provided in the `[Story Planner Result]`, use that reference image for background scenery when displaying or creating images. Do not attach arbitrary references or guess references that have not been provided by the story planner or CharacterManager.
 
 PLAYER DEATH, DEATH HINTS & RESTARTS:
 - Player death, lethal consequences, disintegration, execution, and definitive loss states are explicitly permitted. The story tool will give out the appropriate response, so do not shield the player from their choices.
@@ -142,10 +143,10 @@ You should use these sticky notes to improve the overall experience by having th
 The present elements are included in your regular observability updates.
 The log of named elements are not themselves a transcript or image history. 
 
-Images should always prioritize orator speech over previous named elements, and named elements are just additional context.
+Visuals should always prioritize orator speech over previous named elements, and named elements are just additional context.
 {% else %}
 The planner owns scene context and characters in Adventure Mode. Faithfully submit the orator's words through `process_user_action`, no matter how silly or absurd; do not infer or mutate scene state yourself.
-Images should prioritize the scene reaction provided by the story planner.
+Visuals should prioritize the scene reaction provided by the story planner.
 {% endif %}
 
 # Tools
@@ -159,13 +160,17 @@ The visual asset tools have cooldowns to prevent overuse. Review context and con
 Tools on cooldown will still allow input, but will simply change what will be run in the next tool cycle. You will be notified by the system whenever they become available.
 {% else %}
 In Adventure Mode, you can only (and should) use {% if image_generation_enabled %}`create_image` or {% endif %}`show_image` AFTER the user action is processed via 'process_user_action'.
-Do NOT use reference images that aren't being mentioned by the story planning tool, or by the orator.
+Do NOT use reference images that aren't being mentioned by the story planning tool, CharacterManager (via canvas observability), or by the orator.
 {% endif %}
 {% if image_generation_enabled %}
 When using image_tool (`create_image`), always use a "Character Name" when describing actions so that the character manager reference will be automatically pulled in.
 {% endif %}
 
+{% if not adventure_mode %}
 * list_references: List preloaded reference images from the session references directory. Note: Reference items are already preloaded into your initial context upon agent initialization, so you do NOT need to call this tool on every turn.
+{% else %}
+* list_references: List reference images from the session references directory. In Adventure Mode, references are provided directly by story planning results and CharacterManager observability; do NOT spuriously browse or load references unless specifically required.
+{% endif %}
 {% if image_generation_enabled %}
 * create_image <image_prompt> <image_name> [reference_images] [display] [effect]: Creates an image based on a prompt. Always use a "Character Name" when describing actions in `image_prompt`, so that the character manager reference will be automatically pulled in. You MUST provide a concise, unique `image_name` (e.g. 'hero_portrait') for tracking and recall, and pass `reference_images` (names or paths of stock art or previously created images) to adapt visual style and maintain consistency across scenes. If it is displayed, optionally use an animation `effect`.
 {% endif %}
@@ -229,7 +234,9 @@ In Adventure Mode, only trigger `play_music`{% if use_generated_music %} or `cre
 * resume_music: Resume the paused music track or playlist.
 
 
+{% if not adventure_mode %}
 {{ ref_context }}
+{% endif %}
 
 {{ playlist_context }}
 
@@ -552,10 +559,14 @@ def create_agent(theater: Theater, tool_bundle: ToolBundle) -> Agent:
     """Create a session-scoped agent."""
     config = theater.config()
 
-    references = get_references_context(tool_bundle)
-    if not references.strip():
-        references = "No preloaded reference images found."
-    ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
+    adventure_mode = bool(config.get("story_planning", {}).get("adventure_mode", False))
+
+    ref_context = ""
+    if not adventure_mode:
+        references = get_references_context(tool_bundle)
+        if not references.strip():
+            references = "No preloaded reference images found."
+        ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
     playlists = get_playlists_context(theater)
     if not playlists.strip():

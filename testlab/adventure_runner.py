@@ -588,10 +588,13 @@ class AdventureSession:
     def _create_agent(self) -> Agent:
         """Create ADK Agent using AGENT_INSTRUCTION_TEMPLATE and adventure config."""
         tool_bundle = ToolBundle(self.tools)
-        references = get_references_context(tool_bundle)
-        if not isinstance(references, str) or not references.strip():
-            references = "No preloaded reference images found."
-        ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
+        adventure_mode = bool(self.config.get("story_planning", {}).get("adventure_mode", False))
+        ref_context = ""
+        if not adventure_mode:
+            references = get_references_context(tool_bundle)
+            if not references.strip():
+                references = "No preloaded reference images found."
+            ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
         theater = self.theater_manager.theater(self.session_id)
         playlists = get_playlists_context(theater)

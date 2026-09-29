@@ -568,8 +568,8 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
     def test_create_agent_adventure_mode_instructions(
-        self, mock_agent_cls, mock_bundle_fn, mock_playlists_fn
-    ):
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock, mock_playlists_fn: MagicMock
+    ) -> None:
         mock_bundle = MagicMock()
         mock_bundle.tools = []
         mock_bundle_fn.return_value = mock_bundle
@@ -590,6 +590,10 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
         self.assertIn("AFTER the user action is processed", instruction)
         self.assertIn("In Adventure Mode, you can only (and should) use `create_image` or `show_image` AFTER the user action is processed", instruction)
+        self.assertNotIn("## Preloaded References Context", instruction)
+        self.assertNotIn("check the preloaded references context", instruction)
+        self.assertIn("CharacterManager (via canvas observability", instruction)
+        self.assertIn("scene_reference", instruction)
 
     @patch("services.live_agent.Agent")
     def test_create_agent_non_adventure_mode_character_instructions(self, mock_agent_cls: MagicMock) -> None:
@@ -607,6 +611,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("* lookup_character", instruction)
         self.assertIn("* clear_characters", instruction)
         self.assertNotIn("process_user_action", instruction)
+        self.assertIn("## Preloaded References Context", instruction)
 
     @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_character_tool_conditional_on_adventure_mode(
