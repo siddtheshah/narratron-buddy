@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import os
+from pathlib import Path
 from typing import Any
 
 from google import genai
@@ -35,10 +36,12 @@ class GeminiImageProvider(ImageProvider):
         self.client = client
 
     def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        parts: list[Any] = [
-            types.Part.from_bytes(data=ref.data, mime_type=ref.mime_type)
-            for ref in request.references
-        ]
+        parts: list[types.Part | str] = []
+        for ref in request.references:
+            label = ref.label or Path(ref.name).stem or ref.name
+            if label:
+                parts.append(f"Reference image for '{label}':")
+            parts.append(types.Part.from_bytes(data=ref.data, mime_type=ref.mime_type))
         parts.append(request.prompt)
         aspect_ratio = self._normalize_aspect_ratio(request.resolved_aspect_ratio)
         config = types.GenerateContentConfig(

@@ -86,6 +86,61 @@ def is_character_reference(
     return False
 
 
+def get_reference_label(
+    ref: str,
+    resolved_path: Optional[str] = None,
+    lookup_result: Optional[CharacterLookupResult] = None,
+) -> str:
+    """Return a descriptive label for a reference (e.g., character name or clean identifier)."""
+    ref_clean = str(ref).strip()
+    ref_norm = ref_clean.lower()
+    ref_stem = Path(ref_clean).stem.lower()
+    resolved_norm = os.path.normcase(os.path.abspath(resolved_path)) if resolved_path else None
+
+    # 1. Check against acquired characters and player from lookup_result
+    if lookup_result is not None:
+        if lookup_result.player is not None:
+            player = lookup_result.player
+            player_name = (player.name or "").strip()
+            player_ref = (player.reference or "").strip().lower()
+            player_path = (player.reference_path or "").strip().lower()
+            norm_player_path = os.path.normcase(os.path.abspath(player.reference_path)) if player.reference_path else None
+
+            if (
+                ref_norm in (player_name.lower(), player_ref, player_path)
+                or ref_stem in (Path(player_ref).stem.lower(), Path(player_path).stem.lower())
+                or (resolved_norm is not None and resolved_norm == norm_player_path)
+            ):
+                return player_name or "Player"
+            if len(player_name) >= 2:
+                ref_words = ref_norm.replace("_", " ").replace("-", " ")
+                if re.search(r"\b" + re.escape(player_name.lower()) + r"\b", ref_words):
+                    return player_name
+
+        for char in lookup_result.characters:
+            char_name = char.name.strip()
+            char_alias = char.alias.strip().lower()
+            char_img_ref = (char.image_reference or "").strip().lower()
+            char_path = (char.image_reference_path or "").strip().lower()
+            norm_char_path = os.path.normcase(os.path.abspath(char.image_reference_path)) if char.image_reference_path else None
+
+            if (
+                ref_norm in (char_name.lower(), char_alias, char_img_ref, char_path)
+                or ref_stem in (char_alias, Path(char_img_ref).stem.lower(), Path(char_path).stem.lower())
+                or (resolved_norm is not None and resolved_norm == norm_char_path)
+            ):
+                return char_name
+            if len(char_name) >= 2:
+                ref_words = ref_norm.replace("_", " ").replace("-", " ")
+                if re.search(r"\b" + re.escape(char_name.lower()) + r"\b", ref_words):
+                    return char_name
+
+    # 2. Fallback to filename stem or clean identifier
+    if resolved_path is not None:
+        return Path(resolved_path).stem
+    return Path(ref_clean).stem or ref_clean
+
+
 def resolve_provider_references(
     reference_images: Union[list[str], str, None],
     prompt: str = "",
@@ -176,8 +231,18 @@ def resolve_provider_references(
 
         suffix = Path(reference_path).suffix.lower()
         mime_type = "image/png" if suffix == ".png" else "image/webp" if suffix == ".webp" else "image/jpeg"
+        label = get_reference_label(
+            ref=ref_name,
+            resolved_path=reference_path,
+            lookup_result=lookup_result,
+        )
         provider_references.append(
-            ImageReference(name=Path(reference_path).name, data=data, mime_type=mime_type)
+            ImageReference(
+                name=Path(reference_path).name,
+                data=data,
+                mime_type=mime_type,
+                label=label,
+            )
         )
 
     if provider_references:

@@ -16,6 +16,7 @@ from components.character_manager import (
     PlayerCharacter,
 )
 from tools.reference_utils import (
+    get_reference_label,
     is_character_reference,
     resolve_provider_references,
 )
@@ -312,6 +313,52 @@ class TestReferenceUtils(unittest.TestCase):
         self.assertIsNotNone(err)
         assert err is not None
         self.assertTrue(err.startswith("Error loading reference image 'ghost':"))
+
+    def test_get_reference_label_matches_player_and_characters(self) -> None:
+        lookup = CharacterLookupResult(
+            characters=[
+                Character(name="Captain Nova", gender="female", image_reference="nova_ref"),
+                Character(name="Dr. Aris", gender="male", image_reference="aris_ref"),
+            ],
+            player=PlayerCharacter(name="Elena", reference="elena_ref"),
+        )
+        self.assertEqual(get_reference_label("elena_ref", lookup_result=lookup), "Elena")
+        self.assertEqual(get_reference_label("nova_ref", lookup_result=lookup), "Captain Nova")
+        self.assertEqual(get_reference_label("aris_ref", lookup_result=lookup), "Dr. Aris")
+        self.assertEqual(get_reference_label("forest_clearing.png", lookup_result=lookup), "forest_clearing")
+
+    def test_resolve_provider_references_assigns_character_labels(self) -> None:
+        nova_file = self._create_dummy_image_file("c_nova.png", b"nova_bytes")
+        aris_file = self._create_dummy_image_file("aris_doc.png", b"aris_bytes")
+        forest_file = self._create_dummy_image_file("ancient_ruins.png", b"ruin_bytes")
+        resolver = DummyPathResolver({
+            "nova_ref": nova_file,
+            "aris_ref": aris_file,
+            "ancient_ruins": forest_file,
+        })
+
+        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr.lookup_character.return_value = CharacterLookupResult(
+            characters=[
+                Character(name="Captain Nova", gender="female", image_reference="nova_ref"),
+                Character(name="Dr. Aris", gender="male", image_reference="aris_ref"),
+            ]
+        )
+
+        refs, err = resolve_provider_references(
+            reference_images=["ancient_ruins"],
+            prompt="Captain Nova and Dr. Aris exploring ancient ruins",
+            character_manager=mock_mgr,
+            visual=resolver,
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(len(refs), 3)
+        # Check that character references have their character names as labels
+        labels = {r.name: r.label for r in refs}
+        self.assertEqual(labels["c_nova.png"], "Captain Nova")
+        self.assertEqual(labels["aris_doc.png"], "Dr. Aris")
+        self.assertEqual(labels["ancient_ruins.png"], "ancient_ruins")
 
 
 if __name__ == "__main__":
