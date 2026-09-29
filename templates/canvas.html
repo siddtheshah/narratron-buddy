@@ -6424,7 +6424,8 @@
                 }
 
                 await refreshMicrophoneDevices(true);
-                const [node, context, stream] = await startAudioRecorderWorklet(audioRecorderHandler);
+                const [node, context, stream, started] = await startAudioRecorderWorklet(audioRecorderHandler);
+                if (!started) return;
                 audioRecorderNode = node;
                 audioRecorderContext = context;
                 micStream = stream;

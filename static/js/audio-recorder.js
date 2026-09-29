@@ -16,6 +16,7 @@ let speechActive = false;
 let audioRecorderHandler = null;
 let audioEncoder = null;
 let audioTimestampUs = 0;
+let captureGeneration = 0;
 
 function vadThreshold() {
   const threshold = Number(window.MIC_DETECT_THRESHOLD);
@@ -99,6 +100,7 @@ async function finishSpeech() {
  */
 export async function startAudioRecorderWorklet(handler) {
   stopMicrophone();
+  const generation = ++captureGeneration;
 
   if (typeof window.AudioEncoder !== "function") {
     throw new Error("Your browser is out of date and needs Opus audio support. Please update your browser and try again.");
@@ -106,54 +108,82 @@ export async function startAudioRecorderWorklet(handler) {
 
   speechActive = false;
   audioRecorderHandler = handler;
-  audioEncoder = initAudioEncoder(handler);
-  if (!audioEncoder) {
+  const encoder = initAudioEncoder(handler);
+  audioEncoder = encoder;
+  if (!encoder) {
+    audioRecorderHandler = null;
     throw new Error("Your browser is out of date and needs Opus audio support. Please update your browser and try again.");
   }
 
-  stopListening = await listenForSpeech({
-    deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
-    sampleRate: SAMPLE_RATE,
-    vadThreshold: vadThreshold(),
-    vadSilenceDuration: DEFAULT_SILENCE_MS,
-    vadMinRecordingTime: DEFAULT_MIN_SPEECH_MS,
-    continuous: true,
-    onData: ({ float32 }) => {
-      if (!speechActive) return;
-      if (audioEncoder && audioEncoder.state === "configured" && float32) {
-        const audioData = new AudioData({
-          format: "f32-planar",
-          sampleRate: SAMPLE_RATE,
-          numberOfFrames: float32.length,
-          numberOfChannels: 1,
-          timestamp: audioTimestampUs,
-          data: float32,
-        });
-        audioTimestampUs += Math.round((float32.length / SAMPLE_RATE) * 1_000_000);
-        audioEncoder.encode(audioData);
-        audioData.close();
+  let stop;
+  try {
+    stop = await listenForSpeech({
+      deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
+      sampleRate: SAMPLE_RATE,
+      vadThreshold: vadThreshold(),
+      vadSilenceDuration: DEFAULT_SILENCE_MS,
+      vadMinRecordingTime: DEFAULT_MIN_SPEECH_MS,
+      continuous: true,
+      onData: ({ float32 }) => {
+        if (generation !== captureGeneration || !speechActive) return;
+        if (audioEncoder && audioEncoder.state === "configured" && float32) {
+          const audioData = new AudioData({
+            format: "f32-planar",
+            sampleRate: SAMPLE_RATE,
+            numberOfFrames: float32.length,
+            numberOfChannels: 1,
+            timestamp: audioTimestampUs,
+            data: float32,
+          });
+          audioTimestampUs += Math.round((float32.length / SAMPLE_RATE) * 1_000_000);
+          audioEncoder.encode(audioData);
+          audioData.close();
+        }
+      },
+      onSpeechStart: () => {
+        if (generation !== captureGeneration || speechActive) return;
+        speechActive = true;
+        emitVadEvent("start", "speech_start");
+        emitSpeechActivity("start");
+      },
+      onSpeechEnd: () => {
+        if (generation !== captureGeneration) return;
+        void finishSpeech();
+      },
+      onError: (error) => {
+        if (generation !== captureGeneration) return;
+        console.error("[AudioRecorder] microphone capture failed:", error);
+        void finishSpeech();
+      },
+    });
+  } catch (error) {
+    if (generation === captureGeneration) {
+      audioEncoder = null;
+      audioRecorderHandler = null;
+      try {
+        if (encoder.state === "configured") encoder.close();
+      } catch (closeError) {
+        console.warn("[AudioRecorder] Could not close failed Opus encoder:", closeError);
       }
-    },
-    onSpeechStart: () => {
-      if (speechActive) return;
-      speechActive = true;
-      emitVadEvent("start", "speech_start");
-      emitSpeechActivity("start");
-    },
-    onSpeechEnd: () => {
-      void finishSpeech();
-    },
-    onError: (error) => {
-      console.error("[AudioRecorder] microphone capture failed:", error);
-      void finishSpeech();
-    },
-  });
+    }
+    throw error;
+  }
 
-  return [null, null, null];
+  // getUserMedia and AudioWorklet loading are asynchronous. A disconnect can
+  // happen while either is pending, so do not install a capture that has
+  // already been stopped or superseded.
+  if (generation !== captureGeneration) {
+    stop();
+    return [null, null, null, false];
+  }
+
+  stopListening = stop;
+  return [null, null, null, true];
 }
 
 /** Stops capture and closes the Opus encoder. */
 export function stopMicrophone() {
+  captureGeneration += 1;
   const stop = stopListening;
   stopListening = null;
   const encoderToClose = audioEncoder;
