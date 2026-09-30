@@ -105,7 +105,7 @@ def test_docs_beyond20_page_renders():
     response = pages.read_docs_beyond20()
     assert "Using Beyond20 with a Narratron canvas" in response
     assert "Viewer collaboration" in response
-    assert '<title>Beyond20 · Docs · Narratron</title>' in response
+    assert '<title>Beyond20 Integration | Narratron Docs</title>' in response
 
 
 def test_docs_index_is_not_shadowed_by_the_openapi_docs():
@@ -114,6 +114,36 @@ def test_docs_index_is_not_shadowed_by_the_openapi_docs():
     client = TestClient(app)
     assert client.get("/docs").status_code == 200
     assert client.get("/fastapi-docs").status_code == 200
+
+
+def test_public_pages_include_canonical_metadata_and_structured_data():
+    response = pages.read_join_splash()
+
+    assert "<title>Narratron | Live Interactive Storytelling</title>" in response
+    assert '<meta name="description" content="Create and share live, AI-powered interactive storytelling experiences with Narratron.">' in response
+    assert '<link rel="canonical" href="https://narratron.app/">' in response
+    assert '<meta property="og:url" content="https://narratron.app/">' in response
+    assert '<script type="application/ld+json">' in response
+
+
+def test_private_pages_are_marked_noindex_without_structured_data():
+    response = pages.read_credit_gift("secret-token")
+
+    assert '<meta name="robots" content="noindex, nofollow">' in response
+    assert '<script type="application/ld+json">' not in response
+
+
+def test_robots_and_sitemap_publish_only_canonical_public_pages():
+    robots = pages.read_robots()
+    sitemap = pages.read_sitemap()
+
+    assert robots.media_type == "text/plain"
+    assert "Disallow: /api/" in robots.body.decode()
+    assert "Disallow: /gift/" in robots.body.decode()
+    assert "Sitemap: https://narratron.app/sitemap.xml" in robots.body.decode()
+    assert sitemap.media_type == "application/xml"
+    assert b"https://narratron.app/adventures" in sitemap.body
+    assert b"https://narratron.app/gift/" not in sitemap.body
 
 
 def test_adventures_page_reads_template():
