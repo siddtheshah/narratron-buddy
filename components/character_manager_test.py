@@ -690,6 +690,101 @@ class TestCharacterManager(unittest.TestCase):
         self.assertIn("lyra_portrait", refs)
         self.assertEqual(len(refs), len(set(r.casefold() for r in refs)))
 
+    def test_character_manager_resolves_existing_reference_for_character_name_slug(self) -> None:
+        provider = MagicMock(spec=ImageProvider)
+        library = MagicMock(spec=ImageLibrary)
+        library.find_image_names.return_value = [
+            {
+                "name": "lady_lux",
+                "alias": "lady_lux",
+                "path": "/theaters/references/lady_lux.jpg",
+                "title": "Lady Lux",
+                "description": "Lady Lux portrait",
+            }
+        ]
+        manager = CharacterManager(
+            self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+        )
+
+        char = manager.create_or_update_character(
+            "Lady Lux",
+            personality="Glamorous",
+            motivation="Freedom",
+            quirk="Plays sax riffs",
+            gender="female",
+        )
+
+        self.assertIsNotNone(char)
+        self.assertEqual(char["image_reference"], "lady_lux")
+        self.assertEqual(char["image_reference_path"], "/theaters/references/lady_lux.jpg")
+        self.assertEqual(char["image_reference_source"], "existing")
+        # Should NOT have called image provider to generate a fallback portrait
+        provider.generate.assert_not_called()
+
+    def test_character_manager_prefers_base_reference_over_generated_character_png(self) -> None:
+        provider = MagicMock(spec=ImageProvider)
+        library = MagicMock(spec=ImageLibrary)
+        library.find_image_names.return_value = [
+            {
+                "name": "Lady_Lux_character",
+                "alias": "Lady_Lux_character",
+                "path": "/theaters/references/Lady_Lux_character.png",
+                "title": "Generated Portrait",
+                "description": "Generated",
+            },
+            {
+                "name": "lady_lux",
+                "alias": "lady_lux",
+                "path": "/theaters/references/lady_lux.jpg",
+                "title": "Lady Lux",
+                "description": "Lady Lux reference",
+            },
+        ]
+        manager = CharacterManager(
+            self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+        )
+
+        char = manager.create_or_update_character(
+            "Lady Lux",
+            personality="Glamorous",
+            motivation="Freedom",
+            quirk="Plays sax riffs",
+            gender="female",
+        )
+
+        self.assertIsNotNone(char)
+        self.assertEqual(char["image_reference"], "lady_lux")
+        self.assertEqual(char["image_reference_path"], "/theaters/references/lady_lux.jpg")
+        self.assertEqual(char["image_reference_source"], "existing")
+        provider.generate.assert_not_called()
+
+    def test_character_manager_resolves_player_character_by_slug(self) -> None:
+        provider = MagicMock(spec=ImageProvider)
+        library = MagicMock(spec=ImageLibrary)
+        library.find_image_names.return_value = [
+            {
+                "name": "retro_pulsar",
+                "alias": "retro_pulsar",
+                "path": "/theaters/references/retro_pulsar.jpg",
+                "title": "Retro Pulsar",
+                "description": "Retro Pulsar suit",
+            }
+        ]
+        manager = CharacterManager(
+            self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+        )
+
+        player = manager.update_player_character(
+            name="Retro Pulsar",
+            image_description="Astronaut in 1960s suit",
+        )
+
+        self.assertEqual(player.name, "Retro Pulsar")
+        self.assertEqual(player.reference, "retro_pulsar")
+        self.assertEqual(player.reference_path, "/theaters/references/retro_pulsar.jpg")
+        self.assertEqual(player.reference_source, "existing")
+        provider.generate.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

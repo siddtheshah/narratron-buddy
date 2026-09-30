@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from threading import Lock
 from io import BytesIO
@@ -482,6 +483,10 @@ class CharacterManager:
         return re.sub(r"\s+", " ", str(name or "").strip()).casefold()
 
     @staticmethod
+    def _slug_key(name: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9]+", "_", str(name or "").strip().lower()).strip("_")
+
+    @staticmethod
     def _alias_for_name(name: str) -> str:
         alias = re.sub(r"[^a-zA-Z0-9]+", "_", str(name or "").strip().lower()).strip("_")
         if not alias:
@@ -490,15 +495,21 @@ class CharacterManager:
 
     def _existing_character(self, name_or_alias: str) -> Character | None:
         key = self._character_key(name_or_alias)
+        slug = self._slug_key(name_or_alias)
         with self._characters_lock:
             character = self._characters.get(str(name_or_alias))
             if character is not None:
                 return character
-            return next((character for alias, character in self._characters.items()
-                         if self._character_key(alias) == key or self._character_key(character.name) == key), None)
+            return next((
+                character for alias, character in self._characters.items()
+                if self._character_key(alias) == key
+                or self._character_key(character.name) == key
+                or (slug and (self._slug_key(alias) == slug or self._slug_key(character.name) == slug))
+            ), None)
 
     def _serialized_character(self, name_or_alias: str) -> Character | None:
         key = self._character_key(name_or_alias)
+        slug = self._slug_key(name_or_alias)
         story_state = self.story_state
 
         # Check characters in story planning state
@@ -508,8 +519,10 @@ class CharacterManager:
         for item in (raw_characters or ()):
             try:
                 character = Character.model_validate(item)
-                if self._character_key(character.name) == key or (
-                    character.alias and self._character_key(character.alias) == key
+                if (
+                    self._character_key(character.name) == key
+                    or (character.alias and self._character_key(character.alias) == key)
+                    or (slug and (self._slug_key(character.name) == slug or (character.alias and self._slug_key(character.alias) == slug)))
                 ):
                     return character
             except Exception:
@@ -547,25 +560,85 @@ class CharacterManager:
 
         return None
 
-    def _reference_entry(self, reference: Any) -> dict[str, str] | None:
-        """Resolve a reference only by an exact stable identifier.
+    def _reference_entry(self, reference: str | None) -> dict[str, str] | None:
+        """Resolve a reference by an exact stable identifier or canonical slug.
 
         Fuzzy matching is intentionally prohibited here: choosing a wrong
         portrait is worse than creating a new one for character cohesion.
+        Matches:
+        1. Exact path, filename, name, alias, or stem.
+        2. Normalized slug matching (e.g. 'Lady Lux' <-> 'lady_lux.jpg').
+        3. Fallback match to an already-generated character portrait ({slug}_character).
         """
         if not reference or self.image_library is None:
             return None
         requested = str(reference).strip()
         if not requested:
             return None
+
+        entries = self.image_library.find_image_names()
+        if not entries:
+            return None
+
         normalized = self._character_key(requested)
-        filename = self._character_key(Path(requested).name)
-        for entry in self.image_library.find_image_names():
-            values = (entry.get("path", ""), entry.get("name", ""), entry.get("alias", ""))
+        req_path_obj = Path(requested)
+        filename = self._character_key(req_path_obj.name)
+        stem = self._character_key(req_path_obj.stem)
+        norm_req_path = os.path.normcase(os.path.normpath(requested))
+
+        # Pass 1: Exact matches (path, filename, stem, name, alias, character_key)
+        for entry in entries:
+            entry_path = entry.get("path", "")
+            entry_name = entry.get("name", "")
+            entry_alias = entry.get("alias", "")
+            entry_filename = Path(entry_path).name
+            entry_stem = Path(entry_path).stem
+
+            if entry_path and os.path.normcase(os.path.normpath(entry_path)) == norm_req_path:
+                return entry
+
+            values = (entry_path, entry_name, entry_alias)
             if any(self._character_key(value) == normalized for value in values):
                 return entry
-            if self._character_key(Path(entry.get("path", "")).name) == filename:
+
+            if self._character_key(entry_filename) == filename:
                 return entry
+
+            if entry_stem and (
+                self._character_key(entry_stem) == stem
+                or self._character_key(entry_stem) == normalized
+            ):
+                return entry
+
+        # Pass 2: Normalized slug identifier match (e.g., 'Lady Lux' <-> 'lady_lux.jpg')
+        req_slug = self._slug_key(req_path_obj.stem) or self._slug_key(requested)
+        if req_slug:
+            for entry in entries:
+                entry_path = entry.get("path", "")
+                entry_stem = Path(entry_path).stem if entry_path else ""
+                entry_slugs = {
+                    self._slug_key(entry_stem),
+                    self._slug_key(entry.get("alias", "")),
+                    self._slug_key(entry.get("name", "")),
+                }
+                entry_slugs.discard("")
+                if req_slug in entry_slugs:
+                    return entry
+
+            # Pass 3: Fallback match to an already-generated character portrait
+            generated_char_slug = f"{req_slug}_character"
+            for entry in entries:
+                entry_path = entry.get("path", "")
+                entry_stem = Path(entry_path).stem if entry_path else ""
+                entry_slugs = {
+                    self._slug_key(entry_stem),
+                    self._slug_key(entry.get("alias", "")),
+                    self._slug_key(entry.get("name", "")),
+                }
+                entry_slugs.discard("")
+                if generated_char_slug in entry_slugs:
+                    return entry
+
         return None
 
     def _generate_character_reference(self, character: Character) -> dict[str, str] | None:
@@ -601,7 +674,7 @@ class CharacterManager:
             return
         requested = character.image_reference
         # A character name is a safe fallback only when an image's name/alias
-        # matches exactly; this never guesses from a semantic description.
+        # matches exactly or by canonical slug; this never guesses from a semantic description.
         entry = self._reference_entry(requested) or self._reference_entry(character.name)
         source = "existing" if entry else "generated"
         if entry is None:
@@ -719,25 +792,37 @@ class CharacterManager:
                 matches = []
                 for character in characters:
                     char_name = character.name.strip().lower()
-                    if not char_name:
+                    char_alias = character.alias.strip().lower()
+                    if not char_name and not char_alias:
                         continue
+                    if char_alias and clean_query in (char_alias, char_alias.replace("_", " ")):
+                        matches.append(character)
+                        continue
+                    query_words = clean_query.replace("_", " ")
+                    name_words = char_name.replace("_", " ")
                     if len(char_name) == 1:
-                        if clean_query == char_name:
+                        if clean_query == char_name or query_words == name_words:
                             matches.append(character)
                     else:
                         if (
                             re.search(r"\b" + re.escape(char_name) + r"\b", clean_query)
                             or (len(clean_query) >= 2 and re.search(r"\b" + re.escape(clean_query) + r"\b", char_name))
+                            or re.search(r"\b" + re.escape(name_words) + r"\b", query_words)
+                            or (len(query_words) >= 2 and re.search(r"\b" + re.escape(query_words) + r"\b", name_words))
                         ):
                             matches.append(character)
                 if player is not None:
                     player_name = (player.name or "").strip().lower()
+                    player_words = player_name.replace("_", " ")
+                    query_words = clean_query.replace("_", " ")
                     if len(player_name) == 1:
-                        player_matches = (clean_query == player_name)
+                        player_matches = (clean_query == player_name or query_words == player_words)
                     elif len(player_name) >= 2:
                         player_matches = bool(
                             re.search(r"\b" + re.escape(player_name) + r"\b", clean_query)
                             or (len(clean_query) >= 2 and re.search(r"\b" + re.escape(clean_query) + r"\b", player_name))
+                            or re.search(r"\b" + re.escape(player_words) + r"\b", query_words)
+                            or (len(query_words) >= 2 and re.search(r"\b" + re.escape(query_words) + r"\b", player_words))
                         )
             else:
                 terms = re.findall(r"\w+", clean_query)
@@ -991,9 +1076,14 @@ class CharacterManager:
             clean_description = (serialized.description or description or "")[:500]
 
             voice_id = serialized.voice_id
-            clean_image_ref = (serialized.image_reference or image_reference or "").strip()
-            image_ref_path = serialized.image_reference_path if serialized.image_reference else None
-            image_ref_source = serialized.image_reference_source if serialized.image_reference else None
+            if image_reference and str(image_reference).strip():
+                clean_image_ref = str(image_reference).strip()
+                image_ref_path = None
+                image_ref_source = None
+            else:
+                clean_image_ref = (serialized.image_reference or "").strip()
+                image_ref_path = serialized.image_reference_path if serialized.image_reference else None
+                image_ref_source = serialized.image_reference_source if serialized.image_reference else None
         else:
             alias = self._alias_for_name(clean_name)
             clean_description = str(description or "").strip()[:500]
@@ -1092,7 +1182,7 @@ class CharacterManager:
             self._characters[character.alias] = character
         self._sync_story_state()
 
-        if image_reference and character.image_reference != str(image_reference).strip():
+        if image_reference and not character.image_reference_path and character.image_reference != str(image_reference).strip():
             character.image_reference = str(image_reference).strip()
             character.image_reference_path = None
             character.image_reference_source = None
