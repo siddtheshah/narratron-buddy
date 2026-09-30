@@ -1,4 +1,4 @@
-# ---- Build stage: install dependencies ----
+# ---- Build stage: install dependencies with uv ----
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
@@ -8,8 +8,13 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Install uv from official binary image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Sync dependencies into /opt/venv exactly as resolved in uv.lock
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # ---- Runtime stage ----
 FROM python:3.12-slim
@@ -18,8 +23,9 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder
-COPY --from=builder /install /usr/local
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application source
 COPY object_registry.py .
@@ -49,4 +55,4 @@ COPY reference_library/ reference_library/
 EXPOSE 8080
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
-CMD ["sh", "-c", "python main.py --host=0.0.0.0 --port=8080"]
+CMD ["sh", "-c", "python main.py --host=0.0.0.0 --port=${PORT:-8080}"]

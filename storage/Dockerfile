@@ -7,8 +7,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
     rm -rf /var/lib/apt/lists/*
 
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Runtime stage
 FROM python:3.12-slim
@@ -16,12 +19,13 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Copy installed dependencies
-COPY --from=builder /install /usr/local
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application source code needed by DatabaseManager & Theater Manager
 COPY app.yaml .
 COPY theater_default.yaml .
-COPY deployer/ deployer/
+COPY components/ components/
 COPY utils/ utils/
 COPY storage/ storage/
 
