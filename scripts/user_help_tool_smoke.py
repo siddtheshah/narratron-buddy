@@ -12,10 +12,13 @@ Mode questions.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import TheaterManager
 from tools.user_help_tool import UserHelpTool
 from utils.config_loader import get_app_config
 
@@ -45,6 +48,7 @@ def _parse_arguments() -> argparse.Namespace:
         help="A question to ask. Repeat to ask multiple questions; overrides the built-in Adventure Mode checks.",
     )
     parser.add_argument("--model", default=_configured_model(), help="ADK model used by the help agent.")
+    parser.add_argument("--theater-id", default="default", help="Theater whose cooldown and configuration apply.")
     return parser.parse_args()
 
 
@@ -53,12 +57,17 @@ def main() -> None:
     load_dotenv(_PROJECT_ROOT / ".env")
     arguments = _parse_arguments()
     questions: tuple[str, ...] = tuple(arguments.questions) if arguments.questions else _DEFAULT_QUESTIONS
-    help_tool = UserHelpTool(model=arguments.model)
+    theater = TheaterManager().theater(arguments.theater_id)
+    help_tool = UserHelpTool(
+        theater=theater,
+        canvas_manager=CanvasStateManager(theater),
+        model=arguments.model,
+    )
 
     print(f"Running {len(questions)} live user_help_tool question(s) with ADK model {arguments.model}.")
     for number, question in enumerate(questions, start=1):
         print(f"\n[{number}] Question: {question}")
-        print(help_tool.user_help_tool(question))
+        print(asyncio.run(help_tool.user_help_tool(question)))
 
 
 if __name__ == "__main__":

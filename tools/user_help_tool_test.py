@@ -1,16 +1,25 @@
+import asyncio
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from tools.user_help_tool import UserHelpTool
 
 
 def make_tool(tmp_path: Path) -> UserHelpTool:
+    theater = MagicMock()
+    theater.theater_id = "test_theater"
+    theater.config.return_value = {"user_help": {"cooldown_duration": 15}}
     with (
         patch("tools.user_help_tool.Agent"),
         patch("tools.user_help_tool.App"),
         patch("tools.user_help_tool.Runner"),
     ):
-        return UserHelpTool(model="test-model", help_roots=(tmp_path / "templates", tmp_path / "docs"))
+        return UserHelpTool(
+            theater=theater,
+            canvas_manager=MagicMock(),
+            model="test-model",
+            help_roots=(tmp_path / "templates", tmp_path / "docs"),
+        )
 
 
 def test_user_help_agent_browses_matching_template_and_documentation_files(tmp_path: Path) -> None:
@@ -67,8 +76,8 @@ def test_user_help_tool_resets_browse_limits_for_each_agent_question(tmp_path: P
     tool = make_tool(tmp_path)
     tool._search_calls = 3
 
-    with patch.object(tool, "_run_agent", return_value="Use Adventure Mode.") as run_agent:
-        answer = tool.user_help_tool("How do I turn on Adventure Mode?")
+    with patch.object(tool, "_run_agent", new=AsyncMock(return_value="Use Adventure Mode.")) as run_agent:
+        answer = asyncio.run(tool.user_help_tool("How do I turn on Adventure Mode?"))
 
     assert answer == "Use Adventure Mode."
     assert tool._search_calls == 0
@@ -82,8 +91,24 @@ def test_user_help_tool_rejects_an_empty_question_without_running_agent(tmp_path
     docs.mkdir()
     tool = make_tool(tmp_path)
 
-    with patch.object(tool, "_run_agent") as run_agent:
-        answer = tool.user_help_tool("   ")
+    with patch.object(tool, "_run_agent", new=AsyncMock()) as run_agent:
+        answer = asyncio.run(tool.user_help_tool("   "))
 
     assert answer == "Please ask a specific question about using the Narratron interface."
     run_agent.assert_not_called()
+
+
+def test_user_help_tool_schedules_another_question_during_cooldown(tmp_path: Path) -> None:
+    templates = tmp_path / "templates"
+    docs = tmp_path / "docs"
+    templates.mkdir()
+    docs.mkdir()
+    tool = make_tool(tmp_path)
+    tool.cooldown_duration = 60.0
+
+    with patch.object(tool, "_run_agent", new=AsyncMock(return_value="Help answer.")):
+        first = asyncio.run(tool.user_help_tool("How do I open the menu?"))
+        second = asyncio.run(tool.user_help_tool("How do I save theater.yaml?"))
+
+    assert first == "Help answer."
+    assert second == "Tool 'user_help_tool' scheduled for next cycle when cooldown expires."

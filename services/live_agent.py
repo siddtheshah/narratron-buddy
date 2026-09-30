@@ -445,6 +445,8 @@ def create_tool_bundle_for_session(
     user_help_config = user_help_config if type(user_help_config) is dict else {}
     if bool(user_help_config.get("enabled", True)):
         user_help_tools = UserHelpTool(
+            theater,
+            canvas_manager=canvas_manager,
             model=str(user_help_config.get("model") or story_planning_config.get("planner_model", "gemini-3.7-flash")),
             max_output_tokens=int(user_help_config.get("max_output_tokens", 1_200)),
         )

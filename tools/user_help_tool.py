@@ -13,6 +13,10 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from components.canvas_state import CanvasStateManager
+from components.theater_manager import Theater
+from tools.base_tool import BaseTools, with_cycle_cooldown
+
 
 _TEXT_FILE_SUFFIXES = frozenset({".html", ".md"})
 _MAX_SEARCH_CALLS = 3
@@ -20,16 +24,22 @@ _MAX_READ_CALLS = 3
 _MAX_READ_LINES = 240
 
 
-class UserHelpTool:
+class UserHelpTool(BaseTools):
     """Answer UI questions through a bounded ADK agent that browses help files."""
 
     def __init__(
         self,
+        theater: Theater,
+        canvas_manager: CanvasStateManager,
         model: str,
         help_roots: tuple[Path, ...] | None = None,
         session_service: InMemorySessionService | None = None,
         max_output_tokens: int = 1_200,
     ) -> None:
+        super().__init__(theater=theater, canvas_manager=canvas_manager)
+        user_help_config = self.config.get("user_help", {})
+        self.config = user_help_config if type(user_help_config) is dict else {}
+        self.cooldown_duration = float(self.config.get("cooldown_duration", 15.0))
         self.model = model
         self.help_roots = help_roots or self._default_help_roots()
         self.session_service = session_service or InMemorySessionService()
@@ -46,7 +56,8 @@ class UserHelpTool:
         project_root = Path(__file__).resolve().parent.parent
         return (project_root / "templates", project_root / "docs")
 
-    def user_help_tool(self, question: str) -> str:
+    @with_cycle_cooldown(action_desc="researching another interface-help question")
+    async def user_help_tool(self, question: str) -> str:
         """Research current templates and docs, then answer a UI usage question.
 
         Args:
@@ -59,7 +70,7 @@ class UserHelpTool:
         if not clean_question:
             return "Please ask a specific question about using the Narratron interface."
         self._reset_call_counts()
-        return self._run_agent(clean_question)
+        return await self._run_agent(clean_question)
 
     def list_help_files(self) -> str:
         """List the current template and documentation files available for UI-help research."""
@@ -143,7 +154,8 @@ class UserHelpTool:
             disallow_transfer_to_peers=True,
         )
 
-    def _run_agent(self, question: str) -> str:
+    async def _run_agent(self, question: str) -> str:
+        """Run one isolated ADK help turn without blocking a tool worker thread."""
         async def run_turn() -> str:
             answer = ""
             async for event in self._runner.run_async(
@@ -154,9 +166,8 @@ class UserHelpTool:
                 if event.is_final_response() and event.content and event.content.parts:
                     answer = "".join(part.text or "" for part in event.content.parts).strip()
             return answer
-
         try:
-            answer = asyncio.run(asyncio.wait_for(run_turn(), timeout=45.0))
+            answer = await asyncio.wait_for(run_turn(), timeout=45.0)
         except (asyncio.TimeoutError, TimeoutError):
             return "I couldn't finish researching the interface in time. Please try again."
         except Exception:

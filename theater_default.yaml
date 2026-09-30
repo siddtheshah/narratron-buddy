@@ -85,6 +85,7 @@ chat:
 # questions about the visible UI. Set enabled to false to omit the tool.
 user_help:
     enabled: true
+    cooldown_duration: 15
     max_output_tokens: 1200
 
 # Speech delivery defaults for synthesized dialogue (Adventure Mode).
