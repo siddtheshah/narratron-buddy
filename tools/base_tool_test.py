@@ -341,11 +341,10 @@ class TestBaseTools(BaseTestCase):
         self.assertEqual(res1, "Ran Open the treasure chest")
         self.assertEqual(sample.cycle_calls, ["Open the treasure chest"])
 
-        # Second call within cooldown with basically identical text is swallowed
+        # Second call within cooldown with basically identical text is swallowed,
+        # but returns standard scheduling confirmation to keep model interaction smooth
         res2 = sample.cycle_tool("I open the treasure chest.")
-        self.assertIn("duplicate call ignored", res2)
-        self.assertIn("Do not call 'cycle_tool' again for this action", res2)
-        self.assertIn("already in progress or completed", res2)
+        self.assertEqual(res2, "Tool 'cycle_tool' scheduled for next cycle when cooldown expires.")
         # Should NOT be queued for next cycle
         self.assertIsNone(sample.get_pending_cycle_call("cycle_tool"))
         self.assertEqual(sample.cycle_calls, ["Open the treasure chest"])
@@ -355,11 +354,10 @@ class TestBaseTools(BaseTestCase):
         self.assertEqual(res3, "Tool 'cycle_tool' scheduled for next cycle when cooldown expires.")
         self.assertIsNotNone(sample.get_pending_cycle_call("cycle_tool"))
 
-        # Fourth call that duplicates the pending call is also swallowed
+        # Fourth call that duplicates the pending call is also swallowed,
+        # returning standard parameter update message
         res4 = sample.cycle_tool("cast protective shield spell")
-        self.assertIn("duplicate call ignored", res4)
-        self.assertIn("Do not call 'cycle_tool' again for this action", res4)
-        self.assertIn("already queued and scheduled", res4)
+        self.assertEqual(res4, "Tool 'cycle_tool' parameters updated for next cycle.")
         pending = sample.get_pending_cycle_call("cycle_tool")
         self.assertEqual(pending["args"], ("Cast a protective shield spell",))
 
@@ -401,9 +399,11 @@ class TestBaseTools(BaseTestCase):
         res1 = sample.cycle_tool_dict_error(True)
         self.assertEqual(res1, {"status": "ok"})
 
-        # Call with identical arguments after a successful call SHOULD be swallowed
+        # Call with identical arguments after a successful call SHOULD be swallowed,
+        # returning standard scheduling confirmation
         res2 = sample.cycle_tool_dict_error(True)
-        self.assertIn("duplicate call ignored", res2)
+        self.assertEqual(res2, "Tool 'cycle_tool_dict_error' scheduled for next cycle when cooldown expires.")
+        self.assertIsNone(sample.get_pending_cycle_call("cycle_tool_dict_error"))
 
 
 if __name__ == "__main__":

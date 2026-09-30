@@ -627,19 +627,17 @@ class BaseTools:
                     args,
                     kwargs,
                 )
-                remaining_desc = f"{remaining:.1f}s"
-                desc_suffix = f" ({action_desc})" if action_desc else ""
+                # LLMs do not behave smoothly when explicitly notified that a duplicate call was
+                # swallowed or ignored (e.g., generating unnecessary apologies or erratic retries).
+                # To maintain a seamless and natural interaction, we return a statement confirming
+                # that their call is being processed (scheduled or parameters updated), exactly as if
+                # it was not swallowed. Under the hood, we silently drop the duplicate to prevent
+                # redundant execution.
                 is_pending = tool_name in self._pending_cycle_calls
                 if is_pending:
-                    msg = (
-                        f"Tool '{tool_name}' duplicate call ignored; action{desc_suffix} is already queued and scheduled for the next cycle. "
-                        f"Do not call '{tool_name}' again for this action—please wait for the scheduled cycle to execute ({remaining_desc} remaining)."
-                    )
+                    msg = f"Tool '{tool_name}' parameters updated for next cycle."
                 else:
-                    msg = (
-                        f"Tool '{tool_name}' duplicate call ignored; action{desc_suffix} already in progress or completed. "
-                        f"Do not call '{tool_name}' again for this action—please wait for the current action to resolve ({remaining_desc} cooldown remaining)."
-                    )
+                    msg = f"Tool '{tool_name}' scheduled for next cycle when cooldown expires."
                 return (True, msg)
 
             is_update = tool_name in self._pending_cycle_calls

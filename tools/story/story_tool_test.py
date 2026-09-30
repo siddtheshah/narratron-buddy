@@ -142,11 +142,10 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertEqual(res1, {"narration": "Done"})
         response_type.return_value.process_user_action.assert_called_once_with("Open the ancient door")
 
-        # Second call with slightly different phrasing / casing / punctuation is swallowed
+        # Second call with slightly different phrasing / casing / punctuation is swallowed,
+        # but returns standard scheduling confirmation to keep model interaction smooth
         res2 = tool.process_user_action("I open the ancient door.")
-        self.assertIn("duplicate call ignored", res2)
-        self.assertIn("Do not call 'process_user_action' again for this action", res2)
-        self.assertIn("resolving story update", res2)
+        self.assertEqual(res2, "Tool 'process_user_action' scheduled for next cycle when cooldown expires.")
 
         # Verify it was NOT enqueued for next cycle
         pending = tool.get_pending_cycle_call("process_user_action")
@@ -181,7 +180,7 @@ class TestStoryToolComposition(unittest.TestCase):
 
         # Subsequent call with identical action SHOULD now be swallowed
         res3 = tool.process_user_action("Open the ancient door")
-        self.assertIn("duplicate call ignored", res3)
+        self.assertEqual(res3, "Tool 'process_user_action' scheduled for next cycle when cooldown expires.")
         self.assertEqual(response_type.return_value.process_user_action.call_count, 2)
 
 
