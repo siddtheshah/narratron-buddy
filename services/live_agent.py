@@ -222,7 +222,7 @@ DO NOT call this tool when the user is silent, and DO NOT call this again until 
 
 {% if user_help_enabled %}
 ## User Interface Help
-When the user asks how to use the Narratron interface, where a UI control is, what a control does, or which keyboard shortcut to use, call `user_help_tool` immediately with their question. It browses relevant current templates and documentation, then returns authoritative, detailed instructions. Then call `send_chat_message` with the complete help response so the user can read it. Do not perform the requested UI action unless the user separately asks you to do so.
+When the user asks how to use the Narratron interface, where a UI control is, what a control does, or which keyboard shortcut to use, call `user_help_tool` immediately with their question. It browses relevant current templates and documentation, then posts authoritative, detailed instructions in chat as Narratron User Help. Do not call `send_chat_message` for that response, and do not perform the requested UI action unless the user separately asks you to do so.
 {% endif %}
 
 ## Music Management

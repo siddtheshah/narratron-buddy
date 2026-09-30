@@ -22,6 +22,7 @@ _TEXT_FILE_SUFFIXES = frozenset({".html", ".md"})
 _MAX_SEARCH_CALLS = 3
 _MAX_READ_CALLS = 3
 _MAX_READ_LINES = 240
+_HELP_CHAT_AUTHOR = "Narratron User Help"
 
 
 class UserHelpTool(BaseTools):
@@ -64,13 +65,27 @@ class UserHelpTool(BaseTools):
             question: The user's question about controls, workflows, roles, or keyboard shortcuts.
 
         Returns:
-            Detailed, source-grounded instructions suitable for posting directly in chat.
+            A brief status after the detailed answer is posted directly to chat.
         """
         clean_question = question.strip()
         if not clean_question:
             return "Please ask a specific question about using the Narratron interface."
         self._reset_call_counts()
-        return await self._run_agent(clean_question)
+        answer = await self._run_agent(clean_question)
+        self._send_help_chat_message(answer)
+        return "User help answer posted in chat."
+
+    def _send_help_chat_message(self, answer: str) -> None:
+        """Publish the completed answer to the shared canvas chat stream."""
+        chat = self.canvas_manager.chat
+        if chat is None:
+            return
+        chat.add_message({
+            "author": _HELP_CHAT_AUTHOR,
+            "text": answer,
+            "type": "user_help",
+        })
+        self.canvas_manager.notify_changed("chat")
 
     def list_help_files(self) -> str:
         """List the current template and documentation files available for UI-help research."""

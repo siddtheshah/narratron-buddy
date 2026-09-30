@@ -117,6 +117,9 @@ export function initializeChatController(options = {}) {
     function renderChatMessage(msg) {
         const div = document.createElement('div');
         div.className = 'chat-message';
+        if (msg.type === 'user_help') {
+            div.classList.add('user-help-message');
+        }
 
         const rawAuthor = msg.author || 'Narratron';
         const isNarratron = (rawAuthor.toLowerCase() === 'agent' || rawAuthor.toLowerCase() === 'narratron');

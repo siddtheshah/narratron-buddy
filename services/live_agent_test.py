@@ -60,7 +60,8 @@ class TestCreateAgent(unittest.TestCase):
 
     def test_user_help_instruction_routes_interface_questions_to_source_grounded_tool(self):
         self.assertIn("call `user_help_tool` immediately", AGENT_INSTRUCTION_TEMPLATE)
-        self.assertIn("call `send_chat_message` with the complete help response", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("Narratron User Help", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("Do not call `send_chat_message`", AGENT_INSTRUCTION_TEMPLATE)
 
     def test_image_tool_character_naming_instruction_informs_agent(self):
         self.assertIn(

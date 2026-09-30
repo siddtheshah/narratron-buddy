@@ -79,9 +79,15 @@ def test_user_help_tool_resets_browse_limits_for_each_agent_question(tmp_path: P
     with patch.object(tool, "_run_agent", new=AsyncMock(return_value="Use Adventure Mode.")) as run_agent:
         answer = asyncio.run(tool.user_help_tool("How do I turn on Adventure Mode?"))
 
-    assert answer == "Use Adventure Mode."
+    assert answer == "User help answer posted in chat."
     assert tool._search_calls == 0
     run_agent.assert_called_once_with("How do I turn on Adventure Mode?")
+    tool.canvas_manager.chat.add_message.assert_called_once_with({
+        "author": "Narratron User Help",
+        "text": "Use Adventure Mode.",
+        "type": "user_help",
+    })
+    tool.canvas_manager.notify_changed.assert_called_once_with("chat")
 
 
 def test_user_help_tool_rejects_an_empty_question_without_running_agent(tmp_path: Path) -> None:
@@ -110,5 +116,5 @@ def test_user_help_tool_schedules_another_question_during_cooldown(tmp_path: Pat
         first = asyncio.run(tool.user_help_tool("How do I open the menu?"))
         second = asyncio.run(tool.user_help_tool("How do I save theater.yaml?"))
 
-    assert first == "Help answer."
+    assert first == "User help answer posted in chat."
     assert second == "Tool 'user_help_tool' scheduled for next cycle when cooldown expires."
