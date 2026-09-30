@@ -140,14 +140,25 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - **Planning Signals (Direct Communication to Deep Planner)**: These signals are internal communication directed solely to the deep planner (never shown to the player). You MUST use this channel to ensure high recall of sticky note updates: explicitly review your active sticky notes and call out any topics that need an update based on this turn's resolution (e.g. `[STICKY UPDATE: <Exact Topic Name>] <what changed or new value>` for stat changes, inventory items gained/lost, location shifts, quest progress, combat status, enemy stats, or lasting effects), followed by factual story fallout and thread consequences for background planning. Do not invent future player events; describe what was established this turn.
 
 # Character Generation
-Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
-If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
-Every generated character must have an explicit gender assignment ('male', 'female', or 'nonbinary') to ensure appropriate voice synthesis.
+- Important characters should always be generated with `create_or_update_character` before writing dialogue for them.
+  - Your lore files will often specify an image reference to attach to the character. If so, include it in the image reference field.
+  - You can look up the character using `lookup_character` to see if they have already been created.
+- Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
+- If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
+- Every generated character must have an explicit gender assignment ('male', 'female', or 'nonbinary') to ensure appropriate voice synthesis.
 
 # Scene Labeling & Reference
 - **Scene Labeling**: Ensure the scene has a label (`scene_label`). The location name is generally a good choice. Keep using that label until a major shift occurs.
 - **Scene Reference**: If established in lore or reference assets for the current location or background scenery, provide the reference image identifier or path in `scene_reference` to signal the live agent which reference image to use for background scenery. If no specific reference image exists for this scenery, set it to null.
 {% if style -%}
+
+# Typical Response Procedure
+
+1. Search lore library for relevant context using `search_lore`
+2. Read relevant lore documents using `read_lore`
+3. Create or update characters using `create_or_update_character`
+4. Update player character using `update_player_character`
+5. Finalize scene reaction.
 
 # Story-Planning Style (User Specified)
 {{ style }}
@@ -716,6 +727,7 @@ class StoryResponseModule:
         If the character is to be created per the story module's views, prioritizes traits
         assigned in serialized story state so the character remains consistent across initializations.
         """
+        logger.debug(f"[StoryResponseModule] create_or_update_character called for character {name} ; ref {image_reference}")
         if self.character_manager.story_state is None and self.canvas_manager is not None:
             self.character_manager.story_state = self.canvas_manager.story
         profile = self.character_manager.create_or_update_character(
@@ -1099,7 +1111,7 @@ class StoryResponseModule:
                 self.release_in_flight("process_user_action")
                 if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
                     self.canvas_manager.tool_response.set_activity("user_action", active=False)
-
+            logger.debug(f"[StoryResponseModule] User action resolved, notifying canvas manager: {result}")
             callback = self.on_scene_reaction
             if callback and result is not None:
                 try:
