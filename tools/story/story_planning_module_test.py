@@ -152,7 +152,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             characters=[Character(name="Lyra", gender="female", description="Mystic scholar")]
         )
         character_manager.lookup_character.return_value = mock_result
-        self.assertEqual(module._lookup_character("Lyra"), mock_result)
+        self.assertEqual(module.lookup_character("Lyra"), mock_result)
         character_manager.lookup_character.assert_called_once_with("Lyra")
 
     def test_delegates_player_and_character_management(self) -> None:
