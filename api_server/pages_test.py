@@ -211,6 +211,15 @@ def test_render_shared_topbar_active_highlighting():
     assert 'onclick="openPricingModal()"' in pricing_topbar
 
 
+def test_render_shared_topbar_includes_mobile_side_menu() -> None:
+    topbar = pages.render_shared_topbar(active_page="join")
+
+    assert 'class="mobile-menu-toggle"' in topbar
+    assert 'aria-controls="narratron-mobile-menu"' in topbar
+    assert 'id="narratron-mobile-menu"' in topbar
+    assert 'class="mobile-menu-scrim"' in topbar
+
+
 def test_obs_canvas_returns_200_without_redirect_and_grants_cookie(tmp_path):
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
     theater = MagicMock()

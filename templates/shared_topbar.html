@@ -1,10 +1,19 @@
-<link rel="stylesheet" href="/static/css/topbar.css">
+<link rel="stylesheet" href="/static/css/topbar.css?v=mobile-menu-20260930">
 <header class="narratron-topbar">
   <a href="/join" class="logo">
     <img src="/static/narratron-avatar.png" alt="Narratron" class="brand-avatar">
     <span>Narratron</span>
   </a>
-  <nav class="nav-links" aria-label="Main Navigation">
+  <button
+    type="button"
+    class="mobile-menu-toggle"
+    aria-expanded="false"
+    aria-controls="narratron-mobile-menu"
+    aria-label="Open navigation menu">
+    <span></span><span></span><span></span>
+  </button>
+  <button type="button" class="mobile-menu-scrim" aria-label="Close navigation menu"></button>
+  <nav id="narratron-mobile-menu" class="nav-links" aria-label="Main Navigation">
     <a href="/join" class="deploy-nav-btn {% if active_page == 'join' %}active{% endif %}">Join</a>
     <a href="/demos" class="deploy-nav-btn {% if active_page == 'demos' %}active{% endif %}">▶ Demos</a>
     <a href="/adventures" class="deploy-nav-btn {% if active_page == 'adventures' %}active{% endif %}">🗺️ Adventures</a>
@@ -24,3 +33,35 @@
     </div>
   </nav>
 </header>
+<script>
+  (() => {
+    const topbar = document.querySelector('header.narratron-topbar');
+    const toggle = topbar.querySelector('.mobile-menu-toggle');
+    const menu = topbar.querySelector('.nav-links');
+    const scrim = topbar.querySelector('.mobile-menu-scrim');
+
+    const closeMenu = () => {
+      topbar.classList.remove('mobile-menu-open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open navigation menu');
+    };
+
+    toggle.addEventListener('click', () => {
+      const isOpen = topbar.classList.toggle('mobile-menu-open');
+      toggle.setAttribute('aria-expanded', String(isOpen));
+      toggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
+    });
+    scrim.addEventListener('click', closeMenu);
+    menu.addEventListener('click', (event) => {
+      if (event.target.closest('a, button')) {
+        closeMenu();
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeMenu();
+      }
+    });
+    window.matchMedia('(min-width: 761px)').addEventListener('change', closeMenu);
+  })();
+</script>
