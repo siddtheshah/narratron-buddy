@@ -81,6 +81,12 @@ story_planning:
 chat:
     cooldown_duration: 10
 
+# Lets the live agent browse matching templates and documentation to answer
+# questions about the visible UI. Set enabled to false to omit the tool.
+user_help:
+    enabled: true
+    max_output_tokens: 1200
+
 # Speech delivery defaults for synthesized dialogue (Adventure Mode).
 # Operational backend provider and model selection are configured in app.yaml.
 speech:

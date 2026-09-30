@@ -58,6 +58,10 @@ class TestCreateAgent(unittest.TestCase):
             AGENT_INSTRUCTION_TEMPLATE,
         )
 
+    def test_user_help_instruction_routes_interface_questions_to_source_grounded_tool(self):
+        self.assertIn("call `user_help_tool` immediately", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("call `send_chat_message` with the complete help response", AGENT_INSTRUCTION_TEMPLATE)
+
     def test_image_tool_character_naming_instruction_informs_agent(self):
         self.assertIn(
             'When using image_tool (`create_image`), always use a "Character Name" when describing actions so that the character manager reference will be automatically pulled in.',
@@ -339,6 +343,24 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("create_image", tool_names)
         self.assertIn("show_image", tool_names)
         self.assertIn("create_animation", tool_names)
+
+    @patch("services.live_agent.get_text_response_provider")
+    def test_create_tool_bundle_includes_user_help_tool_by_default_and_can_disable_it(self, mock_get_text_provider):
+        from services.live_agent import create_tool_bundle_for_session
+
+        base_config = {
+            "visuals": {"model": "hybrid-flux-gemini"},
+            "music": {"provider": "lyria"},
+        }
+        enabled = create_tool_bundle_for_session(make_test_theater("help_enabled", base_config))
+        disabled = create_tool_bundle_for_session(
+            make_test_theater("help_disabled", {**base_config, "user_help": {"enabled": False}})
+        )
+
+        enabled_names = [tool.name for tool in enabled.tools]
+        disabled_names = [tool.name for tool in disabled.tools]
+        self.assertIn("user_help_tool", enabled_names)
+        self.assertNotIn("user_help_tool", disabled_names)
 
     @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_only_includes_observability_tool_when_enabled(self, mock_get_text_provider):

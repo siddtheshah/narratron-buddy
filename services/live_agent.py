@@ -30,6 +30,7 @@ from tools.notepad_tool import NotepadTool
 from tools.character_tool import CharacterTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
+from tools.user_help_tool import UserHelpTool
 from providers import (
     ImageProviderError,
     get_image_provider,
@@ -217,6 +218,11 @@ DO NOT call this tool when the user is silent, and DO NOT call this again until 
 ## Interactive Canvas (A2UI)
 * update_interactive_canvas <request>: Ask the canvas-aware A2UI designer to add or update UI for the current state—for example an interactable, presentation control, status panel, poll, dashboard, health display, inventory, currency, objectives, or available actions. Do not select a surface yourself: the UI designer sees every current surface and decides whether to update one or add another. It may mark cross-scene or persistent displays accordingly; ordinary scene-specific UI automatically clears with the next image. Updates preserve user-adjusted placement.
 * clear_interactive_canvas: Remove all surfaces—including persistent displays—when the UI should be reset completely. A clicked control returns as immutable user input. In Adventure Mode submit in-world actions through `process_user_action`; otherwise handle the selection directly like explicit user input.
+{% endif %}
+
+{% if user_help_enabled %}
+## User Interface Help
+When the user asks how to use the Narratron interface, where a UI control is, what a control does, or which keyboard shortcut to use, call `user_help_tool` immediately with their question. It browses relevant current templates and documentation, then returns authoritative, detailed instructions. Then call `send_chat_message` with the complete help response so the user can read it. Do not perform the requested UI action unless the user separately asks you to do so.
 {% endif %}
 
 ## Music Management
@@ -435,6 +441,15 @@ def create_tool_bundle_for_session(
     chat_tools = ChatTools(theater, canvas_manager)
     tools.append(chat_tools.send_chat_message)
 
+    user_help_config = config.get("user_help", {})
+    user_help_config = user_help_config if type(user_help_config) is dict else {}
+    if bool(user_help_config.get("enabled", True)):
+        user_help_tools = UserHelpTool(
+            model=str(user_help_config.get("model") or story_planning_config.get("planner_model", "gemini-3.7-flash")),
+            max_output_tokens=int(user_help_config.get("max_output_tokens", 1_200)),
+        )
+        tools.append(user_help_tools.user_help_tool)
+
     if music_catalog is None:
         music_catalog = MusicCatalog.from_config(config=config)
     music_tools = MusicTools(
@@ -560,6 +575,8 @@ def create_agent(theater: Theater, tool_bundle: ToolBundle) -> Agent:
     config = theater.config()
 
     adventure_mode = bool(config.get("story_planning", {}).get("adventure_mode", False))
+    user_help_config = config.get("user_help", {})
+    user_help_config = user_help_config if type(user_help_config) is dict else {}
 
     ref_context = ""
     if not adventure_mode:
@@ -586,6 +603,7 @@ def create_agent(theater: Theater, tool_bundle: ToolBundle) -> Agent:
         use_generated_music=bool(config.get("music", {}).get("use_generated_music", False)),
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
+        user_help_enabled=bool(user_help_config.get("enabled", True)),
         agent=config.get("live_agent", {}),
     ).strip()
     app_internal = get_app_config().get("live_agent", {})

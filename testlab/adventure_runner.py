@@ -596,9 +596,12 @@ class AdventureSession:
                 references = "No preloaded reference images found."
             ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
+        user_help_config = self.config.get("user_help", {})
+        user_help_config = user_help_config if type(user_help_config) is dict else {}
+
         theater = self.theater_manager.theater(self.session_id)
         playlists = get_playlists_context(theater)
-        if not isinstance(playlists, str) or not playlists.strip():
+        if type(playlists) is not str or not playlists.strip():
             playlists = "No preloaded music playlists found."
         playlist_context = "\n\n## Preloaded Music Playlists Context (Loaded at Agent Init)\n" + playlists
 
@@ -616,6 +619,7 @@ class AdventureSession:
             use_generated_music=bool(self.config.get("music", {}).get("use_generated_music", False)),
             adventure_mode=bool(self.config.get("story_planning", {}).get("adventure_mode", False)),
             interactive_canvas_enabled=bool(self.config.get("interactive_canvas", {}).get("enabled", False)),
+            user_help_enabled=bool(user_help_config.get("enabled", True)),
             theater_id=self.session_id,
             theater_name=self.adventure_id,
             config=self.config,
