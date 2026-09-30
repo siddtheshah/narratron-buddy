@@ -32,7 +32,7 @@ class CharacterTool(BaseTools):
         self.character_manager = character_manager
 
     @logged_tool_call
-    def update_character(
+    def create_or_update_character(
         self,
         name: str,
         description: str = "",

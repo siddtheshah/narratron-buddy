@@ -706,8 +706,9 @@ class StoryResponseModule:
         personality: str = "",
         motivation: str = "",
         quirk: str = "",
-        voice_tags: list[str] = None,
+        voice_tags: Optional[list[str]] = None,
         gender: Optional[str] = None,
+        image_reference: str = "",
     ) -> Optional[Character]:
         """Create or update an NPC profile with an explicit gender ('male', 'female', or 'nonbinary').
 
@@ -725,30 +726,12 @@ class StoryResponseModule:
             quirk=quirk,
             voice_tags=voice_tags,
             gender=gender,
+            image_reference=image_reference,
         )
         if profile is not None:
             self.save_to_session_state()
         return profile
 
-    def generate_character(
-        self,
-        name: str,
-        description: str = "",
-        personality: str = "",
-        motivation: str = "",
-        quirk: str = "",
-        voice_tags: Any = None,
-        gender: Optional[str] = None,
-    ) -> Optional[Character]:
-        return self.character_manager.generate_character(
-            name=name,
-            description=description,
-            personality=personality,
-            motivation=motivation,
-            quirk=quirk,
-            voice_tags=voice_tags,
-            gender=gender,
-        )
 
     def clear_scene(self) -> str:
         """Remove characters from the current scene while preserving durable story context."""
@@ -782,29 +765,6 @@ class StoryResponseModule:
         )
         ref_info = f" Image reference: {player.reference}." if player.reference else ""
         return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}.{ref_info}"
-
-    def update_character(
-        self,
-        name: str,
-        description: str = "",
-        personality: str = "",
-        motivation: str = "",
-        quirk: str = "",
-        voice_tags: Any = None,
-        gender: Optional[str] = None,
-        image_reference: str = "",
-    ) -> Character | None:
-        """Canonically create or update an NPC record in the session."""
-        return self.character_manager.generate_character(
-            name=name,
-            description=description,
-            personality=personality,
-            motivation=motivation,
-            quirk=quirk,
-            voice_tags=voice_tags,
-            gender=gender,
-            image_reference=image_reference,
-        )
 
     # ADK Responder Agent
     def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:

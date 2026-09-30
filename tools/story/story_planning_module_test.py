@@ -164,7 +164,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         character_manager.update_player_character.return_value = PlayerCharacter(
             name="Valen", image_description="Armored knight", reference="valen_img"
         )
-        character_manager.generate_character.return_value = Character(
+        character_manager.create_or_update_character.return_value = Character(
             name="Soran", alias="soran", gender="male", personality="Brave"
         )
         module = self._make_module(lore_library)
@@ -180,9 +180,9 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertIn("Valen", update_msg)
         character_manager.update_player_character.assert_called_once()
 
-        char_msg = module.update_character(name="Soran", personality="Brave")
+        char_msg = module.create_or_update_character(name="Soran", personality="Brave")
         self.assertIn("Soran", char_msg)
-        character_manager.generate_character.assert_called_once()
+        character_manager.create_or_update_character.assert_called_once()
 
     def test_initializes_with_reflect_and_retry_plugin_by_default(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)

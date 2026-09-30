@@ -77,7 +77,7 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 - For you, accuracy is more important than speed.
 
 # Character, Lore, and Image Tools
-You can canonically manage the player character using `update_player_character` (name, visual description, image reference) and query them with `get_player_character_info`. You can canonically create or update NPC records using `update_character` and look up all characters using `_lookup_character`.
+You can canonically manage the player character using `update_player_character` (name, visual description, image reference) and query them with `get_player_character_info`. You can canonically create or update NPC records using `create_or_update_character` and look up all characters using `_lookup_character`.
 Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an older mounted or generated image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
@@ -431,7 +431,7 @@ class StoryPlanningModule:
         ref_info = f" Image reference: {player.reference}." if player.reference else ""
         return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}.{ref_info}"
 
-    def update_character(
+    def create_or_update_character(
         self,
         name: str,
         description: str = "",
@@ -443,7 +443,7 @@ class StoryPlanningModule:
         image_reference: str = "",
     ) -> str:
         """Canonically create or update an NPC record in the character manager."""
-        char = self.character_manager.generate_character(
+        char = self.character_manager.create_or_update_character(
             name=name,
             description=description,
             personality=personality,
@@ -540,7 +540,7 @@ class StoryPlanningModule:
                 self._lookup_character,
                 self.get_player_character_info,
                 self.update_player_character,
-                self.update_character,
+                self.create_or_update_character,
                 self.find_image_names,
                 self.notepad.check_schema,
                 self.notepad.update_sticky_note,

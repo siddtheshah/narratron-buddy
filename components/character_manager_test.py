@@ -52,7 +52,7 @@ class TestCharacterManager(unittest.TestCase):
         )
 
     def _create_character(self, name: str, description: str = "") -> str:
-        return self.manager.generate_character(
+        return self.manager.create_or_update_character(
             name=name,
             description=description,
             personality="Resolute",
@@ -107,7 +107,7 @@ class TestCharacterManager(unittest.TestCase):
         )
         manager.max_active_characters = 2
         for name in ("One", "Two", "Three"):
-            manager.generate_character(
+            manager.create_or_update_character(
                 name=name,
                 personality="Steady",
                 motivation="Help",
@@ -256,7 +256,7 @@ class TestCharacterManager(unittest.TestCase):
             exclude=["Counts every doorway"]
         )
 
-    def test_generate_character_mutates_state_and_notifies(self) -> None:
+    def test_create_or_update_character_mutates_state_and_notifies(self) -> None:
         result = self._create_character("Lyra")
 
         self.assertIn("Created character 'Lyra'", result)
@@ -337,7 +337,7 @@ class TestCharacterManager(unittest.TestCase):
             self.assertIn("nonbinary", nb_alias["voice_tags"])
 
     def test_get_character_voice_tags_direct_lookup(self) -> None:
-        self.manager.generate_character("Rowan", gender="nonbinary")
+        self.manager.create_or_update_character("Rowan", gender="nonbinary")
         self.assertEqual(self.manager.get_character_voice_tags("Rowan"), ["nonbinary"])
         self.assertEqual(self.manager.get_character_voice_tags("rowan"), ["nonbinary"])
         self.assertEqual(self.manager.get_character_voice_tags("Unknown"), [])
@@ -354,12 +354,12 @@ class TestCharacterManager(unittest.TestCase):
             self.provider, self.notepad, self.story_state, library, self.image_provider, speech_provider,
         )
 
-        manager.generate_character(
+        manager.create_or_update_character(
             "Lyra", personality="Curious", motivation="Learn", quirk="Hums",
             gender="female", image_reference="lyra_portrait",
         )
         # A later profile update does not silently replace either identity binding.
-        manager.generate_character("Lyra", personality="Brave", motivation="Learn", quirk="Hums", gender="female")
+        manager.create_or_update_character("Lyra", personality="Brave", motivation="Learn", quirk="Hums", gender="female")
 
         character = manager.export_characters()[0]
         self.assertEqual(character["image_reference"], "lyra_portrait")
@@ -385,7 +385,7 @@ class TestCharacterManager(unittest.TestCase):
             manager = CharacterManager(
                 self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
             )
-            manager.generate_character("Mira", personality="Alert", motivation="Help", quirk="Hums", gender="female")
+            manager.create_or_update_character("Mira", personality="Alert", motivation="Help", quirk="Hums", gender="female")
             character = manager.export_characters()[0]
             self.assertEqual(character["image_reference_path"], output)
             self.assertTrue(Path(output).is_file())
@@ -522,7 +522,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertNotIn("Lyra", match_player)
 
     def test_create_or_update_character_upsert_existing_updates_only_specified_fields(self) -> None:
-        self.manager.generate_character(
+        self.manager.create_or_update_character(
             name="Orin",
             description="An archivist",
             personality="Patient",
@@ -551,7 +551,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(self.manager.count(), 1)
 
     def test_create_or_update_character_upsert_updates_gender_and_voice_tags(self) -> None:
-        self.manager.generate_character(
+        self.manager.create_or_update_character(
             name="Rowan",
             description="A wandering healer",
             personality="Empathetic",
@@ -676,7 +676,7 @@ class TestCharacterManager(unittest.TestCase):
         )
         self.assertEqual(manager.get_character_references(), ["hero_portrait", "/references/hero.png"])
 
-        manager.generate_character(
+        manager.create_or_update_character(
             "Lyra",
             personality="Curious",
             motivation="Explore",

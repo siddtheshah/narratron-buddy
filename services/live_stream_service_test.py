@@ -65,7 +65,7 @@ def test_format_canvas_state_includes_active_characters():
         canvas_manager=MagicMock(),
         text_response_provider=MagicMock(),
     )
-    elements.generate_character(name="Vaelen", personality="Brave", motivation="Find the talisman", quirk="Flips a coin on choices")
+    elements.create_or_update_character(name="Vaelen", personality="Brave", motivation="Find the talisman", quirk="Flips a coin on choices")
 
     state = format_canvas_state(
         CanvasFixture(),

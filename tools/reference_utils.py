@@ -247,5 +247,6 @@ def resolve_provider_references(
 
     if provider_references:
         logger.debug(f"[{caller_label}] Adapted prompt with {len(provider_references)} reference images by bytes.")
+        logger.debug(f"[{caller_label}] provider references: {[p.name for p in provider_references]}")
 
     return provider_references, None

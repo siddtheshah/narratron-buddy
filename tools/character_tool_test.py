@@ -47,7 +47,7 @@ class TestCharacterTool(unittest.TestCase):
         with self.assertRaises(ValueError):
             CharacterTool(self.theater, character_manager=None)  # type: ignore
 
-    def test_update_character_success(self) -> None:
+    def test_create_or_update_character_success(self) -> None:
         dummy_char = Character(
             name="Aria",
             gender="female",
@@ -65,7 +65,7 @@ class TestCharacterTool(unittest.TestCase):
             canvas_manager=self.canvas,
             character_manager=self.mock_char_mgr,
         )
-        result = tool.update_character(
+        result = tool.create_or_update_character(
             name="Aria",
             description="A wandering minstrel.",
             personality="Charming and resourceful",
@@ -87,17 +87,17 @@ class TestCharacterTool(unittest.TestCase):
             image_reference="aria_ref",
         )
 
-    def test_update_character_empty_name(self) -> None:
+    def test_create_or_update_character_empty_name(self) -> None:
         tool = CharacterTool(
             self.theater,
             canvas_manager=self.canvas,
             character_manager=self.mock_char_mgr,
         )
-        result = tool.update_character(name="   ")
+        result = tool.create_or_update_character(name="   ")
         self.assertIn("Error: Character name cannot be empty.", result)
         self.mock_char_mgr.create_or_update_character.assert_not_called()
 
-    def test_update_character_failed_generation(self) -> None:
+    def test_create_or_update_character_failed_generation(self) -> None:
         self.mock_char_mgr.create_or_update_character.return_value = None
 
         tool = CharacterTool(
@@ -105,7 +105,7 @@ class TestCharacterTool(unittest.TestCase):
             canvas_manager=self.canvas,
             character_manager=self.mock_char_mgr,
         )
-        result = tool.update_character(name="Ghost")
+        result = tool.create_or_update_character(name="Ghost")
         self.assertIn("Error: Failed to create or update character 'Ghost'.", result)
 
     def test_lookup_character(self) -> None:

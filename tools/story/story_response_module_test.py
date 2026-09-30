@@ -353,7 +353,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertIn("Lore details", self.module.read_lore("lore.txt"))
 
     def test_delegates_character_management_to_shared_manager(self) -> None:
-        self.module.generate_character(
+        self.module.create_or_update_character(
             name="Kaelen",
             description="A stoic ranger",
             personality="Taciturn",
@@ -612,6 +612,7 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
             quirk="",
             voice_tags=None,
             gender="male",
+            image_reference="",
         )
 
 

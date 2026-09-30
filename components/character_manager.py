@@ -887,29 +887,6 @@ class CharacterManager:
             return None
         return self.set_player_character(data)
 
-    def update_character(
-        self,
-        name: str,
-        description: str = "",
-        personality: str = "",
-        motivation: str = "",
-        quirk: str = "",
-        voice_tags: Any = None,
-        gender: Optional[str] = None,
-        image_reference: str = "",
-    ) -> Character | None:
-        """Canonically create or update an NPC record in the session."""
-        return self.generate_character(
-            name=name,
-            description=description,
-            personality=personality,
-            motivation=motivation,
-            quirk=quirk,
-            voice_tags=voice_tags,
-            gender=gender,
-            image_reference=image_reference,
-        )
-
     def create_or_update_character(
         self,
         name: str,
@@ -1114,6 +1091,16 @@ class CharacterManager:
         with self._characters_lock:
             self._characters[character.alias] = character
         self._sync_story_state()
+
+        if image_reference and character.image_reference != str(image_reference).strip():
+            character.image_reference = str(image_reference).strip()
+            character.image_reference_path = None
+            character.image_reference_source = None
+            self._ensure_character_bindings(character)
+            with self._characters_lock:
+                self._characters[character.alias] = character
+            self._sync_story_state()
+
         return character
 
     def _supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:
@@ -1130,40 +1117,6 @@ class CharacterManager:
         options = [f"- {field}: {', '.join(values)}" for field, values in sorted(tags.items()) if values]
         return "\n".join(options) or "- gender: female, male, nonbinary"
 
-    def generate_character(
-        self,
-        name: str,
-        description: str = "",
-        personality: str = "",
-        motivation: str = "",
-        quirk: str = "",
-        voice_tags: Any = None,
-        gender: Optional[str] = None,
-        image_reference: str = "",
-    ) -> Character | None:
-        character = self.create_or_update_character(
-            name=name,
-            description=description,
-            personality=personality,
-            motivation=motivation,
-            quirk=quirk,
-            voice_tags=voice_tags,
-            gender=gender,
-            image_reference=image_reference,
-        )
-        if character is None:
-            return None
-
-        if image_reference and character.image_reference != str(image_reference).strip():
-            character.image_reference = str(image_reference).strip()
-            character.image_reference_path = None
-            character.image_reference_source = None
-            self._ensure_character_bindings(character)
-            with self._characters_lock:
-                self._characters[character.alias] = character
-            self._sync_story_state()
-        return character
-
     def apply_character_updates(
         self, updates: Sequence[Character] | None
     ) -> list[Character]:
@@ -1177,7 +1130,7 @@ class CharacterManager:
                 logger.warning("[CharacterManager] Invalid character update ignored: %s (%s)", raw_update, exc)
                 continue
 
-            character = self.generate_character(
+            character = self.create_or_update_character(
                 name=char_update.name,
                 description=char_update.description,
                 personality=char_update.personality,

@@ -585,7 +585,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("## Adventure Mode", instruction)
         self.assertNotIn("* generate_character", instruction)
         self.assertNotIn("## Character Management", instruction)
-        self.assertNotIn("* update_character", instruction)
+        self.assertNotIn("* create_or_update_character", instruction)
         self.assertIn("process_user_action", instruction)
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
         self.assertIn("AFTER the user action is processed", instruction)
@@ -607,7 +607,7 @@ class TestCreateAgent(unittest.TestCase):
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Character Management", instruction)
-        self.assertIn("* update_character", instruction)
+        self.assertIn("* create_or_update_character", instruction)
         self.assertIn("* lookup_character", instruction)
         self.assertIn("* clear_characters", instruction)
         self.assertNotIn("process_user_action", instruction)
@@ -629,7 +629,7 @@ class TestCreateAgent(unittest.TestCase):
         )
         non_adv_bundle = create_tool_bundle_for_session(non_adv_theater)
         non_adv_names = [tool.name for tool in non_adv_bundle.tools]
-        self.assertIn("update_character", non_adv_names)
+        self.assertIn("create_or_update_character", non_adv_names)
         self.assertIn("lookup_character", non_adv_names)
         self.assertIn("clear_characters", non_adv_names)
         self.assertNotIn("process_user_action", non_adv_names)
@@ -644,7 +644,7 @@ class TestCreateAgent(unittest.TestCase):
         )
         adv_bundle = create_tool_bundle_for_session(adv_theater)
         adv_names = [tool.name for tool in adv_bundle.tools]
-        self.assertNotIn("update_character", adv_names)
+        self.assertNotIn("create_or_update_character", adv_names)
         self.assertNotIn("lookup_character", adv_names)
         self.assertNotIn("clear_characters", adv_names)
         self.assertIn("process_user_action", adv_names)

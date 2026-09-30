@@ -231,7 +231,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         )
 
     def test_saves_and_reloads_story_planning_state(self) -> None:
-        self.tool.generate_character(
+        self.tool.create_or_update_character(
             name="Lyra",
             description="Mystic scholar",
             personality="Curious",

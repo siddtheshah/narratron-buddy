@@ -197,7 +197,7 @@ In order to maintain coherency, you must use these tools to keep track of the sc
 ## Character Management
 Track and maintain recurring characters in the story. When you introduce or meet a new character or learn more about them, update their details so that their appearance, personality, voice, and visual references remain consistent across the narrative.
 
-* update_character <name> [description] [personality] [motivation] [quirk] [gender] [voice_tags] [image_reference]: Add or update a character. Use this whenever a new character enters the scene or an existing character is developed. Their reference image will automatically be generated and pulled into subsequent `create_image` calls when you mention their name.
+* create_or_update_character <name> [description] [personality] [motivation] [quirk] [gender] [voice_tags] [image_reference]: Add or update a character. Use this whenever a new character enters the scene or an existing character is developed. Their reference image will automatically be generated and pulled into subsequent `create_image` calls when you mention their name.
 * lookup_character [query]: Search for known characters by name or trait, or list all characters currently in the session if query is omitted.
 * clear_characters: Clear all active characters from the scene when transitioning to an entirely new setting or story.
 {% endif %}
@@ -475,7 +475,7 @@ def create_tool_bundle_for_session(
             canvas_manager=canvas_manager,
         )
         tools.extend([
-            character_tools.update_character,
+            character_tools.create_or_update_character,
             character_tools.lookup_character,
             character_tools.clear_characters,
         ])
