@@ -396,6 +396,19 @@ class ImageTools(BaseTools):
         """The configured image provider instance."""
         return self._get_image_provider()
 
+    @staticmethod
+    def _is_narratron_avatar(path_or_name: str) -> bool:
+        """Check if an image path or alias targets the default narratron avatar.
+
+        live_agent defaults to displaying it on reinitialization.
+        """
+        if not path_or_name or not path_or_name.strip():
+            return False
+        cleaned = path_or_name.strip().strip("'\"")
+        stem = Path(cleaned).stem
+        normalized = re.sub(r"[^a-zA-Z0-9]", "_", stem).strip("_").lower()
+        return normalized == "narratron_avatar"
+
     @blocked_when_canvas_pinned
     @with_cycle_cooldown(action_desc="showing another image")
     def show_image(
@@ -430,7 +443,24 @@ class ImageTools(BaseTools):
                 self._trigger_after_tool_call("show_image")
                 return res
 
-        resolved_path = self.visual.resolve_image_path(file_path) if self.visual else None
+        resolved_path = self.visual.resolve_image_path(file_path) if self.visual is not None else None
+        if self._is_narratron_avatar(file_path) or (
+            resolved_path is not None and self._is_narratron_avatar(resolved_path)
+        ):
+            # Silently reject explicit attempts to display narratron_avatar during a session,
+            # as live_agent defaults to displaying it on reinitialization.
+            target = resolved_path if resolved_path is not None else file_path
+            logger.info(
+                "[ImageTools] show_image silently rejected for '%s' ('%s').",
+                file_path,
+                target,
+            )
+            with self._story_plan_lock:
+                if self.adventure_mode:
+                    self._story_plan_completed = False
+            self._trigger_after_tool_call("show_image")
+            return f"Successfully displayed {target} to the user with transition '{transition}' and effect '{effect}'."
+
         if not resolved_path:
             logger.warning(f"[ImageTools] Image path or alias '{file_path}' could not be resolved.")
             res = f"Error: Image '{file_path}' not found."
@@ -484,55 +514,6 @@ class ImageTools(BaseTools):
         self._trigger_after_tool_call("show_image")
         return res
 
-    def _display_image(
-        self,
-        file_path: str,
-        transition: str = "crossfade",
-        effect: str = "gleam3",
-    ) -> str:
-        """Apply an image to the canvas immediately."""
-        try:
-            supported_effects = {"none", "creeping", "dream", "sparkle", "gleam3", "haze", "trace"}
-            effect = str(effect or "gleam3").lower().strip()
-            if effect not in supported_effects:
-                return f"Error: Unsupported image effect '{effect}'. Use one of: {', '.join(sorted(supported_effects))}."
-            resolved_path = self.visual.resolve_image_path(file_path) if self.visual else None
-            if not resolved_path:
-                res = f"Error: Image '{file_path}' not found."
-                self._trigger_after_tool_call("show_image")
-                return res
-            display_path = self._ensure_webp_for_display(resolved_path)
-            if not display_path.lower().endswith(".webp") or not os.path.exists(display_path):
-                res = f"Error: Unable to prepare a WebP display image for '{file_path}'."
-                self._trigger_after_tool_call("show_image")
-                return res
-
-            if self.canvas_manager and hasattr(self.canvas_manager, "visual"):
-                self.canvas_manager.visual.update_visual(
-                    type="image",
-                    path=resolved_path,
-                    display_path=display_path,
-                    transition=transition,
-                    effect=effect,
-                    prompt=extract_image_prompt(display_path),
-                    immediate=True,
-                    url_for_path=self.theater.get_url_for_path,
-                )
-                show_img = getattr(self.canvas_manager.visual, "show_image", None)
-                if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
-                    show_img(display_path)
-
-            self._currently_displayed_image_path = resolved_path
-            self._currently_displayed_image_transition = transition
-            self._currently_displayed_image_effect = effect
-            res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
-            self._trigger_after_tool_call("show_image")
-            return res
-        except Exception as e:
-            logger.error(f"[ImageTools] Exception occurred while showing image '{file_path}': {e}", exc_info=True)
-            res = f"Error showing image: {e}"
-            self._trigger_after_tool_call("show_image")
-            return res
 
     @logged_tool_call
     def browse_images(self) -> list[str]:

@@ -759,6 +759,74 @@ class TestImageTools(BaseTestCase):
         self.assertIn("hero.png", ref_names)
         self.assertIn("castle_courtyard.png", ref_names)
 
+    def test_show_image_silently_rejects_narratron_avatar(self) -> None:
+        """Calling show_image with narratron_avatar returns success but does not update the canvas."""
+        mock_canvas_service = MagicMock()
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="avatar_reject_test",
+            theater_manager=self.manager,
+            canvas_state_service=mock_canvas_service,
+        )
+        avatar_ref = os.path.join(tools.reference_dir, "narratron_avatar.jpg")
+        Image.new("RGB", (20, 20), color="blue").save(avatar_ref)
+        tools._load_references()
+
+        res = tools.show_image("narratron_avatar.jpg")
+
+        self.assertIn("Successfully displayed", res)
+        mock_canvas_service.visual.update_visual.assert_not_called()
+        self.assertIsNone(tools.currently_displayed_image_path)
+
+    def test_show_image_silently_rejects_narratron_avatar_alias_variations(self) -> None:
+        """Aliases, hyphenated names, and extensions for narratron_avatar are all silently rejected."""
+        mock_canvas_service = MagicMock()
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="avatar_variations_test",
+            theater_manager=self.manager,
+            canvas_state_service=mock_canvas_service,
+        )
+        avatar_ref = os.path.join(tools.reference_dir, "narratron_avatar.jpg")
+        Image.new("RGB", (20, 20), color="blue").save(avatar_ref)
+        tools._load_references()
+
+        variations = [
+            "narratron_avatar",
+            "narratron_avatar.jpg",
+            "narratron-avatar",
+            "narratron-avatar.png",
+            "narratron avatar",
+        ]
+        for name in variations:
+            res = tools.show_image(name)
+            self.assertIn("Successfully displayed", res)
+            mock_canvas_service.visual.update_visual.assert_not_called()
+            self.assertIsNone(tools.currently_displayed_image_path)
+
+    def test_show_image_silently_rejects_narratron_avatar_in_adventure_mode(self) -> None:
+        """In adventure mode, silent rejection of narratron_avatar resets the story plan completed flag."""
+        mock_canvas_service = MagicMock()
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="avatar_adv_test",
+            theater_manager=self.manager,
+            canvas_state_service=mock_canvas_service,
+            adventure_mode=True,
+        )
+        avatar_ref = os.path.join(tools.reference_dir, "narratron_avatar.jpg")
+        Image.new("RGB", (20, 20), color="blue").save(avatar_ref)
+        tools._load_references()
+
+        tools.record_story_plan_completed()
+        self.assertTrue(tools._story_plan_completed)
+
+        res = tools.show_image("narratron_avatar")
+        self.assertIn("Successfully displayed", res)
+        mock_canvas_service.visual.update_visual.assert_not_called()
+        self.assertIsNone(tools.currently_displayed_image_path)
+        self.assertFalse(tools._story_plan_completed)
+
 
 
 
