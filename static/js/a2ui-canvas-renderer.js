@@ -190,6 +190,7 @@ export function createA2UICanvasRenderer({ container, actionUrl, surfaceUrl, can
 
     function addSurfaceControls(host, surface) {
         if (!canEdit()) return;
+        host.classList.add('a2ui-surface-editable');
         const controls = document.createElement('div');
         controls.className = 'a2ui-surface-controls';
 
@@ -201,39 +202,62 @@ export function createA2UICanvasRenderer({ container, actionUrl, surfaceUrl, can
         move.textContent = surface.persistent ? '📌' : '⠿';
         move.style.touchAction = 'none';
 
-        let dragging = false;
+        let activePointerId = null;
+        let startX = 0;
+        let startY = 0;
+        let startLeft = 0;
+        let startTop = 0;
         let latestLeft = Number(surface.placement?.left_pct) || 50;
         let latestTop = Number(surface.placement?.top_pct) || 50;
-        move.addEventListener('pointerdown', event => {
-            if (event.button !== 0) return;
-            dragging = true;
+        host.addEventListener('pointerdown', event => {
+            // Only the outer padding and move control are drag handles.
+            if (event.target !== host && !move.contains(event.target)) return;
+            if (event.button !== 0 || activePointerId !== null || !canEdit()) return;
+            activePointerId = event.pointerId;
+            startX = event.clientX;
+            startY = event.clientY;
+            startLeft = latestLeft;
+            startTop = latestTop;
             move.classList.add('dragging');
             host.classList.add('dragging');
-            move.setPointerCapture(event.pointerId);
+            host.setPointerCapture(event.pointerId);
             event.preventDefault();
+            event.stopPropagation();
         });
-        move.addEventListener('pointermove', event => {
-            if (!dragging) return;
+        host.addEventListener('pointermove', event => {
+            if (event.pointerId !== activePointerId) return;
             const rect = container.getBoundingClientRect();
-            latestLeft = Math.max(2, Math.min(98, ((event.clientX - rect.left) / rect.width) * 100));
-            latestTop = Math.max(2, Math.min(98, ((event.clientY - rect.top) / rect.height) * 100));
+            if (!rect.width || !rect.height) return;
+            latestLeft = Math.max(2, Math.min(98, startLeft + ((event.clientX - startX) / rect.width) * 100));
+            latestTop = Math.max(2, Math.min(98, startTop + ((event.clientY - startY) / rect.height) * 100));
             host.style.left = `${latestLeft}%`;
             host.style.top = `${latestTop}%`;
+            event.stopPropagation();
         });
         const finishDrag = async event => {
-            if (!dragging) return;
-            dragging = false;
+            if (event.pointerId !== activePointerId) return;
+            activePointerId = null;
             move.classList.remove('dragging');
             host.classList.remove('dragging');
-            try { move.releasePointerCapture(event.pointerId); } catch (_) {}
+            if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+            event.stopPropagation();
+            if (event.type !== 'pointerup') {
+                latestLeft = startLeft;
+                latestTop = startTop;
+                host.style.left = `${latestLeft}%`;
+                host.style.top = `${latestTop}%`;
+                return;
+            }
+            if (latestLeft === startLeft && latestTop === startTop) return;
             try {
                 await moveSurface(surface.surface_id, latestLeft, latestTop);
             } catch (error) {
                 console.error('Could not persist A2UI surface position:', error);
             }
         };
-        move.addEventListener('pointerup', finishDrag);
-        move.addEventListener('pointercancel', finishDrag);
+        host.addEventListener('pointerup', finishDrag);
+        host.addEventListener('pointercancel', finishDrag);
+        host.addEventListener('lostpointercapture', finishDrag);
 
         const remove = document.createElement('button');
         remove.type = 'button';

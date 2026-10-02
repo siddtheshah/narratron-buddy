@@ -1889,6 +1889,22 @@
             z-index: 10;
         }
 
+        .a2ui-surface-editable {
+            padding: 20px;
+            cursor: grab;
+            touch-action: none;
+        }
+
+        .a2ui-surface-editable > :not(.a2ui-surface-controls) {
+            cursor: auto;
+            touch-action: auto;
+        }
+
+        .a2ui-surface-editable.dragging {
+            cursor: grabbing;
+            user-select: none;
+        }
+
         .a2ui-surface-used {
             opacity: 0;
             transform: translate(-50%, -44%) scale(0.96);
@@ -3505,7 +3521,7 @@
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=video-loop-silent-performance-20260906-1";
-        import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20260926-1";
+        import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261002-1";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
         let lastTime = -1;
