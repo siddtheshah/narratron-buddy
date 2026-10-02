@@ -258,29 +258,12 @@ Cooldowns are now lifted. GO!
 """
 
 def build_run_config(
-    agent: Any = None,
     config: Optional[dict] = None,
-    proactivity: Optional[bool] = None,
-    affective_dialog: Optional[bool] = None,
-    model_name: Optional[str] = None,
 ) -> RunConfig:
-    """Construct RunConfig for ADK streaming execution using parameters from config.yaml."""
+    """Construct Gemini 3.8 Live streaming options from theater and app settings."""
     config = config or {}
     agent_config = config.get("live_agent", {})
     app_internal = get_app_config().get("live_agent", {})
-
-    if proactivity is None:
-        proactivity = agent_config.get("proactivity", False)
-    if affective_dialog is None:
-        affective_dialog = agent_config.get("affective_dialog", False)
-
-    if model_name is None and agent is not None:
-        model_name = getattr(agent, "model", "")
-    model_name = (
-        model_name
-        or app_internal.get("model_id")
-        or app_internal.get("model", "gemini-3.1-flash-live-preview")
-    )
 
     compaction = app_internal.get("compaction", {})
     compaction_config = None
@@ -299,10 +282,6 @@ def build_run_config(
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=None,
         context_window_compression=compaction_config,
-        proactivity=(
-            types.ProactivityConfig(proactive_audio=True) if proactivity else None
-        ),
-        enable_affective_dialog=affective_dialog if affective_dialog else None,
         realtime_input_config=types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(
                 disabled=True
@@ -609,7 +588,7 @@ def create_agent(theater: Theater, tool_bundle: ToolBundle) -> Agent:
         agent=config.get("live_agent", {}),
     ).strip()
     app_internal = get_app_config().get("live_agent", {})
-    model_id = app_internal.get("model_id") or app_internal.get("model", "gemini-3.1-flash-live-preview")
+    model_id = app_internal.get("model_id") or app_internal.get("model") or "gemini-3.8-live"
     return Agent(
         name="narratron_agent",
         model=DeveloperLiveGemini(model=model_id),

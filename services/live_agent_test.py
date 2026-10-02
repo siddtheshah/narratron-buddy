@@ -36,8 +36,8 @@ def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = 
 class TestCreateAgent(unittest.TestCase):
     @patch.dict("os.environ", {"GOOGLE_GENAI_USE_ENTERPRISE": "true"}, clear=False)
     @patch("services.live_agent.genai.Client")
-    def test_live_model_forces_developer_api_when_enterprise_is_enabled(self, mock_client):
-        model = DeveloperLiveGemini(model="gemini-3.1-flash-live-preview")
+    def test_live_model_forces_developer_api_when_enterprise_is_enabled(self, mock_client: MagicMock) -> None:
+        model = DeveloperLiveGemini(model="gemini-3.8-live")
 
         model.api_client
         model._live_api_client
@@ -45,6 +45,22 @@ class TestCreateAgent(unittest.TestCase):
         self.assertEqual(mock_client.call_count, 2)
         for call in mock_client.call_args_list:
             self.assertFalse(call.kwargs["enterprise"])
+
+    @patch("services.live_agent.get_app_config")
+    def test_create_agent_uses_live_model_selection(self, mock_get_app_config: MagicMock) -> None:
+        theater = make_test_theater("live_model_selection", {})
+        bundle = MagicMock()
+        bundle.tools = []
+        for settings, expected_model in (
+            ({"model_id": "gemini-3.8-live"}, "gemini-3.8-live"),
+            ({"model": "custom-live-model"}, "custom-live-model"),
+            ({}, "gemini-3.8-live"),
+        ):
+            with self.subTest(settings=settings):
+                mock_get_app_config.return_value = {"live_agent": settings}
+                with patch("services.live_agent.Agent") as mock_agent_cls:
+                    create_agent(theater, tool_bundle=bundle)
+                self.assertEqual(mock_agent_cls.call_args.kwargs["model"].model, expected_model)
 
     def test_music_instruction_prefers_reuse_and_requires_scene_and_tone_change(self):
         self.assertIn("Music continuity is the default", AGENT_INSTRUCTION_TEMPLATE)
@@ -686,9 +702,9 @@ class TestCreateAgent(unittest.TestCase):
 
 class TestBuildRunConfig(unittest.TestCase):
     @patch("services.live_agent.get_app_config")
-    def test_build_run_config_native_audio_defaults(self, mock_get_app_config):
+    def test_build_run_config_native_audio_defaults(self, mock_get_app_config: MagicMock) -> None:
         mock_get_app_config.return_value = {
-            "live_agent": {"model": "gemini-3.1-flash-live-preview"}
+            "live_agent": {"model_id": "gemini-3.8-live"}
         }
         from services.live_agent import build_run_config
         config = {
@@ -700,8 +716,12 @@ class TestBuildRunConfig(unittest.TestCase):
         }
         run_cfg = build_run_config(config=config)
         self.assertEqual(run_cfg.response_modalities, ["AUDIO"])
-        self.assertIsNotNone(run_cfg.proactivity)
-        self.assertTrue(run_cfg.enable_affective_dialog)
+        setup = run_cfg.model_dump(exclude_none=True)
+        self.assertNotIn("proactivity", setup)
+        self.assertNotIn("enable_affective_dialog", setup)
+        self.assertNotIn("thinking_config", setup)
+        self.assertIsNotNone(run_cfg.input_audio_transcription)
+        self.assertIsNotNone(run_cfg.session_resumption)
         self.assertEqual(run_cfg.tool_thread_pool_config.max_workers, 5)
 
 

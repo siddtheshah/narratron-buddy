@@ -1,6 +1,4 @@
 live_agent:
-    proactivity: false
-    affective_dialog: false
     special_instructions: "be calm, serene, and encouraging to the orator"
 
 # Optional reference image filename or alias to show when a new canvas initializes.

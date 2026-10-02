@@ -39,20 +39,20 @@ class TestTheaterManager(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_create_deploy_stop_and_destroy_theater(self):
+    def test_create_deploy_stop_and_destroy_theater(self) -> None:
         theater = self.manager.create_theater(
             name="Fantasy Quest",
             theater_id="quest",
             reference_files=[("references/maps/hero.png", b"image")],
             playlists_data={"ambient": [("rain.mp3", b"audio")]},
-            theater_config={"live_agent": {"proactivity": False, "style": "painted fantasy"}},
+            theater_config={"live_agent": {"special_instructions": "painted fantasy"}},
         )
 
         theater_dir = Path(self.temp_dir.name) / "quest"
         self.assertEqual(theater.status, "created")
         self.assertTrue((theater_dir / "references" / "maps" / "hero.png").exists())
         self.assertTrue((theater_dir / "playlists" / "ambient" / "rain.mp3").exists())
-        self.assertIn("style: painted fantasy", (theater_dir / "theater.yaml").read_text(encoding="utf-8"))
+        self.assertIn("special_instructions: painted fantasy", (theater_dir / "theater.yaml").read_text(encoding="utf-8"))
         self.assertEqual(self.manager.deploy_theater("quest").status, "deployed")
         self.assertEqual(self.manager.stop_theater("quest").status, "stopped")
         self.assertTrue(self.manager.destroy_theater("quest"))

@@ -142,8 +142,6 @@ Adventures specifically rely on the **`story_planning`** section to govern the i
 ```yaml
 # Live Gemini agent behavior and adventure-specific instructions
 live_agent:
-    proactivity: false
-    affective_dialog: false
     special_instructions: "Carry user actions faithfully and guide the adventure with dramatic tension and clear consequences."
 
 # Starting visual displayed on the canvas when the adventure starts

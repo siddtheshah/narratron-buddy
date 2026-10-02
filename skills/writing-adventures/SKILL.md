@@ -93,8 +93,6 @@ Adventures use `theater.yaml` to govern agent persona, art direction, and runtim
 
 ```yaml
 live_agent:
-    proactivity: false
-    affective_dialog: false
     special_instructions: "Carry user actions faithfully and let the story planner resolve questions. Guide the adventure with dramatic tension and clear consequences."
 
 starting_image: "references/cover.png"

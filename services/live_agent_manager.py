@@ -166,7 +166,6 @@ class LiveAgentSession:
         )
 
         self.run_config = build_run_config(
-            agent=self.agent,
             config=self.config,
         )
 
