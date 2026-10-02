@@ -1290,3 +1290,20 @@ def test_visual_state_uses_theater_config_directly() -> None:
     assert state.theater_config == {"visuals": {"cycle_length": 42.0}}
     assert state.cycle_length == 42.0
     theater.config.assert_called_once()
+
+
+def test_payload_updates_shown_image_prompt_when_image_resolved(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
+    state = VisualState(theater)
+    img = tmp_path / "scene.png"
+    img.write_text("data", encoding="utf-8")
+
+    with patch(
+        "components.canvas.visual_state.extract_image_prompt",
+        return_value="A dragon over mountains\nReferences: dragon.png",
+    ):
+        state.shown_image_path = str(img)
+        state.shown_image_prompt = ""
+        payload = state.payload()
+        assert payload["prompt"] == "A dragon over mountains\nReferences: dragon.png"
+        assert state.shown_image_prompt == "A dragon over mountains\nReferences: dragon.png"

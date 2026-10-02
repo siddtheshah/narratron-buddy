@@ -827,6 +827,51 @@ class TestImageTools(BaseTestCase):
         self.assertIsNone(tools.currently_displayed_image_path)
         self.assertFalse(tools._story_plan_completed)
 
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_populates_reference_image_names_in_metadata_and_shown_prompt(
+        self, mock_get_provider
+    ) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="ref_metadata_test",
+            theater_manager=self.manager,
+        )
+        ref_path1 = os.path.join(tools.reference_dir, "hero.png")
+        ref_path2 = os.path.join(tools.reference_dir, "castle.jpg")
+        Image.new("RGB", (10, 10), color="red").save(ref_path1)
+        Image.new("RGB", (10, 10), color="blue").save(ref_path2)
+        tools._load_references()
 
+        tools.create_image(
+            "A warrior outside a castle",
+            image_name="warrior_castle",
+            reference_images=["hero", "castle"],
+            display=True,
+        )
+        tools.join_generation()
 
+        # Canvas visual state has shown_image_prompt updated with references
+        visual = tools.canvas_manager.visual
+        self.assertIsNotNone(visual)
+        self.assertIn("A warrior outside a castle", visual.shown_image_prompt)
+        self.assertIn("References: hero.png, castle.jpg", visual.shown_image_prompt)
 
+        # payload() includes the updated prompt for the canvas hover button
+        payload_prompt = str(visual.payload().get("prompt") or "")
+        self.assertIn("A warrior outside a castle", payload_prompt)
+        self.assertIn("References: hero.png, castle.jpg", payload_prompt)
+
+        # Full-quality image on disk has embedded EXIF metadata with references
+        full_quality_path = str(next(Path(tools.output_dir).glob("warrior_castle_*.jpg")))
+        from utils.image_utils import extract_image_prompt
+        full_meta = extract_image_prompt(full_quality_path)
+        self.assertIn("A warrior outside a castle", full_meta)
+        self.assertIn("References: hero.png, castle.jpg", full_meta)
+
+        # Compressed WebP image on disk also has embedded EXIF metadata with references
+        webp_path = os.path.splitext(full_quality_path)[0] + ".webp"
+        webp_meta = extract_image_prompt(webp_path)
+        self.assertIn("A warrior outside a castle", webp_meta)
+        self.assertIn("References: hero.png, castle.jpg", webp_meta)

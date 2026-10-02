@@ -197,7 +197,8 @@ class ImageTools(BaseTools):
         except Exception:
             pass
 
-        compressed = compress_image_to_webp(file_path, output_path=webp_path, quality=80)
+        prompt = extract_image_prompt(file_path)
+        compressed = compress_image_to_webp(file_path, output_path=webp_path, quality=80, prompt=prompt or None)
         return compressed if compressed and os.path.exists(compressed) else file_path
 
     def join_generation(self, timeout: float = 10.0) -> None:
@@ -318,8 +319,24 @@ class ImageTools(BaseTools):
                     filepath = os.path.join(out_folder, filename)
                     webp_filepath = os.path.join(out_folder, webp_filename)
                      
+                    ref_names: list[str] = []
+                    for ref in provider_references:
+                        ref_name = ref.name.strip()
+                        if ref_name and ref_name not in ref_names:
+                            ref_names.append(ref_name)
+
+                    clean_prompt = effective_prompt.strip()
+                    if ref_names:
+                        metadata_prompt = (
+                            f"{clean_prompt}\nReferences: {', '.join(ref_names)}"
+                            if clean_prompt
+                            else f"References: {', '.join(ref_names)}"
+                        )
+                    else:
+                        metadata_prompt = effective_prompt
+
                     exif = image.getexif()
-                    embed_image_metadata(exif, effective_prompt)
+                    embed_image_metadata(exif, metadata_prompt)
                      
                     # Save full quality image
                     image.save(filepath, "JPEG", exif=exif, quality=95)
@@ -350,14 +367,14 @@ class ImageTools(BaseTools):
                 if saved_paths:
                     saved_path = saved_paths[0]
                     if display:
-                        if self.canvas_manager and hasattr(self.canvas_manager, "visual"):
+                        if self.canvas_manager is not None and self.canvas_manager.visual is not None:
                             update_res = self.canvas_manager.visual.update_visual(
                                 type="image",
                                 path=saved_path,
                                 display_path=webp_filepath,
                                 transition="crossfade",
                                 effect=effect,
-                                prompt=effective_prompt,
+                                prompt=metadata_prompt,
                                 priority=PRIORITY_CREATE,
                                 source="create_image",
                                 url_for_path=self.theater.get_url_for_path,
@@ -478,14 +495,14 @@ class ImageTools(BaseTools):
             if self.adventure_mode:
                 self._story_plan_completed = False
 
-        if self.canvas_manager and hasattr(self.canvas_manager, "visual"):
+        if self.canvas_manager is not None and self.canvas_manager.visual is not None:
             update_res = self.canvas_manager.visual.update_visual(
                 type="image",
                 path=resolved_path,
                 display_path=display_path,
                 transition=transition,
                 effect=effect,
-                prompt=extract_image_prompt(display_path),
+                prompt=extract_image_prompt(display_path) or extract_image_prompt(resolved_path),
                 priority=PRIORITY_SHOW,
                 source="show_image",
                 url_for_path=self.theater.get_url_for_path,

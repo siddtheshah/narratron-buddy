@@ -676,6 +676,7 @@ class VisualState:
                 self.shown_image_prompt,
                 theater=th,
             )
+            self.shown_image_prompt = prompt
             time_val = self.shown_image_time
             if not time_val and os.path.exists(self.shown_image_path):
                 try:
@@ -889,6 +890,7 @@ class VisualState:
 
         if selected_file:
             self.current_image_basename = os.path.basename(selected_file)
+            self.shown_image_prompt = prompt_text
 
         transition = self.shown_image_transition or "crossfade"
         effect = self.shown_image_effect or "gleam3"
