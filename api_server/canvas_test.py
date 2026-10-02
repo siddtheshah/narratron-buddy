@@ -377,3 +377,29 @@ def test_websocket_endpoints_pass_join_key_to_require_canvas_access_async():
         mock_require.assert_called_once_with(ws, "stage", join_key="KEY-123")
         ws.close.assert_called_once_with(code=1008)
 
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled,persistent", [(True, False), (True, True), (False, False)])
+async def test_doodle_mode_is_saved_and_broadcast(enabled: bool, persistent: bool) -> None:
+    sender = MagicMock()
+    sender.send_json = AsyncMock()
+    viewer = MagicMock()
+    viewer.send_json = AsyncMock()
+    state = MagicMock()
+    state.connections.processed_doodle_message_ids = set()
+    state.connections.active_ws_connections = [sender, viewer]
+    await canvas._apply_doodle_message(state, {
+        "type": "toggle_doodles", "enabled": enabled, "persistent": persistent,
+        "client_message_id": "mode-1",
+    }, sender)
+    assert state.doodles.enabled == enabled
+    assert state.doodles.persistent == persistent
+    state.persist.assert_called_once()
+    viewer.send_json.assert_awaited_once_with({
+        "type": "doodles_toggle", "enabled": enabled, "persistent": persistent,
+    })
+    sender.send_json.assert_any_await({
+        "type": "doodles_toggle", "enabled": enabled, "persistent": persistent,
+    })
+    sender.send_json.assert_any_await({"type": "doodle_ack", "client_message_id": "mode-1"})

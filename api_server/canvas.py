@@ -190,8 +190,10 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
 
     if data.get("type") == "toggle_doodles":
         state.doodles.enabled = bool(data.get("enabled", True))
+        state.doodles.persistent = state.doodles.enabled and bool(data.get("persistent", False))
         state.persist()
-        await _broadcast_doodle(state, {"type": "doodles_toggle", "enabled": state.doodles.enabled})
+        await _broadcast_doodle(state, {"type": "doodles_toggle", "enabled": state.doodles.enabled,
+                                        "persistent": state.doodles.persistent})
         await acknowledge()
         return
 
@@ -275,7 +277,8 @@ async def websocket_endpoint(
     if websocket not in connections.active_ws_connections:
         connections.active_ws_connections.append(websocket)
     connections.active_user_connections[websocket] = current_user
-    await websocket.send_json({"type": "doodles_toggle", "enabled": cs.doodles.enabled})
+    await websocket.send_json({"type": "doodles_toggle", "enabled": cs.doodles.enabled,
+                               "persistent": cs.doodles.persistent})
     await websocket.send_json({
         "type": "doodle_snapshot",
         "batches": cs.doodles.snapshot_batches(),

@@ -30,6 +30,7 @@ class DoodleState:
         self._persist = persist
         self.doodles: list[dict[str, object]] = []
         self.enabled = True
+        self.persistent = False
 
     def add(self, doodles: list[dict[str, object]] | dict[str, object]) -> None:
         if isinstance(doodles, dict):
@@ -114,6 +115,8 @@ class DoodleState:
         saved = data.get("doodles", [])
         self.doodles = [item for item in saved if isinstance(item, dict)] if isinstance(saved, list) else []
         self.enabled = bool(data.get("doodles_enabled", True))
+        self.persistent = self.enabled and bool(data.get("doodles_persistent", False))
 
     def serialize(self) -> dict[str, object]:
-        return {"doodles": self.doodles, "doodles_enabled": self.enabled}
+        return {"doodles": self.doodles, "doodles_enabled": self.enabled,
+                "doodles_persistent": self.persistent}

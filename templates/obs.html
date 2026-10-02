@@ -265,6 +265,7 @@
         let lastAnimationSignature = '';
         let doodleActions = [];
         let doodlesEnabled = true;
+        let doodlesPersistent = false;
         // OBS Browser Sources capture audio produced by this page. Keep this
         // player deliberately headless so the visual output remains clean.
         const audioEnabled = urlParams.get('audio') !== '0';
@@ -518,6 +519,7 @@
                     syncMusic(data.music);
                 }
 
+                doodlesPersistent = Boolean(data.doodles_persistent);
                 if (data.doodles_enabled !== undefined && data.doodles_enabled !== doodlesEnabled) {
                     doodlesEnabled = Boolean(data.doodles_enabled);
                     redrawAllDoodles();
@@ -570,8 +572,10 @@
                     lastImageEffect = currentImageEffect;
                     lastAnimationSignature = animationSignature;
 
-                    doodleActions = [];
-                    redrawAllDoodles();
+                    if (!doodlesPersistent) {
+                        doodleActions = [];
+                        redrawAllDoodles();
+                    }
 
                     if (animationSignature) {
                         if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
@@ -614,6 +618,7 @@
             const data = JSON.parse(event.data);
             if (data.type === 'doodles_toggle') {
                 doodlesEnabled = Boolean(data.enabled);
+                doodlesPersistent = doodlesEnabled && Boolean(data.persistent);
                 redrawAllDoodles();
             } else if (data.type === 'clear') {
                 doodleActions = [];

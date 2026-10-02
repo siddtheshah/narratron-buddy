@@ -125,3 +125,33 @@ def test_manager_persist_writes_theater_json(tmp_path: Path) -> None:
     data = json.loads(target.read_text(encoding="utf-8"))
     assert data["canvas_state"]["narration"] == "Persisted narration"
 
+
+
+def test_persistent_doodles_survive_visual_updates_and_reload(tmp_path: Path) -> None:
+    theater = FakeTheaterManager(tmp_path).theater("persistent_doodles")
+    manager = CanvasStateManager(theater)
+    actions = [{"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.2, "y1": 0.2},
+               {"type": "text", "text": "A clue", "x": 0.3, "y": 0.4}]
+    manager.doodles.persistent = True
+    manager.doodles.add(actions)
+    manager._on_visual_changed(True)
+    assert manager.doodles.doodles == actions
+    assert manager.get_latest_state()["doodles_persistent"] is True
+    manager.persist()
+
+    reloaded = CanvasStateManager(theater)
+    assert reloaded.doodles.persistent is True
+    assert reloaded.doodles.doodles == actions
+    reloaded._on_visual_changed(True)
+    assert reloaded.doodles.doodles == actions
+    reloaded.doodles.add([{"type": "clear"}])
+    assert reloaded.doodles.doodles == []
+
+
+def test_normal_doodles_clear_only_when_visual_changes(tmp_path: Path) -> None:
+    manager = CanvasStateManager(FakeTheaterManager(tmp_path).theater("normal_doodles"))
+    manager.doodles.add([{"type": "text", "text": "Temporary clue"}])
+    manager._on_visual_changed(False)
+    assert len(manager.doodles.doodles) == 1
+    manager._on_visual_changed(True)
+    assert manager.doodles.doodles == []

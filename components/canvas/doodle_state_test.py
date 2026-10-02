@@ -99,7 +99,7 @@ def test_doodle_state_visible_annotations_ignores_empty_text() -> None:
 
 def test_doodle_state_load_and_serialize() -> None:
     state = DoodleState(lambda: None)
-    serialized = {"doodles": [{"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.2, "y1": 0.2}], "doodles_enabled": False}
+    serialized = {"doodles": [{"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.2, "y1": 0.2}], "doodles_enabled": False, "doodles_persistent": False}
     state.load(serialized)
     assert state.enabled is False
     assert len(state.doodles) == 1

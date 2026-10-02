@@ -2324,7 +2324,26 @@
             cursor: crosshair;
         }
 
+        #doodles-toggle-btn {
+            min-width: 150px;
+            justify-content: center;
+            white-space: nowrap;
+        }
+
         #doodle-toolbar {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            width: max-content;
+            max-width: calc(100vw - 3rem);
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 0.6rem 1rem;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             display: flex;
             gap: 0.5rem;
             align-items: center;
@@ -2921,14 +2940,14 @@
                 </div>
             </div>
 
-            <!-- Doodle toggle button (Orator control) & palette controls -->
+            <!-- Doodle mode (Orator control) and a separate floating tools bar above the menu -->
             <div id="doodle-section"
                 style="display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
                 <button id="doodles-toggle-btn" title="Toggle doodle display on canvas"
                     style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
                     ✏️ Doodles: On
                 </button>
-                <div id="doodle-toolbar" style="display: flex; align-items: center; gap: 0.5rem;">
+                <div id="doodle-toolbar" role="toolbar" aria-label="Doodle and text tools" style="display: flex; align-items: center; gap: 0.5rem;">
                     <button class="color-btn" type="button" style="background: #ef4444;" data-color="#ef4444"
                         aria-label="Red"></button>
                     <button class="color-btn" type="button" style="background: #22c55e;" data-color="#22c55e"
@@ -4600,8 +4619,8 @@
                     }
                 }
 
-                if (data.doodles_enabled !== undefined && data.doodles_enabled !== doodlesEnabled) {
-                    setDoodlesDisplay(data.doodles_enabled);
+                if (data.doodles_enabled !== undefined) {
+                    setDoodlesDisplay(data.doodles_enabled, data.doodles_persistent);
                 }
 
                 if (data.history && Array.isArray(data.history) && data.history.length > 0) {
@@ -4678,10 +4697,9 @@
                         hasNewHeadWhilePagedBack = false;
                         pruneHistoryResources(currentViewIndex);
 
-                        doodleActions = [];
-                        redrawAllDoodles();
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'clear' }));
+                        if (!doodlesPersistent) {
+                            doodleActions = [];
+                            redrawAllDoodles();
                         }
 
                         const activePrompt = data.prompt || (data.animation && data.animation.scene_prompt) || "";
@@ -4974,6 +4992,7 @@
         let lastNormX = 0;
         let lastNormY = 0;
         let doodlesEnabled = true;
+        let doodlesPersistent = false;
         let textAnnotationMode = false;
         let currentTextColor = '#ffffff';
         let activeTextEditor = null;
@@ -5058,8 +5077,9 @@
             }, delay);
         }
 
-        function setDoodlesDisplay(enabled) {
+        function setDoodlesDisplay(enabled, persistent = false) {
             doodlesEnabled = Boolean(enabled);
+            doodlesPersistent = doodlesEnabled && Boolean(persistent);
             if (canvas) {
                 canvas.style.display = doodlesEnabled ? 'block' : 'none';
             }
@@ -5067,7 +5087,10 @@
                 doodleToolbar.style.display = doodlesEnabled ? 'flex' : 'none';
             }
             if (doodlesToggleBtn) {
-                doodlesToggleBtn.textContent = doodlesEnabled ? '✏️ Doodles: On' : '✏️ Doodles: Off';
+                doodlesToggleBtn.textContent = doodlesPersistent ? '✏️ Doodles: Persist' : doodlesEnabled ? '✏️ Doodles: On' : '✏️ Doodles: Off';
+                doodlesToggleBtn.title = doodlesPersistent
+                    ? 'Doodles survive visual updates. Click to turn off.'
+                    : doodlesEnabled ? 'Doodles clear on visual updates. Click to persist.' : 'Click to turn doodles on.';
                 doodlesToggleBtn.style.color = doodlesEnabled ? '#a5b4fc' : '#94a3b8';
                 doodlesToggleBtn.style.background = doodlesEnabled ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.08)';
                 doodlesToggleBtn.style.borderColor = doodlesEnabled ? 'rgba(99, 102, 241, 0.4)' : 'var(--glass-border)';
@@ -5079,9 +5102,10 @@
         if (doodlesToggleBtn) {
             doodlesToggleBtn.addEventListener('click', () => {
                 if (!isCurrentOrator()) return;
-                const newEnabled = !doodlesEnabled;
-                setDoodlesDisplay(newEnabled);
-                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: newEnabled });
+                const newEnabled = !doodlesPersistent;
+                const newPersistent = doodlesEnabled && !doodlesPersistent;
+                setDoodlesDisplay(newEnabled, newPersistent);
+                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: newEnabled, persistent: newPersistent });
             });
         }
 
@@ -5277,7 +5301,7 @@
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'doodles_toggle') {
-                    setDoodlesDisplay(data.enabled);
+                    setDoodlesDisplay(data.enabled, data.persistent);
                 } else if (data.type === 'clear') {
                     doodleActions = [];
                     redrawAllDoodles();

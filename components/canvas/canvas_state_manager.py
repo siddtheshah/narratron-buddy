@@ -53,7 +53,8 @@ class CanvasStateManager:
 
     def _on_visual_changed(self, changed: bool = True) -> None:
         if changed:
-            self.doodles.doodles.clear()
+            if not self.doodles.persistent:
+                self.doodles.doodles.clear()
             self.ui.interactive_surfaces = {
                 surface_id: surface for surface_id, surface in self.ui.interactive_surfaces.items()
                 if bool(surface.get("persistent", False))
@@ -98,6 +99,7 @@ class CanvasStateManager:
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload()
         return {**visual, "music": self.audio.payload(), "doodles_enabled": self.doodles.enabled,
+                "doodles_persistent": self.doodles.persistent,
                 "viewer_collab_enabled": self.ui.viewer_collab_enabled,
                 "tool_activity": self.tool_response.activity_payload(),
                 "agent_thought": self.tool_response.agent_thought_payload(),
