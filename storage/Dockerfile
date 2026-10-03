@@ -4,14 +4,16 @@ FROM python:3.12-slim AS builder
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential && \
+    apt-get install -y --no-install-recommends build-essential curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+ADD https://astral.sh/uv/0.8.20/install.sh /tmp/uv-installer.sh
+RUN UV_INSTALL_DIR=/bin UV_NO_MODIFY_PATH=1 sh /tmp/uv-installer.sh && \
+    rm /tmp/uv-installer.sh
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Runtime stage
 FROM python:3.12-slim
@@ -20,6 +22,7 @@ WORKDIR /app
 
 # Copy installed dependencies
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /bin/uv /bin/uv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application source code needed by DatabaseManager & Theater Manager
@@ -28,13 +31,14 @@ COPY theater_default.yaml .
 COPY components/ components/
 COPY utils/ utils/
 COPY storage/ storage/
+COPY pricing/ pricing/
 
-# Default directories for theaters data if using local storage
-RUN mkdir -p /tmp
+# Create the default theater storage directory before dropping privileges.
+RUN mkdir -p /mnt/storage
 
 # Run as non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app /tmp
+RUN groupadd -r appuser && useradd -r -m -g appuser appuser
+RUN chown -R appuser:appuser /app /mnt/storage
 USER appuser
 
 # Environment default parameters
@@ -45,4 +49,4 @@ ENV USE_LIVE_DB=false
 ENV DB_PATH=deployer.db
 
 # Run the storage daemon on persistent schedule
-CMD ["python", "-m", "storage.storage_daemon"]
+CMD ["uv", "run", "--no-project", "--python", "/opt/venv/bin/python", "-m", "storage.storage_daemon"]

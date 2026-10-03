@@ -5,11 +5,13 @@ WORKDIR /app
 
 # Install build-essential for any native extensions
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential ffmpeg && \
+    apt-get install -y --no-install-recommends build-essential curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Install uv from official binary image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# Install a pinned uv release without depending on the container registry.
+ADD https://astral.sh/uv/0.8.20/install.sh /tmp/uv-installer.sh
+RUN UV_INSTALL_DIR=/bin UV_NO_MODIFY_PATH=1 sh /tmp/uv-installer.sh && \
+    rm /tmp/uv-installer.sh
 
 # Sync dependencies into /opt/venv exactly as resolved in uv.lock
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
@@ -25,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /bin/uv /bin/uv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application source
@@ -55,4 +58,4 @@ COPY reference_library/ reference_library/
 EXPOSE 8080
 
 # Start the app — Cloud Run requires listening on 0.0.0.0:$PORT
-CMD ["sh", "-c", "python main.py --host=0.0.0.0 --port=${PORT:-8080}"]
+CMD ["sh", "-c", "exec uv run --no-project --python /opt/venv/bin/python main.py --host=0.0.0.0 --port=${PORT:-8080}"]
