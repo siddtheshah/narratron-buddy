@@ -30,7 +30,7 @@ from api_server.canvas import broadcast_baton_update
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
-from utils.config_loader import deep_merge, get_theater_config, get_theater_default_config
+from utils.config_loader import get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ async def serve_theater_reference(
         raise HTTPException(status_code=404, detail="Theater reference file not found")
     return FileResponse(file_path)
 
-@app.get("/theaters/{theater_id}/playlists/{playlist_name}/{filename}")
+@app.get("/theaters/{theater_id}/playlists/{playlist_name}/{filename:path}")
 async def serve_theater_playlist_track(
     request: Request,
     theater_id: str,
@@ -113,10 +113,12 @@ async def serve_theater_playlist_track(
 ):
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    _safe_path_param(playlist_name, "playlist_name")
-    _safe_path_param(filename, "filename")
-    file_path = theater_manager.theater(theater_id).playlists_dir() / playlist_name / filename
-    if not file_path.exists():
+    playlists_root = theater_manager.theater(theater_id).playlists_dir().resolve()
+    playlist_root = (playlists_root / playlist_name).resolve()
+    file_path = (playlist_root / filename).resolve()
+    if playlists_root not in playlist_root.parents or playlist_root not in file_path.parents:
+        raise HTTPException(status_code=400, detail="Invalid playlist path")
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Theater playlist track not found")
     return FileResponse(file_path)
 

@@ -1,4 +1,3 @@
-import glob
 import logging
 import os
 import re
@@ -7,6 +6,7 @@ import time
 import shutil
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
+from urllib.parse import quote
 
 from providers import (
     MusicGenerationRequest,
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Keep this aligned with the theater asset API.  Playlists are user-uploaded
 # assets, so limiting resolution to MP3 made otherwise valid theater tracks
 # invisible to the agent.
-SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a")
+SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac")
 
 class MusicTools(BaseTools):
     def __init__(
@@ -135,15 +135,18 @@ class MusicTools(BaseTools):
         # 2. Check the theater playlist directory.
         playlist_path = os.path.join(self.theater_playlists_dir, clean_id)
         if os.path.exists(playlist_path) and os.path.isdir(playlist_path):
+            playlist_root = Path(playlist_path).resolve()
+            if Path(self.theater_playlists_dir).resolve() not in playlist_root.parents:
+                return None
             track_paths = sorted(
-                path for path in glob.glob(os.path.join(playlist_path, "*"))
-                if os.path.isfile(path)
-                and Path(path).suffix.lower() in SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
+                path for path in playlist_root.rglob("*")
+                if path.is_file() and playlist_root in path.resolve().parents
+                and path.suffix.lower() in SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
             )
             if track_paths:
                 if self.active_theater_id:
-                    return [f"/theaters/{self.active_theater_id}/playlists/{clean_id}/{os.path.basename(f)}" for f in track_paths]
-                return [f"/playlists/{clean_id}/{os.path.basename(f)}" for f in track_paths]
+                    return [f"/theaters/{self.active_theater_id}/playlists/{quote(clean_id, safe='/')}/{quote(track.relative_to(playlist_root).as_posix(), safe='/')}" for track in track_paths]
+                return [f"/playlists/{quote(clean_id, safe='/')}/{quote(track.relative_to(playlist_root).as_posix(), safe='/')}" for track in track_paths]
 
         # 3. Check created music output directory output/music
         if os.path.exists(self.output_dir):

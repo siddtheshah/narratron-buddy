@@ -1034,6 +1034,11 @@
                 <!-- Theater Creation Path Cards -->
                 <div class="creation-paths-container">
                     <div class="creation-paths-grid">
+                        <a class="path-card" id="pathCardBuilder" href="/theater-editor" style="text-decoration: none; color: inherit;">
+                            <div class="path-icon">✦</div>
+                            <div class="path-title">Build with AI</div>
+                            <div class="path-desc">Create a world with an assistant, organize assets, and test your theater</div>
+                        </a>
                         <div class="path-card active" id="pathCardBlank" onclick="selectCreationPath('blank')">
                             <div class="path-icon">✨</div>
                             <div class="path-title">Fresh Blank Slate</div>
@@ -2691,6 +2696,7 @@
                     let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')">Launch Canvas</button>`;
                     actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; font-size:1.1rem;" title="Export Assets" download>📦</a>`;
                     if (s.is_owner) {
+                        actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary" style="text-decoration:none;">Edit in Builder</a>`;
                         actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroyTheater('${s.theater_id}')">Destroy</button>`;
                     }
 

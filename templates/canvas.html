@@ -5744,6 +5744,11 @@
                 .then(data => {
                     if (data && data.metadata) {
                         const isOwner = data.metadata.is_owner;
+                        const builderLink = document.getElementById('menu-item-theater-builder');
+                        if (builderLink && isOwner) {
+                            builderLink.href = `/theater-editor?theater_id=${encodeURIComponent(activetheaterId)}`;
+                            builderLink.style.display = 'flex';
+                        }
                         const isActiveOrator = data.metadata.is_active_orator;
                         const isContributor = data.metadata.is_contributor;
                         window._isContributor = Boolean(isOwner || isActiveOrator || isContributor);
@@ -7852,6 +7857,10 @@
                         <a href="/deploy?from=canvas" class="pullout-menu-item">
                             <span class="pullout-item-icon">🚀</span>
                             <span>Deploy & Manage Theaters</span>
+                        </a>
+                        <a id="menu-item-theater-builder" class="pullout-menu-item" style="display: none;">
+                            <span class="pullout-item-icon">✦</span>
+                            <span>Edit in Theater Builder</span>
                         </a>
                     </div>
                 </div>

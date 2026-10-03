@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Theater Builder</title>
+  <link rel="icon" href="/favicon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/auth-flow.css">
+  <link rel="stylesheet" href="/static/css/theater-editor.css">
+  <script src="/static/js/auth-flow.js"></script>
+  <script src="/static/js/theater-editor.js" defer></script>
+</head>
+<body>
+  <!-- SHARED_TOPBAR -->
+  <main>
+    <header class="builder-heading">
+      <div><a class="back-link" href="/deploy">← Your theaters</a><h1>Theater Builder <span class="eyebrow">WITH AI</span></h1><p>Shape a world. Give it a voice. Bring it to life.</p></div>
+      <a class="credit-link" href="/deploy" id="credit-balance">Credits & top up →</a>
+    </header>
+    <div id="builder-status" role="status" aria-live="polite"></div>
+    <section id="login-gate" class="welcome-card" hidden>
+      <span class="welcome-icon" aria-hidden="true">✦</span><h2>Your next story starts here.</h2>
+      <p>Log in to build theaters, upload assets, and create with your AI assistant.</p>
+      <button type="button" onclick="openAuthModal('login')">Log in to build</button>
+    </section>
+    <section id="start-panel" class="welcome-card" hidden>
+      <span class="welcome-icon" aria-hidden="true">✦</span><h2>Start with a spark.</h2>
+      <p>Use our default theater or bring a folder of your own. You can add loose assets along the way.</p>
+      <label class="name-label" for="new-name">Theater name</label><input id="new-name" value="My Theater" maxlength="120">
+      <div class="start-options">
+        <button id="start-default" type="button"><b>✧ Populate default</b><span>A ready-to-edit theater with sample assets</span></button>
+        <button id="start-folder" type="button"><b>▤ Upload a folder</b><span>Bring your theater.yaml, lore, images, and playlists</span></button>
+      </div>
+      <button id="resume-draft" class="text-button" type="button" hidden>Resume your last saved draft →</button>
+    </section>
+    <section id="workspace" hidden>
+      <div class="draft-toolbar">
+        <label for="draft-name" class="sr-only">Theater name</label><input id="draft-name" maxlength="120">
+        <span class="draft-badge" id="draft-state">Draft</span><div class="toolbar-actions">
+          <button class="secondary" id="new-draft" type="button">New theater</button>
+          <button class="secondary" id="reload-draft" type="button">Reload</button>
+          <button class="secondary" id="save-draft" type="button">Save draft</button>
+          <button id="deploy-draft" type="button">Deploy & test →</button>
+        </div>
+      </div>
+      <div class="builder-grid">
+        <aside class="files-panel panel" aria-label="Theater files">
+          <div class="panel-heading"><h2>Your theater</h2><span id="file-count"></span></div>
+          <div class="upload-actions"><button class="secondary" id="upload-assets" type="button">＋ Assets</button><button class="secondary" id="upload-folder" type="button">＋ Folder</button></div>
+          <p class="hint">Loose images, audio, and text are sorted automatically. Ask the assistant to organize them further.</p>
+          <nav id="file-list" aria-label="Files"></nav>
+          <button class="text-button" id="new-file" type="button">＋ Create a text file</button>
+        </aside>
+        <section class="preview-panel panel" aria-label="File editor">
+          <div class="panel-heading"><h2 id="selected-path">Explore your theater</h2><a id="download-file" hidden download>Download</a></div>
+          <div id="empty-preview" class="empty-preview"><span aria-hidden="true">✧</span><h3>A world, in the making.</h3><p>Select a file to edit its text or preview an asset.<br>Your assistant can help fill in the details.</p></div>
+          <label for="file-editor" class="sr-only">File contents</label><textarea id="file-editor" spellcheck="false" hidden></textarea>
+          <div id="media-preview" hidden></div>
+          <div class="preview-footer"><span id="file-save-state">Changes stay in your draft until you deploy.</span><a href="/docs/theater-yaml" target="_blank" rel="noopener">Configuration guide ↗</a></div>
+        </section>
+        <aside class="assistant-panel panel" aria-label="AI theater assistant">
+          <div class="panel-heading"><h2>✦ Your co-creator</h2><span class="assistant-dot" aria-hidden="true"></span></div>
+          <p class="hint" id="generation-rates">Reference and playlist generation use live credit rates.</p>
+          <div id="assistant-messages" role="log" aria-live="polite"><div class="message assistant">Tell me about your world. I can write lore, tune your theater, organize uploads, and propose artwork and music.</div></div>
+          <div id="assistant-proposal" hidden></div>
+          <div class="assistant-shortcuts"><button class="secondary" id="organize-assets" type="button">Organize assets</button><button class="secondary" id="suggest-world" type="button">Develop this world</button></div>
+          <form id="assistant-form"><label for="assistant-input" class="sr-only">Message the assistant</label><textarea id="assistant-input" maxlength="4000" rows="3" placeholder="A misty harbor, a missing cartographer…" required></textarea><button id="assistant-send" type="submit">Send →</button></form>
+          <details class="manual-generation"><summary>Generate an asset directly</summary><form id="generation-form">
+            <label for="generation-kind">Asset type</label><select id="generation-kind"><option value="reference">Reference image</option><option value="playlist">Playlist track</option></select>
+            <label for="generation-name">Name</label><input id="generation-name" maxlength="100" placeholder="harbor" required>
+            <label for="generation-playlist">Playlist name (for music)</label><input id="generation-playlist" maxlength="80" value="ambient">
+            <label for="generation-prompt">Description</label><textarea id="generation-prompt" maxlength="4000" rows="3" required></textarea><button id="generation-submit" type="submit">Generate</button>
+          </form></details>
+        </aside>
+      </div>
+    </section>
+    <input type="file" id="folder-input" webkitdirectory multiple hidden>
+    <input type="file" id="assets-input" accept=".png,.jpg,.jpeg,.webp,.gif,.mp3,.wav,.ogg,.flac,.m4a,.aac,.txt,.md" multiple hidden>
+    <dialog id="new-file-dialog"><form method="dialog"><h2>Create a text file</h2><label for="new-file-path">Path</label><input id="new-file-path" placeholder="lore/characters/cartographer.txt" required><div class="dialog-actions"><button class="secondary" value="cancel">Cancel</button><button value="create">Create</button></div></form></dialog>
+  </main>
+</body>
+</html>

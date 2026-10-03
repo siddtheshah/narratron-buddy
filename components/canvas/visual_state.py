@@ -128,7 +128,8 @@ class VisualState:
                 continue
             for image_path in root.rglob("*"):
                 if image_path.is_file() and image_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-                    self.register_image(str(image_path), image_path.name)
+                    relative = image_path.relative_to(root).as_posix()
+                    self.register_image(str(image_path), image_path.name, relative, f"{root.name}/{relative}")
 
     def resolve_image_path(self, value: str) -> str | None:
         """Resolve a visual path or alias owned by this canvas state."""
@@ -727,6 +728,10 @@ class VisualState:
         reference_dir = theater.references_dir()
         if not reference_dir.exists():
             return None
+        relative_name = image_name.replace("\\", "/").removeprefix("references/")
+        candidate = (reference_dir / relative_name).resolve()
+        if reference_dir.resolve() in candidate.parents and candidate.is_file() and candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            return candidate
         normalized_name = re.sub(r"[^a-zA-Z0-9_-]", "_", image_name).lower()
         for image_path in reference_dir.rglob("*"):
             if not image_path.is_file() or image_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:

@@ -10,6 +10,7 @@ import secrets
 import shutil
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 import zipfile
 
 from pydantic import BaseModel, Field
@@ -126,10 +127,10 @@ class Theater:
     def destroy(self) -> bool:
         return self.manager.destroy_theater(self.theater_id)
 
-    def references(self) -> List[Dict[str, str]]:
+    def references(self) -> list[dict[str, str | int]]:
         return self.manager.get_theater_references(self.theater_id)
 
-    def playlists(self) -> Dict[str, List[Dict[str, str]]]:
+    def playlists(self) -> dict[str, list[dict[str, str | int]]]:
         return self.manager.get_theater_playlists(self.theater_id)
 
     def lore_documents(self) -> List[str]:
@@ -266,13 +267,22 @@ class TheaterManager:
         if not file_path:
             return ""
         path_obj = Path(file_path)
-        if not path_obj.is_absolute():
+        if not path_obj.is_absolute() and path_obj.parts and path_obj.parts[0] == "references":
+            sel_path_obj = (self._get_theater_dir(theater_id) / path_obj).resolve()
+        elif not path_obj.is_absolute():
             sel_path_obj = (self._get_theater_output_dir(theater_id) / path_obj).resolve()
         else:
             sel_path_obj = path_obj.resolve()
 
         if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
-            return f"/theaters/{theater_id}/references/{sel_path_obj.name}"
+            if "references" in sel_path_obj.parts:
+                try:
+                    relative_reference = sel_path_obj.relative_to(self._get_theater_reference_dir(theater_id).resolve()).as_posix()
+                except ValueError:
+                    reference_index = len(sel_path_obj.parts) - 1 - sel_path_obj.parts[::-1].index("references")
+                    relative_reference = Path(*sel_path_obj.parts[reference_index + 1:]).as_posix()
+                return f"/theaters/{theater_id}/references/{quote(relative_reference, safe='/')}"
+            return f"/theaters/{theater_id}/references/{quote(sel_path_obj.name)}"
 
         output_dir = self._get_theater_output_dir(theater_id).resolve()
         try:
@@ -528,14 +538,31 @@ class TheaterManager:
         shutil.rmtree(theater_dir)
         return True
 
-    def get_theater_references(self, theater_id: str) -> List[Dict[str, str]]:
+    def get_theater_references(self, theater_id: str) -> list[dict[str, str | int]]:
         reference_dir = self._get_theater_reference_dir(theater_id)
         if not reference_dir.exists():
             return []
-        return [{"name": file.stem, "filename": file.name, "url": f"/theaters/{theater_id}/references/{file.name}", "size_bytes": file.stat().st_size} for file in reference_dir.iterdir() if file.is_file() and file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}]
+        references: list[dict[str, str | int]] = []
+        for file in sorted(reference_dir.rglob("*")):
+            if not file.is_file() or reference_dir.resolve() not in file.resolve().parents or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                continue
+            filename = file.relative_to(reference_dir).as_posix()
+            references.append({"name": file.stem, "filename": filename, "url": f"/theaters/{theater_id}/references/{quote(filename, safe='/')}", "size_bytes": file.stat().st_size})
+        return references
 
-    def get_theater_playlists(self, theater_id: str) -> Dict[str, List[Dict[str, str]]]:
+    def get_theater_playlists(self, theater_id: str) -> dict[str, list[dict[str, str | int]]]:
         playlists_dir = self._get_theater_playlists_dir(theater_id)
         if not playlists_dir.exists():
             return {}
-        return {directory.name: [{"filename": track.name, "url": f"/theaters/{theater_id}/playlists/{directory.name}/{track.name}", "size_bytes": track.stat().st_size} for track in directory.iterdir() if track.is_file() and track.suffix.lower() in {".mp3", ".wav", ".ogg", ".m4a"}] for directory in playlists_dir.iterdir() if directory.is_dir()}
+        playlists: dict[str, list[dict[str, str | int]]] = {}
+        for directory in sorted(playlists_dir.iterdir()):
+            if not directory.is_dir() or playlists_dir.resolve() not in directory.resolve().parents:
+                continue
+            tracks: list[dict[str, str | int]] = []
+            for track in sorted(directory.rglob("*")):
+                if not track.is_file() or directory.resolve() not in track.resolve().parents or track.suffix.lower() not in {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"}:
+                    continue
+                filename = track.relative_to(directory).as_posix()
+                tracks.append({"filename": filename, "url": f"/theaters/{theater_id}/playlists/{quote(directory.name)}/{quote(filename, safe='/')}", "size_bytes": track.stat().st_size})
+            playlists[directory.name] = tracks
+        return playlists

@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Any, Optional
+from pathlib import Path
+from typing import Optional
 
 from google.adk.agents import Agent
 from google.adk.agents.run_config import RunConfig
@@ -134,7 +135,7 @@ def build_run_config(
     return selected.build_run_config(settings)
 
 
-def get_playlists_context(theater: Any) -> str:
+def get_playlists_context(theater: Theater) -> str:
     """Return available music context for inclusion in the agent's startup prompt.
 
     Args:
@@ -161,9 +162,10 @@ def get_playlists_context(theater: Any) -> str:
                         desc = f.read().strip()
 
                 track_files = sorted(
-                    entry.name for entry in os.scandir(path)
+                    entry.relative_to(Path(path)).as_posix() for entry in Path(path).rglob("*")
                     if entry.is_file()
-                    and os.path.splitext(entry.name)[1].lower() in SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
+                    and Path(path).resolve() in entry.resolve().parents
+                    and entry.suffix.lower() in SUPPORTED_PLAYLIST_AUDIO_EXTENSIONS
                 )
                 if track_files:
                     tracks_str = ", ".join(track_files)
