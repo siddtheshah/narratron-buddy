@@ -1,13 +1,17 @@
 """Integration coverage for authorization, imports, billing, and publishing drafts."""
 
+import asyncio
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 from typing import TypedDict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import Request
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from pydantic import JsonValue
 import pytest
 
 import object_registry
@@ -18,7 +22,7 @@ from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from providers.image_provider import ImageGenerationResult
 from providers.music_provider import MusicGenerationResult
-from services.theater_builder import BuilderProposal, TheaterBuilderStore
+from services.theater_builder import BuilderProposal, ChatMessage, DraftInfo, TheaterBuilderStore
 from services.live_agent import get_playlists_context
 from services.music_catalog import MusicCatalog
 from storage.theater_repository import TheaterRepository
@@ -92,6 +96,7 @@ def test_drafts_require_login_and_owner_for_every_action(builder: BuilderHarness
     assert builder.client.post(f"{base}/generate", json={"revision": 1, "kind": "reference", "name": "Hero", "prompt": "Hero"}).status_code == 403
     assert builder.client.post(f"{base}/deploy", json={"revision": 1}).status_code == 403
     assert builder.client.post(f"{base}/upload", data={"revision": 1}, files={"files": ("hero.png", b"image")}).status_code == 403
+    builder.database.record_user_usage.assert_not_called()
 
 
 def test_folder_import_preserves_config_planning_lore_and_playlist(builder: BuilderHarness) -> None:
@@ -173,14 +178,108 @@ def test_assistant_proposes_then_applies_without_modifying_runtime(builder: Buil
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
     proposal = BuilderProposal(message="Add a guide", writes=[{"path": "lore/guide.txt", "content": "Harbor guide"}])
-    with patch.object(TheaterBuilderStore, "propose", return_value=proposal):
+    builder.database.record_user_usage.return_value = {"credits": 29.9}
+    with patch.object(TheaterBuilderStore, "propose", return_value=proposal), patch("api_server.theater_editor.auth_session_cache.invalidate_user") as invalidate:
         result = builder.client.post(f"{base}/assistant", json={"prompt": "Add a guide"})
     assert result.status_code == 200
+    assert result.json()["credits_charged"] == 0.1
+    assert result.json()["credits"] == 29.9
+    builder.database.record_user_usage.assert_called_once()
+    assert builder.database.record_user_usage.call_args.args == (7,)
+    usage = builder.database.record_user_usage.call_args.kwargs
+    assert usage["credit_cost"] == 0.1
+    assert usage["idempotency_key"].startswith(f"builder:assistant:{data['draft']['theater_id']}:")
+    invalidate.assert_called_once_with(7)
     assert builder.client.get(f"{base}/file?path=lore/guide.txt").status_code == 404
     applied = builder.client.post(f"{base}/apply", json=result.json())
     assert applied.status_code == 200, applied.text
     assert builder.client.get(f"{base}/file?path=lore/guide.txt").text == "Harbor guide"
     assert not builder.manager.theater(data["draft"]["theater_id"]).directory().exists()
+    builder.database.record_user_usage.assert_called_once()
+
+
+@pytest.mark.parametrize("credits", [0.0, 0.09])
+def test_unaffordable_assistant_does_not_call_provider_or_charge(builder: BuilderHarness, credits: float) -> None:
+    data = builder.create()
+    builder.database.get_user_by_id.return_value = {"id": 7, "credits": credits}
+    with patch.object(TheaterBuilderStore, "propose") as propose:
+        result = builder.client.post(f"/api/theater-editor/{data['draft']['theater_id']}/assistant", json={"prompt": "Write lore"})
+    assert result.status_code == 402
+    assert "0.1 credits" in result.json()["detail"]
+    propose.assert_not_called()
+    builder.database.record_user_usage.assert_not_called()
+
+
+def test_failed_assistant_does_not_charge(builder: BuilderHarness) -> None:
+    data = builder.create()
+    with patch.object(TheaterBuilderStore, "propose", side_effect=ValueError("invalid proposal")):
+        result = builder.client.post(f"/api/theater-editor/{data['draft']['theater_id']}/assistant", json={"prompt": "Write lore"})
+    assert result.status_code == 502
+    assert "No credits were charged" in result.json()["detail"]
+    builder.database.record_user_usage.assert_not_called()
+
+
+def test_assistant_billing_failure_withholds_proposal(builder: BuilderHarness) -> None:
+    data = builder.create()
+    builder.database.record_user_usage.side_effect = RuntimeError("database unavailable")
+    with patch.object(TheaterBuilderStore, "propose", return_value=BuilderProposal(message="New lore")):
+        result = builder.client.post(f"/api/theater-editor/{data['draft']['theater_id']}/assistant", json={"prompt": "Write lore"})
+    assert result.status_code == 503
+    assert "proposal" not in result.json()
+
+
+@pytest.mark.parametrize("rate", [0.1, 0.2])
+def test_each_assistant_reply_charges_configured_rate_with_unique_key(builder: BuilderHarness, rate: float) -> None:
+    data = builder.create()
+    builder.database.get_user_by_id.return_value = {"id": 7, "credits": rate}
+    pricing = PricingController(theater_editor_assistant_credit_rate=rate)
+    with patch.object(object_registry, "pricing_controller", pricing), patch.object(TheaterBuilderStore, "propose", return_value=BuilderProposal(message="Ideas")):
+        assert builder.client.get(f"/api/theater-editor/{data['draft']['theater_id']}").json()["rates"]["theater_editor_assistant_credit_rate"] == rate
+        for _ in range(2):
+            result = builder.client.post(f"/api/theater-editor/{data['draft']['theater_id']}/assistant", json={"prompt": "Suggest ideas"})
+            assert result.status_code == 200
+            assert result.json()["credits_charged"] == rate
+    calls = builder.database.record_user_usage.call_args_list
+    assert len(calls) == 2
+    assert all(call.kwargs["credit_cost"] == rate for call in calls)
+    assert calls[0].kwargs["idempotency_key"] != calls[1].kwargs["idempotency_key"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("second_action", ["assistant", "generate"])
+async def test_paid_actions_share_owner_lock_across_drafts(builder: BuilderHarness, second_action: str) -> None:
+    first = builder.create()
+    second = builder.create()
+    started, release = Event(), Event()
+    account = {"id": 7, "credits": 0.1}
+    builder.database.get_user_by_id.return_value = account
+
+    def propose(info: DraftInfo, prompt: str, history: list[ChatMessage], config: dict[str, JsonValue]) -> BuilderProposal:
+        started.set()
+        assert release.wait(timeout=5)
+        return BuilderProposal(message="Ideas")
+
+    def settle(user_id: int, *, credit_cost: float, idempotency_key: str) -> dict[str, float]:
+        account["credits"] -= credit_cost
+        return {"credits": account["credits"]}
+
+    builder.database.record_user_usage.side_effect = settle
+    pricing = PricingController(image_credit_rate=0.1)
+    with patch.object(object_registry, "pricing_controller", pricing), patch("api_server.theater_editor._billing_locks", {}), patch.object(TheaterBuilderStore, "propose", side_effect=propose) as provider, patch("api_server.theater_editor.generate_asset") as generate:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver", headers={"x-test-user": "7"}) as client:
+            first_request = asyncio.create_task(client.post(f"/api/theater-editor/{first['draft']['theater_id']}/assistant", json={"prompt": "Write lore"}))
+            try:
+                assert await asyncio.to_thread(started.wait, 5)
+                body = {"prompt": "Write lore"} if second_action == "assistant" else {"revision": second["draft"]["revision"], "kind": "reference", "name": "hero", "prompt": "Hero"}
+                second_request = asyncio.create_task(client.post(f"/api/theater-editor/{second['draft']['theater_id']}/{second_action}", json=body))
+                await asyncio.sleep(0)
+            finally:
+                release.set()
+            results = await asyncio.gather(first_request, second_request)
+    assert [result.status_code for result in results] == [200, 402]
+    provider.assert_called_once()
+    generate.assert_not_called()
+    builder.database.record_user_usage.assert_called_once()
 
 
 def test_default_draft_deploys_and_redeployment_keeps_identity(builder: BuilderHarness) -> None:

@@ -62,6 +62,8 @@
     el('draft-name').value = state.draft.name;
     el('file-count').textContent = `${state.files.length} files`;
     const rates = state.rates;
+    el('assistant-send').textContent = `Send · ${rates.theater_editor_assistant_credit_rate} Cr →`;
+    el('assistant-cost').textContent = `${rates.theater_editor_assistant_credit_rate} Cr per assistant turn, including shortcuts. Charged when a reply is ready.`;
     el('generation-rates').textContent = `References: ${rates.image_credit_rate} Cr / image · Playlists: ${rates.music_credit_rate} Cr / track. Same rates as live generation.`;
     updateGenerationCost();
     if (lastDraftKey) localStorage.setItem(lastDraftKey, state.draft.theater_id);
@@ -214,7 +216,8 @@
       message('assistant', proposal.message);
       el('assistant-input').value = '';
       renderProposal();
-      status('Proposal ready. Review file changes or generate the suggested assets below.');
+      await checkAuthStatus({ refresh: true });
+      status(`Proposal ready. Charged ${result.credits_charged} credits. Review file changes or generate the suggested assets below.`);
     }, 'Your assistant is shaping a proposal…');
   }
   function renderProposal() {

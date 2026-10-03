@@ -46,6 +46,7 @@ def editor_page() -> Iterator[Page]:
         page.add_init_script("""
             window.accountCredits = 100;
             window.paymentMode = 'success';
+            window.assistantMode = 'success';
             const initialFiles = [
                 {path: 'references/characters/captain.png', kind: 'image'},
                 {path: 'lore/guide.txt', kind: 'text'},
@@ -57,7 +58,7 @@ def editor_page() -> Iterator[Page]:
             ];
             const draft = {
                 draft: {theater_id: 'theater_tree', name: 'Harbor', revision: 0},
-                files: [...initialFiles], rates: {image_credit_rate: 4, music_credit_rate: 6},
+                files: [...initialFiles], rates: {image_credit_rate: 4, music_credit_rate: 6, theater_editor_assistant_credit_rate: 0.1},
             };
             window.savedFiles = {};
             window.fetch = async (url, options = {}) => {
@@ -107,6 +108,15 @@ def editor_page() -> Iterator[Page]:
                     window.accountCredits -= 4;
                     return {ok: true, json: async () => ({state: structuredClone(draft),
                         path, credits: window.accountCredits, credits_charged: 4})};
+                }
+                if (request.pathname.endsWith('/assistant')) {
+                    if (window.assistantMode === 'insufficient') {
+                        return {ok: false, status: 402, json: async () => ({detail: 'Each assistant turn requires 0.1 credits. Buy credits using the balance at the top of this page.'})};
+                    }
+                    window.accountCredits -= 0.1;
+                    return {ok: true, json: async () => ({revision: draft.draft.revision,
+                        proposal: {message: 'Here are ideas for your world.', writes: [], moves: [], generations: []},
+                        credits: window.accountCredits, credits_charged: 0.1})};
                 }
                 return {ok: true, json: async () => structuredClone(draft)};
             };
@@ -226,6 +236,35 @@ def test_topbar_shows_credits_and_refreshes_after_generation(editor_page: Page, 
     page.locator("#generation-submit").click()
     expect(page.locator("#builder-status")).to_have_text("Saved references/harbor.png to your draft.")
     expect(badge).to_have_text("⚡ 96.0 Credits + Buy")
+
+
+@pytest.mark.parametrize("trigger", ["send", "organize-assets", "suggest-world"])
+def test_assistant_discloses_price_and_refreshes_balance(editor_page: Page, trigger: str) -> None:
+    page = editor_page
+    expect(page.locator("#assistant-send")).to_have_text("Send · 0.1 Cr →")
+    expect(page.locator("#assistant-cost")).to_contain_text("0.1 Cr per assistant turn, including shortcuts")
+    if trigger == "send":
+        page.locator("#assistant-input").fill("Develop my world.")
+        page.locator("#assistant-send").click()
+    else:
+        page.locator(f"#{trigger}").click()
+    expect(page.locator("#assistant-messages")).to_contain_text("Here are ideas for your world.")
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 99.9 Credits + Buy")
+    expect(page.locator("#builder-status")).to_contain_text("Charged 0.1 credits")
+
+
+def test_unaffordable_assistant_preserves_prompt_for_retry(editor_page: Page) -> None:
+    page = editor_page
+    page.evaluate("window.assistantMode = 'insufficient'")
+    page.locator("#assistant-input").fill("Develop my world.")
+    page.locator("#assistant-send").click()
+    expect(page.locator("#builder-status")).to_contain_text("Each assistant turn requires 0.1 credits")
+    expect(page.locator("#assistant-input")).to_have_value("Develop my world.")
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 100.0 Credits + Buy")
+    expect(page.locator("#assistant-send")).to_be_enabled()
+    page.evaluate("window.assistantMode = 'success'")
+    page.locator("#assistant-send").click()
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 99.9 Credits + Buy")
 
 
 @pytest.mark.parametrize("width", [1280, 390])

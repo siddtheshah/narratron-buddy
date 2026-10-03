@@ -31,9 +31,9 @@ from utils.auth_cache import auth_session_cache
 from utils.config_loader import get_theater_default_config
 
 logger = logging.getLogger(__name__)
-# A draft has one writer at a time. Generation also serializes requests per owner.
+# A draft has one writer at a time. Paid actions also serialize requests per owner.
 _draft_locks: dict[str, asyncio.Lock] = {}
-_generation_locks: dict[int, asyncio.Lock] = {}
+_billing_locks: dict[int, asyncio.Lock] = {}
 
 
 class CreateDraftRequest(BaseModel):
@@ -213,14 +213,27 @@ async def upload_assets(theater_id: str, request: Request, files: list[UploadFil
 
 @app.post("/api/theater-editor/{theater_id}/assistant")
 async def ask_assistant(theater_id: str, body: AssistantRequest, request: Request) -> dict[str, JsonValue]:
-    async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+    owner_id = await require_user(request)
+    async with _billing_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
         info = await require_draft(request, theater_id)
+        cost = pricing_controller.get_rates()["theater_editor_assistant_credit_rate"]
+        user = await asyncio.to_thread(db.get_user_by_id, owner_id)
+        if not user or user["credits"] < cost:
+            raise HTTPException(status_code=402, detail=f"Each assistant turn requires {cost:g} credits. Buy credits using the balance at the top of this page.")
         try:
             proposal = await asyncio.to_thread(store().propose, info, body.prompt, body.history, config)
         except Exception as error:
             logger.exception("Theater builder assistant failed")
-            raise HTTPException(status_code=502, detail="The assistant could not prepare a valid proposal. Please try again.") from error
-        return {"revision": info.revision, "proposal": proposal.model_dump(mode="json")}
+            raise HTTPException(status_code=502, detail="The assistant could not prepare a valid proposal. No credits were charged. Please try again.") from error
+        try:
+            updated = await asyncio.to_thread(db.record_user_usage, owner_id,
+                credit_cost=cost, idempotency_key=f"builder:assistant:{theater_id}:{uuid.uuid4().hex}")
+        except Exception as error:
+            logger.exception("Theater builder assistant billing failed")
+            raise HTTPException(status_code=503, detail="Could not settle assistant credits. Please try again.") from error
+        auth_session_cache.invalidate_user(owner_id)
+        return {"revision": info.revision, "proposal": proposal.model_dump(mode="json"),
+                "credits_charged": cost, "credits": float(updated["credits"])}
 
 
 @app.post("/api/theater-editor/{theater_id}/apply")
@@ -272,7 +285,7 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
 @app.post("/api/theater-editor/{theater_id}/generate")
 async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, request: Request) -> dict[str, JsonValue]:
     owner_id = await require_user(request)
-    async with _generation_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
+    async with _billing_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
         info = await require_draft(request, theater_id)
         check_revision(info, body.revision)
         rates = pricing_controller.get_rates()

@@ -7,6 +7,7 @@ DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL = 4000
 DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE = 5.0
 DEFAULT_CHARACTER_VOICING_TURN_CREDIT_RATE = 0.25
 DEFAULT_INTERACTIVE_CANVAS_CREDIT_RATE = 0.25
+DEFAULT_THEATER_EDITOR_ASSISTANT_CREDIT_RATE = 0.1
 # AnimationTools emits its completion event only after a playable animation
 # manifest has been written.  This rate therefore applies once per successful
 # animation, regardless of the selected rendering technique.
@@ -30,7 +31,8 @@ class PricingController:
         character_voicing_turn_credit_rate: Optional[float] = None,
         interactive_canvas_credit_rate: Optional[float] = None,
         layered_animation_credit_rate: Optional[float] = None,
-    ):
+        theater_editor_assistant_credit_rate: Optional[float] = None,
+    ) -> None:
         self.voice_credit_rate = voice_credit_rate if voice_credit_rate is not None else 1.0
         self.image_credit_rate = image_credit_rate if image_credit_rate is not None else 1.0
         self.music_credit_rate = music_credit_rate if music_credit_rate is not None else 2.0
@@ -62,6 +64,11 @@ class PricingController:
             layered_animation_credit_rate
             if layered_animation_credit_rate is not None
             else DEFAULT_LAYERED_ANIMATION_CREDIT_RATE
+        )
+        self.theater_editor_assistant_credit_rate = (
+            theater_editor_assistant_credit_rate
+            if theater_editor_assistant_credit_rate is not None
+            else DEFAULT_THEATER_EDITOR_ASSISTANT_CREDIT_RATE
         )
 
     @property
@@ -154,6 +161,7 @@ class PricingController:
             "interactive_canvas_tool_credit_rate": self.interactive_canvas_credit_rate,
             "layered_animation_credit_rate": self.layered_animation_credit_rate,
             "layered_animation_tool_credit_rate": self.layered_animation_credit_rate,
+            "theater_editor_assistant_credit_rate": self.theater_editor_assistant_credit_rate,
         }
 
     def calculate_usage_cost(
