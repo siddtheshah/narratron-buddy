@@ -39,8 +39,8 @@ smtp:
     port: 587
 
 live_agent:
-    provider: "openai"
-    model_id: "gpt-realtime-2.1"
+    provider: "gemini"
+    model_id: "gemini-3.8-live"
     # Model tool calls allowed after each VAD end before the the live model is starved.
     live_tool_budget: 5
     enable_tool_injection: false

@@ -1,8 +1,19 @@
 # Live agent providers
 
-`live_agent.provider` in `app.yaml` selects the backend. The application now uses
-OpenAI Realtime 2.1. Set `OPENAI_API_KEY` in the server environment (or `.env`)
+`live_agent.provider` in `app.yaml` selects the backend. The application uses
+Gemini 3.8 Live. Set `GEMINI_API_KEY` in the server environment (or `.env`)
 and restart the application before summoning the agent:
+
+```yaml
+live_agent:
+  provider: gemini
+  model_id: gemini-3.8-live
+  compaction:
+    trigger_tokens: 20000
+    target_tokens: 8000
+```
+
+To use the optional OpenAI backend, set `OPENAI_API_KEY` and configure:
 
 ```yaml
 live_agent:
@@ -67,8 +78,9 @@ connections do not use Gemini resumption handles or transparent reconnects;
 after a failed connection, summon a fresh session. No vendor failover happens
 automatically. Missing credentials fail explicitly when connecting.
 
-To switch back, set `provider: gemini` and `model_id: gemini-3.8-live`. Gemini
-retains AUDIO output because Gemini 3.8 Live rejects TEXT, along with its existing
+The default Gemini configuration uses `provider: gemini` and
+`model_id: gemini-3.8-live`. Gemini retains AUDIO output for its
+native-audio Live model, along with its existing
 VAD, reminder, and context-compression behavior. Other OpenAI Realtime model IDs
 can be selected through `model_id` without changing the adapter.
 

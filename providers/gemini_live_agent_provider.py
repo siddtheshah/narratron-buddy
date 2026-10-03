@@ -64,7 +64,7 @@ class GeminiLiveAgentProvider(LiveAgentProvider):
                     if compaction.target_tokens is not None else None
                 ),
             )
-        # Gemini 3.8 Live rejects TEXT output; tool calls are separate events.
+        # Native-audio Live models use AUDIO output; tool calls are separate events.
         return RunConfig(
             streaming_mode=StreamingMode.BIDI,
             response_modalities=[types.Modality.AUDIO],
