@@ -71,7 +71,7 @@ def test_session_configuration_uses_ga_schema_text_and_manual_vad() -> None:
     assert session["max_output_tokens"] == 1024
     assert "When a [Story Planner Result] arrives" in session["instructions"]
     assert "Never invent player" in session["instructions"]
-    assert session["truncation"]["token_limits"]["post_instructions"] == 8000
+    assert session["truncation"]["token_limits"]["post_instructions"] == 4000
     parameters = session["tools"][0]["parameters"]
     assert parameters["type"] == "object"
     assert parameters["properties"]["track"]["type"] == "string"

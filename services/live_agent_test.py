@@ -48,6 +48,7 @@ class TestCreateAgent(unittest.TestCase):
 
         mock_config.return_value = {"live_agent": {"provider": "alternate", "model_id": "custom"}}
         provider = MagicMock(spec=LiveAgentProvider)
+        provider.id = "alternate"
         bundle = MagicMock()
         bundle.tools = []
         create_agent(make_test_theater("alternate", {}), bundle, provider=provider)
@@ -87,7 +88,7 @@ class TestCreateAgent(unittest.TestCase):
 
     def test_music_instruction_prefers_reuse_and_requires_scene_and_tone_change(self):
         self.assertIn("Music continuity is the default", AGENT_INSTRUCTION_TEMPLATE)
-        self.assertIn("both** the story has moved to a materially different scene **and** the emotional tone", AGENT_INSTRUCTION_TEMPLATE)
+        self.assertIn("both the scene and emotional tone materially change", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("confirmed by at least two distinct narrative events or user actions", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("use_generated_music", AGENT_INSTRUCTION_TEMPLATE)
 
@@ -104,7 +105,7 @@ class TestCreateAgent(unittest.TestCase):
 
     def test_image_tool_character_naming_instruction_informs_agent(self):
         self.assertIn(
-            'When using image_tool (`create_image`), always use a "Character Name" when describing actions so that the character manager reference will be automatically pulled in.',
+            'Use explicit character names in `create_image` prompts so CharacterManager binds their references.',
             AGENT_INSTRUCTION_TEMPLATE,
         )
 
@@ -652,8 +653,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("* create_or_update_character", instruction)
         self.assertIn("process_user_action", instruction)
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
-        self.assertIn("AFTER the user action is processed", instruction)
-        self.assertIn("In Adventure Mode, you can only (and should) use `create_image` or `show_image` AFTER the user action is processed", instruction)
+        self.assertIn("Wait for `[Story Planner Result]` before staging visuals or changing music", instruction)
         self.assertNotIn("## Preloaded References Context", instruction)
         self.assertNotIn("check the preloaded references context", instruction)
         self.assertIn("CharacterManager (via canvas observability", instruction)
@@ -671,9 +671,9 @@ class TestCreateAgent(unittest.TestCase):
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Character Management", instruction)
-        self.assertIn("* create_or_update_character", instruction)
-        self.assertIn("* lookup_character", instruction)
-        self.assertIn("* clear_characters", instruction)
+        self.assertIn("`create_or_update_character`", instruction)
+        self.assertIn("`lookup_character`", instruction)
+        self.assertIn("`clear_characters`", instruction)
         self.assertNotIn("process_user_action", instruction)
         self.assertIn("## Preloaded References Context", instruction)
 

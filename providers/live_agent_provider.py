@@ -34,7 +34,7 @@ class OpenAIRealtimeConfig(BaseModel):
 
     max_output_tokens: int = Field(default=1024, ge=1, le=4096)
     max_response_turns: int = Field(default=6, ge=1)
-    post_instructions_token_limit: int = Field(default=8000, gt=0)
+    post_instructions_token_limit: int = Field(default=4000, gt=0)
     retention_ratio: float = Field(default=0.8, gt=0, le=1)
     input_transcription_model: str | None = None
 
