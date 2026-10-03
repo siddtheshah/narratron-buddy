@@ -408,6 +408,8 @@ class LiveAgentSession:
 
     def send_canvas_state(self) -> bool:
         """Inject current canvas image/music state into LiveRequestQueue."""
+        if not self.enable_regular_observability:
+            return False
         if not self.websocket_connected:
             logger.debug(f"[LiveAgentSession] User disconnected; suppressing canvas state update for session {self.theater_id}.")
             return False
@@ -437,8 +439,6 @@ class LiveAgentSession:
         A successful update also refreshes ``last_canvas_state_sent``, naturally
         deferring the next periodic canvas observability update.
         """
-        if not self.enable_regular_observability:
-            return False
         if not self.websocket_connected:
             logger.debug(
                 "[LiveAgentSession] User disconnected; suppressing collaboration toggle update for session %s.",
