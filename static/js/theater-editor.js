@@ -13,6 +13,8 @@
   let proposalRevision = null;
   const history = [];
   const pendingWrites = new Map();
+  const expandedFolders = new Map();
+  let fileTreeDraftId = null;
   let lastDraftKey = null;
 
   function status(message, error = false) {
@@ -71,28 +73,69 @@
   }
   function renderFiles() {
     const list = el('file-list');
+    if (fileTreeDraftId !== state.draft.theater_id) {
+      expandedFolders.clear();
+      fileTreeDraftId = state.draft.theater_id;
+    } else {
+      list.querySelectorAll('.file-folder').forEach(folder => expandedFolders.set(folder.dataset.path, folder.open));
+    }
     list.replaceChildren();
-    const groups = ['Configuration', 'lore', 'references', 'playlists'];
-    for (const group of groups) {
-      const files = state.files.filter(file => group === 'Configuration' ? !file.path.includes('/') : file.path.startsWith(`${group}/`));
-      if (!files.length) continue;
-      const section = document.createElement('div'); section.className = 'file-group';
-      const heading = document.createElement('h3'); heading.textContent = group; section.append(heading);
-      for (const file of files) {
-        const button = document.createElement('button'); button.type = 'button'; button.className = 'file-button';
-        button.classList.toggle('active', selected?.path === file.path);
-        button.textContent = `${file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡'} ${group === 'Configuration' ? file.path : file.path.slice(group.length + 1)}`;
-        button.title = file.path; button.addEventListener('click', () => selectFile(file)); section.append(button);
+    const root = { folders: new Map(), files: [], count: 0 };
+    for (const file of state.files) {
+      const parts = file.path.split('/');
+      let node = root;
+      node.count++;
+      for (const name of parts.slice(0, -1)) {
+        if (!node.folders.has(name)) node.folders.set(name, { folders: new Map(), files: [], count: 0 });
+        node = node.folders.get(name);
+        node.count++;
       }
+      node.files.push(file);
+    }
+    function appendFiles(parent, files) {
+      for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'file-button';
+        button.dataset.path = file.path;
+        button.classList.toggle('active', selected?.path === file.path);
+        if (selected?.path === file.path) button.setAttribute('aria-current', 'true');
+        button.textContent = `${file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡'} ${file.path.split('/').pop()}`;
+        button.title = file.path; button.addEventListener('click', () => selectFile(file)); parent.append(button);
+      }
+    }
+    function appendFolders(parent, node, prefix = '') {
+      for (const [name, child] of [...node.folders].sort(([a], [b]) => a.localeCompare(b))) {
+        const path = prefix ? `${prefix}/${name}` : name;
+        const folder = document.createElement('details'); folder.className = 'file-folder';
+        folder.dataset.path = path; folder.open = expandedFolders.get(path) || false;
+        const summary = document.createElement('summary'); summary.className = 'folder-button'; summary.title = path;
+        const label = document.createElement('span'); label.className = 'folder-name'; label.textContent = name;
+        const count = document.createElement('span'); count.className = 'folder-count';
+        count.textContent = child.count; count.setAttribute('aria-label', `${child.count} files`);
+        summary.append(label, count);
+        const contents = document.createElement('div'); contents.className = 'file-children';
+        appendFolders(contents, child, path); appendFiles(contents, child.files);
+        folder.append(summary, contents); parent.append(folder);
+      }
+    }
+    if (root.files.length) {
+      const section = document.createElement('div'); section.className = 'file-group';
+      const heading = document.createElement('h3'); heading.textContent = 'Configuration'; section.append(heading);
+      appendFiles(section, root.files);
       list.append(section);
     }
+    appendFolders(list, root);
   }
   async function selectFile(file) {
     if (busy) return;
     captureText();
     selected = file;
     const sequence = ++previewSequence;
-    renderFiles();
+    el('file-list').querySelectorAll('.file-button').forEach(button => {
+      const active = button.dataset.path === file.path;
+      button.classList.toggle('active', active);
+      if (active) button.setAttribute('aria-current', 'true');
+      else button.removeAttribute('aria-current');
+    });
     el('selected-path').textContent = file.path;
     el('empty-preview').hidden = true;
     el('file-editor').hidden = true;
@@ -217,7 +260,6 @@
       // A generated asset adds a new file, so the same proposal remains applicable.
       if (proposalRevision === revision) proposalRevision = state.draft.revision;
       if (button) { button.textContent = 'Generated'; button.dataset.done = 'true'; }
-      el('credit-balance').textContent = `${result.credits.toFixed(2)} credits · Top up →`;
       await checkAuthStatus({ refresh: true });
       message('assistant', `Created ${result.path}. Charged ${result.credits_charged} credits.`);
       history.push({ role: 'assistant', content: `Created asset: ${result.path}` });
@@ -235,7 +277,6 @@
       if (!auth.authenticated) { el('login-gate').hidden = false; el('workspace').hidden = true; el('start-panel').hidden = true; return; }
       el('login-gate').hidden = true;
       lastDraftKey = `narratron.builder.lastDraft:${auth.user.id}`;
-      el('credit-balance').textContent = `${Number(auth.user.credits || 0).toFixed(2)} credits · Top up →`;
       const identifier = new URLSearchParams(location.search).get('theater_id');
       if (identifier) await run(() => load(identifier), 'Loading your theater…');
       else {
@@ -290,5 +331,9 @@
     if (!event.detail.authenticated) { state = null; lastDraftKey = null; pendingWrites.clear(); textDirty = false; nameDirty = false; clearPreview(); history.length = 0; el('assistant-messages').replaceChildren(); el('assistant-proposal').replaceChildren(); el('workspace').hidden = true; el('start-panel').hidden = true; el('login-gate').hidden = false; }
   });
   window.onAuthSuccess = mode => { if (mode !== 'logout') initialize(); };
+  window.beforeCreditPurchase = async () => {
+    if (busy) throw new Error('Please wait for the current action to finish before purchasing credits.');
+    await save();
+  };
   initialize();
 })();

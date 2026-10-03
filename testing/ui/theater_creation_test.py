@@ -4,6 +4,7 @@ import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import Error, Page, Route, expect, sync_playwright
@@ -21,6 +22,14 @@ def deploy_page() -> Iterator[Page]:
     def serve_page(route: Route) -> None:
         if route.request.resource_type == "document":
             route.fulfill(body=template, content_type="text/html")
+        elif urlsplit(route.request.url).path in (
+            "/static/js/credit-purchase.js", "/static/css/credit-purchase.css",
+        ):
+            path = urlsplit(route.request.url).path
+            route.fulfill(
+                body=Path(path.lstrip("/")).read_text(encoding="utf-8"),
+                content_type="text/javascript" if path.endswith(".js") else "text/css",
+            )
         else:
             route.fulfill(body="")
 
@@ -51,6 +60,17 @@ def deploy_page() -> Iterator[Page]:
         yield page
         browser.close()
     assert errors == []
+
+
+def test_deploy_uses_the_shared_credit_purchase_modal(deploy_page: Page) -> None:
+    page = deploy_page
+    page.evaluate("openBuyCreditsModal()")
+    expect(page.locator("#buyCreditsModal")).to_be_visible()
+    page.locator("#pkgUltra").click()
+    expect(page.locator("#btnCompletePurchase")).to_have_text("Pay $40.00 & Add 1000 Credits")
+    page.locator("#buyCreditsModal [data-credit-rates]").click()
+    expect(page.locator("#buyCreditsModal")).not_to_be_visible()
+    expect(page.locator("#pricingModal")).to_have_class("modal-overlay active")
 
 
 @pytest.mark.parametrize("width", [1280, 390])

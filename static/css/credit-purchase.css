@@ -1,0 +1,96 @@
+#buyCreditsModal{display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:10000;padding:20px;opacity:1;pointer-events:auto}
+#buyCreditsModal.active{display:flex}
+#buyCreditsModal .modal-card{background:rgba(22,27,38,.95);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:2rem;box-shadow:0 20px 40px rgba(0,0,0,.6);max-height:calc(100dvh - 40px);overflow-y:auto;color:#f8fafc}
+#buyCreditsModal .credit-purchase-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:.5rem}
+#buyCreditsModal .credit-purchase-heading-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#buyCreditsModal .btn{padding:.75rem 1.5rem;border-radius:12px;font-weight:600;font-size:.95rem;cursor:pointer;border:0;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;transition:all .2s ease;text-decoration:none}
+#buyCreditsModal .btn-primary{background:linear-gradient(135deg,#6366f1,#a855f7);color:white;box-shadow:0 4px 20px rgba(99,102,241,.35)}
+#buyCreditsModal .btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+#buyCreditsModal .btn-secondary{background:rgba(255,255,255,.08);color:#f8fafc;border:1px solid rgba(255,255,255,.08)}
+#buyCreditsModal .btn-secondary:hover{background:rgba(255,255,255,.15)}
+#buyCreditsModal .btn-sm{padding:.4rem .8rem;font-size:.85rem;border-radius:8px}
+#buyCreditsModal .btn:disabled{opacity:.5;cursor:wait}
+#buyCreditsModal input[type=radio]{width:auto;accent-color:#10b981}
+#buyCreditsModal .modal-error{color:#f87171;font-size:.85rem;margin-top:.5rem;display:none}
+#buyCreditsModal :focus-visible{outline:2px solid #818cf8;outline-offset:2px}
+#buyCreditsModal [hidden]{display:none!important}
+
+#buyCreditsModal .packages-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 1.25rem 0;
+}
+
+#buyCreditsModal .package-card {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1rem 0.75rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+#buyCreditsModal .package-card:hover {
+    border-color: #38bdf8;
+    transform: translateY(-2px);
+    background: rgba(30, 41, 59, 0.9);
+}
+
+#buyCreditsModal .package-card.selected {
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.15);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.25);
+}
+
+#buyCreditsModal .package-badge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 99px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+#buyCreditsModal .package-card.selected .package-badge {
+    background: linear-gradient(135deg, #10b981, #059669);
+}
+
+#buyCreditsModal .package-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-top: 0.25rem;
+    color: var(--text-primary, #f8fafc);
+}
+
+#buyCreditsModal .package-credits {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #34d399;
+    margin: 0.4rem 0;
+}
+
+#buyCreditsModal .package-price {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+#buyCreditsModal .package-subtext {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #94a3b8);
+    margin-top: 0.2rem;
+}
+@media(max-width:650px){#buyCreditsModal .packages-grid{grid-template-columns:repeat(2,1fr)}#buyCreditsModal .modal-card{padding:1.25rem}}
