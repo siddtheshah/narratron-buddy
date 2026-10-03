@@ -17,9 +17,9 @@ from google.adk.agents import Agent
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
-from services.live_agent import DeveloperLiveGemini, build_run_config
+from providers import LiveAgentRunRequest, get_live_agent_provider
+from services.live_agent import build_live_agent_config
 from services.priority_live_request_queue import PriorityLiveRequestQueue
-from utils.config_loader import get_app_config
 
 
 def report_probe(label: str) -> dict[str, str]:
@@ -47,10 +47,13 @@ async def send_audio(queue: PriorityLiveRequestQueue, audio: bytes) -> None:
 async def run_probe(audio_path: Path | None) -> None:
     """Verify input and tool-result delivery using the application's Live setup."""
     audio = read_audio(audio_path) if audio_path is not None else None
-    model_id = get_app_config().get("live_agent", {}).get("model_id", "gemini-3.8-live")
+    config = build_live_agent_config()
+    provider = get_live_agent_provider(config.provider)
+    model = provider.create_model(config)
+    model_id = model.model
     agent = Agent(
         name="live_smoke_probe",
-        model=DeveloperLiveGemini(model=model_id),
+        model=model,
         instruction=(
             "You are a transport test. For the text 'typed input probe', call "
             "report_probe exactly once with label 'typed_input'. For any spoken "
@@ -67,10 +70,11 @@ async def run_probe(audio_path: Path | None) -> None:
     expected = {"typed_input", "audio_input"} if audio is not None else {"typed_input"}
     completed: set[str] = set()
     audio_task: asyncio.Task[None] | None = None
-    events = runner.run_live(
+    events = provider.run_live(LiveAgentRunRequest(
+        runner=runner,
         user_id="smoke", session_id=session.id,
-        live_request_queue=queue, run_config=build_run_config(),
-    )
+        input_queue=queue, run_config=provider.build_run_config(config),
+    ))
     try:
         async for event in events:
             calls = event.get_function_calls()

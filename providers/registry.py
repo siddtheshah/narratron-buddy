@@ -22,7 +22,8 @@ from providers.fal_seed_speech_provider import FalSeedSpeechProvider
 from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
 from providers.video_provider import VideoProvider, VideoProviderError
 from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
-
+from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
+from providers.live_agent_provider import LiveAgentProvider, LiveAgentProviderError
 
 
 _IMAGE_SPECS = (
@@ -186,6 +187,12 @@ def list_image_provider_specs() -> list[dict[str, Any]]:
             spec["status"] = "available" if (os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY")) and os.getenv("GEMINI_API_KEY") else "unconfigured"
     return specs
 
+
+def get_live_agent_provider(provider_id: str = "gemini") -> LiveAgentProvider:
+    """Resolve a Live backend explicitly; never silently switch vendors."""
+    if provider_id == "gemini":
+        return GeminiLiveAgentProvider()
+    raise LiveAgentProviderError(f"Unsupported live agent provider: {provider_id!r}")
 
 def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) -> ImageProvider:
     options = options or {}

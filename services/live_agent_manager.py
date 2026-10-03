@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import aclosing
 from datetime import datetime, timezone
 import json
 import logging
@@ -14,9 +15,9 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from providers import get_speech_provider
+from providers import LiveAgentProvider, LiveAgentRunRequest, get_live_agent_provider, get_speech_provider
 
-from services.live_agent import build_run_config
+from services.live_agent import build_live_agent_config, build_run_config
 from services.disk_artifact_service import DiskArtifactService
 from services.live_stream_service import (
     format_canvas_state,
@@ -57,7 +58,8 @@ class LiveAgentSession:
         canvas_state_manager: Optional[Any] = None,
         theater_manager: Optional[TheaterManager] = None,
         music_catalog: Optional[Any] = None,
-    ):
+        provider: LiveAgentProvider | None = None,
+    ) -> None:
         self.theater_id = theater_id
         self.adk_session_id = f"adk_{theater_id}_{uuid.uuid4().hex[:8]}"
         self.adk_user_id = f"orator_{theater_id}"
@@ -165,9 +167,9 @@ class LiveAgentSession:
             "create_or_update_character",
         )
 
-        self.run_config = build_run_config(
-            config=self.config,
-        )
+        provider_config = build_live_agent_config(self.config)
+        self.provider = provider if provider is not None else get_live_agent_provider(provider_config.provider)
+        self.run_config = self.provider.build_run_config(provider_config)
 
         self._setup_tool_callbacks()
 
@@ -618,9 +620,9 @@ class LiveAgentSession:
         self.send_canvas_state()
 
 
-    async def _run_downstream(self):
-        """Task that runs runner.run_live() continuously and broadcasts model events to attached WebSockets."""
-        logger.info(f"[LiveAgentSession] Starting downstream_task (runner.run_live) for theater_id={self.theater_id}")
+    async def _run_downstream(self) -> None:
+        """Consume backend events and broadcast them to attached WebSockets."""
+        logger.info("[LiveAgentSession] Starting %s backend for theater_id=%s", self.provider.id, self.theater_id)
         try:
             if await self.session_service.get_session(
                 app_name=self.runner.app_name,
@@ -634,27 +636,29 @@ class LiveAgentSession:
                 )
                 logger.info(f"[LiveAgentSession] Created ADK session {self.adk_session_id} for user {self.adk_user_id}")
 
-            async for event in self.runner.run_live(
+            async with aclosing(self.provider.run_live(LiveAgentRunRequest(
+                runner=self.runner,
                 user_id=self.adk_user_id,
                 session_id=self.adk_session_id,
-                live_request_queue=self.live_request_queue,
+                input_queue=self.live_request_queue,
                 run_config=self.run_config,
-            ):
-                function_calls = event.get_function_calls() if hasattr(event, "get_function_calls") else []
-                if function_calls:
-                    self.live_request_queue.record_model_tool_calls(len(function_calls))
-                    for call in function_calls:
-                        logger.info(f"[Agent Tool Call] Function: {call.name}, Args: {call.args}")
+            ))) as events:
+                async for event in events:
+                    function_calls = event.get_function_calls()
+                    if function_calls:
+                        self.live_request_queue.record_model_tool_calls(len(function_calls))
+                        for call in function_calls:
+                            logger.info(f"[Agent Tool Call] Function: {call.name}, Args: {call.args}")
 
-                event_dict = json.loads(event.model_dump_json(exclude_none=True, by_alias=True))
-                if "content" in event_dict and "parts" in event_dict["content"]:
-                    event_dict["content"]["parts"] = [
-                        part for part in event_dict["content"]["parts"]
-                        if "inlineData" not in part
-                    ]
+                    event_dict = json.loads(event.model_dump_json(exclude_none=True, by_alias=True))
+                    if "content" in event_dict and "parts" in event_dict["content"]:
+                        event_dict["content"]["parts"] = [
+                            part for part in event_dict["content"]["parts"]
+                            if "inlineData" not in part
+                        ]
 
-                event_json = json.dumps(event_dict)
-                await self.broadcast_text(event_json)
+                    event_json = json.dumps(event_dict)
+                    await self.broadcast_text(event_json)
         except asyncio.CancelledError:
             logger.debug(f"[LiveAgentSession] downstream_task cancelled for theater_id={self.theater_id}")
         except Exception as e:
@@ -1241,7 +1245,8 @@ class LiveAgentSessionManager:
             music_catalog=self.music_catalog,
         )
 
-        session_agent = create_agent(theater, tool_bundle=tool_bundle)
+        provider = get_live_agent_provider(build_live_agent_config(theater_config).provider)
+        session_agent = create_agent(theater, tool_bundle=tool_bundle, provider=provider)
 
         disk_service_path = theater.artifacts_dir()
         if use_in_memory_artifacts:
@@ -1268,6 +1273,7 @@ class LiveAgentSessionManager:
             canvas_state_manager=canvas_mgr,
             theater_manager=self.theater_manager,
             music_catalog=self.music_catalog,
+            provider=provider,
         )
 
         agent_session.start_background_tasks()

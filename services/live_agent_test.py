@@ -34,8 +34,31 @@ def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = 
 
 
 class TestCreateAgent(unittest.TestCase):
+    def setUp(self) -> None:
+        catalog_patch = patch("services.live_agent.MusicCatalog.from_config")
+        catalog_patch.start()
+        self.addCleanup(catalog_patch.stop)
+
+    @patch("services.live_agent.Agent")
+    @patch("services.live_agent.get_app_config")
+    def test_create_agent_uses_injected_provider(
+        self, mock_config: MagicMock, mock_agent: MagicMock,
+    ) -> None:
+        from providers import LiveAgentProvider
+
+        mock_config.return_value = {"live_agent": {"provider": "alternate", "model_id": "custom"}}
+        provider = MagicMock(spec=LiveAgentProvider)
+        bundle = MagicMock()
+        bundle.tools = []
+        create_agent(make_test_theater("alternate", {}), bundle, provider=provider)
+        mock_agent.assert_called_once()
+        self.assertIs(mock_agent.call_args.kwargs["model"], provider.create_model.return_value)
+        settings = provider.create_model.call_args.args[0]
+        self.assertEqual(settings.provider, "alternate")
+        self.assertEqual(settings.model_id, "custom")
+
     @patch.dict("os.environ", {"GOOGLE_GENAI_USE_ENTERPRISE": "true"}, clear=False)
-    @patch("services.live_agent.genai.Client")
+    @patch("providers.gemini_live_agent_provider.genai.Client")
     def test_live_model_forces_developer_api_when_enterprise_is_enabled(self, mock_client: MagicMock) -> None:
         model = DeveloperLiveGemini(model="gemini-3.8-live")
 

@@ -1,14 +1,9 @@
 import logging
 import os
-from functools import cached_property
 from typing import Any, Optional
 
-from google import genai
 from google.adk.agents import Agent
-from google.adk.agents.run_config import RunConfig, StreamingMode, ToolThreadPoolConfig
-from google.adk.models.google_llm import Gemini
-from google.adk.sessions.base_session_service import GetSessionConfig
-from google.genai import types
+from google.adk.agents.run_config import RunConfig
 from jinja2 import StrictUndefined, Template
 
 from components.canvas.canvas_state_manager import CanvasStateManager
@@ -32,49 +27,20 @@ from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from tools.user_help_tool import UserHelpTool
 from providers import (
+    LiveAgentConfig,
+    LiveAgentProvider,
+    get_live_agent_provider,
     ImageProviderError,
     get_image_provider,
     get_text_response_provider,
     get_video_provider,
 )
+# Preserve the model import used by existing Live smoke clients.
+from providers.gemini_live_agent_provider import DeveloperLiveGemini as DeveloperLiveGemini
 from utils.config_loader import get_app_config
 
 logger = logging.getLogger(__name__)
 
-
-class DeveloperLiveGemini(Gemini):
-    """ADK Gemini model pinned to the Gemini Developer API for Live sessions.
-
-    The live model uses an API key and must remain on the Gemini Developer
-    API, even if a process-wide SDK setting selects the Enterprise backend.
-    """
-
-    @cached_property
-    def api_client(self):
-        base_url, api_version = self._base_url_and_api_version
-        http_options: dict[str, Any] = {
-            "headers": self._tracking_headers(),
-            "retry_options": self.retry_options,
-            "base_url": base_url,
-        }
-        if api_version:
-            http_options["api_version"] = api_version
-        return genai.Client(
-            enterprise=False,
-            http_options=types.HttpOptions(**http_options),
-        )
-
-    @cached_property
-    def _live_api_client(self):
-        base_url, _ = self._base_url_and_api_version
-        return genai.Client(
-            enterprise=False,
-            http_options=types.HttpOptions(
-                headers=self._tracking_headers(),
-                api_version=self._live_api_version,
-                base_url=base_url,
-            ),
-        )
 
 AGENT_INSTRUCTION_TEMPLATE = """
 # Objective
@@ -263,43 +229,26 @@ Be sure to greet the user in a chat message to begin with, to show you are there
 Cooldowns are now lifted. GO!
 """
 
-def build_run_config(
-    config: Optional[dict] = None,
-) -> RunConfig:
-    """Construct Gemini 3.8 Live streaming options from theater and app settings."""
+def build_live_agent_config(config: dict | None = None) -> LiveAgentConfig:
+    """Read app-owned backend settings and theater-specific worker limits."""
     config = config or {}
     agent_config = config.get("live_agent", {})
     app_internal = get_app_config().get("live_agent", {})
+    return LiveAgentConfig.model_validate({
+        **app_internal,
+        "max_tool_workers": agent_config.get("max_tool_workers", 3),
+        "compaction": app_internal.get("compaction") or None,
+    })
 
-    compaction = app_internal.get("compaction", {})
-    compaction_config = None
-    if compaction:
-        trigger = compaction.get("trigger_tokens")
-        target = compaction.get("target_tokens")
-        compaction_config = types.ContextWindowCompressionConfig(
-            trigger_tokens=int(trigger) if trigger is not None else None,
-            sliding_window=types.SlidingWindow(target_tokens=int(target)) if target is not None else None,
-        )
 
-    response_modalities = ["AUDIO"]
-    return RunConfig(
-        streaming_mode=StreamingMode.BIDI,
-        response_modalities=response_modalities,
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=None,
-        context_window_compression=compaction_config,
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(
-                disabled=True
-            ),
-            activity_handling=types.ActivityHandling.NO_INTERRUPTION,
-        ),
-        tool_thread_pool_config=ToolThreadPoolConfig(
-            max_workers=agent_config.get("max_tool_workers", 3)
-        ),
-        get_session_config=GetSessionConfig(num_recent_events=0),
-        session_resumption=types.SessionResumptionConfig()
-    )
+def build_run_config(
+    config: dict | None = None,
+    provider: LiveAgentProvider | None = None,
+) -> RunConfig:
+    """Construct streaming options through the selected Live backend."""
+    settings = build_live_agent_config(config)
+    selected = provider if provider is not None else get_live_agent_provider(settings.provider)
+    return selected.build_run_config(settings)
 
 
 def get_playlists_context(theater: Any) -> str:
@@ -557,7 +506,11 @@ def get_references_context(tool_bundle: ToolBundle) -> str:
     return "No preloaded reference images found."
 
 
-def create_agent(theater: Theater, tool_bundle: ToolBundle) -> Agent:
+def create_agent(
+    theater: Theater,
+    tool_bundle: ToolBundle,
+    provider: LiveAgentProvider | None = None,
+) -> Agent:
     """Create a session-scoped agent."""
     config = theater.config()
 
@@ -593,11 +546,11 @@ def create_agent(theater: Theater, tool_bundle: ToolBundle) -> Agent:
         user_help_enabled=bool(user_help_config.get("enabled", True)),
         agent=config.get("live_agent", {}),
     ).strip()
-    app_internal = get_app_config().get("live_agent", {})
-    model_id = app_internal.get("model_id") or app_internal.get("model") or "gemini-3.8-live"
+    settings = build_live_agent_config(config)
+    selected = provider if provider is not None else get_live_agent_provider(settings.provider)
     return Agent(
         name="narratron_agent",
-        model=DeveloperLiveGemini(model=model_id),
+        model=selected.create_model(settings),
         instruction=instruction,
         tools=tool_bundle.tools,
         # planner=BuiltInPlanner(thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_budget=1024)),

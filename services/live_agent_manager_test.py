@@ -5,10 +5,13 @@ import os
 import tempfile
 import time
 import unittest
+from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from components.theater_manager import TheaterManager
+from google.adk.events import Event
+from providers import LiveAgentProvider
 from services.live_agent_manager import (
     AUTO_BEGIN_ADVENTURE_ACTION,
     LiveAgentSessionManager,
@@ -31,6 +34,37 @@ def canvas_observability_fixture(image_path=None, collaboration_enabled=False, d
 
 
 class TestLiveAgentSessionManager(unittest.TestCase):
+    def test_injected_provider_stream_is_closed_when_event_delivery_fails(self) -> None:
+        closed: list[bool] = []
+
+        async def events() -> AsyncGenerator[Event, None]:
+            try:
+                yield Event(author="alternate", turn_complete=True)
+            finally:
+                closed.append(True)
+
+        runner = MagicMock()
+        runner.agent.tools = []
+        runner.session_service.get_session = AsyncMock(return_value=MagicMock())
+        provider = MagicMock(spec=LiveAgentProvider)
+        provider.id = "alternate"
+        provider.run_live.return_value = events()
+        session = LiveAgentSession(
+            theater_id="alternate", runner=runner, tool_bundle=MagicMock(), provider=provider,
+        )
+        session.broadcast_text = AsyncMock(side_effect=[RuntimeError("browser disconnected"), None])
+        asyncio.run(session._run_downstream())
+        self.assertEqual(closed, [True])
+        provider.build_run_config.assert_called_once()
+        provider.run_live.assert_called_once()
+        request = provider.run_live.call_args.args[0]
+        self.assertIs(request.input_queue, session.live_request_queue)
+        self.assertIs(request.run_config, provider.build_run_config.return_value)
+        self.assertIs(request.runner, runner)
+        self.assertEqual(request.session_id, session.adk_session_id)
+        runner.run_live.assert_not_called()
+        self.assertEqual(session.status, "stopped")
+
     def test_summon_starts_planner_and_greeting_once(self):
         class PlannerTools:
             def record_user_input(self):

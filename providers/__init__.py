@@ -1,4 +1,4 @@
-"""Provider-neutral image, music, and text response generation integrations."""
+"""Provider integrations for Live agents and media generation."""
 
 from providers.image_provider import (
     ImageGenerationRequest,
@@ -8,6 +8,14 @@ from providers.image_provider import (
     ImageReference,
 )
 from providers.openai_image_provider import OpenAIImageProvider
+from providers.live_agent_provider import (
+    LiveAgentCompactionConfig,
+    LiveAgentConfig,
+    LiveAgentProvider,
+    LiveAgentProviderError,
+    LiveAgentRunRequest,
+)
+from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
 from providers.fal_flux_klein_provider import FalFluxKleinProvider
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest, LayeredImageResult
 from providers.hybrid_image_provider import HybridImageProvider, ImageClassifierResponse
@@ -51,6 +59,7 @@ from providers.video_provider import (
 )
 from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 from providers.registry import (
+    get_live_agent_provider,
     get_image_provider,
     get_music_provider,
     get_music_adapter,
@@ -66,6 +75,13 @@ from providers.registry import (
 )
 
 __all__ = [
+    "LiveAgentCompactionConfig",
+    "LiveAgentConfig",
+    "LiveAgentProvider",
+    "LiveAgentProviderError",
+    "LiveAgentRunRequest",
+    "GeminiLiveAgentProvider",
+    "get_live_agent_provider",
     "ImageGenerationRequest",
     "ImageGenerationResult",
     "ImageProvider",
