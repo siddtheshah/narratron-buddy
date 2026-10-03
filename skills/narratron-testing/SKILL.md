@@ -28,13 +28,24 @@ UI integration tests are the exception: place them in `testing/ui/`, also using 
   - `services/live_stream_service_test.py` (tests `services/live_stream_service.py`)
 
 ### Running Unit Tests
-To run unit tests:
+Always invoke pytest via `uv run pytest`. The test runner is configured with `pytest-xdist` (`addopts = -n auto` in `pytest.ini`) to execute tests in parallel across available CPU workers by default:
 
 ```bash
-pytest <subdirectory> --ignore=scratch
+# Run the full test suite in parallel (auto-detects CPU count)
+uv run pytest
+
+# Run a specific directory or file
+uv run pytest services/
+uv run pytest tools/image/image_tool_test.py
+
+# Run serially without worker processes (useful for step debugging or pdb)
+uv run pytest -n 0
+
+# Limit the number of parallel workers
+uv run pytest -n 4
 ```
 
-Only run the full unit test suite when testing broader integrations.
+Parallel execution via `pytest-xdist` significantly reduces full test suite run times (from minutes to under a minute on multi-core systems).
 
 ### Mocking Practices
 - **Gemini API / Vertex AI**: Always mock `genai.Client` in `ImageTools` tests using `unittest.mock.patch("tools.image_tool.genai.Client")` to avoid external API calls during unit tests.
@@ -77,7 +88,7 @@ testing/
 ### Running an Evaluation Testcase
 
 ```bash
-python testing/e2e/validate_single_image_generation.py --testcase=testing/testcases/desert_basic --headless=True
+uv run python testing/e2e/validate_single_image_generation.py --testcase=testing/testcases/desert_basic --headless=True
 ```
 
 ### Available Command Flags

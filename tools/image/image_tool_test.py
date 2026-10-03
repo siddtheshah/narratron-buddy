@@ -198,7 +198,7 @@ class TestImageTools(BaseTestCase):
             canvas_state.visual.shown_image_path,
             str(image_path),
         )
-        self.assertEqual(canvas_state.get_latest_state()["latest"], "/theaters/starting_image/references/opening scene.jpg")
+        self.assertEqual(canvas_state.get_latest_state()["latest"], "/theaters/starting_image/references/opening%20scene.jpg")
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_has_priority_over_show_image_in_next_cycle(self, mock_get_provider):

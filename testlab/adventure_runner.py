@@ -624,6 +624,7 @@ class AdventureSession:
             theater_name=self.adventure_id,
             config=self.config,
             agent=self.config.get("live_agent", {}),
+            text_only_output=bool(self.config.get("live_agent", {}).get("text_only_output", False)),
         ).strip()
 
         app_internal = get_app_config().get("live_agent", {})
