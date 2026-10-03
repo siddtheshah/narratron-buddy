@@ -69,13 +69,19 @@ even when the continuation limit is reached.
 Tools own their continuation policy via `@terminal` from `tools.tool_metadata`.
 This sets the callable's `terminal` attribute. ToolBundle preserves it in ADK's
 custom metadata, which the OpenAI adapter reads when constructing the connection.
-Terminal tools include `create_image`, `show_image`, chat updates, and music
-creation/playback controls. Their non-error status results, including background
+Terminal tools include image creation/display, chat updates, music and animation
+creation/playback controls, note and character updates, interactive canvas updates
+and clearing, and help answers posted directly to chat. Story action submission is
+also terminal: its immediate `processing` result needs no acknowledgement, while
+the completed story-planner notification wakes the agent to stage the scene.
+Animation-ready notifications likewise wake the agent for playback.
+Their non-error status results, including background
 generation and queued actions, do not request an acknowledgement response.
 Explicit errors and unrecognized structured results still allow continuation.
 If any call in a parallel group requires continuation, the group continues once
 all results arrive. User input and actionable notifications still wake the agent.
-Unannotated tools such as `browse_images` continue so their results can inform
+Unannotated tools such as image/animation browsing, character lookup, help-file
+research, and canvas observability continue so their results can inform
 the next action. Independent staging actions should be requested together; a turn ending
 only in successful deferred actions waits for new input.
 

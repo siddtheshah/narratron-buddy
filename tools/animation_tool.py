@@ -30,6 +30,7 @@ from providers import (
 )
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
 from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
+from tools.tool_metadata import terminal
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
@@ -182,6 +183,7 @@ class AnimationTools(BaseTools):
             lookup_result=lookup_result,
         )
 
+    @terminal
     @blocked_when_canvas_pinned
     @with_cycle_cooldown(action_desc="generating another animation")
     def create_animation(
@@ -762,6 +764,7 @@ class AnimationTools(BaseTools):
             caller_label="AnimationTools",
         )
 
+    @terminal
     @blocked_when_canvas_pinned
     @with_cycle_cooldown(action_desc="playing another animation")
     def play_animation(self, animation_id: str) -> str:

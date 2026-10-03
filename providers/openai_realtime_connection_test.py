@@ -79,6 +79,11 @@ def tool_result(
     {"result": "Image generation started in background. It will automatically appear."},
     {"result": "Image queued; waiting for another operation."},
     {"status": "queued"},
+    {"status": "processing", "message": "Story responder is resolving the action."},
+    {"status": "displayed", "surface_id": "canvas_1"},
+    {"status": "updated", "surface_id": "canvas_1"},
+    {"status": "applied", "surface_count": 2},
+    {"status": "cleared", "removed": 1},
 ])
 async def test_successful_terminal_result_waits_for_next_user_input(
     payload: dict[str, JsonValue],
@@ -103,6 +108,7 @@ async def test_successful_terminal_result_waits_for_next_user_input(
     {"result": "Failed to create the image."},
     {"result": {"unexpected": True}},
     {"status": "error"},
+    {"status": "blocked"},
     {"status": "ok", "error": "Display failed"},
 ])
 async def test_terminal_errors_and_unknown_results_still_continue(

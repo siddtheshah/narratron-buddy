@@ -16,6 +16,7 @@ from google.genai import types
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, with_cycle_cooldown
+from tools.tool_metadata import terminal
 
 
 _TEXT_FILE_SUFFIXES = frozenset({".html", ".md"})
@@ -57,6 +58,7 @@ class UserHelpTool(BaseTools):
         project_root = Path(__file__).resolve().parent.parent
         return (project_root / "templates", project_root / "docs")
 
+    @terminal
     @with_cycle_cooldown(action_desc="researching another interface-help question")
     async def user_help_tool(self, question: str) -> str:
         """Research current templates and docs, then answer a UI usage question.

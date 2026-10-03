@@ -174,7 +174,10 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
             return False
         status = response.response.get("status")
         if status is not None:
-            return status in ("ok", "success", "queued", "started")
+            return status in (
+                "ok", "success", "queued", "started", "processing",
+                "displayed", "updated", "applied", "cleared",
+            )
         # ADK wraps string return values from Narratron tools as {'result': ...}.
         try:
             result = _TOOL_RESULT_TEXT.validate_python(

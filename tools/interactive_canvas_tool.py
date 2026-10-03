@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from providers import TextResponseAttachment, TextResponseProvider, TextResponseRequest
 from tools.base_tool import BaseTools, logged_tool_call, with_cycle_cooldown
+from tools.tool_metadata import terminal
 
 logger = logging.getLogger(__name__)
 LOG_PREFIX = "[InteractiveCanvasTools]"
@@ -660,6 +661,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
             raise ValueError(f"Identifier {value!r} cannot be normalized safely.")
         return normalized
 
+    @terminal
     @with_cycle_cooldown(action_desc="updating the interactive canvas")
     def update_interactive_canvas(self, request: str) -> dict[str, Any] | str:
         """Ask the UI agent to add new UI or update the relevant current surface.
@@ -794,6 +796,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
             "persistent": prepared[0][0]["persistent"] if len(prepared) == 1 else None,
         }
 
+    @terminal
     @logged_tool_call
     def clear_interactive_canvas(self) -> dict[str, Any]:
         """Remove all generated A2UI surfaces from the current canvas."""

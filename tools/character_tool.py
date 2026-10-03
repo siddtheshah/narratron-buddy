@@ -13,6 +13,7 @@ from components.character_manager import (
 )
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, logged_tool_call
+from tools.tool_metadata import terminal
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class CharacterTool(BaseTools):
             raise ValueError("character_manager is required.")
         self.character_manager = character_manager
 
+    @terminal
     @logged_tool_call
     def create_or_update_character(
         self,
@@ -90,6 +92,7 @@ class CharacterTool(BaseTools):
         result: CharacterLookupResult = self.character_manager.lookup_character(query=query)
         return result.describe()
 
+    @terminal
     @logged_tool_call
     def clear_characters(self) -> str:
         """Clear all active characters from the scene.

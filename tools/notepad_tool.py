@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, logged_tool_call
+from tools.tool_metadata import terminal
 from components.notepad import Notepad
 
 
@@ -33,11 +34,13 @@ class NotepadTool(BaseTools):
         self.reload_from_session_state()
         self.notepad.sync_story_state()
 
+    @terminal
     @logged_tool_call
     def update_sticky_note(self, topic: str, info: str) -> str:
         """Add or update one durable sticky note for the current narration."""
         return self.notepad.update_sticky_note(topic, info)
 
+    @terminal
     def update_or_insert_named_element(self, name: str, content: str) -> str:
         return self.update_sticky_note(name, content)
 

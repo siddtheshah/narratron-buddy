@@ -15,6 +15,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
 from tools.base_tool import BaseTools, with_cycle_cooldown
+from tools.tool_metadata import terminal
 from components.character_manager import CharacterManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
@@ -296,6 +297,7 @@ class StoryTool(BaseTools):
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 
+    @terminal
     @with_cycle_cooldown(
         action_desc="resolving story update",
         tool_name="process_user_action",
@@ -363,10 +365,12 @@ class StoryTool(BaseTools):
     def max_named_elements(self) -> int:
         return self.notepad.max_named_elements
 
+    @terminal
     def update_sticky_note(self, topic: str, info: str) -> str:
         """Insert or replace one sticky note in the current scene."""
         return self.notepad.update_sticky_note(topic, info)
 
+    @terminal
     def update_or_insert_named_element(self, name: str, content: str) -> str:
         return self.update_sticky_note(topic=name, info=content)
 
