@@ -40,10 +40,6 @@ class NotepadTool(BaseTools):
         """Add or update one durable sticky note for the current narration."""
         return self.notepad.update_sticky_note(topic, info)
 
-    @terminal
-    def update_or_insert_named_element(self, name: str, content: str) -> str:
-        return self.update_sticky_note(name, content)
-
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
         return self.notepad.get_present_sticky_notes()
 

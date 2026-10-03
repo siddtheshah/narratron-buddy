@@ -46,8 +46,8 @@ def test_format_canvas_state_includes_present_scene_elements():
         canvas_manager=MagicMock(),
         text_response_provider=MagicMock(),
     )
-    elements.update_or_insert_named_element("hero", "Mara, a cartographer")
-    elements.update_or_insert_named_element("tone", "Hopeful and tense")
+    elements.update_sticky_note("hero", "Mara, a cartographer")
+    elements.update_sticky_note("tone", "Hopeful and tense")
 
     state = format_canvas_state(
         CanvasFixture(),

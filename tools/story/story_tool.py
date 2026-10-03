@@ -370,10 +370,6 @@ class StoryTool(BaseTools):
         """Insert or replace one sticky note in the current scene."""
         return self.notepad.update_sticky_note(topic, info)
 
-    @terminal
-    def update_or_insert_named_element(self, name: str, content: str) -> str:
-        return self.update_sticky_note(topic=name, info=content)
-
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
         return self.notepad.get_present_sticky_notes()
 
