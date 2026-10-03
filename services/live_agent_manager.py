@@ -78,6 +78,9 @@ class LiveAgentSession:
         self.owner_user_id: Optional[int] = None
         live_agent_config = self.config.get("live_agent", {})
         self.enable_tool_injection = bool(live_agent_config.get("enable_tool_injection", False))
+        self.enable_regular_observability: bool = bool(
+            live_agent_config.get("enable_regular_observability", True)
+        )
         self.observability_startup_delay = self._get_nonnegative_config_seconds(
             live_agent_config.get(
                 "observability_startup_delay",
@@ -434,6 +437,8 @@ class LiveAgentSession:
         A successful update also refreshes ``last_canvas_state_sent``, naturally
         deferring the next periodic canvas observability update.
         """
+        if not self.enable_regular_observability:
+            return False
         if not self.websocket_connected:
             logger.debug(
                 "[LiveAgentSession] User disconnected; suppressing collaboration toggle update for session %s.",
