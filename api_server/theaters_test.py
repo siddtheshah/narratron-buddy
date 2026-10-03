@@ -62,12 +62,15 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn("openAuthModal('login')", join_response.text)
         self.assertIn("auth-flow.js", join_response.text)
 
-    def test_deploy_page(self):
+    def test_deploy_page(self) -> None:
         response = self.client.get("/deploy")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Theater Deployer", response.text)
         self.assertIn("Deploy Theater", response.text)
-        self.assertIn("Fresh Blank Slate", response.text)
+        self.assertIn("Blank Canvas", response.text)
+        self.assertNotIn("Configure with Assets", response.text)
+        self.assertNotIn('id="pathCardIndividual"', response.text)
+        self.assertNotIn('id="refFileInput"', response.text)
         self.assertIn('id="pathCardAdventure"', response.text)
         self.assertIn('id="cfgAdventureMode"', response.text)
         self.assertIn('id="theaterNameConfig"', response.text)

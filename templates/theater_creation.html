@@ -715,6 +715,17 @@
             border-radius: var(--radius-sm);
         }
 
+        .theater-action-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            font-size: 1.1rem;
+            text-decoration: none;
+        }
+
         .btn-danger {
             background: rgba(239, 68, 68, 0.15);
             color: #fca5a5;
@@ -967,7 +978,7 @@
         }
 
         /* Replaced by the YAML editor; retained markup can be removed in a later UI cleanup. */
-        .advanced-config-body>div {
+        #advancedConfig .advanced-config-body>div {
             display: none;
         }
 
@@ -1012,11 +1023,11 @@
 
     <main>
         <div class="hero">
-            <h1>Theater & Asset Deployer</h1>
-            <p>Deploy a Theater with your own personal assets and custom styles.</p>
+            <h1>Theater Deployer</h1>
+            <p>Start a blank canvas, launch an adventure, or deploy a theater package.</p>
             <div class="canvas-return-banner" id="canvasReturnBanner" role="status">
-                <span>Ready to make it your own? Try <strong>Configure with Assets</strong> to add reference images,
-                    playlists, and custom agent settings.</span>
+                <span>Ready to make it your own? Use the <a href="/theater-editor">Theater Editor</a> to add reference
+                    images and music, or expand Blank Canvas settings to configure your tools.</span>
                 <button class="btn btn-secondary btn-sm" type="button" onclick="dismissCanvasReturnBanner()">Got
                     it</button>
             </div>
@@ -1041,20 +1052,14 @@
                         </a>
                         <div class="path-card active" id="pathCardBlank" onclick="selectCreationPath('blank')">
                             <div class="path-icon">✨</div>
-                            <div class="path-title">Fresh Blank Slate</div>
-                            <div class="path-desc">First-timer's demo with default assets and configs</div>
+                            <div class="path-title">Blank Canvas</div>
+                            <div class="path-desc">Start with default assets and optional tool settings</div>
                         </div>
 
                         <div class="path-card" id="pathCardAdventure" onclick="selectCreationPath('adventure')">
                             <div class="path-icon">🗺️</div>
                             <div class="path-title">Adventure Mode</div>
                             <div class="path-desc">Jump into a player-led, choice-driven story</div>
-                        </div>
-
-                        <div class="path-card" id="pathCardIndividual" onclick="selectCreationPath('individual')">
-                            <div class="path-icon">🖼️</div>
-                            <div class="path-title">Configure with Assets</div>
-                            <div class="path-desc">Configure your agent and add individual assets</div>
                         </div>
 
                         <div class="path-card" id="pathCardFolder" onclick="selectCreationPath('folder')">
@@ -1068,183 +1073,8 @@
                 <!-- Common Top Fields -->
                 <div id="theaterNameConfig" class="form-group">
                     <label for="theaterName">Theater Name</label>
-                    <input type="text" id="theaterName" placeholder="e.g. Desert Mystery Adventure"
-                        value="Narratron Adventure">
+                    <input type="text" id="theaterName" placeholder="e.g. Desert Mystery Adventure">
                 </div>
-                <div id="customConfigOptions">
-                    <details id="simpleConfig" class="advanced-config-accordion">
-                        <summary class="advanced-config-summary">
-                            <span style="font-weight: 600; font-size: 0.92rem; color: #a5b4fc;">Simple
-                                Configuration</span>
-                        </summary>
-                        <div id="agentQuickConfig" class="advanced-config-body form-group"
-                            style="margin-bottom: 1.25rem;">
-                            <label for="theaterStyle">Default Image Style</label>
-                            <textarea id="theaterStyle" rows="3"
-                                placeholder="e.g. cinematic watercolor, warm desert palette, soft ink outlines"></textarea>
-                            <small>Leave blank to use the default from <code>theater_default.yaml</code>.</small>
-                            <label for="theaterSpecialInstructions">Special Instructions for the Agent</label>
-                            <textarea id="theaterSpecialInstructions" rows="3"
-                                placeholder="e.g. Keep the tone mysterious and ask before changing the scene."></textarea>
-                            <small>Leave blank to use the default from <code>theater_default.yaml</code>.</small>
-                            <div
-                                style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 1rem;">
-                                <label class="checkbox-card">
-                                    <input type="checkbox" id="cfgUseGeneratedMusic">
-                                    <div>
-                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
-                                            🎵 Use Generated Music</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">AI fills gaps in
-                                            your playlists with generated music</div>
-                                    </div>
-                                </label>
-                                <label class="checkbox-card">
-                                    <input type="checkbox" id="cfgImageGeneration" checked>
-                                    <div>
-                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
-                                            🖼️ AI Image Generation</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Turn off to
-                                            coordinate your mounted visual assets without generating new images</div>
-                                    </div>
-                                </label>
-                                <label class="checkbox-card">
-                                    <input type="checkbox" id="cfgSceneAnimations">
-                                    <div>
-                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">✨
-                                            Scene Animations</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Adds transitions
-                                            between scenes</div>
-                                    </div>
-                                </label>
-                                <label class="checkbox-card">
-                                    <input type="checkbox" id="cfgAdventureMode">
-                                    <div>
-                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
-                                            🗺️ Adventure Mode</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets players
-                                            guide a persistent, choice-driven story</div>
-                                    </div>
-                                </label>
-                                <label class="checkbox-card">
-                                    <input type="checkbox" id="cfgInteractiveCanvas">
-                                    <div>
-                                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
-                                            🧩 Interactive Canvas Tools</div>
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets the agent
-                                            add interactive controls and displays to the canvas</div>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-                    </details>
-
-                    <div
-                        style="text-align: center; margin: 1.25rem 0; color: var(--text-secondary); font-size: 0.9rem;">
-                        - OR -</div>
-                    <!-- Custom Theater Settings (Expandable Accordion) -->
-                    <details id="advancedConfig" class="advanced-config-accordion">
-                        <summary class="advanced-config-summary">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-size: 1.1rem;">⚙️</span>
-                                <div>
-                                    <span style="font-weight: 600; font-size: 0.92rem; color: #a5b4fc;">Advanced Theater
-                                        Configuration</span>
-                                    <small
-                                        style="display: block; color: var(--text-muted); font-size: 0.75rem; font-weight: 400; margin-top: 1px;">
-                                        Edit the configuration inherited from theater_default.yaml
-                                    </small>
-                                </div>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span class="badge badge-created"
-                                    style="font-size: 0.7rem; padding: 2px 8px;">Optional</span>
-                                <span class="accordion-chevron">▼</span>
-                            </div>
-                        </summary>
-
-                        <div class="advanced-config-body">
-                            <section class="theater-yaml-editor">
-                                <label for="theaterConfigEditor" class="config-section-label">Theater YAML</label>
-                                <textarea id="theaterConfigEditor" rows="18" spellcheck="false"
-                                    placeholder="Open Advanced Theater Configuration to load theater_default.yaml"
-                                    style="width: 100%; resize: vertical; box-sizing: border-box; min-height: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.78rem; line-height: 1.45;"></textarea>
-                                <small id="theaterConfigEditorStatus"
-                                    style="color: var(--text-muted); font-size: 0.73rem;">
-                                    Loaded from theater_default.yaml. Changes apply only to this new theater.
-                                </small>
-                            </section>
-                            <!-- Section 1: Agent Behaviors -->
-                            <div>
-                                <div class="config-section-label">🤖 Agent Behaviors</div>
-                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                                    <label class="checkbox-card">
-                                        <input type="checkbox" id="cfgAgentProactivity">
-                                        <div>
-                                            <div
-                                                style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
-                                                Proactive Agent</div>
-                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">Agent will be
-                                                hyper-focused (can drift)</div>
-                                        </div>
-                                    </label>
-                                    <label class="checkbox-card">
-                                        <input type="checkbox" id="cfgAffectiveDialog">
-                                        <div>
-                                            <div
-                                                style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
-                                                Affective Dialog</div>
-                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">Adapts
-                                                emotional
-                                                response tone to context</div>
-                                        </div>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <!-- Section 2: Action Cooldowns -->
-                            <div>
-                                <div class="config-section-label">⏱️ Action Cooldowns (Seconds)</div>
-                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                                    <div class="form-group">
-                                        <label for="cfgImageCooldown" style="font-size: 0.78rem;">Image Cooldown</label>
-                                        <input type="number" id="cfgImageCooldown" min="0" value="12"
-                                            style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="cfgMusicCooldown" style="font-size: 0.78rem;">Music Cooldown</label>
-                                        <input type="number" id="cfgMusicCooldown" min="0" value="15"
-                                            style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="cfgNotesCooldown" style="font-size: 0.78rem;">Notes Cooldown</label>
-                                        <input type="number" id="cfgNotesCooldown" min="0" value="5"
-                                            style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="cfgChatCooldown" style="font-size: 0.78rem;">Chat Cooldown</label>
-                                        <input type="number" id="cfgChatCooldown" min="0" value="15"
-                                            style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Section 3: Controls & Hotkeys -->
-                            <div>
-                                <div class="config-section-label">⌨️ Orator Controls</div>
-                                <div class="form-group">
-                                    <label for="cfgOratorHotkey" style="font-size: 0.78rem;">Orator Push-To-Talk
-                                        Hotkey</label>
-                                    <input type="text" id="cfgOratorHotkey" value="<ctrl>+<shift>+["
-                                        style="padding: 0.45rem 0.7rem; font-size: 0.85rem;"
-                                        placeholder="e.g. <ctrl>+<shift>+[">
-                                    <small style="color: var(--text-muted); font-size: 0.73rem;">Key combination used to
-                                        trigger live voice streaming.</small>
-                                </div>
-                            </div>
-                        </div>
-                    </details>
-                </div>
-
                 <!-- PATH 1: Blank Canvas -->
                 <div id="pathSectionBlank" class="creation-path-section">
                     <div
@@ -1256,6 +1086,180 @@
                             Deploy an instant interactive theater. Default Narratron library reference assets and
                             ambient audio will be mounted automatically.
                         </p>
+                    </div>
+                    <div id="customConfigOptions" style="margin-top: 1.25rem;">
+                        <details id="simpleConfig" class="advanced-config-accordion">
+                            <summary class="advanced-config-summary">
+                                <span style="font-weight: 600; font-size: 0.92rem; color: #a5b4fc;">Tools & Agent
+                                    Settings</span>
+                                <span class="accordion-chevron">▼</span>
+                            </summary>
+                            <div id="agentQuickConfig" class="advanced-config-body form-group"
+                                style="margin-bottom: 1.25rem;">
+                                <label for="theaterStyle">Default Image Style</label>
+                                <textarea id="theaterStyle" rows="3"
+                                    placeholder="e.g. cinematic watercolor, warm desert palette, soft ink outlines"></textarea>
+                                <small>Leave blank to use the default from <code>theater_default.yaml</code>.</small>
+                                <label for="theaterSpecialInstructions">Special Instructions for the Agent</label>
+                                <textarea id="theaterSpecialInstructions" rows="3"
+                                    placeholder="e.g. Keep the tone mysterious and ask before changing the scene."></textarea>
+                                <small>Leave blank to use the default from <code>theater_default.yaml</code>.</small>
+                                <div
+                                    style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 1rem;">
+                                    <label class="checkbox-card">
+                                        <input type="checkbox" id="cfgUseGeneratedMusic">
+                                        <div>
+                                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                                🎵 Use Generated Music</div>
+                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">AI fills gaps in
+                                                your playlists with generated music</div>
+                                        </div>
+                                    </label>
+                                    <label class="checkbox-card">
+                                        <input type="checkbox" id="cfgImageGeneration" checked>
+                                        <div>
+                                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                                🖼️ AI Image Generation</div>
+                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">Turn off to
+                                                coordinate your mounted visual assets without generating new images</div>
+                                        </div>
+                                    </label>
+                                    <label class="checkbox-card">
+                                        <input type="checkbox" id="cfgSceneAnimations">
+                                        <div>
+                                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">✨
+                                                Scene Animations</div>
+                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">Adds transitions
+                                                between scenes</div>
+                                        </div>
+                                    </label>
+                                    <label class="checkbox-card">
+                                        <input type="checkbox" id="cfgAdventureMode">
+                                        <div>
+                                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                                🗺️ Adventure Mode</div>
+                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets players
+                                                guide a persistent, choice-driven story</div>
+                                        </div>
+                                    </label>
+                                    <label class="checkbox-card">
+                                        <input type="checkbox" id="cfgInteractiveCanvas">
+                                        <div>
+                                            <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                                🧩 Interactive Canvas Tools</div>
+                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">Lets the agent
+                                                add interactive controls and displays to the canvas</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </details>
+
+                        <div
+                            style="text-align: center; margin: 1.25rem 0; color: var(--text-secondary); font-size: 0.9rem;">
+                            - OR -</div>
+                        <!-- Custom Theater Settings (Expandable Accordion) -->
+                        <details id="advancedConfig" class="advanced-config-accordion">
+                            <summary class="advanced-config-summary">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 1.1rem;">⚙️</span>
+                                    <div>
+                                        <span style="font-weight: 600; font-size: 0.92rem; color: #a5b4fc;">Advanced Theater
+                                            Configuration</span>
+                                        <small
+                                            style="display: block; color: var(--text-muted); font-size: 0.75rem; font-weight: 400; margin-top: 1px;">
+                                            Edit the configuration inherited from theater_default.yaml
+                                        </small>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span class="badge badge-created"
+                                        style="font-size: 0.7rem; padding: 2px 8px;">Optional</span>
+                                    <span class="accordion-chevron">▼</span>
+                                </div>
+                            </summary>
+
+                            <div class="advanced-config-body">
+                                <section class="theater-yaml-editor">
+                                    <label for="theaterConfigEditor" class="config-section-label">Theater YAML</label>
+                                    <textarea id="theaterConfigEditor" rows="18" spellcheck="false"
+                                        placeholder="Open Advanced Theater Configuration to load theater_default.yaml"
+                                        style="width: 100%; resize: vertical; box-sizing: border-box; min-height: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.78rem; line-height: 1.45;"></textarea>
+                                    <small id="theaterConfigEditorStatus"
+                                        style="color: var(--text-muted); font-size: 0.73rem;">
+                                        Loaded from theater_default.yaml. Changes apply only to this new theater.
+                                    </small>
+                                </section>
+                                <!-- Section 1: Agent Behaviors -->
+                                <div>
+                                    <div class="config-section-label">🤖 Agent Behaviors</div>
+                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                                        <label class="checkbox-card">
+                                            <input type="checkbox" id="cfgAgentProactivity">
+                                            <div>
+                                                <div
+                                                    style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                                    Proactive Agent</div>
+                                                <div style="font-size: 0.72rem; color: var(--text-secondary);">Agent will be
+                                                    hyper-focused (can drift)</div>
+                                            </div>
+                                        </label>
+                                        <label class="checkbox-card">
+                                            <input type="checkbox" id="cfgAffectiveDialog">
+                                            <div>
+                                                <div
+                                                    style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                                                    Affective Dialog</div>
+                                                <div style="font-size: 0.72rem; color: var(--text-secondary);">Adapts
+                                                    emotional
+                                                    response tone to context</div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Section 2: Action Cooldowns -->
+                                <div>
+                                    <div class="config-section-label">⏱️ Action Cooldowns (Seconds)</div>
+                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                                        <div class="form-group">
+                                            <label for="cfgImageCooldown" style="font-size: 0.78rem;">Image Cooldown</label>
+                                            <input type="number" id="cfgImageCooldown" min="0" value="12"
+                                                style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfgMusicCooldown" style="font-size: 0.78rem;">Music Cooldown</label>
+                                            <input type="number" id="cfgMusicCooldown" min="0" value="15"
+                                                style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfgNotesCooldown" style="font-size: 0.78rem;">Notes Cooldown</label>
+                                            <input type="number" id="cfgNotesCooldown" min="0" value="5"
+                                                style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfgChatCooldown" style="font-size: 0.78rem;">Chat Cooldown</label>
+                                            <input type="number" id="cfgChatCooldown" min="0" value="15"
+                                                style="padding: 0.45rem 0.7rem; font-size: 0.85rem;">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Section 3: Controls & Hotkeys -->
+                                <div>
+                                    <div class="config-section-label">⌨️ Orator Controls</div>
+                                    <div class="form-group">
+                                        <label for="cfgOratorHotkey" style="font-size: 0.78rem;">Orator Push-To-Talk
+                                            Hotkey</label>
+                                        <input type="text" id="cfgOratorHotkey" value="<ctrl>+<shift>+["
+                                            style="padding: 0.45rem 0.7rem; font-size: 0.85rem;"
+                                            placeholder="e.g. <ctrl>+<shift>+[">
+                                        <small style="color: var(--text-muted); font-size: 0.73rem;">Key combination used to
+                                            trigger live voice streaming.</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                 </div>
 
@@ -1311,29 +1315,6 @@
                             placeholder="e.g. Harsh and unforgiving: failures leave lasting scars, enemies exploit mistakes, and victories must be earned—but never take away player agency."></textarea>
                         <small>Sets the planner's tone, pacing, opposition, and consequences. Leave blank for a
                             balanced, consequence-driven adventure.</small>
-                    </div>
-                </div>
-
-                <!-- PATH 2: Individual Asset Upload -->
-                <div id="pathSectionIndividual" class="creation-path-section" style="display: none;">
-                    <div class="form-group">
-                        <label>Reference Images</label>
-                        <div class="dropzone" id="refDropzone">
-                            <input type="file" id="refFileInput" accept="image/*" multiple style="display: none;">
-                            <span style="font-size: 1.5rem;">🖼️</span>
-                            <p>Click or drag & drop reference images here</p>
-                        </div>
-                        <div class="file-list" id="refFileList"></div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Playlists & Tracks</label>
-                        <div id="playlistsContainer"></div>
-                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                            <input type="text" id="newPlaylistName" placeholder="New Playlist Name" style="flex: 1;">
-                            <button class="btn btn-secondary btn-sm" onclick="addNewPlaylistGroup()">+ Add
-                                Playlist</button>
-                        </div>
                     </div>
                 </div>
 
@@ -1455,7 +1436,6 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Theater ID</th>
                             <th>Name</th>
                             <th>Join Key</th>
                             <th>Mounted Assets</th>
@@ -1464,7 +1444,7 @@
                     </thead>
                     <tbody id="theatersTableBody">
                         <tr>
-                            <td colspan="5" class="empty-state">Loading active theaters...</td>
+                            <td colspan="4" class="empty-state">Loading active theaters...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1849,8 +1829,14 @@
 
     <script>
         let currentUser = window.currentUser || null;
-        let refFiles = [];
-        let playlistsData = {};
+        function getDefaultTheaterName() {
+            const day = new Date().toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric',
+            });
+            return `Theater ${day}`;
+        }
+        const defaultTheaterName = getDefaultTheaterName();
+        document.getElementById('theaterName').value = defaultTheaterName;
         const deploymentAcknowledgementStorageKey = 'narratron.deployAcknowledgement.v1';
         const canvasReturnSuggestionStorageKey = 'narratron.canvasReturnSuggestion.v1';
 
@@ -1889,7 +1875,7 @@
             if (params.get('from') !== 'canvas' || localStorage.getItem(canvasReturnSuggestionStorageKey)) return;
 
             localStorage.setItem(canvasReturnSuggestionStorageKey, 'seen');
-            selectCreationPath('individual');
+            selectCreationPath('blank');
             document.getElementById('canvasReturnBanner')?.classList.add('visible');
             params.delete('from');
             const query = params.toString();
@@ -2066,132 +2052,6 @@
 
 
 
-        // Dropzone Reference Files Handling
-        const refDropzone = document.getElementById('refDropzone');
-        const refFileInput = document.getElementById('refFileInput');
-
-        refDropzone.onclick = () => refFileInput.click();
-
-        refFileInput.onchange = (e) => {
-            handleRefFiles(e.target.files);
-        };
-
-        refDropzone.ondragover = (e) => {
-            e.preventDefault();
-            refDropzone.classList.add('dragover');
-        };
-
-        refDropzone.ondragleave = () => {
-            refDropzone.classList.remove('dragover');
-        };
-
-        refDropzone.ondrop = (e) => {
-            e.preventDefault();
-            refDropzone.classList.remove('dragover');
-            handleRefFiles(e.dataTransfer.files);
-        };
-
-        function handleRefFiles(files) {
-            for (let f of files) {
-                if (f.type.startsWith('image/')) {
-                    refFiles.push(f);
-                }
-            }
-            renderRefFileList();
-        }
-
-        function renderRefFileList() {
-            const container = document.getElementById('refFileList');
-            container.innerHTML = '';
-            refFiles.forEach((file, index) => {
-                const pill = document.createElement('div');
-                pill.className = 'file-pill';
-                pill.innerHTML = `
-                    <span>🖼️ ${file.name}</span>
-                    <button class="remove-btn" onclick="removeRefFile(${index})">&times;</button>
-                `;
-                container.appendChild(pill);
-            });
-        }
-
-        function removeRefFile(index) {
-            refFiles.splice(index, 1);
-            renderRefFileList();
-        }
-
-        // Playlists Management
-        function addNewPlaylistGroup() {
-            const nameInput = document.getElementById('newPlaylistName');
-            const plName = nameInput.value.trim();
-            if (!plName) return;
-
-            if (!playlistsData[plName]) {
-                playlistsData[plName] = [];
-            }
-            nameInput.value = '';
-            renderPlaylists();
-        }
-
-        function renderPlaylists() {
-            const container = document.getElementById('playlistsContainer');
-            container.innerHTML = '';
-
-            Object.keys(playlistsData).forEach(plName => {
-                const group = document.createElement('div');
-                group.className = 'playlist-group';
-                group.style.marginBottom = '0.75rem';
-
-                const header = document.createElement('div');
-                header.style.display = 'flex';
-                header.style.alignItems = 'center';
-                header.style.justifySpaceBetween = 'space-between';
-                header.style.marginBottom = '0.4rem';
-                header.innerHTML = `<span>🎵 <strong>${plName}</strong></span>`;
-
-                const addTrackBtn = document.createElement('button');
-                addTrackBtn.className = 'btn-sm btn-success';
-                addTrackBtn.innerText = '+ Track';
-                addTrackBtn.style.marginLeft = 'auto';
-
-                const trackInput = document.createElement('input');
-                trackInput.type = 'file';
-                trackInput.accept = 'audio/*';
-                trackInput.multiple = true;
-                trackInput.style.display = 'none';
-
-                trackInput.onchange = (e) => {
-                    for (let f of e.target.files) {
-                        playlistsData[plName].push(f);
-                    }
-                    renderPlaylists();
-                };
-
-                addTrackBtn.onclick = () => trackInput.click();
-                header.appendChild(addTrackBtn);
-                group.appendChild(header);
-                group.appendChild(trackInput);
-
-                playlistsData[plName].forEach((trackFile, index) => {
-                    const trackRow = document.createElement('div');
-                    trackRow.className = 'file-pill';
-                    trackRow.style.marginTop = '0.25rem';
-                    trackRow.innerHTML = `<span>${trackFile.name}</span>`;
-
-                    const remTrack = document.createElement('button');
-                    remTrack.className = 'remove-btn';
-                    remTrack.innerHTML = '&times;';
-                    remTrack.onclick = () => {
-                        playlistsData[plName].splice(index, 1);
-                        renderPlaylists();
-                    };
-                    trackRow.appendChild(remTrack);
-                    group.appendChild(trackRow);
-                });
-
-                container.appendChild(group);
-            });
-        }
-
         // Asset Folder & ZIP Dropzone Handling
         let mountedZipFile = null;
         let mountedFolderFiles = [];
@@ -2287,19 +2147,11 @@
 
                 if (parts.includes('references') || (cleanName.match(/\.(png|jpg|jpeg|webp|gif)$/i) && !parts.includes('playlists'))) {
                     refCount++;
-                    if (!refFiles.some(rf => rf.name === cleanName)) {
-                        refFiles.push(f);
-                    }
                 } else if (parts.includes('playlists')) {
                     const idx = parts.indexOf('playlists');
                     const plName = (idx + 1 < parts.length - 1) ? parts[idx + 1] : 'default';
                     if (!playListMap[plName]) playListMap[plName] = 0;
                     playListMap[plName]++;
-
-                    if (!playlistsData[plName]) playlistsData[plName] = [];
-                    if (!playlistsData[plName].some(tf => tf.name === cleanName)) {
-                        playlistsData[plName].push(f);
-                    }
                 }
             });
 
@@ -2310,9 +2162,6 @@
             folderConfigReadPromise = theaterConfigFile
                 ? theaterConfigFile.text().then(text => { folderTheaterConfigYaml = text; })
                 : null;
-
-            renderRefFileList();
-            renderPlaylists();
 
             const summarySpan = document.getElementById('folderManifestSummary');
             const detailsDiv = document.getElementById('folderManifestDetails');
@@ -2342,10 +2191,10 @@
             if (manifestCard) manifestCard.style.display = 'none';
         }
 
-        // 3 Creation Path State & Switcher
+        // Creation Path State & Switcher
         const deployQuery = new URLSearchParams(window.location.search);
         const requestedCreationPath = deployQuery.get('creation_path');
-        let currentCreationPath = ['blank', 'adventure', 'individual', 'folder'].includes(requestedCreationPath)
+        let currentCreationPath = ['blank', 'adventure', 'folder'].includes(requestedCreationPath)
             ? requestedCreationPath
             : 'blank';
 
@@ -2353,22 +2202,18 @@
             currentCreationPath = mode;
 
             const cardFolder = document.getElementById('pathCardFolder');
-            const cardIndividual = document.getElementById('pathCardIndividual');
             const cardBlank = document.getElementById('pathCardBlank');
             const cardAdventure = document.getElementById('pathCardAdventure');
 
             const secFolder = document.getElementById('pathSectionFolder');
-            const secIndividual = document.getElementById('pathSectionIndividual');
             const secBlank = document.getElementById('pathSectionBlank');
             const secAdventure = document.getElementById('pathSectionAdventure');
 
             const deployBtnText = document.getElementById('deployBtnText');
-            const customConfigOptions = document.getElementById('customConfigOptions');
             const theaterNameConfig = document.getElementById('theaterNameConfig');
 
-            [cardFolder, cardIndividual, cardBlank, cardAdventure].forEach(c => c && c.classList.remove('active'));
-            [secFolder, secIndividual, secBlank, secAdventure].forEach(s => s && (s.style.display = 'none'));
-            if (customConfigOptions) customConfigOptions.style.display = mode === 'individual' ? 'block' : 'none';
+            [cardFolder, cardBlank, cardAdventure].forEach(c => c && c.classList.remove('active'));
+            [secFolder, secBlank, secAdventure].forEach(s => s && (s.style.display = 'none'));
             if (theaterNameConfig) theaterNameConfig.style.display = 'block';
 
             if (mode === 'adventure') {
@@ -2379,10 +2224,6 @@
                 if (cardFolder) cardFolder.classList.add('active');
                 if (secFolder) secFolder.style.display = 'block';
                 if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater from Folder';
-            } else if (mode === 'individual') {
-                if (cardIndividual) cardIndividual.classList.add('active');
-                if (secIndividual) secIndividual.style.display = 'block';
-                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater with Custom Assets';
             } else if (mode === 'blank') {
                 if (cardBlank) cardBlank.classList.add('active');
                 if (secBlank) secBlank.style.display = 'block';
@@ -2460,7 +2301,7 @@
             }
 
             const nameInput = document.getElementById('theaterName');
-            if (nameInput && (nameInput.value === 'Narratron Theater' || nameInput.value === 'Narratron Adventure' || !nameInput.value)) {
+            if (nameInput && (nameInput.value === defaultTheaterName || !nameInput.value.trim())) {
                 nameInput.value = adv.title || adv.id;
             }
         }
@@ -2532,7 +2373,8 @@
                 return;
             }
 
-            const name = document.getElementById('theaterName').value.trim() || 'Narratron Canvas';
+            const enteredName = document.getElementById('theaterName').value.trim();
+            const name = !enteredName || enteredName === defaultTheaterName ? getDefaultTheaterName() : enteredName;
             const style = document.getElementById('theaterStyle').value.trim();
             const specialInstructions = document.getElementById('theaterSpecialInstructions').value.trim();
             const deployBtn = document.getElementById('deployBtn');
@@ -2549,17 +2391,22 @@
                 const formData = new FormData();
                 formData.append('name', name);
                 formData.append('creation_mode', currentCreationPath);
-                formData.append('agent_style', style);
-                formData.append('agent_special_instructions', specialInstructions);
-                formData.append('advanced_config_canonical', advancedConfigIsCanonical);
-                formData.append('use_generated_music', document.getElementById('cfgUseGeneratedMusic')?.checked ? 'true' : 'false');
-                formData.append('enable_image_generation', document.getElementById('cfgImageGeneration')?.checked ? 'true' : 'false');
-                formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
+                const useBlankConfig = currentCreationPath === 'blank';
+                if (useBlankConfig) {
+                    formData.append('agent_style', style);
+                    formData.append('agent_special_instructions', specialInstructions);
+                    formData.append('advanced_config_canonical', advancedConfigIsCanonical);
+                    formData.append('use_generated_music', document.getElementById('cfgUseGeneratedMusic')?.checked ? 'true' : 'false');
+                    formData.append('enable_image_generation', document.getElementById('cfgImageGeneration')?.checked ? 'true' : 'false');
+                    formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
+                    formData.append('enable_interactive_canvas',
+                        document.getElementById('cfgInteractiveCanvas')?.checked ? 'true' : 'false');
+                }
                 formData.append('enable_adventure_mode',
-                    currentCreationPath === 'adventure' || document.getElementById('cfgAdventureMode')?.checked ? 'true' : 'false');
-                formData.append('enable_interactive_canvas',
-                    document.getElementById('cfgInteractiveCanvas')?.checked ? 'true' : 'false');
-                formData.append('story_planning_style', document.getElementById('storyPlanningStyle')?.value.trim() || '');
+                    currentCreationPath === 'adventure' || (useBlankConfig && document.getElementById('cfgAdventureMode')?.checked) ? 'true' : 'false');
+                if (currentCreationPath === 'adventure') {
+                    formData.append('story_planning_style', document.getElementById('storyPlanningStyle')?.value.trim() || '');
+                }
 
                 const presetAdventureId = document.getElementById('adventurePresetSelect')?.value || '';
                 if (currentCreationPath === 'adventure' && presetAdventureId) {
@@ -2567,7 +2414,7 @@
                 }
 
                 const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
-                if (advancedConfigIsCanonical && theaterConfigYaml) {
+                if (useBlankConfig && advancedConfigIsCanonical && theaterConfigYaml) {
                     formData.append('advanced_config', theaterConfigYaml);
                 }
 
@@ -2584,16 +2431,6 @@
                     if (folderTheaterConfigYaml) {
                         formData.append('folder_theater_config_yaml', folderTheaterConfigYaml);
                     }
-                } else if (currentCreationPath === 'individual') {
-                    refFiles.forEach(file => {
-                        formData.append('reference_files', file);
-                    });
-
-                    Object.keys(playlistsData).forEach(plName => {
-                        playlistsData[plName].forEach(file => {
-                            formData.append(`playlist_${plName}`, file);
-                        });
-                    });
                 }
 
                 const response = await fetch('/api/theaters/create-and-deploy', {
@@ -2678,7 +2515,7 @@
                     const emptyMsg = currentUser
                         ? 'No personal sessions found. Create your first theater above!'
                         : 'No global theaters deployed yet.';
-                    body.innerHTML = `<tr><td colspan="5" class="empty-state">${emptyMsg}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="4" class="empty-state">${emptyMsg}</td></tr>`;
                     return;
                 }
 
@@ -2693,10 +2530,10 @@
                         joinKeyHtml += `<button class="copy-key-btn" onclick="copyJoinKey('${s.join_key}', this)">📋 Copy</button>`;
                     }
 
-                    let actionsHtml = `<button class="btn-sm btn-success" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')">Launch Canvas</button>`;
-                    actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; font-size:1.1rem;" title="Export Assets" download>📦</a>`;
+                    let actionsHtml = `<button class="btn-sm btn-success theater-action-icon" title="Launch Canvas" aria-label="Launch Canvas" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')"><span aria-hidden="true">▶</span></button>`;
+                    actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary theater-action-icon" title="Export Assets" aria-label="Export Assets" download><span aria-hidden="true">📦</span></a>`;
                     if (s.is_owner) {
-                        actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary" style="text-decoration:none;">Edit in Builder</a>`;
+                        actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary theater-action-icon" title="Edit in Builder" aria-label="Edit in Builder"><span aria-hidden="true">✦</span></a>`;
                         actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroyTheater('${s.theater_id}')">Destroy</button>`;
                     }
 
@@ -2708,7 +2545,6 @@
                         : '';
 
                     tr.innerHTML = `
-                        <td><code>${s.theater_id}</code></td>
                         <td>
                             <div id="nameCell-${s.theater_id}" style="display:flex; align-items:center; gap:6px;">
                                 <strong>${safeName}</strong> ${ownerBadge} ${editIconHtml}
@@ -2722,7 +2558,7 @@
                 });
             } catch (err) {
                 console.error('Error loading theaters:', err);
-                body.innerHTML = `<tr><td colspan="5" class="empty-state">Error loading active theaters.</td></tr>`;
+                body.innerHTML = `<tr><td colspan="4" class="empty-state">Error loading active theaters.</td></tr>`;
             }
         }
 
@@ -3032,8 +2868,6 @@
 
         // Initialize on load
         async function initPage() {
-            playlistsData['default'] = [];
-            renderPlaylists();
             showDeploymentAcknowledgement();
             showCanvasReturnSuggestion();
             await loadTheaters();
