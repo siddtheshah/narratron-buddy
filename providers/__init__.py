@@ -14,8 +14,10 @@ from providers.live_agent_provider import (
     LiveAgentProvider,
     LiveAgentProviderError,
     LiveAgentRunRequest,
+    OpenAIRealtimeConfig,
 )
 from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
+from providers.openai_live_agent_provider import OpenAILiveAgentProvider
 from providers.fal_flux_klein_provider import FalFluxKleinProvider
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest, LayeredImageResult
 from providers.hybrid_image_provider import HybridImageProvider, ImageClassifierResponse
@@ -81,6 +83,8 @@ __all__ = [
     "LiveAgentProviderError",
     "LiveAgentRunRequest",
     "GeminiLiveAgentProvider",
+    "OpenAILiveAgentProvider",
+    "OpenAIRealtimeConfig",
     "get_live_agent_provider",
     "ImageGenerationRequest",
     "ImageGenerationResult",

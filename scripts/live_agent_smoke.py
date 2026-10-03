@@ -65,7 +65,11 @@ async def run_probe(audio_path: Path | None) -> None:
     )
     runner = InMemoryRunner(agent=agent, app_name="live_smoke_probe")
     session = await runner.session_service.create_session(app_name=runner.app_name, user_id="smoke")
-    queue = PriorityLiveRequestQueue(live_tool_budget=5)
+    queue = PriorityLiveRequestQueue(
+        live_tool_budget=5,
+        background_content_is_partial=provider.background_content_is_partial,
+        tool_results_bypass_input_window=provider.tool_results_bypass_input_window,
+    )
     queue.send_user_input(types.Content(role="user", parts=[types.Part(text="typed input probe")]))
     expected = {"typed_input", "audio_input"} if audio is not None else {"typed_input"}
     completed: set[str] = set()
@@ -84,9 +88,10 @@ async def run_probe(audio_path: Path | None) -> None:
                 if response.name == "report_probe" and response.response.get("status") == "ok":
                     completed.add(str(response.response["label"]))
                     print(f"{model_id}: {response.response['label']} tool result received", flush=True)
-            if event.turn_complete and "typed_input" in completed and audio is not None and audio_task is None:
+            turn_finished = event.turn_complete and event.interaction_status != types.InteractionStatus.IN_PROGRESS
+            if turn_finished and "typed_input" in completed and audio is not None and audio_task is None:
                 audio_task = asyncio.create_task(send_audio(queue, audio))
-            if event.turn_complete and expected <= completed:
+            if turn_finished and expected <= completed:
                 print(f"PASS: {model_id} completed input, tool call, tool result, and model turn", flush=True)
                 return
         raise RuntimeError(f"Live stream ended before completing probes: {expected - completed}")

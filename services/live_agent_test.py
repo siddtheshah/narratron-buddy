@@ -108,11 +108,13 @@ class TestCreateAgent(unittest.TestCase):
             AGENT_INSTRUCTION_TEMPLATE,
         )
 
+    @patch("services.live_agent.get_app_config")
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
     def test_create_agent_calls_list_references_on_init(
-        self, mock_agent_cls, mock_bundle_fn
-    ):
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock, mock_config: MagicMock,
+    ) -> None:
+        mock_config.return_value = {"live_agent": {"provider": "gemini", "model_id": "gemini-3.8-live"}}
         mock_image_tools = MagicMock()
         mock_image_tools.list_references.return_value = [
             {
@@ -137,7 +139,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Preloaded References Context", instruction)
         self.assertIn("hero_character", instruction)
         self.assertIn("/path/to/hero_character.png", instruction)
-        self.assertIsInstance(mock_agent_cls.call_args.kwargs["model"], DeveloperLiveGemini)
+        self.assertEqual(mock_agent_cls.call_args.kwargs["model"].model, "gemini-3.8-live")
         self.assertIs(agent_inst, mock_agent_cls.return_value)
 
     @patch("services.live_agent.get_playlists_context")

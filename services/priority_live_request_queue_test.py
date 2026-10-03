@@ -7,6 +7,35 @@ from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 class TestPriorityLiveRequestQueue(unittest.TestCase):
+    def test_tool_results_can_bypass_exhausted_notification_budget(self) -> None:
+        async def run_test() -> None:
+            queue = PriorityLiveRequestQueue(live_tool_budget=1, tool_results_bypass_input_window=True)
+            queue.send_user_input(types.Content(parts=[types.Part(text="Go north")]))
+            await queue.get()
+            queue.record_model_tool_calls(1)
+            queue.send_content(types.Content(parts=[types.Part(text="Background update")]))
+            queue.send_content(types.Content(parts=[types.Part(function_response=types.FunctionResponse(
+                id="call_a", name="tool", response={"status": "ok"},
+            ))]))
+            result = await asyncio.wait_for(queue.get(), timeout=1)
+            self.assertEqual(result.content.parts[0].function_response.id, "call_a")
+            self.assertFalse(queue.live_tool_window_active)
+
+        asyncio.run(run_test())
+
+    def test_partial_background_notifications_preserve_complete_user_turns(self) -> None:
+        async def run_test() -> None:
+            queue = PriorityLiveRequestQueue(background_content_is_partial=True)
+            notification = types.Content(parts=[types.Part(text="Canvas: forest")])
+            queue.send_content(notification)
+            self.assertTrue((await queue.get()).partial)
+            queue.send_user_input(types.Content(parts=[types.Part(text="Go north")]))
+            self.assertFalse((await queue.get()).partial)
+            queue.send_content(notification, partial=False)
+            self.assertFalse((await queue.get()).partial)
+
+        asyncio.run(run_test())
+
     def test_text_user_input_is_prioritized_without_audio_activity_boundaries(self):
         async def run_test():
             queue = PriorityLiveRequestQueue()

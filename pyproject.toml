@@ -14,7 +14,7 @@ dependencies = [
     "jinja2",
     "joblib>=1.2.0",
     "jsonschema>=4.0",
-    "openai>=1.0",
+    "openai[realtime]>=2.0",
     "pillow",
     "playwright",
     "pyarrow>=17.0",

@@ -39,8 +39,8 @@ smtp:
     port: 587
 
 live_agent:
-    provider: "gemini"
-    model_id: "gemini-3.8-live"
+    provider: "openai"
+    model_id: "gpt-realtime-2.1-mini"
     # Model tool calls allowed after each VAD end before the the live model is starved.
     live_tool_budget: 5
     enable_tool_injection: false
@@ -50,6 +50,12 @@ live_agent:
     compaction:
         trigger_tokens: 20000
         target_tokens: 8000
+    # OpenAI uses truncation rather than Gemini's context compression.
+    openai:
+        max_output_tokens: 1024
+        max_response_turns: 6
+        post_instructions_token_limit: 8000
+        retention_ratio: 0.8
 
 text_beautifier_model: "gemini-3.5-flash-lite"
 suggestion_model: "gemini-3.6-flash"

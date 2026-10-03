@@ -29,6 +29,16 @@ class LiveAgentCompactionConfig(BaseModel):
     target_tokens: int | None = Field(default=None, gt=0)
 
 
+class OpenAIRealtimeConfig(BaseModel):
+    """OpenAI response and context limits; transcription is optional."""
+
+    max_output_tokens: int = Field(default=1024, ge=1, le=4096)
+    max_response_turns: int = Field(default=6, ge=1)
+    post_instructions_token_limit: int = Field(default=8000, gt=0)
+    retention_ratio: float = Field(default=0.8, gt=0, le=1)
+    input_transcription_model: str | None = None
+
+
 class LiveAgentConfig(BaseModel):
     """Operational settings shared by Live backend implementations."""
 
@@ -39,6 +49,7 @@ class LiveAgentConfig(BaseModel):
     legacy_model: str | None = Field(default=None, alias="model")
     max_tool_workers: int = Field(default=3, ge=1)
     compaction: LiveAgentCompactionConfig | None = None
+    openai: OpenAIRealtimeConfig = Field(default_factory=OpenAIRealtimeConfig)
 
 
 @dataclass(frozen=True)
@@ -62,6 +73,9 @@ class LiveAgentProvider(ABC):
 
     id: str
     display_name: str
+    background_content_is_partial: bool = False
+    requires_tool_reminders: bool = True
+    tool_results_bypass_input_window: bool = False
 
     @abstractmethod
     def create_model(self, config: LiveAgentConfig) -> BaseLlm:

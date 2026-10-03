@@ -23,6 +23,7 @@ from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
 from providers.video_provider import VideoProvider, VideoProviderError
 from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
+from providers.openai_live_agent_provider import OpenAILiveAgentProvider
 from providers.live_agent_provider import LiveAgentProvider, LiveAgentProviderError
 
 
@@ -192,6 +193,8 @@ def get_live_agent_provider(provider_id: str = "gemini") -> LiveAgentProvider:
     """Resolve a Live backend explicitly; never silently switch vendors."""
     if provider_id == "gemini":
         return GeminiLiveAgentProvider()
+    if provider_id == "openai":
+        return OpenAILiveAgentProvider()
     raise LiveAgentProviderError(f"Unsupported live agent provider: {provider_id!r}")
 
 def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) -> ImageProvider:

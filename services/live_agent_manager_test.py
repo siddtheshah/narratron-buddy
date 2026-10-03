@@ -48,6 +48,9 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         runner.session_service.get_session = AsyncMock(return_value=MagicMock())
         provider = MagicMock(spec=LiveAgentProvider)
         provider.id = "alternate"
+        provider.background_content_is_partial = False
+        provider.requires_tool_reminders = True
+        provider.tool_results_bypass_input_window = False
         provider.run_live.return_value = events()
         session = LiveAgentSession(
             theater_id="alternate", runner=runner, tool_bundle=MagicMock(), provider=provider,

@@ -16,8 +16,16 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
     _USER_INPUT = "user_input"
     DEFAULT_LIVE_TOOL_BUDGET = 3
 
-    def __init__(self, live_tool_budget: int = DEFAULT_LIVE_TOOL_BUDGET):
+    def __init__(
+        self,
+        live_tool_budget: int = DEFAULT_LIVE_TOOL_BUDGET,
+        background_content_is_partial: bool = False,
+        tool_results_bypass_input_window: bool = False,
+    ) -> None:
         super().__init__()
+        self._background_content_is_partial = background_content_is_partial
+        self._tool_results_bypass_input_window = tool_results_bypass_input_window
+        self._tool_result_queue: asyncio.Queue[LiveRequest] = asyncio.Queue()
         self._current_non_audio_queue: asyncio.Queue = asyncio.Queue()
         self._current_user_input_queue: asyncio.Queue = asyncio.Queue()
         self._future_non_audio_queue: asyncio.Queue = asyncio.Queue()
@@ -130,6 +138,13 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         self._current_user_input_queue.put_nowait(req)
 
     def _queue_non_audio(self, req: LiveRequest) -> None:
+        # Explicit-turn providers must return already-issued tool results even
+        # after the notification budget expires, or the next turn deadlocks.
+        if self._tool_results_bypass_input_window and req.content is not None and any(
+            part.function_response is not None for part in req.content.parts or []
+        ):
+            self._tool_result_queue.put_nowait(req)
+            return
         if (
             self._defer_non_audio_until_next_input
             or (self._state == self._NON_AUDIO and self._user_input_turn_pending)
@@ -148,9 +163,12 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
             self._queue_non_audio(req)
         self._notify_event.set()
 
-    def send_content(self, content: types.Content) -> None:
+    def send_content(self, content: types.Content, *, partial: bool | None = None) -> None:
         """Send a non-user notification such as a canvas update or tool result."""
-        req = LiveRequest(content=content)
+        req = LiveRequest(
+            content=content,
+            partial=self._background_content_is_partial if partial is None else partial,
+        )
         self._queue_non_audio(req)
         self._notify_event.set()
 
@@ -203,6 +221,8 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         tool-call budget; later notifications wait in the future queue.
         """
         while True:
+            if not self._tool_result_queue.empty():
+                return self._tool_result_queue.get_nowait()
             if self._state == self._NON_AUDIO:
                 if not self._current_non_audio_queue.empty():
                     return self._current_non_audio_queue.get_nowait()

@@ -72,6 +72,9 @@ class LiveAgentSession:
         self.canvas_state_manager = canvas_state_manager
         self.theater_manager = theater_manager
         self.music_catalog = music_catalog
+        provider_config = build_live_agent_config(self.config)
+        self.provider = provider if provider is not None else get_live_agent_provider(provider_config.provider)
+        self.run_config = self.provider.build_run_config(provider_config)
         self.owner_user_id: Optional[int] = None
         live_agent_config = self.config.get("live_agent", {})
         self.enable_tool_injection = bool(live_agent_config.get("enable_tool_injection", False))
@@ -129,6 +132,8 @@ class LiveAgentSession:
 
 
         self.live_request_queue = PriorityLiveRequestQueue(
+            background_content_is_partial=self.provider.background_content_is_partial,
+            tool_results_bypass_input_window=self.provider.tool_results_bypass_input_window,
             live_tool_budget=self._get_live_tool_budget(
                 live_agent_config.get("live_tool_budget")
             )
@@ -166,10 +171,6 @@ class LiveAgentSession:
             self.agent,
             "create_or_update_character",
         )
-
-        provider_config = build_live_agent_config(self.config)
-        self.provider = provider if provider is not None else get_live_agent_provider(provider_config.provider)
-        self.run_config = self.provider.build_run_config(provider_config)
 
         self._setup_tool_callbacks()
 
@@ -599,7 +600,7 @@ class LiveAgentSession:
         except Exception:
             logger.exception("Failed to render viewer doodle snapshot for theater %s", self.theater_id)
 
-    def start_background_tasks(self):
+    def start_background_tasks(self) -> None:
         """Start the live runner plus independent refresh and notification loops."""
         self._event_loop = asyncio.get_running_loop()
         if self.downstream_task is None or self.downstream_task.done():
@@ -611,7 +612,9 @@ class LiveAgentSession:
         if self.enable_tool_injection and (self.tool_injection_task is None or self.tool_injection_task.done()):
             self.tool_injection_task = asyncio.create_task(self._run_tool_injection_loop())
 
-        if self.live_tool_reminder_task is None or self.live_tool_reminder_task.done():
+        if self.provider.requires_tool_reminders and (
+            self.live_tool_reminder_task is None or self.live_tool_reminder_task.done()
+        ):
             self.live_tool_reminder_task = asyncio.create_task(
                 self._run_live_tool_reminder_loop()
             )
