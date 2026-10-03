@@ -1279,6 +1279,47 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertIn("layered", content_arg.parts[0].text)
             self.assertIn("ready to play", content_arg.parts[0].text)
 
+    def test_session_binds_notepad_and_character_tools_and_passes_to_format_canvas_state(self) -> None:
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_notepad_tools = MagicMock()
+        mock_character_tools = MagicMock()
+
+        with patch("services.live_agent_manager.get_bound_tool_instance") as mock_get_tool:
+            def side_effect(agent: MagicMock, tool_name: str) -> MagicMock | None:
+                if tool_name == "update_sticky_note":
+                    return mock_notepad_tools
+                if tool_name in ("create_or_update_character", "create_character", "update_character"):
+                    return mock_character_tools
+                return None
+
+            mock_get_tool.side_effect = side_effect
+
+            session = LiveAgentSession(
+                theater_id="test_notepad_char_tools",
+                runner=MagicMock(agent=mock_agent, session_service=MagicMock()),
+                tool_bundle=MagicMock(),
+                config={"live_agent": {"observability_startup_delay": 0}},
+            )
+            self.assertIs(session.notepad_tools, mock_notepad_tools)
+            self.assertIs(session.character_tools, mock_character_tools)
+
+            session.live_request_queue = MagicMock()
+            session.websockets.add(MagicMock())
+            session.canvas_state_manager = canvas_observability_fixture()
+            session.observability_available_at = 0.0
+
+            with patch("services.live_agent_manager.format_canvas_state") as mock_format_canvas_state:
+                mock_format_canvas_state.return_value = "Formatted Canvas State"
+                with patch("services.live_agent_manager.time.monotonic", return_value=10.0):
+                    self.assertTrue(session.send_canvas_state())
+
+                mock_format_canvas_state.assert_called_once_with(
+                    session.canvas_state_manager,
+                    mock_notepad_tools,
+                    mock_character_tools,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

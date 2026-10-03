@@ -158,7 +158,13 @@ class LiveAgentSession:
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
         self.story_planning_tools = (
             get_bound_tool_instance(self.agent, "process_user_action")
-            or get_bound_tool_instance(self.agent, "update_sticky_note")
+        )
+        self.notepad_tools = (
+            get_bound_tool_instance(self.agent, "update_sticky_note")
+        )
+        self.character_tools = (
+            get_bound_tool_instance(self.agent, "create_character")
+            or get_bound_tool_instance(self.agent, "update_character")
         )
         self.music_tools = get_bound_tool_instance(self.agent, "play_music")
         self.observability_tools = get_bound_tool_instance(
@@ -421,7 +427,7 @@ class LiveAgentSession:
                 and now - self.last_canvas_state_sent < self.observability_interval
             ):
                 return False
-            msg = format_canvas_state(self.canvas_state_manager, self.story_planning_tools)
+            msg = format_canvas_state(self.canvas_state_manager, self.notepad_tools, self.character_tools)
             try:
                 self.send_content(types.Content(parts=[types.Part(text=msg)]))
             except Exception as e:
@@ -458,7 +464,7 @@ class LiveAgentSession:
                 )
                 return False
 
-            msg = format_canvas_state(self.canvas_state_manager, self.story_planning_tools)
+            msg = format_canvas_state(self.canvas_state_manager, self.notepad_tools, self.character_tools)
             try:
                 self.send_content(types.Content(parts=[types.Part(text=msg)]))
             except Exception as e:
@@ -494,7 +500,7 @@ class LiveAgentSession:
 
         now = time.monotonic()
         with self.state_lock:
-            msg = format_canvas_state(self.canvas_state_manager, self.story_planning_tools)
+            msg = format_canvas_state(self.canvas_state_manager, self.notepad_tools, self.character_tools)
             parts = [types.Part(text=msg)]
             image_part = self._get_current_canvas_image_part()
             if image_part:

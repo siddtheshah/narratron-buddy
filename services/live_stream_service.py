@@ -21,17 +21,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class StoryPlanningProvider(Protocol):
+class NotepadToolProvider(Protocol):
     def get_present_elements(self) -> list[dict[str, str]]:
         ...
 
+class CharacterToolProvider(Protocol):
     def get_present_characters(self) -> list[Character]:
         ...
 
 
 def format_canvas_state(
     canvas_state_manager: Optional[CanvasStateManager],
-    story_planning_tools: Optional[StoryPlanningProvider] = None,
+    notepad_tools: Optional[NotepadToolProvider] = None,
+    character_tools: Optional[CharacterToolProvider] = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
     visual = canvas_state_manager.visual if canvas_state_manager is not None else None
@@ -66,8 +68,8 @@ def format_canvas_state(
             )
 
     elements: list[dict[str, str]] = []
-    if story_planning_tools is not None:
-        elements = story_planning_tools.get_present_elements()
+    if notepad_tools is not None:
+        elements = notepad_tools.get_present_elements()
     elif story is not None:
         elements = story.get_sticky_notes()
 
@@ -90,8 +92,8 @@ def format_canvas_state(
     characters = []
     if story is not None:
         characters = story.get_present_characters()
-    if not characters and story_planning_tools is not None:
-        characters = story_planning_tools.get_present_characters()
+    if not characters and character_tools is not None:
+        characters = character_tools.get_present_characters()
 
     if characters:
         rendered_char_list: list[str] = []

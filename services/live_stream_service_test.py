@@ -7,8 +7,10 @@ from google.genai import types
 
 from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
 from tools.story import StoryTool
-from components.character_manager import PlayerCharacter
+from components.character_manager import Character, PlayerCharacter
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
+from tools.character_tool import CharacterTool
+from tools.notepad_tool import NotepadTool
 
 
 @dataclass
@@ -38,7 +40,7 @@ class CanvasFixture:
     story: StoryState | None = None
 
 
-def test_format_canvas_state_includes_present_scene_elements():
+def test_format_canvas_state_includes_present_scene_elements() -> None:
     theater = MagicMock(theater_id="stage")
     theater.config = MagicMock(return_value={})
     elements = StoryTool(
@@ -51,13 +53,13 @@ def test_format_canvas_state_includes_present_scene_elements():
 
     state = format_canvas_state(
         CanvasFixture(),
-        elements,
+        notepad_tools=elements,
     )
 
     assert "[Present Scene Elements]: hero: Mara, a cartographer; tone: Hopeful and tense" in state
 
 
-def test_format_canvas_state_includes_active_characters():
+def test_format_canvas_state_includes_active_characters() -> None:
     theater = MagicMock(theater_id="stage_chars")
     theater.config = MagicMock(return_value={"adventure_mode": True})
     elements = StoryTool(
@@ -69,11 +71,49 @@ def test_format_canvas_state_includes_active_characters():
 
     state = format_canvas_state(
         CanvasFixture(),
-        elements,
+        character_tools=elements,
     )
 
     assert "[Active Characters]: Vaelen (Personality: Brave, Motivation: Find the talisman, Quirk: Flips a coin on choices)" in state
     assert "[Character Image References]:" not in state
+
+
+def test_format_canvas_state_includes_elements_from_notepad_tool() -> None:
+    theater = MagicMock(theater_id="stage_notepad")
+    theater.config = MagicMock(return_value={})
+    canvas = CanvasFixture(story=StoryState())
+    notepad_tool = NotepadTool(
+        theater,
+        canvas_manager=canvas,  # type: ignore[arg-type]
+    )
+    notepad_tool.update_sticky_note("objective", "Find the lost compass")
+
+    state = format_canvas_state(canvas, notepad_tools=notepad_tool)
+    assert "[Present Scene Elements]: objective: Find the lost compass" in state
+
+
+def test_format_canvas_state_includes_characters_from_character_tool() -> None:
+    theater = MagicMock(theater_id="stage_char_tool")
+    theater.config = MagicMock(return_value={})
+    canvas = CanvasFixture()
+    char_mgr = MagicMock()
+    char_mgr.get_present_characters.return_value = [
+        Character(
+            name="Rowan",
+            gender="nonbinary",
+            personality="Stealthy",
+            motivation="Freedom",
+            quirk="Whistles quietly",
+        )
+    ]
+    char_tool = CharacterTool(
+        theater,
+        character_manager=char_mgr,
+        canvas_manager=canvas,  # type: ignore[arg-type]
+    )
+
+    state = format_canvas_state(canvas, character_tools=char_tool)
+    assert "[Active Characters]: Rowan (Personality: Stealthy, Motivation: Freedom, Quirk: Whistles quietly)" in state
 
 
 def test_format_canvas_state_includes_character_manager_image_references_for_npcs() -> None:
