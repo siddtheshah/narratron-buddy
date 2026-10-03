@@ -85,6 +85,7 @@ def test_user_help_tool_resets_browse_limits_for_each_agent_question(tmp_path: P
     tool.canvas_manager.chat.add_message.assert_called_once_with({
         "author": "Narratron User Help",
         "text": "Use Adventure Mode.",
+        "html": "<p>Use Adventure Mode.</p>",
         "type": "user_help",
     })
     tool.canvas_manager.notify_changed.assert_called_once_with("chat")

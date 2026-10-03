@@ -17,6 +17,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, with_cycle_cooldown
 from tools.tool_metadata import terminal
+from utils.markdown import render_markdown
 
 
 _TEXT_FILE_SUFFIXES = frozenset({".html", ".md"})
@@ -85,6 +86,7 @@ class UserHelpTool(BaseTools):
         chat.add_message({
             "author": _HELP_CHAT_AUTHOR,
             "text": answer,
+            "html": render_markdown(answer),
             "type": "user_help",
         })
         self.canvas_manager.notify_changed("chat")
@@ -158,7 +160,10 @@ class UserHelpTool(BaseTools):
                 "focused phrases, visible UI labels, or exact configuration keys; avoid generic searches such as "
                 "'mode' or 'settings'. Read the relevant line ranges before answering. You have at most three "
                 "searches and three reads, so use them deliberately. Never invent a UI control, shortcut, or "
-                "workflow. If the files do not establish an answer, say that plainly. Give practical numbered "
+                "workflow. If the files do not establish an answer, say that plainly. Format your answer as Markdown: "
+                "use short headings when helpful, blank lines between paragraphs and lists, bold for control names, "
+                "and inline code for keys and shortcuts. Do not wrap the whole answer in a code fence or use raw HTML. "
+                "Give practical numbered "
                 "steps and name controls, keys, and shortcuts exactly as the source confirms them. Do not mention "
                 "tools, source files, or internal implementation details in the final answer."
             ),

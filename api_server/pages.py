@@ -6,12 +6,13 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from services.docs_search import DocsSearchPage, docs_search_index
+from utils.markdown import render_markdown as render_about_markdown
 
 from api_server.shared import (
     app,
@@ -75,117 +76,6 @@ def render_seo_markup(metadata: SeoMetadata) -> str:
             f'<script type="application/ld+json">{json.dumps(structured_data, separators=(",", ":"))}</script>'
         )
     return "\n".join(markup)
-
-
-def _format_about_inline(text: str) -> str:
-    """Render the small, safe Markdown subset used by ABOUT.md and documentation."""
-    escaped = html.escape(text, quote=False)
-    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
-    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
-    escaped = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", escaped)
-
-    def link(match: re.Match) -> str:
-        label, url = match.groups()
-        if re.match(r"^(https?://|mailto:|/|#)", url):
-            return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
-        return label
-
-    return re.sub(r"\[([^]]+)\]\(([^)]+)\)", link, escaped)
-
-
-def render_about_markdown(markdown_source: str) -> str:
-    """Convert headings, code blocks, lists, and paragraphs in Markdown to page markup."""
-    blocks: List[str] = []
-    list_items: List[str] = []
-    list_tag: Optional[str] = None
-    paragraph: List[str] = []
-    in_code_block: bool = False
-    code_block_lines: List[str] = []
-    code_block_lang: str = ""
-
-    def flush_list() -> None:
-        nonlocal list_items, list_tag
-        if list_items and list_tag:
-            blocks.append(f"<{list_tag}>" + "".join(list_items) + f"</{list_tag}>")
-        list_items = []
-        list_tag = None
-
-    def flush_paragraph() -> None:
-        nonlocal paragraph
-        if paragraph:
-            blocks.append(f"<p>{_format_about_inline(' '.join(paragraph))}</p>")
-        paragraph = []
-
-    def flush_code_block() -> None:
-        nonlocal code_block_lines, code_block_lang, in_code_block
-        if in_code_block:
-            escaped = html.escape("\n".join(code_block_lines))
-            lang_attr = f' class="language-{html.escape(code_block_lang)}"' if code_block_lang else ""
-            blocks.append(f"<pre><code{lang_attr}>{escaped}</code></pre>")
-        code_block_lines = []
-        code_block_lang = ""
-        in_code_block = False
-
-    for raw_line in markdown_source.splitlines():
-        trimmed = raw_line.strip()
-
-        if trimmed.startswith("```"):
-            if in_code_block:
-                flush_code_block()
-            else:
-                flush_paragraph()
-                flush_list()
-                in_code_block = True
-                code_block_lang = trimmed[3:].strip()
-                code_block_lines = []
-            continue
-
-        if in_code_block:
-            code_block_lines.append(raw_line)
-            continue
-
-        line = trimmed
-        heading = re.match(r"^(#{1,4})\s+(.+)$", line)
-        task_item = re.match(r"^[-*]\s+\[([ xX])\]\s+(.+)$", line)
-        unordered_item = re.match(r"^[-*]\s+(.+)$", line)
-        ordered_item = re.match(r"^\d+\.\s+(.+)$", line)
-
-        if heading:
-            flush_paragraph()
-            flush_list()
-            level = len(heading.group(1))
-            heading_text = heading.group(2)
-            blocks.append(f"<h{level}>{_format_about_inline(heading_text)}</h{level}>")
-        elif task_item:
-            flush_paragraph()
-            if list_tag and list_tag != "ul":
-                flush_list()
-            list_tag = "ul"
-            checked = " checked" if task_item.group(1).lower() == "x" else ""
-            item_text = task_item.group(2)
-            list_items.append(f'<li class="task-list-item"><input type="checkbox" disabled{checked}> {_format_about_inline(item_text)}</li>')
-        elif unordered_item or ordered_item:
-            flush_paragraph()
-            item_tag = "ul" if unordered_item else "ol"
-            if list_tag and list_tag != item_tag:
-                flush_list()
-            list_tag = item_tag
-            item_text = (unordered_item or ordered_item).group(1)
-            list_items.append(f"<li>{_format_about_inline(item_text)}</li>")
-        elif line == "":
-            flush_paragraph()
-            flush_list()
-        elif line in {"---", "***", "___"}:
-            flush_paragraph()
-            flush_list()
-            blocks.append("<hr>")
-        else:
-            paragraph.append(line)
-
-    flush_paragraph()
-    flush_list()
-    flush_code_block()
-    return "\n".join(blocks)
 
 
 # ========================================

@@ -252,9 +252,15 @@ export function initializeChatController(options = {}) {
         prefixSpan.style.marginRight = '6px';
         prefixSpan.textContent = `${displayAuthor}:`;
 
-        const textSpan = document.createElement('span');
-        textSpan.className = 'chat-text';
-        textSpan.textContent = msg.text;
+        const isHelp = msg.type === 'user_help';
+        const textSpan = document.createElement(isHelp ? 'div' : 'span');
+        textSpan.className = isHelp ? 'chat-text help-markdown' : 'chat-text';
+        if (isHelp && msg.html) {
+            // Help markup is escaped and rendered by the server.
+            textSpan.innerHTML = msg.html;
+        } else {
+            textSpan.textContent = msg.text;
+        }
 
         div.appendChild(prefixSpan);
         div.appendChild(textSpan);

@@ -31,6 +31,54 @@
     flex-shrink: 0;
 }
 
+/* Markdown answers from Narratron User Help */
+.help-markdown {
+    margin-top: 0.5rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.help-markdown p,
+.help-markdown ul,
+.help-markdown ol,
+.help-markdown pre {
+    margin: 0.65em 0;
+}
+
+.help-markdown h1,
+.help-markdown h2,
+.help-markdown h3,
+.help-markdown h4 {
+    font-size: 1em;
+    line-height: 1.35;
+    color: #e0e7ff;
+    margin: 1em 0 0.4em;
+}
+
+.help-markdown > :first-child { margin-top: 0; }
+.help-markdown > :last-child { margin-bottom: 0; }
+.help-markdown ul,
+.help-markdown ol { padding-left: 1.5em; }
+.help-markdown li + li { margin-top: 0.35em; }
+.help-markdown strong { color: #f1f5f9; }
+.help-markdown a { color: #a5b4fc; text-decoration: underline; }
+
+.help-markdown code {
+    font-size: 0.9em;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    padding: 0.1em 0.3em;
+}
+
+.help-markdown pre {
+    padding: 0.65em;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.help-markdown pre code { background: none; padding: 0; }
+
 /* White Background Dice Roll Card */
 .chat-message.chat-roll-message {
     background: #ffffff !important;
