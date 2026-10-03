@@ -135,8 +135,17 @@
     el('file-list').querySelectorAll('.file-button').forEach(button => {
       const active = button.dataset.path === file.path;
       button.classList.toggle('active', active);
-      if (active) button.setAttribute('aria-current', 'true');
-      else button.removeAttribute('aria-current');
+      if (active) {
+        button.setAttribute('aria-current', 'true');
+        let parent = button.closest('.file-folder');
+        while (parent) {
+          parent.open = true;
+          expandedFolders.set(parent.dataset.path, true);
+          parent = parent.parentElement ? parent.parentElement.closest('.file-folder') : null;
+        }
+      } else {
+        button.removeAttribute('aria-current');
+      }
     });
     el('selected-path').textContent = file.path;
     el('empty-preview').hidden = true;
@@ -211,6 +220,7 @@
       await save();
       message('user', prompt);
       const result = await post('/assistant', { prompt, history: history.slice(-12) });
+      if (result.state) render(result.state);
       history.push({ role: 'user', content: prompt }, { role: 'assistant', content: result.proposal.message });
       proposal = result.proposal; proposalRevision = result.revision;
       message('assistant', proposal.message);
@@ -272,6 +282,73 @@
   function updateGenerationCost() {
     if (state) el('generation-submit').textContent = `Generate · ${state.rates[el('generation-kind').value === 'reference' ? 'image_credit_rate' : 'music_credit_rate']} Cr`;
   }
+  function openGoogleDialog(focusDoc = false) {
+    el('google-link-url').value = '';
+    el('google-link-name').value = '';
+    el('google-harvest-prompt').value = '';
+    el('google-doc-harvest').checked = true;
+    el('google-doc-options').hidden = !focusDoc;
+    el('google-link-submit').textContent = focusDoc ? 'Harvest with AI' : 'Import Link';
+    el('google-link-dialog').showModal();
+    el('google-link-url').focus();
+  }
+  function updateGoogleDialogState() {
+    const url = el('google-link-url').value.trim();
+    const isDoc = url.includes('docs.google.com/document');
+    el('google-doc-options').hidden = !isDoc;
+    if (isDoc) {
+      el('google-link-submit').textContent = el('google-doc-harvest').checked ? 'Harvest with AI' : 'Import Lore File';
+    } else {
+      el('google-link-submit').textContent = 'Import from Drive';
+    }
+  }
+  async function submitGoogleLink() {
+    const url = el('google-link-url').value.trim();
+    if (!url) return;
+    const targetName = el('google-link-name').value.trim() || undefined;
+    const isDoc = url.includes('docs.google.com/document');
+    const harvest = isDoc && el('google-doc-harvest').checked;
+    const harvestPrompt = el('google-harvest-prompt').value.trim() || undefined;
+
+    el('google-link-dialog').close();
+    let importedFile = null;
+    await run(async () => {
+      await save();
+      const res = await post('/google-link', {
+        revision: state.draft.revision,
+        url,
+        target_name: targetName,
+        harvest,
+        harvest_prompt: harvestPrompt,
+      });
+
+      if (res.path) {
+        const parts = res.path.split('/');
+        let cur = '';
+        for (const part of parts.slice(0, -1)) {
+          cur = cur ? `${cur}/${part}` : part;
+          expandedFolders.set(cur, true);
+        }
+      }
+
+      if (res.state) render(res.state);
+
+      if (res.harvested && res.proposal) {
+        proposal = res.proposal;
+        proposalRevision = res.revision;
+        message('assistant', proposal.message);
+        renderProposal();
+        await checkAuthStatus({ refresh: true });
+        status(`Harvested Google Doc into your theater draft. Charged ${res.credits_charged} credits.`);
+      } else {
+        importedFile = state.files.find(f => f.path === res.path);
+        status(res.message || `Imported ${res.path} from Google.`);
+      }
+    }, harvest ? 'Harvesting Google Doc with AI co-creator…' : 'Downloading and importing from Google…');
+    if (importedFile) {
+      await selectFile(importedFile);
+    }
+  }
   async function initialize() {
     if (opening) return;
     opening = true;
@@ -315,6 +392,12 @@
   el('assistant-form').addEventListener('submit', event => { event.preventDefault(); ask(el('assistant-input').value.trim()); });
   el('organize-assets').addEventListener('click', () => ask('Organize my uploaded assets into meaningful reference subfolders, lore documents, and named playlists. Update all file references where necessary.'));
   el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose an opening scene, characters, reference images, and atmospheric playlist tracks.'));
+  el('harvest-doc-shortcut').addEventListener('click', () => openGoogleDialog(true));
+  el('import-google-link').addEventListener('click', () => openGoogleDialog(false));
+  el('google-link-cancel').addEventListener('click', () => el('google-link-dialog').close());
+  el('google-link-url').addEventListener('input', updateGoogleDialogState);
+  el('google-doc-harvest').addEventListener('change', updateGoogleDialogState);
+  el('google-link-form').addEventListener('submit', event => { event.preventDefault(); submitGoogleLink(); });
   el('generation-kind').addEventListener('change', updateGenerationCost);
   el('generation-form').addEventListener('submit', event => {
     event.preventDefault(); generate({ kind: el('generation-kind').value, name: el('generation-name').value, playlist: el('generation-playlist').value || 'ambient', prompt: el('generation-prompt').value, references: [] });

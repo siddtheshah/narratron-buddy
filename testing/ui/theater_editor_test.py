@@ -118,6 +118,26 @@ def editor_page() -> Iterator[Page]:
                         proposal: {message: 'Here are ideas for your world.', writes: [], moves: [], generations: []},
                         credits: window.accountCredits, credits_charged: 0.1})};
                 }
+                if (request.pathname.endsWith('/google-link')) {
+                    const body = JSON.parse(options.body);
+                    window.googleLinkRequest = body;
+                    if (body.harvest) {
+                        window.accountCredits -= 0.1;
+                        return {ok: true, json: async () => ({
+                            kind: 'doc', harvested: true, revision: draft.draft.revision,
+                            proposal: {message: 'Harvested Google Doc into theater.', writes: [{path: 'lore/harvested.txt', content: 'Harvested'}], moves: [], generations: []},
+                            credits: window.accountCredits, credits_charged: 0.1,
+                            state: structuredClone(draft),
+                        })};
+                    }
+                    const path = body.target_name ? `references/${body.target_name}.png` : 'references/imported_gdrive.png';
+                    draft.files.push({path, kind: 'image'});
+                    draft.draft.revision++;
+                    return {ok: true, json: async () => ({
+                        kind: 'image', harvested: false, path, revision: draft.draft.revision,
+                        state: structuredClone(draft), message: `Imported ${path} from Google.`
+                    })};
+                }
                 return {ok: true, json: async () => structuredClone(draft)};
             };
         """)
@@ -326,3 +346,38 @@ def test_credit_checkout_failure_can_be_retried(editor_page: Page) -> None:
     page.evaluate("window.paymentMode = 'checkout'")
     page.locator("#btnCompletePurchase").click()
     page.wait_for_url("http://narratron.test/checkout")
+
+
+def test_import_google_drive_image_ui(editor_page: Page) -> None:
+    page = editor_page
+    page.locator("#import-google-link").click()
+    dialog = page.locator("#google-link-dialog")
+    expect(dialog).to_be_visible()
+    expect(page.locator("#google-doc-options")).not_to_be_visible()
+
+    page.locator("#google-link-url").fill("https://drive.google.com/file/d/IMG_HERO/view")
+    page.locator("#google-link-name").fill("hero_art")
+    page.locator("#google-link-submit").click()
+
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Imported references/hero_art.png from Google")
+    expect(page.locator('.file-button[title="references/hero_art.png"]')).to_be_visible()
+    expect(page.locator("#selected-path")).to_have_text("references/hero_art.png")
+
+
+def test_harvest_google_doc_ui(editor_page: Page) -> None:
+    page = editor_page
+    page.locator("#harvest-doc-shortcut").click()
+    dialog = page.locator("#google-link-dialog")
+    expect(dialog).to_be_visible()
+    expect(page.locator("#google-doc-options")).to_be_visible()
+    expect(page.locator("#google-link-submit")).to_have_text("Harvest with AI")
+
+    page.locator("#google-link-url").fill("https://docs.google.com/document/d/DOC_WORLD/edit")
+    page.locator("#google-harvest-prompt").fill("Focus on factions and mysteries")
+    page.locator("#google-link-submit").click()
+
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#assistant-proposal")).to_be_visible()
+    expect(page.locator("#assistant-proposal")).to_contain_text("Review proposed changes")
+    expect(page.locator("#assistant-messages")).to_contain_text("Harvested Google Doc into theater.")

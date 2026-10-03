@@ -22,6 +22,7 @@ from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from providers.image_provider import ImageGenerationResult
 from providers.music_provider import MusicGenerationResult
+from services.google_asset_importer import GoogleImportResult
 from services.theater_builder import BuilderProposal, ChatMessage, DraftInfo, TheaterBuilderStore
 from services.live_agent import get_playlists_context
 from services.music_catalog import MusicCatalog
@@ -395,3 +396,93 @@ def test_editor_and_deploy_navigation_are_present(builder: BuilderHarness) -> No
     canvas = builder.client.get("/canvas").text
     assert 'id="menu-item-theater-builder"' in canvas
     assert "if (builderLink && isOwner)" in canvas
+
+
+def test_import_google_drive_image_success(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    mock_result = GoogleImportResult(
+        kind="image",
+        suggested_path="references/hero_portrait.png",
+        content_bytes=b"fake_image_bytes",
+        title="hero_portrait",
+    )
+    with patch("api_server.theater_editor.import_google_link", new=AsyncMock(return_value=mock_result)):
+        result = builder.client.post(f"{base}/google-link", json={
+            "revision": data["draft"]["revision"],
+            "url": "https://drive.google.com/file/d/IMG123/view",
+            "target_name": "hero_portrait",
+        })
+    assert result.status_code == 200, result.text
+    assert result.json()["kind"] == "image"
+    assert result.json()["path"] == "references/hero_portrait.png"
+    assert builder.client.get(f"{base}/file?path=references/hero_portrait.png").content == b"fake_image_bytes"
+
+
+def test_import_google_doc_raw(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    mock_result = GoogleImportResult(
+        kind="doc",
+        suggested_path="lore/world_guide.txt",
+        text_content="World setting guide",
+        title="world_guide",
+    )
+    with patch("api_server.theater_editor.import_google_link", new=AsyncMock(return_value=mock_result)):
+        result = builder.client.post(f"{base}/google-link", json={
+            "revision": data["draft"]["revision"],
+            "url": "https://docs.google.com/document/d/DOC123/edit",
+            "harvest": False,
+        })
+    assert result.status_code == 200, result.text
+    assert result.json()["kind"] == "doc"
+    assert result.json()["harvested"] is False
+    assert builder.client.get(f"{base}/file?path=lore/world_guide.txt").text == "World setting guide"
+
+
+def test_import_google_doc_harvest(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    mock_result = GoogleImportResult(
+        kind="doc",
+        suggested_path="lore/campaign.txt",
+        text_content="Full campaign world notes",
+        title="campaign",
+    )
+    proposal = BuilderProposal(
+        message="Harvested campaign doc",
+        writes=[{"path": "lore/factions.txt", "content": "Three warring factions"}],
+    )
+    with patch("api_server.theater_editor.import_google_link", new=AsyncMock(return_value=mock_result)), patch.object(TheaterBuilderStore, "harvest_doc", return_value=proposal) as harvest_mock:
+        result = builder.client.post(f"{base}/google-link", json={
+            "revision": data["draft"]["revision"],
+            "url": "https://docs.google.com/document/d/DOC_HARVEST/edit",
+            "harvest": True,
+            "harvest_prompt": "Focus on factions",
+        })
+    assert result.status_code == 200, result.text
+    assert result.json()["kind"] == "doc"
+    assert result.json()["harvested"] is True
+    assert result.json()["proposal"]["message"] == "Harvested campaign doc"
+    assert result.json()["credits_charged"] == 0.1
+    harvest_mock.assert_called_once()
+    builder.database.record_user_usage.assert_called_once()
+
+
+def test_assistant_auto_imports_google_image_in_prompt(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    mock_result = GoogleImportResult(
+        kind="image",
+        suggested_path="references/captain.png",
+        content_bytes=b"captain_image",
+        title="captain",
+    )
+    proposal = BuilderProposal(message="Added captain reference")
+    with patch("api_server.theater_editor.import_google_link", new=AsyncMock(return_value=mock_result)), patch.object(TheaterBuilderStore, "propose", return_value=proposal) as propose_mock:
+        result = builder.client.post(f"{base}/assistant", json={
+            "prompt": "Here is our captain: https://drive.google.com/file/d/IMG_CAPTAIN/view, make lore for him",
+        })
+    assert result.status_code == 200, result.text
+    assert builder.client.get(f"{base}/file?path=references/captain.png").content == b"captain_image"
+    propose_mock.assert_called_once()

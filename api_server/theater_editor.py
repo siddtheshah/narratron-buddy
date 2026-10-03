@@ -22,6 +22,7 @@ from api_server.theater_access_cache import theater_access_cache
 from providers.image_provider import ImageGenerationRequest, ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_image_provider, get_music_provider
+from services.google_asset_importer import find_google_urls, import_google_link
 from services.theater_builder import (
     BuilderFile, BuilderProposal, ChatMessage, DraftInfo, FileWrite, GenerationRequest,
     MAX_DRAFT_BYTES, MAX_FILE_BYTES, MAX_FILES, TheaterBuilderStore,
@@ -63,6 +64,14 @@ class RevisionRequest(BaseModel):
 
 class GenerateDraftRequest(GenerationRequest):
     revision: int
+
+
+class GoogleLinkRequest(BaseModel):
+    revision: int
+    url: str = Field(min_length=5, max_length=2000)
+    target_name: str | None = Field(default=None, max_length=100)
+    harvest: bool = False
+    harvest_prompt: str | None = Field(default=None, max_length=4000)
 
 
 class DraftResponse(BaseModel):
@@ -211,6 +220,62 @@ async def upload_assets(theater_id: str, request: Request, files: list[UploadFil
         return await asyncio.to_thread(response, info)
 
 
+@app.post("/api/theater-editor/{theater_id}/google-link")
+async def import_google_resource(theater_id: str, body: GoogleLinkRequest, request: Request) -> dict[str, JsonValue]:
+    owner_id = await require_user(request)
+    async with _billing_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
+        info = await require_draft(request, theater_id)
+        check_revision(info, body.revision)
+        with invalid_input():
+            result = await import_google_link(body.url, custom_name=body.target_name)
+
+        if result.kind == "doc" and body.harvest:
+            cost = pricing_controller.get_rates()["theater_editor_assistant_credit_rate"]
+            user = await asyncio.to_thread(db.get_user_by_id, owner_id)
+            if not user or user["credits"] < cost:
+                raise HTTPException(status_code=402, detail=f"Harvesting a Google Doc requires {cost:g} credits. Buy credits using the balance at the top of this page.")
+            try:
+                proposal = await asyncio.to_thread(store().harvest_doc, info, result.title, result.text_content, body.harvest_prompt or "", config)
+            except Exception as error:
+                logger.exception("Google Doc harvesting failed")
+                raise HTTPException(status_code=502, detail="The assistant could not harvest the Google Doc into a valid proposal. No credits were charged. Please try again.") from error
+            try:
+                updated = await asyncio.to_thread(db.record_user_usage, owner_id,
+                    credit_cost=cost, idempotency_key=f"builder:harvest:{theater_id}:{uuid.uuid4().hex}")
+            except Exception as error:
+                logger.exception("Google Doc harvest billing failed")
+                raise HTTPException(status_code=503, detail="Could not settle assistant credits. Please try again.") from error
+            auth_session_cache.invalidate_user(owner_id)
+            return {
+                "kind": "doc",
+                "harvested": True,
+                "proposal": proposal.model_dump(mode="json"),
+                "revision": info.revision,
+                "credits_charged": cost,
+                "credits": float(updated["credits"]),
+                "state": (await asyncio.to_thread(response, info)).model_dump(mode="json"),
+                "message": f"Harvested '{result.title}' into theater proposal."
+            }
+
+        files_to_write: dict[str, bytes] = {}
+        if result.kind == "doc":
+            files_to_write[result.suggested_path] = result.text_content.encode("utf-8")
+        else:
+            files_to_write[result.suggested_path] = result.content_bytes
+
+        with invalid_input():
+            await asyncio.to_thread(store().write_files, info, files_to_write)
+
+        return {
+            "kind": result.kind,
+            "harvested": False,
+            "path": result.suggested_path,
+            "revision": info.revision,
+            "state": (await asyncio.to_thread(response, info)).model_dump(mode="json"),
+            "message": f"Imported {result.suggested_path} from Google."
+        }
+
+
 @app.post("/api/theater-editor/{theater_id}/assistant")
 async def ask_assistant(theater_id: str, body: AssistantRequest, request: Request) -> dict[str, JsonValue]:
     owner_id = await require_user(request)
@@ -220,8 +285,32 @@ async def ask_assistant(theater_id: str, body: AssistantRequest, request: Reques
         user = await asyncio.to_thread(db.get_user_by_id, owner_id)
         if not user or user["credits"] < cost:
             raise HTTPException(status_code=402, detail=f"Each assistant turn requires {cost:g} credits. Buy credits using the balance at the top of this page.")
+
+        # Detect any Google links in the user prompt and resolve them before asking the assistant
+        harvest_docs: list[dict[str, str]] = []
+        downloaded_assets: list[str] = []
+        for link in find_google_urls(body.prompt):
+            try:
+                imported = await import_google_link(link.original_url)
+                if imported.kind == "doc":
+                    harvest_docs.append({"title": imported.title, "content": imported.text_content[:50_000]})
+                elif imported.kind in {"image", "audio", "text"}:
+                    content = imported.content_bytes if imported.kind != "text" else imported.text_content.encode("utf-8")
+                    with invalid_input():
+                        await asyncio.to_thread(store().write_files, info, {imported.suggested_path: content})
+                    downloaded_assets.append(imported.suggested_path)
+            except Exception as import_err:
+                logger.warning("Could not auto-import Google link %s: %s", link.original_url, import_err)
+
+        augmented_prompt = body.prompt
+        if downloaded_assets:
+            augmented_prompt += f"\n[System note: Downloaded Google Drive assets to draft: {', '.join(downloaded_assets)}]"
+
         try:
-            proposal = await asyncio.to_thread(store().propose, info, body.prompt, body.history, config)
+            if harvest_docs:
+                proposal = await asyncio.to_thread(store().propose, info, augmented_prompt, body.history, config, harvest_docs=harvest_docs)
+            else:
+                proposal = await asyncio.to_thread(store().propose, info, augmented_prompt, body.history, config)
         except Exception as error:
             logger.exception("Theater builder assistant failed")
             raise HTTPException(status_code=502, detail="The assistant could not prepare a valid proposal. No credits were charged. Please try again.") from error
@@ -233,7 +322,8 @@ async def ask_assistant(theater_id: str, body: AssistantRequest, request: Reques
             raise HTTPException(status_code=503, detail="Could not settle assistant credits. Please try again.") from error
         auth_session_cache.invalidate_user(owner_id)
         return {"revision": info.revision, "proposal": proposal.model_dump(mode="json"),
-                "credits_charged": cost, "credits": float(updated["credits"])}
+                "credits_charged": cost, "credits": float(updated["credits"]),
+                "state": (await asyncio.to_thread(response, info)).model_dump(mode="json") if downloaded_assets else None}
 
 
 @app.post("/api/theater-editor/{theater_id}/apply")

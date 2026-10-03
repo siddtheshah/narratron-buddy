@@ -266,7 +266,7 @@ class TheaterBuilderStore:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(safe_asset_path(root, relative), destination)
 
-    def propose(self, info: DraftInfo, prompt: str, history: list[ChatMessage], app_config: dict[str, JsonValue]) -> BuilderProposal:
+    def propose(self, info: DraftInfo, prompt: str, history: list[ChatMessage], app_config: dict[str, JsonValue], harvest_docs: list[dict[str, str]] | None = None) -> BuilderProposal:
         root = self.directory(info.theater_id)
         inventory = self.files(info.theater_id)
         texts: dict[str, str] = {}
@@ -280,7 +280,9 @@ class TheaterBuilderStore:
         gcloud = TypeAdapter(dict[str, JsonValue]).validate_python(app_config.get("gcloud", {}))
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         client = genai.Client(api_key=api_key) if api_key else genai.Client(vertexai=True, project=str(gcloud.get("project_id") or os.getenv("GOOGLE_CLOUD_PROJECT") or ""), location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"))
-        context = {"name": info.name, "files": [item.model_dump() for item in inventory], "text_files": texts, "conversation": [item.model_dump() for item in history], "request": prompt}
+        context: dict[str, JsonValue] = {"name": info.name, "files": [item.model_dump() for item in inventory], "text_files": texts, "conversation": [item.model_dump() for item in history], "request": prompt}
+        if harvest_docs:
+            context["harvest_docs"] = harvest_docs
         contents: list[types.Part] = [types.Part.from_text(text=json.dumps(context))]
         # Let the assistant identify loose images even when their filenames convey no meaning.
         previews = [item for item in inventory if item.kind == "image"][:12]
@@ -312,6 +314,7 @@ class TheaterBuilderStore:
                         "Image previews are supplied for up to twelve references; identify their content when organizing generic filenames. Do not claim to have inspected audio or unshown images. "
                         "Update lore/config asset paths when moving assets. Generation requests propose one reference image or one playlist track each. "
                         "Generated assets are charged only when the user clicks Generate. Use only existing references paths in generation requests. "
+                        "When harvest_docs are provided, thoroughly harvest their world-building, lore, characters, locations, factions, and rules into well-structured files under lore/*.txt (keeping each file under 30KB), configure live_agent.special_instructions with an authentic persona and roleplay instructions, set visuals.style and music.style, configure story_planning and adventure_mode, and propose appropriate reference images and playlist tracks for key figures and locations. "
                         "Explain your proposal briefly and mention any missing assets. Never include executable files or scripts."
                     ),
                 ),
@@ -327,6 +330,11 @@ class TheaterBuilderStore:
             safe_asset_path(root, move.source)
             safe_asset_path(root, move.destination)
         return proposal
+
+    def harvest_doc(self, info: DraftInfo, doc_title: str, doc_text: str, user_prompt: str, app_config: dict[str, JsonValue]) -> BuilderProposal:
+        prompt = user_prompt.strip() or f"Harvest '{doc_title}' into structured lore files, narrator persona, visual styles, and adventure planning."
+        docs = [{"title": doc_title, "content": doc_text[:50_000]}]
+        return self.propose(info, prompt, [], app_config, harvest_docs=docs)
 
 
 def asset_mime(path: Path) -> str:
