@@ -1,8 +1,10 @@
 # Live agent providers
 
-`live_agent.provider` in `app.yaml` selects the backend. The application uses
-Gemini 3.8 Live. Set `GEMINI_API_KEY` in the server environment (or `.env`)
-and restart the application before summoning the agent:
+`live_agent.provider` in `app.yaml` selects the backend. The application defaults
+to OpenAI `gpt-realtime-2.1` with audio input and text-only output. Set
+`OPENAI_API_KEY` in the server environment (or `.env`) and restart the application
+before summoning a fresh agent session. To use Gemini instead, set
+`GEMINI_API_KEY` and configure:
 
 ```yaml
 live_agent:
@@ -13,7 +15,7 @@ live_agent:
     target_tokens: 8000
 ```
 
-To use the optional OpenAI backend, set `OPENAI_API_KEY` and configure:
+The OpenAI configuration is:
 
 ```yaml
 live_agent:
@@ -63,6 +65,23 @@ overlap, and continuations are
 limited by `max_response_turns` until fresh user input. This limit includes the
 initial response. Tools already issued still execute and their results are sent
 even when the continuation limit is reached.
+
+Tools own their continuation policy via `@terminal` from `tools.tool_metadata`.
+This sets the callable's `terminal` attribute. ToolBundle preserves it in ADK's
+custom metadata, which the OpenAI adapter reads when constructing the connection.
+Terminal tools include `create_image`, `show_image`, chat updates, and music
+creation/playback controls. Their non-error status results, including background
+generation and queued actions, do not request an acknowledgement response.
+Explicit errors and unrecognized structured results still allow continuation.
+If any call in a parallel group requires continuation, the group continues once
+all results arrive. User input and actionable notifications still wake the agent.
+Unannotated tools such as `browse_images` continue so their results can inform
+the next action. Independent staging actions should be requested together; a turn ending
+only in successful deferred actions waits for new input.
+
+Logs record each requested response (including a connection-wide count and
+remaining turn budget) and each deferred tool completion. Compare these with
+per-response usage to measure the reduction in responses during live trials.
 
 OpenAI truncation retains a fraction of conversation history at the configured
 token limit; it does not summarize. Gemini's `compaction` settings do not apply

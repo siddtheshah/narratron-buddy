@@ -57,6 +57,115 @@ def user_text(text: str = "Go north") -> types.Content:
     return types.Content(role="user", parts=[types.Part(text=text)])
 
 
+def tool_call(call_id: str, name: str) -> dict[str, JsonValue]:
+    return {
+        "type": "function_call", "call_id": call_id,
+        "name": name, "arguments": "{}",
+    }
+
+
+def tool_result(
+    call_id: str, name: str, payload: dict[str, JsonValue], *, continuing: bool = False
+) -> types.Content:
+    return types.Content(parts=[types.Part(function_response=types.FunctionResponse(
+        id=call_id, name=name, response=payload, will_continue=continuing,
+    ))])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [
+    {"result": "Successfully displayed forest.webp to the user."},
+    {"status": "ok"},
+    {"result": "Image generation started in background. It will automatically appear."},
+    {"result": "Image queued; waiting for another operation."},
+    {"status": "queued"},
+])
+async def test_successful_terminal_result_waits_for_next_user_input(
+    payload: dict[str, JsonValue],
+) -> None:
+    socket = make_socket([response_event("r1", [tool_call("a", "show_image")])])
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig(), terminal_tools={"show_image"})
+    await connection.send_content(user_text())
+    _ = [event async for event in connection.receive()]
+    await connection._send_content(tool_result("a", "show_image", payload), partial=True)
+    assert socket.response.create.await_count == 1
+    item = socket.conversation.item.create.call_args.kwargs["item"]
+    assert item["type"] == "function_call_output"
+    assert item["call_id"] == "a"
+    assert json.loads(item["output"]) == payload
+    await connection.send_content(user_text("Now go east"))
+    assert socket.response.create.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [
+    {"result": "Error: Image not found."},
+    {"result": "Failed to create the image."},
+    {"result": {"unexpected": True}},
+    {"status": "error"},
+    {"status": "ok", "error": "Display failed"},
+])
+async def test_terminal_errors_and_unknown_results_still_continue(
+    payload: dict[str, JsonValue],
+) -> None:
+    socket = make_socket([response_event("r1", [tool_call("a", "show_image")])])
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig(), terminal_tools={"show_image"})
+    await connection.send_content(user_text())
+    _ = [event async for event in connection.receive()]
+    await connection._send_content(tool_result("a", "show_image", payload), partial=True)
+    assert socket.response.create.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lookup_first", [True, False])
+async def test_mixed_parallel_results_continue_once_in_either_completion_order(
+    lookup_first: bool,
+) -> None:
+    socket = make_socket([response_event("r1", [
+        tool_call("a", "show_image"), tool_call("b", "browse_images"),
+    ])])
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig(), terminal_tools={"show_image"})
+    await connection.send_content(user_text())
+    _ = [event async for event in connection.receive()]
+    terminal = tool_result("a", "show_image", {"result": "Successfully displayed forest."})
+    lookup = tool_result("b", "browse_images", {"images": ["forest", "river"]})
+    ordered = [lookup, terminal] if lookup_first else [terminal, lookup]
+    await connection._send_content(ordered[0], partial=True)
+    assert socket.response.create.await_count == 1
+    await connection._send_content(ordered[1], partial=True)
+    assert socket.response.create.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_all_terminal_parallel_results_defer_but_actionable_notification_wakes() -> None:
+    socket = make_socket([response_event("r1", [
+        tool_call("a", "show_image"), tool_call("b", "send_chat_message"),
+    ])])
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig(), terminal_tools={"show_image", "send_chat_message"})
+    await connection.send_content(user_text())
+    _ = [event async for event in connection.receive()]
+    for call_id, name in [("a", "show_image"), ("b", "send_chat_message")]:
+        await connection._send_content(tool_result(call_id, name, {"status": "ok"}), partial=True)
+    assert socket.response.create.await_count == 1
+    await connection._send_content(user_text("Canvas status"), partial=True)
+    assert socket.response.create.await_count == 1
+    await connection._send_content(user_text("[Story Planner Result] New scene"), partial=False)
+    assert socket.response.create.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_streaming_terminal_result_waits_for_final_result() -> None:
+    socket = make_socket([response_event("r1", [tool_call("a", "show_image")])])
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig(), terminal_tools={"show_image"})
+    await connection.send_content(user_text())
+    _ = [event async for event in connection.receive()]
+    await connection._send_content(tool_result("a", "show_image", {"status": "ok"}, continuing=True))
+    await connection.send_content(user_text("Another user action"))
+    assert socket.response.create.await_count == 1
+    await connection._send_content(tool_result("a", "show_image", {"status": "ok"}))
+    assert socket.response.create.await_count == 2
+
+
 @pytest.mark.asyncio
 async def test_manual_vad_resamples_audio_and_commits_only_at_speech_end() -> None:
     socket = make_socket()

@@ -15,12 +15,13 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
 from openai.types.realtime.realtime_conversation_item_user_message_param import Content
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
 from providers.live_agent_provider import LiveAgentProviderError, OpenAIRealtimeConfig
 
 logger = logging.getLogger(__name__)
 _ARGUMENTS = TypeAdapter(dict[str, JsonValue])
+_TOOL_RESULT_TEXT = TypeAdapter(str)
 
 
 class _TextPart(BaseModel):
@@ -99,10 +100,13 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
         socket: AsyncRealtimeConnection,
         model: str,
         config: OpenAIRealtimeConfig,
+        *,
+        terminal_tools: set[str] | None = None,
     ) -> None:
         self._socket = socket
         self._model = model
         self._config = config
+        self._terminal_tools = terminal_tools or set()
         self._send_lock = asyncio.Lock()
         self._closed = False
         self._speaking = False
@@ -114,6 +118,7 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
         self._pending_calls: set[str] = set()
         self._completed_responses: set[str] = set()
         self._session_id: str | None = None
+        self._responses_created = 0
 
     async def wait_for_setup(self) -> None:
         """Wait for configuration acknowledgement before accepting input."""
@@ -155,6 +160,31 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
         self._response_active = True
         self._turns_remaining -= 1
         await self._socket.response.create(response={"output_modalities": ["text"]})
+        self._responses_created += 1
+        logger.info(
+            "OpenAI Realtime response requested session=%s model=%s count=%s remaining=%s",
+            self._session_id, self._model, self._responses_created, self._turns_remaining,
+        )
+
+    def _defer_successful_result(self, response: types.FunctionResponse) -> bool:
+        """Terminal actions can end on accepted/background results, but not errors."""
+        if response.name not in self._terminal_tools:
+            return False
+        if response.response.get("error"):
+            return False
+        status = response.response.get("status")
+        if status is not None:
+            return status in ("ok", "success", "queued", "started")
+        # ADK wraps string return values from Narratron tools as {'result': ...}.
+        try:
+            result = _TOOL_RESULT_TEXT.validate_python(
+                response.response.get("result"), strict=True
+            )
+        except ValidationError:
+            return False
+        return bool(result.strip()) and not result.lstrip().lower().startswith(
+            ("error", "failed", "failure")
+        )
 
     async def send_history(self, history: list[types.Content]) -> None:
         async with self._send_lock:
@@ -182,7 +212,13 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
                 for response in responses:
                     if not response.will_continue:
                         self._pending_calls.discard(response.id or "")
-                self._response_pending = True
+                        if self._defer_successful_result(response):
+                            logger.info(
+                                "OpenAI Realtime tool continuation deferred session=%s tool=%s call=%s",
+                                self._session_id, response.name, response.id,
+                            )
+                        else:
+                            self._response_pending = True
             elif not partial:
                 self._turns_remaining = self._config.max_response_turns
                 self._response_pending = True

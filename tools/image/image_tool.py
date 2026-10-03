@@ -16,6 +16,7 @@ from providers import (
     get_image_provider,
 )
 from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
+from tools.tool_metadata import terminal
 from utils.image_utils import (
     compress_image_to_webp,
     embed_image_metadata,
@@ -221,6 +222,7 @@ class ImageTools(BaseTools):
             lookup_result=lookup_result,
         )
 
+    @terminal
     @blocked_when_canvas_pinned
     @with_cycle_cooldown(action_desc="generating another image")
     def create_image(
@@ -426,6 +428,7 @@ class ImageTools(BaseTools):
         normalized = re.sub(r"[^a-zA-Z0-9]", "_", stem).strip("_").lower()
         return normalized == "narratron_avatar"
 
+    @terminal
     @blocked_when_canvas_pinned
     @with_cycle_cooldown(action_desc="showing another image")
     def show_image(

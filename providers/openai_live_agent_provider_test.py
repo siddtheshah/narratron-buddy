@@ -27,6 +27,7 @@ from providers.openai_live_agent_provider import (
     build_openai_session_config,
 )
 from providers.openai_realtime_connection_test import make_socket, response_event
+from tools.tool_metadata import annotated_function_tool, terminal
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
@@ -111,7 +112,7 @@ def test_registry_and_run_config_do_not_require_credentials() -> None:
     provider = get_live_agent_provider("openai")
     config = LiveAgentConfig(provider="openai", max_tool_workers=4)
     with patch.dict("os.environ", {}, clear=True):
-        assert provider.create_model(config).model == "gpt-realtime-2.1-mini"
+        assert provider.create_model(config).model == "gpt-realtime-2.1"
     run_config = provider.build_run_config(config)
     assert run_config.response_modalities == ["TEXT"]
     assert run_config.input_audio_transcription is None
@@ -121,6 +122,29 @@ def test_registry_and_run_config_do_not_require_credentials() -> None:
     assert run_config.tool_thread_pool_config.max_workers == 4
     assert not provider.requires_tool_reminders
     assert provider.background_content_is_partial
+
+
+def test_deferred_tools_are_explained_in_session_instructions() -> None:
+    @terminal
+    def show_image() -> str:
+        """Display a scene."""
+        return "Successfully displayed the scene."
+
+    def browse_images() -> list[str]:
+        """Find a scene to display."""
+        return ["forest"]
+
+    request = LlmRequest(config=types.GenerateContentConfig(system_instruction="Stage scenes."))
+    request.append_tools([annotated_function_tool(show_image), annotated_function_tool(browse_images)])
+    session = build_openai_session_config(
+        request,
+        "gpt-realtime-2.1",
+        OpenAIRealtimeConfig(),
+    )
+    assert "may not trigger another response: show_image." in session["instructions"]
+    assert "Request all independent staging actions together" in session["instructions"]
+    assert {tool["name"] for tool in session["tools"]} == {"show_image", "browse_images"}
+    assert all("terminal" not in tool for tool in session["tools"])
 
 
 @pytest.mark.asyncio
@@ -138,8 +162,10 @@ async def test_missing_key_fails_explicitly_before_connecting() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("input_mode", ["text", "audio", "notification"])
+@pytest.mark.parametrize("terminal_action", [False, True])
 async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
     input_mode: str,
+    terminal_action: bool,
 ) -> None:
     socket = make_socket()
     wire_events: asyncio.Queue[bytes] = asyncio.Queue()
@@ -157,6 +183,16 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
     def report_probe(label: str) -> dict[str, str]:
         tool_arguments.append(label)
         return {"status": "ok", "label": label}
+
+    if terminal_action:
+        terminal(report_probe)
+    tool_result_delivered = asyncio.Event()
+
+    async def create_item(*, item: dict[str, JsonValue]) -> None:
+        if item["type"] == "function_call_output":
+            tool_result_delivered.set()
+
+    socket.conversation.item.create = AsyncMock(side_effect=create_item)
 
     async def create_response() -> None:
         if len(tool_arguments) == 0:
@@ -205,7 +241,7 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
         name="test_agent",
         model=provider.create_model(config),
         instruction="Call report_probe.",
-        tools=[report_probe],
+        tools=[annotated_function_tool(report_probe)],
     )
     runner = InMemoryRunner(agent=agent, app_name="openai_adapter_test")
     session = await runner.session_service.create_session(
@@ -249,6 +285,10 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
                 results.extend(
                     response.id for response in event.get_function_responses()
                 )
+                if terminal_action and results:
+                    await tool_result_delivered.wait()
+                    await asyncio.sleep(0)
+                    return
                 if event.content and any(
                     part.text == "Done" for part in event.content.parts or []
                 ):
@@ -275,7 +315,7 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
     assert len(outputs) == 1
     assert outputs[0]["call_id"] == "call_probe"
     assert json.loads(outputs[0]["output"])["label"] == "typed_input"
-    assert socket.response.create.await_count == 2
+    assert socket.response.create.await_count == (1 if terminal_action else 2)
     assert socket.input_audio_buffer.commit.await_count == (
         1 if input_mode == "audio" else 0
     )

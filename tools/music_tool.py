@@ -14,6 +14,7 @@ from providers import (
     get_music_provider,
 )
 from tools.base_tool import BaseTools, logged_tool_call, with_cycle_cooldown
+from tools.tool_metadata import terminal
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from services.music_catalog import MusicCatalog
@@ -171,6 +172,7 @@ class MusicTools(BaseTools):
             return f"{music_prompt}\n\nStyle: {self.style_default}"
         return music_prompt
 
+    @terminal
     @logged_tool_call
     def create_music(
         self,
@@ -290,6 +292,7 @@ class MusicTools(BaseTools):
             logger.error("[MusicTools] Error playing music: %s", e)
             return f"Error playing music: {e}"
 
+    @terminal
     @with_cycle_cooldown(
         action_desc="playing another music track",
         duration=lambda tools: tools.switch_cooldown,
@@ -307,6 +310,7 @@ class MusicTools(BaseTools):
         logger.debug("[MusicTools] play_music requested for theater=%s music_id=%s.", self.active_theater_id, music_id)
         return self._play_music_internal(music_id)
 
+    @terminal
     @logged_tool_call
     def pause_music(self) -> str:
         """Pause the current playing music track or playlist on the canvas dashboard.
@@ -324,6 +328,7 @@ class MusicTools(BaseTools):
             logger.error("[MusicTools] Error pausing music: %s", e)
             return f"Error pausing music: {e}"
 
+    @terminal
     @logged_tool_call
     def resume_music(self) -> str:
         """Resume the paused music track or playlist on the canvas dashboard.

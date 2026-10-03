@@ -29,7 +29,7 @@ from providers.live_agent_provider import (
 )
 from providers.openai_realtime_connection import OpenAIRealtimeConnection
 
-DEFAULT_OPENAI_LIVE_MODEL = "gpt-realtime-2.1-mini"
+DEFAULT_OPENAI_LIVE_MODEL = "gpt-realtime-2.1"
 _JSON_SCHEMA = TypeAdapter(dict[str, JsonValue])
 _INSTRUCTION = TypeAdapter(str)
 _FOLLOW_THROUGH_INSTRUCTION = """
@@ -133,11 +133,30 @@ def build_openai_session_config(
             "token_limits": {"post_instructions": config.post_instructions_token_limit},
         },
     }
+    terminal_tools = terminal_tool_names(request)
+    if terminal_tools:
+        session["instructions"] += (
+            "\n\nRequest all independent staging actions together when their "
+            "arguments are already known. Successful results from these tools "
+            "may not trigger another response: "
+            + ", ".join(sorted(terminal_tools))
+            + ". Include all already-planned actions in that response rather "
+            "than relying on an acknowledgement turn. Results needing further "
+            "decisions and errors will still allow continuation."
+        )
     if config.input_transcription_model:
         session["audio"]["input"]["transcription"] = {
             "model": config.input_transcription_model
         }
     return session
+
+
+def terminal_tool_names(request: LlmRequest) -> set[str]:
+    """Read the tool-owned policy without sending custom fields to OpenAI."""
+    return {
+        name for name, tool in request.tools_dict.items()
+        if tool.custom_metadata is not None and tool.custom_metadata.get("terminal") is True
+    }
 
 
 class OpenAIRealtimeModel(BaseLlm):
@@ -169,7 +188,8 @@ class OpenAIRealtimeModel(BaseLlm):
             # No transparent reconnect: a fresh socket loses server conversation state.
             async with client.realtime.connect(model=self.model) as socket:
                 connection = OpenAIRealtimeConnection(
-                    socket, self.model, self.realtime_config
+                    socket, self.model, self.realtime_config,
+                    terminal_tools=terminal_tool_names(llm_request),
                 )
                 try:
                     await socket.session.update(session=session)

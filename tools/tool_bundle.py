@@ -1,8 +1,9 @@
 import logging
 from typing import Any, Callable, List, Sequence, Union
 
-from google.adk.tools import BaseTool, FunctionTool
+from google.adk.tools import BaseTool
 from google.genai import types
+from tools.tool_metadata import annotated_function_tool
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class ToolBundle:
             if isinstance(item, BaseTool):
                 self.tools.append(item)
             elif callable(item):
-                self.tools.append(FunctionTool(item))
+                self.tools.append(annotated_function_tool(item))
             elif hasattr(item, "_get_declaration"):
                 self.tools.append(item)
             else:
