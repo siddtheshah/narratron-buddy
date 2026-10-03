@@ -40,7 +40,7 @@ smtp:
 
 live_agent:
     provider: "openai"
-    model_id: "gpt-realtime-2.1-mini"
+    model_id: "gpt-realtime-2.1"
     # Model tool calls allowed after each VAD end before the the live model is starved.
     live_tool_budget: 5
     enable_tool_injection: false

@@ -186,7 +186,8 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
             elif not partial:
                 self._turns_remaining = self._config.max_response_turns
                 self._response_pending = True
-            # Background state is context only. It must not open a new paid turn.
+            # Passive context does not start a turn. Complete notifications from
+            # async work get a bounded response budget just like user input.
             await self._start_response_if_ready()
 
     async def _create_content_items(self, content: types.Content) -> None:

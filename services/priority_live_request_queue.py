@@ -25,7 +25,7 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         super().__init__()
         self._background_content_is_partial = background_content_is_partial
         self._tool_results_bypass_input_window = tool_results_bypass_input_window
-        self._tool_result_queue: asyncio.Queue[LiveRequest] = asyncio.Queue()
+        self._priority_content_queue: asyncio.Queue[LiveRequest] = asyncio.Queue()
         self._current_non_audio_queue: asyncio.Queue = asyncio.Queue()
         self._current_user_input_queue: asyncio.Queue = asyncio.Queue()
         self._future_non_audio_queue: asyncio.Queue = asyncio.Queue()
@@ -143,7 +143,7 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         if self._tool_results_bypass_input_window and req.content is not None and any(
             part.function_response is not None for part in req.content.parts or []
         ):
-            self._tool_result_queue.put_nowait(req)
+            self._priority_content_queue.put_nowait(req)
             return
         if (
             self._defer_non_audio_until_next_input
@@ -170,6 +170,15 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
             partial=self._background_content_is_partial if partial is None else partial,
         )
         self._queue_non_audio(req)
+        self._notify_event.set()
+
+    def send_notification(self, content: types.Content) -> None:
+        """Deliver an actionable completion event as a complete model turn."""
+        req = LiveRequest(content=content, partial=False)
+        if self._background_content_is_partial:
+            self._priority_content_queue.put_nowait(req)
+        else:
+            self._queue_non_audio(req)
         self._notify_event.set()
 
     def send_user_input(self, content: types.Content) -> None:
@@ -221,8 +230,8 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         tool-call budget; later notifications wait in the future queue.
         """
         while True:
-            if not self._tool_result_queue.empty():
-                return self._tool_result_queue.get_nowait()
+            if not self._priority_content_queue.empty() and self._current_user_input_queue.empty():
+                return self._priority_content_queue.get_nowait()
             if self._state == self._NON_AUDIO:
                 if not self._current_non_audio_queue.empty():
                     return self._current_non_audio_queue.get_nowait()

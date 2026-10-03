@@ -133,6 +133,26 @@ async def test_background_context_does_not_generate_response() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completed_work_wakes_agent_after_previous_turns_are_exhausted() -> None:
+    socket = make_socket([response_event("r1", [])])
+    connection = OpenAIRealtimeConnection(
+        socket, "test-model", OpenAIRealtimeConfig(max_response_turns=1)
+    )
+    await connection.send_content(user_text())
+    responses = [response async for response in connection.receive()]
+    assert responses[-1].turn_complete
+    await connection._send_content(user_text("Canvas pulse"), partial=True)
+    assert socket.response.create.await_count == 1
+    await connection.send_realtime(types.ActivityStart())
+    await connection._send_content(
+        user_text("[Story Planner Result] Door opens"), partial=False
+    )
+    assert socket.response.create.await_count == 1
+    await connection.send_realtime(types.ActivityEnd())
+    assert socket.response.create.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_waits_for_all_parallel_tool_results_and_preserves_ids() -> None:
     socket = make_socket(
         [

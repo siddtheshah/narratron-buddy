@@ -68,6 +68,8 @@ def test_session_configuration_uses_ga_schema_text_and_manual_vad() -> None:
     assert "transcription" not in session["audio"]["input"]
     assert "output" not in session["audio"]
     assert session["max_output_tokens"] == 1024
+    assert "When a [Story Planner Result] arrives" in session["instructions"]
+    assert "Never invent player" in session["instructions"]
     assert session["truncation"]["token_limits"]["post_instructions"] == 8000
     parameters = session["tools"][0]["parameters"]
     assert parameters["type"] == "object"
@@ -135,7 +137,7 @@ async def test_missing_key_fails_explicitly_before_connecting() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("input_mode", ["text", "audio"])
+@pytest.mark.parametrize("input_mode", ["text", "audio", "notification"])
 async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
     input_mode: str,
 ) -> None:
@@ -210,19 +212,26 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
         app_name=runner.app_name, user_id="user"
     )
     queue = PriorityLiveRequestQueue(
-        live_tool_budget=1, background_content_is_partial=True,
+        live_tool_budget=1,
+        background_content_is_partial=True,
         tool_results_bypass_input_window=provider.tool_results_bypass_input_window,
     )
     if input_mode == "text":
         queue.send_user_input(
             types.Content(role="user", parts=[types.Part(text="typed input probe")])
         )
-    else:
+    elif input_mode == "audio":
         queue.send_activity_start()
         queue.send_realtime(
             types.Blob(data=b"\x01\x00" * 1600, mime_type="audio/pcm;rate=16000")
         )
         queue.send_activity_end()
+    else:
+        queue.send_notification(
+            types.Content(
+                parts=[types.Part(text="[Story Planner Result] The door opens.")]
+            )
+        )
     request = LiveAgentRunRequest(
         runner=runner,
         user_id="user",

@@ -32,6 +32,18 @@ from providers.openai_realtime_connection import OpenAIRealtimeConnection
 DEFAULT_OPENAI_LIVE_MODEL = "gpt-realtime-2.1-mini"
 _JSON_SCHEMA = TypeAdapter(dict[str, JsonValue])
 _INSTRUCTION = TypeAdapter(str)
+_FOLLOW_THROUGH_INSTRUCTION = """
+Be an active stage director within the agency allowed by the instructions above.
+After completed user input, carry out the relevant available tools without asking
+the user to prompt you again. When a [Story Planner Result] arrives, immediately
+stage the authoritative scene using appropriate visuals, music, and animation;
+do not wait for another player action. When an animation becomes ready, display
+it if it still fits the current scene. Follow through on relevant pending work
+after tool results, and run independent staging tools together when appropriate.
+Respect existing timing, cooldown, and music-continuity rules. Never invent player
+actions or advance the adventure independently. Once staging is complete, wait
+for new input or an actionable notification; do not repeatedly poll tools.
+""".strip()
 
 
 def _convert_schema(schema: types.Schema) -> dict[str, JsonValue]:
@@ -102,7 +114,9 @@ def build_openai_session_config(
         "model": model,
         "instructions": _INSTRUCTION.validate_python(
             request.config.system_instruction or ""
-        ),
+        )
+        + "\n\n"
+        + _FOLLOW_THROUGH_INSTRUCTION,
         "output_modalities": ["text"],
         "max_output_tokens": config.max_output_tokens,
         "audio": {

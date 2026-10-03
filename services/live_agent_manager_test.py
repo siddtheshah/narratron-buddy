@@ -504,7 +504,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         planner_tools.on_scene_reaction({"narration": "A door opens."})
 
-        args, _ = session.live_request_queue.send_content.call_args
+        args, _ = session.live_request_queue.send_notification.call_args
         self.assertIn("[Story Planner Result]", args[0].parts[0].text)
         self.assertIn("A door opens.", args[0].parts[0].text)
         mock_image_tools.record_story_plan_completed.assert_called_once()
@@ -1263,7 +1263,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 runner=MagicMock(agent=mock_agent, session_service=MagicMock()),
                 tool_bundle=MagicMock(),
             )
-            session.send_content = MagicMock()
+            session.send_notification = MagicMock()
 
             # Verify on_animation_ready callback was registered
             self.assertIsNotNone(mock_animation_tools.on_animation_ready)
@@ -1273,8 +1273,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             mock_animation_tools.on_animation_ready("anim_123", "layered")
 
             # Check that notification was sent
-            session.send_content.assert_called_once()
-            content_arg = session.send_content.call_args.args[0]
+            session.send_notification.assert_called_once()
+            content_arg = session.send_notification.call_args.args[0]
             self.assertIn("anim_123", content_arg.parts[0].text)
             self.assertIn("layered", content_arg.parts[0].text)
             self.assertIn("ready to play", content_arg.parts[0].text)

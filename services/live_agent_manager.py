@@ -233,6 +233,13 @@ class LiveAgentSession:
         self.live_request_queue.send_content(content)
         return True
 
+    def send_notification(self, content: types.Content) -> bool:
+        """Wake the agent for an actionable result without recording player input."""
+        if not self.is_alive:
+            return False
+        self.live_request_queue.send_notification(content)
+        return True
+
     def send_user_content(self, content: types.Content) -> bool:
         """Send typed input as a complete Live user-input turn."""
         if not self.is_alive:
@@ -319,7 +326,7 @@ class LiveAgentSession:
             content = types.Content(parts=[types.Part(text=message)])
 
             def enqueue() -> None:
-                self.send_content(content)
+                self.send_notification(content)
 
             if self._event_loop and self._event_loop.is_running():
                 self._event_loop.call_soon_threadsafe(enqueue)
@@ -333,7 +340,7 @@ class LiveAgentSession:
             content = types.Content(parts=[types.Part(text=msg)])
 
             def enqueue() -> None:
-                self.send_content(content)
+                self.send_notification(content)
 
             if self._event_loop and self._event_loop.is_running():
                 self._event_loop.call_soon_threadsafe(enqueue)

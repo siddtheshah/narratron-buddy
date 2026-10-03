@@ -1,13 +1,13 @@
 # Live agent providers
 
 `live_agent.provider` in `app.yaml` selects the backend. The application now uses
-OpenAI Realtime 2.1 Mini. Set `OPENAI_API_KEY` in the server environment (or `.env`)
+OpenAI Realtime 2.1. Set `OPENAI_API_KEY` in the server environment (or `.env`)
 and restart the application before summoning the agent:
 
 ```yaml
 live_agent:
   provider: openai
-  model_id: gpt-realtime-2.1-mini
+  model_id: gpt-realtime-2.1
   openai:
     max_output_tokens: 1024
     max_response_turns: 6
@@ -39,7 +39,12 @@ to satisfy the API's minimum audio-buffer length. Server VAD is disabled.
 
 Text input and summon greetings start a response. Background canvas/state messages
 provide context without starting a response; OpenAI does not run the periodic
-tool-reminder loop. Completed function calls are handed to ADK and results are
+tool-reminder loop. Completed story-planner results and ready animations are
+actionable notifications: they wake the agent with a fresh bounded response budget,
+even when the previous notification window has expired. Responses wait until
+speech ends and pending tools finish. The OpenAI prompt instructs it to stage
+completed scenes and display relevant ready animations without another user prompt.
+Completed function calls are handed to ADK and results are
 returned with their original call IDs. Parallel calls wait for every result before
 requesting the next response. Tool results bypass the notification window so an
 exhausted tool budget cannot strand an already-issued call. Responses never

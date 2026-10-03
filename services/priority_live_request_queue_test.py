@@ -7,6 +7,23 @@ from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 class TestPriorityLiveRequestQueue(unittest.TestCase):
+    def test_actionable_notifications_wake_after_budget_expires_and_prioritize_speech(self) -> None:
+        async def run_test() -> None:
+            queue = PriorityLiveRequestQueue(live_tool_budget=1, background_content_is_partial=True)
+            queue.send_user_input(types.Content(parts=[types.Part(text="Open door")]))
+            await queue.get()
+            queue.record_model_tool_calls(1)
+            queue.send_notification(types.Content(parts=[types.Part(text="[Story Planner Result] Door opens")]))
+            queue.send_activity_start()
+            queue.send_activity_end()
+            self.assertIsNotNone((await queue.get()).activity_start)
+            self.assertIsNotNone((await queue.get()).activity_end)
+            result = await asyncio.wait_for(queue.get(), timeout=1)
+            self.assertFalse(result.partial)
+            self.assertIn("Door opens", result.content.parts[0].text)
+
+        asyncio.run(run_test())
+
     def test_tool_results_can_bypass_exhausted_notification_budget(self) -> None:
         async def run_test() -> None:
             queue = PriorityLiveRequestQueue(live_tool_budget=1, tool_results_bypass_input_window=True)
