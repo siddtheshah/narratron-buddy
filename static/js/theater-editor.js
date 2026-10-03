@@ -64,7 +64,7 @@
     const rates = state.rates;
     el('assistant-send').textContent = `Send · ${rates.theater_editor_assistant_credit_rate} Cr →`;
     el('assistant-cost').textContent = `${rates.theater_editor_assistant_credit_rate} Cr per assistant turn, including shortcuts. Charged when a reply is ready.`;
-    el('generation-rates').textContent = `References: ${rates.image_credit_rate} Cr / image · Playlists: ${rates.music_credit_rate} Cr / track. Same rates as live generation.`;
+    el('generation-rates').textContent = 'Image and playlist pricing follows standard live pricing.';
     updateGenerationCost();
     if (lastDraftKey) localStorage.setItem(lastDraftKey, state.draft.theater_id);
     const url = new URL(location.href);

@@ -61,9 +61,20 @@
           <div class="preview-footer"><span id="file-save-state">Changes stay in your draft until you deploy.</span><a href="/docs/theater-yaml" target="_blank" rel="noopener">Configuration guide ↗</a></div>
         </section>
         <aside class="assistant-panel panel" aria-label="AI theater assistant">
-          <div class="panel-heading"><h2>✦ Your co-creator</h2><span class="assistant-dot" aria-hidden="true"></span></div>
-          <p class="hint" id="assistant-cost"></p>
-          <p class="hint" id="generation-rates">Reference and playlist generation use live credit rates.</p>
+          <div class="panel-heading">
+            <div class="panel-heading-title">
+              <h2>✦ Your co-creator</h2>
+              <div class="info-tooltip-wrapper">
+                <button type="button" class="info-circle-btn" id="assistant-pricing-info" aria-label="Pricing information" aria-describedby="pricing-tooltip">i</button>
+                <div class="info-tooltip" id="pricing-tooltip" role="tooltip">
+                  <div class="info-tooltip-title">Pricing Details</div>
+                  <p class="hint" id="assistant-cost"></p>
+                  <p class="hint" id="generation-rates">Image and playlist pricing follows standard live pricing.</p>
+                </div>
+              </div>
+            </div>
+            <span class="assistant-dot" aria-hidden="true"></span>
+          </div>
           <div id="assistant-messages" role="log" aria-live="polite"><div class="message assistant">Tell me about your world. I can write lore, tune your theater, organize uploads, and propose artwork and music.</div></div>
           <div id="assistant-proposal" hidden></div>
           <div class="assistant-shortcuts"><button class="secondary" id="organize-assets" type="button">Organize assets</button><button class="secondary" id="suggest-world" type="button">Develop this world</button><button class="secondary" id="harvest-doc-shortcut" type="button">Harvest Google Doc</button></div>

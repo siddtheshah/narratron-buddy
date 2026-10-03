@@ -273,6 +273,18 @@ def test_assistant_discloses_price_and_refreshes_balance(editor_page: Page, trig
     expect(page.locator("#builder-status")).to_contain_text("Charged 0.1 credits")
 
 
+def test_pricing_info_hover_button_and_rates(editor_page: Page) -> None:
+    page = editor_page
+    info_btn = page.locator("#assistant-pricing-info")
+    expect(info_btn).to_be_visible()
+    expect(info_btn).to_have_text("i")
+    expect(page.locator("#generation-rates")).to_have_text("Image and playlist pricing follows standard live pricing.")
+    expect(page.locator("#assistant-cost")).to_contain_text("0.1 Cr per assistant turn, including shortcuts")
+    info_btn.hover()
+    expect(page.locator("#pricing-tooltip")).to_be_visible()
+
+
+
 def test_unaffordable_assistant_preserves_prompt_for_retry(editor_page: Page) -> None:
     page = editor_page
     page.evaluate("window.assistantMode = 'insufficient'")
