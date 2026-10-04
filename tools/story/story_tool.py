@@ -94,6 +94,7 @@ class StoryTool(BaseTools):
         )
         self._story_log: list[Dict[str, Any]] = []
         self._pending_actions: list[str] = []
+        self.on_scene_reaction = None
         self._load_story_log()
 
         self.lore_library = lore_library if lore_library is not None else LoreLibrary(theater=theater)

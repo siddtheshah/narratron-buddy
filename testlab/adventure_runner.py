@@ -503,6 +503,11 @@ class AdventureSession:
         clean_nudge = str(nudge or "").strip()
         logger.info("[AdventureRunner] process_user_action called: action=%r, nudge=%r", clean_action, clean_nudge)
 
+        # The synchronous harness bypasses the public asynchronous tool, so
+        # register the action and deliver its callback just as that tool does.
+        self.story_tool.append_story_log_entry({"type": "user_action", "action": clean_action})
+        self.story_tool._pending_actions.append(clean_action)
+
         # Run in a dedicated worker thread so that the internal asyncio.run() in
         # StoryTool._resolve_user_action may create its own event loop, so keep
         # it isolated from the ADK agent's event loop.
@@ -513,6 +518,8 @@ class AdventureSession:
                 nudge=clean_nudge,
             )
             result = future.result()
+
+        self.story_tool._handle_scene_reaction(result)
 
         # Production narration never waits for long-horizon planning, but the
         # deterministic CLI/autoplay harness should observe the completed plan

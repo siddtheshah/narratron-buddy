@@ -1,6 +1,7 @@
 """Unit and integration tests for Local Adventure Runner in Test Lab."""
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 import pytest
@@ -18,6 +19,36 @@ from testlab.adventure_runner import (
     run_autoplay,
 )
 from testlab.server import app
+
+
+def test_synchronous_action_queues_planning_before_wait(sample_adventure: Path) -> None:
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
+    reaction = {
+        "turn_id": 1,
+        "narration": "The hearing begins.",
+        "dialogue": [],
+        "planning_signals": ["Docket phase: Hearing"],
+    }
+    lifecycle = MagicMock()
+    try:
+        with (
+            patch.object(session.story_tool.response_module, "_run_responder_agent", return_value=reaction),
+            patch.object(session.story_tool.planning_module, "queue_deep_planning") as queue,
+            patch.object(session.story_tool.planning_module, "wait_for_deep_planning", return_value=True) as wait,
+        ):
+            lifecycle.attach_mock(queue, "queue")
+            lifecycle.attach_mock(wait, "wait")
+            session._process_user_action_wrapper("  Begin the hearing.  ")
+
+            queue.assert_called_once()
+            assert queue.call_args.args[1] == "Begin the hearing."
+            assert queue.call_args.args[2]["narration"] == "The hearing begins."
+            assert [entry[0] for entry in lifecycle.mock_calls] == ["queue", "wait"]
+            assert session.story_tool._pending_actions == []
+            assert session.story_tool._story_log[-2]["action"] == "Begin the hearing."
+            assert session.story_tool._story_log[-1]["type"] == "story_response"
+    finally:
+        session.cleanup()
 
 
 @pytest.fixture
