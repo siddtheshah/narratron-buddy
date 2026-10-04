@@ -230,6 +230,7 @@ class TestUploadAdventuresToGCS(unittest.TestCase):
             bucket=mock_bucket,
             gcs_prefix="adventures",
             clear_existing=False,
+            prune=False,
             dry_run=False,
         )
 
@@ -510,6 +511,97 @@ class TestUploadAdventuresToGCS(unittest.TestCase):
             )
         self.assertIn("Failed to parse YAML file", str(ctx.exception))
         mock_bucket.blob.assert_not_called()
+
+
+    def test_upload_adventure_default_sync_prunes_old_upstream_files(self) -> None:
+        mock_bucket = MagicMock()
+        mock_bucket.name = "test-bucket"
+        old_blob = MagicMock()
+        old_blob.name = "adventures/lesovik-station/stale_file.txt"
+
+        def mock_list_blobs(prefix: str = "") -> list:
+            if prefix == "adventures/lesovik-station/":
+                return [old_blob]
+            return []
+
+        mock_bucket.list_blobs.side_effect = mock_list_blobs
+        mock_target_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_target_blob
+
+        # Call with defaults (diff=True, prune=True)
+        result = upload_adventure_to_gcs(
+            adventure_dir=self.adv_dir,
+            bucket=mock_bucket,
+            gcs_prefix="adventures",
+        )
+
+        self.assertEqual(result["id"], "lesovik-station")
+        self.assertEqual(result["pruned_count"], 1)
+        self.assertEqual(result["files_count"], 3)
+        old_blob.delete.assert_called_once()
+        self.assertEqual(mock_target_blob.upload_from_filename.call_count, 3)
+
+    def test_upload_adventure_deletes_upstream_when_file_deleted_locally(self) -> None:
+        mock_bucket = MagicMock()
+        mock_bucket.name = "test-bucket"
+        # Remote GCS has theater.yaml, metadata.json, and a removed lore file
+        yaml_file = self.adv_dir / "theater.yaml"
+        old_yaml_blob = MagicMock()
+        old_yaml_blob.name = "adventures/lesovik-station/theater.yaml"
+        old_yaml_blob.size = yaml_file.stat().st_size
+        old_yaml_blob.md5_hash = compute_file_md5(yaml_file)
+
+        deleted_locally_blob = MagicMock()
+        deleted_locally_blob.name = "adventures/lesovik-station/deleted_locally.txt"
+
+        def mock_list_blobs(prefix: str = "") -> list:
+            if prefix == "adventures/lesovik-station/":
+                return [old_yaml_blob, deleted_locally_blob]
+            return []
+
+        mock_bucket.list_blobs.side_effect = mock_list_blobs
+        mock_target_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_target_blob
+
+        # self.adv_dir does not contain deleted_locally.txt
+        result = upload_adventure_to_gcs(
+            adventure_dir=self.adv_dir,
+            bucket=mock_bucket,
+            gcs_prefix="adventures",
+        )
+
+        # Unchanged theater.yaml skipped (saving bandwidth!)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertIn("theater.yaml", result["skipped_files"])
+        # deleted_locally.txt pruned in upstream
+        self.assertEqual(result["pruned_count"], 1)
+        deleted_locally_blob.delete.assert_called_once()
+        self.assertNotIn("deleted_locally.txt", result["uploaded_files"])
+
+    def test_upload_adventure_diff_mode_with_prune_deletes_locally_deleted_file(self) -> None:
+        mock_bucket = MagicMock()
+        mock_bucket.name = "test-bucket"
+
+        # In diff mode (overwrite=False), prune=True deletes files that were removed locally
+        deleted_blob = MagicMock()
+        deleted_blob.name = "adventures/lesovik-station/lore/deleted_locally.txt"
+
+        mock_bucket.list_blobs.return_value = [deleted_blob]
+        mock_target_blob = MagicMock()
+        mock_bucket.blob.return_value = mock_target_blob
+
+        result = upload_adventure_to_gcs(
+            adventure_dir=self.adv_dir,
+            bucket=mock_bucket,
+            gcs_prefix="adventures",
+            overwrite=False,
+            diff=True,
+            prune=True,
+        )
+
+        self.assertEqual(result["pruned_count"], 1)
+        self.assertIn("lore/deleted_locally.txt", result["pruned_count"] and ["lore/deleted_locally.txt"])
+        deleted_blob.delete.assert_called_once()
 
 
 if __name__ == "__main__":

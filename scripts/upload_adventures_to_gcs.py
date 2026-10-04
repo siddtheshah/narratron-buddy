@@ -15,15 +15,32 @@ import mimetypes
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Dict, Iterable, List, Optional, Protocol, Union
 
 from dotenv import load_dotenv
 import yaml
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
+
+class StorageBlobProtocol(Protocol):
+    name: str
+    size: Optional[int]
+    md5_hash: Optional[str]
+    crc32c: Optional[str]
+
+    def download_as_bytes(self) -> bytes: ...
+    def upload_from_filename(self, filename: str, content_type: Optional[str] = None) -> None: ...
+    def delete(self) -> None: ...
+
+
+class StorageBucketProtocol(Protocol):
+    name: str
+
+    def list_blobs(self, prefix: str = "") -> Iterable[StorageBlobProtocol]: ...
+    def blob(self, blob_name: str) -> StorageBlobProtocol: ...
+    def delete_blobs(self, blobs: List[StorageBlobProtocol]) -> None: ...
 
 
 # Ensure mimetypes knows common audio and yaml extensions
@@ -56,10 +73,14 @@ def slugify(text: str) -> str:
     return "-".join(part for part in clean.split("-") if part)
 
 
-def create_or_load_metadata(adventure_dir: Path) -> Dict[str, Any]:
+MetadataValue = Union[str, int, float, bool, List[str], Dict[str, str]]
+MetadataDict = Dict[str, MetadataValue]
+
+
+def create_or_load_metadata(adventure_dir: Path) -> MetadataDict:
     """Load existing metadata.json or generate from adventure folder."""
     meta_path = adventure_dir / "metadata.json"
-    existing_meta: Dict[str, Any] = {}
+    existing_meta: MetadataDict = {}
     if meta_path.exists():
         try:
             existing_meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -67,7 +88,7 @@ def create_or_load_metadata(adventure_dir: Path) -> Dict[str, Any]:
             existing_meta = {}
 
     folder_name = adventure_dir.name
-    defaults = {
+    defaults: MetadataDict = {
         "id": slugify(folder_name),
         "title": folder_name,
         "description": f"Premade adventure package for {folder_name}.",
@@ -80,7 +101,7 @@ def create_or_load_metadata(adventure_dir: Path) -> Dict[str, Any]:
         "recommended_players": "1-4",
     }
 
-    merged = {**defaults, **existing_meta}
+    merged: MetadataDict = {**defaults, **existing_meta}
     if not merged.get("id"):
         merged["id"] = slugify(folder_name)
     if not merged.get("created_at"):
@@ -115,12 +136,13 @@ def collect_adventure_files(adventure_dir: Path) -> List[Path]:
 class UniqueKeyYamlLoader(yaml.SafeLoader):
     """YAML SafeLoader that detects duplicate mapping keys and resolves merge keys."""
 
-    def construct_mapping(self, node: Any, deep: bool = False) -> Dict[Any, Any]:
-        if isinstance(node, yaml.MappingNode):
-            self.flatten_mapping(node)
-        mapping: Dict[Any, Any] = {}
+    def construct_mapping(
+        self, node: yaml.MappingNode, deep: bool = False
+    ) -> Dict[str, Union[str, int, float, bool, List[str], Dict[str, str], list, dict, None]]:
+        self.flatten_mapping(node)
+        mapping: Dict[str, Union[str, int, float, bool, List[str], Dict[str, str], list, dict, None]] = {}
         for key_node, value_node in node.value:
-            key = self.construct_object(key_node, deep=deep)
+            key = str(self.construct_object(key_node, deep=deep))
             if key in mapping:
                 raise yaml.constructor.ConstructorError(
                     "while constructing a mapping",
@@ -187,7 +209,7 @@ def compute_file_crc32c(file_path: Path) -> Optional[str]:
         return None
 
 
-def is_file_changed(file_path: Path, remote_blob: Any) -> bool:
+def is_file_changed(file_path: Path, remote_blob: Optional[StorageBlobProtocol]) -> bool:
     """Determine if a local file differs from a remote GCS blob.
 
     Compares size, MD5 hash, and CRC32c checksum to avoid unnecessary transfers.
@@ -197,34 +219,34 @@ def is_file_changed(file_path: Path, remote_blob: Any) -> bool:
         return True
 
     local_size = file_path.stat().st_size
-    remote_size = getattr(remote_blob, "size", None)
+    remote_size = remote_blob.size
 
     # Size difference indicates an immediate modification
-    if isinstance(remote_size, int) and local_size != remote_size:
+    if remote_size is not None and local_size != remote_size:
         return True
 
     # Compare MD5 hash if available on remote blob
-    remote_md5 = getattr(remote_blob, "md5_hash", None)
-    if isinstance(remote_md5, str) and remote_md5:
+    remote_md5 = remote_blob.md5_hash
+    if remote_md5 is not None and remote_md5 != "":
         local_md5 = compute_file_md5(file_path)
         return local_md5 != remote_md5
 
     # Compare CRC32c checksum if available on remote blob
-    remote_crc32c = getattr(remote_blob, "crc32c", None)
-    if isinstance(remote_crc32c, str) and remote_crc32c:
+    remote_crc32c = remote_blob.crc32c
+    if remote_crc32c is not None and remote_crc32c != "":
         local_crc32c = compute_file_crc32c(file_path)
         if local_crc32c is not None:
             return local_crc32c != remote_crc32c
 
     # If sizes match and no hashes are available to compare, consider unchanged
-    if isinstance(remote_size, int) and local_size == remote_size:
+    if remote_size is not None and local_size == remote_size:
         return False
 
     return True
 
 
 def clear_exact_matching_adventure(
-    bucket: Any,
+    bucket: StorageBucketProtocol,
     gcs_prefix: str,
     adventure_slug: str,
     adventure_title: Optional[str] = None,
@@ -265,7 +287,7 @@ def clear_exact_matching_adventure(
 
     # Verify existing metadata.json if present to ensure exact match confirmation
     meta_blob = next((b for b in existing_blobs if b.name == f"{exact_target_prefix}metadata.json"), None)
-    if meta_blob:
+    if meta_blob is not None:
         try:
             raw_meta = meta_blob.download_as_bytes()
             existing_meta = json.loads(raw_meta.decode("utf-8"))
@@ -273,11 +295,14 @@ def clear_exact_matching_adventure(
             existing_title = (existing_meta.get("title") or "").strip()
 
             # Exact match check
-            matches_id = existing_id and existing_id == clean_slug
+            matches_id = bool(existing_id) and (existing_id == clean_slug or slugify(existing_id) == clean_slug)
             matches_title = (
                 bool(existing_title)
                 and bool(adventure_title)
-                and (existing_title.strip().lower() == adventure_title.strip().lower())
+                and (
+                    existing_title.strip().lower() == adventure_title.strip().lower()
+                    or slugify(existing_title) == clean_slug
+                )
             )
 
             if not (matches_id or matches_title):
@@ -301,51 +326,51 @@ def clear_exact_matching_adventure(
             return 0
 
     total_deleted = 0
+    bucket_name = bucket.name
     if dry_run:
-        print(f"  [DRY-RUN] Exact match confirmed: Found {len(existing_blobs)} existing blob(s) in gs://{getattr(bucket, 'name', 'bucket')}/{exact_target_prefix} - would clear before upload.")
+        print(f"  [DRY-RUN] Exact match confirmed: Found {len(existing_blobs)} existing blob(s) in gs://{bucket_name}/{exact_target_prefix} - would clear before upload.")
         total_deleted = len(existing_blobs)
     else:
-        print(f"  🗑️  Exact match confirmed: Clearing {len(existing_blobs)} existing blob(s) from gs://{getattr(bucket, 'name', 'bucket')}/{exact_target_prefix}...")
+        print(f"  🗑️  Exact match confirmed: Clearing {len(existing_blobs)} existing blob(s) from gs://{bucket_name}/{exact_target_prefix}...")
         try:
-            if hasattr(bucket, "delete_blobs"):
-                bucket.delete_blobs(existing_blobs)
-                total_deleted = len(existing_blobs)
-            else:
-                for b in existing_blobs:
-                    b.delete()
-                    total_deleted += 1
+            bucket.delete_blobs(existing_blobs)
+            total_deleted = len(existing_blobs)
         except Exception:
             for b in existing_blobs:
                 try:
                     b.delete()
                     total_deleted += 1
                 except Exception as e:
-                    print(f"    ⚠️ Failed to delete {getattr(b, 'name', b)}: {e}", file=sys.stderr)
-        print(f"  ✓ Cleared {total_deleted} existing file(s) from gs://{getattr(bucket, 'name', 'bucket')}/{exact_target_prefix}")
+                    print(f"    ⚠️ Failed to delete {b.name}: {e}", file=sys.stderr)
+        print(f"  ✓ Cleared {total_deleted} existing file(s) from gs://{bucket_name}/{exact_target_prefix}")
 
     return total_deleted
 
 
 def upload_adventure_to_gcs(
     adventure_dir: Path,
-    bucket: Any,
+    bucket: Optional[StorageBucketProtocol],
     gcs_prefix: str,
-    clear_existing: bool = False,
     diff: bool = True,
-    prune: bool = False,
+    prune: bool = True,
+    clear_existing: bool = False,
+    overwrite: Optional[bool] = None,
     dry_run: bool = False,
-) -> Dict[str, Any]:
+) -> Dict[str, Union[str, int, List[str], bool]]:
     """Upload an adventure directory to GCS with incremental diff and change detection."""
+    should_clear = clear_existing or (overwrite is True and not diff)
     metadata = create_or_load_metadata(adventure_dir)
-    adventure_slug = metadata.get("id") or slugify(adventure_dir.name)
-    adventure_title = metadata.get("title", adventure_dir.name)
+    raw_slug = metadata.get("id")
+    adventure_slug = str(raw_slug) if raw_slug is not None else slugify(adventure_dir.name)
+    raw_title = metadata.get("title")
+    adventure_title = str(raw_title) if raw_title is not None else adventure_dir.name
 
     if is_adventure_excluded(adventure_dir.name) or is_adventure_excluded(adventure_slug):
         print(f"⚠️ Skipping '{adventure_title}' ({adventure_dir.name}): excluded example adventure.")
         return {
             "id": adventure_slug,
             "title": adventure_title,
-            "created_at": metadata.get("created_at"),
+            "created_at": str(metadata.get("created_at") or ""),
             "files_count": 0,
             "uploaded_files": [],
             "skipped_count": 0,
@@ -364,7 +389,7 @@ def upload_adventure_to_gcs(
     print(f"\n📂 Processing Adventure: '{adventure_title}' ({adventure_dir.name}) -> {gcs_prefix}/{adventure_slug}/")
 
     cleared_count = 0
-    if clear_existing and bucket is not None:
+    if should_clear and bucket is not None:
         cleared_count = clear_exact_matching_adventure(
             bucket=bucket,
             gcs_prefix=gcs_prefix,
@@ -376,8 +401,8 @@ def upload_adventure_to_gcs(
     # Collect existing remote blobs for diffing if not cleared
     clean_prefix = gcs_prefix.strip("/")
     exact_target_prefix = f"{clean_prefix}/{adventure_slug}/"
-    remote_blobs: Dict[str, Any] = {}
-    if not clear_existing and bucket is not None:
+    remote_blobs: Dict[str, StorageBlobProtocol] = {}
+    if not should_clear and bucket is not None:
         try:
             for b in bucket.list_blobs(prefix=exact_target_prefix):
                 if b.name.startswith(exact_target_prefix):
@@ -399,7 +424,7 @@ def upload_adventure_to_gcs(
         size = file_path.stat().st_size
 
         remote_blob = remote_blobs.get(rel_path)
-        if diff and not clear_existing and remote_blob is not None:
+        if diff and not should_clear and remote_blob is not None:
             if not is_file_changed(file_path, remote_blob):
                 skipped_files.append(rel_path)
                 skipped_bytes += size
@@ -409,26 +434,29 @@ def upload_adventure_to_gcs(
         total_bytes += size
 
         content_type, _ = mimetypes.guess_type(file_path.name)
-        if not content_type:
+        if content_type is None:
             content_type = "application/octet-stream"
 
+        bucket_name = bucket.name if bucket is not None else "bucket"
         if dry_run:
-            print(f"  [DRY-RUN] Would upload ({change_type}): {rel_path} ({size} bytes, {content_type}) -> gs://{getattr(bucket, 'name', 'bucket')}/{blob_name}")
+            print(f"  [DRY-RUN] Would upload ({change_type}): {rel_path} ({size} bytes, {content_type}) -> gs://{bucket_name}/{blob_name}")
         else:
-            blob = bucket.blob(blob_name)
-            blob.upload_from_filename(str(file_path), content_type=content_type)
+            if bucket is not None:
+                blob = bucket.blob(blob_name)
+                blob.upload_from_filename(str(file_path), content_type=content_type)
             print(f"  ✓ Uploaded ({change_type}): {rel_path} ({size} bytes, {content_type})")
 
         uploaded_files.append(rel_path)
 
-    # Prune orphaned remote files if prune flag is enabled
-    if prune and not clear_existing and bucket is not None:
+    # Prune orphaned remote files if prune flag is enabled in diff/non-overwrite mode
+    if prune and not should_clear and bucket is not None:
         local_rel_paths = {f.relative_to(adventure_dir).as_posix() for f in files}
         orphans = [b for rel, b in remote_blobs.items() if rel not in local_rel_paths]
+        bucket_name = bucket.name
         for orphan_blob in orphans:
             rel = orphan_blob.name[len(exact_target_prefix):]
             if dry_run:
-                print(f"  [DRY-RUN] Would prune orphaned file: {rel} from gs://{getattr(bucket, 'name', 'bucket')}/{orphan_blob.name}")
+                print(f"  [DRY-RUN] Would prune orphaned file: {rel} from gs://{bucket_name}/{orphan_blob.name}")
             else:
                 try:
                     orphan_blob.delete()
@@ -444,7 +472,7 @@ def upload_adventure_to_gcs(
     return {
         "id": adventure_slug,
         "title": adventure_title,
-        "created_at": metadata.get("created_at"),
+        "created_at": str(metadata.get("created_at") or ""),
         "files_count": len(uploaded_files),
         "uploaded_files": uploaded_files,
         "skipped_count": len(skipped_files),
@@ -489,14 +517,14 @@ def main():
     parser.add_argument(
         "--prune",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Delete remote files that no longer exist locally (default: False)",
+        default=True,
+        help="Delete remote files that no longer exist locally (default: True)",
     )
     parser.add_argument(
         "--clear-existing",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Clear all existing adventure files from GCS before uploading new version (default: False)",
+        help="Clear all existing adventure files from GCS before uploading (default: False)",
     )
     parser.add_argument(
         "--dry-run",
@@ -537,11 +565,12 @@ def main():
         print(f"⚠️ No matching adventure folders found in {source_path}")
         sys.exit(0)
 
+    clear_mode = args.clear_existing
     diff_mode = args.diff and not args.clear_existing
 
     print(f"🚀 Found {len(adventure_folders)} adventure folder(s) to process")
     print(f"☁️ Target GCS Bucket: gs://{args.bucket}/{args.prefix}")
-    if args.clear_existing:
+    if clear_mode:
         print("🧹 Clear existing matching adventures: Enabled")
     elif diff_mode:
         prune_str = " (pruning enabled)" if args.prune else ""
@@ -557,44 +586,41 @@ def main():
         sys.exit(1)
 
     client = None
-    bucket = None
+    bucket: Optional[StorageBucketProtocol] = None
     if not args.dry_run:
         try:
             from google.cloud import storage
             project = os.getenv("GOOGLE_CLOUD_PROJECT", "narratron")
             client = storage.Client(project=project)
-            bucket = client.bucket(args.bucket)
-            if not bucket.exists():
+            real_bucket = client.bucket(args.bucket)
+            if not real_bucket.exists():
                 print(f"❌ Bucket '{args.bucket}' does not exist or cannot be accessed.", file=sys.stderr)
                 sys.exit(1)
+            bucket = real_bucket
         except Exception as e:
             print(f"❌ GCS Client Initialization Error: {e}", file=sys.stderr)
             sys.exit(1)
     else:
-        # Mock bucket or real bucket inspection for dry-run
-        try:
-            from google.cloud import storage
-            project = os.getenv("GOOGLE_CLOUD_PROJECT", "narratron")
-            client = storage.Client(project=project)
-            bucket = client.bucket(args.bucket)
-        except Exception:
-            class MockBucket:
-                name = args.bucket
-                def list_blobs(self, prefix=""):
-                    return []
-                def blob(self, name):
-                    return None
-            bucket = MockBucket()
+        # Mock bucket for dry-run
+        class MockBucket:
+            name: str = args.bucket
+            def list_blobs(self, prefix: str = "") -> List[StorageBlobProtocol]:
+                return []
+            def blob(self, blob_name: str) -> StorageBlobProtocol:
+                raise NotImplementedError
+            def delete_blobs(self, blobs: List[StorageBlobProtocol]) -> None:
+                pass
+        bucket = MockBucket()
 
-    results = []
+    results: List[Dict[str, Union[str, int, List[str], bool]]] = []
     for adv_dir in adventure_folders:
         res = upload_adventure_to_gcs(
             adventure_dir=adv_dir,
             bucket=bucket,
             gcs_prefix=args.prefix.strip("/"),
-            clear_existing=args.clear_existing,
             diff=diff_mode,
             prune=args.prune,
+            clear_existing=clear_mode,
             dry_run=args.dry_run,
         )
         results.append(res)
@@ -603,10 +629,15 @@ def main():
     print("✨ Adventure Upload Summary:")
     print("========================================================")
     for r in results:
-        mb = r["total_bytes"] / (1024 * 1024)
-        skipped_str = f", {r.get('skipped_count', 0)} unchanged" if r.get("skipped_count") else ""
-        pruned_str = f", {r.get('pruned_count', 0)} pruned" if r.get("pruned_count") else ""
-        cleared_str = f" [cleared {r['cleared_count']} old file(s)]" if r.get("cleared_count") else ""
+        total_bytes_val = r.get("total_bytes")
+        total_bytes_num = int(total_bytes_val) if total_bytes_val is not None and not isinstance(total_bytes_val, list) and not isinstance(total_bytes_val, bool) else 0
+        mb = total_bytes_num / (1024 * 1024)
+        skipped_count = r.get("skipped_count")
+        skipped_str = f", {skipped_count} unchanged" if skipped_count else ""
+        pruned_count = r.get("pruned_count")
+        pruned_str = f", {pruned_count} pruned" if pruned_count else ""
+        cleared_count = r.get("cleared_count")
+        cleared_str = f" [cleared {cleared_count} old file(s)]" if cleared_count else ""
         print(f" • {r['title']} [{r['id']}] - {r['files_count']} uploaded ({mb:.2f} MB){skipped_str}{pruned_str}{cleared_str} - Date: {r['created_at']}")
     print("========================================================\n")
 
