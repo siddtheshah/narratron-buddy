@@ -323,7 +323,7 @@ class TestCreateAgent(unittest.TestCase):
         create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
-        self.assertLess(instruction.index("# Objective"), instruction.index("## Preloaded References Context"))
+        self.assertLess(instruction.index("# Job Description"), instruction.index("## Preloaded References Context"))
         self.assertLess(instruction.index("## Preloaded References Context"), instruction.index("## SPECIAL INSTRUCTIONS"))
         self.assertLess(instruction.index("## SPECIAL INSTRUCTIONS"), instruction.index("## Startup"))
         self.assertIn("moonlit_keep", instruction)
