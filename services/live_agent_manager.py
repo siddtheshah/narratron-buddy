@@ -330,7 +330,13 @@ class LiveAgentSession:
                 self.image_tools.record_story_plan_completed()
             if self.interactive_canvas_tools and hasattr(self.interactive_canvas_tools, "record_story_plan_completed"):
                 self.interactive_canvas_tools.record_story_plan_completed()
-            message = "[Story Planner Result] " + json.dumps(result, ensure_ascii=False)
+            message = (
+                "[System Notification] [Story Planner Result]\n"
+                "System-generated story planner output, not user input. "
+                "Use this authoritative result to stage the scene; do not submit it "
+                "to process_user_action as a new player action.\n"
+                + json.dumps(result, ensure_ascii=False)
+            )
             content = types.Content(parts=[types.Part(text=message)])
 
             def enqueue() -> None:

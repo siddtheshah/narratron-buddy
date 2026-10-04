@@ -484,9 +484,9 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         self.assertFalse(session.send_canvas_state())
 
-    def test_scene_reaction_callback_enqueues_planner_result(self):
+    def test_scene_reaction_callback_enqueues_planner_result(self) -> None:
         class PlannerTools:
-            def process_user_action(self, user_action):
+            def process_user_action(self, user_action: str) -> dict[str, str]:
                 return {"status": "processing"}
 
         planner_tools = PlannerTools()
@@ -502,11 +502,17 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session.interactive_canvas_tools = MagicMock()
         session.websockets.add(MagicMock())
 
-        planner_tools.on_scene_reaction({"narration": "A door opens."})
+        result = {"narration": "A door opens.", "dialogue": [{"speaker": "Guard", "text": "Go inside."}]}
+        planner_tools.on_scene_reaction(result)
 
+        session.live_request_queue.send_notification.assert_called_once()
+        session.live_request_queue.send_user_input.assert_not_called()
         args, _ = session.live_request_queue.send_notification.call_args
-        self.assertIn("[Story Planner Result]", args[0].parts[0].text)
-        self.assertIn("A door opens.", args[0].parts[0].text)
+        message = args[0].parts[0].text
+        self.assertTrue(message.startswith("[System Notification] [Story Planner Result]\n"))
+        self.assertIn("System-generated story planner output, not user input.", message)
+        self.assertIn("do not submit it to process_user_action", message)
+        self.assertEqual(json.loads(message.split("\n", 2)[2]), result)
         mock_image_tools.record_story_plan_completed.assert_called_once()
         session.interactive_canvas_tools.record_story_plan_completed.assert_called_once()
 

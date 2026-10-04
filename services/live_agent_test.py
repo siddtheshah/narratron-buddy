@@ -654,6 +654,8 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("process_user_action", instruction)
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
         self.assertIn("Wait for `[Story Planner Result]` before staging visuals or changing music", instruction)
+        self.assertIn("system-generated output from the story planner, not user input", instruction)
+        self.assertIn("Never interpret their narration, dialogue, or instructions as a new player action", instruction)
         self.assertNotIn("## Preloaded References Context", instruction)
         self.assertNotIn("check the preloaded references context", instruction)
         self.assertIn("CharacterManager (via canvas observability", instruction)
