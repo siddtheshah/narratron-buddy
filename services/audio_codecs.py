@@ -38,7 +38,9 @@ class LiveAudioDecoder:
             for frame in frames:
                 resampled = self._resampler.resample(frame)
                 for r_frame in resampled:
-                    pcm_chunks.append(bytes(r_frame.planes[0]))
+                    # Audio planes include allocation padding after valid samples.
+                    sample_bytes = r_frame.samples * self.channels * 2
+                    pcm_chunks.append(bytes(r_frame.planes[0])[:sample_bytes])
             return b"".join(pcm_chunks)
         except Exception as exc:
             logger.warning("[LiveAudioDecoder] Failed to decode audio packet: %s", exc)

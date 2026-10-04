@@ -1,9 +1,4 @@
-/**
- * Microphone capture for the live agent with Opus compression.
- *
- * Captures microphone audio, gates with RMS VAD, compresses into Opus packets
- * via WebCodecs AudioEncoder, and delivers compressed packets to the WebSocket handler.
- */
+/** Microphone capture with serialized VAD boundaries and Opus delivery. */
 import { listenForSpeech } from "/static/js/device-aware-pcm.js";
 
 const SAMPLE_RATE = 16000;
@@ -11,12 +6,9 @@ const DEFAULT_VAD_THRESHOLD = 0.01;
 const DEFAULT_SILENCE_MS = 1200;
 const DEFAULT_MIN_SPEECH_MS = 250;
 
-let stopListening = null;
-let speechActive = false;
-let audioRecorderHandler = null;
-let audioEncoder = null;
-let audioTimestampUs = 0;
+let activeCapture = null;
 let captureGeneration = 0;
+let pendingStop = Promise.resolve();
 
 function vadThreshold() {
   const threshold = Number(window.MIC_DETECT_THRESHOLD);
@@ -25,176 +17,163 @@ function vadThreshold() {
     : DEFAULT_VAD_THRESHOLD;
 }
 
-function sendControlMessage(type, reason) {
-  const ws = window.agentWs;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type, reason, ts: new Date().toISOString() }));
-  }
-}
-
-function emitVadEvent(phase, reason) {
-  // These browser events make VAD state available to UI integrations and tests.
+function emitVadEvent(socket, phase, reason) {
   const detail = { reason, ts: new Date().toISOString() };
   window.dispatchEvent(new CustomEvent(phase === "start" ? "vadstart" : "vadstop", { detail }));
   window.dispatchEvent(new CustomEvent(`narratron:vad-${phase}`, { detail }));
-
-  // The live-agent protocol represents VAD boundaries as activity boundaries.
-  sendControlMessage(phase === "start" ? "activity_start" : "activity_end", reason);
+  if (window.agentWs === socket && socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({
+      type: phase === "start" ? "activity_start" : "activity_end",
+      ...detail,
+    }));
+  }
 }
 
 function emitSpeechActivity(phase) {
-  // Unlike VAD chunk events, this maps one-to-one with the complete utterance.
   window.dispatchEvent(new CustomEvent(`narratron:speech-${phase}`));
 }
 
-function initAudioEncoder(handler) {
-  audioTimestampUs = 0;
-  if (typeof window.AudioEncoder !== "function") {
-    console.error("[AudioRecorder] AudioEncoder is not supported in this browser.");
-    return null;
-  }
-  try {
-    const encoder = new AudioEncoder({
-      output: (chunk) => {
-        const buffer = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(buffer);
-        if (typeof handler === "function") {
-          handler(buffer.buffer);
-        }
-      },
-      error: (err) => {
-        console.error("[AudioRecorder] WebCodecs Opus encoding error:", err);
-      },
-    });
-    encoder.configure({
-      codec: "opus",
-      sampleRate: SAMPLE_RATE,
-      numberOfChannels: 1,
-      bitrate: 24000,
-    });
-    return encoder;
-  } catch (err) {
-    console.error("[AudioRecorder] Failed to initialize AudioEncoder:", err);
-    return null;
-  }
-}
+function createCapture(handler, socket) {
+  let accepting = true;
+  let closed = false;
+  let speaking = false;
+  let timestampUs = 0;
+  let stopListening = null;
+  let operations = Promise.resolve();
 
-async function finishSpeech() {
-  if (!speechActive) return;
-  speechActive = false;
-  // AudioEncoder emits asynchronously. Make its last packet reach the socket
-  // before the activity boundary closes this turn on the server.
-  if (audioEncoder?.state === "configured") {
-    try {
-      await audioEncoder.flush();
-    } catch (err) {
-      console.warn("[AudioRecorder] Could not flush final Opus audio packet:", err);
+  const encoder = new AudioEncoder({
+    output: (chunk) => {
+      // A draining encoder belongs to its original socket, even after disconnect.
+      if (closed || window.agentWs !== socket || socket?.readyState !== WebSocket.OPEN) return;
+      const buffer = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(buffer);
+      handler(buffer.buffer);
+    },
+    error: (error) => {
+      console.error("[AudioRecorder] WebCodecs Opus encoding error:", error);
+    },
+  });
+  try {
+    encoder.configure({ codec: "opus", sampleRate: SAMPLE_RATE, numberOfChannels: 1, bitrate: 24000 });
+  } catch (error) {
+    encoder.close();
+    throw error;
+  }
+
+  const enqueue = (operation) => {
+    operations = operations.then(operation).catch((error) => {
+      console.error("[AudioRecorder] Audio delivery failed:", error);
+    });
+    return operations;
+  };
+
+  const finishSpeech = async () => {
+    if (!speaking) return;
+    // Keep the next start and its PCM queued until the previous Opus output
+    // and end boundary have both reached the socket.
+    if (encoder.state === "configured") {
+      try {
+        await encoder.flush();
+      } catch (error) {
+        console.warn("[AudioRecorder] Could not flush final Opus audio packet:", error);
+      }
     }
-  }
-  emitVadEvent("stop", "speech_end");
-  emitSpeechActivity("end");
-}
+    speaking = false;
+    emitVadEvent(socket, "stop", "speech_end");
+    emitSpeechActivity("end");
+  };
 
-/**
- * Starts microphone capture gated by RMS VAD and encoded to Opus packets.
- */
-export async function startAudioRecorderWorklet(handler) {
-  stopMicrophone();
-  const generation = ++captureGeneration;
-
-  if (typeof window.AudioEncoder !== "function") {
-    throw new Error("Your browser is out of date and needs Opus audio support. Please update your browser and try again.");
-  }
-
-  speechActive = false;
-  audioRecorderHandler = handler;
-  const encoder = initAudioEncoder(handler);
-  audioEncoder = encoder;
-  if (!encoder) {
-    audioRecorderHandler = null;
-    throw new Error("Your browser is out of date and needs Opus audio support. Please update your browser and try again.");
-  }
-
-  let stop;
-  try {
-    stop = await listenForSpeech({
+  return {
+    options: {
       deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
       sampleRate: SAMPLE_RATE,
       vadThreshold: vadThreshold(),
       vadSilenceDuration: DEFAULT_SILENCE_MS,
       vadMinRecordingTime: DEFAULT_MIN_SPEECH_MS,
       continuous: true,
+      onSpeechStart: () => {
+        if (!accepting) return;
+        enqueue(() => {
+          if (speaking) return;
+          speaking = true;
+          emitVadEvent(socket, "start", "speech_start");
+          emitSpeechActivity("start");
+        });
+      },
       onData: ({ float32 }) => {
-        if (generation !== captureGeneration || !speechActive) return;
-        if (audioEncoder && audioEncoder.state === "configured" && float32) {
+        if (!accepting || !float32) return;
+        enqueue(() => {
+          if (!speaking || encoder.state !== "configured") return;
           const audioData = new AudioData({
             format: "f32-planar",
             sampleRate: SAMPLE_RATE,
             numberOfFrames: float32.length,
             numberOfChannels: 1,
-            timestamp: audioTimestampUs,
+            timestamp: timestampUs,
             data: float32,
           });
-          audioTimestampUs += Math.round((float32.length / SAMPLE_RATE) * 1_000_000);
-          audioEncoder.encode(audioData);
-          audioData.close();
-        }
-      },
-      onSpeechStart: () => {
-        if (generation !== captureGeneration || speechActive) return;
-        speechActive = true;
-        emitVadEvent("start", "speech_start");
-        emitSpeechActivity("start");
+          timestampUs += Math.round((float32.length / SAMPLE_RATE) * 1_000_000);
+          try {
+            encoder.encode(audioData);
+          } finally {
+            audioData.close();
+          }
+        });
       },
       onSpeechEnd: () => {
-        if (generation !== captureGeneration) return;
-        void finishSpeech();
+        if (accepting) enqueue(finishSpeech);
       },
       onError: (error) => {
-        if (generation !== captureGeneration) return;
+        if (!accepting) return;
         console.error("[AudioRecorder] microphone capture failed:", error);
-        void finishSpeech();
+        enqueue(finishSpeech);
       },
-    });
+    },
+    installStop(stop) {
+      // Initialization may finish after this capture was already stopped.
+      if (accepting) stopListening = stop;
+      else stop();
+    },
+    stop() {
+      accepting = false;
+      if (stopListening) stopListening();
+      stopListening = null;
+      return enqueue(finishSpeech).finally(() => {
+        closed = true;
+        if (encoder.state !== "closed") encoder.close();
+      });
+    },
+  };
+}
+
+/** Starts microphone capture gated by RMS VAD and encoded to Opus packets. */
+export async function startAudioRecorderWorklet(handler) {
+  const stopping = stopMicrophone();
+  const generation = ++captureGeneration;
+  await stopping;
+  if (generation !== captureGeneration) return [null, null, null, false];
+
+  if (typeof window.AudioEncoder !== "function") {
+    throw new Error("Your browser is out of date and needs Opus audio support. Please update your browser and try again.");
+  }
+
+  const capture = createCapture(handler, window.agentWs);
+  activeCapture = capture;
+  try {
+    capture.installStop(await listenForSpeech(capture.options));
   } catch (error) {
-    if (generation === captureGeneration) {
-      audioEncoder = null;
-      audioRecorderHandler = null;
-      try {
-        if (encoder.state === "configured") encoder.close();
-      } catch (closeError) {
-        console.warn("[AudioRecorder] Could not close failed Opus encoder:", closeError);
-      }
-    }
+    if (activeCapture === capture) await stopMicrophone();
     throw error;
   }
-
-  // getUserMedia and AudioWorklet loading are asynchronous. A disconnect can
-  // happen while either is pending, so do not install a capture that has
-  // already been stopped or superseded.
-  if (generation !== captureGeneration) {
-    stop();
-    return [null, null, null, false];
-  }
-
-  stopListening = stop;
+  if (generation !== captureGeneration) return [null, null, null, false];
   return [null, null, null, true];
 }
 
-/** Stops capture and closes the Opus encoder. */
+/** Stops capture immediately, then drains its encoder before another capture starts. */
 export function stopMicrophone() {
   captureGeneration += 1;
-  const stop = stopListening;
-  stopListening = null;
-  const encoderToClose = audioEncoder;
-  void finishSpeech().finally(() => {
-    if (typeof stop === "function") stop();
-    if (encoderToClose) {
-      try {
-        if (encoderToClose.state === "configured") encoderToClose.close();
-      } catch (e) {}
-    }
-  });
-  audioEncoder = null;
-  audioRecorderHandler = null;
+  const capture = activeCapture;
+  activeCapture = null;
+  if (capture) pendingStop = capture.stop();
+  return pendingStop;
 }

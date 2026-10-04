@@ -6189,7 +6189,8 @@
         }
 
         function audioRecorderHandler(opusBuffer) {
-            if (!isRecording) return;
+            // The recorder owns capture validity. Deliver startup packets and
+            // the final encoder flush even before/after the UI recording flag.
             if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
                 return;
             }
