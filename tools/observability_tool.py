@@ -35,5 +35,5 @@ class ObservabilityTools(BaseTools):
         if not callable(callback):
             return "Error: Canvas observability is not available for this session."
         if not callback():
-            return "Error: Canvas observability could not be sent because no live session is connected."
+            return "No canvas update sent: the canvas is unchanged or no live session is connected."
         return "Current canvas state sent. The next regular update has been postponed."

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from components.theater_manager import TheaterManager
 from google.adk.events import Event
 from providers import LiveAgentProvider
+from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
 from services.live_agent_manager import (
     AUTO_BEGIN_ADVENTURE_ACTION,
     LiveAgentSessionManager,
@@ -647,7 +648,89 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertTrue(session.websocket_connected)
             mock_send_canvas.assert_called_once_with()
 
-    def test_canvas_observability_respects_startup_delay_and_interval(self):
+    def make_observability_session(self) -> LiveAgentSession:
+        runner = MagicMock()
+        runner.agent.tools = []
+        session = LiveAgentSession(
+            theater_id="observability", runner=runner, tool_bundle=MagicMock(),
+            provider=GeminiLiveAgentProvider(),
+            config={"live_agent": {"observability_interval": 0, "collaboration_observability_cooldown": 0}},
+        )
+        session.websockets.add(MagicMock())
+        session.canvas_state_manager = canvas_observability_fixture()
+        session.observability_available_at = 0.0
+        return session
+
+    def test_observability_is_partial_for_complete_turn_provider(self) -> None:
+        session = self.make_observability_session()
+        self.assertFalse(session.provider.background_content_is_partial)
+
+        async def run_test() -> None:
+            self.assertTrue(session.send_canvas_state())
+            request = await session.live_request_queue.get()
+            self.assertTrue(request.partial)
+            self.assertIn("[Canvas Image]", request.content.parts[0].text)
+
+        asyncio.run(run_test())
+
+    def test_observability_deduplicates_across_sources_and_sends_changed_state(self) -> None:
+        session = self.make_observability_session()
+        session.live_request_queue = MagicMock()
+        self.assertTrue(session.send_canvas_state())
+        self.assertFalse(session.send_canvas_state())
+        self.assertFalse(session.send_collaboration_toggle_observability())
+        self.assertFalse(session.send_agent_requested_observability())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 1)
+
+        session.canvas_state_manager.visual.shown_image_prompt = "A changed scene"
+        self.assertTrue(session.send_collaboration_toggle_observability())
+        self.assertFalse(session.send_canvas_state())
+        session.canvas_state_manager.visual.shown_image_prompt = None
+        self.assertTrue(session.send_agent_requested_observability())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 3)
+        for call in session.live_request_queue.send_content.call_args_list:
+            self.assertEqual(call.kwargs, {"partial": True})
+
+    def test_observability_deduplicates_images_and_detects_changed_annotations(self) -> None:
+        session = self.make_observability_session()
+        session.live_request_queue = MagicMock()
+        canvas = canvas_observability_fixture(collaboration_enabled=True, doodles=[{"type": "draw"}])
+        canvas.doodles.snapshot_png.return_value = b"first-annotation"
+        session.canvas_state_manager = canvas
+        self.assertTrue(session.send_agent_requested_observability())
+        self.assertFalse(session.send_agent_requested_observability())
+        self.assertFalse(session.send_canvas_state())
+        asyncio.run(session._send_doodle_snapshot())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 1)
+
+        canvas.doodles.snapshot_png.return_value = b"changed-annotation"
+        asyncio.run(session._send_doodle_snapshot())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+        self.assertFalse(session.send_agent_requested_observability())
+        for call in session.live_request_queue.send_content.call_args_list:
+            self.assertEqual(call.kwargs, {"partial": True})
+
+    def test_observability_retries_failed_enqueue_without_caching_state(self) -> None:
+        session = self.make_observability_session()
+        session.live_request_queue = MagicMock()
+        session.live_request_queue.send_content.side_effect = [RuntimeError("enqueue failed"), None]
+        self.assertFalse(session.send_canvas_state())
+        self.assertIsNone(session.last_canvas_state_sent)
+        self.assertTrue(session.send_canvas_state())
+        self.assertFalse(session.send_canvas_state())
+        self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+
+    def test_stopped_session_does_not_cache_observability(self) -> None:
+        session = self.make_observability_session()
+        session.live_request_queue = MagicMock()
+        session.status = "stopped"
+        self.assertFalse(session.send_agent_requested_observability())
+        self.assertIsNone(session.last_canvas_state_sent)
+        session.live_request_queue.send_content.assert_not_called()
+        session.status = "active"
+        self.assertTrue(session.send_agent_requested_observability())
+
+    def test_canvas_observability_respects_startup_delay_and_interval(self) -> None:
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_runner = MagicMock()
@@ -679,11 +762,12 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         with patch("services.live_agent_manager.time.monotonic", return_value=139.0):
             self.assertFalse(session.send_canvas_state())
 
+        session.canvas_state_manager.visual.shown_image_prompt = "A new scene"
         with patch("services.live_agent_manager.time.monotonic", return_value=140.0):
             self.assertTrue(session.send_canvas_state())
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
-    def test_collaboration_toggle_observability_is_cooled_down_and_defers_periodic_update(self):
+    def test_collaboration_toggle_observability_is_cooled_down_and_defers_periodic_update(self) -> None:
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_runner = MagicMock()
@@ -711,12 +795,13 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertFalse(session.send_collaboration_toggle_observability())
         with patch("services.live_agent_manager.time.monotonic", return_value=129.0):
             self.assertFalse(session.send_canvas_state())
+        session.canvas_state_manager.visual.shown_image_prompt = "A new scene"
         with patch("services.live_agent_manager.time.monotonic", return_value=130.0):
             self.assertTrue(session.send_canvas_state())
 
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
-    def test_agent_requested_observability_defers_the_next_regular_pulse(self):
+    def test_agent_requested_observability_defers_the_next_regular_pulse(self) -> None:
         mock_theater = MagicMock(theater_id="test-theater")
         mock_theater.config = MagicMock(return_value={"cooldown_duration": 0})
         observability_tools = ObservabilityTools(mock_theater, MagicMock())
@@ -747,6 +832,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 self.assertIn("Current canvas state sent", observability_tools.request_canvas_observability())
             with patch("services.live_agent_manager.time.monotonic", return_value=129.0):
                 self.assertFalse(session.send_canvas_state())
+            session.canvas_state_manager.visual.shown_image_prompt = "A new scene"
             with patch("services.live_agent_manager.time.monotonic", return_value=130.0):
                 self.assertTrue(session.send_canvas_state())
 

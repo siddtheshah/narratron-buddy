@@ -188,6 +188,9 @@ class LiveAgentSession:
         self.live_tool_reminder_task: Optional[asyncio.Task] = None
         self.observability_available_at = time.monotonic() + self.observability_startup_delay
         self.last_canvas_state_sent: Optional[float] = None
+        self._last_canvas_state_checked: float | None = None
+        self._last_observability_text: str | None = None
+        self._last_observability_image: types.Part | None = None
         self.last_collaboration_observability_sent: Optional[float] = None
         self.state_lock = threading.Lock()
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -233,12 +236,15 @@ class LiveAgentSession:
     def websocket_connected(self) -> bool:
         return len(self.websockets) > 0
 
-    def send_content(self, content: types.Content) -> bool:
+    def send_content(self, content: types.Content, *, partial: bool | None = None) -> bool:
         """Send a system or canvas notification to an active Live session."""
         if not self.is_alive:
             logger.debug(f"[LiveAgentSession] Stopped; suppressing content input for session {self.theater_id}.")
             return False
-        self.live_request_queue.send_content(content)
+        if partial is None:
+            self.live_request_queue.send_content(content)
+        else:
+            self.live_request_queue.send_content(content, partial=partial)
         return True
 
     def send_notification(self, content: types.Content) -> bool:
@@ -417,8 +423,28 @@ class LiveAgentSession:
         if self.chat_tools:
             self.chat_tools.on_send_chat_message = handle_session_chat_message
 
+    def _send_observability(self, content: types.Content, state_text: str | None = None) -> bool:
+        """Enqueue changed context without completing a turn; caller holds state_lock.
+
+        Track text and visuals separately so alternating text pulses and visual
+        snapshots do not cause either unchanged component to be sent again.
+        Only remember updates accepted by the live session.
+        """
+        image = next((part for part in content.parts or [] if part.inline_data is not None), None)
+        text_changed = state_text is not None and state_text != self._last_observability_text
+        image_changed = image is not None and image != self._last_observability_image
+        if not text_changed and not image_changed:
+            return False
+        if not self.send_content(content, partial=True):
+            return False
+        if state_text is not None:
+            self._last_observability_text = state_text
+        if image is not None:
+            self._last_observability_image = image.model_copy(deep=True)
+        return True
+
     def send_canvas_state(self) -> bool:
-        """Inject current canvas image/music state into LiveRequestQueue."""
+        """Add changed canvas state as context for the next model turn."""
         if not self.enable_regular_observability:
             return False
         if not self.websocket_connected:
@@ -433,14 +459,23 @@ class LiveAgentSession:
                 and now - self.last_canvas_state_sent < self.observability_interval
             ):
                 return False
+            if (
+                self._last_canvas_state_checked is not None
+                and now - self._last_canvas_state_checked < self.observability_interval
+            ):
+                return False
             msg = format_canvas_state(self.canvas_state_manager, self.notepad_tools, self.character_tools)
             try:
-                self.send_content(types.Content(parts=[types.Part(text=msg)]))
+                sent = self._send_observability(types.Content(parts=[types.Part(text=msg)]), msg)
             except Exception as e:
                 logger.error(f"[LiveAgentSession] Failed to send canvas observability update: {e}", exc_info=True)
                 return False
-            self.last_canvas_state_sent = now
+            self._last_canvas_state_checked = now
+            if sent:
+                self.last_canvas_state_sent = now
         self._schedule_doodle_snapshot()
+        if not sent:
+            return False
         logger.info("[LiveAgentSession] Canvas state update: %s", msg.replace("\n", " | "))
         return True
 
@@ -472,7 +507,7 @@ class LiveAgentSession:
 
             msg = format_canvas_state(self.canvas_state_manager, self.notepad_tools, self.character_tools)
             try:
-                self.send_content(types.Content(parts=[types.Part(text=msg)]))
+                sent = self._send_observability(types.Content(parts=[types.Part(text=msg)]), msg)
             except Exception as e:
                 logger.error(
                     "[LiveAgentSession] Failed to send collaboration toggle observability update: %s",
@@ -480,10 +515,13 @@ class LiveAgentSession:
                     exc_info=True,
                 )
                 return False
-            self.last_canvas_state_sent = now
-            self.last_collaboration_observability_sent = now
+            if sent:
+                self.last_canvas_state_sent = now
+                self.last_collaboration_observability_sent = now
 
         self._schedule_doodle_snapshot()
+        if not sent:
+            return False
         logger.info("[LiveAgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
         return True
 
@@ -519,7 +557,7 @@ class LiveAgentSession:
                     ))
                 parts.append(image_part)
             try:
-                self.send_content(types.Content(parts=parts))
+                sent = self._send_observability(types.Content(parts=parts), msg)
             except Exception as e:
                 logger.error(
                     "[LiveAgentSession] Failed to send agent-requested canvas observability update: %s",
@@ -528,6 +566,8 @@ class LiveAgentSession:
                 )
                 return False
             # Share the periodic timestamp with every observation source.
+            if not sent:
+                return False
             self.last_canvas_state_sent = now
 
         # The visual attached above already includes viewer doodles when
@@ -619,7 +659,8 @@ class LiveAgentSession:
                     types.Part(text="[Viewer Annotations]: A composite canvas image with audience annotations is attached."),
                     types.Part(inline_data=types.Blob(mime_type="image/png", data=snapshot)),
                 ])
-                self.send_content(content)
+                with self.state_lock:
+                    self._send_observability(content)
         except Exception:
             logger.exception("Failed to render viewer doodle snapshot for theater %s", self.theater_id)
 
