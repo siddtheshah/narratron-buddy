@@ -3190,6 +3190,8 @@
             <div id="chat-user-bar"
                 style="padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15); display: flex; align-items: center; gap: 8px; font-size: 0.8rem;">
                 <span style="color: #94a3b8; font-weight: 500; white-space: nowrap;">Name:</span>
+                <span id="chat-name-display"
+                    style="display: none; flex: 1; min-width: 0; font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
                 <input type="text" id="chat-name-input"
                     style="flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 3px 10px; color: #fff; font-size: 0.8rem; outline: none; font-family: inherit;"
                     placeholder="Your Chat Name..." title="Click to set/change your chat display name">
@@ -3884,6 +3886,7 @@
             chatForm: chatForm,
             chatInput: chatInput,
             nameInput: document.getElementById('chat-name-input'),
+            nameDisplay: document.getElementById('chat-name-display'),
             nameBadge: document.getElementById('chat-name-badge'),
             hideSuggestionsBtn: document.getElementById('hide-suggestions-btn'),
             theaterId: theaterId,

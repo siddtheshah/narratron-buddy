@@ -39,6 +39,7 @@ export function initializeChatController(options = {}) {
         chatForm,
         chatInput,
         nameInput,
+        nameDisplay: initialNameDisplay,
         nameBadge,
         hideSuggestionsBtn,
         theaterId = '',
@@ -53,13 +54,32 @@ export function initializeChatController(options = {}) {
     let lastChatFingerprint = "";
     let suggestionsHidden = false;
 
+    let nameDisplay = initialNameDisplay || null;
+    if (!nameDisplay && nameInput && nameInput.parentElement) {
+        nameDisplay = nameInput.parentElement.querySelector('#chat-name-display');
+        if (!nameDisplay) {
+            nameDisplay = document.createElement('span');
+            nameDisplay.id = 'chat-name-display';
+            nameDisplay.style.display = 'none';
+            nameDisplay.style.fontWeight = '600';
+            nameDisplay.style.fontSize = '0.85rem';
+            nameDisplay.style.overflow = 'hidden';
+            nameDisplay.style.textOverflow = 'ellipsis';
+            nameDisplay.style.whiteSpace = 'nowrap';
+            nameInput.parentElement.insertBefore(nameDisplay, nameInput);
+        }
+    }
+
     // --- Identity Management ---
     async function initChatUser() {
+        let profileColor = null;
         try {
             const data = await getAuthState();
             if (data && data.authenticated && data.user && data.user.username) {
                 currentChatUsername = data.user.username;
                 isAuthenticatedUser = true;
+                const rawColor = data.user.profile_color;
+                profileColor = (rawColor && /^#[0-9a-fA-F]{6}$/.test(rawColor)) ? rawColor : (rawColor || '#818cf8');
                 if (nameBadge) {
                     nameBadge.textContent = 'Member';
                     nameBadge.style.background = 'rgba(34, 197, 94, 0.2)';
@@ -80,10 +100,26 @@ export function initializeChatController(options = {}) {
             }
         }
 
-        if (nameInput) {
-            nameInput.value = currentChatUsername;
-            nameInput.addEventListener('change', updateChatName);
-            nameInput.addEventListener('blur', updateChatName);
+        if (isAuthenticatedUser) {
+            if (nameInput) {
+                nameInput.style.display = 'none';
+                nameInput.value = currentChatUsername;
+            }
+            if (nameDisplay) {
+                nameDisplay.textContent = currentChatUsername;
+                nameDisplay.style.color = profileColor || '#818cf8';
+                nameDisplay.style.display = '';
+            }
+        } else {
+            if (nameDisplay) {
+                nameDisplay.style.display = 'none';
+            }
+            if (nameInput) {
+                nameInput.style.display = '';
+                nameInput.value = currentChatUsername;
+                nameInput.addEventListener('change', updateChatName);
+                nameInput.addEventListener('blur', updateChatName);
+            }
         }
         refreshSuggestionVoting();
     }
@@ -93,6 +129,9 @@ export function initializeChatController(options = {}) {
         const newName = nameInput.value.trim();
         if (newName) {
             currentChatUsername = newName;
+            if (nameDisplay) {
+                nameDisplay.textContent = currentChatUsername;
+            }
             refreshSuggestionVoting();
             if (!isAuthenticatedUser) {
                 localStorage.setItem('narratron_anon_chat_name', newName);
@@ -115,6 +154,9 @@ export function initializeChatController(options = {}) {
         refreshSuggestionVoting();
         if (nameInput) {
             nameInput.value = currentChatUsername;
+        }
+        if (nameDisplay) {
+            nameDisplay.textContent = currentChatUsername;
         }
     }
 

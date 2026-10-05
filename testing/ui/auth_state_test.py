@@ -11,8 +11,8 @@ def test_canvas_deduplicates_its_initial_auth_state_request():
     assert "function invalidateAuthState" in auth_flow
     assert "authStatePromise" in auth_flow
     assert "function getCanvasAuthState" in canvas
-    # One declaration plus the chat, baton, and microphone consumers.
-    assert canvas.count("getCanvasAuthState()") == 4
+    # One declaration plus the chat, stamp manager, baton, and microphone consumers.
+    assert canvas.count("getCanvasAuthState()") == 5
     assert canvas.count("fetch('/api/auth/me')") == 1
 
 
