@@ -875,3 +875,48 @@ class TestImageTools(BaseTestCase):
         webp_meta = extract_image_prompt(webp_path)
         self.assertIn("A warrior outside a castle", webp_meta)
         self.assertIn("References: hero.png, castle.jpg", webp_meta)
+
+    def test_character_images_in_characters_dir_not_visible_in_overall_image_tool(self) -> None:
+        tools = self.make_image_tools(self.config, theater_id="char_vis_test", theater_manager=self.manager)
+        theater = self.manager.theater("char_vis_test")
+
+        # 1. Scenery image in output/artifacts/images (should be visible)
+        scene_img = os.path.join(tools.output_dir, "ancient_forest.png")
+        Image.new("RGB", (10, 10), color="green").save(scene_img)
+
+        # 2. Reference image in references/ (should be visible)
+        ref_img = os.path.join(tools.reference_dir, "tavern_interior.png")
+        Image.new("RGB", (10, 10), color="brown").save(ref_img)
+        tools._load_references()
+
+        # 3. Character image specifically created under output/characters/
+        char_dir = os.path.join(str(theater.characters_dir()), "Soran")
+        os.makedirs(char_dir, exist_ok=True)
+        char_img = os.path.join(char_dir, "1.png")
+        Image.new("RGB", (10, 10), color="purple").save(char_img)
+
+        # Character image must not be in browse_images
+        browsed = tools.browse_images()
+        self.assertIn(scene_img, browsed)
+        self.assertIn(ref_img, browsed)
+        self.assertNotIn(char_img, browsed)
+
+        # Character image must not be in search_image_by_metadata
+        searched = tools.search_image_by_metadata("Soran")
+        self.assertNotIn(char_img, searched)
+
+        # Character image must not be in list_references
+        ref_manifest_paths = [str(r.get("path") or "") for r in tools.list_references()]
+        self.assertIn(ref_img, ref_manifest_paths)
+        self.assertNotIn(char_img, ref_manifest_paths)
+
+        # show_image must reject displaying character images
+        res_alias = tools.show_image("Soran")
+        self.assertIn("Error: Image 'Soran' not found.", res_alias)
+
+        res_path = tools.show_image(char_img)
+        self.assertIn("not found", res_path)
+
+        # Canvas visual state must not have displayed the character image
+        self.assertNotEqual(tools.currently_displayed_image_path, char_img)
+

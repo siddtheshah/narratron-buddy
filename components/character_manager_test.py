@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from providers import ImageGenerationResult, ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider
-from components.image_library import ImageLibrary
 from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
 from components.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
@@ -35,8 +34,6 @@ class TestCharacterManager(unittest.TestCase):
         self.notepad.get_present_elements.return_value = [
             {"topic": "Quest", "info": "Recover the starblade"}
         ]
-        self.image_library = MagicMock(spec=ImageLibrary)
-        self.image_library.find_image_names.return_value = []
         self.image_provider = MagicMock(spec=ImageProvider)
         self.image_provider.generate.side_effect = ImageProviderError("not used by this test")
         self.speech_provider = MagicMock(spec=SpeechProvider)
@@ -46,7 +43,6 @@ class TestCharacterManager(unittest.TestCase):
             text_response_provider=self.provider,
             notepad=self.notepad,
             story_state=self.story_state,
-            image_library=self.image_library,
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
         )
@@ -66,7 +62,6 @@ class TestCharacterManager(unittest.TestCase):
             self.provider,
             self.notepad,
             self.story_state,
-            self.image_library,
             self.image_provider,
             self.speech_provider,
         )
@@ -101,7 +96,6 @@ class TestCharacterManager(unittest.TestCase):
             self.provider,
             self.notepad,
             self.story_state,
-            self.image_library,
             self.image_provider,
             self.speech_provider,
         )
@@ -206,7 +200,7 @@ class TestCharacterManager(unittest.TestCase):
             "gender": ("female", "male", "nonbinary"),
             "persona": ("Narrator",),
         }
-        manager = CharacterManager(self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, speech_provider)
+        manager = CharacterManager(self.provider, self.notepad, self.story_state, self.image_provider, speech_provider)
         self.provider.generate.return_value = SimpleNamespace(
             text='{"personality":"Patient","motivation":"Find truth","gender":"female","voice_tags":["gender=female","accent=British","persona=Narrator"]}'
         )
@@ -345,27 +339,26 @@ class TestCharacterManager(unittest.TestCase):
     def test_character_manager_binds_exact_reference_and_stable_voice(self) -> None:
         speech_provider = MagicMock(spec=SpeechProvider)
         speech_provider.select_voice.return_value = "voice_lyra"
-        library = MagicMock(spec=ImageLibrary)
-        library.find_image_names.return_value = [{
-            "name": "lyra_portrait", "alias": "lyra_portrait",
-            "path": "/references/lyra.png",
-        }]
-        manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, library, self.image_provider, speech_provider,
-        )
+        with tempfile.TemporaryDirectory() as ref_dir:
+            ref_path = str(Path(ref_dir) / "lyra.png")
+            Image.new("RGB", (10, 10), color="pink").save(ref_path)
+            manager = CharacterManager(
+                self.provider, self.notepad, self.story_state, self.image_provider, speech_provider,
+                references_dir=ref_dir,
+            )
 
-        manager.create_or_update_character(
-            "Lyra", personality="Curious", motivation="Learn", quirk="Hums",
-            gender="female", image_reference="lyra_portrait",
-        )
-        # A later profile update does not silently replace either identity binding.
-        manager.create_or_update_character("Lyra", personality="Brave", motivation="Learn", quirk="Hums", gender="female")
+            manager.create_or_update_character(
+                "Lyra", personality="Curious", motivation="Learn", quirk="Hums",
+                gender="female", image_reference="lyra",
+            )
+            # A later profile update does not silently replace either identity binding.
+            manager.create_or_update_character("Lyra", personality="Brave", motivation="Learn", quirk="Hums", gender="female")
 
-        character = manager.export_characters()[0]
-        self.assertEqual(character["image_reference"], "lyra_portrait")
-        self.assertEqual(character["image_reference_path"], "/references/lyra.png")
-        self.assertEqual(character["voice_id"], "voice_lyra")
-        speech_provider.select_voice.assert_called_once()
+            character = manager.export_characters()[0]
+            self.assertEqual(character["image_reference"], "lyra")
+            self.assertEqual(character["image_reference_path"], ref_path)
+            self.assertEqual(character["voice_id"], "voice_lyra")
+            speech_provider.select_voice.assert_called_once()
 
     def test_character_manager_generates_a_dedicated_portrait_without_image_tools(self) -> None:
         image = Image.new("RGB", (8, 8), "purple")
@@ -375,15 +368,11 @@ class TestCharacterManager(unittest.TestCase):
         provider.generate.return_value = ImageGenerationResult(
             image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
         )
-        library = MagicMock(spec=ImageLibrary)
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Mira" / "1.png")
-            library.reference_dir = directory
-            library.find_image_names.side_effect = [[], [{
-                "name": "Mira_1", "alias": "references/Mira/1.png", "path": output,
-            }]]
             manager = CharacterManager(
-                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+                self.provider, self.notepad, self.story_state, provider, self.speech_provider,
+                references_dir=directory,
             )
             manager.create_or_update_character("Mira", personality="Alert", motivation="Help", quirk="Hums", gender="female")
             character = manager.export_characters()[0]
@@ -399,15 +388,13 @@ class TestCharacterManager(unittest.TestCase):
         provider.generate.return_value = ImageGenerationResult(
             image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
         )
-        library = MagicMock(spec=ImageLibrary)
         with tempfile.TemporaryDirectory() as directory:
             iter1_output = str(Path(directory) / "Soran" / "1.png")
             iter2_output = str(Path(directory) / "Soran" / "2.png")
-            library.reference_dir = directory
-            library.find_image_names.return_value = []
 
             manager = CharacterManager(
-                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+                self.provider, self.notepad, self.story_state, provider, self.speech_provider,
+                references_dir=directory,
             )
 
             # 1. Initial creation generates iteration 1
@@ -487,34 +474,33 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(player2.reference, "rowan_portrait")
 
     def test_character_manager_manages_player_character_and_binds_reference(self) -> None:
-        library = MagicMock(spec=ImageLibrary)
-        library.find_image_names.return_value = [{
-            "name": "hero_portrait", "alias": "hero_alias",
-            "path": "/references/hero.png",
-        }]
-        manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, library, self.image_provider, self.speech_provider,
-        )
+        with tempfile.TemporaryDirectory() as ref_dir:
+            ref_path = str(Path(ref_dir) / "hero.png")
+            Image.new("RGB", (10, 10), color="blue").save(ref_path)
+            manager = CharacterManager(
+                self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
+                references_dir=ref_dir,
+            )
 
-        self.assertIsNone(manager.get_player_character())
-        self.assertIsNone(manager.get_player_reference())
+            self.assertIsNone(manager.get_player_character())
+            self.assertIsNone(manager.get_player_reference())
 
-        player = manager.update_player_character(
-            name="Valen",
-            reference="hero_portrait",
-            image_description="Tall knight in etched plate armor",
-        )
-        self.assertEqual(player.name, "Valen")
-        self.assertEqual(player.reference, "hero_alias")
-        self.assertEqual(player.reference_path, "/references/hero.png")
-        self.assertEqual(player.reference_source, "existing")
-        self.assertEqual(manager.get_player_reference(), "hero_alias")
+            player = manager.update_player_character(
+                name="Valen",
+                reference="hero",
+                image_description="Tall knight in etched plate armor",
+            )
+            self.assertEqual(player.name, "Valen")
+            self.assertEqual(player.reference, "hero")
+            self.assertEqual(player.reference_path, ref_path)
+            self.assertEqual(player.reference_source, "existing")
+            self.assertEqual(manager.get_player_reference(), "hero")
 
-        # Calling update again preserves bindings unless reference is updated
-        updated = manager.update_player_character(image_description="Armor now tarnished")
-        self.assertEqual(updated.image_description, "Armor now tarnished")
-        self.assertEqual(updated.reference, "hero_alias")
-        self.assertEqual(updated.reference_path, "/references/hero.png")
+            # Calling update again preserves bindings unless reference is updated
+            updated = manager.update_player_character(image_description="Armor now tarnished")
+            self.assertEqual(updated.image_description, "Armor now tarnished")
+            self.assertEqual(updated.reference, "hero")
+            self.assertEqual(updated.reference_path, ref_path)
 
     def test_character_manager_generates_player_portrait_when_missing(self) -> None:
         image = Image.new("RGB", (8, 8), "blue")
@@ -524,15 +510,11 @@ class TestCharacterManager(unittest.TestCase):
         provider.generate.return_value = ImageGenerationResult(
             image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
         )
-        library = MagicMock(spec=ImageLibrary)
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Valen" / "1.png")
-            library.reference_dir = directory
-            library.find_image_names.side_effect = [[], [{
-                "name": "Valen_1", "alias": "references/Valen/1.png", "path": output,
-            }]]
             manager = CharacterManager(
-                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+                self.provider, self.notepad, self.story_state, provider, self.speech_provider,
+                references_dir=directory,
             )
             player = manager.update_player_character(
                 name="Valen",
@@ -551,15 +533,13 @@ class TestCharacterManager(unittest.TestCase):
         provider.generate.return_value = ImageGenerationResult(
             image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
         )
-        library = MagicMock(spec=ImageLibrary)
         with tempfile.TemporaryDirectory() as directory:
             iter1_output = str(Path(directory) / "Valen" / "1.png")
             iter2_output = str(Path(directory) / "Valen" / "2.png")
-            library.reference_dir = directory
-            library.find_image_names.return_value = []
 
             manager = CharacterManager(
-                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+                self.provider, self.notepad, self.story_state, provider, self.speech_provider,
+                references_dir=directory,
             )
 
             # 1. Initial creation generates iteration 1
@@ -607,7 +587,7 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_player_character_export_and_import(self) -> None:
         manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, self.speech_provider,
+            self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
         )
         manager.update_player_character(
             name="Cora",
@@ -620,7 +600,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(exported["image_description"], "Alchemist with goggles")
 
         manager2 = CharacterManager(
-            self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, self.speech_provider,
+            self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
         )
         manager2.import_player_character(exported)
         player2 = manager2.get_player_character()
@@ -800,7 +780,7 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_get_character_references(self) -> None:
         manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, self.image_library, self.image_provider, self.speech_provider
+            self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider
         )
         self.assertEqual(manager.get_character_references(), [])
 
@@ -825,98 +805,74 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_character_manager_resolves_existing_reference_for_character_name_slug(self) -> None:
         provider = MagicMock(spec=ImageProvider)
-        library = MagicMock(spec=ImageLibrary)
-        library.find_image_names.return_value = [
-            {
-                "name": "lady_lux",
-                "alias": "lady_lux",
-                "path": "/theaters/references/lady_lux.jpg",
-                "title": "Lady Lux",
-                "description": "Lady Lux portrait",
-            }
-        ]
-        manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
-        )
+        with tempfile.TemporaryDirectory() as ref_dir:
+            ref_path = str(Path(ref_dir) / "lady_lux.jpg")
+            Image.new("RGB", (10, 10), color="yellow").save(ref_path)
+            manager = CharacterManager(
+                self.provider, self.notepad, self.story_state, provider, self.speech_provider,
+                references_dir=ref_dir,
+            )
 
-        char = manager.create_or_update_character(
-            "Lady Lux",
-            personality="Glamorous",
-            motivation="Freedom",
-            quirk="Plays sax riffs",
-            gender="female",
-        )
+            char = manager.create_or_update_character(
+                "Lady Lux",
+                personality="Glamorous",
+                motivation="Freedom",
+                quirk="Plays sax riffs",
+                gender="female",
+            )
 
-        self.assertIsNotNone(char)
-        self.assertEqual(char["image_reference"], "lady_lux")
-        self.assertEqual(char["image_reference_path"], "/theaters/references/lady_lux.jpg")
-        self.assertEqual(char["image_reference_source"], "existing")
-        # Should NOT have called image provider to generate a fallback portrait
-        provider.generate.assert_not_called()
+            self.assertIsNotNone(char)
+            self.assertEqual(char["image_reference"], "lady_lux")
+            self.assertEqual(char["image_reference_path"], ref_path)
+            self.assertEqual(char["image_reference_source"], "existing")
+            provider.generate.assert_not_called()
 
     def test_character_manager_prefers_base_reference_over_generated_character_png(self) -> None:
         provider = MagicMock(spec=ImageProvider)
-        library = MagicMock(spec=ImageLibrary)
-        library.find_image_names.return_value = [
-            {
-                "name": "Lady_Lux_character",
-                "alias": "Lady_Lux_character",
-                "path": "/theaters/references/Lady_Lux_character.png",
-                "title": "Generated Portrait",
-                "description": "Generated",
-            },
-            {
-                "name": "lady_lux",
-                "alias": "lady_lux",
-                "path": "/theaters/references/lady_lux.jpg",
-                "title": "Lady Lux",
-                "description": "Lady Lux reference",
-            },
-        ]
-        manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
-        )
+        with tempfile.TemporaryDirectory() as ref_dir:
+            gen_path = str(Path(ref_dir) / "Lady_Lux_character.png")
+            ref_path = str(Path(ref_dir) / "lady_lux.jpg")
+            Image.new("RGB", (10, 10), color="gray").save(gen_path)
+            Image.new("RGB", (10, 10), color="yellow").save(ref_path)
+            manager = CharacterManager(
+                self.provider, self.notepad, self.story_state, provider, self.speech_provider,
+                references_dir=ref_dir,
+            )
 
-        char = manager.create_or_update_character(
-            "Lady Lux",
-            personality="Glamorous",
-            motivation="Freedom",
-            quirk="Plays sax riffs",
-            gender="female",
-        )
+            char = manager.create_or_update_character(
+                "Lady Lux",
+                personality="Glamorous",
+                motivation="Freedom",
+                quirk="Plays sax riffs",
+                gender="female",
+            )
 
-        self.assertIsNotNone(char)
-        self.assertEqual(char["image_reference"], "lady_lux")
-        self.assertEqual(char["image_reference_path"], "/theaters/references/lady_lux.jpg")
-        self.assertEqual(char["image_reference_source"], "existing")
-        provider.generate.assert_not_called()
+            self.assertIsNotNone(char)
+            self.assertEqual(char["image_reference"], "lady_lux")
+            self.assertEqual(char["image_reference_path"], ref_path)
+            self.assertEqual(char["image_reference_source"], "existing")
+            provider.generate.assert_not_called()
 
     def test_character_manager_resolves_player_character_by_slug(self) -> None:
         provider = MagicMock(spec=ImageProvider)
-        library = MagicMock(spec=ImageLibrary)
-        library.find_image_names.return_value = [
-            {
-                "name": "retro_pulsar",
-                "alias": "retro_pulsar",
-                "path": "/theaters/references/retro_pulsar.jpg",
-                "title": "Retro Pulsar",
-                "description": "Retro Pulsar suit",
-            }
-        ]
-        manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
-        )
+        with tempfile.TemporaryDirectory() as ref_dir:
+            ref_path = str(Path(ref_dir) / "retro_pulsar.jpg")
+            Image.new("RGB", (10, 10), color="blue").save(ref_path)
+            manager = CharacterManager(
+                self.provider, self.notepad, self.story_state, provider, self.speech_provider,
+                references_dir=ref_dir,
+            )
 
-        player = manager.update_player_character(
-            name="Retro Pulsar",
-            image_description="Astronaut in 1960s suit",
-        )
+            player = manager.update_player_character(
+                name="Retro Pulsar",
+                image_description="Astronaut in 1960s suit",
+            )
 
-        self.assertEqual(player.name, "Retro Pulsar")
-        self.assertEqual(player.reference, "retro_pulsar")
-        self.assertEqual(player.reference_path, "/theaters/references/retro_pulsar.jpg")
-        self.assertEqual(player.reference_source, "existing")
-        provider.generate.assert_not_called()
+            self.assertEqual(player.name, "Retro Pulsar")
+            self.assertEqual(player.reference, "retro_pulsar")
+            self.assertEqual(player.reference_path, ref_path)
+            self.assertEqual(player.reference_source, "existing")
+            provider.generate.assert_not_called()
 
 
 if __name__ == "__main__":

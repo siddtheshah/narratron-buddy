@@ -89,6 +89,9 @@ class Theater:
     def output_dir(self) -> Path:
         return self.manager._get_theater_output_dir(self.theater_id)
 
+    def characters_dir(self) -> Path:
+        return self.manager._get_theater_characters_dir(self.theater_id)
+
     def artifacts_dir(self) -> Path:
         return self.manager._get_theater_artifacts_dir(self.theater_id)
 
@@ -244,6 +247,9 @@ class TheaterManager:
 
     def _get_theater_output_dir(self, theater_id: str) -> Path:
         return self._get_theater_dir(theater_id) / "output"
+
+    def _get_theater_characters_dir(self, theater_id: str) -> Path:
+        return self._get_theater_output_dir(theater_id) / "characters"
 
     def _get_theater_artifacts_dir(self, theater_id: str) -> Path:
         return self._get_theater_output_dir(theater_id) / "artifacts"

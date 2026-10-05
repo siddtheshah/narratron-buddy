@@ -84,8 +84,10 @@ def is_character_reference(
         if not target:
             continue
         p = Path(target)
+        if "characters" in [part.lower() for part in p.parts]:
+            return True
         parent_name = p.parent.name
-        if parent_name and parent_name.lower() not in ("references", "images", "artifacts", "output", "."):
+        if parent_name and parent_name.lower() not in ("references", "images", "artifacts", "output", "characters", "."):
             res = character_manager.get_latest_reference_path_for_character(parent_name)
             if type(res) is str and res.strip():
                 return True
@@ -185,7 +187,15 @@ def resolve_provider_references(
             ref_key = ref_clean.casefold()
             if not ref_key or ref_key in char_seen_keys:
                 continue
-            ref_path = visual.resolve_image_path(ref_clean) if visual is not None else None
+            ref_path = None
+            if os.path.isfile(ref_clean):
+                ref_path = ref_clean
+            elif character_manager is not None:
+                res = character_manager.get_latest_reference_path_for_character(ref_clean)
+                if type(res) is str and res.strip():
+                    ref_path = res.strip()
+            if ref_path is None and visual is not None:
+                ref_path = visual.resolve_image_path(ref_clean)
             if ref_path is not None:
                 norm_path = os.path.normcase(os.path.abspath(ref_path))
                 if norm_path not in char_seen_paths:

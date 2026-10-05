@@ -120,8 +120,8 @@ class VisualState:
 
     def _index_visual_assets(self) -> None:
         """Index theater reference and generated image files for alias lookup."""
-        for directory in (self.theater.references_dir(), self.theater.output_dir()):
-            if not isinstance(directory, (str, Path)):
+        for directory in (self.theater.references_dir(), self.theater.image_artifacts_dir()):
+            if directory is None:
                 continue
             root = Path(directory)
             if not root.exists():
@@ -133,11 +133,20 @@ class VisualState:
 
     def resolve_image_path(self, value: str) -> str | None:
         """Resolve a visual path or alias owned by this canvas state."""
-        if not isinstance(value, str) or not value.strip():
+        if not value or not str(value).strip():
             return None
-        requested = value.strip()
+        requested = str(value).strip()
         direct_path = Path(requested)
         if direct_path.is_file():
+            char_dir = self.theater.characters_dir()
+            if char_dir is not None:
+                try:
+                    if direct_path.resolve().is_relative_to(Path(char_dir).resolve()):
+                        return None
+                except (ValueError, OSError):
+                    pass
+            if "characters" in [part.lower() for part in direct_path.parts]:
+                return None
             return str(direct_path)
 
         normalized = self._normalize_image_alias(requested)
@@ -153,7 +162,9 @@ class VisualState:
             return resolved
 
         base_name = Path(requested).name
-        for directory in (self.theater.references_dir(), self.theater.output_dir()):
+        for directory in (self.theater.references_dir(), self.theater.image_artifacts_dir()):
+            if directory is None:
+                continue
             root = Path(directory)
             for candidate in (
                 root / requested,
@@ -165,31 +176,7 @@ class VisualState:
                 if candidate.is_file():
                     self.register_image(str(candidate), requested)
                     return str(candidate)
-                if candidate.is_dir():
-                    latest = self._find_latest_iteration_file(candidate)
-                    if latest is not None and latest.is_file():
-                        self.register_image(str(latest), requested)
-                        return str(latest)
         return None
-
-    @staticmethod
-    def _find_latest_iteration_file(char_dir: Path) -> Path | None:
-        if not char_dir.is_dir():
-            return None
-        iterations: list[tuple[int, Path]] = []
-        for item in char_dir.iterdir():
-            if item.is_file() and item.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-                stem = item.stem.strip()
-                if stem.isdigit():
-                    num = int(stem)
-                else:
-                    match = re.search(r"(?:^|[\D_])(\d+)(?:$|[\D_])", stem)
-                    num = int(match.group(1)) if match is not None else 0
-                iterations.append((num, item))
-        if not iterations:
-            return None
-        iterations.sort(key=lambda t: (t[0], t[1].stat().st_mtime if t[1].exists() else 0.0))
-        return iterations[-1][1]
 
     def has_active_animation(self) -> bool:
         """Check if an animation is currently active on the canvas."""
@@ -850,7 +837,8 @@ class VisualState:
         if not base_path:
             raise ValueError("A layered animation requires a base image path.")
         prompt = str(manifest.get("scene_prompt") or manifest.get("prompt") or "")
-        self.shown_animation_frames = []; self.shown_video_animation = None
+        self.shown_animation_frames = []
+        self.shown_video_animation = None
         self.shown_layered_animation = {"id": manifest.get("id"), "scene_prompt": prompt, "layers": [
             {"name": item.get("name", f"layer_{index + 1}"), "description": item.get("description", ""),
              "effect": item.get("effect", "none"), "order": item.get("order", index),
@@ -870,7 +858,8 @@ class VisualState:
         poster_path = str(manifest.get("poster_image") or "")
         prompt = str(manifest.get("scene_prompt") or manifest.get("prompt") or "")
         local_url = url_for_path(video_path) if video_path and url_for_path else video_path
-        self.shown_animation_frames = []; self.shown_layered_animation = None
+        self.shown_animation_frames = []
+        self.shown_layered_animation = None
         self.shown_video_animation = {"id": manifest.get("id"), "scene_prompt": prompt, "video_url": video_url,
             "local_video_url": local_url, "fallback_url": local_url,
             "poster_url": url_for_path(poster_path) if poster_path and url_for_path else poster_path or None,
@@ -885,7 +874,8 @@ class VisualState:
         self.pinned = bool(data.get("pinned", False))
         for name in ("current_image_basename", "shown_image_path", "shown_image_prompt", "shown_image_transition", "shown_image_effect"):
             value = data.get(name)
-            if isinstance(value, str): setattr(self, name, value)
+            if isinstance(value, str):
+                setattr(self, name, value)
         if isinstance(data.get("shown_image_time"), (int, float)):
             self.shown_image_time = float(data["shown_image_time"])
         elif isinstance(data.get("time"), (int, float)):

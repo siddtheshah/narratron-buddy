@@ -122,10 +122,11 @@ class StoryTool(BaseTools):
                 text_response_provider=text_response_provider,
                 notepad=self.notepad,
                 story_state=story_state,
-                image_library=self.image_library,
                 image_provider=character_image_provider,
                 speech_provider=speech_provider,
                 character_image_style=str(visuals_config.get("style") or "").strip(),
+                characters_dir=str(theater.characters_dir()),
+                references_dir=str(theater.references_dir()),
             )
         configured_session_id = str(self.config.get("session_id") or "").strip()
         theater_id = getattr(theater, "theater_id", "")

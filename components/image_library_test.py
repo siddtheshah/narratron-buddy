@@ -105,3 +105,19 @@ class TestImageLibrary:
         with pytest.raises(ValueError, match="limit must be at least 1"):
             self.library.get_recent_images(limit=0)
 
+    def test_character_reference_under_characters_dir_is_invisible(self) -> None:
+        char_dir = os.path.join(str(self.theater.characters_dir()), "Soran")
+        os.makedirs(char_dir, exist_ok=True)
+        char_img = os.path.join(char_dir, "1.png")
+        Image.new("RGB", (10, 10), color="purple").save(char_img)
+
+        # Scenery image that should be visible
+        scenery_img = os.path.join(self.library.output_dir, "mountains.png")
+        Image.new("RGB", (10, 10), color="blue").save(scenery_img)
+
+        assert char_img not in self.library.browse_images()
+        assert char_img not in self.library.search_images("Soran")
+        assert not any(e["name"] == "1" or "Soran" in e["name"] for e in self.library.find_image_names())
+        assert not any(e["path"] == char_img for e in self.library.get_recent_images(limit=10, generated_only=False))
+
+

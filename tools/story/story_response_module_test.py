@@ -276,7 +276,6 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             text_response_provider=self.provider,
             notepad=self.notepad,
             story_state=self.story_state,
-            image_library=self.image_library,
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
         )

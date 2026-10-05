@@ -481,7 +481,23 @@ class ImageTools(BaseTools):
             self._trigger_after_tool_call("show_image")
             return f"Successfully displayed {target} to the user with transition '{transition}' and effect '{effect}'."
 
-        if not resolved_path:
+        char_dir = self.theater.characters_dir()
+        is_char_path = False
+        for p in (file_path, resolved_path):
+            if not p:
+                continue
+            try:
+                p_obj = Path(p)
+                if char_dir is not None and p_obj.resolve().is_relative_to(Path(char_dir).resolve()):
+                    is_char_path = True
+                    break
+                if "characters" in [part.lower() for part in p_obj.parts]:
+                    is_char_path = True
+                    break
+            except (ValueError, OSError):
+                pass
+
+        if not resolved_path or is_char_path or self._is_character_reference(file_path, resolved_path):
             logger.warning(f"[ImageTools] Image path or alias '{file_path}' could not be resolved.")
             res = f"Error: Image '{file_path}' not found."
             self._trigger_after_tool_call("show_image")

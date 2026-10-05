@@ -571,7 +571,7 @@ class TestCreateAgent(unittest.TestCase):
         )
         mock_char_mgr_cls.assert_called_once()
         self.assertIs(mock_char_mgr_cls.call_args.kwargs["notepad"], notepad)
-        self.assertIs(mock_char_mgr_cls.call_args.kwargs["image_library"], image_lib)
+        self.assertNotIn("image_library", mock_char_mgr_cls.call_args.kwargs)
 
         mock_image_tools_cls.assert_called_once_with(
             theater,

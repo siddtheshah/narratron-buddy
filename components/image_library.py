@@ -6,11 +6,9 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any
 
 from components.theater_manager import Theater
 from utils.image_utils import extract_image_metadata_description, extract_image_metadata_title
-
 
 logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
@@ -87,9 +85,7 @@ class ImageLibrary:
             "alias": re.sub(r"[^a-zA-Z0-9_-]", "_", name),
             "path": path,
             "title": extract_image_metadata_title(path) or "",
-            "description": extract_image_metadata_description(path) or (
-                f"Character reference for {parent_name} (iteration {stem})" if is_subfolder else f"Image {filename}"
-            ),
+            "description": extract_image_metadata_description(path) or f"Image {filename}",
         }
 
     def _load_references(self) -> None:
@@ -147,7 +143,7 @@ class ImageLibrary:
 
     def get_recent_images(
         self, limit: int = 5, generated_only: bool = True
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, str | float]]:
         """Return the most recently created images sorted descending by creation time.
 
         Args:
@@ -184,11 +180,10 @@ class ImageLibrary:
             reverse=True,
         )
 
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, str | float]] = []
         for path in sorted_paths[:limit]:
             entry = dict(self.references_manifest.get(path) or self._entry(path))
             entry["created_at"] = self._get_creation_time(path)
             results.append(entry)
 
         return results
-
