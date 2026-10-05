@@ -10,14 +10,13 @@ import time
 from typing import Any, Iterable, Mapping
 
 from google import genai
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
 
 from providers.speech_provider import (
     SpeechProvider,
     SpeechProviderError,
     SpeechSynthesisRequest,
     SpeechSynthesisResult,
-    extract_character_description,
-    extract_voice_tags,
 )
 
 GEMINI_VOICES = (
@@ -27,8 +26,74 @@ GEMINI_VOICES = (
     "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi",
     "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
 )
-GEMINI_FEMALE_VOICES = ("Kore", "Aoede", "Leda")
-GEMINI_MALE_VOICES = ("Puck", "Charon", "Fenrir", "Orus", "Zephyr")
+# Gender presentation follows Google's published voice catalog.
+GEMINI_FEMALE_VOICES = (
+    "Kore", "Aoede", "Leda", "Zephyr", "Callirrhoe", "Autonoe", "Despina",
+    "Erinome", "Laomedeia", "Achernar", "Gacrux", "Pulcherrima", "Vindemiatrix", "Sulafat",
+)
+GEMINI_MALE_VOICES = tuple(voice for voice in GEMINI_VOICES if voice not in GEMINI_FEMALE_VOICES)
+# Timbre labels from https://ai.google.dev/gemini-api/docs/speech-generation.
+GEMINI_VOICE_QUALITIES = {
+    "Zephyr": "Bright", "Puck": "Upbeat", "Charon": "Informative", "Kore": "Firm",
+    "Fenrir": "Excitable", "Leda": "Youthful", "Orus": "Firm", "Aoede": "Breezy",
+    "Callirrhoe": "Easy-going", "Autonoe": "Bright", "Enceladus": "Breathy",
+    "Iapetus": "Clear", "Umbriel": "Easy-going", "Algieba": "Smooth", "Despina": "Smooth",
+    "Erinome": "Clear", "Algenib": "Gravelly", "Rasalgethi": "Informative",
+    "Laomedeia": "Upbeat", "Achernar": "Soft", "Alnilam": "Firm", "Schedar": "Even",
+    "Gacrux": "Mature", "Pulcherrima": "Forward", "Achird": "Friendly",
+    "Zubenelgenubi": "Casual", "Vindemiatrix": "Gentle", "Sadachbia": "Lively",
+    "Sadaltager": "Knowledgeable", "Sulafat": "Warm",
+}
+VOICE_FIELDS = ("language_code", "region_code", "gender", "accent", "pitch", "persona", "contexts")
+VoiceProfile = Iterable[str] | str | Mapping[str, JsonValue] | None
+VoiceFilters = dict[str, list[str]]
+_PROFILE_ADAPTER = TypeAdapter(dict[str, JsonValue])
+_STRING_ADAPTER = TypeAdapter(str)
+_TAGS_ADAPTER = TypeAdapter(list[str])
+
+
+def _tag_values(value: JsonValue | Iterable[str]) -> list[str]:
+    """Validate the supported scalar/list forms at the input boundary."""
+    if value is None:
+        return []
+    try:
+        return [_STRING_ADAPTER.validate_python(value, strict=True)]
+    except ValidationError:
+        return _TAGS_ADAPTER.validate_python(value)
+
+
+class CatalogVoice(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str | None = None
+    language_code: str | None = None
+    region_code: str | None = None
+    gender: str | None = None
+    accent: str | None = None
+    pitch: str | None = None
+    persona: str | None = None
+    context: str | None = None
+    description: str | None = None
+    display_name: str | None = None
+
+    def metadata(self) -> dict[str, str]:
+        return {
+            "language_code": self.language_code or "",
+            "region_code": self.region_code or "",
+            "gender": self.gender or "",
+            "accent": self.accent or "",
+            "pitch": self.pitch or "",
+            "persona": self.persona or "",
+            "contexts": self.context or "",
+        }
+
+
+class CatalogPage(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    voices: list[CatalogVoice] | None = None
+    next_page_token: str | None = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,100 +115,86 @@ class GeminiSpeechProvider(SpeechProvider):
         self.client = client
         self.max_attempts = max(1, int(max_attempts))
         self.retry_delay_seconds = max(0.0, float(retry_delay_seconds))
-        self.voice_language_code = str(voice_language_code).strip() or None
-        self._voice_catalog_cache: dict[tuple[tuple[str, tuple[str, ...]], ...], tuple[str, ...]] = {}
+        self.voice_language_code = (voice_language_code or "").strip() or None
+        self._voice_catalog_cache: dict[tuple[tuple[str, tuple[str, ...]], ...], tuple[CatalogVoice, ...]] = {}
+        self._voice_selection_cache: dict[tuple[str, tuple[str, ...]], str] = {}
         self._voice_tag_catalog_cache: Mapping[str, tuple[str, ...]] | None = None
 
     def get_supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:
-        """Discover the current Extended Voice Library filter values.
-
-        Gemini's catalog changes independently of this application.  Asking
-        the API here lets character generation offer only values that can be
-        used by ``voices.list``.  A small gender-only fallback also keeps
-        character generation available without credentials or connectivity.
-        """
+        """Discover supported values from all pages of the voice catalog."""
         if self._voice_tag_catalog_cache is not None:
             return self._voice_tag_catalog_cache
-
-        fallback: Mapping[str, tuple[str, ...]] = {
-            "gender": ("female", "male", "nonbinary"),
-        }
-        try:
-            client = self._ensure_client()
-            voices_api = getattr(client, "voices", None)
-            if voices_api is None:
-                self._voice_tag_catalog_cache = fallback
-                return fallback
-            voices: list[Any] = []
-            page_token: str | None = None
-            while True:
-                kwargs: dict[str, Any] = {"type_": ["prebuilt"], "page_size": 1000}
-                if page_token:
-                    kwargs["page_token"] = page_token
-                response = voices_api.list(**kwargs)
-                page = getattr(response, "voices", None)
-                if page is None and isinstance(response, Mapping):
-                    page = response.get("voices")
-                voices.extend(page or [])
-                page_token = (
-                    response.get("next_page_token")
-                    if isinstance(response, Mapping)
-                    else getattr(response, "next_page_token", None)
-                )
-                if not page_token:
-                    break
-            fields = ("language_code", "region_code", "gender", "accent", "pitch", "persona", "contexts")
-            catalog: dict[str, set[str]] = {field: set() for field in fields}
-            for voice in voices:
-                for field in fields:
-                    value = self._value(voice, field)
-                    values = value if isinstance(value, (list, tuple, set)) else (value,)
-                    catalog[field].update(str(item).strip() for item in values if item)
-            result = {
-                field: tuple(sorted(values))
-                for field, values in catalog.items()
-                if values
-            }
-            # Gemini uses ``neutral`` in its voice API, while character
-            # generation uses the application's nonbinary convention.
-            if "gender" in result:
-                genders = tuple("nonbinary" if value == "neutral" else value for value in result["gender"])
-                result["gender"] = tuple(dict.fromkeys(genders))
-            self._voice_tag_catalog_cache = result or fallback
-            return self._voice_tag_catalog_cache
-        except Exception as exc:
-            logger.debug("Gemini Extended Voice Library tags unavailable: %s", exc)
-            self._voice_tag_catalog_cache = fallback
-            return fallback
+        voices = self._list_extended_voices({})
+        catalog: dict[str, set[str]] = {field: set() for field in VOICE_FIELDS}
+        for voice in voices:
+            for field, value in voice.metadata().items():
+                if value:
+                    catalog[field].add("nonbinary" if field == "gender" and value.casefold() == "neutral" else value)
+        self._voice_tag_catalog_cache = {
+            field: tuple(sorted(values)) for field, values in catalog.items() if values
+        } or {"gender": ("female", "male", "nonbinary")}
+        return self._voice_tag_catalog_cache
 
     def select_voice(
         self,
-        voice_tags: Iterable[str] | str | Mapping[str, Any] | None = None,
+        voice_tags: VoiceProfile = None,
         *,
         exclude: Iterable[str] | None = None,
-        **kwargs: Any,
+        **kwargs: JsonValue,
     ) -> str:
-        tags = extract_voice_tags(voice_tags)
+        profile, tags = self._normalize_profile(voice_tags)
+        filters = self._voice_library_filters(profile, tags, self.voice_language_code)
+        canonical = repr(tuple(sorted((key, tuple(sorted(value.casefold() for value in values))) for key, values in filters.items())))
+        canonical += repr(sorted({tag.strip().casefold() for tag in tags if "=" not in tag and ":" not in tag and tag.strip().casefold().replace("-", "") not in {"male", "female", "nonbinary", "nb", "neutral"}}))
+        # Mutable character prose must not change casting. A name distinguishes
+        # characters sharing a profile; anonymous profiles use canonical tags.
+        identity = str(profile.get("name") or "").strip().casefold() or canonical
         excluded = set(exclude or ())
-        catalog_voices = self._list_extended_voices(voice_tags, tags)
-        available_catalog_voices = [voice for voice in catalog_voices if voice not in excluded]
-        if available_catalog_voices:
-            return self._stable_voice_choice(available_catalog_voices, voice_tags)
+        cache_key = (identity + canonical, tuple(sorted(excluded)))
+        if cache_key in self._voice_selection_cache:
+            return self._voice_selection_cache[cache_key]
 
-        if "female" in tags and "male" not in tags and "nonbinary" not in tags:
-            pool = GEMINI_FEMALE_VOICES
-        elif "male" in tags and "female" not in tags and "nonbinary" not in tags:
-            pool = GEMINI_MALE_VOICES
+        voices = self._list_extended_voices(filters)
+        available = [voice for voice in voices if voice.id and voice.id not in excluded]
+        if not available:
+            # Exact filters are ANDed by Gemini. Keep explicit gender/language
+            # constraints, then rank the remaining hints. An implicit en-US
+            # default must also allow en-GB voices for a British accent.
+            required = {key: values for key, values in filters.items() if key in {"gender", "language_code"}}
+            language_family: str | None = None
+            explicit_filters = self._voice_library_filters(profile, tags, None)
+            if self.voice_language_code and "language_code" not in explicit_filters and ("accent" in filters or "region_code" in filters):
+                required.pop("language_code", None)
+                language_family = self.voice_language_code.partition("-")[0].casefold()
+            if required != filters:
+                voices = self._list_extended_voices(required)
+                available = [
+                    voice for voice in voices
+                    if voice.id and voice.id not in excluded
+                    and (not language_family or not voice.language_code or voice.language_code.partition("-")[0].casefold() == language_family)
+                ]
+
+        if available:
+            scores = {voice.id: self._match_score(voice, filters, tags) for voice in available}
+            best = max(scores.values())
+            candidates = [voice.id for voice in available if voice.id and scores[voice.id] == best]
         else:
-            pool = GEMINI_VOICES
-
-        available = [v for v in pool if v not in excluded]
-        if not available:
-            available = [v for v in GEMINI_VOICES if v not in excluded]
-        if not available:
-            available = list(pool) or list(GEMINI_VOICES)
-
-        return self._stable_voice_choice(available, voice_tags)
+            genders = filters.get("gender", [])
+            pool = GEMINI_FEMALE_VOICES if genders == ["female"] else GEMINI_MALE_VOICES if genders == ["male"] else GEMINI_VOICES
+            candidates = [voice for voice in pool if voice not in excluded]
+            if not candidates:
+                # Reuse a matching voice rather than silently changing gender.
+                candidates = list(pool)
+            scores = {
+                voice: self._match_score(CatalogVoice(id=voice, persona=GEMINI_VOICE_QUALITIES[voice]), filters, tags)
+                for voice in candidates
+            }
+            best = max(scores.values())
+            candidates = [voice for voice in candidates if scores[voice] == best]
+            logger.debug("Using curated Gemini voices for filters %s", filters)
+        choice = self._stable_voice_choice(candidates, identity)
+        self._voice_selection_cache[cache_key] = choice
+        return choice
 
     def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResult:
         self._ensure_client()
@@ -151,7 +202,7 @@ class GeminiSpeechProvider(SpeechProvider):
         # Gemini 3.8's unary Interactions API returns a complete WAV asset.
         # Unlike the older preview, delivery direction is sent as structured
         # speech metadata, keeping it out of the literal transcript.
-        voice = request.voice or "Kore"
+        voice = request.voice or (self.select_voice(request.voice_tags) if request.voice_tags else "Kore")
         generation_config: dict[str, Any] = {"speech_config": [{"voice": voice}]}
         annotations: list[dict[str, str]] = []
         instruction = request.style_instruction()
@@ -239,76 +290,91 @@ class GeminiSpeechProvider(SpeechProvider):
         except Exception as exc:
             raise SpeechProviderError(f"Failed to initialize Gemini TTS client: {exc}") from exc
 
-    def _list_extended_voices(
-        self,
-        voice_profile: Iterable[str] | str | Mapping[str, Any] | None,
-        tags: list[str],
-    ) -> tuple[str, ...]:
-        """Return cached Extended Voice Library IDs, falling back silently offline."""
-        filters = self._voice_library_filters(voice_profile, tags, self.voice_language_code)
-        cache_key = tuple(sorted((key, tuple(value) if isinstance(value, list) else (str(value),)) for key, value in filters.items()))
+    def _list_extended_voices(self, filters: VoiceFilters) -> tuple[CatalogVoice, ...]:
+        cache_key = tuple(sorted((key, tuple(sorted(value.casefold() for value in values))) for key, values in filters.items()))
         if cache_key in self._voice_catalog_cache:
             return self._voice_catalog_cache[cache_key]
-
         try:
             client = self._ensure_client()
-            voices_api = getattr(client, "voices", None)
-            if voices_api is None:
-                return ()
-            response = voices_api.list(**filters)
-            voices = getattr(response, "voices", None)
-            if voices is None and isinstance(response, Mapping):
-                voices = response.get("voices")
-            ids = tuple(
-                str(self._value(voice, "id")).strip()
-                for voice in (voices or [])
-                if self._value(voice, "id")
-            )
-            self._voice_catalog_cache[cache_key] = ids
-            return ids
+            voices: list[CatalogVoice] = []
+            page_token: str | None = None
+            while True:
+                options: dict[str, list[str] | int | str] = {"type_": ["prebuilt"], "page_size": 1000, **filters}
+                if page_token:
+                    options["page_token"] = page_token
+                page = CatalogPage.model_validate(client.voices.list(**options))
+                voices.extend(page.voices or [])
+                page_token = page.next_page_token
+                if not page_token:
+                    break
+            result = tuple(voices)
+            self._voice_catalog_cache[cache_key] = result
+            return result
         except Exception as exc:
             logger.debug("Gemini Extended Voice Library unavailable; using curated voices: %s", exc)
             return ()
 
     @staticmethod
+    def _normalize_profile(voice_profile: VoiceProfile) -> tuple[dict[str, JsonValue], list[str]]:
+        if voice_profile is None:
+            return {}, []
+        try:
+            profile = _PROFILE_ADAPTER.validate_python(voice_profile)
+        except ValidationError:
+            return {}, _tag_values(voice_profile)
+        return profile, _tag_values(profile.get("voice_tags"))
+
+    @staticmethod
     def _voice_library_filters(
-        voice_profile: Iterable[str] | str | Mapping[str, Any] | None,
+        profile: Mapping[str, JsonValue],
         tags: list[str],
         default_language_code: str | None,
-    ) -> dict[str, Any]:
-        """Build documented ListVoices filters from optional character metadata."""
-        profile = dict(voice_profile) if isinstance(voice_profile, Mapping) else {}
-        raw_tags = profile.get("voice_tags", voice_profile)
-        if isinstance(raw_tags, str):
-            raw_tags = [raw_tags]
-        if isinstance(raw_tags, (list, tuple, set)):
-            for raw_tag in raw_tags:
-                key, separator, value = str(raw_tag).partition("=")
-                if separator and key.strip() in {"language_code", "region_code", "gender", "accent", "pitch", "persona", "contexts"}:
-                    profile.setdefault(key.strip(), value.strip())
-        filters: dict[str, Any] = {"type_": ["prebuilt"], "page_size": 1000}
-        gender = next((tag for tag in tags if tag in {"female", "male"}), None)
-        if gender:
-            filters["gender"] = [gender]
-        elif "nonbinary" in tags:
-            filters["gender"] = ["neutral"]
-        for field in ("language_code", "region_code", "accent", "pitch", "persona", "contexts"):
-            value = profile.get(field) if profile else None
-            if field == "language_code" and not value:
-                value = default_language_code
+    ) -> VoiceFilters:
+        filters: VoiceFilters = {}
+        for field in VOICE_FIELDS:
+            value = profile.get(field)
+            if field == "contexts":
+                value = value or profile.get("context")
             if value:
-                if field == "gender" and str(value).lower() == "nonbinary":
-                    value = "neutral"
-                filters[field] = [str(item) for item in value] if isinstance(value, (list, tuple, set)) else [str(value)]
-        # A character's prose description is intentionally not used as a
-        # search term: ListVoices search is substring matching, not semantic.
+                filters[field] = _tag_values(value)
+        tagged: dict[str, list[str]] = {}
+        for tag in tags:
+            key, separator, value = tag.partition("=")
+            if not separator:
+                key, separator, value = tag.partition(":")
+            key = key.strip().casefold()
+            key = "contexts" if key == "context" else key
+            if separator and key in VOICE_FIELDS and value.strip():
+                tagged.setdefault(key, []).append(value.strip())
+            elif not separator:
+                gender = tag.strip().casefold().replace("-", "")
+                if gender in {"male", "female", "nonbinary", "nb", "neutral"}:
+                    tagged.setdefault("gender", []).append(gender)
+        filters.update(tagged)
+        if default_language_code and not filters.get("language_code"):
+            filters["language_code"] = [default_language_code]
+        aliases = {"nb": "neutral", "nonbinary": "neutral"}
+        for field, values in filters.items():
+            normalized = [value.strip() for value in values if value.strip()]
+            if field == "gender":
+                normalized = [aliases.get(value.casefold().replace("-", ""), value.casefold()) for value in normalized]
+            filters[field] = sorted(set(normalized))
         return filters
 
     @staticmethod
-    def _stable_voice_choice(voices: list[str], voice_profile: Any) -> str:
-        identity = extract_character_description(voice_profile) or " ".join(extract_voice_tags(voice_profile))
-        index = int.from_bytes(hashlib.sha256(identity.encode("utf-8")).digest()[:4], "big") % len(voices)
-        return voices[index]
+    def _match_score(voice: CatalogVoice, filters: VoiceFilters, tags: list[str]) -> int:
+        metadata = voice.metadata()
+        weights = {"accent": 8, "region_code": 8, "pitch": 4, "persona": 2, "contexts": 1}
+        score = sum(weight for field, weight in weights.items() if metadata[field].casefold() in [value.casefold() for value in filters.get(field, [])])
+        prose = " ".join((voice.description or "", voice.persona or "", voice.display_name or "")).casefold()
+        score += sum(1 for tag in set(tags) if "=" not in tag and ":" not in tag and tag.strip().casefold() in prose)
+        return score
+
+    @staticmethod
+    def _stable_voice_choice(voices: list[str], identity: str) -> str:
+        # Rendezvous hashing does not depend on ordering, duplicates, or pool
+        # size. Removing another voice leaves the winning voice unchanged.
+        return max(set(voices), key=lambda voice: (hashlib.sha256(f"{identity}\0{voice}".encode("utf-8")).digest(), voice))
 
     @staticmethod
     def _is_retryable(exc: Exception) -> bool:
