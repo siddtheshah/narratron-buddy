@@ -3,6 +3,7 @@ import shutil
 import tempfile
 
 from PIL import Image, PngImagePlugin
+import pytest
 
 from components.theater_manager import TheaterManager
 from components.image_library import ImageLibrary
@@ -19,6 +20,63 @@ class TestImageLibrary:
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    @pytest.mark.parametrize("cover_setting", [
+        "references/art/title.png",
+        "art/title.png",
+        "title.png",
+        "title",
+    ])
+    def test_cover_and_display_copy_are_excluded_from_all_discovery(
+        self, cover_setting: str
+    ) -> None:
+        cover_dir = os.path.join(self.library.reference_dir, "art")
+        os.makedirs(cover_dir)
+        cover_path = os.path.join(cover_dir, "title.png")
+        display_path = os.path.join(self.library.output_dir, "title.webp")
+        scene_path = os.path.join(self.library.reference_dir, "scene.png")
+        generated_path = os.path.join(self.library.output_dir, "scene.png")
+        for path in (cover_path, display_path, scene_path, generated_path):
+            Image.new("RGB", (10, 10), color="gold").save(path)
+        (self.theater.directory() / "theater.yaml").write_text(
+            f"starting_image: {cover_setting}\n", encoding="utf-8"
+        )
+        self.library = ImageLibrary(self.theater)
+
+        assert [entry["path"] for entry in self.library.list_references()] == [scene_path]
+        assert set(self.library.browse_images()) == {scene_path, generated_path}
+        assert self.library.search_images("title") == []
+        assert {entry["path"] for entry in self.library.find_image_names()} == {scene_path, generated_path}
+        assert {entry["path"] for entry in self.library.get_recent_images(generated_only=False)} == {
+            scene_path, generated_path
+        }
+        assert [entry["path"] for entry in self.library.get_recent_images()] == [generated_path]
+        assert os.path.isfile(cover_path)
+
+    @pytest.mark.parametrize("exclude_starter", [True, False])
+    def test_exclude_starter_config_controls_library_discovery(self, exclude_starter: bool) -> None:
+        cover_path = os.path.join(self.library.reference_dir, "title.png")
+        display_path = os.path.join(self.library.output_dir, "title.webp")
+        for path in (cover_path, display_path):
+            Image.new("RGB", (10, 10), color="gold").save(path)
+        (self.theater.directory() / "theater.yaml").write_text(
+            "starting_image: title.png\n"
+            "image_generation:\n"
+            f"  exclude_starter: {str(exclude_starter).lower()}\n",
+            encoding="utf-8",
+        )
+        self.library = ImageLibrary(self.theater)
+
+        expected = set() if exclude_starter else {cover_path, display_path}
+        expected_references = [] if exclude_starter else [cover_path]
+        assert [entry["path"] for entry in self.library.list_references()] == expected_references
+        assert set(self.library.browse_images()) == expected
+        assert set(self.library.search_images("title")) == expected
+        assert {entry["path"] for entry in self.library.find_image_names()} == expected
+        assert {entry["path"] for entry in self.library.get_recent_images(generated_only=False)} == expected
+        assert [entry["path"] for entry in self.library.get_recent_images()] == (
+            [] if exclude_starter else [display_path]
+        )
 
     def test_find_image_names_returns_aliases_and_searches_metadata(self) -> None:
         path = os.path.join(self.library.reference_dir, "Candlelit Scribe.png")

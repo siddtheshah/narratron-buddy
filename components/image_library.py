@@ -31,11 +31,17 @@ class ImageLibrary:
         self.reference_dir = str(theater.references_dir())
         self.output_dir = str(theater.image_artifacts_dir())
         self.references_manifest: dict[str, dict[str, str]] = {}
+        config = theater.config()
+        self._cover_stem = Path(config.get("starting_image", "")).stem
+        self._exclude_starter = config.get("image_generation", {}).get("exclude_starter", True)
         self._load_references()
 
-    @staticmethod
-    def _is_image(path: str) -> bool:
-        return Path(path).suffix.lower() in IMAGE_EXTENSIONS
+    def _is_image(self, path: str) -> bool:
+        """Identify library images, excluding the configured cover and display copy."""
+        image = Path(path)
+        return image.suffix.lower() in IMAGE_EXTENSIONS and (
+            not self._exclude_starter or image.stem != self._cover_stem
+        )
 
     @staticmethod
     def _get_creation_time(path: str) -> float:
@@ -105,7 +111,7 @@ class ImageLibrary:
         return list(self.references_manifest.values())
 
     def browse_images(self) -> list[str]:
-        """Browse file paths for every mounted or generated image."""
+        """Browse mounted and generated images, excluding adventure cover art."""
         images: list[str] = []
         seen: set[str] = set()
         for directory in (self.reference_dir, self.output_dir):

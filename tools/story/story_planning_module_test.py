@@ -115,6 +115,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
     def test_uses_injected_provider_and_lore_library(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
+        image_library = MagicMock(spec=ImageLibrary)
         character_manager = MagicMock(spec=CharacterManager)
         theater = MagicMock(spec=Theater)
         theater.theater_id = "planning-boundary"
@@ -133,12 +134,14 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 canvas_manager=canvas,
                 lore_library=lore_library,
                 character_manager=character_manager,
+                image_library=image_library,
                 session_service=session_service,
                 session_id="planning-boundary-session",
                 notepad=Notepad(theater, canvas_manager=canvas),
             )
 
         self.assertIs(module.lore_library, lore_library)
+        self.assertIs(module.image_library, image_library)
         self.assertIs(module.character_manager, character_manager)
         self.assertIs(module.theater, theater)
         self.assertIs(module.canvas_manager, canvas)

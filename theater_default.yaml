@@ -21,6 +21,8 @@ image_generation:
     # Disable AI image creation while keeping mounted/reference images available
     # for the agent to browse and show on the canvas.
     enabled: true
+    # Hide starting_image and its display copy from the agent's image library.
+    exclude_starter: true
     cooldown_duration: 9
 
 animation:
