@@ -21,6 +21,9 @@ def test_canvas_html_and_chat_css_stamp_wiring() -> None:
     assert 'id="stamp-manager-pane"' in canvas_html
     assert 'id="close-stamp-manager-btn"' in canvas_html
     assert 'id="stamp-manager-grid"' in canvas_html
+    assert 'id="stamp-manager-profile-link"' in canvas_html
+    assert 'id="stamp-manager-empty-profile-btn"' in canvas_html
+    assert "updateStampManagerProfileLinks" in canvas_html
     assert "#stamp-manager-pane" in chat_css
     assert ".stamp-grid" in chat_css
     assert ".stamp-card" in chat_css

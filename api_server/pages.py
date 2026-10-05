@@ -7,6 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -269,6 +270,18 @@ def read_user_profile(username: str):
         active_page="",
         seo_metadata=SeoMetadata(title="Narratron Profile", description="", path=f"/users/{username}", indexable=False),
     )
+
+@app.get("/profile")
+async def read_profile(request: Request) -> Response:
+    """Redirect to the authenticated user's profile page, or to the home page if not authenticated."""
+    current_user = await get_current_user_async(request, record_activity=False)
+    if current_user is not None and "username" in current_user and current_user["username"]:
+        quoted_username = quote(str(current_user["username"]))
+        return RedirectResponse(
+            url=f"/users/{quoted_username}",
+            status_code=303,
+        )
+    return RedirectResponse(url="/", status_code=303)
 
 @app.get("/gift/{token}", response_class=HTMLResponse)
 def read_credit_gift(token: str):

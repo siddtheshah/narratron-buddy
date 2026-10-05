@@ -289,4 +289,20 @@ def test_obs_canvas_unauthorized_raises_403():
         assert exc_info.value.status_code == 403
 
 
+def test_read_profile_authenticated_redirects_to_user_page() -> None:
+    req = SimpleNamespace()
+    with patch.object(pages, "get_current_user_async", AsyncMock(return_value={"id": 1, "username": "alice"})):
+        response = __import__("asyncio").run(pages.read_profile(req))
+    assert response.status_code == 303
+    assert response.headers["location"] == "/users/alice"
+
+
+def test_read_profile_unauthenticated_redirects_to_home() -> None:
+    req = SimpleNamespace()
+    with patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
+        response = __import__("asyncio").run(pages.read_profile(req))
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+
+
 

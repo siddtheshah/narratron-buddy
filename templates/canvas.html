@@ -3249,13 +3249,13 @@
                     <div class="empty-icon">🏷️</div>
                     <div id="stamp-empty-message" style="font-weight: 500;">No stamps found.</div>
                     <div style="font-size: 0.78rem; color: #64748b;">Upload stamps in your profile to place them on the canvas.</div>
-                    <a href="/profile" target="_blank" class="panel-btn" style="margin-top: 8px; font-size: 0.78rem; text-decoration: none; padding: 5px 12px; color: #a5b4fc;">
+                    <a href="/profile" id="stamp-manager-empty-profile-btn" target="_blank" class="panel-btn" style="margin-top: 8px; font-size: 0.78rem; text-decoration: none; padding: 5px 12px; color: #a5b4fc;">
                         Go to Profile ↗
                     </a>
                 </div>
             </div>
             <div class="stamp-manager-footer">
-                <a href="/profile" target="_blank" class="stamp-manager-footer-link" title="Manage stamps in your profile">
+                <a href="/profile" id="stamp-manager-profile-link" target="_blank" class="stamp-manager-footer-link" title="Manage stamps in your profile">
                     ⚙️ Profile Settings ↗
                 </a>
                 <button type="button" id="stamp-manager-back-chat-btn" class="panel-btn" style="font-size: 0.78rem; padding: 4px 10px;">
@@ -3283,7 +3283,17 @@
         // Keep canvas identity self-contained: this page must still recognize
         // its owner if a shared UI script fails to load. Concurrent consumers
         // on this page nevertheless share the same auth request.
+        let currentUser = null;
         let canvasAuthStatePromise = null;
+
+        function updateStampManagerProfileLinks(user) {
+            const profileLink = document.getElementById('stamp-manager-profile-link');
+            const emptyProfileBtn = document.getElementById('stamp-manager-empty-profile-btn');
+            const targetUrl = (user && user.username) ? `/users/${encodeURIComponent(user.username)}` : '/profile';
+            if (profileLink) profileLink.href = targetUrl;
+            if (emptyProfileBtn) emptyProfileBtn.href = targetUrl;
+        }
+
         function getCanvasAuthState() {
             if (!canvasAuthStatePromise) {
                 canvasAuthStatePromise = fetch('/api/auth/me')
@@ -3306,6 +3316,10 @@
                             } catch (e) {
                                 console.warn('Canvas testing auto-login check failed:', e);
                             }
+                        }
+                        if (data && data.authenticated && data.user) {
+                            currentUser = data.user;
+                            updateStampManagerProfileLinks(currentUser);
                         }
                         return data;
                     })
@@ -5906,6 +5920,17 @@
             chatOpenStampsBtn?.classList.toggle('active', isStampManagerOpen);
             if (isStampManagerOpen) {
                 updateStampManagerPermissionBanner();
+                if (currentUser) {
+                    updateStampManagerProfileLinks(currentUser);
+                } else {
+                    getCanvasAuthState()
+                        .then(data => {
+                            if (data && data.authenticated && data.user) {
+                                updateStampManagerProfileLinks(data.user);
+                            }
+                        })
+                        .catch(() => {});
+                }
                 loadUserStamps();
             }
         }
@@ -6475,7 +6500,6 @@
         let currentBatonState = null;
         let activeViewersList = [];
         let batonTimerInterval = null;
-        let currentUser = null;
 
         const batonStatusBadge = document.getElementById('baton-status-badge');
         const menuTakeBackBatonBtn = document.getElementById('menu-take-back-baton-btn');
