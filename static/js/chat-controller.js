@@ -41,6 +41,8 @@ export function initializeChatController(options = {}) {
         nameInput,
         nameDisplay: initialNameDisplay,
         nameBadge,
+        loginChip: initialLoginChip,
+        onOpenLogin = null,
         hideSuggestionsBtn,
         theaterId = '',
         isCurrentOrator = () => false,
@@ -68,6 +70,21 @@ export function initializeChatController(options = {}) {
             nameDisplay.style.whiteSpace = 'nowrap';
             nameInput.parentElement.insertBefore(nameDisplay, nameInput);
         }
+    }
+
+    let loginChip = initialLoginChip || null;
+    if (!loginChip && nameInput && nameInput.parentElement) {
+        loginChip = nameInput.parentElement.querySelector('#chat-login-chip');
+    }
+    if (loginChip) {
+        loginChip.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (typeof onOpenLogin === 'function') {
+                onOpenLogin();
+            } else if (typeof window.openAuthModal === 'function') {
+                window.openAuthModal('login');
+            }
+        });
     }
 
     // --- Identity Management ---
@@ -110,6 +127,9 @@ export function initializeChatController(options = {}) {
                 nameDisplay.style.color = profileColor || '#818cf8';
                 nameDisplay.style.display = '';
             }
+            if (loginChip) {
+                loginChip.style.display = 'none';
+            }
         } else {
             if (nameDisplay) {
                 nameDisplay.style.display = 'none';
@@ -119,6 +139,9 @@ export function initializeChatController(options = {}) {
                 nameInput.value = currentChatUsername;
                 nameInput.addEventListener('change', updateChatName);
                 nameInput.addEventListener('blur', updateChatName);
+            }
+            if (loginChip) {
+                loginChip.style.display = 'inline-flex';
             }
         }
         refreshSuggestionVoting();

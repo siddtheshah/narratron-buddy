@@ -622,3 +622,34 @@
     transform: scale(1.25);
 }
 
+.chat-login-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(139, 92, 246, 0.2);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: #c4b5fd;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: inherit;
+    line-height: normal;
+}
+
+.chat-login-chip:hover {
+    background: rgba(139, 92, 246, 0.35);
+    border-color: rgba(167, 139, 250, 0.6);
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
+.chat-login-chip:active {
+    transform: translateY(0);
+}
+
+

@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="/static/css/text-effects.css">
     <link rel="stylesheet" href="/static/css/chat.css">
     <link rel="stylesheet" href="/static/css/narration-pane.css">
+    <link rel="stylesheet" href="/static/css/auth-flow.css">
+    <script src="/static/js/auth-flow.js"></script>
     <script src="/static/js/splitting.min.js"></script>
     <style>
         :root {
@@ -3195,6 +3197,10 @@
                 <input type="text" id="chat-name-input"
                     style="flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 3px 10px; color: #fff; font-size: 0.8rem; outline: none; font-family: inherit;"
                     placeholder="Your Chat Name..." title="Click to set/change your chat display name">
+                <button type="button" id="chat-login-chip" class="chat-login-chip"
+                    style="display: none;" title="Log in to your account">
+                    Log In
+                </button>
                 <span id="chat-name-badge"
                     style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 600; flex-shrink: 0;">Anon</span>
             </div>
@@ -3332,6 +3338,10 @@
             }
             return canvasAuthStatePromise;
         }
+
+        window.onAuthSuccess = function(action, data) {
+            window.location.reload();
+        };
 
         // Scene Suggestions Hover & Element Fingerprint Caching Logic
         (function initSuggestionsHandler() {
@@ -3888,6 +3898,10 @@
             nameInput: document.getElementById('chat-name-input'),
             nameDisplay: document.getElementById('chat-name-display'),
             nameBadge: document.getElementById('chat-name-badge'),
+            loginChip: document.getElementById('chat-login-chip'),
+            onOpenLogin: () => {
+                if (typeof openAuthModal === 'function') openAuthModal('login');
+            },
             hideSuggestionsBtn: document.getElementById('hide-suggestions-btn'),
             theaterId: theaterId,
             isCurrentOrator: () => isCurrentOrator(),
@@ -5916,6 +5930,28 @@
         let isFetchingUserStamps = false;
 
         function setStampManagerOpen(open) {
+            if (open) {
+                if (!currentUser || !currentUser.id) {
+                    getCanvasAuthState()
+                        .then(data => {
+                            if (data && data.authenticated && data.user) {
+                                currentUser = data.user;
+                                updateStampManagerProfileLinks(currentUser);
+                                setStampManagerOpen(true);
+                            } else {
+                                if (typeof openAuthModal === 'function') {
+                                    openAuthModal('login');
+                                }
+                            }
+                        })
+                        .catch(() => {
+                            if (typeof openAuthModal === 'function') {
+                                openAuthModal('login');
+                            }
+                        });
+                    return;
+                }
+            }
             isStampManagerOpen = Boolean(open);
             const panelBody = document.getElementById('panel-body');
             if (panelBody) panelBody.style.display = isStampManagerOpen ? 'none' : 'flex';
@@ -5923,17 +5959,7 @@
             chatOpenStampsBtn?.classList.toggle('active', isStampManagerOpen);
             if (isStampManagerOpen) {
                 updateStampManagerPermissionBanner();
-                if (currentUser) {
-                    updateStampManagerProfileLinks(currentUser);
-                } else {
-                    getCanvasAuthState()
-                        .then(data => {
-                            if (data && data.authenticated && data.user) {
-                                updateStampManagerProfileLinks(data.user);
-                            }
-                        })
-                        .catch(() => {});
-                }
+                updateStampManagerProfileLinks(currentUser);
                 loadUserStamps();
             }
         }
@@ -5955,6 +5981,18 @@
         });
         stampManagerBackChatBtn?.addEventListener('click', () => {
             setStampManagerOpen(false);
+        });
+        document.getElementById('stamp-manager-empty-profile-btn')?.addEventListener('click', (e) => {
+            if (!currentUser || !currentUser.id) {
+                e.preventDefault();
+                if (typeof openAuthModal === 'function') openAuthModal('login');
+            }
+        });
+        document.getElementById('stamp-manager-profile-link')?.addEventListener('click', (e) => {
+            if (!currentUser || !currentUser.id) {
+                e.preventDefault();
+                if (typeof openAuthModal === 'function') openAuthModal('login');
+            }
         });
 
         function getStampUsageStorageKey() {
@@ -6027,6 +6065,9 @@
                     if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
                     if (stampEmptyMessage) stampEmptyMessage.textContent = 'Please log in to view and use your stamps.';
                     if (stampManagerCount) stampManagerCount.textContent = '0/10';
+                    if (typeof openAuthModal === 'function') {
+                        openAuthModal('login');
+                    }
                     return;
                 }
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
