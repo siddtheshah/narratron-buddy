@@ -45,8 +45,10 @@ export function initializeActionWheel({
         downright: 'New music',
     };
     const defaultBinding = { type: 'mouse', button: 2, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
+    const isBareLeftClick = value => value?.type === 'mouse' && value.button === 0 &&
+        !value.ctrlKey && !value.altKey && !value.shiftKey && !value.metaKey;
     const validBinding = value => value !== null && modifierKeys.every(key => typeof value[key] === 'boolean') &&
-        ((value.type === 'mouse' && Number.isInteger(value.button) && value.button >= 0) ||
+        ((value.type === 'mouse' && Number.isInteger(value.button) && value.button >= 0 && !isBareLeftClick(value)) ||
          (value.type === 'key' && typeof value.code === 'string' && value.code.length > 0));
     let binding = defaultBinding;
     let rebinding = false;
@@ -63,10 +65,11 @@ export function initializeActionWheel({
         if (saved !== null) {
             const value = JSON.parse(saved);
             if (value === null || validBinding(value)) binding = value;
+            else binding = { ...defaultBinding };
         } else {
             const legacy = win.localStorage.getItem('narratron_action_wheel_button');
             if (legacy === '-1') binding = null;
-            else if (legacy !== null && Number.isInteger(Number(legacy)) && Number(legacy) >= 0) binding = { ...defaultBinding, button: Number(legacy) };
+            else if (legacy !== null && Number.isInteger(Number(legacy)) && Number(legacy) > 0) binding = { ...defaultBinding, button: Number(legacy) };
         }
     } catch (_) { /* Storage can be disabled by the browser. */ }
     const bindingName = () => {
@@ -203,6 +206,12 @@ export function initializeActionWheel({
         if (!drag) suppressUntil = 0;
         if (managesBinding(event.target)) return;
         if (rebinding && isOrator()) {
+            if (event.button === 0 && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+                consume(event);
+                suppressClick(event.button);
+                bindingLabel.textContent = 'Press a mouse button (not left click) or key combo… (Esc cancels)';
+                return;
+            }
             consume(event); binding = { type: 'mouse', button: event.button, ...modifiers(event) };
             rebinding = false; suppressClick(event.button); save(); return;
         }
@@ -252,11 +261,15 @@ export function initializeActionWheel({
         updateState(canvasPinned, musicPinned) {
             currentCanvasPinned = Boolean(canvasPinned);
             currentMusicPinned = Boolean(musicPinned);
-            pinStatus.textContent = `Image: ${currentCanvasPinned ? 'pinned' : 'unpinned'} · Music: ${currentMusicPinned ? 'pinned' : 'unpinned'}`;
-            const imagePin = wheel.querySelector('[data-direction="up"]');
-            if (imagePin) imagePin.innerHTML = `📌<br>${currentCanvasPinned ? 'Unpin' : 'Pin'} image`;
-            const musicPin = wheel.querySelector('[data-direction="down"]');
-            if (musicPin) musicPin.innerHTML = `📌<br>${currentMusicPinned ? 'Unpin' : 'Pin'} music`;
+            if (pinStatus) {
+                pinStatus.textContent = `Image: ${currentCanvasPinned ? 'pinned' : 'unpinned'} · Music: ${currentMusicPinned ? 'pinned' : 'unpinned'}`;
+            }
+            if (wheel) {
+                const imagePin = wheel.querySelector('[data-direction="up"]');
+                if (imagePin) imagePin.innerHTML = `📌<br>${currentCanvasPinned ? 'Unpin' : 'Pin'} image`;
+                const musicPin = wheel.querySelector('[data-direction="down"]');
+                if (musicPin) musicPin.innerHTML = `📌<br>${currentMusicPinned ? 'Unpin' : 'Pin'} music`;
+            }
             labels.up = `${currentCanvasPinned ? 'Unpin' : 'Pin'} image`;
             labels.down = `${currentMusicPinned ? 'Unpin' : 'Pin'} music`;
         },
