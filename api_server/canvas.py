@@ -53,7 +53,11 @@ class CanvasPinRequest(BaseModel):
 
 
 class OratorAction(BaseModel):
-    action: Literal["new_image", "toggle_canvas_pin", "toggle_music_pin", "new_music"]
+    action: Literal[
+        "new_music", "new_image",
+        "previous_music", "previous_image",
+        "toggle_music_pin", "toggle_canvas_pin",
+    ]
 
 
 class A2UIActionBody(BaseModel):
@@ -505,29 +509,30 @@ def post_orator_action(
     if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
         raise HTTPException(status_code=403, detail="Only the active orator can use the action wheel.")
     state = _state(theater_id)
-    direction = {
-        "new_image": "up", "toggle_canvas_pin": "down",
-        "toggle_music_pin": "left", "new_music": "right",
-    }[payload.action]
     session = live_agent_manager.get_session(theater_id)
-    if direction in ("up", "right"):
+    if payload.action in ("new_image", "new_music"):
+        is_image = payload.action == "new_image"
         if not session or not session.is_alive:
             raise HTTPException(status_code=409, detail="Connect Narratron before requesting new media.")
-        suite = session.image_tools if direction == "up" else session.music_tools
+        suite = session.image_tools if is_image else session.music_tools
         if suite is None:
             raise HTTPException(status_code=409, detail="The requested media tools are unavailable.")
-        names = {"create_image"} if direction == "up" else {"create_music", "play_music"}
-        was_pinned = state.visual.pinned if direction == "up" else state.audio.pinned
-        if direction == "up":
+        names = {"create_image"} if is_image else {"create_music", "play_music"}
+        was_pinned = state.visual.pinned if is_image else state.audio.pinned
+        if is_image:
             state.visual.set_pinned(False)
             state.visual.request_immediate_image()
         else:
             state.audio.set_pinned(False)
+        if was_pinned and session and session.is_alive:
+            session.send_content(types.Content(parts=[types.Part(text=(
+                f"[Orator Action] The {'canvas visual' if is_image else 'music'} was unpinned. Media generation may resume."
+            ))]))
         suite.request_orator_bypass(names)
         instruction = (
-            "Generate and display a fresh image for the current narrated scene now using create_image with display=True."
-            if direction == "up" else
-            "Start different music for the current narrated scene now. Use play_music for an available playlist, "
+            "The canvas visual is unpinned. Generate and display a fresh image for the current narrated scene now using create_image with display=True."
+            if is_image else
+            "Music is unpinned. Start different music for the current narrated scene now. Use play_music for an available playlist, "
             "or create_music if generated music is enabled."
         )
         if not session.send_user_content(types.Content(parts=[types.Part(text=(
@@ -535,22 +540,41 @@ def post_orator_action(
             "the next requested media action bypasses its regular cooldown."
         ))])):
             suite.cancel_orator_bypass()
-            if direction == "up":
+            if is_image:
                 state.visual.cancel_immediate_image()
                 state.visual.set_pinned(was_pinned)
             else:
                 state.audio.set_pinned(was_pinned)
             raise HTTPException(status_code=409, detail="Narratron could not receive the action.")
-    elif direction == "down":
+    elif payload.action == "previous_image":
+        if not state.visual.previous_image():
+            raise HTTPException(status_code=400, detail="No previous image available.")
+        if session and session.is_alive:
+            session.send_content(types.Content(parts=[types.Part(text=(
+                "[Orator Action] The orator reverted to the previous scene image."
+            ))]))
+    elif payload.action == "previous_music":
+        if not state.audio.previous_music():
+            raise HTTPException(status_code=400, detail="No previous music available.")
+        if session and session.is_alive:
+            session.send_content(types.Content(parts=[types.Part(text=(
+                "[Orator Action] The orator reverted to the previous music track."
+            ))]))
+    elif payload.action == "toggle_canvas_pin":
         state.visual.set_pinned(not state.visual.pinned)
-    else:
+        if session and session.is_alive:
+            session.send_content(types.Content(parts=[types.Part(text=(
+                f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
+                "Keep pinned media unchanged until the orator unpins it."
+            ))]))
+    elif payload.action == "toggle_music_pin":
         state.audio.set_pinned(not state.audio.pinned)
+        if session and session.is_alive:
+            session.send_content(types.Content(parts=[types.Part(text=(
+                f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
+                "Keep pinned media unchanged until the orator unpins it."
+            ))]))
     state.persist()
-    if direction in ("down", "left") and session and session.is_alive:
-        session.send_content(types.Content(parts=[types.Part(text=(
-            f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
-            "Keep pinned media unchanged until the orator unpins it."
-        ))]))
     return {"status": "accepted", "pinned": state.visual.pinned, "music_pinned": state.audio.pinned}
 
 

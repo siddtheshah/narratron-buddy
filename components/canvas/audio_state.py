@@ -13,6 +13,8 @@ class AudioState:
         self.music_paused = False
         self.pinned = False
         self.current_playlist_time = 0.0
+        self.music_history: list[dict[str, object]] = []
+        self._history_index: int | None = None
 
     def update_music(self, music_id: str, tracks: list[str]) -> None:
         if self.pinned:
@@ -21,7 +23,32 @@ class AudioState:
         self.current_playlist_tracks = list(tracks)
         self.music_paused = False
         self.current_playlist_time = time.time()
+        entry: dict[str, object] = {"music_id": music_id, "tracks": list(tracks)}
+        if not self.music_history or self.music_history[-1].get("music_id") != music_id:
+            self.music_history.append(entry)
+            self.music_history = self.music_history[-50:]
+        self._history_index = None
         self._notify_changed("latest")
+
+    def previous_music(self) -> bool:
+        """Revert playback to the previous music entry in history."""
+        curr_idx = len(self.music_history) - 1 if self._history_index is None else self._history_index
+        if curr_idx <= 0:
+            return False
+        target_idx = curr_idx - 1
+        entry = self.music_history[target_idx]
+        music_id = entry.get("music_id")
+        tracks_raw = entry.get("tracks")
+        if type(music_id) is not str:
+            return False
+        tracks = [track for track in tracks_raw if type(track) is str] if type(tracks_raw) is list else []
+        self._history_index = target_idx
+        self.current_music_id = self.current_playlist = music_id
+        self.current_playlist_tracks = list(tracks)
+        self.music_paused = False
+        self.current_playlist_time = time.time()
+        self._notify_changed("latest")
+        return True
 
     def pause(self) -> None:
         if self.pinned:
@@ -37,7 +64,7 @@ class AudioState:
         self.current_playlist_time = time.time()
         self._notify_changed("latest")
 
-    def payload(self) -> dict:
+    def payload(self) -> dict[str, object]:
         playlist_id = self.current_music_id or self.current_playlist
         return {"music_id": playlist_id, "playlist": playlist_id,
                 "tracks": list(self.current_playlist_tracks), "paused": self.music_paused,
@@ -49,13 +76,13 @@ class AudioState:
 
     def load(self, data: dict[str, object]) -> None:
         self.pinned = bool(data.get("music_pinned", False))
-        self.current_music_id = data.get("current_music_id") if isinstance(data.get("current_music_id"), str) else None
-        self.current_playlist = data.get("current_playlist") if isinstance(data.get("current_playlist"), str) else None
+        self.current_music_id = data.get("current_music_id") if type(data.get("current_music_id")) is str else None
+        self.current_playlist = data.get("current_playlist") if type(data.get("current_playlist")) is str else None
         tracks = data.get("current_playlist_tracks", [])
-        self.current_playlist_tracks = [track for track in tracks if isinstance(track, str)] if isinstance(tracks, list) else []
+        self.current_playlist_tracks = [track for track in tracks if type(track) is str] if type(tracks) is list else []
         self.music_paused = bool(data.get("music_paused", False))
         saved_time = data.get("current_playlist_time")
-        if isinstance(saved_time, (int, float)) and saved_time > 0:
+        if type(saved_time) in (int, float) and float(saved_time) > 0:
             self.current_playlist_time = float(saved_time)
         elif self.current_music_id or self.current_playlist:
             # Older saved theater files did not include a timestamp.  Give
@@ -65,7 +92,23 @@ class AudioState:
         else:
             self.current_playlist_time = 0.0
 
+        history_raw = data.get("music_history")
+        if type(history_raw) is list:
+            parsed_history: list[dict[str, object]] = []
+            for item in history_raw:
+                if type(item) is dict and type(item.get("music_id")) is str:
+                    t_list = item.get("tracks")
+                    safe_tracks = [t for t in t_list if type(t) is str] if type(t_list) is list else []
+                    parsed_history.append({"music_id": str(item["music_id"]), "tracks": safe_tracks})
+            self.music_history = parsed_history
+        elif self.current_music_id:
+            self.music_history = [{"music_id": self.current_music_id, "tracks": list(self.current_playlist_tracks)}]
+        else:
+            self.music_history = []
+        self._history_index = None
+
     def serialize(self) -> dict[str, object]:
         return {"current_music_id": self.current_music_id, "current_playlist": self.current_playlist,
                 "current_playlist_tracks": self.current_playlist_tracks, "music_paused": self.music_paused,
-                "current_playlist_time": self.current_playlist_time, "music_pinned": self.pinned}
+                "current_playlist_time": self.current_playlist_time, "music_pinned": self.pinned,
+                "music_history": list(self.music_history)}

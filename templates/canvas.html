@@ -3584,7 +3584,7 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=movable-text-20261005-2";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=movable-text-video-loop-silent-20261005-2";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
@@ -3614,6 +3614,7 @@
         const canvasPinBtn = document.getElementById('canvas-pin-btn');
         const canvasPinLabel = document.getElementById('canvas-pin-label');
         let canvasPinned = false;
+        let musicPinned = false;
         const bgLayer = document.getElementById('bg-layer');
         const promptTextSpan = document.getElementById('prompt-text');
         const chatMessages = document.getElementById('chat-messages');
@@ -3761,6 +3762,7 @@
                 if (!response.ok) throw new Error(result.detail || 'Unable to update the canvas pin.');
                 canvasPinned = Boolean(result.pinned);
                 updateCanvasPinButton();
+                actionWheel.updateState(canvasPinned, musicPinned);
             } catch (error) {
                 console.error('Failed to update canvas pin:', error);
                 canvasPinBtn.title = error.message;
@@ -3771,6 +3773,7 @@
 
         const actionWheel = initializeActionWheel({
             isOrator: isCurrentOrator,
+            canvasTarget: document.getElementById('image-container'),
             onRebindStart: () => {
                 isRebindingHotkey = false;
                 isRebindingTextHotkey = false;
@@ -3781,6 +3784,14 @@
                 updateTextHotkeyUI();
             },
             sendAction: async (action) => {
+                if (action === 'new_image' && canvasPinned) {
+                    canvasPinned = false;
+                    updateCanvasPinButton();
+                    actionWheel.updateState(false, musicPinned);
+                } else if (action === 'new_music' && musicPinned) {
+                    musicPinned = false;
+                    actionWheel.updateState(canvasPinned, false);
+                }
                 const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action }),
@@ -3788,8 +3799,9 @@
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.detail || 'Unable to apply action.');
                 canvasPinned = Boolean(result.pinned);
+                musicPinned = Boolean(result.music_pinned);
                 updateCanvasPinButton();
-                actionWheel.updateState(canvasPinned, Boolean(result.music_pinned));
+                actionWheel.updateState(canvasPinned, musicPinned);
             },
         });
         const popoutBroadcast = new BroadcastChannel('narratron_popout_channel');
@@ -4663,7 +4675,8 @@
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
                 canvasPinned = Boolean(data.pinned);
-                actionWheel.updateState(canvasPinned, Boolean(data.music_pinned));
+                musicPinned = Boolean(data.music_pinned);
+                actionWheel.updateState(canvasPinned, musicPinned);
                 updateCanvasPinButton();
                 updateSceneDialogue(
                     data.scene_dialogue,
@@ -7611,6 +7624,11 @@
 
         function openMicConfigModal() {
             if (!micConfigModal) return;
+            if (oratorHowtoModal) {
+                delete oratorHowtoModal.dataset.openMicConfigOnClose;
+                oratorHowtoModal.classList.remove('active');
+                oratorHowtoModal.setAttribute('aria-hidden', 'true');
+            }
             closePulloutMenu();
             refreshMicrophoneDevices();
             micConfigModal.classList.add('active');
@@ -8424,12 +8442,11 @@
         aria-hidden="true" style="z-index: 9999;">
         <div class="modal-card"
             style="max-width: 560px; width: 90%; text-align: left; border: 1px solid rgba(99, 102, 241, 0.45); box-shadow: 0 0 35px rgba(99, 102, 241, 0.2);">
-            <button id="mic-config-close-btn" class="modal-close-btn"
-                aria-label="Close microphone configuration">✕</button>
+            <button id="mic-config-close-btn" class="modal-close-btn" aria-label="Close input configuration">✕</button>
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1.25rem;">
                 <div style="font-size: 1.8rem;">🎙️</div>
                 <div>
-                    <h3 id="mic-config-title" style="margin: 0; font-size: 1.25rem; color: #fff;">Microphone
+                    <h3 id="mic-config-title" style="margin: 0; font-size: 1.25rem; color: #fff;">Input
                         Configuration</h3>
                     <div style="font-size: .84rem; color: #94a3b8;">Choose your input, tune detection, and verify
                         playback.</div>
@@ -8450,7 +8467,15 @@
                         <span class="pullout-item-icon">🖱</span>
                         <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
                     </button>
-                    <span id="action-wheel-pin-status" style="font-size:.8rem;">Canvas: unpinned · Music:
+                    <div style="display: flex; gap: 8px;">
+                        <button id="action-wheel-disable" type="button" style="flex: 1;">Disable action wheel</button>
+                        <button id="action-wheel-reset" type="button" style="flex: 1;">Reset default (Right click)</button>
+                    </div>
+                    <span style="font-size:.8rem;">Click the binding above, then press a mouse button or key combo
+                        (modifiers supported). Close settings, then hold it over the canvas to open the wheel at your
+                        cursor. Move toward an action and release; release in the center or press Esc to cancel. New
+                        media bypasses cooldowns and unpins it.</span>
+                    <span id="action-wheel-pin-status" style="font-size:.8rem;">Image: unpinned · Music:
                         unpinned</span>
                 </div>
                 <button id="menu-item-text-hotkey" class="pullout-menu-item"
@@ -8603,29 +8628,91 @@
     </div>
     <style>
         #orator-action-wheel {
+            --sec-default: #162235;
+            --sec-active: #4f46e5;
+            --sec-up: var(--sec-default);
+            --sec-upright: var(--sec-default);
+            --sec-downright: var(--sec-default);
+            --sec-down: var(--sec-default);
+            --sec-downleft: var(--sec-default);
+            --sec-upleft: var(--sec-default);
+            --wheel-divider: rgba(100, 116, 139, 0.45);
             position: fixed;
-            width: 236px;
-            height: 236px;
+            width: 260px;
+            height: 260px;
             transform: translate(-50%, -50%);
             z-index: 10000;
             pointer-events: none;
             border-radius: 50%;
             border: 1px solid #64748b;
             box-shadow: 0 8px 40px #0009;
-            background: conic-gradient(from 45deg, #162235 0deg 89deg, #475569 89deg 90deg,
-                    #162235 90deg 179deg, #475569 179deg 180deg, #162235 180deg 269deg,
-                    #475569 269deg 270deg, #162235 270deg 359deg, #475569 359deg);
+            background: conic-gradient(from 0deg,
+                    var(--sec-up) 0deg 29.5deg,
+                    var(--wheel-divider) 29.5deg 30.5deg,
+                    var(--sec-upright) 30.5deg 89.5deg,
+                    var(--wheel-divider) 89.5deg 90.5deg,
+                    var(--sec-downright) 90.5deg 149.5deg,
+                    var(--wheel-divider) 149.5deg 150.5deg,
+                    var(--sec-down) 150.5deg 209.5deg,
+                    var(--wheel-divider) 209.5deg 210.5deg,
+                    var(--sec-downleft) 210.5deg 269.5deg,
+                    var(--wheel-divider) 269.5deg 270.5deg,
+                    var(--sec-upleft) 270.5deg 329.5deg,
+                    var(--wheel-divider) 329.5deg 330.5deg,
+                    var(--sec-up) 330.5deg 360deg);
             color: #e2e8f0;
-            font: 600 12px/1.3 system-ui;
+            font: 600 12px/1.3 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            transition: box-shadow .15s ease-out, border-color .15s ease-out;
+        }
+
+        #orator-action-wheel[data-selected]:not([data-selected=""]) {
+            border-color: #818cf8;
+            box-shadow: 0 8px 40px #000c, 0 0 24px rgba(79, 70, 229, 0.45);
+        }
+
+        #orator-action-wheel[data-selected="up"],
+        #orator-action-wheel:has([data-direction="up"].selected) {
+            --sec-up: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="upright"],
+        #orator-action-wheel:has([data-direction="upright"].selected) {
+            --sec-upright: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="downright"],
+        #orator-action-wheel:has([data-direction="downright"].selected) {
+            --sec-downright: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="down"],
+        #orator-action-wheel:has([data-direction="down"].selected) {
+            --sec-down: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="downleft"],
+        #orator-action-wheel:has([data-direction="downleft"].selected) {
+            --sec-downleft: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="upleft"],
+        #orator-action-wheel:has([data-direction="upleft"].selected) {
+            --sec-upleft: var(--sec-active);
         }
 
         #orator-action-wheel .wheel-action {
             position: absolute;
+            transform: translate(-50%, -50%);
             width: 76px;
-            padding: 8px 2px;
-            border-radius: 10px;
             text-align: center;
-            transition: background .1s, color .1s;
+            pointer-events: none;
+            user-select: none;
+            color: #cbd5e1;
+            font-size: 11.5px;
+            font-weight: 600;
+            line-height: 1.25;
+            transition: transform 0.12s ease-out, color 0.12s ease-out, text-shadow 0.12s ease-out;
+            z-index: 5;
         }
 
         #action-wheel-rebind.rebinding {
@@ -8634,54 +8721,73 @@
         }
 
         #orator-action-wheel .wheel-action.selected {
-            background: #6366f1;
-            color: white;
-            box-shadow: 0 0 18px #6366f180;
+            color: #ffffff;
+            font-weight: 700;
+            transform: translate(-50%, -50%) scale(1.1);
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 255, 255, 0.4);
         }
 
         #orator-action-wheel [data-direction="up"] {
-            top: 12px;
-            left: 80px;
+            top: 46px;
+            left: 130px;
+        }
+
+        #orator-action-wheel [data-direction="upright"] {
+            top: 88px;
+            left: 203px;
+        }
+
+        #orator-action-wheel [data-direction="downright"] {
+            top: 172px;
+            left: 203px;
         }
 
         #orator-action-wheel [data-direction="down"] {
-            bottom: 12px;
-            left: 80px;
+            top: 214px;
+            left: 130px;
         }
 
-        #orator-action-wheel [data-direction="left"] {
-            top: 92px;
-            left: 3px;
+        #orator-action-wheel [data-direction="downleft"] {
+            top: 172px;
+            left: 57px;
         }
 
-        #orator-action-wheel [data-direction="right"] {
-            top: 92px;
-            right: 3px;
+        #orator-action-wheel [data-direction="upleft"] {
+            top: 88px;
+            left: 57px;
         }
 
         #orator-action-wheel .wheel-center {
             position: absolute;
-            top: 82px;
-            left: 82px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             width: 72px;
             height: 72px;
             border-radius: 50%;
             background: #0f172a;
             border: 1px solid #64748b;
+            box-shadow: 0 0 16px rgba(0, 0, 0, 0.5);
             display: flex;
             align-items: center;
             justify-content: center;
             text-align: center;
             font-size: 10px;
-            font-weight: 400;
+            font-weight: 500;
             color: #94a3b8;
+            line-height: 1.3;
+            z-index: 10;
+            pointer-events: none;
+            user-select: none;
         }
     </style>
     <div id="orator-action-wheel" role="group" aria-label="Orator action wheel" hidden>
-        <span class="wheel-action" data-direction="up">🖼<br>New image</span>
-        <span class="wheel-action" data-direction="down">📌<br>Pin canvas</span>
-        <span class="wheel-action" data-direction="left">📌<br>Pin music</span>
-        <span class="wheel-action" data-direction="right">♫<br>New music</span>
+        <span class="wheel-action" data-direction="up">📌<br>Pin image</span>
+        <span class="wheel-action" data-direction="upright">🖼<br>New image</span>
+        <span class="wheel-action" data-direction="downright">♫<br>New music</span>
+        <span class="wheel-action" data-direction="down">📌<br>Pin music</span>
+        <span class="wheel-action" data-direction="downleft">⏮♫<br>Prev music</span>
+        <span class="wheel-action" data-direction="upleft">⏮🖼<br>Prev image</span>
         <span class="wheel-center">Release<br>to cancel</span>
     </div>
     <div id="action-wheel-status" role="status" aria-live="polite" hidden

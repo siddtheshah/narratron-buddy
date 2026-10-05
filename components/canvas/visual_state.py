@@ -71,6 +71,7 @@ class VisualState:
         self.image_revision = 0
         self.pinned = False
         self._orator_image_until: float = 0.0
+        self._history_index: int | None = None
 
     def request_immediate_image(self) -> None:
         """Display the next explicitly requested generated image without cycle pacing."""
@@ -828,7 +829,102 @@ class VisualState:
                 "priority": self.PRIORITY_SHOW,
                 "source": "show_image",
             }
+        self._history_index = None
         return changed
+
+    def previous_image(self) -> bool:
+        """Revert visual presentation to the previous image/animation in history."""
+        with self._cycle_lock:
+            curr_idx = len(self.shown_images_history) - 1 if self._history_index is None else self._history_index
+            if curr_idx <= 0:
+                return False
+            target_idx = curr_idx - 1
+            target = self.shown_images_history[target_idx]
+            self._history_index = target_idx
+            raw_path = target.get("path")
+            file_path = str(raw_path) if raw_path is not None else None
+            self.shown_image_path = file_path
+            self.shown_image_prompt = str(target.get("prompt") or "")
+            self.shown_image_transition = str(target.get("transition") or "crossfade")
+            self.shown_image_effect = str(target.get("effect") or "gleam3")
+            self.shown_image_time = time.time()
+            self.image_revision += 1
+
+            anim = target.get("animation")
+            if anim and type(anim) is dict:
+                anim_type = str(anim.get("type") or "")
+                if anim_type == "triframe":
+                    frame_paths = anim.get("frame_paths")
+                    self.shown_animation_frames = [str(p) for p in frame_paths] if type(frame_paths) is list else []
+                    self.shown_layered_animation = None
+                    self.shown_video_animation = None
+                    self.current_cycle_visual = {
+                        "type": "triframe",
+                        "manifest": anim,
+                        "frame_paths": list(self.shown_animation_frames),
+                        "prompt": self.shown_image_prompt,
+                        "path": file_path,
+                        "priority": self.PRIORITY_SHOW,
+                        "source": "show_animation",
+                    }
+                elif anim_type == "layered":
+                    self.shown_animation_frames = []
+                    self.shown_layered_animation = anim
+                    self.shown_video_animation = None
+                    self.current_cycle_visual = {
+                        "type": "layered",
+                        "manifest": anim,
+                        "prompt": self.shown_image_prompt,
+                        "path": file_path,
+                        "priority": self.PRIORITY_SHOW,
+                        "source": "show_animation",
+                    }
+                elif anim_type == "video":
+                    self.shown_animation_frames = []
+                    self.shown_layered_animation = None
+                    self.shown_video_animation = anim
+                    self.current_cycle_visual = {
+                        "type": "video",
+                        "manifest": anim,
+                        "prompt": self.shown_image_prompt,
+                        "path": file_path,
+                        "priority": self.PRIORITY_SHOW,
+                        "source": "show_animation",
+                    }
+                else:
+                    self.shown_animation_frames = []
+                    self.shown_layered_animation = None
+                    self.shown_video_animation = None
+                    self.current_cycle_visual = None
+            else:
+                self.shown_animation_frames = []
+                self.shown_layered_animation = None
+                self.shown_video_animation = None
+                if file_path:
+                    self.current_cycle_visual = {
+                        "type": "image",
+                        "path": file_path,
+                        "transition": self.shown_image_transition,
+                        "effect": self.shown_image_effect,
+                        "prompt": self.shown_image_prompt,
+                        "priority": self.PRIORITY_SHOW,
+                        "source": "show_image",
+                    }
+                else:
+                    self.current_cycle_visual = None
+
+        if self.on_visual_changed_fn:
+            self.on_visual_changed_fn(True)
+        elif self.notify_changed_fn:
+            self.notify_changed_fn("latest")
+
+        if self.on_show_image and not anim and self.shown_image_path:
+            self.on_show_image(
+                self._ensure_webp_for_display(str(self.shown_image_path)),
+                transition=self.shown_image_transition,
+                effect=self.shown_image_effect,
+            )
+        return True
 
     def show_triframe(self, frame_paths: list[str], *, prompt: str = "",
                        url_for_path: Callable[[str], str] | None = None) -> bool:
@@ -909,6 +1005,7 @@ class VisualState:
                 "prompt": self.shown_image_prompt,
                 "source": "loaded_state",
             }
+        self._history_index = None
 
     def serialize(self) -> dict[str, object]:
         return {"current_image_basename": self.current_image_basename, "shown_image_path": self.shown_image_path,

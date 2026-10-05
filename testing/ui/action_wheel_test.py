@@ -46,10 +46,10 @@ def test_freeform_native_mouse_rebinding(wheel_page: Page, button: str, name: st
     assert saved["button"] == {"left": 0, "middle": 1, "right": 2, "back": 3, "forward": 4}[button]
     cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "button": button, "buttons": masks[button], "x": 400, "y": 300, "clickCount": 1})
     assert page.locator("#orator-action-wheel").is_visible()
-    cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "button": "none", "buttons": masks[button], "x": 480, "y": 300})
-    cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "button": button, "buttons": 0, "x": 480, "y": 300, "clickCount": 1})
+    cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "button": "none", "buttons": masks[button], "x": 340, "y": 260})
+    cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "button": button, "buttons": 0, "x": 340, "y": 260, "clickCount": 1})
     page.wait_for_function("window.sent.length === 1")
-    assert page.evaluate("window.sent") == ["new_music"]
+    assert page.evaluate("window.sent") == ["previous_image"]
     page.reload()
     assert name in page.locator("#action-wheel-binding-label").inner_text()
 
@@ -67,7 +67,7 @@ def test_keyboard_combo_rebinding_and_cancel(wheel_page: Page) -> None:
     page.keyboard.down("Shift")
     page.keyboard.down("K")
     assert page.locator("#orator-action-wheel").is_visible()
-    page.mouse.move(400, 220)
+    page.mouse.move(460, 260)
     page.keyboard.up("K")
     page.keyboard.up("Shift")
     page.keyboard.up("Control")
@@ -86,10 +86,10 @@ def test_rebound_button_in_mouse_chord(wheel_page: Page) -> None:
     page.mouse.down(button="left")
     page.mouse.down(button="middle")
     assert page.locator("#orator-action-wheel").is_visible()
-    page.mouse.move(480, 300)
+    page.mouse.move(340, 260)
     page.mouse.up(button="middle")
     page.mouse.up(button="left")
-    assert page.evaluate("window.sent") == ["new_music"]
+    assert page.evaluate("window.sent") == ["previous_image"]
 
 
 def test_mouse_modifiers_and_focus_cancellation(wheel_page: Page) -> None:
@@ -105,7 +105,7 @@ def test_mouse_modifiers_and_focus_cancellation(wheel_page: Page) -> None:
     page.keyboard.down("Control")
     page.mouse.down(button="middle")
     assert page.locator("#orator-action-wheel").is_visible()
-    page.mouse.move(480, 300)
+    page.mouse.move(340, 260)
     page.evaluate("window.dispatchEvent(new Event('blur'))")
     page.mouse.up(button="middle")
     page.keyboard.up("Control")
@@ -151,10 +151,23 @@ def test_action_wheel_initializes_on_full_canvas() -> None:
         page.route("**/*", respond)
         page.goto("http://wheel.test/canvas?theater_id=stage")
         page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
+        # Default must be right click
+        assert "Action Wheel: Right mouse" in page.locator("#action-wheel-binding-label").inner_text()
+        # Right click over header must NOT open wheel
+        page.mouse.move(600, 20)
+        page.mouse.down(button="right")
+        assert page.locator("#orator-action-wheel").is_hidden()
+        page.mouse.up(button="right")
+        # Right click over chat sidebar must NOT open wheel
+        page.mouse.move(1350, 400)
+        page.mouse.down(button="right")
+        assert page.locator("#orator-action-wheel").is_hidden()
+        page.mouse.up(button="right")
+        # Right click over canvas DOES open wheel
         page.mouse.move(600, 400)
         page.mouse.down(button="right")
         assert page.locator("#orator-action-wheel").is_visible(), errors
-        page.mouse.move(600, 320)
+        page.mouse.move(660, 365)
         page.mouse.up(button="right")
         page.wait_for_function("document.getElementById('action-wheel-status').textContent.includes('applied')")
         assert actions == ["new_image"]
@@ -163,22 +176,36 @@ def test_action_wheel_initializes_on_full_canvas() -> None:
         page.keyboard.press("Control+Shift+K")
         assert "Ctrl + Shift + K" in page.locator("#action-wheel-binding-label").inner_text()
         page.click("#mic-config-done-btn")
+        # Keyboard combo over chat sidebar must NOT open wheel
+        page.mouse.move(1350, 400)
+        page.keyboard.down("Control")
+        page.keyboard.down("Shift")
+        page.keyboard.down("K")
+        assert page.locator("#orator-action-wheel").is_hidden()
+        page.keyboard.up("K")
+        page.keyboard.up("Shift")
+        page.keyboard.up("Control")
+        # Keyboard combo over canvas DOES open wheel
         page.mouse.move(600, 400)
         page.keyboard.down("Control")
         page.keyboard.down("Shift")
         page.keyboard.down("K")
         assert page.locator("#orator-action-wheel").is_visible()
-        page.mouse.move(680, 400)
+        page.mouse.move(660, 435)
         page.keyboard.up("K")
         page.keyboard.up("Shift")
         page.keyboard.up("Control")
         page.wait_for_function("document.getElementById('action-wheel-status').textContent === 'New music applied'")
         assert actions == ["new_image", "new_music"]
+        # Reset to default button restores Right click default
         page.locator("#menu-item-mic-config").evaluate("el => el.click()")
-        page.click("#action-wheel-rebind")
+        page.click("#action-wheel-reset")
+        assert "Action Wheel: Right mouse" in page.locator("#action-wheel-binding-label").inner_text()
         page.click("#mic-config-done-btn")
-        page.mouse.click(600, 400)
-        assert "Ctrl + Shift + K" in page.locator("#action-wheel-binding-label").inner_text()
+        page.mouse.move(600, 400)
+        page.mouse.down(button="right")
+        assert page.locator("#orator-action-wheel").is_visible()
+        page.mouse.up(button="right")
         assert errors == []
         browser.close()
 
@@ -200,8 +227,15 @@ def test_action_wheel_in_browser() -> None:
             window.wheelController = initializeActionWheel({isOrator: () => window.activeOrator,
                 sendAction: async (action) => { window.sent.push(action); }});
         ''')
-        for dx, dy, direction, action in [(0, -80, "up", "new_image"), (0, 80, "down", "toggle_canvas_pin"),
-                                        (-80, 0, "left", "toggle_music_pin"), (80, 0, "right", "new_music")]:
+        expected_actions = [
+            (0, -70, "up", "toggle_canvas_pin"),
+            (60, -35, "upright", "new_image"),
+            (60, 35, "downright", "new_music"),
+            (0, 70, "down", "toggle_music_pin"),
+            (-60, 35, "downleft", "previous_music"),
+            (-60, -35, "upleft", "previous_image"),
+        ]
+        for dx, dy, direction, action in expected_actions:
             page.mouse.move(400, 300)
             page.mouse.down(button="right")
             assert page.locator("#orator-action-wheel").is_visible()
@@ -211,10 +245,12 @@ def test_action_wheel_in_browser() -> None:
             page.mouse.up(button="right")
             assert page.locator("#orator-action-wheel").is_hidden()
             page.wait_for_function("expected => window.sent.at(-1) === expected", arg=action)
-        assert page.evaluate("window.sent") == ["new_image", "toggle_canvas_pin", "toggle_music_pin", "new_music"]
+        assert page.evaluate("window.sent") == [
+            "toggle_canvas_pin", "new_image", "new_music", "toggle_music_pin", "previous_music", "previous_image"
+        ]
         page.evaluate("window.wheelController.updateState(true, true)")
-        assert "Unpin canvas" in page.locator('[data-direction="down"]').inner_text()
-        assert "Unpin music" in page.locator('[data-direction="left"]').inner_text()
+        assert "Unpin image" in page.locator('[data-direction="up"]').inner_text()
+        assert "Unpin music" in page.locator('[data-direction="down"]').inner_text()
         page.mouse.move(400, 300)
         page.mouse.down(button="right")
         page.mouse.move(400, 220)
@@ -224,7 +260,7 @@ def test_action_wheel_in_browser() -> None:
         # Tiny drags, viewer access, disabled controls, and text input must not send.
         page.mouse.move(400, 300)
         page.mouse.down(button="right")
-        page.mouse.move(410, 310)
+        page.mouse.move(404, 304)
         page.mouse.up(button="right")
         page.mouse.move(5, 580)
         page.mouse.down(button="right")
@@ -248,13 +284,24 @@ def test_action_wheel_in_browser() -> None:
         page.mouse.click(400, 300, button="left")
         page.mouse.move(400, 300)
         page.mouse.down(button="left")
-        page.mouse.move(400, 220)
+        page.mouse.move(460, 260)
         page.mouse.up(button="left")
-        page.wait_for_function("window.sent.length === 5")
+        page.wait_for_function("window.sent.length === 7")
+        assert "Pin image" in page.locator('[data-direction="up"]').inner_text()
+        assert "Image: unpinned" in page.locator("#action-wheel-pin-status").inner_text()
+        page.mouse.move(400, 300)
+        page.mouse.down(button="left")
+        page.mouse.move(460, 340)
+        page.mouse.up(button="left")
+        page.wait_for_function("window.sent.length === 8")
+        assert "Pin music" in page.locator('[data-direction="down"]').inner_text()
+        assert "Music: unpinned" in page.locator("#action-wheel-pin-status").inner_text()
         page.click("#action-wheel-disable")
         page.mouse.move(400, 300)
         page.mouse.down(button="left")
-        page.mouse.move(480, 300)
+        page.mouse.move(460, 260)
         page.mouse.up(button="left")
-        assert page.evaluate("window.sent") == ["new_image", "toggle_canvas_pin", "toggle_music_pin", "new_music", "new_image"]
+        assert page.evaluate("window.sent") == [
+            "toggle_canvas_pin", "new_image", "new_music", "toggle_music_pin", "previous_music", "previous_image", "new_image", "new_music"
+        ]
         browser.close()

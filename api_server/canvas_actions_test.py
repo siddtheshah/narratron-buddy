@@ -38,9 +38,28 @@ def test_force_action_requests_scoped_bypass(
     session.send_user_content.assert_called_once()
     state.persist.assert_called_once()
     if action == "new_image":
+        state.visual.set_pinned.assert_called_once_with(False)
         state.visual.request_immediate_image.assert_called_once()
     else:
         state.audio.set_pinned.assert_called_once_with(False)
+
+
+@pytest.mark.parametrize("action", ["new_image", "new_music"])
+def test_request_new_media_unpins_first_when_pinned(
+    action_services: tuple[MagicMock, MagicMock], action: str
+) -> None:
+    state, session = action_services
+    state.visual.pinned = True
+    state.audio.pinned = True
+    result = canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
+    if action == "new_image":
+        state.visual.set_pinned.assert_called_once_with(False)
+    else:
+        state.audio.set_pinned.assert_called_once_with(False)
+    session.send_content.assert_called_once()
+    call_content = session.send_content.call_args[0][0]
+    assert "was unpinned" in call_content.parts[0].text
+    assert result["status"] == "accepted"
 
 
 @pytest.mark.parametrize("action", ["toggle_canvas_pin", "toggle_music_pin"])
@@ -77,3 +96,33 @@ def test_rejected_generation_cancels_bypass(action_services: tuple[MagicMock, Ma
 def test_invalid_action_action_is_rejected() -> None:
     with pytest.raises(ValidationError):
         canvas.OratorAction(action="diagonal")
+
+
+def test_previous_image_action_success_and_failure(action_services: tuple[MagicMock, MagicMock]) -> None:
+    state, session = action_services
+    state.visual.previous_image.return_value = True
+    response = canvas.post_orator_action("stage", canvas.OratorAction(action="previous_image"), Request({"type": "http"}))
+    assert response["status"] == "accepted"
+    state.visual.previous_image.assert_called_once()
+    session.send_content.assert_called_once()
+    state.persist.assert_called_once()
+
+    state.visual.previous_image.return_value = False
+    with pytest.raises(HTTPException) as error:
+        canvas.post_orator_action("stage", canvas.OratorAction(action="previous_image"), Request({"type": "http"}))
+    assert error.value.status_code == 400
+
+
+def test_previous_music_action_success_and_failure(action_services: tuple[MagicMock, MagicMock]) -> None:
+    state, session = action_services
+    state.audio.previous_music.return_value = True
+    response = canvas.post_orator_action("stage", canvas.OratorAction(action="previous_music"), Request({"type": "http"}))
+    assert response["status"] == "accepted"
+    state.audio.previous_music.assert_called_once()
+    session.send_content.assert_called_once()
+    state.persist.assert_called_once()
+
+    state.audio.previous_music.return_value = False
+    with pytest.raises(HTTPException) as error:
+        canvas.post_orator_action("stage", canvas.OratorAction(action="previous_music"), Request({"type": "http"}))
+    assert error.value.status_code == 400

@@ -21,7 +21,8 @@ def test_audio_state_transitions_publish_latest() -> None:
     domains: list[str] = []
     state = AudioState(domains.append)
     state.update_music("rain", ["rain.mp3"])
-    state.pause(); state.resume()
+    state.pause()
+    state.resume()
     assert state.payload()["playlist"] == "rain"
     assert domains == ["latest", "latest", "latest"]
 
@@ -93,6 +94,7 @@ def test_audio_state_serialize_and_load_round_trip() -> None:
         "music_paused": True,
         "current_playlist_time": state.current_playlist_time,
         "music_pinned": False,
+        "music_history": [{"music_id": "ambient", "tracks": ["amb1.mp3", "amb2.mp3"]}],
     }
 
     new_state = AudioState(lambda *_: None)
@@ -115,6 +117,7 @@ def test_audio_state_loads_legacy_playback_with_a_fresh_timestamp() -> None:
     })
 
     assert state.current_playlist_time > 0
+    assert state.music_history == [{"music_id": "ambient", "tracks": ["amb1.mp3"]}]
 
 
 def test_audio_state_load_handles_malformed_and_missing_data() -> None:
@@ -146,3 +149,39 @@ def test_audio_state_load_handles_malformed_and_missing_data() -> None:
     assert payload["music_id"] == "valid_playlist"
     assert payload["playlist"] == "valid_playlist"
 
+
+def test_audio_state_previous_music_navigation() -> None:
+    events: list[str] = []
+    state = AudioState(events.append)
+
+    # Empty history
+    assert state.previous_music() is False
+
+    # Single track in history
+    state.update_music("track1", ["1.mp3"])
+    assert state.previous_music() is False
+
+    # Multiple tracks
+    state.update_music("track2", ["2.mp3"])
+    state.update_music("track3", ["3.mp3"])
+    assert state.current_music_id == "track3"
+
+    # Go back to track2
+    assert state.previous_music() is True
+    assert state.current_music_id == "track2"
+    assert state.current_playlist_tracks == ["2.mp3"]
+
+    # Go back to track1
+    assert state.previous_music() is True
+    assert state.current_music_id == "track1"
+    assert state.current_playlist_tracks == ["1.mp3"]
+
+    # Cannot go back further
+    assert state.previous_music() is False
+    assert state.current_music_id == "track1"
+
+    # New music resets navigation index
+    state.update_music("track4", ["4.mp3"])
+    assert state.current_music_id == "track4"
+    assert state.previous_music() is True
+    assert state.current_music_id == "track3"

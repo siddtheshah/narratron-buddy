@@ -1317,3 +1317,42 @@ def test_payload_updates_shown_image_prompt_when_image_resolved(tmp_path: Path) 
         payload = state.payload()
         assert payload["prompt"] == "A dragon over mountains\nReferences: dragon.png"
         assert state.shown_image_prompt == "A dragon over mountains\nReferences: dragon.png"
+
+
+def test_previous_image_navigation(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
+    notifications: list[str] = []
+    state = VisualState(theater, notify_changed_fn=notifications.append)
+
+    # Empty history
+    assert state.previous_image() is False
+
+    # Single image in history
+    state.show_image("img1.png", prompt="Prompt 1")
+    assert state.previous_image() is False
+
+    # Multiple images
+    state.show_image("img2.png", prompt="Prompt 2")
+    state.show_image("img3.png", prompt="Prompt 3")
+    assert state.shown_image_path == "img3.png"
+
+    # Step back to img2
+    assert state.previous_image() is True
+    assert state.shown_image_path == "img2.png"
+    assert state.shown_image_prompt == "Prompt 2"
+
+    # Step back to img1
+    assert state.previous_image() is True
+    assert state.shown_image_path == "img1.png"
+    assert state.shown_image_prompt == "Prompt 1"
+
+    # Cannot step back beyond oldest
+    assert state.previous_image() is False
+    assert state.shown_image_path == "img1.png"
+
+    # Showing a new image resets navigation
+    state.show_image("img4.png", prompt="Prompt 4")
+    assert state.shown_image_path == "img4.png"
+    assert state.previous_image() is True
+    assert state.shown_image_path == "img3.png"
+
