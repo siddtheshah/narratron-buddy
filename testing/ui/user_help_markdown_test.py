@@ -23,6 +23,7 @@ def test_help_markdown_renders_and_escapes_model_html(view: str) -> None:
     if view == "canvas":
         script = Path("static/js/chat-controller.js").read_text(encoding="utf-8")
         script = script.replace("export function", "function")
+        script = script.replace("import { initializeChatEmotes } from './chat-emotes.js';", "")
         setup = "window.renderChatMessage = initializeChatController().renderChatMessage;"
     else:
         template = Path("templates/popout.html").read_text(encoding="utf-8")

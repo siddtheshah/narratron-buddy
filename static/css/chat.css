@@ -1,5 +1,87 @@
 /* Chat and Beyond20 Dice Roll Styling for Narratron */
 
+#chat-form {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+#chat-form #chat-input {
+    flex: none;
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: 6px;
+    min-width: 0;
+    min-height: calc(2lh + 1rem + 2px);
+    line-height: 1.4;
+    resize: vertical;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.chat-composer-actions {
+    position: relative;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#chat-form .chat-composer-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    min-height: 36px;
+}
+
+#chat-form button[data-chat-command="suggest"] {
+    background: rgba(251, 191, 36, 0.15);
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    color: #fbbf24;
+}
+
+.suggestion-upvote-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#chat-form .chat-emotes-control > button {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.chat-emotes-palette {
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: repeat(4, 40px);
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: #18181b;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.chat-emotes-palette[hidden] {
+    display: none;
+}
+
+#chat-form .chat-emotes-palette button {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    background: transparent;
+    font-size: 1.25rem;
+}
+
+#chat-form .chat-emotes-palette button:hover,
+#chat-form .chat-emotes-palette button:focus-visible {
+    background: rgba(255, 255, 255, 0.12);
+}
+
 /* Chat Messages Scrollbar & Overflow Container */
 #chat-messages {
     min-height: 0;

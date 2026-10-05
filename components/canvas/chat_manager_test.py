@@ -22,11 +22,12 @@ class TestChatManagerSuggestions(unittest.TestCase):
 
     # --- add_suggestion ---
 
-    def test_add_suggestion_creates_entry(self):
+    def test_add_suggestion_creates_entry(self) -> None:
         result = self.cm.add_suggestion("alice", "Go to the moon")
         self.assertEqual(result["author"], "alice")
         self.assertEqual(result["text"], "Go to the moon")
-        self.assertEqual(result["upvote_count"], 0)
+        self.assertEqual(result["upvote_count"], 1)
+        self.assertEqual(result["upvoters"], ["alice"])
         self.assertIn("alice", self.cm.suggestions)
 
     def test_add_suggestion_adds_chat_message(self):
@@ -72,29 +73,31 @@ class TestChatManagerSuggestions(unittest.TestCase):
 
     # --- upvote_suggestion ---
 
-    def test_upvote_adds_voter(self):
+    def test_upvote_adds_voter(self) -> None:
         self.cm.add_suggestion("alice", "idea")
         result = self.cm.upvote_suggestion("bob", "alice")
         self.assertTrue(result)
         suggestions = self.cm.get_suggestions()
-        self.assertEqual(suggestions[0]["upvote_count"], 1)
+        self.assertEqual(suggestions[0]["upvote_count"], 2)
         self.assertIn("bob", suggestions[0]["upvoters"])
 
-    def test_upvote_self_returns_false(self):
+    def test_upvote_self_returns_false(self) -> None:
         self.cm.add_suggestion("alice", "idea")
         result = self.cm.upvote_suggestion("alice", "alice")
         self.assertFalse(result)
+        self.assertFalse(self.cm.upvote_suggestion(" alice ", " alice "))
+        self.assertEqual(self.cm.get_suggestions()[0]["upvote_count"], 1)
 
     def test_upvote_nonexistent_returns_false(self):
         result = self.cm.upvote_suggestion("bob", "nobody")
         self.assertFalse(result)
 
-    def test_upvote_idempotent(self):
+    def test_upvote_idempotent(self) -> None:
         self.cm.add_suggestion("alice", "idea")
         self.cm.upvote_suggestion("bob", "alice")
         self.cm.upvote_suggestion("bob", "alice")
         suggestions = self.cm.get_suggestions()
-        self.assertEqual(suggestions[0]["upvote_count"], 1)
+        self.assertEqual(suggestions[0]["upvote_count"], 2)
 
     # --- get_suggestions ordering ---
 
@@ -148,21 +151,23 @@ class TestChatManagerSuggestions(unittest.TestCase):
 
     # --- upvotes reset when suggestion is replaced ---
 
-    def test_replacing_suggestion_resets_upvotes(self):
+    def test_replacing_suggestion_resets_upvotes(self) -> None:
         self.cm.add_suggestion("alice", "first")
         self.cm.upvote_suggestion("bob", "alice")
-        self.assertEqual(self.cm.get_suggestions()[0]["upvote_count"], 1)
+        self.assertEqual(self.cm.get_suggestions()[0]["upvote_count"], 2)
         # Replace suggestion
         self.cm.add_suggestion("alice", "new idea")
-        self.assertEqual(self.cm.get_suggestions()[0]["upvote_count"], 0)
+        self.assertEqual(self.cm.get_suggestions()[0]["upvote_count"], 1)
+        self.assertEqual(self.cm.get_suggestions()[0]["upvoters"], ["alice"])
 
-    def test_suggestions_round_trip_through_json_safe_export(self):
+    def test_suggestions_round_trip_through_json_safe_export(self) -> None:
         self.cm.add_suggestion("alice", "idea")
         self.cm.upvote_suggestion("bob", "alice")
         exported = self.cm.export_suggestions()
         restored = ChatManager(FakeTheater("/tmp/test_chat"))
         restored.load_suggestions(exported)
-        self.assertEqual(restored.get_suggestions()[0]["upvote_count"], 1)
+        self.assertEqual(restored.get_suggestions()[0]["upvote_count"], 2)
+        self.assertEqual(restored.get_suggestions()[0]["upvoters"], ["alice", "bob"])
 
     # --- message management and export ---
 

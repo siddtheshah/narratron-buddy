@@ -45,7 +45,7 @@ class ChatManager:
         suggestion = {
             "author": author.strip(),
             "text": text.strip(),
-            "upvotes": set(),
+            "upvotes": {author.strip()},
             "created_at": time.time(),
         }
         author = author.strip()

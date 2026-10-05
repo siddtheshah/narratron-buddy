@@ -3,6 +3,8 @@
  * Manages chat identity, message rendering, suggestions, Beyond20 roll cards, and message submission.
  */
 
+import { initializeChatEmotes } from './chat-emotes.js';
+
 const ADJECTIVES = [
     "Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow",
     "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"
@@ -83,6 +85,7 @@ export function initializeChatController(options = {}) {
             nameInput.addEventListener('change', updateChatName);
             nameInput.addEventListener('blur', updateChatName);
         }
+        refreshSuggestionVoting();
     }
 
     function updateChatName() {
@@ -90,6 +93,7 @@ export function initializeChatController(options = {}) {
         const newName = nameInput.value.trim();
         if (newName) {
             currentChatUsername = newName;
+            refreshSuggestionVoting();
             if (!isAuthenticatedUser) {
                 localStorage.setItem('narratron_anon_chat_name', newName);
             }
@@ -108,6 +112,7 @@ export function initializeChatController(options = {}) {
     function setChatUsername(newName) {
         if (!newName || !newName.trim()) return;
         currentChatUsername = newName.trim();
+        refreshSuggestionVoting();
         if (nameInput) {
             nameInput.value = currentChatUsername;
         }
@@ -158,13 +163,15 @@ export function initializeChatController(options = {}) {
             const upvoteBtn = document.createElement('button');
             upvoteBtn.className = 'suggestion-upvote-btn';
             upvoteBtn.textContent = '👍 +1';
+            upvoteBtn.disabled = rawAuthor === currentChatUsername;
+            upvoteBtn.title = upvoteBtn.disabled ? 'You cannot vote on your own suggestion' : 'Vote for this suggestion';
             upvoteBtn.addEventListener('click', () => upvoteSuggestion(rawAuthor));
             actions.appendChild(upvoteBtn);
 
             const countSpan = document.createElement('span');
             countSpan.className = 'suggestion-vote-count';
             countSpan.dataset.voteCountFor = rawAuthor;
-            countSpan.textContent = '';
+            countSpan.textContent = '1 vote';
             actions.appendChild(countSpan);
 
             if (rawAuthor === currentChatUsername) {
@@ -268,7 +275,17 @@ export function initializeChatController(options = {}) {
     }
 
     // --- Suggestion Helpers ---
+    function refreshSuggestionVoting() {
+        if (!messagesContainer) return;
+        messagesContainer.querySelectorAll('.suggestion-message').forEach(el => {
+            const button = el.querySelector('.suggestion-upvote-btn');
+            button.disabled = el.dataset.suggestionAuthor === currentChatUsername;
+            button.title = button.disabled ? 'You cannot vote on your own suggestion' : 'Vote for this suggestion';
+        });
+    }
+
     async function upvoteSuggestion(targetAuthor) {
+        if (targetAuthor === currentChatUsername) return;
         try {
             await fetch('/api/suggestions/upvote' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
                 method: 'POST',
@@ -309,10 +326,8 @@ export function initializeChatController(options = {}) {
                 countEls.forEach(el => {
                     el.textContent = s.upvote_count > 0 ? `${s.upvote_count} vote${s.upvote_count !== 1 ? 's' : ''}` : '';
                 });
-                if (s.upvoters && s.upvoters.includes(currentChatUsername)) {
-                    document.querySelectorAll(`.suggestion-message[data-suggestion-author="${CSS.escape(s.author)}"] .suggestion-upvote-btn`)
-                        .forEach(btn => btn.classList.add('voted'));
-                }
+                document.querySelectorAll(`.suggestion-message[data-suggestion-author="${CSS.escape(s.author)}"] .suggestion-upvote-btn`)
+                    .forEach(btn => btn.classList.toggle('voted', Boolean(s.upvoters && s.upvoters.includes(currentChatUsername))));
             }
         } catch (err) {
             console.error('Failed to fetch suggestions:', err);
@@ -342,6 +357,7 @@ export function initializeChatController(options = {}) {
                     messagesContainer.appendChild(renderChatMessage(msg));
                 });
                 lastChatFingerprint = fingerprint;
+                await fetchSuggestions();
 
                 if (forceScrollToBottom || isInitial || isNearBottom) {
                     requestAnimationFrame(() => {
@@ -394,10 +410,24 @@ export function initializeChatController(options = {}) {
 
     // Bind form submit listener if provided
     if (chatForm && chatInput) {
+        initializeChatEmotes(chatForm, chatInput);
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                e.preventDefault();
+                if (e.ctrlKey) {
+                    chatForm.requestSubmit(chatForm.querySelector('[data-chat-command="suggest"]'));
+                } else {
+                    chatForm.requestSubmit();
+                }
+            }
+        });
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const text = chatInput.value.trim();
+            let text = chatInput.value.trim();
             if (!text) return;
+            if (e.submitter?.dataset.chatCommand === 'suggest' && !/^\/suggest(?:\s|$)/i.test(text)) {
+                text = `/suggest ${text}`;
+            }
 
             chatInput.value = '';
             try {

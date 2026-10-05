@@ -38,7 +38,7 @@ class TestChatPrefixes(UITestCase):
             ],
         )
 
-    def test_suggest_prefix_creates_ranked_suggestion_not_plain_chat(self):
+    def test_suggest_prefix_creates_ranked_suggestion_not_plain_chat(self) -> None:
         response = self.client.post(
             f"/api/chat?theater_id={self.theater_id}",
             json={"author": "alice", "text": "/suggest Explore the moon"},
@@ -47,6 +47,7 @@ class TestChatPrefixes(UITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["type"], "suggestion")
         self.assertEqual(response.json()["suggestion"]["text"], "Explore the moon")
+        self.assertEqual(response.json()["suggestion"]["upvote_count"], 1)
 
         suggestions = self.client.get(f"/api/suggestions?theater_id={self.theater_id}")
         self.assertEqual(suggestions.status_code, 200)
@@ -58,10 +59,20 @@ class TestChatPrefixes(UITestCase):
             "author": "alice", "text": "Explore the moon", "type": "suggestion",
         }])
 
-    def test_suggestion_vote_and_withdraw_endpoints(self):
+    def test_suggestion_vote_and_withdraw_endpoints(self) -> None:
         self.client.post(
             f"/api/chat?theater_id={self.theater_id}",
             json={"author": "alice", "text": "/suggest First idea"},
+        )
+
+        self_vote = self.client.post(
+            f"/api/suggestions/upvote?theater_id={self.theater_id}",
+            json={"voter": "alice", "target_author": "alice"},
+        )
+        self.assertEqual(self_vote.status_code, 404)
+        self.assertEqual(
+            self.client.get(f"/api/suggestions?theater_id={self.theater_id}").json()[0]["upvote_count"],
+            1,
         )
 
         vote = self.client.post(
@@ -72,7 +83,7 @@ class TestChatPrefixes(UITestCase):
         self.assertEqual(vote.json()["type"], "suggestion")
         self.assertEqual(
             self.client.get(f"/api/suggestions?theater_id={self.theater_id}").json()[0]["upvote_count"],
-            1,
+            2,
         )
 
         withdraw = self.client.post(
