@@ -333,6 +333,61 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.module.reset_die_roll_counts()
         self.assertEqual(self.module.get_die_rolls_this_turn(), [])
 
+    def test_d20_tiers_include_modifiers(self) -> None:
+        cases = [
+            (1, 0, "low"),
+            (6, 0, "low"),
+            (7, 0, "middle"),
+            (13, 0, "middle"),
+            (14, 0, "high"),
+            (20, 0, "high"),
+            (6, 1, "middle"),
+            (7, -1, "low"),
+            (13, 1, "high"),
+            (14, -1, "middle"),
+            (1, -100, "low"),
+            (20, 100, "high"),
+        ]
+        for natural_roll, modifier, expected_tier in cases:
+            with self.subTest(natural_roll=natural_roll, modifier=modifier):
+                with patch("random.randint", return_value=natural_roll):
+                    roll = self.module.roll_dice(modifier=modifier)
+                self.assertEqual(roll["total"], natural_roll + modifier)
+                self.assertEqual(roll["tier"], expected_tier)
+                self.assertEqual(
+                    self.story_state.record_die_roll.call_args.args[0]["tier"],
+                    expected_tier,
+                )
+                self.assertEqual(
+                    self.canvas.tool_response.set_activity.call_args.kwargs["result"]["tier"],
+                    expected_tier,
+                )
+
+    def test_dice_tiers_scale_with_sides_and_count(self) -> None:
+        cases = [
+            (6, [2], 0, "low"),
+            (6, [3], 0, "middle"),
+            (6, [4], 0, "middle"),
+            (6, [5], 0, "high"),
+            (6, [2, 2], 0, "low"),
+            (6, [2, 3], 0, "middle"),
+            (6, [4, 4], 0, "middle"),
+            (6, [4, 5], 0, "high"),
+            (6, [2, 2], 1, "middle"),
+            (6, [4, 5], -1, "middle"),
+        ]
+        for sides, rolls, modifier, expected_tier in cases:
+            with self.subTest(sides=sides, rolls=rolls, modifier=modifier):
+                with patch("random.randint", side_effect=rolls):
+                    roll = self.module.roll_dice(
+                        sides=sides,
+                        count=len(rolls),
+                        modifier=modifier,
+                        procedural=True,
+                    )
+                self.assertEqual(roll["total"], sum(rolls) + modifier)
+                self.assertEqual(roll["tier"], expected_tier)
+
     def test_owns_response_lore_budget_and_activity(self) -> None:
         for _ in range(3):
             self.assertIn("Lore details", self.module.read_lore("lore.txt"))

@@ -622,6 +622,9 @@ class StoryResponseModule:
     ) -> Dict[str, Any]:
         """Roll dice to resolve a genuinely uncertain story outcome.
 
+        Categorize the total, including modifiers, against thirds of the maximum
+        unmodified total. For a d20: low <= 6, middle 7-13, high >= 14.
+
         Args:
             sides: Number of sides per die (2-100, default 20).
             count: Number of dice to roll (1-10, default 1).
@@ -643,11 +646,10 @@ class StoryResponseModule:
         rolls = [random.randint(1, safe_sides) for _ in range(safe_count)]
         total = sum(rolls) + safe_modifier
 
-        possible_results = safe_count * (safe_sides - 1) + 1
-        roll_offset = sum(rolls) - safe_count
+        maximum_total = safe_count * safe_sides
         tier = (
-            "low" if roll_offset * 3 < possible_results
-            else "middle" if roll_offset * 3 < possible_results * 2
+            "low" if total * 3 <= maximum_total
+            else "middle" if total * 3 <= maximum_total * 2
             else "high"
         )
         notation = f"{safe_count}d{safe_sides}" + (f"{safe_modifier:+d}" if safe_modifier else "")
