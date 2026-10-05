@@ -2,7 +2,7 @@
 
 import asyncio
 from uuid import uuid4
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 from fastapi import Request, WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel, Field
@@ -50,6 +50,10 @@ class ViewerCollabRequest(BaseModel):
 
 class CanvasPinRequest(BaseModel):
     pinned: bool
+
+
+class OratorAction(BaseModel):
+    action: Literal["new_image", "toggle_canvas_pin", "toggle_music_pin", "new_music"]
 
 
 class A2UIActionBody(BaseModel):
@@ -489,6 +493,65 @@ def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request)
                 f"[System Notification] The orator has {status} the canvas. {guidance}"
             ))]))
     return {"theater_id": theater_id, "pinned": state.visual.pinned}
+
+
+@app.post("/api/theaters/{theater_id}/orator-action")
+def post_orator_action(
+    theater_id: str, payload: OratorAction, request: Request
+) -> dict[str, str | bool]:
+    """Apply an authorized action wheel selection and relay media intent to Narratron."""
+    _require_canvas_access(request, theater_id)
+    deployment = db.get_deployment(theater_id)
+    if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
+        raise HTTPException(status_code=403, detail="Only the active orator can use the action wheel.")
+    state = _state(theater_id)
+    direction = {
+        "new_image": "up", "toggle_canvas_pin": "down",
+        "toggle_music_pin": "left", "new_music": "right",
+    }[payload.action]
+    session = live_agent_manager.get_session(theater_id)
+    if direction in ("up", "right"):
+        if not session or not session.is_alive:
+            raise HTTPException(status_code=409, detail="Connect Narratron before requesting new media.")
+        suite = session.image_tools if direction == "up" else session.music_tools
+        if suite is None:
+            raise HTTPException(status_code=409, detail="The requested media tools are unavailable.")
+        names = {"create_image"} if direction == "up" else {"create_music", "play_music"}
+        was_pinned = state.visual.pinned if direction == "up" else state.audio.pinned
+        if direction == "up":
+            state.visual.set_pinned(False)
+            state.visual.request_immediate_image()
+        else:
+            state.audio.set_pinned(False)
+        suite.request_orator_bypass(names)
+        instruction = (
+            "Generate and display a fresh image for the current narrated scene now using create_image with display=True."
+            if direction == "up" else
+            "Start different music for the current narrated scene now. Use play_music for an available playlist, "
+            "or create_music if generated music is enabled."
+        )
+        if not session.send_user_content(types.Content(parts=[types.Part(text=(
+            f"[Orator Action] {instruction} This is an explicit orator request; "
+            "the next requested media action bypasses its regular cooldown."
+        ))])):
+            suite.cancel_orator_bypass()
+            if direction == "up":
+                state.visual.cancel_immediate_image()
+                state.visual.set_pinned(was_pinned)
+            else:
+                state.audio.set_pinned(was_pinned)
+            raise HTTPException(status_code=409, detail="Narratron could not receive the action.")
+    elif direction == "down":
+        state.visual.set_pinned(not state.visual.pinned)
+    else:
+        state.audio.set_pinned(not state.audio.pinned)
+    state.persist()
+    if direction in ("down", "left") and session and session.is_alive:
+        session.send_content(types.Content(parts=[types.Part(text=(
+            f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
+            "Keep pinned media unchanged until the orator unpins it."
+        ))]))
+    return {"status": "accepted", "pinned": state.visual.pinned, "music_pinned": state.audio.pinned}
 
 
 @app.patch("/api/a2ui/surfaces/{surface_id}")

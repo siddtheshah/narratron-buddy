@@ -3219,6 +3219,7 @@
 
     <script type="module">
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
+        import { initializeActionWheel } from "/static/js/action-wheel.js?v=freeform-20261005-1";
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
 
@@ -3758,6 +3759,29 @@
             }
         });
 
+        const actionWheel = initializeActionWheel({
+            isOrator: isCurrentOrator,
+            onRebindStart: () => {
+                isRebindingHotkey = false;
+                isRebindingTextHotkey = false;
+                for (const item of [menuItemHotkey, menuItemTextHotkey]) {
+                    if (item) { item.style.background = ''; item.style.color = ''; }
+                }
+                updateHotkeyUI();
+                updateTextHotkeyUI();
+            },
+            sendAction: async (action) => {
+                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action }),
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.detail || 'Unable to apply action.');
+                canvasPinned = Boolean(result.pinned);
+                updateCanvasPinButton();
+                actionWheel.updateState(canvasPinned, Boolean(result.music_pinned));
+            },
+        });
         const popoutBroadcast = new BroadcastChannel('narratron_popout_channel');
 
         // Modular Chat Controller
@@ -4629,6 +4653,7 @@
                 updateAgentActivity(data.tool_activity);
                 updateAgentThought(data.agent_thought);
                 canvasPinned = Boolean(data.pinned);
+                actionWheel.updateState(canvasPinned, Boolean(data.music_pinned));
                 updateCanvasPinButton();
                 updateSceneDialogue(
                     data.scene_dialogue,
@@ -6760,6 +6785,7 @@
         // Rebind hotkey click handler
         const menuItemHotkey = document.getElementById('menu-item-hotkey');
         function startHotkeyRebind(btnElem, labelElem) {
+            actionWheel.cancelRebinding();
             if (isRebindingHotkey) return;
             if (isRebindingTextHotkey) {
                 isRebindingTextHotkey = false;
@@ -6780,6 +6806,7 @@
         }
 
         function startTextHotkeyRebind(btnElem, labelElem) {
+            actionWheel.cancelRebinding();
             if (isRebindingTextHotkey) return;
             if (isRebindingHotkey) {
                 isRebindingHotkey = false;
@@ -7581,6 +7608,7 @@
         }
 
         function closeMicConfigModal() {
+            actionWheel.cancelRebinding();
             if (!micConfigModal) return;
             if (stopMicTestCapture) stopMicTestRecording();
             if (isRebindingHotkey) {
@@ -8405,6 +8433,16 @@
                     <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
                 </button>
 
+                <div class="pullout-menu-item" style="cursor:default;flex-direction:column;align-items:stretch;gap:8px;">
+                    <button id="action-wheel-rebind" type="button" class="pullout-menu-item"
+                        title="Click, then press any mouse button or key combination to rebind the action wheel">
+                        <span class="pullout-item-icon">🖱</span>
+                        <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
+                    </button>
+                    <button id="action-wheel-disable" type="button">Disable action wheel</button>
+                    <span style="font-size:.8rem;">Click the binding above, then press a mouse button or key combo (modifiers supported). Close settings, then hold it over the canvas to open the wheel at your cursor. Move toward an action and release; release in the center or press Esc to cancel. New media bypasses cooldowns and unpins it.</span>
+                    <span id="action-wheel-pin-status" style="font-size:.8rem;">Canvas: unpinned · Music: unpinned</span>
+                </div>
                 <button id="menu-item-text-hotkey" class="pullout-menu-item"
                     title="Click to rebind Orator text input hotkey">
                     <span class="pullout-item-icon">💬</span>
@@ -8553,6 +8591,42 @@
             </div>
         </div>
     </div>
+    <style>
+        #orator-action-wheel {
+            position: fixed; width: 236px; height: 236px; transform: translate(-50%, -50%);
+            z-index: 10000; pointer-events: none; border-radius: 50%;
+            border: 1px solid #64748b; box-shadow: 0 8px 40px #0009;
+            background: conic-gradient(from 45deg, #162235 0deg 89deg, #475569 89deg 90deg,
+                #162235 90deg 179deg, #475569 179deg 180deg, #162235 180deg 269deg,
+                #475569 269deg 270deg, #162235 270deg 359deg, #475569 359deg);
+            color: #e2e8f0; font: 600 12px/1.3 system-ui;
+        }
+        #orator-action-wheel .wheel-action {
+            position: absolute; width: 76px; padding: 8px 2px; border-radius: 10px;
+            text-align: center; transition: background .1s, color .1s;
+        }
+        #action-wheel-rebind.rebinding { background:rgba(234,179,8,.25);color:#fef08a; }
+        #orator-action-wheel .wheel-action.selected { background: #6366f1; color: white; box-shadow: 0 0 18px #6366f180; }
+        #orator-action-wheel [data-direction="up"] { top: 12px; left: 80px; }
+        #orator-action-wheel [data-direction="down"] { bottom: 12px; left: 80px; }
+        #orator-action-wheel [data-direction="left"] { top: 92px; left: 3px; }
+        #orator-action-wheel [data-direction="right"] { top: 92px; right: 3px; }
+        #orator-action-wheel .wheel-center {
+            position: absolute; top: 82px; left: 82px; width: 72px; height: 72px;
+            border-radius: 50%; background: #0f172a; border: 1px solid #64748b;
+            display: flex; align-items: center; justify-content: center; text-align: center;
+            font-size: 10px; font-weight: 400; color: #94a3b8;
+        }
+    </style>
+    <div id="orator-action-wheel" role="group" aria-label="Orator action wheel" hidden>
+        <span class="wheel-action" data-direction="up">🖼<br>New image</span>
+        <span class="wheel-action" data-direction="down">📌<br>Pin canvas</span>
+        <span class="wheel-action" data-direction="left">📌<br>Pin music</span>
+        <span class="wheel-action" data-direction="right">♫<br>New music</span>
+        <span class="wheel-center">Release<br>to cancel</span>
+    </div>
+    <div id="action-wheel-status" role="status" aria-live="polite" hidden
+        style="position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:10000;background:#1e293b;color:#f8fafc;padding:12px 18px;border-radius:10px;pointer-events:none;"></div>
 </body>
 
 </html>

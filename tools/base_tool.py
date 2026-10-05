@@ -500,6 +500,8 @@ class BaseTools:
         self._active_cooldown_durations: Dict[str, float] = {}
         self._pending_cycle_calls: Dict[str, PendingCycleCall[ReturnT, ArgT]] = {}
         self._cycle_cooldown_lock = threading.Lock()
+        self._orator_bypass_tools: set[str] = set()
+        self._orator_bypass_until: float = 0.0
         self._in_flight_tools: Set[str] = set()
         self._in_flight_lock = threading.Lock()
         self._last_call_failed: Dict[str, bool] = {}
@@ -611,6 +613,7 @@ class BaseTools:
     ) -> tuple[bool, Optional[str]]:
         """Check in-flight and cooldown, and either schedule/update for next cycle or indicate immediate run."""
         with self._cycle_cooldown_lock:
+            self._consume_orator_bypass(tool_name)
             in_flight = self.is_in_flight(tool_name)
             remaining = self.get_cooldown_remaining(tool_name, duration=duration)
             has_pending = tool_name in self._pending_cycle_calls
@@ -858,6 +861,31 @@ class BaseTools:
         finally:
             self._on_cycle_tool_completed(tool_name)
 
+    def request_orator_bypass(self, tool_names: set[str]) -> None:
+        """Allow one requested action within a minute, keeping in-flight serialization."""
+        with self._cycle_cooldown_lock:
+            self._orator_bypass_tools = set(tool_names)
+            self._orator_bypass_until = time.monotonic() + 60.0
+
+    def cancel_orator_bypass(self) -> None:
+        with self._cycle_cooldown_lock:
+            self._orator_bypass_tools.clear()
+
+    def _consume_orator_bypass(self, tool_name: str) -> None:
+        """Called under the cycle lock before checking cooldown or duplicates."""
+        if tool_name not in self._orator_bypass_tools:
+            return
+        self._orator_bypass_tools.clear()
+        if time.monotonic() > self._orator_bypass_until:
+            return
+        self._last_call_times.pop(tool_name, None)
+        self._active_cooldown_durations[tool_name] = 0.0
+        self._pending_cycle_calls.pop(tool_name, None)
+        timer = self._cooldown_timers.pop(tool_name, None)
+        if timer is not None:
+            timer.cancel()
+        self.clear_duplicate_history(tool_name)
+
     def check_cooldown(
         self,
         tool_name: str,
@@ -869,6 +897,8 @@ class BaseTools:
         If on cooldown, schedules the timer and returns an error message.
         Otherwise returns None.
         """
+        with self._cycle_cooldown_lock:
+            self._consume_orator_bypass(tool_name)
         cooldown_duration = self._resolve_cooldown_duration(duration)
         now = time.time()
         last_time = self._last_call_times.get(tool_name, 0.0)

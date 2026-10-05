@@ -28,6 +28,35 @@ class FakeMusicCatalogDatabase:
 
 
 class TestMusicTools(BaseTestCase):
+    def test_pinned_music_rejects_tool_changes(self) -> None:
+        tools = self.music_tools
+        tools.play_music("ambient")
+        tools.canvas_manager.audio.set_pinned(True)
+        assert "pinned" in tools._play_music_internal("combat")
+        assert "pinned" in tools.create_music("new track")
+        assert "pinned" in tools.pause_music()
+        assert tools.canvas_manager.audio.current_music_id == "ambient"
+
+    def test_orator_switch_bypasses_cooldown_once(self) -> None:
+        tools = self.music_tools
+        tools.switch_cooldown = 60.0
+        tools.play_music("ambient")
+        tools.request_orator_bypass({"create_music", "play_music"})
+        assert "Successfully" in tools.play_music("combat")
+        assert tools.canvas_manager.audio.current_music_id == "combat"
+        assert "scheduled" in tools.play_music("ambient")
+        tools.cancel_pending_cycle_call("play_music")
+
+    def test_orator_generation_bypasses_cooldown_once(self) -> None:
+        tools = self.music_tools
+        tools._music_provider = MagicMock()
+        tools.generation_cooldown = 60.0
+        tools.record_tool_call("create_music")
+        tools.request_orator_bypass({"create_music", "play_music"})
+        assert "started in background" in tools.create_music("orator requested track")
+        assert "on cooldown" in tools.create_music("another track")
+        tools.join_generation(timeout=5.0)
+
     def setUp(self):
         super().setUp()
         self.temp_dir = tempfile.mkdtemp()

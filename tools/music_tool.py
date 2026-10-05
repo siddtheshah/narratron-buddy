@@ -191,6 +191,8 @@ class MusicTools(BaseTools):
         Returns:
             A status string indicating background generation has started.
         """
+        if self.canvas_manager.audio.pinned:
+            return "Error: Music is pinned by the orator; keep the current track."
         effective_prompt = self._apply_default_style(prompt)
         logger.debug("[MusicTools] create_music requested for theater=%s handle=%s.", self.active_theater_id, handle)
         if not self.use_generated_music:
@@ -198,6 +200,7 @@ class MusicTools(BaseTools):
 
         match = self.music_catalog.find_match(effective_prompt)
         if match:
+            self.cancel_orator_bypass()
             alias_key = handle or re.sub(r'[^a-zA-Z0-9_-]', '_', Path(match["filename"]).stem)
             filename = f"{alias_key}_{int(time.time())}.mp3"
             destination = Path(self.output_dir) / filename
@@ -279,6 +282,8 @@ class MusicTools(BaseTools):
         return f"Music generation started in background{handle_msg} for prompt: '{effective_prompt[:80]}'. It will automatically play when ready."
 
     def _play_music_internal(self, music_id: str) -> str:
+        if self.canvas_manager.audio.pinned:
+            return "Error: Music is pinned by the orator; keep the current track."
         try:
             tracks = self._resolve_music_tracks(music_id)
             if not tracks:
@@ -322,6 +327,8 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
+            if self.canvas_manager.audio.pinned:
+                return "Error: Music is pinned by the orator."
             self.canvas_manager.audio.pause()
             if self.on_pause_music:
                 self.on_pause_music()
@@ -340,6 +347,8 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         try:
+            if self.canvas_manager.audio.pinned:
+                return "Error: Music is pinned by the orator."
             self.canvas_manager.audio.resume()
             if self.on_resume_music:
                 self.on_resume_music()

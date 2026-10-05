@@ -11,9 +11,12 @@ class AudioState:
         self.current_playlist: str | None = None
         self.current_playlist_tracks: list[str] = []
         self.music_paused = False
+        self.pinned = False
         self.current_playlist_time = 0.0
 
     def update_music(self, music_id: str, tracks: list[str]) -> None:
+        if self.pinned:
+            return
         self.current_music_id = self.current_playlist = music_id
         self.current_playlist_tracks = list(tracks)
         self.music_paused = False
@@ -21,11 +24,15 @@ class AudioState:
         self._notify_changed("latest")
 
     def pause(self) -> None:
+        if self.pinned:
+            return
         self.music_paused = True
         self.current_playlist_time = time.time()
         self._notify_changed("latest")
 
     def resume(self) -> None:
+        if self.pinned:
+            return
         self.music_paused = False
         self.current_playlist_time = time.time()
         self._notify_changed("latest")
@@ -36,7 +43,12 @@ class AudioState:
                 "tracks": list(self.current_playlist_tracks), "paused": self.music_paused,
                 "time": self.current_playlist_time}
 
+    def set_pinned(self, pinned: bool) -> None:
+        self.pinned = pinned
+        self._notify_changed("latest")
+
     def load(self, data: dict[str, object]) -> None:
+        self.pinned = bool(data.get("music_pinned", False))
         self.current_music_id = data.get("current_music_id") if isinstance(data.get("current_music_id"), str) else None
         self.current_playlist = data.get("current_playlist") if isinstance(data.get("current_playlist"), str) else None
         tracks = data.get("current_playlist_tracks", [])
@@ -56,4 +68,4 @@ class AudioState:
     def serialize(self) -> dict[str, object]:
         return {"current_music_id": self.current_music_id, "current_playlist": self.current_playlist,
                 "current_playlist_tracks": self.current_playlist_tracks, "music_paused": self.music_paused,
-                "current_playlist_time": self.current_playlist_time}
+                "current_playlist_time": self.current_playlist_time, "music_pinned": self.pinned}

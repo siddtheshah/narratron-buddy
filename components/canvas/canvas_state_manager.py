@@ -98,7 +98,7 @@ class CanvasStateManager:
 
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload()
-        return {**visual, "music": self.audio.payload(), "doodles_enabled": self.doodles.enabled,
+        return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned, "doodles_enabled": self.doodles.enabled,
                 "doodles_persistent": self.doodles.persistent,
                 "viewer_collab_enabled": self.ui.viewer_collab_enabled,
                 "tool_activity": self.tool_response.activity_payload(),

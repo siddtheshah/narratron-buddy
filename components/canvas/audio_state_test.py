@@ -1,6 +1,22 @@
 from components.canvas.audio_state import AudioState
 
 
+def test_pinned_music_blocks_background_changes_and_restores() -> None:
+    state = AudioState(lambda *_: None)
+    state.update_music("current", ["current.mp3"])
+    state.set_pinned(True)
+    state.update_music("replacement", ["replacement.mp3"])
+    state.pause()
+    assert state.current_music_id == "current"
+    assert state.music_paused is False
+    restored = AudioState(lambda *_: None)
+    restored.load(state.serialize())
+    assert restored.pinned is True
+    restored.set_pinned(False)
+    restored.update_music("replacement", ["replacement.mp3"])
+    assert restored.current_music_id == "replacement"
+
+
 def test_audio_state_transitions_publish_latest() -> None:
     domains: list[str] = []
     state = AudioState(domains.append)
@@ -76,6 +92,7 @@ def test_audio_state_serialize_and_load_round_trip() -> None:
         "current_playlist_tracks": ["amb1.mp3", "amb2.mp3"],
         "music_paused": True,
         "current_playlist_time": state.current_playlist_time,
+        "music_pinned": False,
     }
 
     new_state = AudioState(lambda *_: None)

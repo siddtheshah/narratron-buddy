@@ -1,0 +1,260 @@
+from pathlib import Path
+import json
+from collections.abc import Iterator
+from urllib.parse import urlsplit
+
+import pytest
+from playwright.sync_api import Error, Page, Route, sync_playwright
+
+
+@pytest.fixture
+def wheel_page() -> Iterator[Page]:
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    source = Path("static/js/action-wheel.js").read_text(encoding="utf-8").replace("export ", "")
+    markup = template[template.index('    <style>\n        #orator-action-wheel'):template.index('    <div id="action-wheel-status"')]
+    script = source + '''window.sent = []; window.isOrator = true;
+        window.wheelController = initializeActionWheel({isOrator: () => window.isOrator,
+            sendAction: async action => { window.sent.push(action); }});'''
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 800, "height": 600})
+
+        def serve(route: Route) -> None:
+            route.fulfill(body=markup + '''<button id="action-wheel-rebind"><span id="action-wheel-binding-label"></span></button>
+                <button id="action-wheel-disable">Disable</button><div id="action-wheel-pin-status"></div>
+                <div id="action-wheel-status" hidden></div><input id="text">'''
+                + '<script>' + script + '</script>', content_type="text/html")
+
+        page.route("**/*", serve)
+        page.goto("http://wheel.test/")
+        yield page
+        browser.close()
+
+
+@pytest.mark.parametrize("button,name", [("left", "Left"), ("middle", "Middle"), ("right", "Right"),
+                                       ("back", "Back"), ("forward", "Forward")])
+def test_freeform_native_mouse_rebinding(wheel_page: Page, button: str, name: str) -> None:
+    page = wheel_page
+    masks = {"left": 1, "middle": 4, "right": 2, "back": 8, "forward": 16}
+    cdp = page.context.new_cdp_session(page)
+    page.click("#action-wheel-rebind")
+    cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "button": button, "buttons": masks[button], "x": 400, "y": 300, "clickCount": 1})
+    cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "button": button, "buttons": 0, "x": 400, "y": 300, "clickCount": 1})
+    assert name in page.locator("#action-wheel-binding-label").inner_text()
+    assert page.locator("#orator-action-wheel").is_hidden()
+    saved = page.evaluate("JSON.parse(localStorage.getItem('narratron_action_wheel_binding'))")
+    assert saved["button"] == {"left": 0, "middle": 1, "right": 2, "back": 3, "forward": 4}[button]
+    cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "button": button, "buttons": masks[button], "x": 400, "y": 300, "clickCount": 1})
+    assert page.locator("#orator-action-wheel").is_visible()
+    cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "button": "none", "buttons": masks[button], "x": 480, "y": 300})
+    cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "button": button, "buttons": 0, "x": 480, "y": 300, "clickCount": 1})
+    page.wait_for_function("window.sent.length === 1")
+    assert page.evaluate("window.sent") == ["new_music"]
+    page.reload()
+    assert name in page.locator("#action-wheel-binding-label").inner_text()
+
+
+def test_keyboard_combo_rebinding_and_cancel(wheel_page: Page) -> None:
+    page = wheel_page
+    page.click("#action-wheel-rebind")
+    page.keyboard.press("Control+Shift+K")
+    assert "Ctrl + Shift + K" in page.locator("#action-wheel-binding-label").inner_text()
+    page.mouse.move(400, 300)
+    page.keyboard.down("k")
+    assert page.locator("#orator-action-wheel").is_hidden()
+    page.keyboard.up("k")
+    page.keyboard.down("Control")
+    page.keyboard.down("Shift")
+    page.keyboard.down("K")
+    assert page.locator("#orator-action-wheel").is_visible()
+    page.mouse.move(400, 220)
+    page.keyboard.up("K")
+    page.keyboard.up("Shift")
+    page.keyboard.up("Control")
+    page.wait_for_function("window.sent.length === 1")
+    assert page.evaluate("window.sent") == ["new_image"]
+    page.click("#action-wheel-rebind")
+    page.keyboard.press("Escape")
+    assert "Ctrl + Shift + K" in page.locator("#action-wheel-binding-label").inner_text()
+
+
+def test_rebound_button_in_mouse_chord(wheel_page: Page) -> None:
+    page = wheel_page
+    page.click("#action-wheel-rebind")
+    page.mouse.click(400, 300, button="middle")
+    page.mouse.move(400, 300)
+    page.mouse.down(button="left")
+    page.mouse.down(button="middle")
+    assert page.locator("#orator-action-wheel").is_visible()
+    page.mouse.move(480, 300)
+    page.mouse.up(button="middle")
+    page.mouse.up(button="left")
+    assert page.evaluate("window.sent") == ["new_music"]
+
+
+def test_mouse_modifiers_and_focus_cancellation(wheel_page: Page) -> None:
+    page = wheel_page
+    page.click("#action-wheel-rebind")
+    page.keyboard.down("Control")
+    page.mouse.click(400, 300, button="middle")
+    page.keyboard.up("Control")
+    assert "Ctrl + Middle mouse" in page.locator("#action-wheel-binding-label").inner_text()
+    page.mouse.down(button="middle")
+    assert page.locator("#orator-action-wheel").is_hidden()
+    page.mouse.up(button="middle")
+    page.keyboard.down("Control")
+    page.mouse.down(button="middle")
+    assert page.locator("#orator-action-wheel").is_visible()
+    page.mouse.move(480, 300)
+    page.evaluate("window.dispatchEvent(new Event('blur'))")
+    page.mouse.up(button="middle")
+    page.keyboard.up("Control")
+    assert page.evaluate("window.sent") == []
+
+
+def test_action_wheel_initializes_on_full_canvas() -> None:
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    actions: list[str] = []
+
+    def respond(route: Route) -> None:
+        path = urlsplit(route.request.url).path
+        if path == "/canvas":
+            route.fulfill(body=template, content_type="text/html")
+        elif path.startswith("/static/"):
+            asset = Path(path.lstrip("/"))
+            if asset.is_file():
+                route.fulfill(path=asset)
+            else:
+                route.fulfill(status=404)
+        elif path == "/api/auth/me":
+            route.fulfill(json={"authenticated": True, "user": {"id": 1, "username": "orator"}})
+        elif path == "/api/theaters/stage":
+            route.fulfill(json={"metadata": {"is_owner": True, "is_active_orator": True}})
+        elif path == "/api/theaters/stage/baton":
+            route.fulfill(json={"owner": {"id": 1}, "active_orator": {"id": 1}})
+        elif path.endswith("/orator-action"):
+            actions.append(json.loads(route.request.post_data or "{}")["action"])
+            route.fulfill(json={"status": "accepted", "pinned": False, "music_pinned": False})
+        elif path.startswith("/api/"):
+            route.fulfill(json={})
+        else:
+            route.fulfill(status=404)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1500, "height": 900})
+        errors: list[str] = []
+        def record_error(error: Error) -> None:
+            errors.append(str(error))
+
+        page.on("pageerror", record_error)
+        page.route("**/*", respond)
+        page.goto("http://wheel.test/canvas?theater_id=stage")
+        page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
+        page.mouse.move(600, 400)
+        page.mouse.down(button="right")
+        assert page.locator("#orator-action-wheel").is_visible(), errors
+        page.mouse.move(600, 320)
+        page.mouse.up(button="right")
+        page.wait_for_function("document.getElementById('action-wheel-status').textContent.includes('applied')")
+        assert actions == ["new_image"]
+        page.locator("#menu-item-mic-config").evaluate("el => el.click()")
+        page.click("#action-wheel-rebind")
+        page.keyboard.press("Control+Shift+K")
+        assert "Ctrl + Shift + K" in page.locator("#action-wheel-binding-label").inner_text()
+        page.click("#mic-config-done-btn")
+        page.mouse.move(600, 400)
+        page.keyboard.down("Control")
+        page.keyboard.down("Shift")
+        page.keyboard.down("K")
+        assert page.locator("#orator-action-wheel").is_visible()
+        page.mouse.move(680, 400)
+        page.keyboard.up("K")
+        page.keyboard.up("Shift")
+        page.keyboard.up("Control")
+        page.wait_for_function("document.getElementById('action-wheel-status').textContent === 'New music applied'")
+        assert actions == ["new_image", "new_music"]
+        page.locator("#menu-item-mic-config").evaluate("el => el.click()")
+        page.click("#action-wheel-rebind")
+        page.click("#mic-config-done-btn")
+        page.mouse.click(600, 400)
+        assert "Ctrl + Shift + K" in page.locator("#action-wheel-binding-label").inner_text()
+        assert errors == []
+        browser.close()
+
+
+def test_action_wheel_in_browser() -> None:
+    source = Path("static/js/action-wheel.js").read_text(encoding="utf-8").replace("export ", "")
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    wheel_markup = template[template.index('    <style>\n        #orator-action-wheel'):template.index('    <div id="action-wheel-status"')]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 800, "height": 600})
+        page.set_content(wheel_markup + '''<button id="action-wheel-rebind"><span id="action-wheel-binding-label"></span></button>
+            <button id="action-wheel-disable">Disable</button>
+            <div id="action-wheel-status" hidden></div><div id="action-wheel-pin-status"></div>
+            <input id="text" style="position:absolute;left:100px;top:100px;width:200px;height:30px;">''')
+        page.add_script_tag(content=source + '''
+            window.activeOrator = true;
+            window.sent = [];
+            window.wheelController = initializeActionWheel({isOrator: () => window.activeOrator,
+                sendAction: async (action) => { window.sent.push(action); }});
+        ''')
+        for dx, dy, direction, action in [(0, -80, "up", "new_image"), (0, 80, "down", "toggle_canvas_pin"),
+                                        (-80, 0, "left", "toggle_music_pin"), (80, 0, "right", "new_music")]:
+            page.mouse.move(400, 300)
+            page.mouse.down(button="right")
+            assert page.locator("#orator-action-wheel").is_visible()
+            assert page.locator("#orator-action-wheel").evaluate("el => el.style.left") == "400px"
+            page.mouse.move(400 + dx, 300 + dy)
+            assert page.locator(f'[data-direction="{direction}"]').evaluate("el => el.classList.contains('selected')")
+            page.mouse.up(button="right")
+            assert page.locator("#orator-action-wheel").is_hidden()
+            page.wait_for_function("expected => window.sent.at(-1) === expected", arg=action)
+        assert page.evaluate("window.sent") == ["new_image", "toggle_canvas_pin", "toggle_music_pin", "new_music"]
+        page.evaluate("window.wheelController.updateState(true, true)")
+        assert "Unpin canvas" in page.locator('[data-direction="down"]').inner_text()
+        assert "Unpin music" in page.locator('[data-direction="left"]').inner_text()
+        page.mouse.move(400, 300)
+        page.mouse.down(button="right")
+        page.mouse.move(400, 220)
+        page.keyboard.press("Escape")
+        assert page.locator("#orator-action-wheel").is_hidden()
+        page.mouse.up(button="right")
+        # Tiny drags, viewer access, disabled controls, and text input must not send.
+        page.mouse.move(400, 300)
+        page.mouse.down(button="right")
+        page.mouse.move(410, 310)
+        page.mouse.up(button="right")
+        page.mouse.move(5, 580)
+        page.mouse.down(button="right")
+        bounds = page.locator("#orator-action-wheel").bounding_box()
+        assert bounds is not None
+        assert bounds["x"] >= 0 and bounds["y"] >= 0
+        assert bounds["x"] + bounds["width"] <= 800
+        assert bounds["y"] + bounds["height"] <= 600
+        page.mouse.up(button="right")
+        page.evaluate("window.activeOrator = false")
+        page.mouse.move(400, 300)
+        page.mouse.down(button="right")
+        page.mouse.move(480, 300)
+        page.mouse.up(button="right")
+        page.evaluate("window.activeOrator = true")
+        page.mouse.move(130, 115)
+        page.mouse.down(button="right")
+        page.mouse.move(210, 115)
+        page.mouse.up(button="right")
+        page.click("#action-wheel-rebind")
+        page.mouse.click(400, 300, button="left")
+        page.mouse.move(400, 300)
+        page.mouse.down(button="left")
+        page.mouse.move(400, 220)
+        page.mouse.up(button="left")
+        page.wait_for_function("window.sent.length === 5")
+        page.click("#action-wheel-disable")
+        page.mouse.move(400, 300)
+        page.mouse.down(button="left")
+        page.mouse.move(480, 300)
+        page.mouse.up(button="left")
+        assert page.evaluate("window.sent") == ["new_image", "toggle_canvas_pin", "toggle_music_pin", "new_music", "new_image"]
+        browser.close()

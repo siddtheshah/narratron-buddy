@@ -26,6 +26,16 @@ def test_visual_state_requires_theater() -> None:
         VisualState()  # type: ignore[call-arg]
 
 
+def test_orator_image_bypasses_display_cycle_once() -> None:
+    state = VisualState(make_theater())
+    state.current_cycle_visual = {"type": "image", "path": "current.png"}
+    state.request_immediate_image()
+    with patch.object(state, "has_active_visual", return_value=True), \
+            patch.object(state, "_apply_visual"), patch.object(state, "_schedule_next_cycle_tick"):
+        assert state._enqueue_or_display({"type": "image", "source": "create_image", "path": "forced.png"})["status"] == "displayed"
+        assert state._enqueue_or_display({"type": "image", "source": "create_image", "path": "later.png"})["status"] == "queued"
+
+
 def test_visual_state_starts_with_a_crossfade_presentation() -> None:
     theater = make_theater("th_main")
     state = VisualState(theater)

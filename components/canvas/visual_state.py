@@ -70,6 +70,16 @@ class VisualState:
         self.shown_video_animation: dict[str, object] | None = None
         self.image_revision = 0
         self.pinned = False
+        self._orator_image_until: float = 0.0
+
+    def request_immediate_image(self) -> None:
+        """Display the next explicitly requested generated image without cycle pacing."""
+        with self._cycle_lock:
+            self._orator_image_until = time.monotonic() + 300.0
+
+    def cancel_immediate_image(self) -> None:
+        with self._cycle_lock:
+            self._orator_image_until = 0.0
 
     def set_pinned(self, pinned: bool) -> bool:
         """Pin or unpin the current visual, discarding any pending replacement."""
@@ -79,6 +89,7 @@ class VisualState:
                 return False
             self.pinned = pinned
             if pinned:
+                self._orator_image_until = 0.0
                 self.next_cycle_image = None
                 if self._cycle_timer:
                     self._cycle_timer.cancel()
@@ -342,6 +353,9 @@ class VisualState:
                     "resource": item,
                     "message": "The canvas is pinned by the orator; the current visual will remain unchanged.",
                 }
+            if item.get("source") == "create_image" and self._orator_image_until > time.monotonic():
+                force_immediate = True
+                self._orator_image_until = 0.0
             has_active = self.has_active_visual()
             is_cold_start = not has_active
 

@@ -90,6 +90,33 @@ class SampleTools(BaseTools):
 
 
 class TestBaseTools(BaseTestCase):
+    def test_orator_bypass_is_one_use_and_ignores_duplicates(self) -> None:
+        sample = self.make_sample({"cooldown_duration": 10.0})
+        sample.cycle_tool("same scene")
+        sample.request_orator_bypass({"cycle_tool"})
+        assert sample.cycle_tool("same scene") == "Ran same scene"
+        assert sample.cycle_calls == ["same scene", "same scene"]
+        assert "scheduled" in sample.cycle_tool("different scene")
+        sample.cancel_pending_cycle_call("cycle_tool")
+
+    def test_orator_bypass_preserves_in_flight_serialization(self) -> None:
+        sample = self.make_sample({"cooldown_duration": 10.0})
+        sample.acquire_in_flight("cycle_tool")
+        sample.request_orator_bypass({"cycle_tool"})
+        assert "scheduled" in sample.cycle_tool("forced scene")
+        assert sample.cycle_calls == []
+        sample._on_cycle_tool_completed("cycle_tool")
+        deadline = time.monotonic() + 1.0
+        while not sample.cycle_calls and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert sample.cycle_calls == ["forced scene"]
+
+    def test_expired_orator_bypass_keeps_regular_cooldown(self) -> None:
+        self.base_tools.record_tool_call("create_music")
+        self.base_tools.request_orator_bypass({"create_music", "play_music"})
+        self.base_tools._orator_bypass_until = 0.0
+        assert self.base_tools.check_cooldown("create_music") is not None
+
     def setUp(self):
         super().setUp()
         self.config = {
