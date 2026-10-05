@@ -19,6 +19,7 @@ from providers import (
     ImageGenerationRequest,
     ImageProvider,
     ImageProviderError,
+    ImageReference,
     SpeechProvider,
     TextResponseProvider,
     TextResponseRequest,
@@ -34,6 +35,69 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_ACTIVE_CHARACTERS = 5
 MAX_ACTIVE_CHARACTERS = 10
 SUPPORTED_VOICE_TAGS = {"male", "female", "nonbinary"}
+IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def parse_iteration_number(stem_or_filename: str) -> int | None:
+    """Parse numeric iteration from a filename or stem (e.g. '1', '02', 'iteration_3')."""
+    stem = Path(stem_or_filename).stem.strip()
+    if stem.isdigit():
+        return int(stem)
+    match = re.search(r"(?:^|[\D_])(\d+)(?:$|[\D_])", stem)
+    if match is not None:
+        return int(match.group(1))
+    return None
+
+
+def get_character_folder_name(name: str) -> str:
+    """Produce a filesystem-safe folder name for character references."""
+    clean = re.sub(r'[<>:"/\\|?*]', '_', str(name or "")).strip()
+    clean = re.sub(r"\s+", "_", clean).strip("_")
+    return clean or "character"
+
+
+def get_character_reference_dir(reference_dir: Path | str, name: str) -> Path:
+    """Return the directory under reference_dir for the character's reference iterations."""
+    ref_path = Path(reference_dir)
+    folder_name = get_character_folder_name(name)
+    raw_name = str(name or "").strip()
+    for candidate in (folder_name, raw_name):
+        if candidate:
+            candidate_dir = ref_path / candidate
+            if candidate_dir.is_dir():
+                return candidate_dir
+    return ref_path / folder_name
+
+
+def get_character_iteration_files(char_dir: Path) -> list[tuple[int, Path]]:
+    """Return all image iteration files in char_dir sorted by iteration number."""
+    if not char_dir.is_dir():
+        return []
+    iterations: list[tuple[int, Path]] = []
+    for item in char_dir.iterdir():
+        if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+            num = parse_iteration_number(item.name)
+            if num is not None:
+                iterations.append((num, item))
+            else:
+                iterations.append((0, item))
+    iterations.sort(key=lambda t: (t[0], t[1].stat().st_mtime if t[1].exists() else 0.0))
+    return iterations
+
+
+def get_latest_iteration_file(char_dir: Path) -> Path | None:
+    """Return the file path of the highest iteration in char_dir, if any."""
+    iterations = get_character_iteration_files(char_dir)
+    return iterations[-1][1] if iterations else None
+
+
+def get_next_iteration_number(char_dir: Path) -> int:
+    """Return the next numeric iteration index for char_dir."""
+    iterations = get_character_iteration_files(char_dir)
+    if not iterations:
+        return 1
+    max_num = max(num for num, _ in iterations)
+    return max_num + 1 if max_num >= 1 else 1
 
 
 class Character(BaseModel):
@@ -560,15 +624,98 @@ class CharacterManager:
 
         return None
 
+    def _character_reference_dir(self, name: str) -> Path | None:
+        if self.image_library is None or not self.image_library.reference_dir:
+            return None
+        return get_character_reference_dir(self.image_library.reference_dir, name)
+
+    def get_latest_reference_path_for_character(self, query: str) -> str | None:
+        """Return the filesystem path to the latest iteration reference for query."""
+        clean = str(query or "").strip()
+        if not clean:
+            return None
+
+        # 1. Check existing character in memory by name/alias
+        char = self._existing_character(clean)
+        if char is not None:
+            char_dir = self._character_reference_dir(char.name)
+            if char_dir is not None and char_dir.is_dir():
+                latest = get_latest_iteration_file(char_dir)
+                if latest is not None and latest.is_file():
+                    return str(latest)
+            if char.image_reference_path and Path(char.image_reference_path).is_file():
+                return char.image_reference_path
+
+        player = self.get_player_character()
+        if player is not None:
+            p_name = (player.name or "").strip()
+            p_ref = (player.reference or "").strip()
+            p_ref_path = (player.reference_path or "").strip()
+            if (
+                clean.casefold() in (p_name.casefold(), p_ref.casefold(), p_ref_path.casefold(), "player")
+                or (p_name and self._character_key(p_name) == self._character_key(clean))
+            ):
+                p_dir = self._character_reference_dir(p_name or "player")
+                if p_dir is not None and p_dir.is_dir():
+                    latest = get_latest_iteration_file(p_dir)
+                    if latest is not None and latest.is_file():
+                        return str(latest)
+                if player.reference_path and Path(player.reference_path).is_file():
+                    return player.reference_path
+
+        # 2. Check by path or folder structure under reference_dir
+        if self.image_library is not None and self.image_library.reference_dir:
+            req_path = Path(clean)
+            candidates = [req_path.stem, req_path.name]
+            if req_path.parent.name and req_path.parent.name not in (".", ""):
+                candidates.append(req_path.parent.name)
+
+            for cand in candidates:
+                cand_clean = cand.strip()
+                if not cand_clean or cand_clean.lower() in ("references", "images", "artifacts", "output"):
+                    continue
+
+                matched_char = self._existing_character(cand_clean)
+                if matched_char is not None:
+                    matched_dir = self._character_reference_dir(matched_char.name)
+                    if matched_dir is not None and matched_dir.is_dir():
+                        latest = get_latest_iteration_file(matched_dir)
+                        if latest is not None and latest.is_file():
+                            return str(latest)
+                    if matched_char.image_reference_path and Path(matched_char.image_reference_path).is_file():
+                        return matched_char.image_reference_path
+
+                if player is not None:
+                    p_name = (player.name or "").strip()
+                    if cand_clean.casefold() in (p_name.casefold(), "player") or (
+                        p_name and self._character_key(p_name) == self._character_key(cand_clean)
+                    ):
+                        p_dir = self._character_reference_dir(p_name or "player")
+                        if p_dir is not None and p_dir.is_dir():
+                            latest = get_latest_iteration_file(p_dir)
+                            if latest is not None and latest.is_file():
+                                return str(latest)
+                        if player.reference_path and Path(player.reference_path).is_file():
+                            return player.reference_path
+
+                cand_dir = get_character_reference_dir(self.image_library.reference_dir, cand_clean)
+                if cand_dir.is_dir():
+                    latest = get_latest_iteration_file(cand_dir)
+                    if latest is not None and latest.is_file():
+                        return str(latest)
+
+        return None
+
     def _reference_entry(self, reference: str | None) -> dict[str, str] | None:
         """Resolve a reference by an exact stable identifier or canonical slug.
 
         Fuzzy matching is intentionally prohibited here: choosing a wrong
         portrait is worse than creating a new one for character cohesion.
         Matches:
-        1. Exact path, filename, name, alias, or stem.
-        2. Normalized slug matching (e.g. 'Lady Lux' <-> 'lady_lux.jpg').
-        3. Fallback match to an already-generated character portrait ({slug}_character).
+        1. Character iteration folder latest iteration.
+        2. Exact path, filename, name, alias, or stem.
+        3. Normalized slug matching (e.g. 'Lady Lux' <-> 'lady_lux.jpg').
+        4. Fallback match to an already-generated character portrait ({slug}_character).
         """
         if not reference or self.image_library is None:
             return None
@@ -578,7 +725,25 @@ class CharacterManager:
 
         entries = self.image_library.find_image_names()
         if not entries:
-            return None
+            entries = []
+
+        # Check if requested matches a character directory under reference_dir with iterations
+        char_dir = self._character_reference_dir(requested)
+        if char_dir is not None and char_dir.is_dir():
+            latest = get_latest_iteration_file(char_dir)
+            if latest is not None and latest.is_file():
+                norm_latest = os.path.normcase(os.path.normpath(str(latest)))
+                for entry in entries:
+                    e_path = entry.get("path", "")
+                    if e_path and os.path.normcase(os.path.normpath(e_path)) == norm_latest:
+                        return entry
+                return {
+                    "name": f"{char_dir.name}_{latest.stem}",
+                    "alias": f"references/{char_dir.name}/{latest.name}",
+                    "path": str(latest),
+                    "title": f"Reference: {requested}",
+                    "description": f"Character reference for {requested}.",
+                }
 
         normalized = self._character_key(requested)
         req_path_obj = Path(requested)
@@ -641,9 +806,41 @@ class CharacterManager:
 
         return None
 
-    def _generate_character_reference(self, character: Character) -> dict[str, str] | None:
+    def _generate_character_reference(
+        self,
+        character: Character,
+        previous_reference_path: str | None = None,
+    ) -> dict[str, str] | None:
         if self.image_provider is None or self.image_library is None or not self.image_library.reference_dir:
             return None
+
+        char_dir = self._character_reference_dir(character.name)
+        if char_dir is None:
+            return None
+
+        prev_file: Path | None = None
+        if previous_reference_path and Path(previous_reference_path).is_file():
+            prev_file = Path(previous_reference_path)
+        else:
+            prev_file = get_latest_iteration_file(char_dir)
+
+        request_references: list[ImageReference] = []
+        if prev_file is not None and prev_file.is_file():
+            try:
+                prev_data = prev_file.read_bytes()
+                prev_suffix = prev_file.suffix.lower()
+                prev_mime = "image/png" if prev_suffix == ".png" else "image/webp" if prev_suffix == ".webp" else "image/jpeg"
+                request_references.append(
+                    ImageReference(
+                        name=prev_file.name,
+                        data=prev_data,
+                        mime_type=prev_mime,
+                        label=character.name,
+                    )
+                )
+            except OSError as exc:
+                logger.warning("[CharacterManager] Could not read previous reference %s: %s", prev_file, exc)
+
         prompt = (
             f"Single-character reference portrait of {character.name}. "
             f"Appearance: {character.description or character.personality or 'distinctive adventure character'}. "
@@ -652,17 +849,32 @@ class CharacterManager:
         )
         if self.character_image_style:
             prompt += f" Style: {self.character_image_style}."
+
         try:
-            result = self.image_provider.generate(ImageGenerationRequest(prompt=prompt, aspect_ratio="1:1"))
+            result = self.image_provider.generate(
+                ImageGenerationRequest(
+                    prompt=prompt,
+                    references=request_references,
+                    aspect_ratio="1:1",
+                )
+            )
             image = Image.open(BytesIO(result.image_bytes)).convert("RGB")
-            alias = re.sub(r"[^a-zA-Z0-9_-]", "_", character.name).strip("_") or "character"
-            output = Path(self.image_library.reference_dir) / f"{alias}_character.png"
+            char_dir.mkdir(parents=True, exist_ok=True)
+            next_num = get_next_iteration_number(char_dir)
+            ext = ".webp" if result.mime_type == "image/webp" else ".jpg" if result.mime_type in ("image/jpeg", "image/jpg") else ".png"
+            output = char_dir / f"{next_num}{ext}"
             exif = image.getexif()
-            embed_image_metadata(exif, f"Character reference for {character.name}. {prompt}")
-            output.parent.mkdir(parents=True, exist_ok=True)
-            image.save(output, "PNG", exif=exif)
+            embed_image_metadata(exif, f"Character reference for {character.name} (iteration {next_num}). {prompt}")
+            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
             self.image_library._load_references()
-            return self._reference_entry(str(output))
+            alias = f"references/{char_dir.name}/{output.name}"
+            return {
+                "name": f"{char_dir.name}_{next_num}",
+                "alias": alias,
+                "path": str(output),
+                "title": f"Reference: {character.name} (iteration {next_num})",
+                "description": f"Character reference portrait for {character.name} (iteration {next_num}).",
+            }
         except (ImageProviderError, OSError, ValueError) as exc:
             logger.warning("[CharacterManager] Could not create portrait for %s: %s", character.name, exc)
         except Exception:
@@ -685,10 +897,48 @@ class CharacterManager:
         character.image_reference_path = entry.get("path", "")
         character.image_reference_source = source
 
-    def _generate_player_reference(self, player: PlayerCharacter) -> dict[str, str] | None:
+    def _generate_player_reference(
+        self,
+        player: PlayerCharacter,
+        previous_reference_path: str | None = None,
+    ) -> dict[str, str] | None:
         if self.image_provider is None or self.image_library is None or not self.image_library.reference_dir:
             return None
         name_label = player.name or "the protagonist"
+        char_dir = self._character_reference_dir(player.name or "player")
+        if char_dir is None:
+            return None
+
+        prev_file: Path | None = None
+        if previous_reference_path and Path(previous_reference_path).is_file():
+            prev_file = Path(previous_reference_path)
+        else:
+            prev_file = get_latest_iteration_file(char_dir)
+
+        if (
+            prev_file is not None
+            and prev_file.parent.is_dir()
+            and prev_file.parent.name.lower() not in ("references", "images", "artifacts", "output", ".")
+        ):
+            char_dir = prev_file.parent
+
+        request_references: list[ImageReference] = []
+        if prev_file is not None and prev_file.is_file():
+            try:
+                prev_data = prev_file.read_bytes()
+                prev_suffix = prev_file.suffix.lower()
+                prev_mime = "image/png" if prev_suffix == ".png" else "image/webp" if prev_suffix == ".webp" else "image/jpeg"
+                request_references.append(
+                    ImageReference(
+                        name=prev_file.name,
+                        data=prev_data,
+                        mime_type=prev_mime,
+                        label=player.name or "Player",
+                    )
+                )
+            except OSError as exc:
+                logger.warning("[CharacterManager] Could not read previous reference %s: %s", prev_file, exc)
+
         prompt = (
             f"Single-character reference portrait of player character {name_label}. "
             f"Appearance: {player.image_description or 'distinctive adventure protagonist'}. "
@@ -698,16 +948,30 @@ class CharacterManager:
         if self.character_image_style:
             prompt += f" Style: {self.character_image_style}."
         try:
-            result = self.image_provider.generate(ImageGenerationRequest(prompt=prompt, aspect_ratio="1:1"))
+            result = self.image_provider.generate(
+                ImageGenerationRequest(
+                    prompt=prompt,
+                    references=request_references,
+                    aspect_ratio="1:1",
+                )
+            )
             image = Image.open(BytesIO(result.image_bytes)).convert("RGB")
-            alias = re.sub(r"[^a-zA-Z0-9_-]", "_", player.name or "player").strip("_") or "player"
-            output = Path(self.image_library.reference_dir) / f"{alias}_player_character.png"
+            char_dir.mkdir(parents=True, exist_ok=True)
+            next_num = get_next_iteration_number(char_dir)
+            ext = ".webp" if result.mime_type == "image/webp" else ".jpg" if result.mime_type in ("image/jpeg", "image/jpg") else ".png"
+            output = char_dir / f"{next_num}{ext}"
             exif = image.getexif()
-            embed_image_metadata(exif, f"Player character reference for {name_label}. {prompt}")
-            output.parent.mkdir(parents=True, exist_ok=True)
-            image.save(output, "PNG", exif=exif)
+            embed_image_metadata(exif, f"Player character reference for {name_label} (iteration {next_num}). {prompt}")
+            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
             self.image_library._load_references()
-            return self._reference_entry(str(output))
+            alias = f"references/{char_dir.name}/{output.name}"
+            return {
+                "name": f"{char_dir.name}_{next_num}",
+                "alias": alias,
+                "path": str(output),
+                "title": f"Reference: {name_label} (iteration {next_num})",
+                "description": f"Player character reference portrait for {name_label} (iteration {next_num}).",
+            }
         except (ImageProviderError, OSError, ValueError) as exc:
             logger.warning("[CharacterManager] Could not create portrait for player %s: %s", name_label, exc)
         except Exception:
@@ -910,24 +1174,27 @@ class CharacterManager:
         name: str = "",
         reference: str | None = None,
         image_description: str = "",
-        **kwargs: Any,
+        **kwargs: str | None,
     ) -> PlayerCharacter:
         """Update or establish canonical player character identity and visual reference."""
         if not image_description and "description" in kwargs:
-            image_description = str(kwargs["description"] or "")
+            raw_desc = kwargs.get("description")
+            image_description = str(raw_desc).strip() if raw_desc is not None else ""
         if reference is None and "image_reference" in kwargs:
-            reference = kwargs["image_reference"]
+            raw_ref = kwargs.get("image_reference")
+            reference = str(raw_ref).strip() if raw_ref is not None else None
 
         with self._player_character_lock:
             existing = self._player_character
             new_name = str(name).strip() if name else (existing.name if existing else "")
-            new_desc = (
-                str(image_description).strip()
-                if image_description
-                else (existing.image_description if existing else "")
+            clean_desc = str(image_description).strip()[:500] if image_description else ""
+            description_changed = bool(
+                clean_desc and (existing is None or clean_desc != (existing.image_description or "").strip())
             )
+            new_desc = clean_desc if clean_desc else (existing.image_description if existing else "")
 
-            if reference is not None and str(reference).strip():
+            explicit_image_ref = bool(reference is not None and str(reference).strip())
+            if explicit_image_ref:
                 new_ref = str(reference).strip()
                 if existing and existing.reference == new_ref and existing.reference_path:
                     ref_path = existing.reference_path
@@ -936,9 +1203,28 @@ class CharacterManager:
                     ref_path = None
                     ref_source = None
             elif existing:
-                new_ref = existing.reference
-                ref_path = existing.reference_path
-                ref_source = existing.reference_source
+                if description_changed:
+                    prev_path = existing.reference_path
+                    draft = PlayerCharacter(
+                        name=new_name,
+                        reference=None,
+                        image_description=new_desc,
+                        reference_path=None,
+                        reference_source=None,
+                    )
+                    entry = self._generate_player_reference(draft, previous_reference_path=prev_path)
+                    if entry is not None:
+                        new_ref = entry.get("alias", "")
+                        ref_path = entry.get("path", "")
+                        ref_source = "generated"
+                    else:
+                        new_ref = existing.reference
+                        ref_path = existing.reference_path
+                        ref_source = existing.reference_source
+                else:
+                    new_ref = existing.reference
+                    ref_path = existing.reference_path
+                    ref_source = existing.reference_source
             else:
                 new_ref = None
                 ref_path = None
@@ -1001,18 +1287,29 @@ class CharacterManager:
         # 1. If character already exists, update all fields specified (upsert).
         existing = self._existing_character(clean_name)
         if existing:
+            clean_desc = str(description).strip()[:500] if description else ""
+            description_changed = bool(clean_desc and clean_desc != (existing.description or ""))
             if description:
-                existing.description = str(description).strip()[:500]
+                existing.description = clean_desc
             if personality:
                 existing.personality = str(personality).strip()[:300]
             if motivation:
                 existing.motivation = str(motivation).strip()[:300]
             if quirk:
                 existing.quirk = str(quirk).strip()[:300]
-            if image_reference:
+
+            explicit_image_ref = bool(image_reference and str(image_reference).strip())
+            if explicit_image_ref:
                 existing.image_reference = str(image_reference).strip()
                 existing.image_reference_path = None
                 existing.image_reference_source = None
+            elif description_changed:
+                prev_path = existing.image_reference_path
+                entry = self._generate_character_reference(existing, previous_reference_path=prev_path)
+                if entry is not None:
+                    existing.image_reference = entry.get("alias", "")
+                    existing.image_reference_path = entry.get("path", "")
+                    existing.image_reference_source = "generated"
 
             clean_gender = ""
             if gender:
@@ -1021,8 +1318,8 @@ class CharacterManager:
                     clean_gender = norm_g[0]
 
             if voice_tags is not None and (
-                (isinstance(voice_tags, (list, tuple, set)) and len(voice_tags) > 0)
-                or (isinstance(voice_tags, str) and voice_tags.strip())
+                (type(voice_tags) in (list, tuple, set) and len(voice_tags) > 0)
+                or (type(voice_tags) is str and voice_tags.strip())
             ):
                 clean_tags = normalize_voice_tags(voice_tags, supported_tags)
                 tag_gender = _voice_tag_gender(clean_tags)

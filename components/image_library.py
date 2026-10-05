@@ -76,14 +76,20 @@ class ImageLibrary:
 
     @staticmethod
     def _entry(path: str) -> dict[str, str]:
-        filename = Path(path).name
-        name = Path(path).stem
+        path_obj = Path(path)
+        filename = path_obj.name
+        stem = path_obj.stem
+        parent_name = path_obj.parent.name
+        is_subfolder = parent_name.lower() not in ("references", "images", "artifacts", "output", ".")
+        name = f"{parent_name}_{stem}" if is_subfolder else stem
         return {
             "name": name,
             "alias": re.sub(r"[^a-zA-Z0-9_-]", "_", name),
             "path": path,
             "title": extract_image_metadata_title(path) or "",
-            "description": extract_image_metadata_description(path) or f"Image {filename}",
+            "description": extract_image_metadata_description(path) or (
+                f"Character reference for {parent_name} (iteration {stem})" if is_subfolder else f"Image {filename}"
+            ),
         }
 
     def _load_references(self) -> None:

@@ -79,7 +79,18 @@ def is_character_reference(
                 if norm_c == norm_p:
                     return True
 
-    # 3. Check explicit character naming tags in filename
+    # 3. Check character directory or parent directory matching character name
+    for target in (ref_clean, resolved_path or ""):
+        if not target:
+            continue
+        p = Path(target)
+        parent_name = p.parent.name
+        if parent_name and parent_name.lower() not in ("references", "images", "artifacts", "output", "."):
+            res = character_manager.get_latest_reference_path_for_character(parent_name)
+            if type(res) is str and res.strip():
+                return True
+
+    # 4. Check explicit character naming tags in filename
     if re.search(r"(^|[_-])(character|player_character|portrait)($|[._-])", ref_norm):
         return True
 
@@ -123,11 +134,13 @@ def get_reference_label(
             char_img_ref = (char.image_reference or "").strip().lower()
             char_path = (char.image_reference_path or "").strip().lower()
             norm_char_path = os.path.normcase(os.path.abspath(char.image_reference_path)) if char.image_reference_path else None
+            parent_norm = os.path.normcase(Path(resolved_path).parent.name) if resolved_path else ""
 
             if (
                 ref_norm in (char_name.lower(), char_alias, char_img_ref, char_path)
                 or ref_stem in (char_alias, Path(char_img_ref).stem.lower(), Path(char_path).stem.lower())
                 or (resolved_norm is not None and resolved_norm == norm_char_path)
+                or (parent_norm and parent_norm in (char_name.lower(), char_alias))
             ):
                 return char_name
             if len(char_name) >= 2:
@@ -135,9 +148,13 @@ def get_reference_label(
                 if re.search(r"\b" + re.escape(char_name.lower()) + r"\b", ref_words):
                     return char_name
 
-    # 2. Fallback to filename stem or clean identifier
+    # 2. Fallback to character directory name if iteration number, or filename stem
     if resolved_path is not None:
-        return Path(resolved_path).stem
+        stem = Path(resolved_path).stem
+        parent_name = Path(resolved_path).parent.name
+        if (stem.isdigit() or stem.startswith("iteration")) and parent_name and parent_name.lower() not in ("references", "images", "artifacts", "output", "."):
+            return parent_name
+        return stem
     return Path(ref_clean).stem or ref_clean
 
 
@@ -190,7 +207,17 @@ def resolve_provider_references(
 
         for ref in ref_list:
             ref_key = ref.casefold()
-            ref_path = visual.resolve_image_path(ref) if visual is not None else None
+
+            latest_char_path: Optional[str] = None
+            if character_manager is not None:
+                res = character_manager.get_latest_reference_path_for_character(ref)
+                if type(res) is str and res.strip():
+                    latest_char_path = res.strip()
+
+            ref_path = latest_char_path
+            if ref_path is None and visual is not None:
+                ref_path = visual.resolve_image_path(ref)
+
             if ref_path is None:
                 if char_resolved_refs and is_character_reference(
                     ref,

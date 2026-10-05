@@ -360,6 +360,121 @@ class TestReferenceUtils(unittest.TestCase):
         self.assertEqual(labels["aris_doc.png"], "Dr. Aris")
         self.assertEqual(labels["ancient_ruins.png"], "ancient_ruins")
 
+    def test_resolve_provider_references_resolves_character_name_to_latest_iteration(self) -> None:
+        char_dir = os.path.join(self.temp_dir, "Soran")
+        os.makedirs(char_dir, exist_ok=True)
+        iter1 = os.path.join(char_dir, "1.png")
+        iter2 = os.path.join(char_dir, "2.png")
+        with open(iter1, "wb") as f:
+            f.write(b"iter1_bytes")
+        with open(iter2, "wb") as f:
+            f.write(b"iter2_bytes")
+
+        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[])
+        mock_mgr.get_character_references.return_value = []
+        mock_mgr.get_latest_reference_path_for_character.side_effect = lambda query: (
+            iter2 if "soran" in str(query).lower() else None
+        )
+
+        resolver = DummyPathResolver({})
+
+        # Caller provides character name
+        refs, err = resolve_provider_references(
+            reference_images=["Soran"],
+            prompt="A scenic forest view",
+            character_manager=mock_mgr,
+            visual=resolver,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0].name, "2.png")
+        self.assertEqual(refs[0].data, b"iter2_bytes")
+        self.assertEqual(refs[0].label, "Soran")
+
+    def test_resolve_provider_references_older_iteration_resolves_to_latest_iteration(self) -> None:
+        char_dir = os.path.join(self.temp_dir, "Soran")
+        os.makedirs(char_dir, exist_ok=True)
+        iter1 = os.path.join(char_dir, "1.png")
+        iter2 = os.path.join(char_dir, "2.png")
+        with open(iter1, "wb") as f:
+            f.write(b"iter1_bytes")
+        with open(iter2, "wb") as f:
+            f.write(b"iter2_bytes")
+
+        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[])
+        mock_mgr.get_character_references.return_value = []
+        mock_mgr.get_latest_reference_path_for_character.side_effect = lambda query: (
+            iter2 if "soran" in str(query).lower() else None
+        )
+
+        resolver = DummyPathResolver({})
+
+        # Caller explicitly provided older iteration path "references/Soran/1.png"
+        refs, err = resolve_provider_references(
+            reference_images=["references/Soran/1.png"],
+            prompt="Action scene",
+            character_manager=mock_mgr,
+            visual=resolver,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0].name, "2.png")
+        self.assertEqual(refs[0].data, b"iter2_bytes")
+        self.assertEqual(refs[0].label, "Soran")
+
+    def test_get_reference_label_character_folder_iteration(self) -> None:
+        lookup = CharacterLookupResult(
+            characters=[
+                Character(
+                    name="Soran",
+                    gender="male",
+                    image_reference="references/Soran/2.png",
+                    image_reference_path="/theaters/references/Soran/2.png",
+                )
+            ]
+        )
+        label = get_reference_label(
+            ref="references/Soran/2.png",
+            resolved_path="/theaters/references/Soran/2.png",
+            lookup_result=lookup,
+        )
+        self.assertEqual(label, "Soran")
+
+    def test_resolve_provider_references_player_resolves_to_latest_iteration(self) -> None:
+        char_dir = os.path.join(self.temp_dir, "Valen")
+        os.makedirs(char_dir, exist_ok=True)
+        iter1 = os.path.join(char_dir, "1.png")
+        iter2 = os.path.join(char_dir, "2.png")
+        with open(iter1, "wb") as f:
+            f.write(b"player_iter1_bytes")
+        with open(iter2, "wb") as f:
+            f.write(b"player_iter2_bytes")
+
+        mock_mgr = MagicMock(spec=CharacterManager)
+        player = PlayerCharacter(name="Valen", reference="references/Valen/2.png", reference_path=iter2)
+        mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[], player=player)
+        mock_mgr.get_character_references.return_value = []
+        mock_mgr.get_latest_reference_path_for_character.side_effect = lambda query: (
+            iter2 if any(k in str(query).lower() for k in ("valen", "player")) else None
+        )
+
+        resolver = DummyPathResolver({})
+
+        # Caller provides "player", should resolve to latest iteration iter2
+        refs, err = resolve_provider_references(
+            reference_images=["player"],
+            prompt="Dramatic battle",
+            character_manager=mock_mgr,
+            visual=resolver,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0].name, "2.png")
+        self.assertEqual(refs[0].data, b"player_iter2_bytes")
+        self.assertEqual(refs[0].label, "Valen")
+
 
 if __name__ == "__main__":
     unittest.main()

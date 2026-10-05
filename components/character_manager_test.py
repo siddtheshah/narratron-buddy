@@ -377,10 +377,10 @@ class TestCharacterManager(unittest.TestCase):
         )
         library = MagicMock(spec=ImageLibrary)
         with tempfile.TemporaryDirectory() as directory:
-            output = str(Path(directory) / "Mira_character.png")
+            output = str(Path(directory) / "Mira" / "1.png")
             library.reference_dir = directory
             library.find_image_names.side_effect = [[], [{
-                "name": "Mira_character", "alias": "Mira_character", "path": output,
+                "name": "Mira_1", "alias": "references/Mira/1.png", "path": output,
             }]]
             manager = CharacterManager(
                 self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
@@ -390,6 +390,77 @@ class TestCharacterManager(unittest.TestCase):
             self.assertEqual(character["image_reference_path"], output)
             self.assertTrue(Path(output).is_file())
         provider.generate.assert_called_once()
+
+    def test_character_manager_gating_and_iteration_chaining(self) -> None:
+        image = Image.new("RGB", (8, 8), "purple")
+        payload = BytesIO()
+        image.save(payload, "PNG")
+        provider = MagicMock(spec=ImageProvider)
+        provider.generate.return_value = ImageGenerationResult(
+            image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
+        )
+        library = MagicMock(spec=ImageLibrary)
+        with tempfile.TemporaryDirectory() as directory:
+            iter1_output = str(Path(directory) / "Soran" / "1.png")
+            iter2_output = str(Path(directory) / "Soran" / "2.png")
+            library.reference_dir = directory
+            library.find_image_names.return_value = []
+
+            manager = CharacterManager(
+                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+            )
+
+            # 1. Initial creation generates iteration 1
+            char1 = manager.create_or_update_character(
+                "Soran", description="A young scout in leather tunic", personality="Brave", gender="male",
+            )
+            self.assertIsNotNone(char1)
+            self.assertEqual(char1["image_reference_path"], iter1_output)
+            self.assertTrue(Path(iter1_output).is_file())
+            self.assertEqual(provider.generate.call_count, 1)
+
+            # Verify call 1 had no reference images
+            req1 = provider.generate.call_args_list[0][0][0]
+            self.assertEqual(len(req1.references), 0)
+
+            # 2. Updating personality/quirk without description change does NOT regenerate
+            char2 = manager.create_or_update_character(
+                "Soran", personality="Cautious and observant", quirk="Fidgets with compass",
+            )
+            self.assertIsNotNone(char2)
+            self.assertEqual(char2["image_reference_path"], iter1_output)
+            self.assertEqual(provider.generate.call_count, 1)  # No new generation!
+
+            # 3. Updating with the identical description does NOT regenerate
+            char3 = manager.create_or_update_character(
+                "Soran", description="A young scout in leather tunic",
+            )
+            self.assertIsNotNone(char3)
+            self.assertEqual(char3["image_reference_path"], iter1_output)
+            self.assertEqual(provider.generate.call_count, 1)  # Still 1!
+
+            # 4. Updating description DOES regenerate, producing iteration 2 with iteration 1 as reference
+            char4 = manager.create_or_update_character(
+                "Soran", description="Battle-hardened scout wearing spiked iron armor and a wolf cloak",
+            )
+            self.assertIsNotNone(char4)
+            self.assertEqual(char4["image_reference_path"], iter2_output)
+            self.assertTrue(Path(iter2_output).is_file())
+            self.assertEqual(provider.generate.call_count, 2)
+
+            # Verify call 2 had iteration 1 as reference
+            req2 = provider.generate.call_args_list[1][0][0]
+            self.assertEqual(len(req2.references), 1)
+            self.assertEqual(req2.references[0].name, "1.png")
+            self.assertEqual(req2.references[0].label, "Soran")
+
+            # 5. Querying latest reference path returns iteration 2
+            latest_path = manager.get_latest_reference_path_for_character("Soran")
+            self.assertEqual(latest_path, iter2_output)
+            # Querying by directory also returns iteration 2
+            self.assertEqual(manager.get_latest_reference_path_for_character("references/Soran"), iter2_output)
+            # Querying by iteration 1 also returns latest iteration 2
+            self.assertEqual(manager.get_latest_reference_path_for_character("references/Soran/1.png"), iter2_output)
 
     def test_player_character_schema_and_aliases(self) -> None:
         player = PlayerCharacter(
@@ -455,10 +526,10 @@ class TestCharacterManager(unittest.TestCase):
         )
         library = MagicMock(spec=ImageLibrary)
         with tempfile.TemporaryDirectory() as directory:
-            output = str(Path(directory) / "Valen_player_character.png")
+            output = str(Path(directory) / "Valen" / "1.png")
             library.reference_dir = directory
             library.find_image_names.side_effect = [[], [{
-                "name": "Valen_player_character", "alias": "Valen_player_character", "path": output,
+                "name": "Valen_1", "alias": "references/Valen/1.png", "path": output,
             }]]
             manager = CharacterManager(
                 self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
@@ -471,6 +542,68 @@ class TestCharacterManager(unittest.TestCase):
             self.assertEqual(player.reference_source, "generated")
             self.assertTrue(Path(output).is_file())
         provider.generate.assert_called_once()
+
+    def test_player_character_gating_and_iteration_chaining(self) -> None:
+        image = Image.new("RGB", (8, 8), "purple")
+        payload = BytesIO()
+        image.save(payload, "PNG")
+        provider = MagicMock(spec=ImageProvider)
+        provider.generate.return_value = ImageGenerationResult(
+            image_bytes=payload.getvalue(), mime_type="image/png", provider="fast", model="portrait",
+        )
+        library = MagicMock(spec=ImageLibrary)
+        with tempfile.TemporaryDirectory() as directory:
+            iter1_output = str(Path(directory) / "Valen" / "1.png")
+            iter2_output = str(Path(directory) / "Valen" / "2.png")
+            library.reference_dir = directory
+            library.find_image_names.return_value = []
+
+            manager = CharacterManager(
+                self.provider, self.notepad, self.story_state, library, provider, self.speech_provider,
+            )
+
+            # 1. Initial creation generates iteration 1
+            p1 = manager.update_player_character(
+                name="Valen", image_description="A young scout in leather tunic",
+            )
+            self.assertEqual(p1.reference_path, iter1_output)
+            self.assertTrue(Path(iter1_output).is_file())
+            self.assertEqual(provider.generate.call_count, 1)
+
+            # Verify call 1 had no reference images
+            req1 = provider.generate.call_args_list[0][0][0]
+            self.assertEqual(len(req1.references), 0)
+
+            # 2. Updating name only without description change does NOT regenerate
+            p2 = manager.update_player_character(name="Valen the Scout")
+            self.assertEqual(p2.name, "Valen the Scout")
+            self.assertEqual(p2.reference_path, iter1_output)
+            self.assertEqual(provider.generate.call_count, 1)
+
+            # 3. Updating with the identical description does NOT regenerate
+            p3 = manager.update_player_character(image_description="A young scout in leather tunic")
+            self.assertEqual(p3.reference_path, iter1_output)
+            self.assertEqual(provider.generate.call_count, 1)
+
+            # 4. Updating description DOES regenerate, producing iteration 2 with iteration 1 as reference
+            p4 = manager.update_player_character(
+                image_description="Battle-hardened scout wearing spiked iron armor and a wolf cloak",
+            )
+            self.assertEqual(p4.reference_path, iter2_output)
+            self.assertTrue(Path(iter2_output).is_file())
+            self.assertEqual(provider.generate.call_count, 2)
+
+            # Verify call 2 had iteration 1 as reference
+            req2 = provider.generate.call_args_list[1][0][0]
+            self.assertEqual(len(req2.references), 1)
+            self.assertEqual(req2.references[0].name, "1.png")
+            self.assertEqual(req2.references[0].label, "Valen the Scout")
+
+            # 5. Querying latest reference path returns iteration 2
+            self.assertEqual(manager.get_latest_reference_path_for_character("Valen the Scout"), iter2_output)
+            self.assertEqual(manager.get_latest_reference_path_for_character("player"), iter2_output)
+            self.assertEqual(manager.get_latest_reference_path_for_character("references/Valen"), iter2_output)
+            self.assertEqual(manager.get_latest_reference_path_for_character("references/Valen/1.png"), iter2_output)
 
     def test_player_character_export_and_import(self) -> None:
         manager = CharacterManager(

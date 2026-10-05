@@ -165,7 +165,31 @@ class VisualState:
                 if candidate.is_file():
                     self.register_image(str(candidate), requested)
                     return str(candidate)
+                if candidate.is_dir():
+                    latest = self._find_latest_iteration_file(candidate)
+                    if latest is not None and latest.is_file():
+                        self.register_image(str(latest), requested)
+                        return str(latest)
         return None
+
+    @staticmethod
+    def _find_latest_iteration_file(char_dir: Path) -> Path | None:
+        if not char_dir.is_dir():
+            return None
+        iterations: list[tuple[int, Path]] = []
+        for item in char_dir.iterdir():
+            if item.is_file() and item.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                stem = item.stem.strip()
+                if stem.isdigit():
+                    num = int(stem)
+                else:
+                    match = re.search(r"(?:^|[\D_])(\d+)(?:$|[\D_])", stem)
+                    num = int(match.group(1)) if match is not None else 0
+                iterations.append((num, item))
+        if not iterations:
+            return None
+        iterations.sort(key=lambda t: (t[0], t[1].stat().st_mtime if t[1].exists() else 0.0))
+        return iterations[-1][1]
 
     def has_active_animation(self) -> bool:
         """Check if an animation is currently active on the canvas."""
