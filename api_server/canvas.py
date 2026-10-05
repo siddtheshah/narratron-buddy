@@ -55,7 +55,7 @@ class CanvasPinRequest(BaseModel):
 class OratorAction(BaseModel):
     action: Literal[
         "new_music", "new_image",
-        "previous_music", "previous_image",
+        "previous_music", "previous_image", "next_image",
         "toggle_music_pin", "toggle_canvas_pin",
     ]
 
@@ -552,6 +552,13 @@ def post_orator_action(
         if session and session.is_alive:
             session.send_content(types.Content(role="system", parts=[types.Part(text=(
                 "[Orator Action] The orator reverted to the previous scene image."
+            ))]))
+    elif payload.action == "next_image":
+        if not state.visual.next_image():
+            raise HTTPException(status_code=400, detail="No next image available.")
+        if session and session.is_alive:
+            session.send_content(types.Content(role="system", parts=[types.Part(text=(
+                "[Orator Action] The orator advanced to the next scene image."
             ))]))
     elif payload.action == "previous_music":
         if not state.audio.previous_music():

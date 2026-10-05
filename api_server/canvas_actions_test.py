@@ -118,6 +118,22 @@ def test_previous_image_action_success_and_failure(action_services: tuple[MagicM
     assert error.value.status_code == 400
 
 
+def test_next_image_action_success_and_failure(action_services: tuple[MagicMock, MagicMock]) -> None:
+    state, session = action_services
+    state.visual.next_image.return_value = True
+    response = canvas.post_orator_action("stage", canvas.OratorAction(action="next_image"), Request({"type": "http"}))
+    assert response["status"] == "accepted"
+    state.visual.next_image.assert_called_once()
+    session.send_content.assert_called_once()
+    assert session.send_content.call_args[0][0].role == "system"
+    state.persist.assert_called_once()
+
+    state.visual.next_image.return_value = False
+    with pytest.raises(HTTPException) as error:
+        canvas.post_orator_action("stage", canvas.OratorAction(action="next_image"), Request({"type": "http"}))
+    assert error.value.status_code == 400
+
+
 def test_previous_music_action_success_and_failure(action_services: tuple[MagicMock, MagicMock]) -> None:
     state, session = action_services
     state.audio.previous_music.return_value = True

@@ -1364,3 +1364,47 @@ def test_previous_image_navigation(tmp_path: Path) -> None:
     assert state.shown_image_path == "img3.png"
     assert state.orator_cursor == 2
 
+
+def test_next_image_navigation(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
+    notifications: list[str] = []
+    state = VisualState(theater, notify_changed_fn=notifications.append)
+
+    # Empty history
+    assert state.next_image() is False
+
+    # Single image in history
+    state.show_image("img1.png", prompt="Prompt 1")
+    assert state.next_image() is False
+
+    # Multiple images, already at head
+    state.show_image("img2.png", prompt="Prompt 2")
+    state.show_image("img3.png", prompt="Prompt 3")
+    assert state.shown_image_path == "img3.png"
+    assert state.orator_cursor == 2
+    assert state.next_image() is False
+
+    # Step back
+    assert state.previous_image() is True
+    assert state.orator_cursor == 1
+    assert state.previous_image() is True
+    assert state.orator_cursor == 0
+
+    # Step forward to img2
+    assert state.next_image() is True
+    assert state.shown_image_path == "img2.png"
+    assert state.shown_image_prompt == "Prompt 2"
+    assert state.orator_cursor == 1
+
+    # Step forward to img3 (head)
+    assert state.next_image() is True
+    assert state.shown_image_path == "img3.png"
+    assert state.shown_image_prompt == "Prompt 3"
+    assert state.orator_cursor == 2
+
+    # Cannot step forward beyond head
+    assert state.next_image() is False
+    assert state.shown_image_path == "img3.png"
+    assert state.orator_cursor == 2
+
+

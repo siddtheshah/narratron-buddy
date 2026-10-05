@@ -834,13 +834,10 @@ class VisualState:
         self._history_index = self.orator_cursor
         return changed
 
-    def previous_image(self) -> bool:
-        """Revert visual presentation to the previous image/animation in history."""
+    def _apply_history_item(self, target_idx: int) -> bool:
         with self._cycle_lock:
-            curr_idx = len(self.shown_images_history) - 1 if self.orator_cursor is None else self.orator_cursor
-            if curr_idx <= 0 or not self.shown_images_history:
+            if not self.shown_images_history or target_idx < 0 or target_idx >= len(self.shown_images_history):
                 return False
-            target_idx = curr_idx - 1
             target = self.shown_images_history[target_idx]
             self.orator_cursor = target_idx
             self._history_index = target_idx
@@ -928,6 +925,24 @@ class VisualState:
                 effect=self.shown_image_effect,
             )
         return True
+
+    def previous_image(self) -> bool:
+        """Revert visual presentation to the previous image/animation in history."""
+        with self._cycle_lock:
+            curr_idx = len(self.shown_images_history) - 1 if self.orator_cursor is None else self.orator_cursor
+            if curr_idx <= 0 or not self.shown_images_history:
+                return False
+            return self._apply_history_item(curr_idx - 1)
+
+    def next_image(self) -> bool:
+        """Advance visual presentation to the next image/animation in history towards head."""
+        with self._cycle_lock:
+            if not self.shown_images_history:
+                return False
+            curr_idx = len(self.shown_images_history) - 1 if self.orator_cursor is None else self.orator_cursor
+            if curr_idx >= len(self.shown_images_history) - 1:
+                return False
+            return self._apply_history_item(curr_idx + 1)
 
     def show_triframe(self, frame_paths: list[str], *, prompt: str = "",
                        url_for_path: Callable[[str], str] | None = None) -> bool:

@@ -347,6 +347,8 @@ def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -
             actions.append(action_name)
             if action_name == "previous_image":
                 current_cursor[0] = max(0, current_cursor[0] - 1)
+            elif action_name == "next_image":
+                current_cursor[0] = min(1, current_cursor[0] + 1)
             route.fulfill(json={"status": "accepted", "pinned": False, "music_pinned": False, "orator_cursor": current_cursor[0]})
         elif path.startswith("/api/"):
             route.fulfill(json={})
@@ -384,12 +386,9 @@ def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -
         # Orator never gets a sync button or navigational state
         assert sync_button.is_hidden()
 
-        # Orator's next button is disabled; orator does not get a navigational state
+        # Orator's next button is enabled because orator is at 1 / 2 (not greyed out)
         next_button = page.locator("#page-next-btn")
-        assert next_button.is_disabled()
-        next_button.click(force=True)
-        assert page.locator("#page-indicator").inner_text().strip() == "1 / 2"
-        assert sync_button.is_hidden()
+        assert not next_button.is_disabled()
 
         # Now test a viewer connecting to the theater
         viewer_page = browser.new_page(viewport={"width": 1500, "height": 900})
@@ -446,6 +445,14 @@ def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -
         assert viewer_page.locator("#page-indicator").inner_text().strip() == "1 / 2"
         assert viewer_sync.is_hidden()
 
+        # Orator clicks next button to return to head (2 / 2)
+        next_button.click()
+        page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '2 / 2'")
+        assert actions == ["previous_image", "next_image"]
+        # At head (2 / 2), next button is disabled
+        assert next_button.is_disabled()
+        assert sync_button.is_hidden()
+
         assert errors == []
         assert viewer_errors == []
         browser.close()
@@ -488,6 +495,8 @@ def test_orator_page_bar_previous_moves_cursor_and_has_no_sync() -> None:
             actions.append(action_name)
             if action_name == "previous_image":
                 current_cursor[0] = max(0, current_cursor[0] - 1)
+            elif action_name == "next_image":
+                current_cursor[0] = min(2, current_cursor[0] + 1)
             route.fulfill(json={"status": "accepted", "pinned": False, "music_pinned": False, "orator_cursor": current_cursor[0]})
         elif path.startswith("/api/"):
             route.fulfill(json={})
@@ -508,11 +517,23 @@ def test_orator_page_bar_previous_moves_cursor_and_has_no_sync() -> None:
         sync_button = page.locator("#page-head-btn")
         assert sync_button.is_hidden()
 
+        # At 3 / 3 (head), next button is disabled
+        next_button = page.locator("#page-next-btn")
+        assert next_button.is_disabled()
+
         # Orator clicks Previous Image button in the page bar
         page.locator("#page-prev-btn").click()
         page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '2 / 3'")
         assert actions == ["previous_image"]
         # Orator still has no sync button and no navigational state
+        assert sync_button.is_hidden()
+
+        # At 2 / 3, next button is enabled; clicking it advances back to 3 / 3
+        assert not next_button.is_disabled()
+        next_button.click()
+        page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '3 / 3'")
+        assert actions == ["previous_image", "next_image"]
+        assert next_button.is_disabled()
         assert sync_button.is_hidden()
         assert errors == []
         browser.close()
