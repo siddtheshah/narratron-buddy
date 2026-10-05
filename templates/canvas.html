@@ -5729,6 +5729,9 @@
 
         function selectStampAnnotation(action) {
             bringStampToFront(action.id);
+            if (action && action.stamp_id) {
+                recordStampUsage(action.stamp_id);
+            }
             sendOrQueueDoodleMessage({ type: 'select_stamp', id: action.id });
         }
 
@@ -5746,6 +5749,9 @@
 
         function moveStampAnnotation(action, previous, commit) {
             if (commit) {
+                if (action && action.stamp_id) {
+                    recordStampUsage(action.stamp_id);
+                }
                 action = { ...action };
                 delete action.client_message_id;
                 sendOrQueueDoodleMessage(action);
@@ -5923,6 +5929,64 @@
             setStampManagerOpen(false);
         });
 
+        function getStampUsageStorageKey() {
+            const uid = (typeof currentUser !== 'undefined' && currentUser && currentUser.id) ? currentUser.id : null;
+            return uid ? `narratron_stamp_usage_${uid}` : 'narratron_stamp_usage';
+        }
+
+        function getStampUsageMap() {
+            try {
+                const specificKey = getStampUsageStorageKey();
+                const rawSpecific = localStorage.getItem(specificKey);
+                if (rawSpecific) {
+                    const parsed = JSON.parse(rawSpecific);
+                    if (parsed && typeof parsed === 'object') return parsed;
+                }
+                const rawGlobal = localStorage.getItem('narratron_stamp_usage');
+                if (rawGlobal) {
+                    const parsed = JSON.parse(rawGlobal);
+                    if (parsed && typeof parsed === 'object') return parsed;
+                }
+            } catch (_) {}
+            return {};
+        }
+
+        function getStampLastUsedTimestamp(stampId) {
+            const idStr = String(stampId);
+            const map = getStampUsageMap();
+            if (map && map[idStr]) {
+                const val = Number(map[idStr]);
+                if (!Number.isNaN(val)) return val;
+            }
+
+            // Fallback: check if the stamp is currently on canvas in doodleActions
+            if (typeof doodleActions !== 'undefined' && Array.isArray(doodleActions)) {
+                for (let i = doodleActions.length - 1; i >= 0; i--) {
+                    const action = doodleActions[i];
+                    if (action && action.type === 'stamp' && String(action.stamp_id) === idStr) {
+                        return 1000 + i;
+                    }
+                }
+            }
+            return 0;
+        }
+
+        function recordStampUsage(stampId) {
+            if (stampId === null || stampId === undefined) return;
+            const idStr = String(stampId);
+            const now = Date.now();
+            const map = getStampUsageMap();
+            map[idStr] = now;
+            try {
+                const json = JSON.stringify(map);
+                localStorage.setItem(getStampUsageStorageKey(), json);
+                localStorage.setItem('narratron_stamp_usage', json);
+            } catch (_) {}
+            if (cachedUserStamps && cachedUserStamps.length > 0) {
+                renderStampManagerGrid(cachedUserStamps);
+            }
+        }
+
         async function loadUserStamps() {
             if (!stampManagerGrid || isFetchingUserStamps) return;
             isFetchingUserStamps = true;
@@ -5963,8 +6027,20 @@
             }
             if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
 
+            // Stamps in the stamp manager should be ordered from most recently used to least
+            const sortedStamps = [...stamps].sort((a, b) => {
+                const timeA = getStampLastUsedTimestamp(a.id);
+                const timeB = getStampLastUsedTimestamp(b.id);
+                if (timeA !== timeB) {
+                    return timeB - timeA;
+                }
+                const idA = Number(a.id) || 0;
+                const idB = Number(b.id) || 0;
+                return idA - idB;
+            });
+
             const canDrag = hasContributorsPermission();
-            stamps.forEach(stamp => {
+            sortedStamps.forEach(stamp => {
                 const card = document.createElement('div');
                 card.className = `stamp-card ${canDrag ? 'can-drag' : 'locked'}`;
                 card.draggable = canDrag;
@@ -6093,6 +6169,7 @@
             }
             doodleActions.push(action);
 
+            recordStampUsage(stampData.stamp_id);
             sendOrQueueDoodleMessage(action);
             redrawAllDoodles();
         }

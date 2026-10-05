@@ -25,6 +25,10 @@ def test_canvas_html_and_chat_css_stamp_wiring() -> None:
     assert ".stamp-grid" in chat_css
     assert ".stamp-card" in chat_css
 
+    # Stamp manager recency ordering logic
+    assert "recordStampUsage" in canvas_html
+    assert "getStampLastUsedTimestamp" in canvas_html
+
     # Canvas stamp layer and annotations
     assert 'id="canvas-stamp-layer"' in canvas_html
     assert "#canvas-stamp-layer" in chat_css
@@ -108,10 +112,103 @@ def stamp_page() -> Iterator[Page]:
             let myUserId = "Alice";
             let doodleActions = [];
             const sent = [];
+            let cachedUserStamps = null;
 
             function sendOrQueueDoodleMessage(action) {
                 if (!action.client_message_id) action.client_message_id = 'msg-' + sent.length;
                 sent.push(action);
+            }
+
+            function getStampUsageStorageKey() {
+                const uid = (currentUser && currentUser.id) ? currentUser.id : null;
+                return uid ? `narratron_stamp_usage_${uid}` : 'narratron_stamp_usage';
+            }
+
+            function getStampUsageMap() {
+                try {
+                    const specificKey = getStampUsageStorageKey();
+                    const rawSpecific = localStorage.getItem(specificKey);
+                    if (rawSpecific) {
+                        const parsed = JSON.parse(rawSpecific);
+                        if (parsed && typeof parsed === 'object') return parsed;
+                    }
+                    const rawGlobal = localStorage.getItem('narratron_stamp_usage');
+                    if (rawGlobal) {
+                        const parsed = JSON.parse(rawGlobal);
+                        if (parsed && typeof parsed === 'object') return parsed;
+                    }
+                } catch (_) {}
+                return {};
+            }
+
+            function getStampLastUsedTimestamp(stampId) {
+                const idStr = String(stampId);
+                const map = getStampUsageMap();
+                if (map && map[idStr]) {
+                    const val = Number(map[idStr]);
+                    if (!Number.isNaN(val)) return val;
+                }
+
+                if (Array.isArray(doodleActions)) {
+                    for (let i = doodleActions.length - 1; i >= 0; i--) {
+                        const action = doodleActions[i];
+                        if (action && action.type === 'stamp' && String(action.stamp_id) === idStr) {
+                            return 1000 + i;
+                        }
+                    }
+                }
+                return 0;
+            }
+
+            function recordStampUsage(stampId) {
+                if (stampId === null || stampId === undefined) return;
+                const idStr = String(stampId);
+                const now = Date.now();
+                const map = getStampUsageMap();
+                map[idStr] = now;
+                try {
+                    const json = JSON.stringify(map);
+                    localStorage.setItem(getStampUsageStorageKey(), json);
+                    localStorage.setItem('narratron_stamp_usage', json);
+                } catch (_) {}
+                if (cachedUserStamps && cachedUserStamps.length > 0) {
+                    renderStampManagerGrid(cachedUserStamps);
+                }
+            }
+
+            function renderStampManagerGrid(stamps) {
+                if (!stampManagerGrid) return;
+                stampManagerGrid.innerHTML = '';
+                if (stampManagerCount) stampManagerCount.textContent = `${stamps.length}/10`;
+                if (stamps.length === 0) return;
+
+                const sortedStamps = [...stamps].sort((a, b) => {
+                    const timeA = getStampLastUsedTimestamp(a.id);
+                    const timeB = getStampLastUsedTimestamp(b.id);
+                    if (timeA !== timeB) {
+                        return timeB - timeA;
+                    }
+                    const idA = Number(a.id) || 0;
+                    const idB = Number(b.id) || 0;
+                    return idA - idB;
+                });
+
+                const canDrag = hasContributorsPermission();
+                sortedStamps.forEach(stamp => {
+                    const card = document.createElement('div');
+                    card.className = `stamp-card ${canDrag ? 'can-drag' : 'locked'}`;
+                    card.draggable = canDrag;
+                    card.dataset.stampId = String(stamp.id);
+                    card.dataset.stampName = stamp.name || 'Stamp';
+                    card.dataset.stampUrl = stamp.url;
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'stamp-card-name';
+                    nameSpan.textContent = stamp.name;
+                    card.appendChild(nameSpan);
+
+                    stampManagerGrid.appendChild(card);
+                });
             }
 
             function bringStampToFront(stampId) {
@@ -133,6 +230,9 @@ def stamp_page() -> Iterator[Page]:
 
             function selectStampAnnotation(action) {
                 bringStampToFront(action.id);
+                if (action && action.stamp_id) {
+                    recordStampUsage(action.stamp_id);
+                }
                 sendOrQueueDoodleMessage({ type: 'select_stamp', id: action.id });
             }
 
@@ -150,6 +250,9 @@ def stamp_page() -> Iterator[Page]:
 
             function moveStampAnnotation(action, previous, commit) {
                 if (commit) {
+                    if (action && action.stamp_id) {
+                        recordStampUsage(action.stamp_id);
+                    }
                     action = { ...action };
                     delete action.client_message_id;
                     sendOrQueueDoodleMessage(action);
@@ -192,6 +295,7 @@ def stamp_page() -> Iterator[Page]:
                     doodleActions.splice(existingIndex, 1);
                 }
                 doodleActions.push(action);
+                recordStampUsage(stampData.stamp_id);
                 sendOrQueueDoodleMessage(action);
                 renderer.redraw(doodleActions);
             }
@@ -451,6 +555,67 @@ def test_stamp_layering_order_creation_and_selection(stamp_page: Page) -> None:
     assert stamp_page.evaluate('document.getElementById("canvas-stamp-layer").lastElementChild.dataset.annotationId') == dragon_id
     assert stamp_page.evaluate('doodleActions[1].stamp_id') == 10
     assert stamp_page.evaluate('doodleActions[0].stamp_id') == 11
+
+
+def test_stamp_manager_ordered_from_most_recently_used_to_least(stamp_page: Page) -> None:
+    # Initialize cachedUserStamps with 3 stamps: ID 1 (Star), ID 2 (Moon), ID 3 (Sun)
+    stamp_page.evaluate("""
+        cachedUserStamps = [
+            { id: 1, name: "Star", url: "/api/stamps/1" },
+            { id: 2, name: "Moon", url: "/api/stamps/2" },
+            { id: 3, name: "Sun", url: "/api/stamps/3" },
+        ];
+        renderStampManagerGrid(cachedUserStamps);
+    """)
+
+    # Initial order: 1, 2, 3
+    card_ids = stamp_page.evaluate(
+        'Array.from(document.querySelectorAll("#stamp-manager-grid .stamp-card")).map(c => c.dataset.stampId)'
+    )
+    assert card_ids == ["1", "2", "3"]
+
+    # Place Stamp 3 (Sun) on canvas -> Sun is now most recently used!
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 3, name: "Sun", url: "/api/stamps/3"}, 0.2, 0.2)')
+    card_ids_after_3 = stamp_page.evaluate(
+        'Array.from(document.querySelectorAll("#stamp-manager-grid .stamp-card")).map(c => c.dataset.stampId)'
+    )
+    # 3 must now be first, followed by 1 and 2
+    assert card_ids_after_3 == ["3", "1", "2"]
+
+    # Place Stamp 1 (Star) on canvas -> Star is now most recently used!
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 1, name: "Star", url: "/api/stamps/1"}, 0.5, 0.5)')
+    card_ids_after_1 = stamp_page.evaluate(
+        'Array.from(document.querySelectorAll("#stamp-manager-grid .stamp-card")).map(c => c.dataset.stampId)'
+    )
+    # Order: 1 (most recent), 3 (previous), 2 (least recent / unused)
+    assert card_ids_after_1 == ["1", "3", "2"]
+
+    # Re-place Stamp 2 (Moon) on canvas -> Moon is now most recently used!
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 2, name: "Moon", url: "/api/stamps/2"}, 0.7, 0.7)')
+    card_ids_after_2 = stamp_page.evaluate(
+        'Array.from(document.querySelectorAll("#stamp-manager-grid .stamp-card")).map(c => c.dataset.stampId)'
+    )
+    # Order: 2 (most recent), 1, 3
+    assert card_ids_after_2 == ["2", "1", "3"]
+
+    # Selecting Stamp 3 on the canvas also makes Stamp 3 most recently used!
+    sun_annotation_id = stamp_page.evaluate('doodleActions.find(a => a.stamp_id === 3).id')
+    sun_card = stamp_page.locator(f'.canvas-stamp-annotation[data-annotation-id="{sun_annotation_id}"]')
+    sun_card.click()
+
+    card_ids_after_select_3 = stamp_page.evaluate(
+        'Array.from(document.querySelectorAll("#stamp-manager-grid .stamp-card")).map(c => c.dataset.stampId)'
+    )
+    # Order: 3 (selected most recently), 2, 1
+    assert card_ids_after_select_3 == ["3", "2", "1"]
+
+    # Verify order is preserved when re-rendering (e.g. reopening stamp manager or reloading)
+    stamp_page.evaluate('renderStampManagerGrid(cachedUserStamps)')
+    card_ids_rerender = stamp_page.evaluate(
+        'Array.from(document.querySelectorAll("#stamp-manager-grid .stamp-card")).map(c => c.dataset.stampId)'
+    )
+    assert card_ids_rerender == ["3", "2", "1"]
+
 
 
 
