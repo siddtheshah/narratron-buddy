@@ -15,6 +15,7 @@ def action_services() -> Iterator[tuple[MagicMock, MagicMock]]:
     state.visual.pinned = False
     state.visual.orator_cursor = 0
     state.audio.pinned = False
+    state.audio.orator_cursor = 0
     session = MagicMock(is_alive=True)
     session.send_user_content.return_value = True
     session.send_notification.return_value = True
@@ -151,14 +152,17 @@ def test_previous_music_action_success_and_failure(action_services: tuple[MagicM
     assert error.value.status_code == 400
 
 
+
 def test_orator_action_endpoint_response_validation_with_integer_cursor(
     action_services: tuple[MagicMock, MagicMock]
 ) -> None:
     state, _ = action_services
     state.visual.orator_cursor = 7
+    state.audio.orator_cursor = 3
     client = TestClient(canvas.app)
     response = client.post("/api/theaters/stage/orator-action", json={"action": "toggle_canvas_pin"})
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "accepted"
     assert data["orator_cursor"] == 7
+    assert data["music_orator_cursor"] == 3

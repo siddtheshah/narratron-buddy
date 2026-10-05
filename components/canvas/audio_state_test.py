@@ -42,6 +42,7 @@ def test_audio_state_initial_state() -> None:
         "tracks": [],
         "paused": False,
         "time": 0.0,
+        "orator_cursor": 0,
     }
 
 
@@ -95,6 +96,8 @@ def test_audio_state_serialize_and_load_round_trip() -> None:
         "current_playlist_time": state.current_playlist_time,
         "music_pinned": False,
         "music_history": [{"music_id": "ambient", "tracks": ["amb1.mp3", "amb2.mp3"]}],
+        "music_orator_cursor": 0,
+        "orator_cursor": 0,
     }
 
     new_state = AudioState(lambda *_: None)
@@ -170,18 +173,59 @@ def test_audio_state_previous_music_navigation() -> None:
     assert state.previous_music() is True
     assert state.current_music_id == "track2"
     assert state.current_playlist_tracks == ["2.mp3"]
+    assert state.orator_cursor == 1
 
     # Go back to track1
     assert state.previous_music() is True
     assert state.current_music_id == "track1"
     assert state.current_playlist_tracks == ["1.mp3"]
+    assert state.orator_cursor == 0
 
     # Cannot go back further
     assert state.previous_music() is False
     assert state.current_music_id == "track1"
+    assert state.orator_cursor == 0
 
     # New music resets navigation index
     state.update_music("track4", ["4.mp3"])
     assert state.current_music_id == "track4"
+    assert state.orator_cursor == 3
     assert state.previous_music() is True
     assert state.current_music_id == "track3"
+    assert state.orator_cursor == 2
+
+
+
+def test_audio_state_orator_cursor_load_and_clamping() -> None:
+    state = AudioState(lambda *_: None)
+    state.load({
+        "current_music_id": "track2",
+        "current_playlist": "track2",
+        "current_playlist_tracks": ["2.mp3"],
+        "music_history": [
+            {"music_id": "track1", "tracks": ["1.mp3"]},
+            {"music_id": "track2", "tracks": ["2.mp3"]},
+            {"music_id": "track3", "tracks": ["3.mp3"]},
+        ],
+        "music_orator_cursor": 1,
+    })
+    assert state.orator_cursor == 1
+    assert state.music_orator_cursor == 1
+
+    # Out of range clamped to head
+    state.load({
+        "current_music_id": "track3",
+        "music_history": [
+            {"music_id": "track1", "tracks": ["1.mp3"]},
+            {"music_id": "track2", "tracks": ["2.mp3"]},
+        ],
+        "music_orator_cursor": 10,
+    })
+    assert state.orator_cursor == 1
+
+    # Empty history resets cursor to None
+    state.load({
+        "music_history": [],
+        "music_orator_cursor": 5,
+    })
+    assert state.orator_cursor is None

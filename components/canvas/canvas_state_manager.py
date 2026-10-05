@@ -81,7 +81,8 @@ class CanvasStateManager:
             logger.warning("Failed to load canvas state for %s: %s", self.theater_id, exc)
 
     def serialized_state(self) -> dict[str, object]:
-        return {**self.visual.serialize(), **self.audio.serialize(), **self.doodles.serialize(),
+        audio_serialized = {k: v for k, v in self.audio.serialize().items() if k != "orator_cursor"}
+        return {**self.visual.serialize(), **audio_serialized, **self.doodles.serialize(),
                 **self.ui.serialize(), **self.story.serialize(),
                 "suggestions": self.chat.export_suggestions(), "chat_messages": self.chat.get_messages()}
 
@@ -98,7 +99,9 @@ class CanvasStateManager:
 
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload()
-        return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned, "doodles_enabled": self.doodles.enabled,
+        return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned,
+                "music_orator_cursor": self.audio.payload().get("orator_cursor"),
+                "doodles_enabled": self.doodles.enabled,
                 "doodles_persistent": self.doodles.persistent,
                 "viewer_collab_enabled": self.ui.viewer_collab_enabled,
                 "tool_activity": self.tool_response.activity_payload(),

@@ -65,6 +65,7 @@ class OratorActionResponse(BaseModel):
     pinned: bool
     music_pinned: bool
     orator_cursor: int | None
+    music_orator_cursor: int | None = None
 
 
 class A2UIActionBody(BaseModel):
@@ -594,6 +595,7 @@ def post_orator_action(
         "pinned": state.visual.pinned,
         "music_pinned": state.audio.pinned,
         "orator_cursor": state.visual.orator_cursor,
+        "music_orator_cursor": state.audio.orator_cursor,
     }
 
 
