@@ -643,16 +643,18 @@ def test_serialize_returns_all_expected_keys() -> None:
         "shown_image_transition",
         "shown_image_effect",
         "shown_animation_frames",
-            "shown_layered_animation",
-            "shown_video_animation",
-            "pinned",
-        }
+        "shown_layered_animation",
+        "shown_video_animation",
+        "pinned",
+        "orator_cursor",
+    }
     assert set(data.keys()) == expected_keys
     assert data["current_image_basename"] == "base.png"
     assert data["shown_image_path"] == "current.png"
     assert data["shown_image_transition"] == "fade"
     assert data["shown_image_effect"] == "zoom"
     assert data["shown_image_prompt"] == "Prompt"
+    assert data["orator_cursor"] == 0
     assert len(data["shown_images_history"]) == 1
 
 
@@ -1335,24 +1337,30 @@ def test_previous_image_navigation(tmp_path: Path) -> None:
     state.show_image("img2.png", prompt="Prompt 2")
     state.show_image("img3.png", prompt="Prompt 3")
     assert state.shown_image_path == "img3.png"
+    assert state.orator_cursor == 2
 
     # Step back to img2
     assert state.previous_image() is True
     assert state.shown_image_path == "img2.png"
     assert state.shown_image_prompt == "Prompt 2"
+    assert state.orator_cursor == 1
 
     # Step back to img1
     assert state.previous_image() is True
     assert state.shown_image_path == "img1.png"
     assert state.shown_image_prompt == "Prompt 1"
+    assert state.orator_cursor == 0
 
     # Cannot step back beyond oldest
     assert state.previous_image() is False
     assert state.shown_image_path == "img1.png"
+    assert state.orator_cursor == 0
 
     # Showing a new image resets navigation
     state.show_image("img4.png", prompt="Prompt 4")
     assert state.shown_image_path == "img4.png"
+    assert state.orator_cursor == 3
     assert state.previous_image() is True
     assert state.shown_image_path == "img3.png"
+    assert state.orator_cursor == 2
 

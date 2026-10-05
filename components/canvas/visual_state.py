@@ -72,6 +72,7 @@ class VisualState:
         self.pinned = False
         self._orator_image_until: float = 0.0
         self._history_index: int | None = None
+        self.orator_cursor: int | None = None
 
     def request_immediate_image(self) -> None:
         """Display the next explicitly requested generated image without cycle pacing."""
@@ -829,17 +830,19 @@ class VisualState:
                 "priority": self.PRIORITY_SHOW,
                 "source": "show_image",
             }
-        self._history_index = None
+        self.orator_cursor = len(self.shown_images_history) - 1 if self.shown_images_history else None
+        self._history_index = self.orator_cursor
         return changed
 
     def previous_image(self) -> bool:
         """Revert visual presentation to the previous image/animation in history."""
         with self._cycle_lock:
-            curr_idx = len(self.shown_images_history) - 1 if self._history_index is None else self._history_index
-            if curr_idx <= 0:
+            curr_idx = len(self.shown_images_history) - 1 if self.orator_cursor is None else self.orator_cursor
+            if curr_idx <= 0 or not self.shown_images_history:
                 return False
             target_idx = curr_idx - 1
             target = self.shown_images_history[target_idx]
+            self.orator_cursor = target_idx
             self._history_index = target_idx
             raw_path = target.get("path")
             file_path = str(raw_path) if raw_path is not None else None
@@ -1005,14 +1008,28 @@ class VisualState:
                 "prompt": self.shown_image_prompt,
                 "source": "loaded_state",
             }
-        self._history_index = None
+        cursor_val = data.get("orator_cursor")
+        if cursor_val is not None:
+            self.orator_cursor = int(cursor_val)
+            self._history_index = self.orator_cursor
+        elif self.shown_images_history:
+            self.orator_cursor = len(self.shown_images_history) - 1
+            self._history_index = self.orator_cursor
+        else:
+            self.orator_cursor = None
+            self._history_index = None
+
+        if self.orator_cursor is not None and self.shown_images_history:
+            self.orator_cursor = max(0, min(self.orator_cursor, len(self.shown_images_history) - 1))
+            self._history_index = self.orator_cursor
 
     def serialize(self) -> dict[str, object]:
         return {"current_image_basename": self.current_image_basename, "shown_image_path": self.shown_image_path,
                 "shown_image_prompt": self.shown_image_prompt, "shown_images_history": list(self.shown_images_history),
                 "shown_image_transition": self.shown_image_transition, "shown_image_effect": self.shown_image_effect,
                 "shown_animation_frames": list(self.shown_animation_frames), "shown_layered_animation": self.shown_layered_animation,
-                "shown_video_animation": self.shown_video_animation, "pinned": self.pinned}
+                "shown_video_animation": self.shown_video_animation, "pinned": self.pinned,
+                "orator_cursor": self.orator_cursor}
 
     def payload(self) -> dict[str, object]:
         th = self.theater
@@ -1080,6 +1097,16 @@ class VisualState:
                 item["animation"] = anim_info
             formatted_history.append(item)
 
+        cursor_index = (
+            len(formatted_history) - 1
+            if self.orator_cursor is None
+            else self.orator_cursor
+        )
+        if formatted_history:
+            cursor_index = max(0, min(cursor_index, len(formatted_history) - 1))
+        else:
+            cursor_index = 0
+
         result: dict[str, object] = {
             "latest": image_url,
             "time": selected_time,
@@ -1088,6 +1115,7 @@ class VisualState:
             "effect": effect,
             "history": formatted_history,
             "pinned": self.pinned,
+            "orator_cursor": cursor_index,
         }
         if anim_info:
             result["animation"] = anim_info

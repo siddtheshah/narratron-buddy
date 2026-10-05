@@ -12,6 +12,7 @@ from api_server import canvas
 def action_services() -> Iterator[tuple[MagicMock, MagicMock]]:
     state = MagicMock()
     state.visual.pinned = False
+    state.visual.orator_cursor = 0
     state.audio.pinned = False
     session = MagicMock(is_alive=True)
     session.send_user_content.return_value = True

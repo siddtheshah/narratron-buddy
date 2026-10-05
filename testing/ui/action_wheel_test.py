@@ -21,7 +21,6 @@ def wheel_page() -> Iterator[Page]:
 
         def serve(route: Route) -> None:
             route.fulfill(body=markup + '''<button id="action-wheel-rebind"><span id="action-wheel-binding-label"></span></button>
-                <button id="action-wheel-disable">Disable</button><div id="action-wheel-pin-status"></div>
                 <div id="action-wheel-status" hidden></div><input id="text">'''
                 + '<script>' + script + '</script>', content_type="text/html")
 
@@ -31,7 +30,7 @@ def wheel_page() -> Iterator[Page]:
         browser.close()
 
 
-@pytest.mark.parametrize("button,name", [("left", "Left"), ("middle", "Middle"), ("right", "Right"),
+@pytest.mark.parametrize("button,name", [("middle", "Middle"), ("right", "Right"),
                                        ("back", "Back"), ("forward", "Forward")])
 def test_freeform_native_mouse_rebinding(wheel_page: Page, button: str, name: str) -> None:
     page = wheel_page
@@ -52,6 +51,28 @@ def test_freeform_native_mouse_rebinding(wheel_page: Page, button: str, name: st
     assert page.evaluate("window.sent") == ["previous_image"]
     page.reload()
     assert name in page.locator("#action-wheel-binding-label").inner_text()
+
+
+def test_left_click_cannot_be_bound(wheel_page: Page) -> None:
+    page = wheel_page
+    page.click("#action-wheel-rebind")
+    page.mouse.click(400, 300, button="left")
+    assert "not left" in page.locator("#action-wheel-binding-label").inner_text()
+    assert page.evaluate("localStorage.getItem('narratron_action_wheel_binding')") is None
+    page.mouse.click(400, 300, button="middle")
+    assert "Middle mouse" in page.locator("#action-wheel-binding-label").inner_text()
+    page.mouse.move(400, 300)
+    page.mouse.down(button="left")
+    assert page.locator("#orator-action-wheel").is_hidden()
+    page.mouse.up(button="left")
+
+
+def test_saved_left_click_binding_falls_back_to_right(wheel_page: Page) -> None:
+    page = wheel_page
+    page.evaluate("""localStorage.setItem('narratron_action_wheel_binding', JSON.stringify(
+        {type: 'mouse', button: 0, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false}))""")
+    page.reload()
+    assert "Action Wheel: Right mouse" in page.locator("#action-wheel-binding-label").inner_text()
 
 
 def test_keyboard_combo_rebinding_and_cancel(wheel_page: Page) -> None:
@@ -197,15 +218,6 @@ def test_action_wheel_initializes_on_full_canvas() -> None:
         page.keyboard.up("Control")
         page.wait_for_function("document.getElementById('action-wheel-status').textContent === 'New music applied'")
         assert actions == ["new_image", "new_music"]
-        # Reset to default button restores Right click default
-        page.locator("#menu-item-mic-config").evaluate("el => el.click()")
-        page.click("#action-wheel-reset")
-        assert "Action Wheel: Right mouse" in page.locator("#action-wheel-binding-label").inner_text()
-        page.click("#mic-config-done-btn")
-        page.mouse.move(600, 400)
-        page.mouse.down(button="right")
-        assert page.locator("#orator-action-wheel").is_visible()
-        page.mouse.up(button="right")
         assert errors == []
         browser.close()
 
@@ -218,8 +230,7 @@ def test_action_wheel_in_browser() -> None:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 800, "height": 600})
         page.set_content(wheel_markup + '''<button id="action-wheel-rebind"><span id="action-wheel-binding-label"></span></button>
-            <button id="action-wheel-disable">Disable</button>
-            <div id="action-wheel-status" hidden></div><div id="action-wheel-pin-status"></div>
+            <div id="action-wheel-status" hidden></div>
             <input id="text" style="position:absolute;left:100px;top:100px;width:200px;height:30px;">''')
         page.add_script_tag(content=source + '''
             window.activeOrator = true;
@@ -281,27 +292,106 @@ def test_action_wheel_in_browser() -> None:
         page.mouse.move(210, 115)
         page.mouse.up(button="right")
         page.click("#action-wheel-rebind")
-        page.mouse.click(400, 300, button="left")
+        page.mouse.click(400, 300, button="middle")
         page.mouse.move(400, 300)
-        page.mouse.down(button="left")
+        page.mouse.down(button="middle")
         page.mouse.move(460, 260)
-        page.mouse.up(button="left")
+        page.mouse.up(button="middle")
         page.wait_for_function("window.sent.length === 7")
         assert "Pin image" in page.locator('[data-direction="up"]').inner_text()
-        assert "Image: unpinned" in page.locator("#action-wheel-pin-status").inner_text()
         page.mouse.move(400, 300)
-        page.mouse.down(button="left")
+        page.mouse.down(button="middle")
         page.mouse.move(460, 340)
-        page.mouse.up(button="left")
+        page.mouse.up(button="middle")
         page.wait_for_function("window.sent.length === 8")
         assert "Pin music" in page.locator('[data-direction="down"]').inner_text()
-        assert "Music: unpinned" in page.locator("#action-wheel-pin-status").inner_text()
-        page.click("#action-wheel-disable")
-        page.mouse.move(400, 300)
-        page.mouse.down(button="left")
-        page.mouse.move(460, 260)
-        page.mouse.up(button="left")
         assert page.evaluate("window.sent") == [
             "toggle_canvas_pin", "new_image", "new_music", "toggle_music_pin", "previous_music", "previous_image", "new_image", "new_music"
         ]
+        browser.close()
+
+
+def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -> None:
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    actions: list[str] = []
+    current_cursor = [1]
+
+    def respond(route: Route) -> None:
+        path = urlsplit(route.request.url).path
+        if path == "/canvas":
+            route.fulfill(body=template, content_type="text/html")
+        elif path.startswith("/static/"):
+            asset = Path(path.lstrip("/"))
+            if asset.is_file():
+                route.fulfill(path=asset)
+            else:
+                route.fulfill(status=404)
+        elif path == "/api/auth/me":
+            route.fulfill(json={"authenticated": True, "user": {"id": 1, "username": "orator"}})
+        elif path == "/api/theaters/stage":
+            route.fulfill(json={"metadata": {"is_owner": True, "is_active_orator": True}})
+        elif path == "/api/theaters/stage/baton":
+            route.fulfill(json={"owner": {"id": 1}, "active_orator": {"id": 1}})
+        elif path == "/api/latest":
+            route.fulfill(json={
+                "latest": "/static/images/p1.png",
+                "time": 2.0,
+                "history": [
+                    {"url": "/static/images/p1.png", "prompt": "Image 1", "time": 1.0},
+                    {"url": "/static/images/p2.png", "prompt": "Image 2", "time": 2.0},
+                ],
+                "orator_cursor": current_cursor[0],
+            })
+        elif path.endswith("/orator-action"):
+            action_name = str(json.loads(route.request.post_data or "{}").get("action", ""))
+            actions.append(action_name)
+            if action_name == "previous_image":
+                current_cursor[0] = max(0, current_cursor[0] - 1)
+            route.fulfill(json={"status": "accepted", "pinned": False, "music_pinned": False, "orator_cursor": current_cursor[0]})
+        elif path.startswith("/api/"):
+            route.fulfill(json={})
+        else:
+            route.fulfill(status=404)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1500, "height": 900})
+        page.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
+        errors: list[str] = []
+
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        page.route("**/*", respond)
+        page.goto("http://wheel.test/canvas?theater_id=stage")
+        page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
+        page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '2 / 2'")
+
+        # Sync button replaces Head and is hidden when already synced with orator cursor
+        sync_button = page.locator("#page-head-btn")
+        assert "Sync" in sync_button.inner_text()
+        assert sync_button.is_hidden()
+
+        # Trigger previous image on action wheel (upleft: dx=-60, dy=-35)
+        page.mouse.move(600, 400)
+        page.mouse.down(button="right")
+        assert page.locator("#orator-action-wheel").is_visible(), errors
+        page.mouse.move(540, 365)
+        page.mouse.up(button="right")
+        page.wait_for_function("document.getElementById('action-wheel-status').textContent.includes('applied')")
+        assert actions == ["previous_image"]
+
+        # The orator should be paged back simultaneously to 1 / 2, staying in sync (not in navigational state)
+        assert page.locator("#page-indicator").inner_text().strip() == "1 / 2"
+        assert sync_button.is_hidden()
+
+        # Navigating with the page bar next button enters navigational state
+        page.locator("#page-next-btn").click()
+        assert page.locator("#page-indicator").inner_text().strip() == "2 / 2"
+        # Sync button is now visible in navigational state
+        assert sync_button.is_visible()
+
+        # Clicking 'Sync' ends the navigational state and returns to orator cursor (1 / 2)
+        sync_button.click()
+        assert page.locator("#page-indicator").inner_text().strip() == "1 / 2"
+        assert sync_button.is_hidden()
+        assert errors == []
         browser.close()

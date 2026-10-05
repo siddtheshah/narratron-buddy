@@ -13,6 +13,7 @@ export function actionWheelDirection(dx, dy, threshold = 48) {
 export function initializeActionWheel({
     isOrator,
     sendAction,
+    onPreviousImage = null,
     onRebindStart = () => {},
     document: doc = document,
     window: win = window,
@@ -154,6 +155,9 @@ export function initializeActionWheel({
             controller.updateState(false, currentMusicPinned);
         } else if (action === 'new_music' && currentMusicPinned) {
             controller.updateState(currentCanvasPinned, false);
+        }
+        if (action === 'previous_image' && typeof onPreviousImage === 'function') {
+            try { onPreviousImage(); } catch (_) {}
         }
         show(`${labels[direction]}…`);
         try { await sendAction(action); show(`${labels[direction]} applied`); }

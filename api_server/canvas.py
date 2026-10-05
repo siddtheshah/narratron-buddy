@@ -575,7 +575,12 @@ def post_orator_action(
                 "Keep pinned media unchanged until the orator unpins it."
             ))]))
     state.persist()
-    return {"status": "accepted", "pinned": state.visual.pinned, "music_pinned": state.audio.pinned}
+    return {
+        "status": "accepted",
+        "pinned": state.visual.pinned,
+        "music_pinned": state.audio.pinned,
+        "orator_cursor": state.visual.orator_cursor,
+    }
 
 
 @app.patch("/api/a2ui/surfaces/{surface_id}")

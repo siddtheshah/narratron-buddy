@@ -2949,9 +2949,9 @@
                         / 1</span>
                     <button id="page-next-btn" title="Next Image (Right Arrow)"
                         style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">▶</button>
-                    <button id="page-head-btn" title="Jump to Head / Latest Image"
+                    <button id="page-head-btn" class="page-sync-btn" title="Sync with Orator / Live Scene"
                         style="display: none; background: rgba(99, 102, 241, 0.3); border: 1px solid rgba(99, 102, 241, 0.5); color: #a5b4fc; border-radius: 16px; padding: 3px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s;">
-                        <span>Head ⏩</span>
+                        <span>Sync 🔄</span>
                         <span id="new-head-badge"
                             style="display: none; background: #ef4444; color: #fff; font-size: 0.65rem; border-radius: 10px; padding: 1px 5px; font-weight: 700; animation: pulseBadge 1.5s infinite;">NEW</span>
                     </button>
@@ -3783,6 +3783,11 @@
                 updateHotkeyUI();
                 updateTextHotkeyUI();
             },
+            onPreviousImage: () => {
+                if (typeof stepOratorPreviousImage === 'function') {
+                    stepOratorPreviousImage();
+                }
+            },
             sendAction: async (action) => {
                 if (action === 'new_image' && canvasPinned) {
                     canvasPinned = false;
@@ -3800,6 +3805,12 @@
                 if (!response.ok) throw new Error(result.detail || 'Unable to apply action.');
                 canvasPinned = Boolean(result.pinned);
                 musicPinned = Boolean(result.music_pinned);
+                if (result.orator_cursor !== undefined && result.orator_cursor !== null) {
+                    oratorCursorIndex = Number(result.orator_cursor);
+                    if (!isNavigating && currentViewIndex !== oratorCursorIndex) {
+                        displayHistoryImage(oratorCursorIndex, 'none');
+                    }
+                }
                 updateCanvasPinButton();
                 actionWheel.updateState(canvasPinned, musicPinned);
             },
@@ -4453,9 +4464,29 @@
 
         let imageHistory = [];
         let currentViewIndex = -1;
+        let oratorCursorIndex = -1;
+        let isNavigating = false;
         let isPagedBack = false;
         let hasNewHeadWhilePagedBack = false;
         let lastAnimationSignature = '';
+
+        function stepOratorPreviousImage() {
+            if (oratorCursorIndex > 0) {
+                oratorCursorIndex -= 1;
+            } else if (oratorCursorIndex < 0 && imageHistory.length > 1) {
+                oratorCursorIndex = imageHistory.length - 2;
+            } else if (currentViewIndex > 0) {
+                oratorCursorIndex = currentViewIndex - 1;
+            }
+            isNavigating = false;
+            isPagedBack = false;
+            hasNewHeadWhilePagedBack = false;
+            if (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length) {
+                displayHistoryImage(oratorCursorIndex, 'none');
+            } else {
+                updatePagingControlsUI();
+            }
+        }
 
         const HISTORY_WINDOW_RADIUS = 5;
         const loadedHistoryResources = new Map();
@@ -4604,11 +4635,11 @@
             }
 
             if (headBtn) {
-                headBtn.style.display = isPagedBack ? 'flex' : 'none';
+                headBtn.style.display = isNavigating ? 'flex' : 'none';
             }
 
             if (newBadge) {
-                newBadge.style.display = hasNewHeadWhilePagedBack ? 'inline-block' : 'none';
+                newBadge.style.display = (isNavigating && hasNewHeadWhilePagedBack) ? 'inline-block' : 'none';
             }
 
             if (doodleCanvas) {
@@ -4619,8 +4650,8 @@
         function displayHistoryImage(index, transition = 'none') {
             if (index < 0 || index >= imageHistory.length) return;
             currentViewIndex = index;
-            isPagedBack = (currentViewIndex < imageHistory.length - 1);
-            if (!isPagedBack) {
+            isPagedBack = isNavigating;
+            if (!isNavigating) {
                 hasNewHeadWhilePagedBack = false;
             }
 
@@ -4752,7 +4783,12 @@
                         animation: data.animation || null
                     }];
                 }
-                pruneHistoryResources(currentViewIndex >= 0 ? currentViewIndex : imageHistory.length - 1);
+                if (data.orator_cursor !== undefined && data.orator_cursor !== null) {
+                    oratorCursorIndex = Math.max(0, Math.min(Number(data.orator_cursor), imageHistory.length - 1));
+                } else if (imageHistory.length > 0) {
+                    oratorCursorIndex = imageHistory.length - 1;
+                }
+                pruneHistoryResources(currentViewIndex >= 0 ? currentViewIndex : (oratorCursorIndex >= 0 ? oratorCursorIndex : imageHistory.length - 1));
 
                 const currentImageEffect = data.effect || 'gleam3';
                 const animationSignature = getAnimationSignature(data.animation);
@@ -4767,7 +4803,10 @@
                 );
                 if (isFirstCanvasLoad) {
                     isFirstCanvasLoad = false;
-                    currentViewIndex = imageHistory.length - 1;
+                    currentViewIndex = (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length)
+                        ? oratorCursorIndex
+                        : Math.max(0, imageHistory.length - 1);
+                    isNavigating = false;
                     isPagedBack = false;
                     hasNewHeadWhilePagedBack = false;
                     pruneHistoryResources(currentViewIndex);
@@ -4776,39 +4815,19 @@
                         lastImageRawUrl = data.latest;
                         lastImageEffect = currentImageEffect;
                         lastAnimationSignature = animationSignature;
-                        if (animationSignature) {
-                            playAnimation(data.animation);
-                            trackHistoryResource(currentViewIndex, {
-                                type: 'animation',
-                                animation: data.animation,
-                            });
-                        } else {
-                            const newImgUrl = data.latest + "?t=" + new Date().getTime();
-                            applyImageTransition(newImgUrl, 'none', currentImageEffect);
-                            const cachedImg = new Image();
-                            cachedImg.src = newImgUrl;
-                            trackHistoryResource(currentViewIndex, {
-                                type: 'image',
-                                img: cachedImg,
-                            });
-                        }
-                        const activePrompt = data.prompt || (data.animation && data.animation.scene_prompt) || "";
-                        if (activePrompt) {
-                            promptTextSpan.textContent = activePrompt;
-                            promptBtn.style.display = 'flex';
-                        }
                     }
-                    updatePagingControlsUI();
-                } else if (isNewImage) {
+                    displayHistoryImage(currentViewIndex, 'none');
+                } else if (isNewImage || (!isNavigating && currentViewIndex !== oratorCursorIndex)) {
                     lastTime = data.time;
                     lastImageRawUrl = data.latest;
                     lastImageEffect = currentImageEffect;
                     lastAnimationSignature = animationSignature;
-                    const newImgUrl = data.latest + "?t=" + new Date().getTime();
                     const transition = (data.transition || 'crossfade').toLowerCase().trim();
 
-                    if (!isPagedBack) {
-                        currentViewIndex = imageHistory.length - 1;
+                    if (!isNavigating) {
+                        currentViewIndex = (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length)
+                            ? oratorCursorIndex
+                            : Math.max(0, imageHistory.length - 1);
                         isPagedBack = false;
                         hasNewHeadWhilePagedBack = false;
                         pruneHistoryResources(currentViewIndex);
@@ -4818,56 +4837,11 @@
                             redrawAllDoodles();
                         }
 
-                        const activePrompt = data.prompt || (data.animation && data.animation.scene_prompt) || "";
-                        if (animationSignature) {
-                            promptBtn.classList.remove('expanded');
-                            promptBtn.style.display = 'none';
-                            promptPinned = false;
-                            playAnimation(data.animation);
-                            trackHistoryResource(currentViewIndex, {
-                                type: 'animation',
-                                animation: data.animation,
-                            });
-                            if (activePrompt) {
-                                promptTextSpan.textContent = activePrompt;
-                                promptBtn.style.display = 'flex';
-                            }
-                            updatePagingControlsUI();
-                            return;
-                        }
-
-                        if (typeof stopImageAnimation === 'function') {
-                            stopImageAnimation();
-                        }
-
-                        const tempImage = new Image();
-                        const triggerTransition = () => {
-                            promptBtn.classList.remove('expanded');
-                            promptBtn.style.display = 'none';
-                            promptPinned = false;
-
-                            applyImageTransition(newImgUrl, transition, currentImageEffect);
-                            trackHistoryResource(currentViewIndex, {
-                                type: 'image',
-                                img: tempImage,
-                            });
-
-                            if (activePrompt) {
-                                promptTextSpan.textContent = activePrompt;
-                                promptBtn.style.display = 'flex';
-                            }
-                        };
-
-                        tempImage.onload = triggerTransition;
-                        tempImage.onerror = triggerTransition;
-                        tempImage.src = newImgUrl;
-                        if (tempImage.complete) {
-                            triggerTransition();
-                        }
+                        displayHistoryImage(currentViewIndex, transition);
                     } else {
                         hasNewHeadWhilePagedBack = true;
+                        updatePagingControlsUI();
                     }
-                    updatePagingControlsUI();
                 } else if (!data.latest && !data.animation && imageHistory.length === 0) {
                     bgLayer.style.backgroundImage = 'none';
                     if (currentImage) currentImage.classList.remove('loaded');
@@ -4886,21 +4860,36 @@
 
         document.getElementById('page-prev-btn')?.addEventListener('click', () => {
             if (currentViewIndex > 0) {
+                isNavigating = true;
+                isPagedBack = true;
                 displayHistoryImage(currentViewIndex - 1, 'none');
             }
         });
 
         document.getElementById('page-next-btn')?.addEventListener('click', () => {
             if (currentViewIndex < imageHistory.length - 1) {
+                isNavigating = true;
+                isPagedBack = true;
                 displayHistoryImage(currentViewIndex + 1, 'none');
             }
         });
 
-        document.getElementById('page-head-btn')?.addEventListener('click', () => {
-            if (imageHistory.length > 0) {
-                displayHistoryImage(imageHistory.length - 1, 'crossfade');
+        const syncToOratorCursor = () => {
+            isNavigating = false;
+            isPagedBack = false;
+            hasNewHeadWhilePagedBack = false;
+            const target = (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length)
+                ? oratorCursorIndex
+                : Math.max(0, imageHistory.length - 1);
+            if (target >= 0 && target < imageHistory.length) {
+                displayHistoryImage(target, 'crossfade');
+            } else {
+                updatePagingControlsUI();
             }
-        });
+        };
+
+        document.getElementById('page-head-btn')?.addEventListener('click', syncToOratorCursor);
+        document.getElementById('page-sync-btn')?.addEventListener('click', syncToOratorCursor);
 
         // Paging bar hover discovery: reveal controls when mouse moves near top center,
         // without letting the discovery area block clicks to underlying canvas or interactive UI elements.
@@ -4947,10 +4936,14 @@
             }
             if (e.key === 'ArrowLeft') {
                 if (currentViewIndex > 0) {
+                    isNavigating = true;
+                    isPagedBack = true;
                     displayHistoryImage(currentViewIndex - 1, 'none');
                 }
             } else if (e.key === 'ArrowRight') {
                 if (currentViewIndex < imageHistory.length - 1) {
+                    isNavigating = true;
+                    isPagedBack = true;
                     displayHistoryImage(currentViewIndex + 1, 'none');
                 }
             }
@@ -8459,24 +8452,11 @@
                     <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
                 </button>
 
-                <div class="pullout-menu-item"
-                    style="cursor:default;flex-direction:column;align-items:stretch;gap:8px;">
-                    <button id="action-wheel-rebind" type="button" class="pullout-menu-item"
-                        title="Click, then press any mouse button or key combination to rebind the action wheel">
-                        <span class="pullout-item-icon">🖱</span>
-                        <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
-                    </button>
-                    <div style="display: flex; gap: 8px;">
-                        <button id="action-wheel-disable" type="button" style="flex: 1;">Disable action wheel</button>
-                        <button id="action-wheel-reset" type="button" style="flex: 1;">Reset default (Right click)</button>
-                    </div>
-                    <span style="font-size:.8rem;">Click the binding above, then press a mouse button or key combo
-                        (modifiers supported). Close settings, then hold it over the canvas to open the wheel at your
-                        cursor. Move toward an action and release; release in the center or press Esc to cancel. New
-                        media bypasses cooldowns and unpins it.</span>
-                    <span id="action-wheel-pin-status" style="font-size:.8rem;">Image: unpinned · Music:
-                        unpinned</span>
-                </div>
+                <button id="action-wheel-rebind" type="button" class="pullout-menu-item"
+                    title="Click, then press any mouse button or key combination to rebind the action wheel">
+                    <span class="pullout-item-icon">🖱</span>
+                    <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
+                </button>
                 <button id="menu-item-text-hotkey" class="pullout-menu-item"
                     title="Click to rebind Orator text input hotkey">
                     <span class="pullout-item-icon">💬</span>
