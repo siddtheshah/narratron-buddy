@@ -143,6 +143,15 @@
             min-height: 0;
         }
 
+        #image-container.layout-resizing::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 199;
+            background: #020617;
+            pointer-events: none;
+        }
+
         #orator-command-overlay {
             position: absolute;
             inset: 0;
@@ -7083,11 +7092,45 @@
         let isPanelCollapsed = window.innerWidth <= SMALL_WINDOW_BREAKPOINT;
         let popoutWindowRef = null;
 
+        // Cover intermediate layouts so image effects never visibly fold during resizing.
+        const canvasContainer = document.getElementById('image-container');
+        let canvasSettleTimer = null;
+        let canvasRevealFrame = null;
+
+        function darkenCanvasUntilStable(delay = 120) {
+            canvasContainer.classList.add('layout-resizing');
+            clearTimeout(canvasSettleTimer);
+            cancelAnimationFrame(canvasRevealFrame);
+            canvasSettleTimer = setTimeout(() => {
+                resizeRendererCanvas();
+                resizeDoodleCanvas();
+                // Let animated renderers paint at the final size before revealing them.
+                canvasRevealFrame = requestAnimationFrame(() => {
+                    canvasRevealFrame = requestAnimationFrame(() => {
+                        canvasContainer.classList.remove('layout-resizing');
+                    });
+                });
+            }, delay);
+        }
+
+        let canvasLayout = canvasContainer.getBoundingClientRect();
+        const canvasResizeObserver = new ResizeObserver(() => {
+            const nextLayout = canvasContainer.getBoundingClientRect();
+            if (nextLayout.width !== canvasLayout.width || nextLayout.height !== canvasLayout.height) {
+                darkenCanvasUntilStable();
+                canvasLayout = nextLayout;
+            }
+        });
+        canvasResizeObserver.observe(canvasContainer);
+
         function setPanelCollapsed(collapsed, manual = false) {
             if (manual) userToggledPanel = true;
             isPanelCollapsed = collapsed;
             const sidebar = document.getElementById('chat-sidebar');
             if (sidebar) {
+                if (sidebar.classList.contains('collapsed') !== collapsed) {
+                    darkenCanvasUntilStable(400);
+                }
                 if (collapsed) {
                     sidebar.classList.add('collapsed');
                 } else {
@@ -7097,10 +7140,6 @@
             if (popoutExpandBtn) {
                 popoutExpandBtn.style.display = collapsed ? 'flex' : 'none';
             }
-            setTimeout(() => {
-                resizeRendererCanvas();
-                resizeDoodleCanvas();
-            }, 360);
         }
 
         if (popoutCollapseBtn) {
