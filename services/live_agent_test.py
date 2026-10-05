@@ -9,6 +9,7 @@ from unittest.mock import ANY, MagicMock, patch
 from components.theater_manager import Theater, TheaterManager
 from services.live_agent import (
     AGENT_INSTRUCTION_TEMPLATE,
+    AUDIENCE_SUGGESTIONS_TEMPLATE,
     DeveloperLiveGemini,
     create_agent,
     create_tool_bundle_for_session,
@@ -103,11 +104,31 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Narratron User Help", AGENT_INSTRUCTION_TEMPLATE)
         self.assertIn("Do not call `send_chat_message`", AGENT_INSTRUCTION_TEMPLATE)
 
-    def test_image_tool_character_naming_instruction_informs_agent(self):
+    def test_image_tool_character_naming_instruction_informs_agent(self) -> None:
         self.assertIn(
             'Use explicit character names in `create_image` prompts so CharacterManager binds their references.',
             AGENT_INSTRUCTION_TEMPLATE,
         )
+
+    def test_audience_suggestions_template_adventure_mode(self) -> None:
+        from jinja2 import Template
+        rendered = Template(AUDIENCE_SUGGESTIONS_TEMPLATE).render(adventure_mode=True)
+        self.assertIn("## Audience Suggestions", rendered)
+        self.assertIn("The top ranked audience suggestion may be provided from time to time.", rendered)
+        self.assertIn("Non-sequitur is explicitly allowed for the sake of fun.", rendered)
+        self.assertIn("process_user_action", rendered)
+        self.assertIn("nudge parameter", rendered)
+        self.assertNotIn("character_tool or notepad_tool", rendered)
+
+    def test_audience_suggestions_template_storytelling_mode(self) -> None:
+        from jinja2 import Template
+        rendered = Template(AUDIENCE_SUGGESTIONS_TEMPLATE).render(adventure_mode=False)
+        self.assertIn("## Audience Suggestions", rendered)
+        self.assertIn("The top ranked audience suggestion may be provided from time to time.", rendered)
+        self.assertIn("Non-sequitur is explicitly allowed for the sake of fun.", rendered)
+        self.assertIn("character_tool or notepad_tool", rendered)
+        self.assertNotIn("process_user_action", rendered)
+        self.assertNotIn("nudge parameter", rendered)
 
     @patch("services.live_agent.get_app_config")
     @patch("services.live_agent.create_tool_bundle_for_session")
@@ -301,7 +322,9 @@ class TestCreateAgent(unittest.TestCase):
 
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
-    def test_create_agent_renders_instruction_sections_in_order(self, mock_agent_cls, mock_bundle_fn):
+    def test_create_agent_renders_instruction_sections_in_order(
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock
+    ) -> None:
         reference_tool = MagicMock()
         reference_tool.name = "list_references"
         reference_tool.func = MagicMock(return_value=[
@@ -323,7 +346,8 @@ class TestCreateAgent(unittest.TestCase):
         create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
-        self.assertLess(instruction.index("# Job Description"), instruction.index("## Preloaded References Context"))
+        self.assertLess(instruction.index("# Job Description"), instruction.index("## Audience Suggestions"))
+        self.assertLess(instruction.index("## Audience Suggestions"), instruction.index("## Preloaded References Context"))
         self.assertLess(instruction.index("## Preloaded References Context"), instruction.index("## SPECIAL INSTRUCTIONS"))
         self.assertLess(instruction.index("## SPECIAL INSTRUCTIONS"), instruction.index("## Startup"))
         self.assertIn("moonlit_keep", instruction)
@@ -333,7 +357,9 @@ class TestCreateAgent(unittest.TestCase):
 
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
-    def test_create_agent_omits_special_instructions_section_when_blank(self, mock_agent_cls, mock_bundle_fn):
+    def test_create_agent_omits_special_instructions_section_when_blank(
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock
+    ) -> None:
         mock_bundle = MagicMock()
         mock_bundle.tools = []
         mock_bundle_fn.return_value = mock_bundle
@@ -345,6 +371,41 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("## SPECIAL INSTRUCTIONS", instruction)
         self.assertIn("No preloaded reference images found.", instruction)
         self.assertIn("## Startup", instruction)
+
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
+    def test_create_agent_renders_audience_suggestions_adventure_mode(
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock,
+    ) -> None:
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+        mock_bundle_fn.return_value = mock_bundle
+
+        theater = make_test_theater("adv_audience", {"story_planning": {"adventure_mode": True}})
+        create_agent(theater=theater, tool_bundle=mock_bundle)
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("## Audience Suggestions", instruction)
+        self.assertIn("process_user_action", instruction)
+        self.assertIn("nudge parameter", instruction)
+        self.assertNotIn("character_tool or notepad_tool", instruction)
+
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
+    def test_create_agent_renders_audience_suggestions_storytelling_mode(
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock,
+    ) -> None:
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+        mock_bundle_fn.return_value = mock_bundle
+
+        theater = make_test_theater("story_audience", {"story_planning": {"adventure_mode": False}})
+        create_agent(theater=theater, tool_bundle=mock_bundle)
+
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("## Audience Suggestions", instruction)
+        self.assertIn("character_tool or notepad_tool", instruction)
+        self.assertNotIn("nudge parameter", instruction)
 
     @patch("services.live_agent.get_text_response_provider")
     @patch("services.live_agent.ImageTools")

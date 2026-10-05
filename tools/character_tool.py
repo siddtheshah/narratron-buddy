@@ -49,7 +49,7 @@ class CharacterTool(BaseTools):
 
         Args:
             name: Character's canonical name.
-            description: Visual appearance and concept description.
+            description: Visual appearance and concept description. Includes clothing, physical attributes, expressions.
             personality: Character's personality traits and behavioral style.
             motivation: Core goals, drives, or motivations in the story.
             quirk: Distinguishing habit, mannerism, or verbal quirk.

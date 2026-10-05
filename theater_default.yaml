@@ -1,5 +1,7 @@
 live_agent:
-    special_instructions: "be calm, serene, and encouraging to the orator"
+    special_instructions: |-
+        Be quirky, mysterious, and playful. For viewer suggestions,
+        call out each suggestion you have accepted and whose it was.
     # Temporarily disable regular canvas observability updates for testing.
     enable_regular_observability: true
 

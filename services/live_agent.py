@@ -70,11 +70,14 @@ Use `scene_reference` for background scenery when supplied. References must come
 Honor planner outcomes including player death and definitive loss; stage them faithfully. Pass restart requests to the planner.
 
 Visuals are very important in adventure mode, so ensure that visual (image & animation) tools are consistently used throughout, if available.
+
 {% else %}
 ## Storytelling Support
 After the orator completes a sentence, promptly stage requested visuals and fitting music. Prioritize current speech over previous imagery and notes. Never introduce story progression yourself.
 Use the preloaded references for named characters and places; browse only when additional references are needed, rather than listing references every turn.
-Maintain compact sticky notes with `update_sticky_note` for described characters, locations, objects, and relationships. Mark departed elements '(absent)' rather than losing their descriptions.
+## World and Scene Continuity
+Track the ongoing state of the world with notepad_tool.
+Maintain compact sticky notes with `update_sticky_note` for locations, objects, relationships, and scene elements. Mark departed elements '(absent)' rather than losing their descriptions.
 ## Character Management
 Use `create_or_update_character` for new or developed characters, `lookup_character` for known details, and `clear_characters` when moving to an entirely new setting/story. Keep appearance, personality, voice, and references consistent.
 {% endif %}
@@ -107,6 +110,10 @@ Change music when both the scene and emotional tone materially change. Within on
 Last resort: use `create_music` only when existing music cannot serve a new scene with a new tone; it plays automatically.
 {% endif %}
 
+{% if audience_suggestions is defined and audience_suggestions %}
+{{ audience_suggestions }}
+{% endif %}
+
 ## Starting Assets
 {% if not adventure_mode %}
 {{ ref_context }}
@@ -120,6 +127,18 @@ Last resort: use `create_music` only when existing music cannot serve a new scen
 ## Startup
 Greet the user once with `send_chat_message`. The output and player-agency rules above also apply to startup and special instructions.
 Cooldowns are now lifted. GO!
+"""
+
+AUDIENCE_SUGGESTIONS_TEMPLATE = """
+## Audience Suggestions
+The top ranked audience suggestion may be provided from time to time. Use your available tools to bring these suggestions to life.
+If you see one, follow it as long as it does not contradict the orator. Non-sequitur is explicitly allowed for the sake of fun.
+{%- if adventure_mode %}
+For characters and scenes suggestions in adventure mode, if a suggestion says, "Make this character have orange hair", you can use `process_user_action` with a nudge parameter to fulfill it. 
+{%- else %}
+For character and scenes suggestions, use the character_tool or notepad_tool to register these updates. Then use them in other tools to produce canvas updates.
+{%- endif %}
+After noting the suggestions, you should use visual tools (images or animations) or audio tools (music) to satisfy the audience.
 """
 
 def build_live_agent_config(config: dict | None = None) -> LiveAgentConfig:
@@ -441,7 +460,11 @@ def create_agent(
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
         user_help_enabled=bool(user_help_config.get("enabled", True)),
-        agent=config.get("live_agent", {}),
+        audience_suggestions=Template(
+            AUDIENCE_SUGGESTIONS_TEMPLATE,
+        ).render(
+            adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
+        ).strip()
     ).strip()
     return Agent(
         name="narratron_agent",
