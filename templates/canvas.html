@@ -3951,7 +3951,8 @@
         const playlistPlaybackState = new Map();
         let bgMusic = new Audio();
         let outgoingMusic = null;
-        let isMuted = false;
+        const MUSIC_MUTED_STORAGE_KEY = 'narratron_music_muted';
+        let isMuted = localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) === 'true';
         let isMusicPausedState = false;
         let lastPlaylistTime = 0;
         let activePlaylistName = null;
@@ -4002,9 +4003,19 @@
         const musicVolumeSlider = document.getElementById('music-volume-slider');
         const volumePercentSpan = document.getElementById('volume-percent');
 
-        // Set initial volume and mute state
+        function setMusicMuted(muted) {
+            isMuted = muted;
+            localStorage.setItem(MUSIC_MUTED_STORAGE_KEY, String(muted));
+            if (bgMusic) bgMusic.muted = muted;
+            if (outgoingMusic) outgoingMusic.muted = muted;
+            musicMuteBtn.textContent = muted ? '🔇 Unmute' : '🔊 Mute';
+            musicMuteBtn.style.background = muted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.08)';
+            musicMuteBtn.style.borderColor = muted ? 'rgba(239, 68, 68, 0.4)' : 'var(--glass-border)';
+        }
+
+        // Set initial volume and restore the user's saved mute preference
         bgMusic.volume = parseFloat(musicVolumeSlider.value);
-        bgMusic.muted = isMuted;
+        setMusicMuted(isMuted);
 
         function setupBgMusicListeners(audioObj) {
             if (!audioObj) return;
@@ -4274,18 +4285,10 @@
         }
 
         musicMuteBtn.addEventListener('click', () => {
-            isMuted = !isMuted;
-            if (bgMusic) bgMusic.muted = isMuted;
-            if (outgoingMusic) outgoingMusic.muted = isMuted;
+            setMusicMuted(!isMuted);
             if (isMuted) {
                 cancelFade();
-                musicMuteBtn.textContent = '🔇 Unmute';
-                musicMuteBtn.style.background = 'rgba(239, 68, 68, 0.2)';
-                musicMuteBtn.style.borderColor = 'rgba(239, 68, 68, 0.4)';
             } else {
-                musicMuteBtn.textContent = '🔊 Mute';
-                musicMuteBtn.style.background = 'rgba(255,255,255,0.08)';
-                musicMuteBtn.style.borderColor = 'var(--glass-border)';
                 // Try to play if it was blocked or paused
                 if (bgMusic && bgMusic.paused && currentPlaylistTracks.length > 0) {
                     bgMusic.volume = 0;
@@ -4303,11 +4306,7 @@
             volumePercentSpan.textContent = Math.round(volume * 100) + '%';
 
             if (volume > 0 && isMuted) {
-                isMuted = false;
-                bgMusic.muted = false;
-                musicMuteBtn.textContent = '🔊 Mute';
-                musicMuteBtn.style.background = 'rgba(255,255,255,0.08)';
-                musicMuteBtn.style.borderColor = 'var(--glass-border)';
+                setMusicMuted(false);
             }
         });
 
