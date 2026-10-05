@@ -5385,6 +5385,7 @@
             canMoveStamp: () => hasContributorsPermission() && !isPagedBack,
             onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
             onRemoveStamp: action => removeStampAnnotation(action),
+            onSelectStamp: action => selectStampAnnotation(action),
         });
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
@@ -5623,6 +5624,8 @@
                     applyTextAnnotation(data);
                 } else if (data.type === 'stamp') {
                     applyStampAnnotation(data);
+                } else if (data.type === 'select_stamp') {
+                    bringStampToFront(data.id);
                 } else if (data.type === 'remove_stamp') {
                     const idx = doodleActions.findIndex(a => a.type === 'stamp' && a.id === data.id);
                     if (idx >= 0) {
@@ -5707,6 +5710,28 @@
             applyTextAnnotation(action);
         }
 
+        function bringStampToFront(stampId) {
+            const index = doodleActions.findIndex(
+                existing => existing.type === 'stamp' && existing.id === stampId
+            );
+            if (index >= 0) {
+                const [selected] = doodleActions.splice(index, 1);
+                doodleActions.push(selected);
+            }
+            const stampLayer = document.getElementById('canvas-stamp-layer');
+            if (stampLayer) {
+                const el = Array.from(stampLayer.children).find(node => node.dataset.annotationId === stampId);
+                if (el && stampLayer.lastElementChild !== el) {
+                    stampLayer.appendChild(el);
+                }
+            }
+        }
+
+        function selectStampAnnotation(action) {
+            bringStampToFront(action.id);
+            sendOrQueueDoodleMessage({ type: 'select_stamp', id: action.id });
+        }
+
         function applyStampAnnotation(action) {
             const index = doodleActions.findIndex(
                 existing => existing.type === 'stamp' && (
@@ -5714,8 +5739,8 @@
                     (String(existing.stamp_id) === String(action.stamp_id) && String(existing.user_id) === String(action.user_id))
                 )
             );
-            if (index >= 0) doodleActions[index] = action;
-            else doodleActions.push(action);
+            if (index >= 0) doodleActions.splice(index, 1);
+            doodleActions.push(action);
             redrawAllDoodles();
         }
 
@@ -6064,10 +6089,9 @@
             );
             if (existingIndex >= 0) {
                 action.id = doodleActions[existingIndex].id || action.id;
-                doodleActions[existingIndex] = action;
-            } else {
-                doodleActions.push(action);
+                doodleActions.splice(existingIndex, 1);
             }
+            doodleActions.push(action);
 
             sendOrQueueDoodleMessage(action);
             redrawAllDoodles();

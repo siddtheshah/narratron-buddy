@@ -256,3 +256,36 @@ def test_stamp_move_and_remove() -> None:
     assert len(state.stamp_annotations()) == 0
     assert state.has_visible_annotations() is False
 
+
+def test_stamp_layering_order_and_select_stamp() -> None:
+    writes: list[bool] = []
+    state = DoodleState(lambda: writes.append(True))
+    stamp_a: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-a", "stamp_id": 1, "user_id": 10,
+        "url": "/api/stamps/1", "name": "Stamp A", "x": 0.1, "y": 0.1, "size": 80.0,
+    }
+    stamp_b: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-b", "stamp_id": 2, "user_id": 10,
+        "url": "/api/stamps/2", "name": "Stamp B", "x": 0.2, "y": 0.2, "size": 80.0,
+    }
+    stamp_c: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-c", "stamp_id": 3, "user_id": 10,
+        "url": "/api/stamps/3", "name": "Stamp C", "x": 0.3, "y": 0.3, "size": 80.0,
+    }
+    state.save_stamp(stamp_a)
+    state.save_stamp(stamp_b)
+    state.save_stamp(stamp_c)
+    assert [s["id"] for s in state.stamp_annotations()] == ["stamp-a", "stamp-b", "stamp-c"]
+
+    # Select stamp A -> moves stamp A to the front (end of list)
+    assert state.select_stamp("stamp-a") is True
+    assert [s["id"] for s in state.stamp_annotations()] == ["stamp-b", "stamp-c", "stamp-a"]
+
+    # Select non-existent stamp -> returns False
+    assert state.select_stamp("stamp-nonexistent") is False
+
+    # Save/move stamp B -> moves stamp B to the front
+    state.save_stamp({**stamp_b, "x": 0.5})
+    assert [s["id"] for s in state.stamp_annotations()] == ["stamp-c", "stamp-a", "stamp-b"]
+
+

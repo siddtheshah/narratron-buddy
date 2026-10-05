@@ -699,9 +699,11 @@
                     (action.id && action.id === data.id) ||
                     (String(action.stamp_id) === String(data.stamp_id) && String(action.user_id) === String(data.user_id))
                 ));
-                if (index >= 0) doodleActions[index] = data;
-                else doodleActions.push(data);
+                if (index >= 0) doodleActions.splice(index, 1);
+                doodleActions.push(data);
                 redrawAllDoodles();
+            } else if (data.type === 'select_stamp') {
+                bringStampToFront(data.id);
             } else if (data.type === 'remove_stamp') {
                 const index = doodleActions.findIndex(action => action.type === 'stamp' && action.id === data.id);
                 if (index >= 0) {
@@ -710,6 +712,23 @@
                 }
             }
         };
+
+        function bringStampToFront(stampId) {
+            const index = doodleActions.findIndex(
+                existing => existing.type === 'stamp' && existing.id === stampId
+            );
+            if (index >= 0) {
+                const [selected] = doodleActions.splice(index, 1);
+                doodleActions.push(selected);
+            }
+            const stampLayer = document.getElementById('canvas-stamp-layer');
+            if (stampLayer) {
+                const el = Array.from(stampLayer.children).find(node => node.dataset.annotationId === stampId);
+                if (el && stampLayer.lastElementChild !== el) {
+                    stampLayer.appendChild(el);
+                }
+            }
+        }
 
         // Initialize Canvas & Start Sync
         resizeRendererCanvas();

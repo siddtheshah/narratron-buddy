@@ -873,14 +873,24 @@ export function createImageRenderer({
     };
 }
 
-export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {} }) {
+export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {}, onSelectStamp = () => {} }) {
     const context = canvas?.getContext("2d");
+
+    let selectedStampItem = null;
 
     function selectMovableStamp(item) {
         if (!stampLayer) return;
+        const previous = selectedStampItem;
+        selectedStampItem = item;
         Array.from(stampLayer.children).forEach(node => node.classList.toggle("movable", node === item));
-        if (item && typeof item.focus === "function") {
-            item.focus();
+        if (item) {
+            stampLayer.appendChild(item);
+            if (typeof item.focus === "function") {
+                item.focus();
+            }
+            if (previous !== item && typeof onSelectStamp === "function" && item.annotation) {
+                onSelectStamp(item.annotation);
+            }
         }
     }
 
@@ -1024,6 +1034,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                     selectMovableStamp(null);
                 }
             });
+            stampLayer.appendChild(item);
+        } else if (stampLayer.lastElementChild !== item) {
             stampLayer.appendChild(item);
         }
         item.annotation = action;

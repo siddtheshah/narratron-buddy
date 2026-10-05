@@ -35,6 +35,7 @@ def test_canvas_html_and_chat_css_stamp_wiring() -> None:
     assert "stampLayer" in renderer_js
     assert "canMoveStamp" in renderer_js
     assert "onMoveStamp" in renderer_js
+    assert "onSelectStamp" in renderer_js
     assert "renderSelectableStamp" in renderer_js
     assert "stamp-resize-handle" in renderer_js
 
@@ -113,6 +114,28 @@ def stamp_page() -> Iterator[Page]:
                 sent.push(action);
             }
 
+            function bringStampToFront(stampId) {
+                const index = doodleActions.findIndex(
+                    existing => existing.type === 'stamp' && existing.id === stampId
+                );
+                if (index >= 0) {
+                    const [selected] = doodleActions.splice(index, 1);
+                    doodleActions.push(selected);
+                }
+                const stampLayer = document.getElementById('canvas-stamp-layer');
+                if (stampLayer) {
+                    const el = Array.from(stampLayer.children).find(node => node.dataset.annotationId === stampId);
+                    if (el && stampLayer.lastElementChild !== el) {
+                        stampLayer.appendChild(el);
+                    }
+                }
+            }
+
+            function selectStampAnnotation(action) {
+                bringStampToFront(action.id);
+                sendOrQueueDoodleMessage({ type: 'select_stamp', id: action.id });
+            }
+
             function applyStampAnnotation(action) {
                 const index = doodleActions.findIndex(
                     existing => existing.type === 'stamp' && (
@@ -120,8 +143,8 @@ def stamp_page() -> Iterator[Page]:
                         (String(existing.stamp_id) === String(action.stamp_id) && String(existing.user_id) === String(action.user_id))
                     )
                 );
-                if (index >= 0) doodleActions[index] = action;
-                else doodleActions.push(action);
+                if (index >= 0) doodleActions.splice(index, 1);
+                doodleActions.push(action);
                 renderer.redraw(doodleActions);
             }
 
@@ -166,10 +189,9 @@ def stamp_page() -> Iterator[Page]:
                 );
                 if (existingIndex >= 0) {
                     action.id = doodleActions[existingIndex].id || action.id;
-                    doodleActions[existingIndex] = action;
-                } else {
-                    doodleActions.push(action);
+                    doodleActions.splice(existingIndex, 1);
                 }
+                doodleActions.push(action);
                 sendOrQueueDoodleMessage(action);
                 renderer.redraw(doodleActions);
             }
@@ -180,6 +202,7 @@ def stamp_page() -> Iterator[Page]:
                 canMoveStamp: () => hasContributorsPermission() && !isPagedBack,
                 onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
                 onRemoveStamp: action => removeStampAnnotation(action),
+                onSelectStamp: action => selectStampAnnotation(action),
             });
 
             function setStampManagerOpen(open) {
@@ -381,5 +404,53 @@ def test_stamps_dynamically_resize_when_canvas_resizes(stamp_page: Page) -> None
     """)
     assert stamp.evaluate("el => el.style.width") == "64px"
     assert stamp.evaluate("el => el.style.height") == "64px"
+
+
+def test_stamp_layering_order_creation_and_selection(stamp_page: Page) -> None:
+    # 1. Place Stamp 10 (Dragon) at (0.3, 0.3)
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.3, 0.3)')
+
+    # 2. Place Stamp 11 (Heart) at (0.35, 0.35)
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 11, name: "Heart", url: "/api/stamps/11"}, 0.35, 0.35)')
+
+    # Heart was created most recently, so Heart must be at the front (last child of #canvas-stamp-layer)
+    assert stamp_page.evaluate('document.getElementById("canvas-stamp-layer").lastElementChild.dataset.annotationId') == stamp_page.evaluate('doodleActions[1].id')
+    assert stamp_page.evaluate('doodleActions[0].stamp_id') == 10
+    assert stamp_page.evaluate('doodleActions[1].stamp_id') == 11
+
+    # 3. Select Dragon (click Stamp 10) -> Dragon must move to front!
+    dragon_id = stamp_page.evaluate('doodleActions[0].id')
+    dragon_locator = stamp_page.locator(f'.canvas-stamp-annotation[data-annotation-id="{dragon_id}"]')
+    dragon_locator.click()
+
+    # Now Dragon should be the last child (at the front)!
+    assert stamp_page.evaluate('document.getElementById("canvas-stamp-layer").lastElementChild.dataset.annotationId') == dragon_id
+    assert stamp_page.evaluate('doodleActions[1].stamp_id') == 10
+    assert stamp_page.evaluate('doodleActions[0].stamp_id') == 11
+
+    # Verify select_stamp message was sent
+    select_messages = stamp_page.evaluate('sent.filter(m => m.type === "select_stamp")')
+    assert len(select_messages) >= 1
+    assert select_messages[-1]["id"] == dragon_id
+
+    # 4. Select Heart (click Stamp 11) -> Heart must move to front!
+    heart_id = stamp_page.evaluate('doodleActions[0].id')
+    heart_locator = stamp_page.locator(f'.canvas-stamp-annotation[data-annotation-id="{heart_id}"]')
+    heart_locator.click()
+
+    assert stamp_page.evaluate('document.getElementById("canvas-stamp-layer").lastElementChild.dataset.annotationId') == heart_id
+    assert stamp_page.evaluate('doodleActions[1].stamp_id') == 11
+    assert stamp_page.evaluate('doodleActions[0].stamp_id') == 10
+
+    # 5. Click background to deselect -> Heart must still remain at the front!
+    stamp_page.locator('#doodle-canvas').click(position={'x': 10, 'y': 10})
+    assert stamp_page.evaluate('document.getElementById("canvas-stamp-layer").lastElementChild.dataset.annotationId') == heart_id
+
+    # 6. Re-placing Dragon replaces it and moves it to the front!
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.7, 0.7)')
+    assert stamp_page.evaluate('document.getElementById("canvas-stamp-layer").lastElementChild.dataset.annotationId') == dragon_id
+    assert stamp_page.evaluate('doodleActions[1].stamp_id') == 10
+    assert stamp_page.evaluate('doodleActions[0].stamp_id') == 11
+
 
 

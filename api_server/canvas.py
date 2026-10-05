@@ -332,6 +332,23 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
         await acknowledge()
         return
 
+    if data.get("type") == "select_stamp":
+        current_user = state.connections.active_user_connections.get(sender)
+        theater_id = sender.state.theater_id
+        deployment = db.get_deployment(theater_id) if theater_id else None
+        user_allowed = True
+        if theater_id:
+            user_allowed = bool(deployment and is_contributor(deployment, current_user=current_user))
+        if not user_allowed:
+            await acknowledge()
+            return
+        action_id = str(data.get("id", ""))
+        if action_id:
+            if state.doodles.select_stamp(action_id):
+                await _broadcast_doodle(state, {"type": "select_stamp", "id": action_id}, sender)
+        await acknowledge()
+        return
+
     if data.get("type") in {"clear", "draw"}:
         state.doodles.add([data])
         await _broadcast_doodle(state, data, sender)
