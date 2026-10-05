@@ -65,7 +65,8 @@ class TestDoodles(UITestCase):
         self.assertIn("canvas.addEventListener('click', beginTextAnnotation);", canvas)
         self.assertIn("else if (data.type === 'text')", canvas)
         self.assertIn('action.type === "text"', renderer)
-        self.assertIn("renderTextAnnotation(data);", obs)
+        self.assertIn("doodleActions[index] = data;", obs)
+        self.assertIn("redrawAllDoodles();", obs)
 
     def test_canvas_retries_active_doodle_websocket_connections(self):
         canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")

@@ -3,6 +3,7 @@
 from collections.abc import Callable
 import io
 import logging
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,24 @@ class DoodleState:
 
     def text_annotations(self) -> list[dict[str, object]]:
         """Return persisted text actions for websocket snapshot replay."""
+        changed = False
+        for action in self.doodles:
+            if action.get("type") == "text" and not action.get("id"):
+                action["id"] = uuid4().hex
+                changed = True
+        if changed:
+            self._persist()
         return [dict(action) for action in self.doodles if action.get("type") == "text"]
+
+    def save_text(self, action: dict[str, str | float]) -> None:
+        """Replace a text annotation in place, preserving its drawing order."""
+        for index, existing in enumerate(self.doodles):
+            if existing.get("type") == "text" and existing.get("id") == action["id"]:
+                self.doodles[index] = dict(action)
+                self._persist()
+                return
+        self.doodles.append(dict(action))
+        self._persist()
 
     def has_visible_annotations(self) -> bool:
         """Return whether the canvas has a stroke or non-empty text annotation."""

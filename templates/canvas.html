@@ -2545,6 +2545,37 @@
             border-color: #0f1115;
         }
 
+        #canvas-text-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            pointer-events: none;
+        }
+
+        .canvas-text-annotation {
+            position: absolute;
+            white-space: pre;
+            color: transparent;
+            pointer-events: auto;
+            user-select: text;
+            cursor: text;
+        }
+
+        .canvas-text-annotation:focus {
+            outline: 1px dashed #c7d2fe;
+        }
+
+        .canvas-text-annotation.movable {
+            outline: 1px dashed #c7d2fe;
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .canvas-text-annotation.dragging {
+            cursor: grabbing;
+        }
+
         .canvas-text-editor {
             position: absolute;
             z-index: 16;
@@ -2773,6 +2804,7 @@
             <img id="ghost-image" src="" alt="" aria-hidden="true"
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
+            <div id="canvas-text-layer"></div>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
             <div id="narration-pane-mount"></div>
             <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title"
@@ -3541,7 +3573,7 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=video-loop-silent-performance-20260906-1";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=movable-text-20261005-2";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
@@ -5043,6 +5075,7 @@
         // so that snapshot cannot overwrite locally drawn strokes.
         const pendingDoodleMessages = [];
         const inFlightDoodleMessages = new Map();
+        const pendingTextEdits = new Map();
         let nextDoodleMessageId = 0;
         let ws = null;
         let doodleSocketReady = false;
@@ -5100,6 +5133,7 @@
             const queuedMessages = pendingDoodleMessages.splice(0);
             for (const message of queuedMessages) {
                 sendOrQueueDoodleMessage(message);
+                if (message.type === 'text') applyTextAnnotation(message);
             }
         }
 
@@ -5155,6 +5189,10 @@
         const doodleRenderer = createDoodleRenderer({
             canvas,
             isVisible: () => doodlesEnabled,
+            textLayer: document.getElementById('canvas-text-layer'),
+            canEditText: () => canAddTextAnnotation() && !isPagedBack,
+            onEditText: action => openTextAnnotationEditor(action),
+            onMoveText: (action, previous, commit) => moveTextAnnotation(action, previous, commit),
         });
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
@@ -5182,6 +5220,11 @@
         }
 
         function refreshCanvasToolInteraction() {
+            const textLayer = document.getElementById('canvas-text-layer');
+            if (textLayer) {
+                textLayer.hidden = !doodlesEnabled || isPagedBack;
+                textLayer.style.zIndex = currentColor !== null ? '4' : '6';
+            }
             const hasCanvasTool = currentColor !== null || textAnnotationMode;
             const canvasInteractive = hasCanvasTool && doodlesEnabled && !isPagedBack;
             canvas.classList.toggle('drawing-disabled', !canvasInteractive);
@@ -5354,11 +5397,15 @@
                     flushQueuedDoodleMessages();
                 } else if (data.type === 'doodle_ack') {
                     inFlightDoodleMessages.delete(data.client_message_id);
+                    pendingTextEdits.delete(data.client_message_id);
                 } else if (data.type === 'text_annotation_rejected') {
                     inFlightDoodleMessages.delete(data.client_message_id);
                     const index = doodleActions.findIndex(action => action.client_message_id === data.client_message_id);
                     if (index >= 0) {
-                        doodleActions.splice(index, 1);
+                        const previous = pendingTextEdits.get(data.client_message_id);
+                        if (previous) doodleActions[index] = previous;
+                        else doodleActions.splice(index, 1);
+                        pendingTextEdits.delete(data.client_message_id);
                         redrawAllDoodles();
                     }
                 } else if (data.type === 'draw_batch') {
@@ -5372,8 +5419,7 @@
                         data.color, data.size || 3
                     );
                 } else if (data.type === 'text') {
-                    doodleActions.push(data);
-                    renderTextAnnotation(data);
+                    applyTextAnnotation(data);
                 } else if (data.type === 'toggle_mic') {
                     if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
                         agentConnectBtn.click();
@@ -5432,20 +5478,43 @@
         function beginTextAnnotation(event) {
             if (!textAnnotationMode || !canAddTextAnnotation() || event.target !== canvas) return;
             event.preventDefault();
+            openTextAnnotationEditor(null, getNormalizedCoords(event));
+        }
+
+        function applyTextAnnotation(action) {
+            const index = doodleActions.findIndex(existing => existing.type === 'text' && existing.id === action.id);
+            if (index >= 0) doodleActions[index] = action;
+            else doodleActions.push(action);
+            redrawAllDoodles();
+        }
+
+        function moveTextAnnotation(action, previous, commit) {
+            if (commit) {
+                action = { ...action };
+                delete action.client_message_id;
+                sendOrQueueDoodleMessage(action);
+                pendingTextEdits.set(action.client_message_id, previous);
+            }
+            applyTextAnnotation(action);
+        }
+
+        function openTextAnnotationEditor(existing, placement = existing) {
+            if (!canAddTextAnnotation() || isPagedBack) return;
             activeTextEditor?.remove();
 
-            const coords = getNormalizedCoords(event);
-            const editor = document.createElement('input');
-            editor.type = 'text';
+            const coords = placement;
+            const editor = document.createElement('textarea');
+            editor.rows = 1;
+            editor.value = existing?.text || '';
             editor.maxLength = 240;
             editor.className = 'canvas-text-editor';
             editor.setAttribute('aria-label', 'Text annotation');
             editor.placeholder = 'Type annotation…';
             editor.style.left = `${coords.x * 100}%`;
             editor.style.top = `${coords.y * 100}%`;
-            editor.style.fontFamily = `"${textAnnotationFont?.value || 'Outfit'}", sans-serif`;
-            editor.style.fontSize = `${textAnnotationSize?.value || 32}px`;
-            editor.style.color = currentTextColor;
+            editor.style.fontFamily = `"${existing?.font || textAnnotationFont?.value || 'Outfit'}", sans-serif`;
+            editor.style.fontSize = `${existing?.size || textAnnotationSize?.value || 32}px`;
+            editor.style.color = existing?.color || currentTextColor;
             imgContainer.appendChild(editor);
             activeTextEditor = editor;
 
@@ -5456,20 +5525,21 @@
                 const text = editor.value.trim();
                 if (commit && text && canAddTextAnnotation()) {
                     const action = {
+                        id: existing?.id || crypto.randomUUID(),
                         type: 'text', x: coords.x, y: coords.y, text,
-                        color: currentTextColor,
-                        size: Number(textAnnotationSize?.value || 32),
-                        font: textAnnotationFont?.value || 'Outfit',
+                        color: existing?.color || currentTextColor,
+                        size: Number(existing?.size || textAnnotationSize?.value || 32),
+                        font: existing?.font || textAnnotationFont?.value || 'Outfit',
                     };
                     sendOrQueueDoodleMessage(action);
-                    doodleActions.push(action);
-                    renderTextAnnotation(action);
+                    if (existing) pendingTextEdits.set(action.client_message_id, existing);
+                    applyTextAnnotation(action);
                 }
                 editor.remove();
                 if (activeTextEditor === editor) activeTextEditor = null;
             };
             editor.addEventListener('keydown', (keyEvent) => {
-                if (keyEvent.key === 'Enter') {
+                if (keyEvent.key === 'Enter' && !keyEvent.shiftKey) {
                     keyEvent.preventDefault();
                     finish(true);
                 } else if (keyEvent.key === 'Escape') {
@@ -5480,6 +5550,7 @@
             });
             editor.addEventListener('blur', () => finish(true), { once: true });
             editor.focus();
+            editor.select();
         }
 
         canvas.addEventListener('click', beginTextAnnotation);

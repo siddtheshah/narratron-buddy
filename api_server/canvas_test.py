@@ -184,7 +184,7 @@ def test_non_orator_cannot_pin_canvas():
     service.get.assert_not_called()
 
 
-def _text_annotation_state(sender, *, collab_enabled: bool):
+def _text_annotation_state(sender: MagicMock, *, collab_enabled: bool) -> MagicMock:
     state = MagicMock()
     state.connections.processed_doodle_message_ids = set()
     state.connections.active_ws_connections = [sender]
@@ -194,7 +194,8 @@ def _text_annotation_state(sender, *, collab_enabled: bool):
 
 
 @pytest.mark.asyncio
-async def test_text_annotation_rejects_non_orator_when_collaboration_is_disabled():
+@pytest.mark.parametrize("annotation_id", [None, "existing-label"])
+async def test_text_annotation_rejects_non_orator_when_collaboration_is_disabled(annotation_id: str | None) -> None:
     sender = MagicMock()
     sender.state.theater_id = "stage"
     sender.send_json = AsyncMock()
@@ -203,12 +204,14 @@ async def test_text_annotation_rejects_non_orator_when_collaboration_is_disabled
     message = {
         "type": "text", "x": 0.2, "y": 0.3, "text": "Nope", "size": 32,
         "font": "Outfit", "color": "#ffffff", "client_message_id": "text-1",
+        "id": annotation_id,
     }
 
     with patch.object(canvas.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
 
     state.doodles.add.assert_not_called()
+    state.doodles.save_text.assert_not_called()
     sender.send_json.assert_any_await(
         {"type": "text_annotation_rejected", "client_message_id": "text-1"}
     )
@@ -217,7 +220,7 @@ async def test_text_annotation_rejects_non_orator_when_collaboration_is_disabled
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("collab_enabled,user_id", [(True, 9), (False, 3)])
-async def test_text_annotation_accepts_collaborating_viewer_or_active_orator(collab_enabled, user_id):
+async def test_text_annotation_accepts_collaborating_viewer_or_active_orator(collab_enabled: bool, user_id: int) -> None:
     sender = MagicMock()
     sender.state.theater_id = "stage"
     sender.send_json = AsyncMock()
@@ -227,15 +230,17 @@ async def test_text_annotation_accepts_collaborating_viewer_or_active_orator(col
     message = {
         "type": "text", "x": 0.2, "y": 0.3, "text": "  A clue  ", "size": 36,
         "font": "Cinzel", "color": "#ffffff", "client_message_id": "text-2",
+        "id": "annotation-2",
     }
 
     with patch.object(canvas.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
 
-    state.doodles.add.assert_called_once_with([{
+    state.doodles.save_text.assert_called_once_with({
+        "id": "annotation-2",
         "type": "text", "x": 0.2, "y": 0.3, "text": "A clue",
         "color": "#ffffff", "size": 36.0, "font": "Cinzel",
-    }])
+    })
     sender.send_json.assert_awaited_once_with({"type": "doodle_ack", "client_message_id": "text-2"})
 
 

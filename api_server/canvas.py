@@ -1,6 +1,7 @@
 """Canvas WebSocket, chat, orator control, and stats API endpoints."""
 
 import asyncio
+from uuid import uuid4
 from typing import Any, Optional
 
 from fastapi import Request, WebSocket, WebSocketDisconnect, HTTPException
@@ -221,7 +222,7 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
 
     if data.get("type") == "text":
         current_user = state.connections.active_user_connections.get(sender)
-        theater_id = getattr(getattr(sender, "state", None), "theater_id", None)
+        theater_id = sender.state.theater_id
         deployment = db.get_deployment(theater_id) if theater_id else None
         is_orator = bool(deployment and can_control_agent_websocket(deployment, current_user=current_user))
         if theater_id and not is_orator and not state.ui.viewer_collab_enabled:
@@ -232,22 +233,25 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
         text = data.get("text")
         font = data.get("font", "Outfit")
         color = data.get("color", "#ffffff")
+        annotation_id = str(data.get("id") or uuid4().hex)
+        if len(annotation_id) > 128:
+            return
         allowed_fonts = {"Outfit", "Bangers", "Cinzel", "MedievalSharp", "Creepster", "Lacquer", "Rubik Glitch"}
         try:
             x, y, size = float(data.get("x")), float(data.get("y")), float(data.get("size", 32))
         except (TypeError, ValueError):
             return
         if (
-            not isinstance(text, str) or not text.strip() or len(text) > 240
+            type(text) is not str or not str(text).strip() or len(str(text)) > 240
             or not 0 <= x <= 1 or not 0 <= y <= 1 or not 12 <= size <= 96
-            or font not in allowed_fonts or not isinstance(color, str) or len(color) > 32
+            or font not in allowed_fonts or type(color) is not str or len(str(color)) > 32
         ):
             return
-        action = {
-            "type": "text", "x": x, "y": y, "text": text.strip(),
-            "color": color, "size": size, "font": font,
+        action: dict[str, str | float] = {
+            "type": "text", "id": annotation_id, "x": x, "y": y, "text": str(text).strip(),
+            "color": str(color), "size": size, "font": str(font),
         }
-        state.doodles.add([action])
+        state.doodles.save_text(action)
         await _broadcast_doodle(state, action, sender)
         await acknowledge()
         return

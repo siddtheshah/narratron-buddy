@@ -91,6 +91,33 @@ def test_doodle_state_replays_and_renders_text_annotations() -> None:
 def test_doodle_state_visible_annotations_ignores_empty_text() -> None:
     state = DoodleState(lambda: None)
     assert state.has_visible_annotations() is False
+
+
+def test_text_edits_replace_saved_annotation_and_observability_pixels(tmp_path: Path) -> None:
+    image_path = tmp_path / "scene.png"
+    Image.new("RGB", (300, 180), "black").save(image_path)
+    state = DoodleState(lambda: None)
+    original: dict[str, str | float] = {
+        "type": "text", "id": "label", "x": 0.1, "y": 0.1,
+        "text": "First", "color": "#ffffff", "size": 32.0, "font": "Outfit",
+    }
+    state.save_text(original)
+    before = state.snapshot_png(str(image_path))
+    state.save_text({**original, "text": "Edited clue"})
+    assert len(state.doodles) == 1
+    assert state.text_annotations()[0]["text"] == "Edited clue"
+    assert state.snapshot_png(str(image_path)) != before
+    reloaded = DoodleState(lambda: None)
+    reloaded.load(state.serialize())
+    assert reloaded.text_annotations() == state.text_annotations()
+
+
+def test_legacy_text_gets_stable_identity_for_editing() -> None:
+    state = DoodleState(lambda: None)
+    state.add([{"type": "text", "text": "Legacy"}])
+    first = state.text_annotations()
+    assert first[0]["id"]
+    assert state.text_annotations() == first
     state.doodles = [{"type": "text", "text": "   "}]
     assert state.has_visible_annotations() is False
     state.doodles.append({"type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1})

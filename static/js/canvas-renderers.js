@@ -874,8 +874,93 @@ export function createImageRenderer({
 }
 
 /** Draws normalized doodle segments and replays them after canvas resizes. */
-export function createDoodleRenderer({ canvas, isVisible = () => true }) {
+export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {} }) {
     const context = canvas?.getContext("2d");
+
+    function selectMovableText(label) {
+        if (!textLayer) return;
+        Array.from(textLayer.children).forEach(node => node.classList.toggle("movable", node === label));
+    }
+
+    textLayer?.parentElement.addEventListener("pointerdown", event => {
+        if (!event.target.closest(".canvas-text-annotation")) selectMovableText(null);
+    });
+
+    function renderSelectableText(action) {
+        if (!textLayer || !action.id) return;
+        let label = Array.from(textLayer.children).find(node => node.dataset.annotationId === action.id);
+        if (!label) {
+            label = document.createElement("span");
+            label.className = "canvas-text-annotation";
+            label.dataset.annotationId = action.id;
+            label.tabIndex = 0;
+            label.title = "Click to select, then drag to move; double-click or press Enter to edit";
+            let drag = null;
+            label.addEventListener("click", event => {
+                event.stopPropagation();
+                if (canEditText()) selectMovableText(label);
+            });
+            label.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || !canEditText() || !label.classList.contains("movable")) return;
+                event.preventDefault();
+                drag = {original: label.annotation, x: event.clientX, y: event.clientY, moved: false};
+                label.setPointerCapture(event.pointerId);
+            });
+            label.addEventListener("pointermove", event => {
+                if (!drag || !canEditText()) return;
+                const dx = event.clientX - drag.x;
+                const dy = event.clientY - drag.y;
+                if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+                const rect = canvas.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                drag.moved = true;
+                label.classList.add("dragging");
+                onMoveText({...drag.original,
+                    x: Math.max(0, Math.min(1, Number(drag.original.x) + dx / rect.width)),
+                    y: Math.max(0, Math.min(1, Number(drag.original.y) + dy / rect.height)),
+                }, drag.original, false);
+            });
+            const finishMove = event => {
+                if (!drag) return;
+                const finished = drag;
+                drag = null;
+                label.classList.remove("dragging");
+                if (label.hasPointerCapture(event.pointerId)) label.releasePointerCapture(event.pointerId);
+                if (!finished.moved) return;
+                if (event.type === "pointerup" && canEditText()) {
+                    onMoveText(label.annotation, finished.original, true);
+                } else {
+                    onMoveText(finished.original, finished.original, false);
+                }
+            };
+            label.addEventListener("pointerup", finishMove);
+            label.addEventListener("pointercancel", finishMove);
+            label.addEventListener("lostpointercapture", finishMove);
+            label.addEventListener("dblclick", event => {
+                event.stopPropagation();
+                if (canEditText()) {
+                    selectMovableText(null);
+                    onEditText(label.annotation);
+                }
+            });
+            label.addEventListener("keydown", event => {
+                if (event.key === "Enter" && canEditText()) {
+                    event.preventDefault();
+                    selectMovableText(null);
+                    onEditText(label.annotation);
+                } else if (event.key === "Escape") {
+                    selectMovableText(null);
+                }
+            });
+            textLayer.appendChild(label);
+        }
+        label.annotation = action;
+        label.textContent = String(action.text).split("\n").slice(0, 4).join("\n");
+        label.style.left = `${Number(action.x) * 100}%`;
+        label.style.top = `${Number(action.y) * 100}%`;
+        label.style.font = `600 ${Math.max(12, Number(action.size) || 32)}px "${String(action.font || "Outfit").replace(/["'`;{}]/g, "")}", sans-serif`;
+        label.style.lineHeight = "1.15";
+    }
 
     function renderText(action) {
         if (!context || !canvas || !action?.text) return;
@@ -901,6 +986,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true }) {
             context.fillText(line, x, lineY);
         });
         context.restore();
+        renderSelectableText(action);
     }
 
     function renderSegment(x0, y0, x1, y1, color, size) {
@@ -926,6 +1012,14 @@ export function createDoodleRenderer({ canvas, isVisible = () => true }) {
 
     function redraw(actions) {
         if (!canvas || !context) return;
+
+        if (textLayer) {
+            const ids = new Set(actions.filter(action => action.type === "text").map(action => action.id));
+            Array.from(textLayer.children).forEach(label => {
+                if (!ids.has(label.dataset.annotationId)) label.remove();
+            });
+            textLayer.hidden = !isVisible();
+        }
 
         const rect = canvas.getBoundingClientRect();
         context.clearRect(0, 0, rect.width, rect.height);
