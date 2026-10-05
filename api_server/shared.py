@@ -14,10 +14,11 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import object_registry
-from api_server.dependencies import FLAGS, canvas_states, db, theater_manager, theater_repository, SERVER_RUN_ID  # noqa: F401
+from api_server.dependencies import FLAGS, canvas_states, db, theater_manager, theater_repository, SERVER_RUN_ID, stamp_storage  # noqa: F401
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from storage.database import DatabaseConnectionTimeout
+from storage.stamp_storage import ensure_stamps_root
 
 # Project root is one level above api_server/
 PROJECT_ROOT = object_registry.PROJECT_ROOT
@@ -62,6 +63,10 @@ app.mount("/reference_library", StaticFiles(directory=ref_library_folder), name=
 # Artwork used by the public join-page background carousel.
 carousel_folder = str((PROJECT_ROOT / "templates" / "carousel").resolve())
 app.mount("/carousel", StaticFiles(directory=carousel_folder), name="carousel")
+
+# Stamp images stored locally or in mounted GCS storage.
+stamps_folder = str(ensure_stamps_root())
+app.mount("/stamps", StaticFiles(directory=stamps_folder), name="stamps")
 
 
 _SAFE_PARAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.() \-]*$')

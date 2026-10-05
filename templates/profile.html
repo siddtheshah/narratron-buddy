@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
   <script src="/static/js/auth-flow.js"></script>
   <style>
-    :root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}main{max-width:760px;margin:4rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin:0}.identity{display:flex;align-items:center;gap:.7rem}.swatch{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.7)}.section{font-size:1rem;margin:2rem 0 .6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}p{line-height:1.55;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem}.stat{padding:1rem;border-radius:12px;background:rgba(255,255,255,.045)}.stat b{display:block;font-size:1.45rem}.stat span,label{color:var(--muted);font-size:.88rem}textarea,input[type="text"],input[type="number"]{width:100%;padding:.8rem;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}textarea{min-height:130px;resize:vertical}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer;transition:all .15s ease}#status{margin-left:.75rem;color:#86efac}.gift-box{margin-top:2rem;padding:1.25rem;border:1px solid rgba(129,140,248,.35);border-radius:12px;background:rgba(99,102,241,.08)}.gift-box p{margin:.4rem 0 1rem;color:var(--muted);font-size:.9rem}.gift-row{display:flex;gap:.75rem;align-items:center}.gift-row input{max-width:180px}.gift-link{margin-top:.85rem;color:#a5b4fc;word-break:break-all;font-size:.9rem}.danger-section{margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid rgba(239,68,68,.2)}.danger-box{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:1.25rem;margin-top:1rem}.danger-btn{background:transparent;color:#f87171;border:1px solid rgba(239,68,68,.4)}.danger-btn:hover{background:rgba(239,68,68,.15);border-color:#f87171}.danger-confirm-btn{background:#dc2626;color:white;border:0}.danger-confirm-btn:disabled{opacity:.4;cursor:not-allowed}.cancel-btn{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--border);margin-right:.75rem}.cancel-btn:hover{background:rgba(255,255,255,.14)}
+    :root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}main{max-width:760px;margin:4rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin:0}.identity{display:flex;align-items:center;gap:.7rem}.swatch{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.7)}.section{font-size:1rem;margin:2rem 0 .6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}p{line-height:1.55;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem}.stat{padding:1rem;border-radius:12px;background:rgba(255,255,255,.045)}.stat b{display:block;font-size:1.45rem}.stat span,label{color:var(--muted);font-size:.88rem}textarea,input[type="text"],input[type="number"]{width:100%;padding:.8rem;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}textarea{min-height:130px;resize:vertical}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer;transition:all .15s ease}#status{margin-left:.75rem;color:#86efac}.gift-box{margin-top:2rem;padding:1.25rem;border:1px solid rgba(129,140,248,.35);border-radius:12px;background:rgba(99,102,241,.08)}.gift-box p{margin:.4rem 0 1rem;color:var(--muted);font-size:.9rem}.gift-row{display:flex;gap:.75rem;align-items:center}.gift-row input{max-width:180px}.gift-link{margin-top:.85rem;color:#a5b4fc;word-break:break-all;font-size:.9rem}.danger-section{margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid rgba(239,68,68,.2)}.danger-box{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:1.25rem;margin-top:1rem}.danger-btn{background:transparent;color:#f87171;border:1px solid rgba(239,68,68,.4)}.danger-btn:hover{background:rgba(239,68,68,.15);border-color:#f87171}.danger-confirm-btn{background:#dc2626;color:white;border:0}.danger-confirm-btn:disabled{opacity:.4;cursor:not-allowed}.cancel-btn{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--border);margin-right:.75rem}.cancel-btn:hover{background:rgba(255,255,255,.14)}.stamps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.85rem;margin-top:.8rem}.stamp-card{position:relative;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px;padding:.75rem;display:flex;flex-direction:column;align-items:center;text-align:center;transition:transform .18s ease,border-color .18s ease}.stamp-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.4)}.stamp-thumb-wrap{width:76px;height:76px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);border-radius:8px;overflow:hidden;margin-bottom:.5rem}.stamp-thumb{max-width:100%;max-height:100%;object-fit:contain}.stamp-title{font-size:.82rem;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;margin-bottom:.4rem}.stamp-delete-btn{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:.3rem .55rem;font-size:.75rem;cursor:pointer;width:100%;transition:background .15s ease}.stamp-delete-btn:hover{background:rgba(239,68,68,.25);color:#fee2e2}.stamp-upload-box{margin-top:1.25rem;padding:1.25rem;border:1px dashed rgba(129,140,248,.35);border-radius:12px;background:rgba(99,102,241,.04)}.stamp-upload-form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin-top:.75rem}.stamp-upload-form input[type="file"]{display:none}.stamp-file-label{display:inline-flex;align-items:center;gap:.5rem;padding:.6rem .9rem;background:rgba(255,255,255,.08);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.85rem;color:var(--text);margin:0;transition:background .15s ease}.stamp-file-label:hover{background:rgba(255,255,255,.14)}.stamp-file-name{font-size:.82rem;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   </style>
 </head>
 <body>
@@ -60,7 +60,50 @@
           </div>
         </div>
       ` : '';
-      el.innerHTML = `<div class="identity"><span class="swatch" style="background:${color}"></span><h1 style="color:${color}">${esc(profile.username)}</h1></div><h2 class="section">Bio</h2><p>${bio}</p><h2 class="section">Stats</h2>${stats}${editor}`;
+
+      const stamps = Array.isArray(profile.stamps) ? profile.stamps : [];
+      const stampCount = stamps.length;
+      let stampsHtml = '';
+      if (stampCount === 0) {
+        stampsHtml = '<p class="empty" id="stamps-empty">No stamps stored yet.</p>';
+      } else {
+        stampsHtml = '<div class="stamps-grid" id="stamps-grid">';
+        for (const stamp of stamps) {
+          stampsHtml += `
+            <div class="stamp-card" id="stamp-card-${stamp.id}">
+              <div class="stamp-thumb-wrap">
+                <img src="${esc(stamp.url || '/api/stamps/' + stamp.id)}" alt="${esc(stamp.name)}" class="stamp-thumb" loading="lazy">
+              </div>
+              <div class="stamp-title" title="${esc(stamp.name)}">${esc(stamp.name)}</div>
+              ${profile.is_owner ? `<button type="button" class="stamp-delete-btn" onclick="deleteStamp(${stamp.id})">Delete</button>` : ''}
+            </div>
+          `;
+        }
+        stampsHtml += '</div>';
+      }
+
+      const stampsUploadSection = profile.is_owner ? `
+        <div class="stamp-upload-box" id="stamp-upload-section">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.9rem;font-weight:500;color:#c7d2fe;">Upload a new stamp</span>
+            <span style="font-size:0.82rem;color:var(--muted);">${stampCount} / 10 used</span>
+          </div>
+          ${stampCount < 10 ? `
+            <div class="stamp-upload-form">
+              <label class="stamp-file-label" for="stamp-file-input">Choose Image</label>
+              <input id="stamp-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+              <span id="stamp-file-chosen" class="stamp-file-name">No file chosen</span>
+              <input id="stamp-name-input" type="text" placeholder="Stamp name (optional)" style="max-width:180px;padding:0.6rem;">
+              <button id="stamp-upload-btn" type="button" style="padding:0.6rem 1rem;">Upload</button>
+              <span id="stamp-upload-status" style="font-size:0.85rem;margin-left:0.5rem;"></span>
+            </div>
+          ` : `
+            <p style="margin:0.6rem 0 0;font-size:0.88rem;color:#fca5a5;">You have reached the maximum limit of 10 stamps. Delete an existing stamp to upload a new one.</p>
+          `}
+        </div>
+      ` : '';
+
+      el.innerHTML = `<div class="identity"><span class="swatch" style="background:${color}"></span><h1 style="color:${color}">${esc(profile.username)}</h1></div><h2 class="section">Bio</h2><p>${bio}</p><h2 class="section">Stats</h2>${stats}<h2 class="section">Stamps (${stampCount} / 10)</h2>${stampsHtml}${stampsUploadSection}${editor}`;
       if (profilePicker) profilePicker.destroyAndRemove();
       selectedProfileColor = color;
       if (profile.is_owner && window.Pickr) {
@@ -153,9 +196,78 @@
           }
         };
       }
+
+      window.deleteStamp = async function(stampId) {
+        if (!confirm('Are you sure you want to delete this stamp?')) return;
+        try {
+          const resp = await fetch(`/api/users/me/stamps/${stampId}`, { method: 'DELETE' });
+          if (resp.ok) {
+            load();
+          } else {
+            const err = await resp.json().catch(() => ({}));
+            alert(err.detail || 'Could not delete stamp.');
+          }
+        } catch (_) {
+          alert('Network error while deleting stamp.');
+        }
+      };
+
+      const stampFileInput = document.getElementById('stamp-file-input');
+      const stampFileChosen = document.getElementById('stamp-file-chosen');
+      const stampUploadBtn = document.getElementById('stamp-upload-btn');
+      const stampNameInput = document.getElementById('stamp-name-input');
+      const stampUploadStatus = document.getElementById('stamp-upload-status');
+
+      if (stampFileInput && stampFileChosen) {
+        stampFileInput.onchange = () => {
+          const file = stampFileInput.files[0];
+          stampFileChosen.textContent = file ? file.name : 'No file chosen';
+          if (file && stampNameInput && !stampNameInput.value.trim()) {
+            stampNameInput.value = file.name.replace(/\.[^/.]+$/, '');
+          }
+        };
+      }
+
+      if (stampUploadBtn) {
+        stampUploadBtn.onclick = async () => {
+          if (!stampFileInput || !stampFileInput.files.length) {
+            stampUploadStatus.style.color = '#f87171';
+            stampUploadStatus.textContent = 'Please choose an image file first.';
+            return;
+          }
+          const file = stampFileInput.files[0];
+          const formData = new FormData();
+          formData.append('file', file);
+          if (stampNameInput && stampNameInput.value.trim()) {
+            formData.append('name', stampNameInput.value.trim());
+          }
+          stampUploadBtn.disabled = true;
+          stampUploadStatus.style.color = 'var(--muted)';
+          stampUploadStatus.textContent = 'Uploading stamp…';
+          try {
+            const resp = await fetch('/api/users/me/stamps', {
+              method: 'POST',
+              body: formData,
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+              stampUploadStatus.style.color = '#86efac';
+              stampUploadStatus.textContent = 'Stamp uploaded!';
+              load();
+            } else {
+              stampUploadStatus.style.color = '#f87171';
+              stampUploadStatus.textContent = data.detail || 'Could not upload stamp.';
+              stampUploadBtn.disabled = false;
+            }
+          } catch (_) {
+            stampUploadStatus.style.color = '#f87171';
+            stampUploadStatus.textContent = 'Network error while uploading stamp.';
+            stampUploadBtn.disabled = false;
+          }
+        };
+      }
     }
     load();
   </script>
 </body>
 </html>
-

@@ -1032,10 +1032,85 @@ class TestPostgresSchemaAndTables(BaseTestCase):
             self.assertIsNotNone(row)
             self.assertEqual(row["count"], 1)
 
-    def test_localtest_seeded_on_init(self):
+    def test_localtest_seeded_on_init(self) -> None:
         user = self.db.authenticate_user("localtest", "narratron")
         self.assertIsNotNone(user)
-        self.assertEqual(user["credits"], 2000.0)
+        if user is not None:
+            self.assertEqual(user["credits"], 2000.0)
+
+    def test_user_stamps_crud_and_limit(self) -> None:
+        user = self.db.register_user("stamptester", "stamptester@example.com", "pass123")
+        user_id = int(user["id"])
+
+        self.assertEqual(self.db.count_user_stamps(user_id), 0)
+        self.assertEqual(self.db.get_user_stamps(user_id), [])
+
+        # Create 10 stamps
+        stamp_ids = []
+        for i in range(10):
+            stamp = self.db.create_user_stamp(
+                user_id=user_id,
+                name=f"Stamp {i}",
+                filename=f"stamp_{i}.png",
+                content_type="image/png",
+            )
+            self.assertEqual(stamp["name"], f"Stamp {i}")
+            self.assertEqual(stamp["filename"], f"stamp_{i}.png")
+            stamp_ids.append(int(stamp["id"]))
+
+        self.assertEqual(self.db.count_user_stamps(user_id), 10)
+        stamps = self.db.get_user_stamps(user_id)
+        self.assertEqual(len(stamps), 10)
+
+        # 11th stamp must fail
+        with self.assertRaises(ValueError):
+            self.db.create_user_stamp(
+                user_id=user_id,
+                name="Overflow Stamp",
+                filename="overflow.png",
+                content_type="image/png",
+            )
+
+        # Profile includes stamps
+        profile = self.db.get_user_profile("stamptester", user_id)
+        self.assertIsNotNone(profile)
+        if profile is not None:
+            self.assertEqual(len(profile["stamps"]), 10)
+
+        # Delete one stamp
+        deleted = self.db.delete_user_stamp(stamp_ids[0], user_id)
+        self.assertTrue(deleted)
+        self.assertEqual(self.db.count_user_stamps(user_id), 9)
+
+        # Now creating a 10th stamp succeeds
+        new_stamp = self.db.create_user_stamp(
+            user_id=user_id,
+            name="New 10th Stamp",
+            filename="new_10.png",
+            content_type="image/png",
+        )
+        self.assertIsNotNone(new_stamp)
+        self.assertEqual(self.db.count_user_stamps(user_id), 10)
+
+    def test_user_stamps_async_methods(self) -> None:
+        user = self.db.register_user("asyncstamper", "asyncstamper@example.com", "pass123")
+        user_id = int(user["id"])
+
+        async def _run() -> None:
+            stamp = await self.db.create_user_stamp_async(
+                user_id=user_id,
+                name="Async Stamp",
+                filename="async.png",
+                content_type="image/png",
+            )
+            self.assertEqual(stamp["name"], "Async Stamp")
+            stamps = await self.db.get_user_stamps_async(user_id)
+            self.assertEqual(len(stamps), 1)
+
+            deleted = await self.db.delete_user_stamp_async(int(stamp["id"]), user_id)
+            self.assertTrue(deleted)
+
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":

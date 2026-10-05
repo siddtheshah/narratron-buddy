@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 from queue import Empty, Queue
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Union
 import logging
 import re
 from dotenv import load_dotenv
@@ -667,6 +667,7 @@ class _DatabaseManagerBase:
             else:
                 profile.pop("lifetime_credits_used", None)
                 profile["stats"] = None
+            profile["stamps"] = self.get_user_stamps(profile_user_id)
             return profile
 
     def update_user_profile(self, user_id: int, bio: str, stats_visible: bool, profile_color: str) -> bool:
@@ -682,6 +683,123 @@ class _DatabaseManagerBase:
                 (bio.strip(), int(stats_visible), profile_color.lower(), user_id),
             )
             return cursor.rowcount > 0
+
+    def get_user_by_username(
+        self, username: str
+    ) -> Optional[Dict[str, Union[str, int, float, bool, None]]]:
+        """Retrieve user record by username."""
+        clean_username = username.strip()
+        if not clean_username:
+            return None
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, "
+                "total_music_created, total_story_plans, total_character_voiced_turns, "
+                "total_interactive_canvas_used, mic_sensitivity, bio, stats_visible, "
+                "lifetime_credits_used, profile_color, created_at, last_active_at "
+                "FROM users WHERE LOWER(username) = LOWER(?)",
+                (clean_username,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_user_stamps(self, user_id: int) -> List[Dict[str, Union[int, str]]]:
+        """Return all stamps saved by the specified user, ordered by ID."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, user_id, name, filename, content_type, created_at "
+                "FROM user_stamps WHERE user_id = ? ORDER BY id ASC",
+                (user_id,),
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def get_user_stamp(self, stamp_id: int, user_id: int) -> Optional[Dict[str, Union[int, str]]]:
+        """Retrieve a specific stamp owned by the specified user."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, user_id, name, filename, content_type, created_at "
+                "FROM user_stamps WHERE id = ? AND user_id = ?",
+                (stamp_id, user_id),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_stamp_by_id(self, stamp_id: int) -> Optional[Dict[str, Union[int, str]]]:
+        """Retrieve a stamp by its global ID."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, user_id, name, filename, content_type, created_at "
+                "FROM user_stamps WHERE id = ?",
+                (stamp_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def count_user_stamps(self, user_id: int) -> int:
+        """Return the number of stamps owned by the specified user."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) AS count FROM user_stamps WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            return int(row["count"]) if row else 0
+
+    def create_user_stamp(
+        self, user_id: int, name: str, filename: str, content_type: str
+    ) -> Dict[str, Union[int, str]]:
+        """Create a stamp record in the database, enforcing the 10-stamp limit."""
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Stamp name cannot be empty.")
+        clean_filename = filename.strip()
+        if not clean_filename:
+            raise ValueError("Stamp filename cannot be empty.")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) AS count FROM user_stamps WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            current_count = int(row["count"]) if row else 0
+            if current_count >= 10:
+                raise ValueError("Users may store a maximum of 10 stamps.")
+
+            created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cursor.execute(
+                "INSERT INTO user_stamps (user_id, name, filename, content_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?) RETURNING id",
+                (user_id, clean_name, clean_filename, content_type.strip(), created_at),
+            )
+            stamp_id = cursor.fetchone()["id"]
+            conn.commit()
+            return {
+                "id": stamp_id,
+                "user_id": user_id,
+                "name": clean_name,
+                "filename": clean_filename,
+                "content_type": content_type.strip(),
+                "created_at": created_at,
+            }
+
+    def delete_user_stamp(self, stamp_id: int, user_id: int) -> bool:
+        """Delete a stamp owned by the specified user."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM user_stamps WHERE id = ? AND user_id = ?",
+                (stamp_id, user_id),
+            )
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
 
     def create_credit_gift(self, sender_user_id: int, credits: float) -> Dict[str, Any]:
         """Create a single-use, seven-day credit gift without reserving funds."""
@@ -1847,6 +1965,26 @@ class _DatabaseManagerBase:
 
     async def delete_user_async(self, user_id: int) -> bool:
         return await asyncio.to_thread(self.delete_user, user_id)
+
+    async def get_user_stamps_async(
+        self, user_id: int
+    ) -> List[Dict[str, Union[int, str]]]:
+        return await asyncio.to_thread(self.get_user_stamps, user_id)
+
+    async def get_user_stamp_async(
+        self, stamp_id: int, user_id: int
+    ) -> Optional[Dict[str, Union[int, str]]]:
+        return await asyncio.to_thread(self.get_user_stamp, stamp_id, user_id)
+
+    async def create_user_stamp_async(
+        self, user_id: int, name: str, filename: str, content_type: str
+    ) -> Dict[str, Union[int, str]]:
+        return await asyncio.to_thread(
+            self.create_user_stamp, user_id, name, filename, content_type
+        )
+
+    async def delete_user_stamp_async(self, stamp_id: int, user_id: int) -> bool:
+        return await asyncio.to_thread(self.delete_user_stamp, stamp_id, user_id)
 
 
 class LocalDatabaseManager(_DatabaseManagerBase):

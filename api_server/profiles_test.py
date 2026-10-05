@@ -106,3 +106,153 @@ def test_credit_gift_rejects_missing_or_invalid_public_origin():
         with pytest.raises(HTTPException) as error:
             profiles.create_credit_gift(profiles.CreditGiftRequest(credits=1), request())
     assert error.value.status_code == 500
+
+
+class DummyUploadFile:
+    def __init__(self, filename: str, content: bytes) -> None:
+        self.filename = filename
+        self._content = content
+
+    async def read(self) -> bytes:
+        return self._content
+
+
+def _png_bytes() -> bytes:
+    import io
+    from PIL import Image
+    img = Image.new("RGBA", (50, 50), (255, 0, 0, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_get_user_stamps_success() -> None:
+    registry_db = MagicMock()
+    registry_db.get_user_profile.return_value = {"username": "Ada"}
+    registry_db.get_user_by_username.return_value = {"id": 8, "username": "Ada"}
+    registry_db.get_user_stamps.return_value = [
+        {"id": 1, "user_id": 8, "name": "Star", "filename": "star.png", "content_type": "image/png"}
+    ]
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}):
+        stamps = profiles.get_user_stamps_endpoint("Ada", request())
+    assert len(stamps) == 1
+    assert stamps[0]["name"] == "Star"
+    assert stamps[0]["url"] == "/api/stamps/1"
+
+
+@pytest.mark.asyncio
+async def test_upload_stamp_requires_login() -> None:
+    dummy_file = DummyUploadFile("cat.png", _png_bytes())
+    with patch.object(profiles, "get_current_user", return_value=None), \
+         pytest.raises(HTTPException) as err:
+        await profiles.upload_stamp(request(), dummy_file, "Cat")
+    assert err.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_upload_stamp_enforces_10_limit() -> None:
+    dummy_file = DummyUploadFile("cat.png", _png_bytes())
+    registry_db = MagicMock()
+    registry_db.count_user_stamps.return_value = 10
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         pytest.raises(HTTPException) as err:
+        await profiles.upload_stamp(request(), dummy_file, "Cat")
+    assert err.value.status_code == 400
+    assert "Maximum limit of 10 stamps reached" in str(err.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_upload_stamp_rejects_empty_file() -> None:
+    dummy_file = DummyUploadFile("empty.png", b"")
+    registry_db = MagicMock()
+    registry_db.count_user_stamps.return_value = 2
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         pytest.raises(HTTPException) as err:
+        await profiles.upload_stamp(request(), dummy_file, "Empty")
+    assert err.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_stamp_success() -> None:
+    dummy_file = DummyUploadFile("star.png", _png_bytes())
+    registry_db = MagicMock()
+    registry_db.count_user_stamps.return_value = 3
+    registry_db.create_user_stamp.return_value = {
+        "id": 12,
+        "user_id": 8,
+        "name": "Star",
+        "filename": "abc_star.png",
+        "content_type": "image/png",
+    }
+    registry_storage = MagicMock()
+    registry_storage.save_stamp.return_value = "abc_star.png"
+
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "stamp_storage", registry_storage), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         patch.object(profiles.auth_session_cache, "invalidate_user"):
+        result = await profiles.upload_stamp(request(), dummy_file, "Star")
+
+    assert result["id"] == 12
+    assert result["url"] == "/api/stamps/12"
+    registry_storage.save_stamp.assert_called_once()
+    registry_db.create_user_stamp.assert_called_once_with(8, "Star", "abc_star.png", "image/png")
+
+
+def test_delete_stamp_requires_login() -> None:
+    with patch.object(profiles, "get_current_user", return_value=None), \
+         pytest.raises(HTTPException) as err:
+        profiles.delete_stamp_endpoint(5, request())
+    assert err.value.status_code == 401
+
+
+def test_delete_stamp_not_found() -> None:
+    registry_db = MagicMock()
+    registry_db.get_user_stamp.return_value = None
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         pytest.raises(HTTPException) as err:
+        profiles.delete_stamp_endpoint(99, request())
+    assert err.value.status_code == 404
+
+
+def test_delete_stamp_success() -> None:
+    registry_db = MagicMock()
+    registry_db.get_user_stamp.return_value = {
+        "id": 5, "user_id": 8, "name": "Star", "filename": "star.png"
+    }
+    registry_storage = MagicMock()
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "stamp_storage", registry_storage), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         patch.object(profiles.auth_session_cache, "invalidate_user"):
+        result = profiles.delete_stamp_endpoint(5, request())
+    assert result["status"] == "ok"
+    registry_storage.delete_stamp.assert_called_once_with(8, "star.png")
+    registry_db.delete_user_stamp.assert_called_once_with(5, 8)
+
+
+def test_get_stamp_endpoint_success() -> None:
+    registry_db = MagicMock()
+    registry_db.get_stamp_by_id.return_value = {
+        "id": 5, "user_id": 8, "name": "Star", "filename": "star.png", "content_type": "image/png"
+    }
+    registry_storage = MagicMock()
+    registry_storage.read_stamp.return_value = b"\x89PNGfake"
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "stamp_storage", registry_storage):
+        resp = profiles.get_stamp_endpoint(5)
+    assert resp.body == b"\x89PNGfake"
+    assert resp.media_type == "image/png"
+
+
+def test_get_stamp_endpoint_not_found() -> None:
+    registry_db = MagicMock()
+    registry_db.get_stamp_by_id.return_value = None
+    with patch.object(object_registry, "db", registry_db), \
+         pytest.raises(HTTPException) as err:
+        profiles.get_stamp_endpoint(999)
+    assert err.value.status_code == 404

@@ -1,12 +1,15 @@
 """Public user profile routes and owner profile settings."""
 
 import os
+from pathlib import Path
+from typing import Optional, Union
 from urllib.parse import urlsplit
 
-from fastapi import HTTPException, Request, Response
+from fastapi import File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from api_server.shared import app, db, get_current_user
+from api_server.shared import app, db, get_current_user, stamp_storage
+from storage.stamp_storage import process_stamp_image
 from utils.auth_cache import auth_session_cache
 
 
@@ -116,3 +119,102 @@ def delete_my_account(request: Request, response: Response):
     db.delete_user(user_id)
     response.delete_cookie("auth_token")
     return {"status": "ok", "message": "Account deleted successfully."}
+
+
+@app.get("/api/users/{username}/stamps")
+def get_user_stamps_endpoint(username: str, request: Request) -> list[dict[str, Union[int, str]]]:
+    """List all stamps for the specified user."""
+    _profile_or_404(username, request)
+    target_user = db.get_user_by_username(username)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    stamps = db.get_user_stamps(int(target_user["id"]))
+    return [
+        {
+            **stamp,
+            "url": f"/api/stamps/{stamp['id']}",
+        }
+        for stamp in stamps
+    ]
+
+
+@app.post("/api/users/me/stamps")
+async def upload_stamp(
+    request: Request,
+    file: UploadFile = File(...),
+    name: Optional[str] = Form(None),
+) -> dict[str, Union[int, str]]:
+    """Upload a new stamp for the authenticated user (maximum 10 stamps)."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    user_id = int(user["id"])
+
+    current_count = db.count_user_stamps(user_id)
+    if current_count >= 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum limit of 10 stamps reached. Please delete an existing stamp before uploading a new one.",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded image file is empty.")
+
+    try:
+        processed_bytes, content_type = process_stamp_image(file_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    raw_filename = file.filename or "stamp.png"
+    stamp_name = (name or "").strip()
+    if not stamp_name:
+        stamp_name = Path(raw_filename).stem.strip() or "stamp"
+    if len(stamp_name) > 100:
+        stamp_name = stamp_name[:100]
+
+    stored_filename = stamp_storage.save_stamp(user_id, raw_filename, processed_bytes, content_type)
+    try:
+        stamp_record = db.create_user_stamp(user_id, stamp_name, stored_filename, content_type)
+    except ValueError as exc:
+        stamp_storage.delete_stamp(user_id, stored_filename)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    auth_session_cache.invalidate_user(user_id)
+    return {
+        **stamp_record,
+        "url": f"/api/stamps/{stamp_record['id']}",
+    }
+
+
+@app.delete("/api/users/me/stamps/{stamp_id}")
+def delete_stamp_endpoint(stamp_id: int, request: Request) -> dict[str, str]:
+    """Delete a stamp owned by the authenticated user."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    user_id = int(user["id"])
+
+    stamp = db.get_user_stamp(stamp_id, user_id)
+    if not stamp:
+        raise HTTPException(status_code=404, detail="Stamp not found.")
+
+    filename = str(stamp["filename"])
+    stamp_storage.delete_stamp(user_id, filename)
+    db.delete_user_stamp(stamp_id, user_id)
+    auth_session_cache.invalidate_user(user_id)
+    return {"status": "ok", "message": "Stamp deleted successfully."}
+
+
+@app.get("/api/stamps/{stamp_id}")
+def get_stamp_endpoint(stamp_id: int) -> Response:
+    """Stream stamp image bytes for display."""
+    stamp = db.get_stamp_by_id(stamp_id)
+    if not stamp:
+        raise HTTPException(status_code=404, detail="Stamp not found.")
+
+    image_bytes = stamp_storage.read_stamp(int(stamp["user_id"]), str(stamp["filename"]))
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail="Stamp image file not found.")
+
+    return Response(content=image_bytes, media_type=str(stamp["content_type"]))

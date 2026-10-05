@@ -24,6 +24,7 @@ from services.music_catalog import MusicCatalog
 from services.suggestion_service import SuggestionService
 from services.text_beautifier import TextBeautifier
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
+from storage.stamp_storage import StampStorage, ensure_stamps_root
 from storage.theater_repository import TheaterRepository
 from utils.config_loader import get_app_config
 
@@ -137,5 +138,6 @@ live_agent_manager = LiveAgentSessionManager(
 suggestion_service = SuggestionService(config=config)
 adventure_service = AdventureService(ensure_adventures_root())
 text_beautifier = TextBeautifier(config=config)
+stamp_storage = StampStorage(ensure_stamps_root())
 
 atexit.register(shutdown_database_connection)
