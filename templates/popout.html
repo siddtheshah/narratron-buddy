@@ -381,6 +381,17 @@
             const displayAuthor = isNarratron ? 'Narratron' : rawAuthor;
             const color = getAuthorColor(displayAuthor);
 
+            if (msg.type === 'suggestion' && msg.status === 'accepted') {
+                div.classList.add('suggestion-message', 'suggestion-accepted');
+                const text = document.createElement('span');
+                text.textContent = `💡 ${displayAuthor} suggests: ${msg.text} `;
+                const badge = document.createElement('span');
+                badge.className = 'suggestion-accepted-badge';
+                badge.textContent = '✓ Accepted';
+                div.append(text, badge);
+                return div;
+            }
+
             if (msg.roll_data) {
                 div.classList.add('chat-roll-message');
 

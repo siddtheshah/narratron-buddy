@@ -302,3 +302,8 @@
         box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
     }
 }
+.suggestion-accepted-badge {
+    color: #6ee7b7;
+    font-size: 0.8rem;
+    font-weight: 600;
+}

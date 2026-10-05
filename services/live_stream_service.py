@@ -38,8 +38,6 @@ def format_canvas_state(
     """Format canvas and current-scene state injected into the live agent context."""
     visual = canvas_state_manager.visual if canvas_state_manager is not None else None
     audio = canvas_state_manager.audio if canvas_state_manager is not None else None
-    ui = canvas_state_manager.ui if canvas_state_manager is not None else None
-    chat = canvas_state_manager.chat if canvas_state_manager is not None else None
     story = canvas_state_manager.story if canvas_state_manager is not None else None
 
     image_path = visual.shown_image_path if visual is not None else None
@@ -52,20 +50,6 @@ def format_canvas_state(
             "[Canvas Pin]: The orator has pinned the current canvas. Do not request image or "
             "animation changes until it is unpinned; those tools will decline while pinned."
         )
-
-    # Collaboration observability consumes the leading suggestion. When it is
-    # disabled, a canvas pulse must be read-only so audience work is retained
-    # until collaboration is enabled again.
-    collaboration_enabled = bool(
-        ui is not None and ui.viewer_collab_enabled
-    )
-    if collaboration_enabled and chat is not None:
-        suggestion = chat.consume_top_suggestion()
-        if suggestion:
-            parts.append(
-                f"[Viewer Suggestion]: {suggestion['text']} "
-                f"(by {suggestion['author']}, {suggestion['upvote_count']} upvotes)"
-            )
 
     elements: list[dict[str, str]] = []
     if notepad_tools is not None:

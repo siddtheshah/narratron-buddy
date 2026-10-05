@@ -47,6 +47,8 @@ live_agent:
     # Delay state-observability messages so the live agent can receive initial user input.
     observability_startup_delay: 10
     observability_interval: 25
+    # Deliver the top viewer suggestion as an actionable notification (seconds).
+    viewer_suggestion_interval: 30
     compaction:
         trigger_tokens: 20000
         target_tokens: 8000

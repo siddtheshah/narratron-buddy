@@ -102,7 +102,7 @@ class ChatManager:
         return [self._serialize_suggestion(s) for s in items]
 
     def consume_top_suggestion(self) -> Optional[dict]:
-        """Pop and return the top-ranked suggestion, or None if empty."""
+        """Accept the top-ranked suggestion, retaining its message in chat."""
         if not self.suggestions:
             return None
         top = min(
@@ -110,7 +110,12 @@ class ChatManager:
             key=lambda s: (-len(s["upvotes"]), s["created_at"]),
         )
         self.suggestions.pop(top["author"], None)
-        self._remove_suggestion_message(top["author"])
+        for message in self.messages:
+            if (message.get("type") == "suggestion"
+                    and message.get("author") == top["author"]
+                    and message.get("status") != "accepted"):
+                message["status"] = "accepted"
+                message["upvote_count"] = len(top["upvotes"])
         return self._serialize_suggestion(top)
 
     def export_suggestions(self) -> list[dict]:
@@ -141,7 +146,8 @@ class ChatManager:
     def _remove_suggestion_message(self, author: str) -> None:
         self.messages = [
             message for message in self.messages
-            if not (message.get("type") == "suggestion" and message.get("author") == author)
+            if not (message.get("type") == "suggestion" and message.get("author") == author
+                    and message.get("status") != "accepted")
         ]
 
     @staticmethod

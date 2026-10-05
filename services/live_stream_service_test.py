@@ -200,7 +200,7 @@ def test_canvas_observability_preserves_collaboration_data_when_disabled():
     assert canvas.doodles == doodles
 
 
-def test_canvas_observability_includes_suggestion_when_collaboration_is_enabled():
+def test_canvas_observability_preserves_suggestion_when_collaboration_is_enabled() -> None:
     canvas = CanvasFixture(ui=CanvasUIFixture(viewer_collab_enabled=True))
     canvas.chat.consume_top_suggestion.return_value = {
         "author": "Ada", "text": "Open the hidden door", "upvote_count": 2,
@@ -208,8 +208,8 @@ def test_canvas_observability_includes_suggestion_when_collaboration_is_enabled(
 
     state = format_canvas_state(canvas)
 
-    assert "[Viewer Suggestion]: Open the hidden door (by Ada, 2 upvotes)" in state
-    canvas.chat.consume_top_suggestion.assert_called_once_with()
+    assert "[Viewer Suggestion]" not in state
+    canvas.chat.consume_top_suggestion.assert_not_called()
 
 
 def test_canvas_observability_informs_agent_when_orator_pins_visual():

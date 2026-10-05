@@ -35,6 +35,76 @@ def canvas_observability_fixture(image_path=None, collaboration_enabled=False, d
 
 
 class TestLiveAgentSessionManager(unittest.TestCase):
+    def test_viewer_suggestion_loop_uses_configured_interval_and_recovers(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        session = LiveAgentSession(
+            theater_id="suggestions", runner=runner, tool_bundle=MagicMock(),
+            config={"live_agent": {"viewer_suggestion_interval": 7}},
+        )
+        session.send_viewer_suggestion = MagicMock(side_effect=[RuntimeError("temporary failure"), True])
+        with patch("services.live_agent_manager.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            sleep.side_effect = [None, None, asyncio.CancelledError()]
+            asyncio.run(session._run_viewer_suggestion_loop())
+        self.assertEqual(session.send_viewer_suggestion.call_count, 2)
+        self.assertEqual([call.args for call in sleep.call_args_list], [(7.0,), (7.0,), (7.0,)])
+
+    def test_viewer_suggestions_use_notifications_and_their_own_interval(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        canvas = canvas_observability_fixture(collaboration_enabled=True)
+        canvas.chat.get_suggestions.return_value = [
+            {"author": "Ada", "text": "Open the hidden door", "upvote_count": 2},
+        ]
+        session = LiveAgentSession(
+            theater_id="suggestions", runner=runner, tool_bundle=MagicMock(),
+            canvas_state_manager=canvas,
+            config={"live_agent": {
+                "enable_regular_observability": False, "viewer_suggestion_interval": 12,
+            }},
+        )
+        session.websockets.add(MagicMock())
+        session.send_notification = MagicMock(return_value=True)
+        with patch("services.live_agent_manager.time.monotonic", return_value=100):
+            self.assertTrue(session.send_viewer_suggestion())
+        content = session.send_notification.call_args.args[0]
+        self.assertEqual(content.parts[0].text,
+                         "[Viewer Suggestion]: Open the hidden door (by Ada, 2 upvotes)")
+        canvas.chat.consume_top_suggestion.assert_called_once_with()
+        canvas.persist.assert_called_once_with()
+        canvas.notify_changed.assert_called_once_with("chat", "suggestions")
+        with patch("services.live_agent_manager.time.monotonic", return_value=111):
+            self.assertFalse(session.send_viewer_suggestion())
+        with patch("services.live_agent_manager.time.monotonic", return_value=112):
+            self.assertTrue(session.send_viewer_suggestion())
+        self.assertIsNone(session.last_canvas_state_sent)
+
+    def test_viewer_suggestions_are_retained_until_notification_can_be_sent(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        canvas = canvas_observability_fixture(collaboration_enabled=True)
+        canvas.chat.get_suggestions.return_value = [
+            {"author": "Ada", "text": "Open the door", "upvote_count": 1},
+        ]
+        session = LiveAgentSession(
+            theater_id="suggestions", runner=runner, tool_bundle=MagicMock(),
+            canvas_state_manager=canvas,
+        )
+        session.send_notification = MagicMock(return_value=False)
+        self.assertFalse(session.send_viewer_suggestion())
+        session.websockets.add(MagicMock())
+        canvas.ui.viewer_collab_enabled = False
+        self.assertFalse(session.send_viewer_suggestion())
+        canvas.ui.viewer_collab_enabled = True
+        self.assertFalse(session.send_viewer_suggestion())
+        canvas.chat.consume_top_suggestion.assert_not_called()
+        self.assertIsNone(session.last_viewer_suggestion_sent)
+        session.send_notification.return_value = True
+        canvas.chat.get_suggestions.return_value = []
+        self.assertFalse(session.send_viewer_suggestion())
+        session.status = "stopped"
+        self.assertFalse(session.send_viewer_suggestion())
+
     def test_injected_provider_stream_is_closed_when_event_delivery_fails(self) -> None:
         closed: list[bool] = []
 

@@ -147,6 +147,7 @@ export function initializeChatController(options = {}) {
         if (msg.type === 'suggestion') {
             div.classList.add('suggestion-message');
             div.dataset.suggestionAuthor = rawAuthor;
+            div.dataset.suggestionStatus = msg.status || 'pending';
 
             const prefixSpan = makeAuthorElement('suggestion-prefix');
             prefixSpan.textContent = `💡 ${displayAuthor} suggests:`;
@@ -159,6 +160,16 @@ export function initializeChatController(options = {}) {
 
             const actions = document.createElement('div');
             actions.className = 'suggestion-actions';
+
+            if (msg.status === 'accepted') {
+                div.classList.add('suggestion-accepted');
+                const badge = document.createElement('span');
+                badge.className = 'suggestion-accepted-badge';
+                badge.textContent = '✓ Accepted';
+                actions.appendChild(badge);
+                div.appendChild(actions);
+                return div;
+            }
 
             const upvoteBtn = document.createElement('button');
             upvoteBtn.className = 'suggestion-upvote-btn';
@@ -279,6 +290,7 @@ export function initializeChatController(options = {}) {
         if (!messagesContainer) return;
         messagesContainer.querySelectorAll('.suggestion-message').forEach(el => {
             const button = el.querySelector('.suggestion-upvote-btn');
+            if (!button) return;
             button.disabled = el.dataset.suggestionAuthor === currentChatUsername;
             button.title = button.disabled ? 'You cannot vote on your own suggestion' : 'Vote for this suggestion';
         });
@@ -316,11 +328,6 @@ export function initializeChatController(options = {}) {
         try {
             const res = await fetch('/api/suggestions' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
             const suggestions = await res.json();
-            const activeAuthors = new Set(suggestions.map(s => s.author));
-            document.querySelectorAll('.suggestion-message').forEach(el => {
-                if (!activeAuthors.has(el.dataset.suggestionAuthor)) el.remove();
-            });
-
             for (const s of suggestions) {
                 const countEls = document.querySelectorAll(`[data-vote-count-for="${CSS.escape(s.author)}"]`);
                 countEls.forEach(el => {

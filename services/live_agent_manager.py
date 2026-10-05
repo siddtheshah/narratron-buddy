@@ -37,6 +37,7 @@ TOOL_INJECTION_INTERVAL_SECONDS = 30.0
 LIVE_TOOL_REMINDER_INTERVAL_SECONDS = 3.0
 DEFAULT_OBSERVABILITY_STARTUP_DELAY_SECONDS = 0.0
 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS = 45.0
+DEFAULT_VIEWER_SUGGESTION_INTERVAL_SECONDS = 30.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
 DEFAULT_LIVE_TOOL_BUDGET = 3
 AUTO_BEGIN_COOLDOWN_SECONDS = 60 * 60
@@ -94,6 +95,12 @@ class LiveAgentSession:
                 DEFAULT_OBSERVABILITY_INTERVAL_SECONDS,
             ),
             "observability_interval",
+        )
+        self.viewer_suggestion_interval = self._get_nonnegative_config_seconds(
+            live_agent_config.get(
+                "viewer_suggestion_interval", DEFAULT_VIEWER_SUGGESTION_INTERVAL_SECONDS,
+            ),
+            "viewer_suggestion_interval",
         )
         self.collaboration_observability_cooldown = self._get_nonnegative_config_seconds(
             live_agent_config.get(
@@ -184,6 +191,8 @@ class LiveAgentSession:
 
         self.downstream_task: Optional[asyncio.Task] = None
         self.refresh_task: Optional[asyncio.Task] = None
+        self.viewer_suggestion_task: asyncio.Task | None = None
+        self.last_viewer_suggestion_sent: float | None = None
         self.tool_injection_task: Optional[asyncio.Task] = None
         self.live_tool_reminder_task: Optional[asyncio.Task] = None
         self.observability_available_at = time.monotonic() + self.observability_startup_delay
@@ -444,6 +453,45 @@ class LiveAgentSession:
             self._last_observability_image = image.model_copy(deep=True)
         return True
 
+    def send_viewer_suggestion(self) -> bool:
+        """Deliver the leading audience suggestion as an actionable notification."""
+        canvas = self.canvas_state_manager
+        if (not self.is_alive or not self.websocket_connected or canvas is None
+                or not canvas.ui.viewer_collab_enabled):
+            return False
+        now = time.monotonic()
+        with self.state_lock:
+            if (self.last_viewer_suggestion_sent is not None
+                    and now - self.last_viewer_suggestion_sent < self.viewer_suggestion_interval):
+                return False
+            suggestions = canvas.chat.get_suggestions()
+            if not suggestions:
+                return False
+            suggestion = suggestions[0]
+            text = (
+                f"[Viewer Suggestion]: {suggestion['text']} "
+                f"(by {suggestion['author']}, {suggestion['upvote_count']} upvotes)"
+            )
+            if not self.send_notification(types.Content(parts=[types.Part(text=text)])):
+                return False
+            canvas.chat.consume_top_suggestion()
+            self.last_viewer_suggestion_sent = now
+        canvas.persist()
+        canvas.notify_changed("chat", "suggestions")
+        return True
+
+    async def _run_viewer_suggestion_loop(self) -> None:
+        """Poll audience suggestions independently of canvas observability."""
+        try:
+            while True:
+                await asyncio.sleep(max(1.0, self.viewer_suggestion_interval))
+                try:
+                    self.send_viewer_suggestion()
+                except Exception:
+                    logger.exception("Failed to deliver viewer suggestion for theater %s", self.theater_id)
+        except asyncio.CancelledError:
+            return
+
     def send_canvas_state(self) -> bool:
         """Add changed canvas state as context for the next model turn."""
         if not self.enable_regular_observability:
@@ -673,6 +721,9 @@ class LiveAgentSession:
 
         if self.refresh_task is None or self.refresh_task.done():
             self.refresh_task = asyncio.create_task(self._run_canvas_refresh())
+
+        if self.viewer_suggestion_task is None or self.viewer_suggestion_task.done():
+            self.viewer_suggestion_task = asyncio.create_task(self._run_viewer_suggestion_loop())
 
         if self.enable_tool_injection and (self.tool_injection_task is None or self.tool_injection_task.done()):
             self.tool_injection_task = asyncio.create_task(self._run_tool_injection_loop())
@@ -1186,6 +1237,8 @@ class LiveAgentSession:
             self.downstream_task.cancel()
         if self.refresh_task and not self.refresh_task.done():
             self.refresh_task.cancel()
+        if self.viewer_suggestion_task and not self.viewer_suggestion_task.done():
+            self.viewer_suggestion_task.cancel()
         if self.tool_injection_task and not self.tool_injection_task.done():
             self.tool_injection_task.cancel()
         if self.live_tool_reminder_task and not self.live_tool_reminder_task.done():

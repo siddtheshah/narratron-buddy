@@ -123,7 +123,7 @@ class TestChatManagerSuggestions(unittest.TestCase):
 
     # --- consume_top_suggestion ---
 
-    def test_consume_returns_top_and_removes(self):
+    def test_consume_returns_top_and_retains_accepted_message(self) -> None:
         self.cm.add_suggestion("alice", "idea A")
         self.cm.add_suggestion("bob", "idea B")
         self.cm.upvote_suggestion("charlie", "bob")
@@ -134,10 +134,22 @@ class TestChatManagerSuggestions(unittest.TestCase):
         remaining = self.cm.get_suggestions()
         self.assertEqual(len(remaining), 1)
         self.assertEqual(remaining[0]["author"], "alice")
-        self.assertEqual(len(self.cm.get_messages()), 1)
+        self.assertEqual(len(self.cm.get_messages()), 2)
+        self.assertEqual(self.cm.get_messages()[1]["status"], "accepted")
+        self.assertEqual(self.cm.get_messages()[1]["upvote_count"], 2)
 
     def test_consume_empty_returns_none(self):
         self.assertIsNone(self.cm.consume_top_suggestion())
+
+    def test_accepted_message_survives_replacement_and_withdrawal(self) -> None:
+        self.cm.add_suggestion("alice", "first")
+        self.cm.consume_top_suggestion()
+        self.cm.add_suggestion("alice", "second")
+        self.cm.add_suggestion("alice", "third")
+        self.assertEqual([m["text"] for m in self.cm.get_messages()], ["first", "third"])
+        self.cm.withdraw_suggestion("alice")
+        self.assertEqual(self.cm.get_messages()[0]["status"], "accepted")
+        self.assertEqual(len(self.cm.get_messages()), 1)
 
     # --- one-per-user enforcement ---
 
