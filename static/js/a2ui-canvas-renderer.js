@@ -162,6 +162,7 @@ function renderComponent(componentId, byId, model, surfaceId, onAction, stack = 
 
 export function createA2UICanvasRenderer({ container, actionUrl, surfaceUrl, canEdit = () => true }) {
     let signature = '';
+    const renderedSurfaces = new Map();
 
     async function sendAction(payload, button) {
         button.disabled = true;
@@ -279,31 +280,59 @@ export function createA2UICanvasRenderer({ container, actionUrl, surfaceUrl, can
 
         controls.append(move, remove);
         host.append(controls);
+        return nextSurface => {
+            move.textContent = nextSurface.persistent ? '📌' : '⠿';
+            if (activePointerId !== null) return;
+            latestLeft = Number(nextSurface.placement?.left_pct) || 50;
+            latestTop = Number(nextSurface.placement?.top_pct) || 50;
+        };
     }
 
     function render(surfaces) {
         const nextSignature = JSON.stringify(surfaces || []);
         if (nextSignature === signature) return;
         signature = nextSignature;
-        container.replaceChildren();
+        const activeSurfaceIds = new Set();
         (Array.isArray(surfaces) ? surfaces : []).forEach(surface => {
             const materialized = materializeSurface(surface);
             if (!materialized?.surfaceId || !materialized.components.size) return;
+            activeSurfaceIds.add(materialized.surfaceId);
             const byId = materialized.components;
             const placement = surface.placement || {};
-            const host = document.createElement('div');
-            host.className = 'a2ui-surface';
-            host.dataset.surfaceId = materialized.surfaceId;
-            host.style.left = `${Number(placement.left_pct) || 50}%`;
-            host.style.top = `${Number(placement.top_pct) || 50}%`;
+            let rendered = renderedSurfaces.get(materialized.surfaceId);
+            if (!rendered) {
+                const host = document.createElement('div');
+                host.className = 'a2ui-surface';
+                host.dataset.surfaceId = materialized.surfaceId;
+                rendered = { host, updateControls: addSurfaceControls(host, surface), contentSignature: null, content: null };
+                renderedSurfaces.set(materialized.surfaceId, rendered);
+            }
+            const { host } = rendered;
+            if (!host.classList.contains('dragging')) {
+                host.style.left = `${Number(placement.left_pct) || 50}%`;
+                host.style.top = `${Number(placement.top_pct) || 50}%`;
+            }
             host.style.width = `${Number(placement.width_pct) || 28}%`;
             host.classList.toggle('persistent', Boolean(surface.persistent));
-            addSurfaceControls(host, surface);
-            host.append(renderComponent(
-                'root', byId, materialized.dataModel, materialized.surfaceId, sendAction
-            ));
-            container.append(host);
+            rendered.updateControls?.(surface);
+            const contentSignature = JSON.stringify(surface.messages || []);
+            if (contentSignature !== rendered.contentSignature) {
+                const content = renderComponent(
+                    'root', byId, materialized.dataModel, materialized.surfaceId, sendAction
+                );
+                if (rendered.content) rendered.content.replaceWith(content);
+                else host.append(content);
+                rendered.content = content;
+                rendered.contentSignature = contentSignature;
+            }
+            // Keep existing hosts attached so their arrival animation and UI state survive updates.
+            if (host.parentNode !== container) container.append(host);
         });
+        for (const [surfaceId, rendered] of renderedSurfaces) {
+            if (activeSurfaceIds.has(surfaceId)) continue;
+            rendered.host.remove();
+            renderedSurfaces.delete(surfaceId);
+        }
     }
 
     return { render };

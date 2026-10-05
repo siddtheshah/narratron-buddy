@@ -12,7 +12,7 @@ from playwright.sync_api import Page, sync_playwright
 def surface_page() -> Iterator[Page]:
     template = Path("templates/canvas.html").read_text(encoding="utf-8")
     styles = template[template.index("        #a2ui-canvas-layer {") :
-                      template.index("        @keyframes a2ui-arrive {")]
+                      template.index("        @media (max-width: 700px) {", template.index("        @keyframes a2ui-arrive {"))]
     renderer = Path("static/js/a2ui-canvas-renderer.js").read_text(encoding="utf-8")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -20,7 +20,7 @@ def surface_page() -> Iterator[Page]:
         )
         page = browser.new_page(viewport={"width": 1000, "height": 800})
         page.set_content(
-            f"<style>{styles}.a2ui-surface {{ animation: none; }}</style>"
+            f"<style>{styles}</style>"
             '<div id="a2ui-canvas-layer"></div>'
         )
         page.add_script_tag(content=renderer.replace("export function", "function"))
@@ -52,6 +52,7 @@ def surface_page() -> Iterator[Page]:
             }];
             window.renderer.render(window.surfaces);
         }""")
+        page.evaluate("async () => { await Promise.all(document.getAnimations().map(a => a.finished)); }")
         yield page
         browser.close()
 
@@ -120,3 +121,88 @@ def test_read_only_surface_cannot_be_dragged(surface_page: Page) -> None:
     surface_page.mouse.up()
     assert surface_page.locator(".a2ui-surface").evaluate("el => el.style.left") == "50%"
     assert surface_page.evaluate("window.requests") == []
+
+
+def test_position_update_preserves_surfaces_and_does_not_replay_arrival(surface_page: Page) -> None:
+    surface_page.evaluate("""() => {
+        const other = structuredClone(window.surfaces[0]);
+        other.surface_id = 'other';
+        other.messages[0].createSurface.surfaceId = 'other';
+        other.placement.left_pct = 80;
+        window.surfaces.push(other);
+        window.renderer.render(window.surfaces);
+        window.originalHosts = [...document.querySelectorAll('.a2ui-surface')];
+        window.originalButtons = [...document.querySelectorAll('.a2ui-button')];
+    }""")
+    surface_page.evaluate("async () => { await Promise.all(document.getAnimations().map(a => a.finished)); }")
+    surface_page.evaluate("""() => {
+        window.arrivals = [];
+        document.addEventListener('animationstart', event => window.arrivals.push(event.animationName));
+    }""")
+    move = surface_page.locator('[data-surface-id="choice"] .a2ui-move')
+    bounds = move.bounding_box()
+    assert bounds is not None
+    x = bounds["x"] + bounds["width"] / 2
+    y = bounds["y"] + bounds["height"] / 2
+    surface_page.mouse.move(x, y)
+    surface_page.mouse.down()
+    surface_page.mouse.move(x + 100, y + 80)
+    surface_page.mouse.up()
+    surface_page.evaluate("""() => {
+        window.surfaces[0].placement.left_pct = 60;
+        window.surfaces[0].placement.top_pct = 60;
+        window.renderer.render(window.surfaces);
+    }""")
+    assert surface_page.evaluate("""() => window.originalHosts.every((host, i) =>
+        host === document.querySelectorAll('.a2ui-surface')[i])""")
+    assert surface_page.evaluate("""() => window.originalButtons.every((button, i) =>
+        button === document.querySelectorAll('.a2ui-button')[i])""")
+    surface_page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert surface_page.evaluate("window.arrivals") == []
+    assert surface_page.evaluate("window.requests.map(r => r.method)") == ["PATCH"]
+
+
+def test_remote_position_update_is_used_for_next_drag(surface_page: Page) -> None:
+    surface_page.evaluate("""() => {
+        window.surfaces[0].placement.left_pct = 60;
+        window.surfaces[0].placement.top_pct = 60;
+        window.renderer.render(window.surfaces);
+    }""")
+    bounds = surface_page.locator('.a2ui-move').bounding_box()
+    assert bounds is not None
+    x = bounds["x"] + bounds["width"] / 2
+    y = bounds["y"] + bounds["height"] / 2
+    surface_page.mouse.move(x, y)
+    surface_page.mouse.down()
+    surface_page.mouse.move(x + 100, y + 80)
+    surface_page.mouse.up()
+    assert surface_page.evaluate("JSON.parse(window.requests[0].body)") == {
+        "left_pct": 70, "top_pct": 70,
+    }
+
+
+def test_content_updates_and_surface_lifecycle_preserve_existing_host(surface_page: Page) -> None:
+    surface_page.evaluate("""() => {
+        window.originalHost = document.querySelector('.a2ui-surface');
+        window.originalAnimation = window.originalHost.getAnimations()[0];
+        window.surfaces[0].messages.push({updateComponents: {components: [
+            {id: 'label', component: 'Text', text: 'Updated choice'},
+        ]}});
+        const added = structuredClone(window.surfaces[0]);
+        added.surface_id = 'added';
+        added.messages[0].createSurface.surfaceId = 'added';
+        window.surfaces.push(added);
+        window.renderer.render(window.surfaces);
+    }""")
+    assert surface_page.locator('[data-surface-id="choice"] .a2ui-button').inner_text() == "Updated choice"
+    assert surface_page.evaluate("window.originalHost === document.querySelector('[data-surface-id=choice]')")
+    assert surface_page.evaluate("window.originalHost.getAnimations()[0] === window.originalAnimation")
+    assert surface_page.locator('[data-surface-id="added"]').evaluate(
+        "el => el.getAnimations().some(a => a.animationName === 'a2ui-arrive')"
+    )
+    surface_page.evaluate("""() => {
+        window.surfaces.splice(0, 1);
+        window.renderer.render(window.surfaces);
+    }""")
+    assert surface_page.locator('[data-surface-id="choice"]').count() == 0
+    assert surface_page.locator('[data-surface-id="added"]').count() == 1
