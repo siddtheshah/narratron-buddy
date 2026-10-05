@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, Request
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from api_server import canvas
@@ -148,3 +149,16 @@ def test_previous_music_action_success_and_failure(action_services: tuple[MagicM
     with pytest.raises(HTTPException) as error:
         canvas.post_orator_action("stage", canvas.OratorAction(action="previous_music"), Request({"type": "http"}))
     assert error.value.status_code == 400
+
+
+def test_orator_action_endpoint_response_validation_with_integer_cursor(
+    action_services: tuple[MagicMock, MagicMock]
+) -> None:
+    state, _ = action_services
+    state.visual.orator_cursor = 7
+    client = TestClient(canvas.app)
+    response = client.post("/api/theaters/stage/orator-action", json={"action": "toggle_canvas_pin"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "accepted"
+    assert data["orator_cursor"] == 7

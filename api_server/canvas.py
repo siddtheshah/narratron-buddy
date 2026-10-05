@@ -60,6 +60,13 @@ class OratorAction(BaseModel):
     ]
 
 
+class OratorActionResponse(BaseModel):
+    status: str
+    pinned: bool
+    music_pinned: bool
+    orator_cursor: int | None
+
+
 class A2UIActionBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     surfaceId: str = Field(min_length=1, max_length=100)
@@ -502,7 +509,7 @@ def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request)
 @app.post("/api/theaters/{theater_id}/orator-action")
 def post_orator_action(
     theater_id: str, payload: OratorAction, request: Request
-) -> dict[str, str | bool]:
+) -> OratorActionResponse:
     """Apply an authorized action wheel selection and relay media intent to Narratron."""
     _require_canvas_access(request, theater_id)
     deployment = db.get_deployment(theater_id)
