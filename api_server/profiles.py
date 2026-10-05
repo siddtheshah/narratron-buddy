@@ -121,6 +121,22 @@ def delete_my_account(request: Request, response: Response):
     return {"status": "ok", "message": "Account deleted successfully."}
 
 
+@app.get("/api/users/me/stamps")
+def get_my_stamps_endpoint(request: Request) -> list[dict[str, Union[int, str]]]:
+    """List all stamps for the authenticated user."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    stamps = db.get_user_stamps(int(user["id"]))
+    return [
+        {
+            **stamp,
+            "url": f"/api/stamps/{stamp['id']}",
+        }
+        for stamp in stamps
+    ]
+
+
 @app.get("/api/users/{username}/stamps")
 def get_user_stamps_endpoint(username: str, request: Request) -> list[dict[str, Union[int, str]]]:
     """List all stamps for the specified user."""

@@ -873,9 +873,177 @@ export function createImageRenderer({
     };
 }
 
-/** Draws normalized doodle segments and replays them after canvas resizes. */
-export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {} }) {
+export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {} }) {
     const context = canvas?.getContext("2d");
+
+    function selectMovableStamp(item) {
+        if (!stampLayer) return;
+        Array.from(stampLayer.children).forEach(node => node.classList.toggle("movable", node === item));
+        if (item && typeof item.focus === "function") {
+            item.focus();
+        }
+    }
+
+    stampLayer?.parentElement.addEventListener("pointerdown", event => {
+        if (!event.target.closest(".canvas-stamp-annotation")) selectMovableStamp(null);
+    });
+
+    function renderSelectableStamp(action) {
+        if (!stampLayer || !action.id) return;
+        let item = Array.from(stampLayer.children).find(node => node.dataset.annotationId === action.id);
+        if (!item) {
+            item = document.createElement("div");
+            item.className = "canvas-stamp-annotation";
+            item.dataset.annotationId = action.id;
+            item.tabIndex = 0;
+            item.title = "Drag to move; click to select and resize; press Delete to remove";
+
+            const img = document.createElement("img");
+            img.src = action.url;
+            img.alt = action.name || "Stamp";
+            img.draggable = false;
+            item.appendChild(img);
+
+            const resizeHandle = document.createElement("div");
+            resizeHandle.className = "stamp-resize-handle";
+            resizeHandle.title = "Drag to resize stamp";
+            item.appendChild(resizeHandle);
+
+            let resizeDrag = null;
+            resizeHandle.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || !canMoveStamp() || !item.classList.contains("movable")) return;
+                event.stopPropagation();
+                event.preventDefault();
+                resizeDrag = {
+                    original: item.annotation,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startSize: Math.max(24, Number(item.annotation.size) || 80),
+                    moved: false,
+                };
+                resizeHandle.setPointerCapture(event.pointerId);
+            });
+
+            resizeHandle.addEventListener("pointermove", event => {
+                if (!resizeDrag || !canMoveStamp()) return;
+                const rect = (canvas && canvas.getBoundingClientRect().width > 0)
+                    ? canvas.getBoundingClientRect()
+                    : (stampLayer?.getBoundingClientRect() || null);
+                if (!rect || !rect.width || !rect.height) return;
+                const centerX = rect.left + Number(resizeDrag.original.x) * rect.width;
+                const centerY = rect.top + Number(resizeDrag.original.y) * rect.height;
+                const dist = Math.max(Math.abs(event.clientX - centerX), Math.abs(event.clientY - centerY));
+                const currentPixelSize = dist * 2;
+                const refWidth = 1000;
+                const normalizedSize = Math.round((currentPixelSize / rect.width) * refWidth);
+                const newSize = Math.max(24, Math.min(512, normalizedSize));
+                if (Math.abs(newSize - resizeDrag.startSize) > 2) {
+                    resizeDrag.moved = true;
+                }
+                onMoveStamp({ ...resizeDrag.original, size: newSize }, resizeDrag.original, false);
+            });
+
+            const finishResize = event => {
+                if (!resizeDrag) return;
+                const finished = resizeDrag;
+                resizeDrag = null;
+                if (resizeHandle.hasPointerCapture(event.pointerId)) resizeHandle.releasePointerCapture(event.pointerId);
+                if (!finished.moved) return;
+                if (event.type === "pointerup" && canMoveStamp()) {
+                    onMoveStamp(item.annotation, finished.original, true);
+                } else {
+                    onMoveStamp(finished.original, finished.original, false);
+                }
+            };
+            resizeHandle.addEventListener("pointerup", finishResize);
+            resizeHandle.addEventListener("pointercancel", finishResize);
+            resizeHandle.addEventListener("lostpointercapture", finishResize);
+
+            item.addEventListener("wheel", event => {
+                if (!canMoveStamp() || !item.classList.contains("movable")) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const step = event.deltaY < 0 ? 8 : -8;
+                const currentSize = Math.max(24, Number(item.annotation.size) || 80);
+                const nextSize = Math.max(24, Math.min(512, currentSize + step));
+                if (nextSize !== currentSize) {
+                    onMoveStamp({ ...item.annotation, size: nextSize }, item.annotation, true);
+                }
+            }, { passive: false });
+
+            let drag = null;
+            item.addEventListener("click", event => {
+                event.stopPropagation();
+                if (canMoveStamp()) selectMovableStamp(item);
+            });
+            item.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || !canMoveStamp()) return;
+                event.stopPropagation();
+                event.preventDefault();
+                selectMovableStamp(item);
+                drag = {original: item.annotation, x: event.clientX, y: event.clientY, moved: false};
+                item.setPointerCapture(event.pointerId);
+            });
+            item.addEventListener("pointermove", event => {
+                if (!drag || !canMoveStamp()) return;
+                const dx = event.clientX - drag.x;
+                const dy = event.clientY - drag.y;
+                if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+                const rect = canvas.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                drag.moved = true;
+                item.classList.add("dragging");
+                onMoveStamp({
+                    ...drag.original,
+                    x: Math.max(0, Math.min(1, Number(drag.original.x) + dx / rect.width)),
+                    y: Math.max(0, Math.min(1, Number(drag.original.y) + dy / rect.height)),
+                }, drag.original, false);
+            });
+            const finishMove = event => {
+                if (!drag) return;
+                const finished = drag;
+                drag = null;
+                item.classList.remove("dragging");
+                if (item.hasPointerCapture(event.pointerId)) item.releasePointerCapture(event.pointerId);
+                if (!finished.moved) return;
+                if (event.type === "pointerup" && canMoveStamp()) {
+                    onMoveStamp(item.annotation, finished.original, true);
+                } else {
+                    onMoveStamp(finished.original, finished.original, false);
+                }
+            };
+            item.addEventListener("pointerup", finishMove);
+            item.addEventListener("pointercancel", finishMove);
+            item.addEventListener("lostpointercapture", finishMove);
+            item.addEventListener("keydown", event => {
+                if ((event.key === "Delete" || event.key === "Backspace") && canMoveStamp()) {
+                    event.preventDefault();
+                    selectMovableStamp(null);
+                    onRemoveStamp(item.annotation);
+                } else if (event.key === "Escape") {
+                    selectMovableStamp(null);
+                }
+            });
+            stampLayer.appendChild(item);
+        }
+        item.annotation = action;
+        const rect = (canvas && canvas.getBoundingClientRect().width > 0)
+            ? canvas.getBoundingClientRect()
+            : (stampLayer?.getBoundingClientRect() || null);
+        const refWidth = 1000;
+        const scale = (rect && rect.width > 0) ? (rect.width / refWidth) : 1;
+        const baseSize = Math.max(16, Number(action.size) || 80);
+        const renderedSize = Math.max(16, Math.round(baseSize * scale));
+        item.style.width = `${renderedSize}px`;
+        item.style.height = `${renderedSize}px`;
+        item.style.left = `${Number(action.x) * 100}%`;
+        item.style.top = `${Number(action.y) * 100}%`;
+        item.style.transform = "translate(-50%, -50%)";
+        const img = item.querySelector("img");
+        if (img && img.getAttribute("src") !== action.url) {
+            img.src = action.url;
+        }
+    }
 
     function selectMovableText(label) {
         if (!textLayer) return;
@@ -1010,22 +1178,33 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         context.restore();
     }
 
+    let lastDoodleActions = [];
+
     function redraw(actions) {
         if (!canvas || !context) return;
+        if (actions) lastDoodleActions = actions;
 
         if (textLayer) {
-            const ids = new Set(actions.filter(action => action.type === "text").map(action => action.id));
+            const ids = new Set(lastDoodleActions.filter(action => action.type === "text").map(action => action.id));
             Array.from(textLayer.children).forEach(label => {
                 if (!ids.has(label.dataset.annotationId)) label.remove();
             });
             textLayer.hidden = !isVisible();
         }
 
+        if (stampLayer) {
+            const ids = new Set(lastDoodleActions.filter(action => action.type === "stamp").map(action => action.id));
+            Array.from(stampLayer.children).forEach(item => {
+                if (!ids.has(item.dataset.annotationId)) item.remove();
+            });
+            stampLayer.hidden = !isVisible();
+        }
+
         const rect = canvas.getBoundingClientRect();
         context.clearRect(0, 0, rect.width, rect.height);
         if (!isVisible()) return;
 
-        actions.forEach((action) => {
+        lastDoodleActions.forEach((action) => {
             if (action.type === "draw") {
                 renderSegment(
                     action.x0 * rect.width,
@@ -1037,12 +1216,15 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 );
             } else if (action.type === "text") {
                 renderText(action);
+            } else if (action.type === "stamp") {
+                renderSelectableStamp(action);
             }
         });
     }
 
     function resize(actions) {
         if (!canvas || !context) return;
+        if (actions) lastDoodleActions = actions;
 
         const rect = canvas.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
@@ -1055,8 +1237,28 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
 
         context.setTransform(1, 0, 0, 1, 0, 0);
         context.scale(dpr, dpr);
-        redraw(actions);
+        redraw(lastDoodleActions);
     }
 
-    return { renderSegment, renderText, redraw, resize };
+    if (typeof ResizeObserver !== "undefined") {
+        const resizeTarget = canvas?.parentElement || canvas || stampLayer;
+        if (resizeTarget) {
+            let lastObservedWidth = 0;
+            let lastObservedHeight = 0;
+            const ro = new ResizeObserver(entries => {
+                for (const entry of entries) {
+                    const width = entry.contentRect.width;
+                    const height = entry.contentRect.height;
+                    if (Math.abs(width - lastObservedWidth) > 0.5 || Math.abs(height - lastObservedHeight) > 0.5) {
+                        lastObservedWidth = width;
+                        lastObservedHeight = height;
+                        resize(lastDoodleActions);
+                    }
+                }
+            });
+            ro.observe(resizeTarget);
+        }
+    }
+
+    return { renderSegment, renderText, renderStamp: renderSelectableStamp, redraw, resize };
 }

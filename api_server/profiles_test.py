@@ -141,6 +141,26 @@ def test_get_user_stamps_success() -> None:
     assert stamps[0]["url"] == "/api/stamps/1"
 
 
+def test_get_my_stamps_success() -> None:
+    registry_db = MagicMock()
+    registry_db.get_user_stamps.return_value = [
+        {"id": 2, "user_id": 8, "name": "Heart", "filename": "heart.png", "content_type": "image/png"}
+    ]
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}):
+        stamps = profiles.get_my_stamps_endpoint(request())
+    assert len(stamps) == 1
+    assert stamps[0]["name"] == "Heart"
+    assert stamps[0]["url"] == "/api/stamps/2"
+
+
+def test_get_my_stamps_requires_login() -> None:
+    with patch.object(profiles, "get_current_user", return_value=None), \
+         pytest.raises(HTTPException) as err:
+        profiles.get_my_stamps_endpoint(request())
+    assert err.value.status_code == 401
+
+
 @pytest.mark.asyncio
 async def test_upload_stamp_requires_login() -> None:
     dummy_file = DummyUploadFile("cat.png", _png_bytes())

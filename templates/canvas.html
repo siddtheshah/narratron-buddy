@@ -2805,6 +2805,7 @@
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <canvas id="doodle-canvas"></canvas>
             <div id="canvas-text-layer"></div>
+            <div id="canvas-stamp-layer"></div>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
             <div id="narration-pane-mount"></div>
             <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title"
@@ -3204,6 +3205,8 @@
                 <textarea id="chat-input" rows="2" wrap="soft" aria-label="Chat message" placeholder="Type an idea..."
                     autocomplete="off" required></textarea>
                 <div class="chat-composer-actions">
+                    <button type="button" id="chat-open-stamps-btn" aria-label="Stamps" title="Open Stamp Manager"><span
+                            aria-hidden="true">🏷️</span></button>
                     <div class="chat-emotes-control">
                         <button type="button" data-chat-emotes-toggle aria-label="Emotes" aria-expanded="false"
                             aria-controls="chat-emotes-palette" title="Add an emote"><span
@@ -3225,6 +3228,41 @@
                 </div>
             </form>
         </div>
+
+        <div id="stamp-manager-pane">
+            <div class="stamp-manager-header">
+                <div class="stamp-manager-header-title">
+                    <span aria-hidden="true">🏷️</span>
+                    <span>Stamp Manager</span>
+                    <span id="stamp-manager-count" class="stamp-manager-count-badge">0/10</span>
+                </div>
+                <button type="button" id="close-stamp-manager-btn" class="panel-btn" title="Back to Chat" style="font-size: 0.78rem; padding: 4px 8px;">
+                    ✕ Back to Chat
+                </button>
+            </div>
+            <div id="stamp-manager-permission-banner" class="stamp-manager-permission-banner non-contributor">
+                <!-- Populated dynamically based on contributor status -->
+            </div>
+            <div id="stamp-manager-body" class="stamp-manager-body">
+                <div id="stamp-manager-grid" class="stamp-grid"></div>
+                <div id="stamp-manager-empty" class="stamp-manager-empty" style="display: none;">
+                    <div class="empty-icon">🏷️</div>
+                    <div id="stamp-empty-message" style="font-weight: 500;">No stamps found.</div>
+                    <div style="font-size: 0.78rem; color: #64748b;">Upload stamps in your profile to place them on the canvas.</div>
+                    <a href="/profile" target="_blank" class="panel-btn" style="margin-top: 8px; font-size: 0.78rem; text-decoration: none; padding: 5px 12px; color: #a5b4fc;">
+                        Go to Profile ↗
+                    </a>
+                </div>
+            </div>
+            <div class="stamp-manager-footer">
+                <a href="/profile" target="_blank" class="stamp-manager-footer-link" title="Manage stamps in your profile">
+                    ⚙️ Profile Settings ↗
+                </a>
+                <button type="button" id="stamp-manager-back-chat-btn" class="panel-btn" style="font-size: 0.78rem; padding: 4px 10px;">
+                    ← Back to Chat
+                </button>
+            </div>
+        </div>
     </div>
 
     <script type="module">
@@ -3232,6 +3270,15 @@
         import { initializeActionWheel } from "/static/js/action-wheel.js?v=freeform-20261005-1";
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
+
+        function escapeHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
 
         // Keep canvas identity self-contained: this page must still recognize
         // its owner if a shared UI script fails to load. Concurrent consumers
@@ -5274,6 +5321,7 @@
             for (const message of queuedMessages) {
                 sendOrQueueDoodleMessage(message);
                 if (message.type === 'text') applyTextAnnotation(message);
+                if (message.type === 'stamp') applyStampAnnotation(message);
             }
         }
 
@@ -5333,6 +5381,10 @@
             canEditText: () => canAddTextAnnotation() && !isPagedBack,
             onEditText: action => openTextAnnotationEditor(action),
             onMoveText: (action, previous, commit) => moveTextAnnotation(action, previous, commit),
+            stampLayer: document.getElementById('canvas-stamp-layer'),
+            canMoveStamp: () => hasContributorsPermission() && !isPagedBack,
+            onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
+            onRemoveStamp: action => removeStampAnnotation(action),
         });
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
@@ -5364,6 +5416,11 @@
             if (textLayer) {
                 textLayer.hidden = !doodlesEnabled || isPagedBack;
                 textLayer.style.zIndex = currentColor !== null ? '4' : '6';
+            }
+            const stampLayer = document.getElementById('canvas-stamp-layer');
+            if (stampLayer) {
+                stampLayer.hidden = !doodlesEnabled || isPagedBack;
+                stampLayer.style.zIndex = currentColor !== null ? '4' : '6';
             }
             const hasCanvasTool = currentColor !== null || textAnnotationMode;
             const canvasInteractive = hasCanvasTool && doodlesEnabled && !isPagedBack;
@@ -5533,12 +5590,16 @@
                         doodleActions.push(action);
                         renderTextAnnotation(action);
                     });
+                    (data.stamps || []).forEach(action => {
+                        doodleActions.push(action);
+                    });
+                    redrawAllDoodles();
                     doodleSocketReady = true;
                     flushQueuedDoodleMessages();
                 } else if (data.type === 'doodle_ack') {
                     inFlightDoodleMessages.delete(data.client_message_id);
                     pendingTextEdits.delete(data.client_message_id);
-                } else if (data.type === 'text_annotation_rejected') {
+                } else if (data.type === 'text_annotation_rejected' || data.type === 'stamp_rejected') {
                     inFlightDoodleMessages.delete(data.client_message_id);
                     const index = doodleActions.findIndex(action => action.client_message_id === data.client_message_id);
                     if (index >= 0) {
@@ -5560,6 +5621,14 @@
                     );
                 } else if (data.type === 'text') {
                     applyTextAnnotation(data);
+                } else if (data.type === 'stamp') {
+                    applyStampAnnotation(data);
+                } else if (data.type === 'remove_stamp') {
+                    const idx = doodleActions.findIndex(a => a.type === 'stamp' && a.id === data.id);
+                    if (idx >= 0) {
+                        doodleActions.splice(idx, 1);
+                        redrawAllDoodles();
+                    }
                 } else if (data.type === 'toggle_mic') {
                     if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
                         agentConnectBtn.click();
@@ -5636,6 +5705,39 @@
                 pendingTextEdits.set(action.client_message_id, previous);
             }
             applyTextAnnotation(action);
+        }
+
+        function applyStampAnnotation(action) {
+            const index = doodleActions.findIndex(
+                existing => existing.type === 'stamp' && (
+                    (existing.id && existing.id === action.id) ||
+                    (String(existing.stamp_id) === String(action.stamp_id) && String(existing.user_id) === String(action.user_id))
+                )
+            );
+            if (index >= 0) doodleActions[index] = action;
+            else doodleActions.push(action);
+            redrawAllDoodles();
+        }
+
+        function moveStampAnnotation(action, previous, commit) {
+            if (commit) {
+                action = { ...action };
+                delete action.client_message_id;
+                sendOrQueueDoodleMessage(action);
+                if (action.client_message_id) pendingTextEdits.set(action.client_message_id, previous);
+            }
+            applyStampAnnotation(action);
+        }
+
+        function removeStampAnnotation(action) {
+            const index = doodleActions.findIndex(
+                existing => existing.type === 'stamp' && existing.id === action.id
+            );
+            if (index >= 0) {
+                doodleActions.splice(index, 1);
+                sendOrQueueDoodleMessage({ type: 'remove_stamp', id: action.id });
+                redrawAllDoodles();
+            }
         }
 
         function openTextAnnotationEditor(existing, placement = existing) {
@@ -5747,6 +5849,259 @@
         });
 
         resizeDoodleCanvas();
+
+        // ========================================
+        // Stamp Manager & Canvas Stamp Dropping
+        // ========================================
+        const chatOpenStampsBtn = document.getElementById('chat-open-stamps-btn');
+        const stampManagerPane = document.getElementById('stamp-manager-pane');
+        const closeStampManagerBtn = document.getElementById('close-stamp-manager-btn');
+        const stampManagerBackChatBtn = document.getElementById('stamp-manager-back-chat-btn');
+        const stampManagerGrid = document.getElementById('stamp-manager-grid');
+        const stampManagerEmpty = document.getElementById('stamp-manager-empty');
+        const stampEmptyMessage = document.getElementById('stamp-empty-message');
+        const stampManagerCount = document.getElementById('stamp-manager-count');
+        const stampManagerPermissionBanner = document.getElementById('stamp-manager-permission-banner');
+
+        let isStampManagerOpen = false;
+        let cachedUserStamps = null;
+        let isFetchingUserStamps = false;
+
+        function setStampManagerOpen(open) {
+            isStampManagerOpen = Boolean(open);
+            const panelBody = document.getElementById('panel-body');
+            if (panelBody) panelBody.style.display = isStampManagerOpen ? 'none' : 'flex';
+            if (stampManagerPane) stampManagerPane.style.display = isStampManagerOpen ? 'flex' : 'none';
+            chatOpenStampsBtn?.classList.toggle('active', isStampManagerOpen);
+            if (isStampManagerOpen) {
+                updateStampManagerPermissionBanner();
+                loadUserStamps();
+            }
+        }
+
+        function updateStampManagerPermissionBanner() {
+            if (!stampManagerPermissionBanner) return;
+            const canContribute = hasContributorsPermission();
+            stampManagerPermissionBanner.className = `stamp-manager-permission-banner ${canContribute ? 'contributor' : 'non-contributor'}`;
+            stampManagerPermissionBanner.innerHTML = canContribute
+                ? '✨ <strong>Contributor Active</strong>: Drag any stamp out of this pane and onto the canvas.'
+                : '🔒 <strong>Viewer Mode</strong>: You need contributor permission to place stamps on the canvas.';
+        }
+
+        chatOpenStampsBtn?.addEventListener('click', () => {
+            setStampManagerOpen(!isStampManagerOpen);
+        });
+        closeStampManagerBtn?.addEventListener('click', () => {
+            setStampManagerOpen(false);
+        });
+        stampManagerBackChatBtn?.addEventListener('click', () => {
+            setStampManagerOpen(false);
+        });
+
+        async function loadUserStamps() {
+            if (!stampManagerGrid || isFetchingUserStamps) return;
+            isFetchingUserStamps = true;
+            if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/users/me/stamps');
+                if (res.status === 401) {
+                    stampManagerGrid.innerHTML = '';
+                    if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
+                    if (stampEmptyMessage) stampEmptyMessage.textContent = 'Please log in to view and use your stamps.';
+                    if (stampManagerCount) stampManagerCount.textContent = '0/10';
+                    return;
+                }
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const stamps = await res.json();
+                cachedUserStamps = Array.isArray(stamps) ? stamps : [];
+                renderStampManagerGrid(cachedUserStamps);
+            } catch (err) {
+                console.warn('Unable to load user stamps:', err);
+                stampManagerGrid.innerHTML = '';
+                if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
+                if (stampEmptyMessage) stampEmptyMessage.textContent = 'Unable to load stamps at this time.';
+            } finally {
+                isFetchingUserStamps = false;
+            }
+        }
+
+        function renderStampManagerGrid(stamps) {
+            if (!stampManagerGrid) return;
+            stampManagerGrid.innerHTML = '';
+            if (stampManagerCount) stampManagerCount.textContent = `${stamps.length}/10`;
+
+            if (stamps.length === 0) {
+                if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
+                if (stampEmptyMessage) stampEmptyMessage.textContent = 'No stamps uploaded yet.';
+                return;
+            }
+            if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
+
+            const canDrag = hasContributorsPermission();
+            stamps.forEach(stamp => {
+                const card = document.createElement('div');
+                card.className = `stamp-card ${canDrag ? 'can-drag' : 'locked'}`;
+                card.draggable = canDrag;
+                card.dataset.stampId = String(stamp.id);
+                card.dataset.stampName = stamp.name || 'Stamp';
+                card.dataset.stampUrl = stamp.url;
+                const stampLabel = stamp.name || 'Stamp';
+                card.title = canDrag
+                    ? `Drag "${stampLabel}" onto canvas`
+                    : `"${stampLabel}" (Requires Contributor permission to place)`;
+
+                const img = document.createElement('img');
+                img.className = 'stamp-card-thumb';
+                img.src = stamp.url;
+                img.alt = stamp.name;
+                img.draggable = false;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'stamp-card-name';
+                nameSpan.textContent = stamp.name;
+
+                card.appendChild(img);
+                card.appendChild(nameSpan);
+
+                if (canDrag) {
+                    const grip = document.createElement('span');
+                    grip.className = 'stamp-card-grip';
+                    grip.textContent = '⠿';
+                    card.appendChild(grip);
+
+                    card.addEventListener('dragstart', (e) => {
+                        if (!hasContributorsPermission()) {
+                            e.preventDefault();
+                            return;
+                        }
+                        const payload = {
+                            stamp_id: stamp.id,
+                            name: stamp.name,
+                            url: stamp.url,
+                        };
+                        e.dataTransfer.setData('application/json', JSON.stringify(payload));
+                        e.dataTransfer.effectAllowed = 'copyMove';
+                    });
+
+                    // Touch / Pointer drag fallback
+                    card.addEventListener('pointerdown', (e) => {
+                        if (e.button !== 0 || !hasContributorsPermission()) return;
+                        let moved = false;
+                        const startX = e.clientX;
+                        const startY = e.clientY;
+                        let ghost = null;
+
+                        const onPointerMove = (moveEvt) => {
+                            const dist = Math.hypot(moveEvt.clientX - startX, moveEvt.clientY - startY);
+                            if (!moved && dist > 6) {
+                                moved = true;
+                                ghost = document.createElement('div');
+                                ghost.className = 'stamp-drag-ghost';
+                                const ghostImg = document.createElement('img');
+                                ghostImg.src = stamp.url;
+                                ghost.appendChild(ghostImg);
+                                document.body.appendChild(ghost);
+                            }
+                            if (ghost) {
+                                ghost.style.left = `${moveEvt.clientX}px`;
+                                ghost.style.top = `${moveEvt.clientY}px`;
+                            }
+                        };
+
+                        const onPointerUp = (upEvt) => {
+                            window.removeEventListener('pointermove', onPointerMove);
+                            window.removeEventListener('pointerup', onPointerUp);
+                            window.removeEventListener('pointercancel', onPointerUp);
+                            if (ghost) {
+                                ghost.remove();
+                                ghost = null;
+                            }
+                            if (!moved) return;
+
+                            const rect = canvas.getBoundingClientRect();
+                            if (
+                                upEvt.clientX >= rect.left && upEvt.clientX <= rect.right &&
+                                upEvt.clientY >= rect.top && upEvt.clientY <= rect.bottom
+                            ) {
+                                const normX = Math.max(0, Math.min(1, (upEvt.clientX - rect.left) / rect.width));
+                                const normY = Math.max(0, Math.min(1, (upEvt.clientY - rect.top) / rect.height));
+                                placeStampOnCanvas({ stamp_id: stamp.id, name: stamp.name, url: stamp.url }, normX, normY);
+                            }
+                        };
+
+                        window.addEventListener('pointermove', onPointerMove);
+                        window.addEventListener('pointerup', onPointerUp);
+                        window.addEventListener('pointercancel', onPointerUp);
+                    });
+                }
+
+                stampManagerGrid.appendChild(card);
+            });
+        }
+
+        function placeStampOnCanvas(stampData, normX, normY) {
+            if (!hasContributorsPermission() || isPagedBack) return;
+            const myId = (typeof currentUser !== 'undefined' && currentUser && currentUser.id) ? currentUser.id : myUserId;
+            const action = {
+                type: 'stamp',
+                id: crypto.randomUUID(),
+                stamp_id: stampData.stamp_id,
+                user_id: myId,
+                url: stampData.url,
+                name: stampData.name || 'Stamp',
+                x: normX,
+                y: normY,
+                size: 80,
+            };
+
+            // Enforce that a user can only have one stamp of a kind on the canvas at a time.
+            // Pulling another of the same will just replace it.
+            const existingIndex = doodleActions.findIndex(
+                item => item.type === 'stamp' &&
+                        String(item.stamp_id) === String(action.stamp_id) &&
+                        String(item.user_id) === String(action.user_id)
+            );
+            if (existingIndex >= 0) {
+                action.id = doodleActions[existingIndex].id || action.id;
+                doodleActions[existingIndex] = action;
+            } else {
+                doodleActions.push(action);
+            }
+
+            sendOrQueueDoodleMessage(action);
+            redrawAllDoodles();
+        }
+
+        if (imgContainer) {
+            imgContainer.addEventListener('dragover', (e) => {
+                if (hasContributorsPermission()) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                    imgContainer.classList.add('stamp-drag-over');
+                }
+            });
+            imgContainer.addEventListener('dragleave', (e) => {
+                imgContainer.classList.remove('stamp-drag-over');
+            });
+            imgContainer.addEventListener('drop', (e) => {
+                imgContainer.classList.remove('stamp-drag-over');
+                if (!hasContributorsPermission()) return;
+                try {
+                    const raw = e.dataTransfer.getData('application/json');
+                    if (!raw) return;
+                    const stampData = JSON.parse(raw);
+                    if (!stampData || !stampData.stamp_id) return;
+                    e.preventDefault();
+                    const rect = canvas.getBoundingClientRect();
+                    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+                    placeStampOnCanvas(stampData, normX, normY);
+                } catch (err) {
+                    console.error('Error dropping stamp onto canvas:', err);
+                }
+            });
+        }
 
         // Canvas-state notifications are deliberately separate from the
         // doodle socket. They invalidate REST data; they never carry canvas
@@ -6061,6 +6416,11 @@
             const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
             const isContributorInList = currentUser && (batonState.contributors || []).some(u => u.id === currentUser.id);
             window._isContributor = Boolean(isOwner || isActiveOrator || isContributorInList);
+
+            if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
+                updateStampManagerPermissionBanner();
+                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+            }
 
             // This is the single baton control: it identifies the current
             // holder and opens the owner's assignment menu.

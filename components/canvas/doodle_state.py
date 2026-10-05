@@ -60,6 +60,17 @@ class DoodleState:
             self._persist()
         return [dict(action) for action in self.doodles if action.get("type") == "text"]
 
+    def stamp_annotations(self) -> list[dict[str, str | float | int | None]]:
+        """Return persisted stamp actions for websocket snapshot replay."""
+        changed = False
+        for action in self.doodles:
+            if action.get("type") == "stamp" and not action.get("id"):
+                action["id"] = uuid4().hex
+                changed = True
+        if changed:
+            self._persist()
+        return [dict(action) for action in self.doodles if action.get("type") == "stamp"]
+
     def save_text(self, action: dict[str, str | float]) -> None:
         """Replace a text annotation in place, preserving its drawing order."""
         for index, existing in enumerate(self.doodles):
@@ -70,11 +81,52 @@ class DoodleState:
         self.doodles.append(dict(action))
         self._persist()
 
+    def save_stamp(self, action: dict[str, str | float | int | None]) -> None:
+        """Replace or add a stamp on the canvas.
+
+        Enforces that a user can only have one stamp of a kind on the canvas at a time.
+        Pulling another of the same kind replaces the existing one.
+        """
+        stamp_uuid = action.get("id")
+        user_id = action.get("user_id")
+        stamp_id = action.get("stamp_id")
+
+        for index, existing in enumerate(self.doodles):
+            if existing.get("type") == "stamp":
+                if stamp_uuid and existing.get("id") == stamp_uuid:
+                    self.doodles[index] = dict(action)
+                    self._persist()
+                    return
+                if (
+                    user_id is not None
+                    and stamp_id is not None
+                    and existing.get("user_id") == user_id
+                    and existing.get("stamp_id") == stamp_id
+                ):
+                    self.doodles[index] = dict(action)
+                    self._persist()
+                    return
+
+        self.doodles.append(dict(action))
+        self._persist()
+
+    def remove_stamp(self, stamp_annotation_id: str) -> None:
+        """Remove a stamp annotation by its unique annotation ID."""
+        original_len = len(self.doodles)
+        self.doodles = [
+            action
+            for action in self.doodles
+            if not (action.get("type") == "stamp" and action.get("id") == stamp_annotation_id)
+        ]
+        if len(self.doodles) != original_len:
+            self._persist()
+
     def has_visible_annotations(self) -> bool:
-        """Return whether the canvas has a stroke or non-empty text annotation."""
+        """Return whether the canvas has a stroke, non-empty text, or stamp annotation."""
         return any(
             action.get("type") == "draw"
             or (action.get("type") == "text" and bool(str(action.get("text", "")).strip()))
+            or action.get("type") == "stamp"
             for action in self.doodles
         )
 

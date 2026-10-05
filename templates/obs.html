@@ -90,6 +90,32 @@
             opacity: 1;
         }
 
+        #canvas-stamp-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            pointer-events: none;
+        }
+
+        .canvas-stamp-annotation {
+            position: absolute;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        .canvas-stamp-annotation img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            user-select: none;
+            filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45));
+        }
+
         #scene-dialogue-overlay { position: absolute; right: 0; bottom: clamp(1.25rem,5vh,3.5rem); left: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: 0 6%; box-sizing: border-box; pointer-events: none; }
         .scene-dialogue-bubble { max-width: min(88vw,900px); color: #fff; font-size: clamp(1.05rem,2.1vw,1.65rem); font-weight: 600; line-height: 1.25; text-align: center; text-shadow: 0 2px 5px rgba(0,0,0,.95), 0 0 12px rgba(0,0,0,.7); }
         .scene-dialogue-bubble.thought { font-style: italic; }
@@ -140,6 +166,7 @@
         <img id="current-image" src="" alt="Narratron Generation">
         <img id="ghost-image" src="" alt="" aria-hidden="true">
         <canvas id="doodle-canvas"></canvas>
+        <div id="canvas-stamp-layer"></div>
         <div id="narration-pane-mount"></div>
     </div>
     <div id="clip-capture-panel" aria-live="polite">
@@ -374,6 +401,7 @@
         const doodleRenderer = createDoodleRenderer({
             canvas: doodleCanvas,
             isVisible: () => doodlesEnabled,
+            stampLayer: document.getElementById('canvas-stamp-layer'),
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
@@ -639,6 +667,10 @@
                     doodleActions.push(action);
                     renderTextAnnotation(action);
                 });
+                (data.stamps || []).forEach((action) => {
+                    doodleActions.push(action);
+                });
+                redrawAllDoodles();
             } else if (data.type === 'draw_batch') {
                 const points = data.points || [];
                 const rect = doodleCanvas.getBoundingClientRect();
@@ -662,6 +694,20 @@
                 if (index >= 0) doodleActions[index] = data;
                 else doodleActions.push(data);
                 redrawAllDoodles();
+            } else if (data.type === 'stamp') {
+                const index = doodleActions.findIndex(action => action.type === 'stamp' && (
+                    (action.id && action.id === data.id) ||
+                    (String(action.stamp_id) === String(data.stamp_id) && String(action.user_id) === String(data.user_id))
+                ));
+                if (index >= 0) doodleActions[index] = data;
+                else doodleActions.push(data);
+                redrawAllDoodles();
+            } else if (data.type === 'remove_stamp') {
+                const index = doodleActions.findIndex(action => action.type === 'stamp' && action.id === data.id);
+                if (index >= 0) {
+                    doodleActions.splice(index, 1);
+                    redrawAllDoodles();
+                }
             }
         };
 

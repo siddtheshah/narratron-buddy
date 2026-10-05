@@ -244,6 +244,60 @@ async def test_text_annotation_accepts_collaborating_viewer_or_active_orator(col
     sender.send_json.assert_awaited_once_with({"type": "doodle_ack", "client_message_id": "text-2"})
 
 
+@pytest.mark.asyncio
+async def test_stamp_message_rejects_non_contributor() -> None:
+    sender = MagicMock()
+    sender.state.theater_id = "stage"
+    sender.send_json = AsyncMock()
+    state = _text_annotation_state(sender, collab_enabled=False)
+    state.connections.active_user_connections[sender] = {"id": 99}
+    deployment = {"theater_id": "stage", "user_id": 3, "active_orator_id": 3, "contributors": "[]"}
+    message = {
+        "type": "stamp", "stamp_id": 5, "user_id": 99, "x": 0.4, "y": 0.6,
+        "name": "Dragon", "url": "/api/stamps/5", "size": 80,
+        "client_message_id": "stamp-1", "id": "stamp-uuid-1",
+    }
+
+    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+        await canvas._apply_doodle_message(state, message, sender)
+
+    state.doodles.save_stamp.assert_not_called()
+    sender.send_json.assert_any_await({"type": "stamp_rejected", "client_message_id": "stamp-1"})
+    sender.send_json.assert_any_await({"type": "doodle_ack", "client_message_id": "stamp-1"})
+
+
+@pytest.mark.asyncio
+async def test_stamp_message_accepts_contributor() -> None:
+    sender = MagicMock()
+    sender.state.theater_id = "stage"
+    sender.send_json = AsyncMock()
+    state = _text_annotation_state(sender, collab_enabled=False)
+    state.connections.active_user_connections[sender] = {"id": 12}
+    # User 12 is in contributors list
+    deployment = {"theater_id": "stage", "user_id": 3, "active_orator_id": 3, "contributors": "[12]"}
+    message = {
+        "type": "stamp", "stamp_id": 5, "user_id": 12, "x": 0.4, "y": 0.6,
+        "name": "Dragon", "url": "/api/stamps/5", "size": 80,
+        "client_message_id": "stamp-2", "id": "stamp-uuid-2",
+    }
+
+    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+        await canvas._apply_doodle_message(state, message, sender)
+
+    state.doodles.save_stamp.assert_called_once_with({
+        "type": "stamp",
+        "id": "stamp-uuid-2",
+        "stamp_id": 5,
+        "user_id": 12,
+        "url": "/api/stamps/5",
+        "name": "Dragon",
+        "x": 0.4,
+        "y": 0.6,
+        "size": 80.0,
+    })
+    sender.send_json.assert_awaited_once_with({"type": "doodle_ack", "client_message_id": "stamp-2"})
+
+
 def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}

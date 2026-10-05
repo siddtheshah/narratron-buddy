@@ -272,6 +272,66 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
         await acknowledge()
         return
 
+    if data.get("type") == "stamp":
+        current_user = state.connections.active_user_connections.get(sender)
+        theater_id = sender.state.theater_id
+        deployment = db.get_deployment(theater_id) if theater_id else None
+        user_allowed = True
+        if theater_id:
+            user_allowed = bool(deployment and is_contributor(deployment, current_user=current_user))
+        if not user_allowed:
+            await sender.send_json({"type": "stamp_rejected", "client_message_id": message_id})
+            await acknowledge()
+            return
+
+        stamp_id = data.get("stamp_id")
+        user_id = current_user.get("id") if (current_user and current_user.get("id")) else data.get("user_id")
+        action_id = str(data.get("id") or uuid4().hex)
+        if len(action_id) > 128:
+            return
+        try:
+            x, y = float(data.get("x")), float(data.get("y"))
+            size = float(data.get("size", 80))
+        except (TypeError, ValueError):
+            return
+        if not (0 <= x <= 1 and 0 <= y <= 1 and 10 <= size <= 512):
+            return
+        url = str(data.get("url") or f"/api/stamps/{stamp_id}")
+        name = str(data.get("name") or "Stamp")[:100]
+
+        stamp_action: dict[str, str | float | int | None] = {
+            "type": "stamp",
+            "id": action_id,
+            "stamp_id": stamp_id,
+            "user_id": user_id,
+            "url": url,
+            "name": name,
+            "x": x,
+            "y": y,
+            "size": size,
+        }
+        state.doodles.save_stamp(stamp_action)
+        await _broadcast_doodle(state, stamp_action, sender)
+        await acknowledge()
+        return
+
+    if data.get("type") == "remove_stamp":
+        current_user = state.connections.active_user_connections.get(sender)
+        theater_id = sender.state.theater_id
+        deployment = db.get_deployment(theater_id) if theater_id else None
+        user_allowed = True
+        if theater_id:
+            user_allowed = bool(deployment and is_contributor(deployment, current_user=current_user))
+        if not user_allowed:
+            await acknowledge()
+            return
+        action_id = str(data.get("id", ""))
+        if action_id:
+            state.doodles.remove_stamp(action_id)
+            await _broadcast_doodle(state, {"type": "remove_stamp", "id": action_id}, sender)
+        await acknowledge()
+        return
+
     if data.get("type") in {"clear", "draw"}:
         state.doodles.add([data])
         await _broadcast_doodle(state, data, sender)
@@ -303,6 +363,7 @@ async def websocket_endpoint(
         "type": "doodle_snapshot",
         "batches": cs.doodles.snapshot_batches(),
         "annotations": cs.doodles.text_annotations(),
+        "stamps": cs.doodles.stamp_annotations(),
     })
     
     if theater_id:

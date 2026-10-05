@@ -12,6 +12,7 @@ __pycache__/
 output/
 scratch/
 theaters/
+stamps/
 ephemeral/
 adventures/*
 !adventures/README.md

@@ -186,3 +186,73 @@ def test_doodle_state_load_handles_malformed_payload() -> None:
     assert state.enabled is True
     assert state.doodles == []
 
+
+def test_stamp_saves_and_replaces_same_kind_for_user() -> None:
+    persisted: list[int] = []
+    state = DoodleState(lambda: persisted.append(1))
+
+    # User 5 places Stamp 10
+    stamp_a1: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-1", "stamp_id": 10, "user_id": 5,
+        "url": "/api/stamps/10", "name": "Dragon", "x": 0.2, "y": 0.2, "size": 80.0,
+    }
+    state.save_stamp(stamp_a1)
+    assert len(state.stamp_annotations()) == 1
+    assert state.stamp_annotations()[0]["x"] == 0.2
+    assert state.has_visible_annotations() is True
+
+    # User 5 places Stamp 11 (different kind -> both allowed)
+    stamp_b: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-2", "stamp_id": 11, "user_id": 5,
+        "url": "/api/stamps/11", "name": "Heart", "x": 0.5, "y": 0.5, "size": 80.0,
+    }
+    state.save_stamp(stamp_b)
+    assert len(state.stamp_annotations()) == 2
+
+    # User 5 places Stamp 10 again (same kind -> replaces previous Stamp 10)
+    stamp_a2: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-3", "stamp_id": 10, "user_id": 5,
+        "url": "/api/stamps/10", "name": "Dragon", "x": 0.8, "y": 0.8, "size": 80.0,
+    }
+    state.save_stamp(stamp_a2)
+    stamps = state.stamp_annotations()
+    assert len(stamps) == 2
+    # Verify the first slot (Dragon) was replaced with new position
+    dragon_stamp = [s for s in stamps if s["stamp_id"] == 10][0]
+    assert dragon_stamp["x"] == 0.8
+    assert dragon_stamp["y"] == 0.8
+
+    # User 6 places Stamp 10 (different user -> allowed)
+    stamp_u6: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-4", "stamp_id": 10, "user_id": 6,
+        "url": "/api/stamps/10", "name": "Dragon", "x": 0.1, "y": 0.9, "size": 80.0,
+    }
+    state.save_stamp(stamp_u6)
+    assert len(state.stamp_annotations()) == 3
+
+
+def test_stamp_move_and_remove() -> None:
+    state = DoodleState(lambda: None)
+    stamp: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "uuid-abc", "stamp_id": 10, "user_id": 5,
+        "url": "/api/stamps/10", "name": "Dragon", "x": 0.2, "y": 0.2, "size": 80.0,
+    }
+    state.save_stamp(stamp)
+    assert len(state.stamp_annotations()) == 1
+
+    # Move existing stamp by ID
+    state.save_stamp({**stamp, "x": 0.45, "y": 0.65})
+    assert len(state.stamp_annotations()) == 1
+    assert state.stamp_annotations()[0]["x"] == 0.45
+    assert state.stamp_annotations()[0]["y"] == 0.65
+
+    # Serialization and loading
+    reloaded = DoodleState(lambda: None)
+    reloaded.load(state.serialize())
+    assert reloaded.stamp_annotations() == state.stamp_annotations()
+
+    # Removal by ID
+    state.remove_stamp("uuid-abc")
+    assert len(state.stamp_annotations()) == 0
+    assert state.has_visible_annotations() is False
+
