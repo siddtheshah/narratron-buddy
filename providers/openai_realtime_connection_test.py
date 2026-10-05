@@ -451,3 +451,21 @@ async def test_images_are_inline_context_and_close_is_idempotent() -> None:
     await connection.close()
     await connection.close()
     socket.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_system_role_content_creates_system_message() -> None:
+    socket = make_socket()
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig())
+    await connection.send_content(
+        types.Content(
+            role="system",
+            parts=[types.Part(text="[System Notification] Cooldown expired")],
+        )
+    )
+    socket.conversation.item.create.assert_awaited_once()
+    item = socket.conversation.item.create.call_args.kwargs["item"]
+    assert item["type"] == "message"
+    assert item["role"] == "system"
+    assert item["content"] == [{"type": "input_text", "text": "[System Notification] Cooldown expired"}]
+

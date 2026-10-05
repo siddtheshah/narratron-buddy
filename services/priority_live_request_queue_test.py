@@ -20,6 +20,7 @@ class TestPriorityLiveRequestQueue(unittest.TestCase):
             self.assertIsNotNone((await queue.get()).activity_end)
             result = await asyncio.wait_for(queue.get(), timeout=1)
             self.assertFalse(result.partial)
+            self.assertEqual(result.content.role, "system")
             self.assertIn("Door opens", result.content.parts[0].text)
 
         asyncio.run(run_test())

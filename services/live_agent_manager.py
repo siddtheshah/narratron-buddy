@@ -251,6 +251,7 @@ class LiveAgentSession:
         """Wake the agent for an actionable result without recording player input."""
         if not self.is_alive:
             return False
+        content.role = "system"
         self.live_request_queue.send_notification(content)
         return True
 
@@ -343,7 +344,7 @@ class LiveAgentSession:
                 "to process_user_action as a new player action.\n"
                 + json.dumps(result, ensure_ascii=False)
             )
-            content = types.Content(parts=[types.Part(text=message)])
+            content = types.Content(role="system", parts=[types.Part(text=message)])
 
             def enqueue() -> None:
                 self.send_notification(content)
@@ -357,7 +358,7 @@ class LiveAgentSession:
             technique_str = f" ({technique})" if technique else ""
             msg = f"[System Notification] Animation '{animation_id}'{technique_str} is ready to play. Call play_animation with animation_id='{animation_id}' to display it on canvas."
             logger.info(f"[LiveAgentSession] Animation ready notification: {msg}")
-            content = types.Content(parts=[types.Part(text=msg)])
+            content = types.Content(role="system", parts=[types.Part(text=msg)])
 
             def enqueue() -> None:
                 self.send_notification(content)

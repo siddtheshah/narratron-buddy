@@ -525,7 +525,7 @@ def post_orator_action(
         else:
             state.audio.set_pinned(False)
         if was_pinned and session and session.is_alive:
-            session.send_content(types.Content(parts=[types.Part(text=(
+            session.send_content(types.Content(role="system", parts=[types.Part(text=(
                 f"[Orator Action] The {'canvas visual' if is_image else 'music'} was unpinned. Media generation may resume."
             ))]))
         suite.request_orator_bypass(names)
@@ -535,7 +535,7 @@ def post_orator_action(
             "Music is unpinned. Start different music for the current narrated scene now. Use play_music for an available playlist, "
             "or create_music if generated music is enabled."
         )
-        if not session.send_user_content(types.Content(parts=[types.Part(text=(
+        if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
             f"[Orator Action] {instruction} This is an explicit orator request; "
             "the next requested media action bypasses its regular cooldown."
         ))])):
@@ -550,27 +550,27 @@ def post_orator_action(
         if not state.visual.previous_image():
             raise HTTPException(status_code=400, detail="No previous image available.")
         if session and session.is_alive:
-            session.send_content(types.Content(parts=[types.Part(text=(
+            session.send_content(types.Content(role="system", parts=[types.Part(text=(
                 "[Orator Action] The orator reverted to the previous scene image."
             ))]))
     elif payload.action == "previous_music":
         if not state.audio.previous_music():
             raise HTTPException(status_code=400, detail="No previous music available.")
         if session and session.is_alive:
-            session.send_content(types.Content(parts=[types.Part(text=(
+            session.send_content(types.Content(role="system", parts=[types.Part(text=(
                 "[Orator Action] The orator reverted to the previous music track."
             ))]))
     elif payload.action == "toggle_canvas_pin":
         state.visual.set_pinned(not state.visual.pinned)
         if session and session.is_alive:
-            session.send_content(types.Content(parts=[types.Part(text=(
+            session.send_content(types.Content(role="system", parts=[types.Part(text=(
                 f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
                 "Keep pinned media unchanged until the orator unpins it."
             ))]))
     elif payload.action == "toggle_music_pin":
         state.audio.set_pinned(not state.audio.pinned)
         if session and session.is_alive:
-            session.send_content(types.Content(parts=[types.Part(text=(
+            session.send_content(types.Content(role="system", parts=[types.Part(text=(
                 f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
                 "Keep pinned media unchanged until the orator unpins it."
             ))]))

@@ -174,6 +174,7 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
 
     def send_notification(self, content: types.Content) -> None:
         """Deliver an actionable completion event as a complete model turn."""
+        content.role = "system"
         req = LiveRequest(content=content, partial=False)
         if self._background_content_is_partial:
             self._priority_content_queue.put_nowait(req)

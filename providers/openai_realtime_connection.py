@@ -232,6 +232,7 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
     async def _create_content_items(self, content: types.Content) -> None:
         user_parts: list[Content] = []
         model_text: list[dict[str, str]] = []
+        system_text: list[dict[str, str]] = []
         for part in content.parts or []:
             if part.function_response is not None:
                 response = part.function_response
@@ -263,6 +264,8 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
             elif part.text:
                 if content.role == "model":
                     model_text.append({"type": "output_text", "text": part.text})
+                elif content.role == "system":
+                    system_text.append({"type": "input_text", "text": part.text})
                 else:
                     user_parts.append({"type": "input_text", "text": part.text})
             elif part.inline_data is not None:
@@ -284,6 +287,14 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
                 raise LiveAgentProviderError(
                     "OpenAI Live input requires inline image data"
                 )
+        if system_text:
+            await self._socket.conversation.item.create(
+                item={
+                    "type": "message",
+                    "role": "system",
+                    "content": system_text,
+                }
+            )
         if user_parts:
             await self._socket.conversation.item.create(
                 item={
