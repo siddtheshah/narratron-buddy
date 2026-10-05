@@ -4481,10 +4481,30 @@
             isNavigating = false;
             isPagedBack = false;
             hasNewHeadWhilePagedBack = false;
+            currentViewIndex = oratorCursorIndex;
             if (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length) {
                 displayHistoryImage(oratorCursorIndex, 'none');
             } else {
                 updatePagingControlsUI();
+            }
+        }
+
+        async function triggerOratorPreviousImage() {
+            stepOratorPreviousImage();
+            try {
+                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'previous_image' }),
+                });
+                const result = await response.json();
+                if (response.ok && result.orator_cursor !== undefined && result.orator_cursor !== null) {
+                    oratorCursorIndex = Number(result.orator_cursor);
+                    currentViewIndex = oratorCursorIndex;
+                    updatePagingControlsUI();
+                }
+            } catch (err) {
+                console.error("Failed to trigger previous image action:", err);
             }
         }
 
@@ -4615,6 +4635,13 @@
 
             if (!controls) return;
 
+            const isOrator = typeof isCurrentOrator === 'function' ? isCurrentOrator() : false;
+            if (isOrator) {
+                isNavigating = false;
+                isPagedBack = false;
+                hasNewHeadWhilePagedBack = false;
+            }
+
             const total = Math.max(1, imageHistory ? imageHistory.length : 1);
             const currentNum = currentViewIndex >= 0 ? currentViewIndex + 1 : total;
 
@@ -4629,17 +4656,17 @@
             }
 
             if (nextBtn) {
-                nextBtn.disabled = (currentViewIndex >= total - 1 || total <= 1);
+                nextBtn.disabled = (isOrator || currentViewIndex >= total - 1 || total <= 1);
                 nextBtn.style.opacity = nextBtn.disabled ? '0.35' : '1';
                 nextBtn.style.cursor = nextBtn.disabled ? 'default' : 'pointer';
             }
 
             if (headBtn) {
-                headBtn.style.display = isNavigating ? 'flex' : 'none';
+                headBtn.style.display = (!isOrator && isNavigating) ? 'flex' : 'none';
             }
 
             if (newBadge) {
-                newBadge.style.display = (isNavigating && hasNewHeadWhilePagedBack) ? 'inline-block' : 'none';
+                newBadge.style.display = (!isOrator && isNavigating && hasNewHeadWhilePagedBack) ? 'inline-block' : 'none';
             }
 
             if (doodleCanvas) {
@@ -4649,6 +4676,12 @@
 
         function displayHistoryImage(index, transition = 'none') {
             if (index < 0 || index >= imageHistory.length) return;
+            const isOrator = typeof isCurrentOrator === 'function' ? isCurrentOrator() : false;
+            if (isOrator) {
+                isNavigating = false;
+                isPagedBack = false;
+                hasNewHeadWhilePagedBack = false;
+            }
             currentViewIndex = index;
             isPagedBack = isNavigating;
             if (!isNavigating) {
@@ -4824,6 +4857,13 @@
                     lastAnimationSignature = animationSignature;
                     const transition = (data.transition || 'crossfade').toLowerCase().trim();
 
+                    const isOrator = typeof isCurrentOrator === 'function' ? isCurrentOrator() : false;
+                    if (isOrator) {
+                        isNavigating = false;
+                        isPagedBack = false;
+                        hasNewHeadWhilePagedBack = false;
+                    }
+
                     if (!isNavigating) {
                         currentViewIndex = (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length)
                             ? oratorCursorIndex
@@ -4859,7 +4899,11 @@
         }
 
         document.getElementById('page-prev-btn')?.addEventListener('click', () => {
-            if (currentViewIndex > 0) {
+            if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
+                if (currentViewIndex > 0) {
+                    void triggerOratorPreviousImage();
+                }
+            } else if (currentViewIndex > 0) {
                 isNavigating = true;
                 isPagedBack = true;
                 displayHistoryImage(currentViewIndex - 1, 'none');
@@ -4867,6 +4911,9 @@
         });
 
         document.getElementById('page-next-btn')?.addEventListener('click', () => {
+            if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
+                return;
+            }
             if (currentViewIndex < imageHistory.length - 1) {
                 isNavigating = true;
                 isPagedBack = true;
@@ -4875,6 +4922,7 @@
         });
 
         const syncToOratorCursor = () => {
+            if (typeof isCurrentOrator === 'function' && isCurrentOrator()) return;
             isNavigating = false;
             isPagedBack = false;
             hasNewHeadWhilePagedBack = false;
@@ -4935,12 +4983,19 @@
                 return;
             }
             if (e.key === 'ArrowLeft') {
-                if (currentViewIndex > 0) {
+                if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
+                    if (currentViewIndex > 0) {
+                        void triggerOratorPreviousImage();
+                    }
+                } else if (currentViewIndex > 0) {
                     isNavigating = true;
                     isPagedBack = true;
                     displayHistoryImage(currentViewIndex - 1, 'none');
                 }
             } else if (e.key === 'ArrowRight') {
+                if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
+                    return;
+                }
                 if (currentViewIndex < imageHistory.length - 1) {
                     isNavigating = true;
                     isPagedBack = true;
@@ -5820,6 +5875,13 @@
             updateTextAnnotationAvailability();
 
             if (isNowOrator) {
+                isNavigating = false;
+                isPagedBack = false;
+                hasNewHeadWhilePagedBack = false;
+                if (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length) {
+                    displayHistoryImage(oratorCursorIndex, 'none');
+                }
+                updatePagingControlsUI();
                 if (backBtn) backBtn.href = '/deploy?from=canvas';
                 roleBadge.textContent = 'Orator';
                 roleBadge.style.color = '#f97316';

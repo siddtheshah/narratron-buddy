@@ -365,7 +365,7 @@ def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -
         page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
         page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '2 / 2'")
 
-        # Sync button replaces Head and is hidden when already synced with orator cursor
+        # Sync button replaces Head and is hidden for orator
         sync_button = page.locator("#page-head-btn")
         assert "Sync" in sync_button.inner_text()
         assert sync_button.is_hidden()
@@ -379,19 +379,140 @@ def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -
         page.wait_for_function("document.getElementById('action-wheel-status').textContent.includes('applied')")
         assert actions == ["previous_image"]
 
-        # The orator should be paged back simultaneously to 1 / 2, staying in sync (not in navigational state)
+        # The orator should be paged back simultaneously to 1 / 2
+        assert page.locator("#page-indicator").inner_text().strip() == "1 / 2"
+        # Orator never gets a sync button or navigational state
+        assert sync_button.is_hidden()
+
+        # Orator's next button is disabled; orator does not get a navigational state
+        next_button = page.locator("#page-next-btn")
+        assert next_button.is_disabled()
+        next_button.click(force=True)
         assert page.locator("#page-indicator").inner_text().strip() == "1 / 2"
         assert sync_button.is_hidden()
 
-        # Navigating with the page bar next button enters navigational state
-        page.locator("#page-next-btn").click()
-        assert page.locator("#page-indicator").inner_text().strip() == "2 / 2"
-        # Sync button is now visible in navigational state
-        assert sync_button.is_visible()
+        # Now test a viewer connecting to the theater
+        viewer_page = browser.new_page(viewport={"width": 1500, "height": 900})
+        viewer_page.add_init_script("localStorage.setItem('narratron_viewer_collab_guide_seen:stage', 'true'); localStorage.setItem('narratron_orator_howto_seen', 'true');")
+        viewer_errors: list[str] = []
+        viewer_page.on("pageerror", lambda err: viewer_errors.append(str(err)))
 
-        # Clicking 'Sync' ends the navigational state and returns to orator cursor (1 / 2)
-        sync_button.click()
-        assert page.locator("#page-indicator").inner_text().strip() == "1 / 2"
+        def respond_viewer(route: Route) -> None:
+            path = urlsplit(route.request.url).path
+            if path == "/canvas":
+                route.fulfill(body=template, content_type="text/html")
+            elif path.startswith("/static/"):
+                asset = Path(path.lstrip("/"))
+                if asset.is_file():
+                    route.fulfill(path=asset)
+                else:
+                    route.fulfill(status=404)
+            elif path == "/api/auth/me":
+                route.fulfill(json={"authenticated": True, "user": {"id": 2, "username": "viewer"}})
+            elif path == "/api/theaters/stage":
+                route.fulfill(json={"metadata": {"is_owner": False, "is_active_orator": False}})
+            elif path == "/api/theaters/stage/baton":
+                route.fulfill(json={"owner": {"id": 1}, "active_orator": {"id": 1}})
+            elif path == "/api/latest":
+                route.fulfill(json={
+                    "latest": "/static/images/p1.png",
+                    "time": 2.0,
+                    "history": [
+                        {"url": "/static/images/p1.png", "prompt": "Image 1", "time": 1.0},
+                        {"url": "/static/images/p2.png", "prompt": "Image 2", "time": 2.0},
+                    ],
+                    "orator_cursor": current_cursor[0],
+                })
+            elif path.startswith("/api/"):
+                route.fulfill(json={})
+            else:
+                route.fulfill(status=404)
+
+        viewer_page.route("**/*", respond_viewer)
+        viewer_page.goto("http://wheel.test/canvas?theater_id=stage")
+        viewer_page.wait_for_function("window._isActiveOratorState === false", timeout=5000)
+        # Viewer starts synced to orator cursor (1 / 2)
+        viewer_page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '1 / 2'")
+        viewer_sync = viewer_page.locator("#page-head-btn")
+        assert viewer_sync.is_hidden()
+
+        # Viewer can navigate forward and enter navigational state
+        viewer_page.locator("#page-next-btn").click()
+        assert viewer_page.locator("#page-indicator").inner_text().strip() == "2 / 2"
+        assert viewer_sync.is_visible()
+
+        # Viewer clicks 'Sync' to end navigational state and return to orator cursor (1 / 2)
+        viewer_sync.click()
+        assert viewer_page.locator("#page-indicator").inner_text().strip() == "1 / 2"
+        assert viewer_sync.is_hidden()
+
+        assert errors == []
+        assert viewer_errors == []
+        browser.close()
+
+
+def test_orator_page_bar_previous_moves_cursor_and_has_no_sync() -> None:
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    actions: list[str] = []
+    current_cursor = [2]
+
+    def respond(route: Route) -> None:
+        path = urlsplit(route.request.url).path
+        if path == "/canvas":
+            route.fulfill(body=template, content_type="text/html")
+        elif path.startswith("/static/"):
+            asset = Path(path.lstrip("/"))
+            if asset.is_file():
+                route.fulfill(path=asset)
+            else:
+                route.fulfill(status=404)
+        elif path == "/api/auth/me":
+            route.fulfill(json={"authenticated": True, "user": {"id": 1, "username": "orator"}})
+        elif path == "/api/theaters/stage":
+            route.fulfill(json={"metadata": {"is_owner": True, "is_active_orator": True}})
+        elif path == "/api/theaters/stage/baton":
+            route.fulfill(json={"owner": {"id": 1}, "active_orator": {"id": 1}})
+        elif path == "/api/latest":
+            route.fulfill(json={
+                "latest": "/static/images/p3.png",
+                "time": 3.0,
+                "history": [
+                    {"url": "/static/images/p1.png", "prompt": "Image 1", "time": 1.0},
+                    {"url": "/static/images/p2.png", "prompt": "Image 2", "time": 2.0},
+                    {"url": "/static/images/p3.png", "prompt": "Image 3", "time": 3.0},
+                ],
+                "orator_cursor": current_cursor[0],
+            })
+        elif path.endswith("/orator-action"):
+            action_name = str(json.loads(route.request.post_data or "{}").get("action", ""))
+            actions.append(action_name)
+            if action_name == "previous_image":
+                current_cursor[0] = max(0, current_cursor[0] - 1)
+            route.fulfill(json={"status": "accepted", "pinned": False, "music_pinned": False, "orator_cursor": current_cursor[0]})
+        elif path.startswith("/api/"):
+            route.fulfill(json={})
+        else:
+            route.fulfill(status=404)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1500, "height": 900})
+        page.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        page.route("**/*", respond)
+        page.goto("http://wheel.test/canvas?theater_id=stage")
+        page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
+        page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '3 / 3'")
+
+        sync_button = page.locator("#page-head-btn")
+        assert sync_button.is_hidden()
+
+        # Orator clicks Previous Image button in the page bar
+        page.locator("#page-prev-btn").click()
+        page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '2 / 3'")
+        assert actions == ["previous_image"]
+        # Orator still has no sync button and no navigational state
         assert sync_button.is_hidden()
         assert errors == []
         browser.close()
