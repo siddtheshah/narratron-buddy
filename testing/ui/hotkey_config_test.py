@@ -59,7 +59,7 @@ def test_orator_howto_modal_documents_text_input_and_configuration() -> None:
     assert "Command Narratron via Text" in howto_snippet or "Text Input" in howto_snippet
     assert 'id="howto-text-hotkey-display"' in howto_snippet
 
-    # Documents how to customize hotkeys in Microphone Configuration
-    assert "Microphone Configuration" in howto_snippet
+    # Documents how to customize hotkeys in Input Configuration
+    assert "Input Configuration" in howto_snippet
     assert 'id="howto-tip-text-hotkey"' in howto_snippet
 

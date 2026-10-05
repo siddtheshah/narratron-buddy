@@ -1904,7 +1904,7 @@
             touch-action: none;
         }
 
-        .a2ui-surface-editable > :not(.a2ui-surface-controls) {
+        .a2ui-surface-editable> :not(.a2ui-surface-controls) {
             cursor: auto;
             touch-action: auto;
         }
@@ -1969,7 +1969,7 @@
             border-color: rgba(251, 191, 36, 0.75);
         }
 
-        .a2ui-surface > .a2ui-card {
+        .a2ui-surface>.a2ui-card {
             padding: 0;
             background: none;
             border: none;
@@ -2818,7 +2818,8 @@
                         placeholder="Tell Narratron what to do…" aria-describedby="orator-command-hint">
                     <div id="orator-command-hint"
                         style="display: flex; justify-content: space-between; gap: 1rem; margin-top: 0.75rem; color: #94a3b8; font-size: 0.78rem;">
-                        <span id="orator-command-hint-text">Enter to send · Esc or <span id="orator-command-dismiss-hotkey">Shift + Space</span> to dismiss</span>
+                        <span id="orator-command-hint-text">Enter to send · Esc or <span
+                                id="orator-command-dismiss-hotkey">Shift + Space</span> to dismiss</span>
                         <span id="orator-command-status" aria-live="polite"></span>
                     </div>
                 </form>
@@ -3004,7 +3005,8 @@
                     style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
                     ✏️ Doodles: On
                 </button>
-                <div id="doodle-toolbar" role="toolbar" aria-label="Doodle and text tools" style="display: flex; align-items: center; gap: 0.5rem;">
+                <div id="doodle-toolbar" role="toolbar" aria-label="Doodle and text tools"
+                    style="display: flex; align-items: center; gap: 0.5rem;">
                     <button class="color-btn" type="button" style="background: #ef4444;" data-color="#ef4444"
                         aria-label="Red"></button>
                     <button class="color-btn" type="button" style="background: #22c55e;" data-color="#22c55e"
@@ -3199,15 +3201,23 @@
             </div>
             <div id="chat-messages"></div>
             <form id="chat-form">
-                <textarea id="chat-input" rows="2" wrap="soft" aria-label="Chat message" placeholder="Type an idea..." autocomplete="off" required></textarea>
+                <textarea id="chat-input" rows="2" wrap="soft" aria-label="Chat message" placeholder="Type an idea..."
+                    autocomplete="off" required></textarea>
                 <div class="chat-composer-actions">
                     <div class="chat-emotes-control">
-                        <button type="button" data-chat-emotes-toggle aria-label="Emotes" aria-expanded="false" aria-controls="chat-emotes-palette" title="Add an emote"><span aria-hidden="true">😀</span></button>
-                        <div id="chat-emotes-palette" class="chat-emotes-palette" role="group" aria-label="Emotes palette" hidden></div>
+                        <button type="button" data-chat-emotes-toggle aria-label="Emotes" aria-expanded="false"
+                            aria-controls="chat-emotes-palette" title="Add an emote"><span
+                                aria-hidden="true">😀</span></button>
+                        <div id="chat-emotes-palette" class="chat-emotes-palette" role="group"
+                            aria-label="Emotes palette" hidden></div>
                     </div>
-                    <button type="submit" data-chat-command="suggest" aria-label="Send suggestion" aria-keyshortcuts="Control+Enter" title="Send as a suggestion (Ctrl+Enter)"><span aria-hidden="true">💡</span></button>
+                    <button type="submit" data-chat-command="suggest" aria-label="Send suggestion"
+                        aria-keyshortcuts="Control+Enter" title="Send as a suggestion (Ctrl+Enter)"><span
+                            aria-hidden="true">💡</span></button>
                     <button type="submit" aria-label="Send" title="Send message (Enter)">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                            focusable="false">
                             <path d="m22 2-7 20-4-9-9-4Z"></path>
                             <path d="M22 2 11 13"></path>
                         </svg>
@@ -4446,7 +4456,7 @@
                     resource.img.onload = null;
                     resource.img.onerror = null;
                     resource.img.src = '';
-                } catch (e) {}
+                } catch (e) { }
                 resource.img = null;
             }
             if (Array.isArray(resource.frames)) {
@@ -4456,7 +4466,7 @@
                             frame.onload = null;
                             frame.onerror = null;
                             frame.src = '';
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 });
                 resource.frames = [];
@@ -4466,7 +4476,7 @@
                     resource.video.pause();
                     resource.video.removeAttribute('src');
                     resource.video.load();
-                } catch (e) {}
+                } catch (e) { }
                 resource.video = null;
             }
         }
@@ -8024,7 +8034,7 @@
                     <div class="pullout-menu-list">
                         <button id="menu-item-mic-config" class="pullout-menu-item">
                             <span class="pullout-item-icon">🎙️</span>
-                            <span>Microphone Configuration</span>
+                            <span>Input Configuration</span>
                         </button>
                     </div>
                 </div>
@@ -8165,7 +8175,7 @@
                             • Use the bottom toolbar to doodle live on canvas.<br>
                             • Press <code id="howto-tip-text-hotkey" style="color:#c7d2fe;">Shift+Space</code> to type a
                             direct command to Narratron without speaking.<br>
-                            • Open ✨ menu ➔ <strong>Microphone Configuration</strong> to customize your mic toggle and
+                            • Open ✨ menu ➔ <strong>Input Configuration</strong> to customize your mic toggle and
                             text input shortcuts.
                         </div>
                     </div>
@@ -8409,7 +8419,7 @@
         </div>
     </div>
 
-    <!-- Microphone Configuration Modal -->
+    <!-- Input Configuration Modal -->
     <div id="mic-config-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="mic-config-title"
         aria-hidden="true" style="z-index: 9999;">
         <div class="modal-card"
@@ -8433,15 +8443,15 @@
                     <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
                 </button>
 
-                <div class="pullout-menu-item" style="cursor:default;flex-direction:column;align-items:stretch;gap:8px;">
+                <div class="pullout-menu-item"
+                    style="cursor:default;flex-direction:column;align-items:stretch;gap:8px;">
                     <button id="action-wheel-rebind" type="button" class="pullout-menu-item"
                         title="Click, then press any mouse button or key combination to rebind the action wheel">
                         <span class="pullout-item-icon">🖱</span>
                         <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
                     </button>
-                    <button id="action-wheel-disable" type="button">Disable action wheel</button>
-                    <span style="font-size:.8rem;">Click the binding above, then press a mouse button or key combo (modifiers supported). Close settings, then hold it over the canvas to open the wheel at your cursor. Move toward an action and release; release in the center or press Esc to cancel. New media bypasses cooldowns and unpins it.</span>
-                    <span id="action-wheel-pin-status" style="font-size:.8rem;">Canvas: unpinned · Music: unpinned</span>
+                    <span id="action-wheel-pin-status" style="font-size:.8rem;">Canvas: unpinned · Music:
+                        unpinned</span>
                 </div>
                 <button id="menu-item-text-hotkey" class="pullout-menu-item"
                     title="Click to rebind Orator text input hotkey">
@@ -8593,29 +8603,78 @@
     </div>
     <style>
         #orator-action-wheel {
-            position: fixed; width: 236px; height: 236px; transform: translate(-50%, -50%);
-            z-index: 10000; pointer-events: none; border-radius: 50%;
-            border: 1px solid #64748b; box-shadow: 0 8px 40px #0009;
+            position: fixed;
+            width: 236px;
+            height: 236px;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            pointer-events: none;
+            border-radius: 50%;
+            border: 1px solid #64748b;
+            box-shadow: 0 8px 40px #0009;
             background: conic-gradient(from 45deg, #162235 0deg 89deg, #475569 89deg 90deg,
-                #162235 90deg 179deg, #475569 179deg 180deg, #162235 180deg 269deg,
-                #475569 269deg 270deg, #162235 270deg 359deg, #475569 359deg);
-            color: #e2e8f0; font: 600 12px/1.3 system-ui;
+                    #162235 90deg 179deg, #475569 179deg 180deg, #162235 180deg 269deg,
+                    #475569 269deg 270deg, #162235 270deg 359deg, #475569 359deg);
+            color: #e2e8f0;
+            font: 600 12px/1.3 system-ui;
         }
+
         #orator-action-wheel .wheel-action {
-            position: absolute; width: 76px; padding: 8px 2px; border-radius: 10px;
-            text-align: center; transition: background .1s, color .1s;
+            position: absolute;
+            width: 76px;
+            padding: 8px 2px;
+            border-radius: 10px;
+            text-align: center;
+            transition: background .1s, color .1s;
         }
-        #action-wheel-rebind.rebinding { background:rgba(234,179,8,.25);color:#fef08a; }
-        #orator-action-wheel .wheel-action.selected { background: #6366f1; color: white; box-shadow: 0 0 18px #6366f180; }
-        #orator-action-wheel [data-direction="up"] { top: 12px; left: 80px; }
-        #orator-action-wheel [data-direction="down"] { bottom: 12px; left: 80px; }
-        #orator-action-wheel [data-direction="left"] { top: 92px; left: 3px; }
-        #orator-action-wheel [data-direction="right"] { top: 92px; right: 3px; }
+
+        #action-wheel-rebind.rebinding {
+            background: rgba(234, 179, 8, .25);
+            color: #fef08a;
+        }
+
+        #orator-action-wheel .wheel-action.selected {
+            background: #6366f1;
+            color: white;
+            box-shadow: 0 0 18px #6366f180;
+        }
+
+        #orator-action-wheel [data-direction="up"] {
+            top: 12px;
+            left: 80px;
+        }
+
+        #orator-action-wheel [data-direction="down"] {
+            bottom: 12px;
+            left: 80px;
+        }
+
+        #orator-action-wheel [data-direction="left"] {
+            top: 92px;
+            left: 3px;
+        }
+
+        #orator-action-wheel [data-direction="right"] {
+            top: 92px;
+            right: 3px;
+        }
+
         #orator-action-wheel .wheel-center {
-            position: absolute; top: 82px; left: 82px; width: 72px; height: 72px;
-            border-radius: 50%; background: #0f172a; border: 1px solid #64748b;
-            display: flex; align-items: center; justify-content: center; text-align: center;
-            font-size: 10px; font-weight: 400; color: #94a3b8;
+            position: absolute;
+            top: 82px;
+            left: 82px;
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: #0f172a;
+            border: 1px solid #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 400;
+            color: #94a3b8;
         }
     </style>
     <div id="orator-action-wheel" role="group" aria-label="Orator action wheel" hidden>
@@ -8626,7 +8685,8 @@
         <span class="wheel-center">Release<br>to cancel</span>
     </div>
     <div id="action-wheel-status" role="status" aria-live="polite" hidden
-        style="position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:10000;background:#1e293b;color:#f8fafc;padding:12px 18px;border-radius:10px;pointer-events:none;"></div>
+        style="position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:10000;background:#1e293b;color:#f8fafc;padding:12px 18px;border-radius:10px;pointer-events:none;">
+    </div>
 </body>
 
 </html>
