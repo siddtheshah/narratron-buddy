@@ -27,6 +27,7 @@ from providers import (
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
 from services.quirk_service import get_quirk_generator_service
 from components.notepad import Notepad
+from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
 
 logger = logging.getLogger(__name__)
@@ -451,29 +452,43 @@ class CharacterManager:
 
     def __init__(
         self,
+        theater: Theater,
         text_response_provider: TextResponseProvider,
         notepad: Optional[Notepad] = None,
         story_state: Optional[StoryState] = None,
         image_provider: Optional[ImageProvider] = None,
         speech_provider: Optional[SpeechProvider] = None,
         character_image_style: str = "",
-        characters_dir: Optional[str] = None,
-        references_dir: Optional[str] = None,
     ) -> None:
+        if theater is None:
+            raise ValueError("theater is required.")
+        self.theater: Theater = theater
         self.text_response_provider = text_response_provider
         self.notepad: Optional[Notepad] = notepad
         self._story_state = story_state if story_state is not None else StoryState()
         self.image_provider: Optional[ImageProvider] = image_provider
         self.speech_provider: Optional[SpeechProvider] = speech_provider
         self.character_image_style = str(character_image_style or "").strip()
-        self.characters_dir: Optional[str] = characters_dir
-        self.references_dir: Optional[str] = references_dir
         self.max_active_characters = DEFAULT_MAX_ACTIVE_CHARACTERS
         self._characters: dict[str, Character] = {}
         self._characters_lock = Lock()
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
         self._sync_story_state()
+
+    @property
+    def characters_dir(self) -> Path | None:
+        val = self.theater.characters_dir()
+        if val is None or not str(val).strip():
+            return None
+        return Path(val)
+
+    @property
+    def references_dir(self) -> Path | None:
+        val = self.theater.references_dir()
+        if val is None or not str(val).strip():
+            return None
+        return Path(val)
 
     def _parse_initial_characters(self, raw: object) -> list[Character]:
         if not raw:
@@ -626,10 +641,12 @@ class CharacterManager:
         return None
 
     def _characters_base_dir(self) -> Path | None:
-        if type(self.characters_dir) is str and self.characters_dir.strip():
-            return Path(self.characters_dir)
-        if type(self.references_dir) is str and self.references_dir.strip():
-            return Path(self.references_dir)
+        chars_dir = self.characters_dir
+        if chars_dir is not None:
+            return chars_dir
+        refs_dir = self.references_dir
+        if refs_dir is not None:
+            return refs_dir
         return None
 
     def _character_reference_dir(self, name: str) -> Path | None:
@@ -715,14 +732,13 @@ class CharacterManager:
                     if latest is not None and latest.is_file():
                         return str(latest)
 
-            if type(self.references_dir) is str and self.references_dir.strip():
-                ref_base = Path(self.references_dir)
-                if ref_base.is_dir():
-                    cand_dir = get_character_reference_dir(ref_base, cand_clean)
-                    if cand_dir.is_dir():
-                        latest = get_latest_iteration_file(cand_dir)
-                        if latest is not None and latest.is_file():
-                            return str(latest)
+            ref_base = self.references_dir
+            if ref_base is not None and ref_base.is_dir():
+                cand_dir = get_character_reference_dir(ref_base, cand_clean)
+                if cand_dir.is_dir():
+                    latest = get_latest_iteration_file(cand_dir)
+                    if latest is not None and latest.is_file():
+                        return str(latest)
 
         return None
 
@@ -748,7 +764,8 @@ class CharacterManager:
         if char_dir is not None and char_dir.is_dir():
             latest = get_latest_iteration_file(char_dir)
             if latest is not None and latest.is_file():
-                if self.characters_dir and Path(self.characters_dir).resolve() == char_dir.parent.resolve():
+                chars_dir = self.characters_dir
+                if chars_dir is not None and chars_dir.resolve() == char_dir.parent.resolve():
                     alias = f"output/characters/{char_dir.name}/{latest.name}"
                 else:
                     alias = f"references/{char_dir.name}/{latest.name}"
@@ -773,11 +790,12 @@ class CharacterManager:
                 "description": f"Reference image {req_p.name}",
             }
 
-        if not self.references_dir or not os.path.isdir(self.references_dir):
+        ref_dir = self.references_dir
+        if ref_dir is None or not os.path.isdir(ref_dir):
             return None
 
         entries: list[dict[str, str]] = []
-        for root, _, files in os.walk(self.references_dir):
+        for root, _, files in os.walk(ref_dir):
             for filename in files:
                 p_file = Path(filename)
                 if p_file.suffix.lower() in IMAGE_EXTENSIONS:
@@ -912,7 +930,8 @@ class CharacterManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Character reference for {character.name} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
-            if self.characters_dir and Path(self.characters_dir).resolve() == char_dir.parent.resolve():
+            chars_dir = self.characters_dir
+            if chars_dir is not None and chars_dir.resolve() == char_dir.parent.resolve():
                 alias = f"output/characters/{char_dir.name}/{output.name}"
             else:
                 alias = f"references/{char_dir.name}/{output.name}"
@@ -1011,7 +1030,8 @@ class CharacterManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Player character reference for {name_label} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
-            if self.characters_dir and Path(self.characters_dir).resolve() == char_dir.parent.resolve():
+            chars_dir = self.characters_dir
+            if chars_dir is not None and chars_dir.resolve() == char_dir.parent.resolve():
                 alias = f"output/characters/{char_dir.name}/{output.name}"
             else:
                 alias = f"references/{char_dir.name}/{output.name}"

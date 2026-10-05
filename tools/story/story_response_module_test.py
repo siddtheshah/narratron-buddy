@@ -273,6 +273,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.speech_provider = MagicMock(spec=SpeechProvider)
         self.speech_provider.select_voice.return_value = "voice_default"
         self.character_manager = CharacterManager(
+            theater=self.theater,
             text_response_provider=self.provider,
             notepad=self.notepad,
             story_state=self.story_state,

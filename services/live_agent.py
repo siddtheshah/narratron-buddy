@@ -260,14 +260,13 @@ def create_tool_bundle_for_session(
         speech_provider = canvas_manager.story.speech_provider
     story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
     character_manager = CharacterManager(
+        theater=theater,
         text_response_provider=story_planning_text_provider,
         notepad=notepad,
         story_state=story_state,
         image_provider=character_image_provider,
         speech_provider=speech_provider,
         character_image_style=str(visuals_config.get("style") or "").strip(),
-        characters_dir=str(theater.characters_dir()),
-        references_dir=str(theater.references_dir()),
     )
 
     # Initialize tools reusing intermediate components across them

@@ -14,6 +14,7 @@ from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
 from components.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
 from components.notepad import Notepad
+from components.theater_manager import Theater
 
 
 class TestNormalizeVoiceTags(unittest.TestCase):
@@ -29,6 +30,9 @@ class TestNormalizeVoiceTags(unittest.TestCase):
 
 class TestCharacterManager(unittest.TestCase):
     def setUp(self) -> None:
+        self.theater = MagicMock(spec=Theater)
+        self.theater.characters_dir.return_value = Path("/nonexistent/characters")
+        self.theater.references_dir.return_value = Path("/nonexistent/references")
         self.provider = MagicMock(spec=TextResponseProvider)
         self.notepad = MagicMock(spec=Notepad)
         self.notepad.get_present_elements.return_value = [
@@ -40,12 +44,20 @@ class TestCharacterManager(unittest.TestCase):
         self.speech_provider.select_voice.return_value = "voice_default"
         self.story_state = StoryState()
         self.manager = CharacterManager(
+            theater=self.theater,
             text_response_provider=self.provider,
             notepad=self.notepad,
             story_state=self.story_state,
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
         )
+
+    def test_requires_theater(self) -> None:
+        with self.assertRaisesRegex(ValueError, "theater is required"):
+            CharacterManager(
+                theater=None,  # type: ignore[arg-type]
+                text_response_provider=self.provider,
+            )
 
     def _create_character(self, name: str, description: str = "") -> str:
         return self.manager.create_or_update_character(
@@ -59,6 +71,7 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_loads_and_normalizes_initial_characters(self) -> None:
         manager = CharacterManager(
+            self.theater,
             self.provider,
             self.notepad,
             self.story_state,
@@ -93,6 +106,7 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_limits_present_characters_without_discarding_history(self) -> None:
         manager = CharacterManager(
+            self.theater,
             self.provider,
             self.notepad,
             self.story_state,
@@ -200,7 +214,7 @@ class TestCharacterManager(unittest.TestCase):
             "gender": ("female", "male", "nonbinary"),
             "persona": ("Narrator",),
         }
-        manager = CharacterManager(self.provider, self.notepad, self.story_state, self.image_provider, speech_provider)
+        manager = CharacterManager(self.theater, self.provider, self.notepad, self.story_state, self.image_provider, speech_provider)
         self.provider.generate.return_value = SimpleNamespace(
             text='{"personality":"Patient","motivation":"Find truth","gender":"female","voice_tags":["gender=female","accent=British","persona=Narrator"]}'
         )
@@ -342,9 +356,12 @@ class TestCharacterManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as ref_dir:
             ref_path = str(Path(ref_dir) / "lyra.png")
             Image.new("RGB", (10, 10), color="pink").save(ref_path)
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, self.image_provider, speech_provider,
-                references_dir=ref_dir,
             )
 
             manager.create_or_update_character(
@@ -370,9 +387,12 @@ class TestCharacterManager(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Mira" / "1.png")
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(directory)
+            theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, provider, self.speech_provider,
-                references_dir=directory,
             )
             manager.create_or_update_character("Mira", personality="Alert", motivation="Help", quirk="Hums", gender="female")
             character = manager.export_characters()[0]
@@ -392,9 +412,12 @@ class TestCharacterManager(unittest.TestCase):
             iter1_output = str(Path(directory) / "Soran" / "1.png")
             iter2_output = str(Path(directory) / "Soran" / "2.png")
 
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(directory)
+            theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, provider, self.speech_provider,
-                references_dir=directory,
             )
 
             # 1. Initial creation generates iteration 1
@@ -477,9 +500,12 @@ class TestCharacterManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as ref_dir:
             ref_path = str(Path(ref_dir) / "hero.png")
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
-                references_dir=ref_dir,
             )
 
             self.assertIsNone(manager.get_player_character())
@@ -512,9 +538,12 @@ class TestCharacterManager(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Valen" / "1.png")
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(directory)
+            theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, provider, self.speech_provider,
-                references_dir=directory,
             )
             player = manager.update_player_character(
                 name="Valen",
@@ -537,9 +566,12 @@ class TestCharacterManager(unittest.TestCase):
             iter1_output = str(Path(directory) / "Valen" / "1.png")
             iter2_output = str(Path(directory) / "Valen" / "2.png")
 
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(directory)
+            theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, provider, self.speech_provider,
-                references_dir=directory,
             )
 
             # 1. Initial creation generates iteration 1
@@ -587,7 +619,7 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_player_character_export_and_import(self) -> None:
         manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
+            self.theater, self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
         )
         manager.update_player_character(
             name="Cora",
@@ -600,7 +632,7 @@ class TestCharacterManager(unittest.TestCase):
         self.assertEqual(exported["image_description"], "Alchemist with goggles")
 
         manager2 = CharacterManager(
-            self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
+            self.theater, self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider,
         )
         manager2.import_player_character(exported)
         player2 = manager2.get_player_character()
@@ -780,7 +812,7 @@ class TestCharacterManager(unittest.TestCase):
 
     def test_get_character_references(self) -> None:
         manager = CharacterManager(
-            self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider
+            self.theater, self.provider, self.notepad, self.story_state, self.image_provider, self.speech_provider
         )
         self.assertEqual(manager.get_character_references(), [])
 
@@ -808,9 +840,12 @@ class TestCharacterManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as ref_dir:
             ref_path = str(Path(ref_dir) / "lady_lux.jpg")
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, provider, self.speech_provider,
-                references_dir=ref_dir,
             )
 
             char = manager.create_or_update_character(
@@ -834,9 +869,12 @@ class TestCharacterManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "lady_lux.jpg")
             Image.new("RGB", (10, 10), color="gray").save(gen_path)
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, provider, self.speech_provider,
-                references_dir=ref_dir,
             )
 
             char = manager.create_or_update_character(
@@ -858,9 +896,12 @@ class TestCharacterManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as ref_dir:
             ref_path = str(Path(ref_dir) / "retro_pulsar.jpg")
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
+            theater = MagicMock(spec=Theater)
+            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
+                theater,
                 self.provider, self.notepad, self.story_state, provider, self.speech_provider,
-                references_dir=ref_dir,
             )
 
             player = manager.update_player_character(

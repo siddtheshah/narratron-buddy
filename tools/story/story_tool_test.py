@@ -36,14 +36,13 @@ class TestStoryToolComposition(unittest.TestCase):
 
         lore_type.assert_called_once_with(theater=self.theater)
         character_type.assert_called_once_with(
+            theater=self.theater,
             text_response_provider=self.provider,
             notepad=tool.notepad,
             story_state=self.canvas.story,
             image_provider=None,
             speech_provider=self.canvas.story.speech_provider,
             character_image_style="",
-            characters_dir=str(self.theater.characters_dir()),
-            references_dir=str(self.theater.references_dir()),
         )
         planning_kwargs = planning_type.call_args.kwargs
         response_kwargs = response_type.call_args.kwargs
