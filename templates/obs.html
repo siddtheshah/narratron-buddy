@@ -726,11 +726,19 @@
             };
         }
 
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden && (!canvasStateWs || canvasStateWs.readyState !== WebSocket.OPEN)) {
-                fetchLatestImage();
-            }
-        });
+        // Coalesce tab selection, focus, and clicks into a single catch-up poll.
+        let canvasStateActivityTimer = null;
+        function refreshCanvasStateOnActivity() {
+            if (document.hidden || canvasStateActivityTimer) return;
+            canvasStateActivityTimer = setTimeout(() => {
+                canvasStateActivityTimer = null;
+                if (!document.hidden) fetchLatestImage();
+            }, 50);
+        }
+
+        document.addEventListener('visibilitychange', refreshCanvasStateOnActivity);
+        window.addEventListener('focus', refreshCanvasStateOnActivity);
+        document.addEventListener('click', refreshCanvasStateOnActivity, true);
         connectCanvasStateSocket();
 
         // Clip mode is intentionally isolated from the interactive canvas so

@@ -5594,11 +5594,14 @@
             };
         }
 
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden && (!canvasStateWs || canvasStateWs.readyState !== WebSocket.OPEN)) {
-                refreshCanvasState();
-            }
-        });
+        // Catch up on viewer activity even when the state socket is connected.
+        function refreshCanvasStateOnActivity() {
+            if (!document.hidden) refreshCanvasState();
+        }
+
+        document.addEventListener('visibilitychange', refreshCanvasStateOnActivity);
+        window.addEventListener('focus', refreshCanvasStateOnActivity);
+        document.addEventListener('click', refreshCanvasStateOnActivity, true);
 
         refreshCanvasState();
         connectCanvasStateSocket();
