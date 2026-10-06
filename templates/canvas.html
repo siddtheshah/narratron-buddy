@@ -2805,9 +2805,9 @@
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
             <img id="ghost-image" src="" alt="" aria-hidden="true"
                 style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
+            <div id="canvas-stamp-layer"></div>
             <canvas id="doodle-canvas"></canvas>
             <div id="canvas-text-layer"></div>
-            <div id="canvas-stamp-layer"></div>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
             <div id="narration-pane-mount"></div>
             <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title"
@@ -5456,7 +5456,7 @@
             const stampLayer = document.getElementById('canvas-stamp-layer');
             if (stampLayer) {
                 stampLayer.hidden = !doodlesEnabled || isPagedBack;
-                stampLayer.style.zIndex = currentColor !== null ? '4' : '6';
+                stampLayer.style.zIndex = '4';
             }
             const hasCanvasTool = currentColor !== null || textAnnotationMode;
             const canvasInteractive = hasCanvasTool && doodlesEnabled && !isPagedBack;
@@ -5626,13 +5626,13 @@
                 } else if (data.type === 'doodle_snapshot') {
                     doodleActions = [];
                     redrawAllDoodles();
+                    (data.stamps || []).forEach(action => {
+                        doodleActions.push(action);
+                    });
                     (data.batches || []).forEach(renderDoodleBatch);
                     (data.annotations || []).forEach(action => {
                         doodleActions.push(action);
                         renderTextAnnotation(action);
-                    });
-                    (data.stamps || []).forEach(action => {
-                        doodleActions.push(action);
                     });
                     redrawAllDoodles();
                     doodleSocketReady = true;
@@ -5756,7 +5756,9 @@
             );
             if (index >= 0) {
                 const [selected] = doodleActions.splice(index, 1);
-                doodleActions.push(selected);
+                const firstNonStamp = doodleActions.findIndex(existing => existing.type !== 'stamp');
+                if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, selected);
+                else doodleActions.push(selected);
             }
             const stampLayer = document.getElementById('canvas-stamp-layer');
             if (stampLayer) {
@@ -5783,7 +5785,9 @@
                 )
             );
             if (index >= 0) doodleActions.splice(index, 1);
-            doodleActions.push(action);
+            const firstNonStamp = doodleActions.findIndex(existing => existing.type !== 'stamp');
+            if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, action);
+            else doodleActions.push(action);
             redrawAllDoodles();
         }
 
@@ -6383,7 +6387,9 @@
                 action.id = doodleActions[existingIndex].id || action.id;
                 doodleActions.splice(existingIndex, 1);
             }
-            doodleActions.push(action);
+            const firstNonStamp = doodleActions.findIndex(item => item.type !== 'stamp');
+            if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, action);
+            else doodleActions.push(action);
 
             recordStampUsage(stampData.stamp_id);
             sendOrQueueDoodleMessage(action);

@@ -392,7 +392,9 @@ def stamp_page() -> Iterator[Page]:
                 );
                 if (index >= 0) {
                     const [selected] = doodleActions.splice(index, 1);
-                    doodleActions.push(selected);
+                    const firstNonStamp = doodleActions.findIndex(action => action.type !== 'stamp');
+                    if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, selected);
+                    else doodleActions.push(selected);
                 }
                 const stampLayer = document.getElementById('canvas-stamp-layer');
                 if (stampLayer) {
@@ -419,7 +421,9 @@ def stamp_page() -> Iterator[Page]:
                     )
                 );
                 if (index >= 0) doodleActions.splice(index, 1);
-                doodleActions.push(action);
+                const firstNonStamp = doodleActions.findIndex(action => action.type !== 'stamp');
+                if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, action);
+                else doodleActions.push(action);
                 renderer.redraw(doodleActions);
             }
 
@@ -469,7 +473,9 @@ def stamp_page() -> Iterator[Page]:
                     action.id = doodleActions[existingIndex].id || action.id;
                     doodleActions.splice(existingIndex, 1);
                 }
-                doodleActions.push(action);
+                const firstNonStamp = doodleActions.findIndex(item => item.type !== 'stamp');
+                if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, action);
+                else doodleActions.push(action);
                 recordStampUsage(stampData.stamp_id);
                 sendOrQueueDoodleMessage(action);
                 renderer.redraw(doodleActions);
@@ -820,6 +826,45 @@ def test_stamp_manager_ordered_from_most_recently_used_to_least(stamp_page: Page
         'Array.from(document.querySelectorAll("#stamp-manager-grid .stamp-card")).map(c => c.dataset.stampId)'
     )
     assert card_ids_rerender == ["3", "2", "1"]
+
+
+def test_stamps_always_under_doodles_layering(stamp_page: Page) -> None:
+    # 1. Add a doodle stroke to doodleActions
+    stamp_page.evaluate("""
+        doodleActions = [{
+            type: 'draw', x0: 0.1, y0: 0.1, x1: 0.5, y1: 0.5, color: '#ff0000', size: 3
+        }];
+        renderer.redraw(doodleActions);
+    """)
+
+    # 2. Place Stamp 10 (Dragon) on canvas -> must be placed BEFORE doodle (under doodles)
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.3, 0.3)')
+    types_after_stamp10 = stamp_page.evaluate('doodleActions.map(a => a.type)')
+    assert types_after_stamp10 == ["stamp", "draw"]
+    assert stamp_page.evaluate('doodleActions[0].stamp_id') == 10
+
+    # 3. Place Stamp 11 (Heart) on canvas -> must be after Stamp 10, but still BEFORE doodle
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 11, name: "Heart", url: "/api/stamps/11"}, 0.35, 0.35)')
+    types_after_stamp11 = stamp_page.evaluate('doodleActions.map(a => a.type)')
+    assert types_after_stamp11 == ["stamp", "stamp", "draw"]
+    assert stamp_page.evaluate('doodleActions[0].stamp_id') == 10
+    assert stamp_page.evaluate('doodleActions[1].stamp_id') == 11
+
+    # 4. Select Stamp 10 (Dragon) -> Dragon moves to front of stamps, but remains BEFORE doodle
+    dragon_id = stamp_page.evaluate('doodleActions[0].id')
+    dragon_locator = stamp_page.locator(f'.canvas-stamp-annotation[data-annotation-id="{dragon_id}"]')
+    dragon_locator.click()
+
+    types_after_select = stamp_page.evaluate('doodleActions.map(a => a.type)')
+    assert types_after_select == ["stamp", "stamp", "draw"]
+    assert stamp_page.evaluate('doodleActions[0].stamp_id') == 11
+    assert stamp_page.evaluate('doodleActions[1].stamp_id') == 10
+    assert stamp_page.evaluate('doodleActions[2].type') == "draw"
+
+    # 5. Verify chat.css configures #canvas-stamp-layer with z-index: 4 (under #doodle-canvas)
+    chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
+    assert "z-index: 4;" in chat_css
+
 
 
 

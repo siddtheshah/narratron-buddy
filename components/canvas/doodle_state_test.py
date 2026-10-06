@@ -289,3 +289,52 @@ def test_stamp_layering_order_and_select_stamp() -> None:
     assert [s["id"] for s in state.stamp_annotations()] == ["stamp-c", "stamp-a", "stamp-b"]
 
 
+def test_stamps_always_under_doodles_layering() -> None:
+    writes: list[bool] = []
+    state = DoodleState(lambda: writes.append(True))
+
+    stamp_1: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-1", "stamp_id": 10, "user_id": 1,
+        "url": "/api/stamps/10", "name": "Stamp 1", "x": 0.1, "y": 0.1, "size": 80.0,
+    }
+    stamp_2: dict[str, str | float | int | None] = {
+        "type": "stamp", "id": "stamp-2", "stamp_id": 11, "user_id": 1,
+        "url": "/api/stamps/11", "name": "Stamp 2", "x": 0.2, "y": 0.2, "size": 80.0,
+    }
+    draw_stroke: dict[str, str | float | int | None] = {
+        "type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.5, "y1": 0.5, "color": "#ff0000", "size": 3,
+    }
+    text_note: dict[str, str | float | int | None] = {
+        "type": "text", "id": "text-1", "x": 0.4, "y": 0.4, "text": "Note", "color": "#ffffff", "size": 24,
+    }
+
+    # Start with a doodle stroke and text
+    state.add([draw_stroke])
+    state.save_text(text_note)
+
+    # Adding stamp 1 must place it BEFORE the doodle actions (under doodles)
+    state.save_stamp(stamp_1)
+    types_after_stamp1 = [d.get("type") for d in state.doodles]
+    assert types_after_stamp1 == ["stamp", "draw", "text"]
+    assert state.doodles[0]["id"] == "stamp-1"
+
+    # Adding stamp 2 must place it after stamp 1, but still BEFORE doodles
+    state.save_stamp(stamp_2)
+    types_after_stamp2 = [d.get("type") for d in state.doodles]
+    assert types_after_stamp2 == ["stamp", "stamp", "draw", "text"]
+    assert [d.get("id") for d in state.doodles if d.get("type") == "stamp"] == ["stamp-1", "stamp-2"]
+
+    # Selecting stamp 1 moves it to the front of stamps, but still UNDER doodles
+    assert state.select_stamp("stamp-1") is True
+    types_after_select = [d.get("type") for d in state.doodles]
+    assert types_after_select == ["stamp", "stamp", "draw", "text"]
+    assert [d.get("id") for d in state.doodles if d.get("type") == "stamp"] == ["stamp-2", "stamp-1"]
+
+    # Moving stamp 2 moves it to the front of stamps, but still UNDER doodles
+    state.save_stamp({**stamp_2, "x": 0.8})
+    types_after_move = [d.get("type") for d in state.doodles]
+    assert types_after_move == ["stamp", "stamp", "draw", "text"]
+    assert [d.get("id") for d in state.doodles if d.get("type") == "stamp"] == ["stamp-1", "stamp-2"]
+
+
+

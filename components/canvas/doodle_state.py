@@ -86,7 +86,7 @@ class DoodleState:
 
         Enforces that a user can only have one stamp of a kind on the canvas at a time.
         Pulling another of the same kind replaces the existing one.
-        Stamps are placed at the end so the most recent is layered at the front.
+        Stamps are layered under doodles, with the most recent stamp at the front of the stamp layer.
         """
         stamp_uuid = action.get("id")
         user_id = action.get("user_id")
@@ -106,15 +106,23 @@ class DoodleState:
                     self.doodles.pop(index)
                     break
 
-        self.doodles.append(dict(action))
+        first_non_stamp = next(
+            (idx for idx, item in enumerate(self.doodles) if item.get("type") != "stamp"),
+            len(self.doodles),
+        )
+        self.doodles.insert(first_non_stamp, dict(action))
         self._persist()
 
     def select_stamp(self, stamp_annotation_id: str) -> bool:
-        """Move a stamp to the front (end of doodles list) when selected."""
+        """Move a stamp to the front of stamps (under doodles) when selected."""
         for index, action in enumerate(self.doodles):
             if action.get("type") == "stamp" and action.get("id") == stamp_annotation_id:
                 stamp = self.doodles.pop(index)
-                self.doodles.append(stamp)
+                first_non_stamp = next(
+                    (idx for idx, item in enumerate(self.doodles) if item.get("type") != "stamp"),
+                    len(self.doodles),
+                )
+                self.doodles.insert(first_non_stamp, stamp)
                 self._persist()
                 return True
         return False
