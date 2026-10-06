@@ -4,7 +4,7 @@ Narratron Buddy is designed to combine an AI **narrative assistant** with the in
 
 While traditional VTTs require manual map imports, complex grid calibrations, and heavy character sheet engines, Narratron takes a lightweight, agentic approach:
 
-1. **Character sheets live outside Narratron:** Sheets remain in specialized external tools (e.g. D&D Beyond, Demiplane, or Pathbuilder) and send dice rolls into Narratron chat via browser extensions like [Beyond20](beyond20.md).
+1. **Character sheets live outside Narratron:** Sheets remain in specialized external tools (e.g. D&D Beyond, Demiplane, or Pathbuilder) and send dice rolls into Narratron chat via browser extensions like [Beyond20](/docs/beyond20).
 2. **Tactical battlemaps are generated on demand:** The GM can summon 2D overhead battlemaps with tactical grids simply by asking Narratron's narrative assistant.
 3. **The Gamemaster directs pacing via the Action Wheel:** A radial gesture HUD lets the GM lock or advance maps, control background music, and direct the audiovisual atmosphere with split-second mouse gestures.
 4. **Miniatures and tokens are placed using Stamps:** Both the GM and players can drop custom tokens, adjust sizing, reposition minis across the grid, and layer tactical markers directly onto the canvas.
@@ -37,7 +37,7 @@ Narratron intentionally **does not** manage stat blocks, inventory, spell slots,
   - **Viewer Collaboration OFF (Public Dice Tray):** Rolls appear visibly in the chat log for all table participants to inspect, but do **not** prompt the narrative assistant. This is ideal when the human GM wants to run the session traditionally and interpret rolls manually.
   - **Viewer Collaboration ON (Agentic Reactivity):** When the GM turns on **Viewer collaboration** in the canvas settings, rolls from authorized players are forwarded to the Gemini Live narrative assistant. The assistant dynamically offers supportive narrative descriptions (e.g. describing the impact of a critical hit or spell blast) that the GM can build upon.
 
-For step-by-step extension configuration, see [docs/beyond20.md](beyond20.md).
+For step-by-step extension configuration, see [Beyond20 Integration Guide](/docs/beyond20).
 
 ---
 

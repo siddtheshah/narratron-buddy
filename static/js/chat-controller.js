@@ -341,6 +341,10 @@ export function initializeChatController(options = {}) {
         if (isHelp && msg.html) {
             // Help markup is escaped and rendered by the server.
             textSpan.innerHTML = msg.html;
+            textSpan.querySelectorAll('a').forEach(anchor => {
+                anchor.setAttribute('target', '_blank');
+                anchor.setAttribute('rel', 'noopener noreferrer');
+            });
         } else {
             textSpan.textContent = msg.text;
         }

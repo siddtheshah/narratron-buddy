@@ -93,7 +93,11 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return template.render(active_page=active_page, show_pricing=show_pricing)
     except Exception:
         out = raw
-        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-adventures", "docs-beyond20", "docs-terms", "docs-privacy"}
+        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-adventures", "docs-beyond20", "docs-virtual-tabletop", "docs-terms", "docs-privacy"}
+        out = out.replace(
+            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures', 'docs-beyond20', 'docs-virtual-tabletop', 'docs-terms', 'docs-privacy'] %}active{% endif %}",
+            "active" if docs_active else "",
+        )
         out = out.replace(
             "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures', 'docs-beyond20', 'docs-terms', 'docs-privacy'] %}active{% endif %}",
             "active" if docs_active else "",
@@ -102,7 +106,7 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
             "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-adventures'] %}active{% endif %}",
             "active" if docs_active else "",
         )
-        for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-terms", "docs-privacy", "stats", "deploy"]:
+        for p in ["join", "demos", "adventures", "docs-about", "docs-ideas", "docs-virtual-tabletop", "docs-theater-yaml", "docs-writing-adventures", "docs-terms", "docs-privacy", "stats", "deploy"]:
             pattern = f"{{% if active_page == '{p}' %}}active{{% endif %}}"
             out = out.replace(pattern, "active" if active_page == p else "")
         out = re.sub(
@@ -215,6 +219,7 @@ def read_sitemap() -> Response:
         "/docs/theater-yaml",
         "/docs/writing-adventures",
         "/docs/beyond20",
+        "/docs/virtual-tabletop",
         "/terms",
         "/privacy",
     ]
@@ -407,6 +412,29 @@ def read_docs_beyond20():
     )
 
 
+@app.get("/docs/virtual-tabletop", response_class=HTMLResponse)
+@app.get("/docs/virtual_tabletop", response_class=HTMLResponse)
+@app.get("/docs/vtt", response_class=HTMLResponse)
+def read_docs_virtual_tabletop() -> str:
+    """Serve the Virtual Tabletop Guide from docs/virtual_tabletop_guide.md."""
+    doc_path = PROJECT_ROOT / "docs" / "virtual_tabletop_guide.md"
+    raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
+    vtt_content = render_about_markdown(raw_content)
+    return render_page_template(
+        "about.html",
+        active_page="docs-virtual-tabletop",
+        extra_replacements={
+            "<!-- ABOUT_CONTENT -->": vtt_content,
+            "<title>About Narratron</title>": "<title>Virtual Tabletop Guide · Docs · Narratron</title>",
+        },
+        seo_metadata=SeoMetadata(
+            title="Virtual Tabletop Guide | Narratron Docs",
+            description="Learn how to use Narratron as a lightweight virtual tabletop with 2D battlemaps, tokens, and the Orator Action Wheel.",
+            path="/docs/virtual-tabletop",
+        ),
+    )
+
+
 @app.get("/terms", response_class=HTMLResponse)
 @app.get("/terms-of-service", response_class=HTMLResponse)
 @app.get("/terms-of-use", response_class=HTMLResponse)
@@ -467,6 +495,7 @@ def rebuild_docs_search_index() -> int:
         DocsSearchPage("theater.yaml reference", "/docs/theater-yaml", read_docs_theater_yaml()),
         DocsSearchPage("Writing adventures", "/docs/writing-adventures", read_docs_writing_adventures()),
         DocsSearchPage("Beyond20 dice rolls", "/docs/beyond20", read_docs_beyond20()),
+        DocsSearchPage("Virtual tabletop guide", "/docs/virtual-tabletop", read_docs_virtual_tabletop()),
         DocsSearchPage("Terms of Service", "/docs/terms", read_terms()),
         DocsSearchPage("Privacy Policy", "/docs/privacy", read_privacy()),
     ]

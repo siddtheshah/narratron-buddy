@@ -67,5 +67,5 @@ Roll details are shared with everyone who can view the theater chat. Treat a rol
 
 ## Related guides
 
-- [Using Narratron as a Virtual Tabletop (VTT)](virtual_tabletop_guide.md)
+- [Using Narratron as a Virtual Tabletop (VTT)](/docs/virtual-tabletop)
 

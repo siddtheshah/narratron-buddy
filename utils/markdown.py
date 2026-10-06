@@ -4,7 +4,7 @@ import html
 import re
 
 
-def _format_inline(text: str) -> str:
+def _format_inline(text: str, open_in_new_tab: bool = False) -> str:
     """Render the small, safe Markdown subset used by ABOUT.md and documentation."""
     escaped = html.escape(text, quote=False)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
@@ -14,13 +14,14 @@ def _format_inline(text: str) -> str:
     def link(match: re.Match[str]) -> str:
         label, url = match.groups()
         if re.match(r"^(https?://|mailto:|/|#)", url):
-            return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+            target_attr = ' target="_blank" rel="noopener noreferrer"' if open_in_new_tab else ""
+            return f'<a href="{html.escape(url, quote=True)}"{target_attr}>{label}</a>'
         return label
 
     return re.sub(r"\[([^]]+)\]\(([^)]+)\)", link, escaped)
 
 
-def render_markdown(markdown_source: str) -> str:
+def render_markdown(markdown_source: str, *, open_in_new_tab: bool = False) -> str:
     """Convert headings, code blocks, lists, and paragraphs in Markdown to page markup."""
     blocks: list[str] = []
     list_items: list[str] = []
@@ -29,6 +30,9 @@ def render_markdown(markdown_source: str) -> str:
     in_code_block: bool = False
     code_block_lines: list[str] = []
     code_block_lang: str = ""
+
+    def inline(text: str) -> str:
+        return _format_inline(text, open_in_new_tab=open_in_new_tab)
 
     def flush_list() -> None:
         nonlocal list_items, list_tag
@@ -40,7 +44,7 @@ def render_markdown(markdown_source: str) -> str:
     def flush_paragraph() -> None:
         nonlocal paragraph
         if paragraph:
-            blocks.append(f"<p>{_format_inline(' '.join(paragraph))}</p>")
+            blocks.append(f"<p>{inline(' '.join(paragraph))}</p>")
         paragraph = []
 
     def flush_code_block() -> None:
@@ -82,7 +86,7 @@ def render_markdown(markdown_source: str) -> str:
             flush_list()
             level = len(heading.group(1))
             heading_text = heading.group(2)
-            blocks.append(f"<h{level}>{_format_inline(heading_text)}</h{level}>")
+            blocks.append(f"<h{level}>{inline(heading_text)}</h{level}>")
         elif task_item:
             flush_paragraph()
             if list_tag and list_tag != "ul":
@@ -90,7 +94,7 @@ def render_markdown(markdown_source: str) -> str:
             list_tag = "ul"
             checked = " checked" if task_item.group(1).lower() == "x" else ""
             item_text = task_item.group(2)
-            list_items.append(f'<li class="task-list-item"><input type="checkbox" disabled{checked}> {_format_inline(item_text)}</li>')
+            list_items.append(f'<li class="task-list-item"><input type="checkbox" disabled{checked}> {inline(item_text)}</li>')
         elif unordered_item or ordered_item:
             flush_paragraph()
             item_tag = "ul" if unordered_item else "ol"
@@ -98,7 +102,7 @@ def render_markdown(markdown_source: str) -> str:
                 flush_list()
             list_tag = item_tag
             item_text = (unordered_item or ordered_item).group(1)
-            list_items.append(f"<li>{_format_inline(item_text)}</li>")
+            list_items.append(f"<li>{inline(item_text)}</li>")
         elif line == "":
             flush_paragraph()
             flush_list()

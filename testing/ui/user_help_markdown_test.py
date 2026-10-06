@@ -38,6 +38,7 @@ def test_help_markdown_renders_and_escapes_model_html(view: str) -> None:
         def serve_chat_shell(route: Route) -> None:
             route.fulfill(body="<div id='messages'></div>")
 
+        page.context.route("https://example.test/**", lambda route: route.fulfill(body="<h1>Guide</h1>"))
         page.route("http://narratron.test/", serve_chat_shell)
         page.goto("http://narratron.test/")
         page.add_style_tag(content=Path("static/css/chat.css").read_text(encoding="utf-8"))
@@ -52,6 +53,15 @@ def test_help_markdown_renders_and_escapes_model_html(view: str) -> None:
         assert help_body.locator("li code").inner_text() == "Shift+A"
         assert help_body.locator("pre code").inner_text() == "adventure_mode: true"
         assert help_body.locator("a").get_attribute("href") == "https://example.test/guide"
+        assert help_body.locator("a").get_attribute("target") == "_blank"
+        assert "noopener" in (help_body.locator("a").get_attribute("rel") or "")
+
+        with page.expect_popup() as popup_info:
+            help_body.locator("a").click()
+        popup = popup_info.value
+        assert popup.url == "https://example.test/guide"
+        popup.close()
+
         assert help_body.locator("img").count() == 0
         assert '<img src=x onerror="window.injected=true">' in help_body.inner_text()
         assert page.evaluate("window.injected === undefined")

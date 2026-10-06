@@ -49,6 +49,12 @@ def test_docs_theater_yaml_page_reads_the_reference_template():
     assert "nodes_ahead" not in response
 
 
+def test_docs_virtual_tabletop_page_serves_markdown_content():
+    response = pages.read_docs_virtual_tabletop()
+    assert "Virtual Tabletop" in response
+    assert "Action Wheel" in response
+
+
 def test_docs_index_links_to_each_documentation_page():
     response = pages.read_docs()
     assert 'href="/docs/about"' in response
@@ -56,6 +62,7 @@ def test_docs_index_links_to_each_documentation_page():
     assert 'href="/docs/theater-yaml"' in response
     assert 'href="/docs/writing-adventures"' in response
     assert 'href="/docs/beyond20"' in response
+    assert 'href="/docs/virtual-tabletop"' in response
 
 
 def test_docs_pages_render_persistent_navigation_and_search():
@@ -66,12 +73,14 @@ def test_docs_pages_render_persistent_navigation_and_search():
         pages.read_docs_theater_yaml(),
         pages.read_docs_writing_adventures(),
         pages.read_docs_beyond20(),
+        pages.read_docs_virtual_tabletop(),
         pages.read_terms(),
         pages.read_privacy(),
     ]:
         assert 'class="docs-sidebar"' in response
         assert 'id="docsSearch"' in response
         assert 'href="/docs/theater-yaml"' in response
+        assert 'href="/docs/virtual-tabletop"' in response
 
 
 def test_docs_search_indexes_rendered_content_and_returns_section_links():

@@ -84,8 +84,8 @@ def test_user_help_tool_resets_browse_limits_for_each_agent_question(tmp_path: P
     run_agent.assert_called_once_with("How do I turn on Adventure Mode?")
     tool.canvas_manager.chat.add_message.assert_called_once_with({
         "author": "Narratron User Help",
-        "text": "Use Adventure Mode.",
-        "html": "<p>Use Adventure Mode.</p>",
+        "text": "Use Adventure Mode.\n\nFor more details, see the [Writing Adventures Guide](/docs/writing-adventures).",
+        "html": "<p>Use Adventure Mode.</p>\n<p>For more details, see the <a href=\"/docs/writing-adventures\" target=\"_blank\" rel=\"noopener noreferrer\">Writing Adventures Guide</a>.</p>",
         "type": "user_help",
     })
     tool.canvas_manager.notify_changed.assert_called_once_with("chat")
@@ -113,9 +113,62 @@ def test_user_help_tool_schedules_another_question_during_cooldown(tmp_path: Pat
     tool = make_tool(tmp_path)
     tool.cooldown_duration = 60.0
 
-    with patch.object(tool, "_run_agent", new=AsyncMock(return_value="Help answer.")):
+    with patch.object(tool, "_run_agent", new=AsyncMock(return_value="Help answer [Docs](/docs).")):
         first = asyncio.run(tool.user_help_tool("How do I open the menu?"))
         second = asyncio.run(tool.user_help_tool("How do I save theater.yaml?"))
 
     assert first == "User help answer posted in chat."
     assert second == "Tool 'user_help_tool' scheduled for next cycle when cooldown expires."
+
+
+def test_user_help_tool_normalizes_file_paths_to_web_doc_urls() -> None:
+    from tools.user_help_tool import normalize_doc_links
+
+    raw = "Refer to [Virtual Tabletop Guide](virtual_tabletop_guide.md) or [Beyond20](docs/beyond20.md)."
+    normalized = normalize_doc_links(raw)
+    assert normalized == "Refer to [Virtual Tabletop Guide](/docs/virtual-tabletop) or [Beyond20](/docs/beyond20)."
+
+
+def test_user_help_tool_ensures_doc_citation_on_all_answers() -> None:
+    from tools.user_help_tool import ensure_doc_citation
+
+    # When doc link is already present, it is not modified
+    already_cited = "Open settings as documented in [theater.yaml](/docs/theater-yaml)."
+    assert ensure_doc_citation(already_cited, "How to configure?") == already_cited
+
+    # When missing, keyword-specific citation is appended
+    answer_vtt = ensure_doc_citation("Right click for the action-wheel.", "How to use action wheel?")
+    assert "[Virtual Tabletop Guide](/docs/virtual-tabletop)" in answer_vtt
+
+    answer_gen = ensure_doc_citation("Press Tab.", "How to toggle view?")
+    assert "[Narratron Documentation](/docs)" in answer_gen
+
+
+def test_user_help_tool_resolves_files_via_web_doc_urls(tmp_path: Path) -> None:
+    templates = tmp_path / "templates"
+    docs = tmp_path / "docs"
+    templates.mkdir()
+    docs.mkdir()
+    (docs / "virtual_tabletop_guide.md").write_text("# VTT Guide\nGrid and tokens.", encoding="utf-8")
+    tool = make_tool(tmp_path)
+
+    # Resolve using doc URL directly
+    resolved = tool._resolve_help_path("/docs/virtual-tabletop")
+    assert resolved is not None
+    assert resolved.name == "virtual_tabletop_guide.md"
+
+    # Reading file using doc URL
+    content = tool.read_help_file("/docs/virtual-tabletop", start_line=1)
+    assert "Grid and tokens." in content
+
+
+def test_user_help_tool_agent_instructions_direct_concise_answers_and_doc_citations(tmp_path: Path) -> None:
+    tool = make_tool(tmp_path)
+    instructions = tool._create_agent().instruction
+    assert "simple, answer it concisely" in instructions
+    assert "general or broad" in instructions
+    assert "refer the user to the relevant documentation guide" in instructions
+    assert "Always cite links to the relevant documentation for any answer" in instructions
+    assert "/docs/virtual-tabletop" in instructions
+    assert "/docs/theater-yaml" in instructions
+

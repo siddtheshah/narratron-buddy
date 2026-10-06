@@ -67,7 +67,15 @@ def main() -> None:
     print(f"Running {len(questions)} live user_help_tool question(s) with ADK model {arguments.model}.")
     for number, question in enumerate(questions, start=1):
         print(f"\n[{number}] Question: {question}")
-        print(asyncio.run(help_tool.user_help_tool(question)))
+        status = asyncio.run(help_tool.user_help_tool(question))
+        print(f"Result: {status}")
+        chat = help_tool.canvas_manager.chat
+        if chat and chat.messages:
+            last_message = chat.messages[-1]
+            print("\n--- Answer Text ---")
+            print(last_message.get("text", ""))
+            print("\n--- Rendered HTML ---")
+            print(last_message.get("html", ""))
 
 
 if __name__ == "__main__":
