@@ -1,9 +1,11 @@
 """Owner authorization, persistence, and billing for canvas stamp generation."""
 
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import Request
@@ -14,7 +16,7 @@ import pytest
 import api_server.theaters as theaters
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
-from providers.image_provider import ImageGenerationResult
+from providers.image_provider import ImageGenerationRequest, ImageGenerationResult
 from storage.theater_repository import TheaterRepository
 
 
@@ -144,3 +146,41 @@ def test_storage_failure_removes_partial_stamp_without_charging(stamps: StampHar
     assert stamps.manager.theater("stage").stamps() == []
     stamps.database.record_user_usage.assert_not_called()
     stamps.broadcast.assert_not_awaited()
+
+
+@pytest.mark.parametrize("credits", [10, 4])
+def test_stamp_jobs_generate_concurrently_and_settle_without_overdraft(
+    stamps: StampHarness, credits: int,
+) -> None:
+    both_generating = Barrier(2)
+    image = stamps.provider.generate.return_value
+    account: dict[str, float] = {"id": 7, "credits": credits}
+    stamps.database.get_user_by_id.return_value = account
+
+    def generate(request: ImageGenerationRequest) -> ImageGenerationResult:
+        # Neither request can finish generation until both have started.
+        both_generating.wait(timeout=5)
+        return image
+
+    def settle(
+        owner_id: int, *, images_created: int, credit_cost: float, idempotency_key: str,
+    ) -> dict[str, float]:
+        account["credits"] -= credit_cost
+        return {"credits": account["credits"]}
+
+    def submit(name: str) -> int:
+        return stamps.client.post(
+            "/api/theaters/stage/stamps/generate", json={"name": name, "prompt": name},
+        ).status_code
+
+    stamps.provider.generate.side_effect = generate
+    stamps.database.record_user_usage.side_effect = settle
+    # Each TestClient owns a fresh event loop; avoid reusing a previously bound lock.
+    with patch.object(theaters, "_billing_locks", {}), ThreadPoolExecutor(max_workers=2) as executor:
+        results = sorted(executor.map(submit, ["Goblin", "Dragon"]))
+    expected_count = 2 if credits == 10 else 1
+    assert results == ([200, 200] if credits == 10 else [200, 402])
+    assert stamps.provider.generate.call_count == 2
+    assert stamps.database.record_user_usage.call_count == expected_count
+    assert len(stamps.manager.theater("stage").stamps()) == expected_count
+    assert account["credits"] == credits - expected_count * 4

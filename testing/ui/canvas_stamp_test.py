@@ -52,6 +52,7 @@ def test_production_stamp_manager_separates_sources_and_places_theater_stamps(st
     render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
     stamp_page.add_script_tag(content="""
         let cachedTheaterStamps = [{id: 'theater:stage:hero.png', name: 'Theater Hero', url: '/theaters/stage/stamps/hero.png'}];
+        const pendingStampGenerations = new Map();
         let stampLoadError = '';
         const stampManagerEmpty = document.getElementById('stamp-manager-empty');
         const stampEmptyMessage = null;
@@ -90,9 +91,10 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
         const stampManagerEmpty = document.getElementById('stamp-manager-empty');
         const stampEmptyMessage = null;
         window.generationRequests = [];
+        window.generationResolvers = [];
         window.fetch = async (url, options) => {
             window.generationRequests.push({url, ...options});
-            return new Promise(resolve => { window.finishGeneration = resolve; });
+            return new Promise(resolve => { window.generationResolvers.push(resolve); });
         };
         function redrawAllDoodles() { renderer.redraw(doodleActions); }
     """ + generation + render)
@@ -112,29 +114,52 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
     assert stamp_page.locator("#stamp-generation-name").count() == 0
     stamp_page.locator("#stamp-generation-prompt").fill("A green goblin with a spear")
     stamp_page.locator("#stamp-generation-prompt").press("Enter")
-    assert stamp_page.locator("#stamp-generation-prompt").input_value() == "A green goblin with a spear"
-    assert stamp_page.locator("#stamp-generation-submit").is_disabled()
-    assert "Generating your stamp" in stamp_page.locator("#stamp-generation-status").inner_text()
+    assert stamp_page.locator("#stamp-generation-prompt").input_value() == ""
+    assert stamp_page.locator("#stamp-generation-submit").is_enabled()
+    assert "1 stamp generating" in stamp_page.locator("#stamp-generation-status").inner_text()
+    assert stamp_page.locator(".stamp-card-generating").count() == 1
+    assert stamp_page.locator(".stamp-generation-placeholder").evaluate(
+        "element => getComputedStyle(element, '::after').animationName"
+    ) == "stamp-generation-spin"
+    assert stamp_page.locator(".stamp-card-generating").get_attribute("draggable") == "false"
+    assert not stamp_page.locator("#stamp-manager-empty").is_visible()
     stamp_page.evaluate("document.getElementById('stamp-generation-form').requestSubmit()")
     assert stamp_page.evaluate("generationRequests.length") == 1
     assert stamp_page.evaluate("generationRequests[0].url") == "/api/theaters/stage/stamps/generate"
     assert stamp_page.evaluate("JSON.parse(generationRequests[0].body)") == {
         "name": "green goblin spear", "prompt": "A green goblin with a spear",
     }
+    stamp_page.locator("#stamp-generation-prompt").fill("A silver dragon")
+    stamp_page.locator("#stamp-generation-submit").click()
+    assert stamp_page.evaluate("generationRequests.length") == 2
+    assert stamp_page.locator(".stamp-card-generating").count() == 2
+    assert "2 stamps generating" in stamp_page.locator("#stamp-generation-status").inner_text()
+    stamp_page.locator("#close-stamp-manager-btn").click()
+    stamp_page.locator("#chat-open-stamps-btn").click()
+    stamp_page.evaluate("renderStampManagerGrid(cachedUserStamps || [])")
+    assert stamp_page.locator(".stamp-card-generating").count() == 2
+    stamp_page.evaluate("""generationResolvers[1]({ok: true, json: async () => ({
+        stamps: [{id: 'theater:stage:dragon.png', name: 'Silver dragon', url: '/theaters/stage/stamps/dragon.png'}],
+        credits_charged: 4,
+    })})""")
+    stamp_page.wait_for_function("pendingStampGenerations.size === 1")
+    assert stamp_page.locator(".stamp-card-generating .stamp-card-name").all_text_contents() == ["green goblin spear"]
+    assert "1 stamp generating" in stamp_page.locator("#stamp-generation-status").inner_text()
+    stamp_page.locator("#stamp-generation-prompt").fill("Next stamp draft")
     if success:
-        stamp_page.evaluate("""finishGeneration({ok: true, json: async () => ({
+        stamp_page.evaluate("""generationResolvers[0]({ok: true, json: async () => ({
             stamps: [{id: 'theater:stage:goblin.png', name: 'Goblin scout', url: '/theaters/stage/stamps/goblin.png'}],
             credits_charged: 4,
         })})""")
-        stamp_page.wait_for_function("document.getElementById('stamp-generation-status').textContent.includes('ready to use')")
-        assert stamp_page.locator(".stamp-card-name").all_text_contents() == ["Goblin scout"]
-        assert stamp_page.locator(".stamp-card").get_attribute("draggable") == "true"
-        assert stamp_page.locator("#stamp-generation-prompt").input_value() == ""
+        stamp_page.wait_for_function("pendingStampGenerations.size === 0")
+        assert stamp_page.locator(".stamp-card-name").all_text_contents() == ["Silver dragon", "Goblin scout"]
+        assert stamp_page.locator(".stamp-card").first.get_attribute("draggable") == "true"
     else:
-        stamp_page.evaluate("finishGeneration({ok: false, json: async () => ({detail: 'Generation requires 4 credits.'})})")
+        stamp_page.evaluate("generationResolvers[0]({ok: false, json: async () => ({detail: 'Generation requires 4 credits.'})})")
         stamp_page.wait_for_function("document.getElementById('stamp-generation-status').textContent.includes('requires 4 credits')")
-        assert stamp_page.locator(".stamp-card").count() == 0
-        assert stamp_page.locator("#stamp-generation-prompt").input_value() == "A green goblin with a spear"
+        assert stamp_page.locator(".stamp-card-name").all_text_contents() == ["Silver dragon"]
+    assert stamp_page.locator("#stamp-generation-prompt").input_value() == "Next stamp draft"
+    assert stamp_page.locator(".stamp-card-generating").count() == 0
     assert stamp_page.locator("#stamp-generation-submit").is_enabled()
     stamp_page.evaluate("isTheaterStampOwner = false; updateStampGenerationPermission()")
     assert not stamp_page.locator("#stamp-generation-form").is_visible()

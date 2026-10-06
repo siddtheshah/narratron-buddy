@@ -5940,7 +5940,14 @@
         let stampLoadError = '';
         let isFetchingUserStamps = false;
         let isTheaterStampOwner = false;
-        let isGeneratingStamp = false;
+        const pendingStampGenerations = new Map();
+        let nextStampGenerationId = 0;
+
+        function updateStampGenerationStatus(message = '') {
+            const count = pendingStampGenerations.size;
+            const pending = count ? `${count} stamp${count === 1 ? '' : 's'} generating. You can generate another while you wait.` : '';
+            document.getElementById('stamp-generation-status').textContent = [message, pending].filter(Boolean).join(' ');
+        }
 
         function updateStampGenerationPermission() {
             const form = document.getElementById('stamp-generation-form');
@@ -5974,9 +5981,8 @@
 
         document.getElementById('stamp-generation-form')?.addEventListener('submit', async event => {
             event.preventDefault();
-            if (!isTheaterStampOwner || isGeneratingStamp) return;
+            if (!isTheaterStampOwner) return;
             const promptInput = document.getElementById('stamp-generation-prompt');
-            const button = document.getElementById('stamp-generation-submit');
             const status = document.getElementById('stamp-generation-status');
             const prompt = promptInput.value.trim();
             if (!prompt) {
@@ -5984,10 +5990,12 @@
                 return;
             }
             const name = stampNameFromPrompt(prompt);
-            isGeneratingStamp = true;
-            button.disabled = true;
-            button.textContent = 'Generating…';
-            status.textContent = 'Generating your stamp. You can keep using the canvas while you wait.';
+            const jobId = ++nextStampGenerationId;
+            pendingStampGenerations.set(jobId, { name, prompt });
+            promptInput.value = '';
+            renderStampManagerGrid(cachedUserStamps || []);
+            updateStampGenerationStatus();
+            let resultMessage = '';
             try {
                 const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/stamps/generate`, {
                     method: 'POST',
@@ -5996,16 +6004,18 @@
                 });
                 const data = await response.json();
                 if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Unable to generate stamp.');
-                cachedTheaterStamps = data.stamps;
-                renderStampManagerGrid(cachedUserStamps || []);
-                status.textContent = `Stamp saved to this theater and ready to use. Charged ${data.credits_charged} credits.`;
-                promptInput.value = '';
+                // Responses may arrive out of order, with an older stamp list.
+                const mergedStamps = new Map(cachedTheaterStamps.map(stamp => [stamp.id, stamp]));
+                data.stamps.forEach(stamp => mergedStamps.set(stamp.id, stamp));
+                cachedTheaterStamps = [...mergedStamps.values()];
+                resultMessage = `“${name}” saved to this theater and ready to use. Charged ${data.credits_charged} credits.`;
             } catch (error) {
-                status.textContent = error.message || 'Unable to generate stamp. Please try again.';
+                resultMessage = `“${name}”: ${error.message || 'Unable to generate stamp. Please try again.'}`;
+                if (!promptInput.value.trim()) promptInput.value = prompt;
             } finally {
-                isGeneratingStamp = false;
-                button.disabled = false;
-                button.textContent = 'Generate stamp';
+                pendingStampGenerations.delete(jobId);
+                renderStampManagerGrid(cachedUserStamps || []);
+                updateStampGenerationStatus(resultMessage);
             }
         });
 
@@ -6182,10 +6192,11 @@
             stampManagerGrid.innerHTML = '';
             if (stampManagerCount) {
                 stampManagerCount.textContent = `${stamps.length}/10`;
-                stampManagerCount.title = `${stamps.length} user stamps · ${cachedTheaterStamps.length} theater stamps`;
+                stampManagerCount.title = `${stamps.length} user stamps · ${cachedTheaterStamps.length} theater stamps` +
+                    (pendingStampGenerations.size ? ` · ${pendingStampGenerations.size} generating` : '');
             }
 
-            if (stamps.length === 0 && cachedTheaterStamps.length === 0) {
+            if (stamps.length === 0 && cachedTheaterStamps.length === 0 && pendingStampGenerations.size === 0) {
                 if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
                 if (stampEmptyMessage) stampEmptyMessage.textContent = stampLoadError || 'No stamps available yet.';
                 return;
@@ -6320,7 +6331,30 @@
 
                 stampManagerGrid.appendChild(card);
             });
-            if (cachedTheaterStamps.length === 0) addSection('Theater stamps · None provided', true);
+            if (cachedTheaterStamps.length === 0) {
+                addSection(pendingStampGenerations.size ? 'Theater stamps' : 'Theater stamps · None provided', true);
+            }
+            pendingStampGenerations.forEach((job, jobId) => {
+                const card = document.createElement('div');
+                card.className = 'stamp-card stamp-card-generating';
+                card.dataset.generationId = String(jobId);
+                card.draggable = false;
+                card.setAttribute('aria-busy', 'true');
+                card.setAttribute('aria-label', `${job.name}: Generating`);
+                card.title = `Generating “${job.name}” — ${job.prompt}`;
+
+                const icon = document.createElement('span');
+                icon.className = 'stamp-card-thumb stamp-generation-placeholder';
+                icon.setAttribute('aria-hidden', 'true');
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'stamp-card-name';
+                nameSpan.textContent = job.name;
+                const progress = document.createElement('span');
+                progress.className = 'stamp-card-progress';
+                progress.textContent = 'Generating…';
+                card.append(icon, nameSpan, progress);
+                stampManagerGrid.appendChild(card);
+            });
         }
 
         function placeStampOnCanvas(stampData, normX, normY) {

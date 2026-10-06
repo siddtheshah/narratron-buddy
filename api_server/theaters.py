@@ -86,11 +86,21 @@ async def generate_theater_stamp(
         if not (root / "theater.yaml").is_file():
             if not await asyncio.to_thread(theater_repository.reconstruct_theater, theater_id, root):
                 raise HTTPException(status_code=404, detail="Theater files not found.")
+    # Image jobs can overlap; hold the billing lock only for account checks and settlement.
+    try:
+        image = await asyncio.to_thread(generate_theater_image, root, kind="stamp", prompt=prompt, references=[])
+        if not image.image_bytes or image.mime_type != "image/png":
+            raise ValueError("Stamp generation must return a PNG image.")
+    except Exception as error:
+        logger.exception("Theater stamp generation failed")
+        raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
+
+    async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
+        account = await asyncio.to_thread(db.get_user_by_id, owner_id)
+        if not account or account["credits"] < cost:
+            raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
         filename = ""
         try:
-            image = await asyncio.to_thread(generate_theater_image, root, kind="stamp", prompt=prompt, references=[])
-            if not image.image_bytes or image.mime_type != "image/png":
-                raise ValueError("Stamp generation must return a PNG image.")
             safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or "stamp"
             filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.png"
             await asyncio.to_thread(_save_generated_stamp, theater_id, filename, image.image_bytes)
