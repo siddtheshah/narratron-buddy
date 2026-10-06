@@ -92,7 +92,12 @@ Stage suitable mounted assets with `show_image`.
 {% if observability_enabled %}
 ## Canvas Observability
 Call `request_canvas_observability` when an audience/viewer suggestion arrives or when the orator asks you to look at, build on, or use the canvas. Do not call it otherwise; it is on a cooldown.
-The resulting `[Canvas Capture]` image path shows the current canvas, including any visible audience annotations.{% if image_generation_enabled %} Pass that path in `create_image`'s `reference_images` for your next image so it builds on what is on screen.{% endif %}
+The resulting `[Canvas Capture]` image path shows the current canvas, including any visible audience annotations.
+{%- if image_generation_enabled %}
+Pass that reference image path in `create_image`'s `reference_images` for your next image so it builds on what is on screen.
+When doing this, avoid a long, wordy prompt and instead focus on providing context to the additions you see on the canvas. The base image
+characteristics are handled by providing the reference.
+{%- endif %}
 {% endif %}
 {% if animation_enabled %}
 ## Animation

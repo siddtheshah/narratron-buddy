@@ -482,7 +482,7 @@ class LiveAgentSession:
         try:
             directory = canvas.theater.output_dir() / "canvas_captures"
             directory.mkdir(parents=True, exist_ok=True)
-            path = directory / f"canvas_{hashlib.sha256(data).hexdigest()}{extension}"
+            path = directory / f"canvas_{hashlib.sha256(data).hexdigest()[:8]}{extension}"
             if not path.exists():
                 temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
                 try:
