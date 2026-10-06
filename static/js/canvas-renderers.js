@@ -1035,8 +1035,6 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 }
             });
             stampLayer.appendChild(item);
-        } else if (stampLayer.lastElementChild !== item) {
-            stampLayer.appendChild(item);
         }
         item.annotation = action;
         const rect = (canvas && canvas.getBoundingClientRect().width > 0)
@@ -1231,6 +1229,22 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             } else if (action.type === "stamp") {
                 renderSelectableStamp(action);
             }
+        });
+        syncStampLayerOrder();
+    }
+
+    // Layer stamp nodes to match doodle order without touching nodes already in place.
+    // Re-parenting a node that holds pointer capture fires lostpointercapture and
+    // aborts an in-progress drag, so nodes are only moved when the order differs.
+    function syncStampLayerOrder() {
+        if (!stampLayer) return;
+        const desired = lastDoodleActions
+            .filter(action => action.type === "stamp" && action.id)
+            .map(action => Array.from(stampLayer.children).find(node => node.dataset.annotationId === action.id))
+            .filter(node => node);
+        desired.forEach((node, index) => {
+            const current = stampLayer.children[index];
+            if (current !== node) stampLayer.insertBefore(node, current || null);
         });
     }
 

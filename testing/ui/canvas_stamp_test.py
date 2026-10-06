@@ -660,6 +660,36 @@ def test_stamps_dynamically_resize_when_canvas_resizes(stamp_page: Page) -> None
     assert stamp.evaluate("el => el.style.height") == "64px"
 
 
+@pytest.mark.parametrize("dragged_index", [0, 1])
+def test_stamp_drag_with_multiple_stamps_does_not_snap_back(stamp_page: Page, dragged_index: int) -> None:
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.2, 0.2)')
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 11, name: "Heart", url: "/api/stamps/11"}, 0.6, 0.6)')
+    dragged_id = stamp_page.evaluate(f'doodleActions[{dragged_index}].id')
+    other_id = stamp_page.evaluate(f'doodleActions[{1 - dragged_index}].id')
+    original_x = stamp_page.evaluate(f'doodleActions.find(s => s.id === "{dragged_id}").x')
+    original_y = stamp_page.evaluate(f'doodleActions.find(s => s.id === "{dragged_id}").y')
+    other_before = stamp_page.evaluate(f'doodleActions.find(s => s.id === "{other_id}")')
+
+    stamp = stamp_page.locator(f'.canvas-stamp-annotation[data-annotation-id="{dragged_id}"]')
+    box = stamp.bounding_box()
+    assert box is not None
+    start_x = box["x"] + box["width"] / 2
+    start_y = box["y"] + box["height"] / 2
+
+    stamp_page.mouse.move(start_x, start_y)
+    stamp_page.mouse.down()
+    stamp_page.mouse.move(start_x + 100, start_y + 50, steps=10)
+    stamp_page.mouse.up()
+
+    moved = stamp_page.evaluate(f'doodleActions.find(s => s.id === "{dragged_id}")')
+    assert moved["x"] > original_x + 0.05
+    assert moved["y"] > original_y + 0.02
+    assert stamp_page.evaluate(f'doodleActions.find(s => s.id === "{other_id}")') == other_before
+    committed = stamp_page.evaluate(f'sent.filter(m => m.type === "stamp" && m.id === "{dragged_id}")')
+    assert committed[-1]["x"] == pytest.approx(moved["x"])
+    assert committed[-1]["y"] == pytest.approx(moved["y"])
+
+
 def test_stamp_layering_order_creation_and_selection(stamp_page: Page) -> None:
     # 1. Place Stamp 10 (Dragon) at (0.3, 0.3)
     stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.3, 0.3)')
