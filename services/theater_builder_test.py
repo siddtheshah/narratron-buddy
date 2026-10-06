@@ -131,3 +131,75 @@ def test_assistant_receives_image_previews_for_unnamed_uploads(tmp_path: Path) -
     with Image.open(BytesIO(contents[2].inline_data.data)) as preview:
         assert preview.width <= 512
         assert preview.height <= 512
+
+
+def test_store_deletes_files_and_cleans_empty_directories(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    store.write_files(info, {
+        "lore/chapter1/scene.txt": b"Scene content",
+        "references/hero.png": b"hero",
+    })
+    initial_revision = info.revision
+    store.delete_files(info, ["lore/chapter1/scene.txt"])
+    assert info.revision == initial_revision + 1
+    assert not (store.directory(info.theater_id) / "lore/chapter1/scene.txt").exists()
+    assert not (store.directory(info.theater_id) / "lore/chapter1").exists()
+    assert (store.directory(info.theater_id) / "references/hero.png").is_file()
+    assert {item.path for item in store.files(info.theater_id)} == {"theater.yaml", "references/hero.png"}
+
+
+def test_store_rejects_deleting_theater_yaml(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    with pytest.raises(ValueError, match="Cannot delete theater.yaml."):
+        store.delete_files(info, ["theater.yaml"])
+
+
+def test_store_rejects_deleting_nonexistent_or_duplicate_files(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    with pytest.raises(ValueError, match="File to delete does not exist"):
+        store.delete_files(info, ["lore/missing.txt"])
+    store.write_files(info, {"lore/scene.txt": b"scene"})
+    with pytest.raises(ValueError, match="Duplicate deletion"):
+        store.write_files(info, {}, deletions=["lore/scene.txt", "lore/scene.txt"])
+
+
+def test_store_rejects_deletion_conflicts_with_writes_and_moves(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    store.write_files(info, {
+        "lore/scene.txt": b"scene",
+        "references/old.png": b"old",
+    })
+    with pytest.raises(ValueError, match="A file cannot be deleted and rewritten in the same change."):
+        store.write_files(info, {"lore/scene.txt": b"new"}, deletions=["lore/scene.txt"])
+    with pytest.raises(ValueError, match="A file cannot be deleted and moved in the same change."):
+        store.write_files(info, {}, moves=[FileMove(source="references/old.png", destination="references/new.png")], deletions=["references/old.png"])
+
+
+def test_assistant_proposes_deletions_and_validates_them(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    store.write_files(info, {"lore/obsolete.txt": b"old lore"})
+    client = MagicMock()
+    proposal = BuilderProposal(
+        message="Remove obsolete lore document.",
+        deletions=["lore/obsolete.txt"],
+    )
+    client.models.generate_content.return_value.text = proposal.model_dump_json()
+    with patch("services.theater_builder.genai.Client", return_value=client):
+        result = store.propose(info, "Delete old lore", [], {})
+    assert result.deletions == ["lore/obsolete.txt"]
+    system_instruction = client.models.generate_content.call_args.kwargs["config"].system_instruction
+    assert "propose file deletions" in system_instruction
+    assert "Never propose deleting theater.yaml" in system_instruction
+
+    # Assistant proposing deletion of theater.yaml must be rejected
+    bad_client = MagicMock()
+    bad_proposal = BuilderProposal(message="Delete config", deletions=["theater.yaml"])
+    bad_client.models.generate_content.return_value.text = bad_proposal.model_dump_json()
+    with patch("services.theater_builder.genai.Client", return_value=bad_client), pytest.raises(ValueError, match="Cannot delete theater.yaml."):
+        store.propose(info, "Delete theater.yaml", [], {})
+

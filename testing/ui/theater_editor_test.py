@@ -97,6 +97,33 @@ def editor_page() -> Iterator[Page]:
                         }
                     }
                 }
+                if (request.pathname.endsWith('/delete')) {
+                    const body = JSON.parse(options.body);
+                    draft.files = draft.files.filter(file => file.path !== body.path);
+                    draft.draft.revision++;
+                    delete window.savedFiles[body.path];
+                    return {ok: true, json: async () => structuredClone(draft)};
+                }
+                if (request.pathname.endsWith('/apply')) {
+                    const body = JSON.parse(options.body);
+                    const proposal = body.proposal;
+                    for (const write of proposal.writes || []) {
+                        window.savedFiles[write.path] = write.content;
+                        if (!draft.files.some(file => file.path === write.path)) {
+                            draft.files.push({path: write.path, kind: 'text'});
+                        }
+                    }
+                    for (const move of proposal.moves || []) {
+                        const target = draft.files.find(f => f.path === move.source);
+                        if (target) target.path = move.destination;
+                    }
+                    for (const deletion of proposal.deletions || []) {
+                        draft.files = draft.files.filter(f => f.path !== deletion);
+                        delete window.savedFiles[deletion];
+                    }
+                    draft.draft.revision++;
+                    return {ok: true, json: async () => structuredClone(draft)};
+                }
                 if (request.pathname.endsWith('/drafts')) {
                     draft.draft.theater_id = 'theater_new';
                     draft.files = [...initialFiles];
@@ -433,3 +460,65 @@ def test_assistant_proposes_and_generates_stamp_ui(editor_page: Page) -> None:
     stamp_btn = page.locator('.file-button[title="stamps/goblin.png"]')
     expect(stamp_btn).to_be_visible()
     expect(stamp_btn).to_have_text("🏷️ goblin.png")
+
+
+def test_delete_file_from_editor_ui(editor_page: Page) -> None:
+    page = editor_page
+    expect(page.locator("#file-count")).to_have_text("7 files")
+    page.locator('details[data-path="lore"] > summary').click()
+    guide = page.locator('.file-button[title="lore/guide.txt"]')
+    guide.click()
+    expect(page.locator("#selected-path")).to_have_text("lore/guide.txt")
+    delete_btn = page.locator("#delete-file")
+    expect(delete_btn).to_be_visible()
+
+    # Clicking Delete opens confirmation dialog
+    delete_btn.click()
+    dialog = page.locator("#delete-file-dialog")
+    expect(dialog).to_be_visible()
+    expect(page.locator("#delete-file-prompt")).to_contain_text("lore/guide.txt")
+
+    # Confirm deletion
+    page.locator("#confirm-delete-btn").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_have_text("Deleted lore/guide.txt.")
+    expect(page.locator("#file-count")).to_have_text("6 files")
+    expect(page.locator("#selected-path")).to_have_text("Explore your theater")
+    expect(delete_btn).not_to_be_visible()
+    expect(page.locator('.file-button[title="lore/guide.txt"]')).not_to_be_visible()
+
+
+def test_theater_yaml_delete_button_is_hidden(editor_page: Page) -> None:
+    page = editor_page
+    page.locator('.file-button[title="theater.yaml"]').click()
+    expect(page.locator("#selected-path")).to_have_text("theater.yaml")
+    expect(page.locator("#delete-file")).not_to_be_visible()
+
+
+def test_assistant_proposes_deletions_ui(editor_page: Page) -> None:
+    page = editor_page
+    expect(page.locator("#file-count")).to_have_text("7 files")
+    page.evaluate("""
+        window.assistantProposal = {
+            message: "I recommend removing the outdated lore guide.",
+            writes: [],
+            moves: [],
+            deletions: ["lore/guide.txt"],
+            generations: []
+        };
+    """)
+    page.locator("#assistant-input").fill("Clean up outdated files.")
+    page.locator("#assistant-send").click()
+
+    expect(page.locator("#assistant-proposal")).to_be_visible()
+    expect(page.locator("#assistant-proposal")).to_contain_text("Review proposed changes")
+    expect(page.locator(".proposal-deletion")).to_contain_text("Delete lore/guide.txt")
+
+    apply_btn = page.locator("#assistant-proposal button", has_text="Apply file changes to draft")
+    expect(apply_btn).to_be_visible()
+    apply_btn.click()
+
+    expect(page.locator("#builder-status")).to_have_text("File changes applied and saved to your draft.")
+    expect(page.locator("#file-count")).to_have_text("6 files")
+    expect(page.locator('.file-button[title="lore/guide.txt"]')).not_to_be_visible()
+

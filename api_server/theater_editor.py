@@ -63,6 +63,11 @@ class RevisionRequest(BaseModel):
     revision: int
 
 
+class DeleteDraftFileRequest(BaseModel):
+    revision: int
+    path: str = Field(min_length=1, max_length=500)
+
+
 class GenerateDraftRequest(GenerationRequest):
     revision: int
 
@@ -333,7 +338,27 @@ async def apply_proposal(theater_id: str, body: ApplyProposalRequest, request: R
         info = await require_draft(request, theater_id)
         check_revision(info, body.revision)
         with invalid_input():
-            await asyncio.to_thread(store().write_files, info, encode_text_writes(body.proposal.writes), body.proposal.moves)
+            await asyncio.to_thread(store().write_files, info, encode_text_writes(body.proposal.writes), body.proposal.moves, body.proposal.deletions)
+        return await asyncio.to_thread(response, info)
+
+
+@app.post("/api/theater-editor/{theater_id}/delete")
+async def delete_draft_file(theater_id: str, body: DeleteDraftFileRequest, request: Request) -> DraftResponse:
+    async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+        info = await require_draft(request, theater_id)
+        check_revision(info, body.revision)
+        with invalid_input():
+            await asyncio.to_thread(store().delete_files, info, [body.path])
+        return await asyncio.to_thread(response, info)
+
+
+@app.delete("/api/theater-editor/{theater_id}/file")
+async def remove_draft_file(theater_id: str, path: str, revision: int, request: Request) -> DraftResponse:
+    async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+        info = await require_draft(request, theater_id)
+        check_revision(info, revision)
+        with invalid_input():
+            await asyncio.to_thread(store().delete_files, info, [path])
         return await asyncio.to_thread(response, info)
 
 

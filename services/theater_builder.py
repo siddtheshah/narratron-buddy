@@ -65,6 +65,7 @@ class BuilderProposal(BaseModel):
     message: str = Field(max_length=10_000)
     writes: list[FileWrite] = Field(default_factory=list, max_length=20)
     moves: list[FileMove] = Field(default_factory=list, max_length=50)
+    deletions: list[str] = Field(default_factory=list, max_length=50)
     generations: list[GenerationRequest] = Field(default_factory=list, max_length=5)
 
 
@@ -209,9 +210,11 @@ class TheaterBuilderStore:
             result.append(BuilderFile(path=relative, size=item.stat().st_size, kind=kind))
         return result
 
-    def write_files(self, info: DraftInfo, files: dict[str, bytes], moves: list[FileMove] | None = None) -> None:
+    def write_files(self, info: DraftInfo, files: dict[str, bytes], moves: list[FileMove] | None = None, deletions: list[str] | None = None) -> None:
         root = self.directory(info.theater_id)
+        resolved_root = root.resolve()
         operations = moves or []
+        removals = deletions or []
         targets = {name: safe_asset_path(root, name) for name in files}
         if len({target.as_posix().casefold() for target in targets.values()}) != len(targets):
             raise ValueError("File paths must be unique regardless of capitalization.")
@@ -230,7 +233,27 @@ class TheaterBuilderStore:
             destinations.add(move.destination)
         if sources & destinations:
             raise ValueError("A file cannot be moved and rewritten in the same change.")
+        removal_paths: set[str] = set()
+        for path in removals:
+            if path == "theater.yaml":
+                raise ValueError("Cannot delete theater.yaml.")
+            target_path = safe_asset_path(root, path)
+            if not target_path.is_file():
+                raise ValueError(f"File to delete does not exist: {path}")
+            if path in removal_paths:
+                raise ValueError(f"Duplicate deletion: {path}")
+            removal_paths.add(path)
+        if removal_paths & destinations:
+            raise ValueError("A file cannot be deleted and rewritten in the same change.")
+        if removal_paths & sources:
+            raise ValueError("A file cannot be deleted and moved in the same change.")
         current = {item.path: item.size for item in self.files(info.theater_id)}
+        for path in removal_paths:
+            current.pop(path, None)
+        for move in operations:
+            if move.source in current:
+                size = current.pop(move.source)
+                current[move.destination] = size
         for name, content in files.items():
             if len(content) > MAX_FILE_BYTES:
                 raise ValueError("Each asset must be at most 20MB.")
@@ -239,6 +262,13 @@ class TheaterBuilderStore:
             current[name] = len(content)
         if len(current) > MAX_FILES or sum(current.values()) > MAX_DRAFT_BYTES:
             raise ValueError("A theater draft supports up to 500 files and 100MB.")
+        for path in removal_paths:
+            del_target = safe_asset_path(root, path)
+            del_target.unlink()
+            parent = del_target.parent
+            while parent != resolved_root and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
         for move in operations:
             destination = safe_asset_path(root, move.destination)
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -249,6 +279,9 @@ class TheaterBuilderStore:
             target.write_bytes(content)
         info.revision += 1
         self.save_info(info)
+
+    def delete_files(self, info: DraftInfo, paths: list[str]) -> None:
+        self.write_files(info, {}, deletions=paths)
 
     def copy_to(self, info: DraftInfo, target: Path) -> None:
         """Publish the draft's package files; preserve runtime output and canvas state."""
@@ -318,6 +351,7 @@ class TheaterBuilderStore:
                         "Update lore/config asset paths when moving assets. Generation requests propose one reference image, stamp token, or playlist track each (kind: 'reference', 'stamp', or 'playlist'). "
                         "Generated assets are charged only when the user clicks Generate. Use only existing references paths in generation requests. "
                         "Stamps under stamps/ are movable canvas tokens (such as character tokens, minis, monster tokens, items, props, and markers) for 2D battlemaps and virtual tabletop play. Propose generation requests with kind 'stamp' when setting up tokens/stamps for NPCs, heroes, creatures, or props. You may also organize token image uploads into stamps/. Never use stamp files as input references in generation requests, and never move them into references/. "
+                        "You can propose file deletions (deletions: ['path/to/file']) for unneeded, obsolete, duplicate, or user-requested removals. Never propose deleting theater.yaml. "
                         "When harvest_docs are provided, thoroughly harvest their world-building, lore, characters, locations, factions, and rules into well-structured files under lore/*.txt (keeping each file under 30KB), configure live_agent.special_instructions with an authentic persona and roleplay instructions, set visuals.style and music.style, configure story_planning and adventure_mode, and propose appropriate reference images, stamp tokens for interactive tabletop encounters, and playlist tracks for key figures and locations. "
                         "Explain your proposal briefly and mention any missing assets. Never include executable files or scripts."
                     ),
@@ -333,6 +367,10 @@ class TheaterBuilderStore:
         for move in proposal.moves:
             safe_asset_path(root, move.source)
             safe_asset_path(root, move.destination)
+        for deletion in proposal.deletions:
+            if deletion == "theater.yaml":
+                raise ValueError("Cannot delete theater.yaml.")
+            safe_asset_path(root, deletion)
         return proposal
 
     def harvest_doc(self, info: DraftInfo, doc_title: str, doc_text: str, user_prompt: str, app_config: dict[str, JsonValue]) -> BuilderProposal:

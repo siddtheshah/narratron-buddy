@@ -564,3 +564,79 @@ def test_assistant_auto_imports_google_image_in_prompt(builder: BuilderHarness) 
     assert result.status_code == 200, result.text
     assert builder.client.get(f"{base}/file?path=references/captain.png").content == b"captain_image"
     propose_mock.assert_called_once()
+
+
+def test_delete_endpoint_validates_and_removes_asset(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    # Create a lore file to delete
+    save_result = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"],
+        "name": data["draft"]["name"],
+        "writes": [{"path": "lore/obsolete.txt", "content": "To be removed"}],
+    })
+    assert save_result.status_code == 200
+    rev = save_result.json()["draft"]["revision"]
+
+    # Unauthorized requests
+    builder.client.headers.pop("x-test-user")
+    assert builder.client.post(f"{base}/delete", json={"revision": rev, "path": "lore/obsolete.txt"}).status_code == 401
+    builder.client.headers["x-test-user"] = "999"
+    assert builder.client.post(f"{base}/delete", json={"revision": rev, "path": "lore/obsolete.txt"}).status_code == 403
+    builder.client.headers["x-test-user"] = "7"
+
+    # Revision mismatch
+    assert builder.client.post(f"{base}/delete", json={"revision": rev - 1, "path": "lore/obsolete.txt"}).status_code == 409
+
+    # Cannot delete theater.yaml
+    assert builder.client.post(f"{base}/delete", json={"revision": rev, "path": "theater.yaml"}).status_code == 400
+
+    # Nonexistent file
+    assert builder.client.post(f"{base}/delete", json={"revision": rev, "path": "lore/missing.txt"}).status_code == 400
+
+    # Successful deletion
+    del_result = builder.client.post(f"{base}/delete", json={"revision": rev, "path": "lore/obsolete.txt"})
+    assert del_result.status_code == 200, del_result.text
+    new_files = [f["path"] for f in del_result.json()["files"]]
+    assert "lore/obsolete.txt" not in new_files
+    assert del_result.json()["draft"]["revision"] == rev + 1
+    assert builder.client.get(f"{base}/file?path=lore/obsolete.txt").status_code == 404
+
+
+def test_delete_via_http_delete_method(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    save_result = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"],
+        "name": data["draft"]["name"],
+        "writes": [{"path": "lore/temp.txt", "content": "temporary"}],
+    })
+    rev = save_result.json()["draft"]["revision"]
+    del_result = builder.client.delete(f"{base}/file?path=lore/temp.txt&revision={rev}")
+    assert del_result.status_code == 200
+    assert "lore/temp.txt" not in [f["path"] for f in del_result.json()["files"]]
+
+
+def test_apply_proposal_executes_deletions(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    save_result = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"],
+        "name": data["draft"]["name"],
+        "writes": [{"path": "lore/old_lore.txt", "content": "old"}],
+    })
+    rev = save_result.json()["draft"]["revision"]
+    proposal = BuilderProposal(
+        message="Replace old lore with new lore",
+        writes=[{"path": "lore/new_lore.txt", "content": "brand new lore"}],
+        deletions=["lore/old_lore.txt"],
+    )
+    apply_result = builder.client.post(f"{base}/apply", json={
+        "revision": rev,
+        "proposal": proposal.model_dump(mode="json"),
+    })
+    assert apply_result.status_code == 200, apply_result.text
+    paths = [f["path"] for f in apply_result.json()["files"]]
+    assert "lore/new_lore.txt" in paths
+    assert "lore/old_lore.txt" not in paths
+

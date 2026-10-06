@@ -153,6 +153,9 @@
     el('media-preview').hidden = true;
     const url = `${endpoint('/file')}?path=${encodeURIComponent(file.path)}`;
     el('download-file').href = url; el('download-file').hidden = false;
+    const isProtected = file.path === 'theater.yaml';
+    el('delete-file').hidden = isProtected;
+    el('delete-file').disabled = isProtected;
     if (file.kind === 'text') {
       try {
         let content = pendingWrites.get(file.path);
@@ -184,6 +187,7 @@
     selected = null; ++previewSequence;
     el('selected-path').textContent = 'Explore your theater'; el('empty-preview').hidden = false;
     el('file-editor').hidden = true; el('media-preview').hidden = true; el('download-file').hidden = true;
+    el('delete-file').hidden = true;
     el('media-preview').replaceChildren();
   }
   async function load(identifier) {
@@ -242,7 +246,11 @@
     for (const move of proposal.moves) {
       const text = document.createElement('p'); text.textContent = `${move.source} → ${move.destination}`; container.append(text);
     }
-    if (proposal.writes.length || proposal.moves.length) {
+    for (const deletion of proposal.deletions || []) {
+      const text = document.createElement('p'); text.className = 'proposal-deletion';
+      text.textContent = `🗑 Delete ${deletion}`; container.append(text);
+    }
+    if (proposal.writes.length || proposal.moves.length || (proposal.deletions && proposal.deletions.length)) {
       const button = document.createElement('button'); button.textContent = 'Apply file changes to draft'; button.type = 'button';
       button.addEventListener('click', () => run(async () => {
         await save();
@@ -265,7 +273,7 @@
       button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
       button.addEventListener('click', () => generate(generation, button)); card.append(label, description, button); container.append(card);
     }
-    if (!proposal.writes.length && !proposal.moves.length && !proposal.generations.length) container.hidden = true;
+    if (!proposal.writes.length && !proposal.moves.length && !(proposal.deletions && proposal.deletions.length) && !proposal.generations.length) container.hidden = true;
   }
   async function generate(request, button) {
     await run(async () => {
@@ -416,6 +424,31 @@
       await save(); render(await post('/save', { revision: state.draft.revision, name: state.draft.name, writes: [{ path, content: path.endsWith('.yaml') || path.endsWith('.json') ? '{}\n' : '' }] }));
       status(`Created ${path}. Select it to begin writing.`);
     }, 'Creating file…');
+  });
+  async function performDelete(targetPath) {
+    if (!targetPath || targetPath === 'theater.yaml') return;
+    await run(async () => {
+      pendingWrites.delete(targetPath);
+      if (selected?.path === targetPath) textDirty = false;
+      await save();
+      const next = await post('/delete', { revision: state.draft.revision, path: targetPath });
+      clearPreview();
+      render(next);
+      status(`Deleted ${targetPath}.`);
+    }, `Deleting ${targetPath}…`);
+  }
+  el('delete-file').addEventListener('click', () => {
+    if (!selected || selected.path === 'theater.yaml') return;
+    el('delete-file-prompt').textContent = `Are you sure you want to delete "${selected.path}" from this draft? This cannot be undone.`;
+    el('delete-file-dialog').showModal();
+  });
+  el('delete-file-cancel').addEventListener('click', () => el('delete-file-dialog').close());
+  el('delete-file-dialog').querySelector('form').addEventListener('submit', event => {
+    event.preventDefault();
+    el('delete-file-dialog').close();
+    if (selected && selected.path !== 'theater.yaml') {
+      performDelete(selected.path);
+    }
   });
   window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('narratron:auth-changed', event => {
