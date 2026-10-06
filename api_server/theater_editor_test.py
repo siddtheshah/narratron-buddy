@@ -1,6 +1,7 @@
 """Integration coverage for authorization, imports, billing, and publishing drafts."""
 
 import asyncio
+from io import BytesIO
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from pydantic import JsonValue
+from PIL import Image
 import pytest
 
 import object_registry
@@ -147,14 +149,14 @@ def test_stale_revision_cannot_overwrite_saved_changes(builder: BuilderHarness) 
     ("stamp", 4.0, "images_created"),
     ("playlist", 6.0, "music_created"),
 ])
-def test_generated_assets_use_shared_live_providers_and_rates(builder: BuilderHarness, kind: str, cost: float, counter: str) -> None:
+def test_generated_assets_use_asset_providers_and_shared_rates(builder: BuilderHarness, kind: str, cost: float, counter: str) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
     image = MagicMock()
     image.generate.return_value = ImageGenerationResult(image_bytes=b"image", mime_type="image/png", provider="mock", model="mock")
     music = MagicMock()
     music.generate.return_value = MusicGenerationResult(audio_bytes=b"audio", mime_type="audio/mpeg", provider="mock", model="mock")
-    with patch("api_server.theater_editor.get_image_provider", return_value=image), patch("api_server.theater_editor.get_music_provider", return_value=music):
+    with patch("services.theater_image_generation.get_image_provider", return_value=image), patch("api_server.theater_editor.get_music_provider", return_value=music):
         result = builder.client.post(f"{base}/generate", json={"revision": data["draft"]["revision"], "kind": kind, "name": "harbor", "prompt": "Misty harbor", "playlist": "ambient"})
     assert result.status_code == 200, result.text
     assert result.json()["credits_charged"] == cost
@@ -191,7 +193,7 @@ def test_assistant_proposes_and_generates_stamps(builder: BuilderHarness) -> Non
 
     image = MagicMock()
     image.generate.return_value = ImageGenerationResult(image_bytes=b"goblin-stamp", mime_type="image/png", provider="mock", model="mock")
-    with patch("api_server.theater_editor.get_image_provider", return_value=image):
+    with patch("services.theater_image_generation.get_image_provider", return_value=image):
         gen_res = builder.client.post(f"{base}/generate", json={
             "revision": result.json()["revision"],
             "kind": gen["kind"],
@@ -203,6 +205,38 @@ def test_assistant_proposes_and_generates_stamps(builder: BuilderHarness) -> Non
     stamp_path = gen_res.json()["path"]
     assert stamp_path.startswith("stamps/goblin_scout_")
     assert builder.client.get(f"{base}/file", params={"path": stamp_path}).content == b"goblin-stamp"
+
+
+def test_generated_stamp_preserves_png_alpha_in_draft_and_published_theater(builder: BuilderHarness) -> None:
+    draft = builder.create()
+    identifier = draft["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+    buffer = BytesIO()
+    image = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
+    image.putpixel((16, 16), (0, 255, 0, 255))
+    image.save(buffer, format="PNG")
+    provider = MagicMock()
+    provider.generate.return_value = ImageGenerationResult(
+        image_bytes=buffer.getvalue(), mime_type="image/png", provider="mock", model="mock",
+    )
+    with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
+        result = builder.client.post(f"{base}/generate", json={
+            "revision": draft["draft"]["revision"], "kind": "stamp", "name": "Goblin", "prompt": "Goblin scout",
+        })
+    assert result.status_code == 200, result.text
+    resolve.assert_called_once_with("openai-gpt-image-flare")
+    request = provider.generate.call_args.args[0]
+    assert request.background == "transparent"
+    assert request.aspect_ratio == "1:1"
+    path = result.json()["path"]
+    content = builder.client.get(f"{base}/file", params={"path": path}).content
+    with Image.open(BytesIO(content)) as saved:
+        assert saved.mode == "RGBA"
+        assert saved.getpixel((0, 0)) == (0, 0, 0, 0)
+        assert saved.getpixel((16, 16)) == (0, 255, 0, 255)
+    published = builder.client.post(f"{base}/deploy", json={"revision": result.json()["state"]["draft"]["revision"]})
+    assert published.status_code == 200, published.text
+    assert (builder.repository.theater_path(identifier) / path).read_bytes() == buffer.getvalue()
 
 
 def test_failed_or_unaffordable_generation_does_not_charge(builder: BuilderHarness) -> None:

@@ -19,9 +19,10 @@ from api_server.dependencies import live_agent_manager, pricing_controller
 from api_server.pages import SeoMetadata, render_page_template
 from api_server.shared import app, config, db, get_current_user_async, theater_manager, theater_repository
 from api_server.theater_access_cache import theater_access_cache
-from providers.image_provider import ImageGenerationRequest, ImageReference
+from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
-from providers.registry import get_image_provider, get_music_provider
+from providers.registry import get_music_provider
+from services.theater_image_generation import generate_theater_image
 from services.google_asset_importer import find_google_urls, import_google_link
 from services.theater_builder import (
     BuilderFile, BuilderProposal, ChatMessage, DraftInfo, FileWrite, GenerationRequest,
@@ -341,19 +342,13 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
     name = re.sub(r"[^a-zA-Z0-9_-]", "_", body.name).strip("_") or "asset"
     identifier = uuid.uuid4().hex[:12]
     if body.kind in ("reference", "stamp"):
-        settings = config.get("visuals", {})
         references: list[ImageReference] = []
         for relative in body.references:
             path = safe_asset_path(root, relative)
             if not relative.startswith("references/") or not path.is_file():
                 raise ValueError("Generation references must be existing reference images.")
             references.append(ImageReference(name=path.name, data=path.read_bytes(), mime_type=asset_mime(path)))
-        provider = get_image_provider(str(settings.get("model") or ""), settings.get("model_options") or {})
-        theater_settings = TypeAdapter(dict[str, JsonValue]).validate_python(yaml.safe_load((root / "theater.yaml").read_text(encoding="utf-8")))
-        visual_settings = TypeAdapter(dict[str, JsonValue]).validate_python(theater_settings.get("visuals", {}))
-        style = str(visual_settings.get("style") or "").strip()
-        prompt = f"{body.prompt}\nStyle: {style}" if style else body.prompt
-        result = provider.generate(ImageGenerationRequest(prompt=prompt, references=references))
+        result = generate_theater_image(root, kind=body.kind, prompt=body.prompt, references=references)
         extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(result.mime_type)
         if not result.image_bytes or extension is None:
             raise ValueError("Image provider returned no supported image.")

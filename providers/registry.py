@@ -10,6 +10,7 @@ from providers.fal_flux_klein_provider import FalFluxKleinProvider
 from providers.hybrid_image_provider import HybridImageProvider
 from providers.image_provider import ImageProvider, ImageProviderError
 from providers.openai_image_provider import OpenAIImageProvider
+from providers.openai_flare_image_provider import OpenAIFlareImageProvider
 from providers.lyria_music_provider import LyriaMusicProvider
 from providers.fal_stable_audio_adapter import FalStableAudioAdapter
 from providers.adapted_music_provider import AdaptedMusicProvider
@@ -28,6 +29,16 @@ from providers.live_agent_provider import LiveAgentProvider, LiveAgentProviderEr
 
 
 _IMAGE_SPECS = (
+    {
+        "id": "openai-gpt-image-flare",
+        "name": "GPT Image 2.5 Flare",
+        "model": "gpt-image-2.5-flare",
+        "quality_options": ["low", "medium", "high", "auto"],
+        "estimated_cost_usd_1mp": None,
+        "reference_limit": None,
+        "status": "unconfigured",
+        "notes": "High-quality theater assets with transparent PNG support. Defaults to high quality.",
+    },
     {
         "id": "openai-gpt-image",
         "name": "GPT Image 1 Mini",
@@ -178,7 +189,7 @@ _SPEECH_SPECS = (
 def list_image_provider_specs() -> list[dict[str, Any]]:
     specs = [dict(spec) for spec in _IMAGE_SPECS]
     for spec in specs:
-        if spec["id"] == "openai-gpt-image":
+        if spec["id"] in ("openai-gpt-image", "openai-gpt-image-flare"):
             spec["status"] = "available" if (os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY")) else "unconfigured"
         if spec["id"] == "gemini":
             spec["status"] = "available" if os.getenv("GEMINI_API_KEY") else "unconfigured"
@@ -199,6 +210,11 @@ def get_live_agent_provider(provider_id: str = "gemini") -> LiveAgentProvider:
 
 def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) -> ImageProvider:
     options = options or {}
+    if provider_id == "openai-gpt-image-flare":
+        quality = options.get("quality") or "high"
+        if quality not in ("low", "medium", "high", "auto"):
+            raise ImageProviderError(f"Unsupported Flare quality: {quality}")
+        return OpenAIFlareImageProvider(quality=quality)
     if provider_id == "gemini":
         return GeminiImageProvider(model=str(options.get("model") or "gemini-3.1-flash-lite-image"))
     if provider_id == "openai-gpt-image":

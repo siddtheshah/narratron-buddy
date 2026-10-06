@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 
 class ImageProviderError(RuntimeError):
@@ -27,6 +27,7 @@ class ImageGenerationRequest:
     height: int | None = None
     count: int = 1
     aspect_ratio: str = "16:9"
+    background: Literal["auto", "opaque", "transparent"] = "auto"
 
     def __post_init__(self) -> None:
         if self.count != 1:

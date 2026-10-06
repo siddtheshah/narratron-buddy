@@ -8,6 +8,7 @@ from providers.image_provider import (
     ImageReference,
 )
 from providers.openai_image_provider import OpenAIImageProvider
+from providers.openai_flare_image_provider import OpenAIFlareImageProvider
 from providers.live_agent_provider import (
     LiveAgentCompactionConfig,
     LiveAgentConfig,
@@ -92,6 +93,7 @@ __all__ = [
     "ImageProviderError",
     "ImageReference",
     "OpenAIImageProvider",
+    "OpenAIFlareImageProvider",
     "FalFluxKleinProvider",
     "FalQwenLayeredProvider",
     "LayeredImageRequest",
