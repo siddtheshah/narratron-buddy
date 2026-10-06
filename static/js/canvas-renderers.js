@@ -2,7 +2,7 @@ import {
     attachImageEffect,
     IMAGE_EFFECTS,
     IMAGE_EFFECT_DEFAULT_INTENSITIES,
-} from "/static/js/image-effects.js?v=effects-20260811-2";
+} from "/static/js/image-effects.js?v=effects-20261005-1";
 import {
     layerTransform,
     layerOpacity,

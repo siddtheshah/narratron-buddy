@@ -565,7 +565,7 @@ function createStarTwinkleLayer(frame, image) {
           ...candidate,
           phase: random * Math.PI * 2,
           frequency: 1.1 + hash(candidate.x, candidate.y, 1) * 1.9,
-          radius: 0.42 + Math.min(0.88, candidate.score * 1.9),
+          radius: (0.42 + Math.min(0.88, candidate.score * 1.9)) * 0.8,
           rotation: (hash(candidate.x, candidate.y, 2) - 0.5) * 0.48,
         });
         if (stars.length === 160) break;

@@ -242,8 +242,13 @@ class ImageTools(BaseTools):
             image_name: Required friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
             reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
             display: Whether to automatically display the image on the canvas upon creation (default True).
-            effect: Optional canvas animation effect; defaults to gleam3. Supported values: none, creeping,
-                    dream, sparkle, gleam3, haze, or trace.
+            effect: Optional canvas animation effect; defaults to gleam3. Supported values: none,
+                gleam3 - Best all-rounder, especially good for drama. 
+                creeping - for dark reveals and introductions, shadowy effects
+                dream - for lighthearted moments, flashbacks.
+                sparkle - for shiny objects and treasure. whimsical.
+                haze - murky, confusing moments and places. Smoky optical distortions.
+                trace - for high contrast scenes, where there is shiny objects in darkness.
 
         Returns:
             A string indicating that background image generation has started, or an error message.
