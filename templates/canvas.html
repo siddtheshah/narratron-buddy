@@ -3252,6 +3252,15 @@
                 <!-- Populated dynamically based on contributor status -->
             </div>
             <div id="stamp-manager-body" class="stamp-manager-body">
+                <form id="stamp-generation-form" class="stamp-generation-form" hidden>
+                    <strong>Generate a theater stamp</strong>
+                    <label for="stamp-generation-name">Stamp name</label>
+                    <input id="stamp-generation-name" maxlength="100" required placeholder="Goblin scout">
+                    <label for="stamp-generation-prompt">Image prompt</label>
+                    <textarea id="stamp-generation-prompt" maxlength="4000" rows="3" required placeholder="Describe the character, creature, item, or marker…"></textarea>
+                    <button id="stamp-generation-submit" class="panel-btn" type="submit">Generate stamp</button>
+                    <div id="stamp-generation-status" role="status" aria-live="polite">Uses image generation credits. Saved to this theater for everyone to use.</div>
+                </form>
                 <div id="stamp-manager-grid" class="stamp-grid"></div>
                 <div id="stamp-manager-empty" class="stamp-manager-empty" style="display: none;">
                     <div class="empty-icon">🏷️</div>
@@ -5609,6 +5618,11 @@
             socket.onerror = () => socket.close();
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                if (data.type === 'theater_stamps_updated') {
+                    cachedTheaterStamps = data.stamps || [];
+                    if (isStampManagerOpen) renderStampManagerGrid(cachedUserStamps || []);
+                    return;
+                }
                 if (data.type === 'doodles_toggle') {
                     setDoodlesDisplay(data.enabled, data.persistent);
                 } else if (data.type === 'clear') {
@@ -5930,6 +5944,52 @@
         let cachedTheaterStamps = [];
         let stampLoadError = '';
         let isFetchingUserStamps = false;
+        let isTheaterStampOwner = false;
+        let isGeneratingStamp = false;
+
+        function updateStampGenerationPermission() {
+            const form = document.getElementById('stamp-generation-form');
+            if (form) form.hidden = !isTheaterStampOwner;
+        }
+
+        document.getElementById('stamp-generation-form')?.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!isTheaterStampOwner || isGeneratingStamp) return;
+            const nameInput = document.getElementById('stamp-generation-name');
+            const promptInput = document.getElementById('stamp-generation-prompt');
+            const button = document.getElementById('stamp-generation-submit');
+            const status = document.getElementById('stamp-generation-status');
+            const name = nameInput.value.trim();
+            const prompt = promptInput.value.trim();
+            if (!name || !prompt) {
+                status.textContent = 'Enter a stamp name and image prompt.';
+                return;
+            }
+            isGeneratingStamp = true;
+            button.disabled = true;
+            button.textContent = 'Generating…';
+            status.textContent = 'Generating your stamp. You can keep using the canvas while you wait.';
+            try {
+                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/stamps/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, prompt }),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Unable to generate stamp.');
+                cachedTheaterStamps = data.stamps;
+                renderStampManagerGrid(cachedUserStamps || []);
+                status.textContent = `Stamp saved to this theater and ready to use. Charged ${data.credits_charged} credits.`;
+                nameInput.value = '';
+                promptInput.value = '';
+            } catch (error) {
+                status.textContent = error.message || 'Unable to generate stamp. Please try again.';
+            } finally {
+                isGeneratingStamp = false;
+                button.disabled = false;
+                button.textContent = 'Generate stamp';
+            }
+        });
 
         function setStampManagerOpen(open) {
             if (open) {
@@ -6532,6 +6592,8 @@
                 .then(data => {
                     if (data && data.metadata) {
                         const isOwner = data.metadata.is_owner;
+                        isTheaterStampOwner = Boolean(isOwner);
+                        updateStampGenerationPermission();
                         const builderLink = document.getElementById('menu-item-theater-builder');
                         if (builderLink && isOwner) {
                             builderLink.href = `/theater-editor?theater_id=${encodeURIComponent(activetheaterId)}`;
@@ -6603,6 +6665,8 @@
             activeViewersList = activeViewers || [];
 
             const isOwner = currentUser && batonState.owner && currentUser.id === batonState.owner.id;
+            isTheaterStampOwner = Boolean(isOwner);
+            updateStampGenerationPermission();
             const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
             const isContributorInList = currentUser && (batonState.contributors || []).some(u => u.id === currentUser.id);
             window._isContributor = Boolean(isOwner || isActiveOrator || isContributorInList);

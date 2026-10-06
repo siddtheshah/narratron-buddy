@@ -23,6 +23,7 @@ from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_music_provider
 from services.theater_image_generation import generate_theater_image
+from services.generation_billing import billing_locks as _billing_locks
 from services.google_asset_importer import find_google_urls, import_google_link
 from services.theater_builder import (
     BuilderFile, BuilderProposal, ChatMessage, DraftInfo, FileWrite, GenerationRequest,
@@ -35,7 +36,6 @@ from utils.config_loader import get_theater_default_config
 logger = logging.getLogger(__name__)
 # A draft has one writer at a time. Paid actions also serialize requests per owner.
 _draft_locks: dict[str, asyncio.Lock] = {}
-_billing_locks: dict[int, asyncio.Lock] = {}
 
 
 class CreateDraftRequest(BaseModel):

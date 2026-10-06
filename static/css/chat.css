@@ -666,3 +666,29 @@
 }
 
 
+.stamp-generation-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    font-size: 0.8rem;
+}
+
+.stamp-generation-form[hidden] { display: none; }
+.stamp-generation-form input,
+.stamp-generation-form textarea {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    background: #0f172a;
+    color: #e2e8f0;
+    font: inherit;
+}
+
+#stamp-generation-status { color: #94a3b8; font-size: 0.75rem; }
+#stamp-generation-submit:disabled { opacity: 0.6; cursor: wait; }

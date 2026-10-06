@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 import json
 import logging
+import re
 from typing import Any, Dict, Optional, Union
 import uuid
 import yaml
@@ -11,7 +12,7 @@ import yaml
 from fastapi import Request, Response, HTTPException
 from fastapi.responses import FileResponse
 from starlette.staticfiles import NotModifiedResponse, StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, JsonValue
 
 from api_server.shared import (
     app,
@@ -26,14 +27,91 @@ from api_server.shared import (
     _grant_canvas_access,
     PROJECT_ROOT
 )
-from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service
-from api_server.canvas import broadcast_baton_update
+from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, pricing_controller
+from api_server.canvas import broadcast_baton_update, _broadcast_doodle
+from services.theater_image_generation import generate_theater_image
+from services.generation_billing import billing_locks as _billing_locks
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
 from utils.config_loader import get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
+
+
+class GenerateTheaterStampRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    prompt: str = Field(min_length=1, max_length=4000)
+
+
+def _save_generated_stamp(theater_id: str, filename: str, content: bytes) -> None:
+    for root in (
+        theater_manager.theater(theater_id).directory(),
+        theater_repository.theater_path(theater_id),
+    ):
+        target = root / "stamps" / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+
+
+def _remove_generated_stamp(theater_id: str, filename: str) -> None:
+    for root in (
+        theater_manager.theater(theater_id).directory(),
+        theater_repository.theater_path(theater_id),
+    ):
+        (root / "stamps" / filename).unlink(missing_ok=True)
+
+
+@app.post("/api/theaters/{theater_id}/stamps/generate")
+async def generate_theater_stamp(
+    request: Request, theater_id: str, body: GenerateTheaterStampRequest,
+) -> dict[str, JsonValue]:
+    _safe_path_param(theater_id, "theater_id")
+    user = await get_current_user_async(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sign in to generate theater stamps.")
+    deployment = await asyncio.to_thread(db.get_deployment, theater_id)
+    if not deployment or deployment["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the theater owner can generate stamps.")
+    name, prompt = body.name.strip(), body.prompt.strip()
+    if not name or not prompt:
+        raise HTTPException(status_code=422, detail="Enter a stamp name and image prompt.")
+    owner_id = int(user["id"])
+    async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
+        cost = pricing_controller.get_rates()["image_credit_rate"]
+        account = await asyncio.to_thread(db.get_user_by_id, owner_id)
+        if not account or account["credits"] < cost:
+            raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
+        root = theater_manager.theater(theater_id).directory()
+        if not (root / "theater.yaml").is_file():
+            if not await asyncio.to_thread(theater_repository.reconstruct_theater, theater_id, root):
+                raise HTTPException(status_code=404, detail="Theater files not found.")
+        filename = ""
+        try:
+            image = await asyncio.to_thread(generate_theater_image, root, kind="stamp", prompt=prompt, references=[])
+            if not image.image_bytes or image.mime_type != "image/png":
+                raise ValueError("Stamp generation must return a PNG image.")
+            safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or "stamp"
+            filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.png"
+            await asyncio.to_thread(_save_generated_stamp, theater_id, filename, image.image_bytes)
+        except Exception as error:
+            if filename:
+                await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
+            logger.exception("Theater stamp generation failed")
+            raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
+        try:
+            updated = await asyncio.to_thread(
+                db.record_user_usage, owner_id, images_created=1, credit_cost=cost,
+                idempotency_key=f"stamp:{theater_id}:{filename}",
+            )
+        except Exception as error:
+            await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
+            logger.exception("Theater stamp billing failed")
+            raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
+        auth_session_cache.invalidate_user(owner_id)
+        stamps = theater_manager.theater(theater_id).stamps()
+    await _broadcast_doodle(canvas_states.get(theater_id), {"type": "theater_stamps_updated", "stamps": stamps})
+    return {"stamps": stamps, "credits_charged": cost, "credits": float(updated["credits"])}
 
 
 def _session_notepad(session: object) -> object | None:
