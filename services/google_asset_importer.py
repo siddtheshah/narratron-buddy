@@ -228,7 +228,8 @@ async def import_google_link(url: str, custom_name: str | None = None, client: h
     if suffix in IMAGE_EXTENSIONS or mime.startswith("image/"):
         ext = suffix if suffix in IMAGE_EXTENSIONS else ".png"
         stem = sanitize_filename_stem(custom_name or "", PurePosixPath(filename).stem)
-        target_path = f"references/{stem}{ext}"
+        target_dir = "stamps" if stem.lower().startswith(("stamp_", "stamp-", "token_", "token-")) else "references"
+        target_path = f"{target_dir}/{stem}{ext}"
         return GoogleImportResult(
             kind="image",
             suggested_path=target_path,

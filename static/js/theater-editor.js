@@ -100,7 +100,7 @@
         button.dataset.path = file.path;
         button.classList.toggle('active', selected?.path === file.path);
         if (selected?.path === file.path) button.setAttribute('aria-current', 'true');
-        button.textContent = `${file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡'} ${file.path.split('/').pop()}`;
+        button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡')} ${file.path.split('/').pop()}`;
         button.title = file.path; button.addEventListener('click', () => selectFile(file)); parent.append(button);
       }
     }
@@ -257,10 +257,12 @@
     }
     for (const generation of proposal.generations) {
       const card = document.createElement('div'); card.className = 'generation-card';
-      const label = document.createElement('strong'); label.textContent = `${generation.kind === 'reference' ? 'Reference' : 'Playlist track'}: ${generation.name}`;
+      const kindLabel = generation.kind === 'reference' ? 'Reference' : (generation.kind === 'stamp' ? 'Stamp token' : 'Playlist track');
+      const label = document.createElement('strong'); label.textContent = `${kindLabel}: ${generation.name}`;
       const description = document.createElement('p'); description.textContent = generation.prompt;
       const button = document.createElement('button'); button.type = 'button';
-      button.textContent = `Generate · ${state.rates[generation.kind === 'reference' ? 'image_credit_rate' : 'music_credit_rate']} Cr`;
+      const isMusic = generation.kind === 'playlist';
+      button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
       button.addEventListener('click', () => generate(generation, button)); card.append(label, description, button); container.append(card);
     }
     if (!proposal.writes.length && !proposal.moves.length && !proposal.generations.length) container.hidden = true;
@@ -280,7 +282,10 @@
     }, 'Generating your asset. This can take a few minutes…');
   }
   function updateGenerationCost() {
-    if (state) el('generation-submit').textContent = `Generate · ${state.rates[el('generation-kind').value === 'reference' ? 'image_credit_rate' : 'music_credit_rate']} Cr`;
+    if (state) {
+      const isMusic = el('generation-kind').value === 'playlist';
+      el('generation-submit').textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+    }
   }
   function openGoogleDialog(focusDoc = false) {
     el('google-link-url').value = '';
@@ -390,8 +395,8 @@
     window.history.replaceState(null, '', '/theater-editor'); status('');
   });
   el('assistant-form').addEventListener('submit', event => { event.preventDefault(); ask(el('assistant-input').value.trim()); });
-  el('organize-assets').addEventListener('click', () => ask('Organize my uploaded assets into meaningful reference subfolders, lore documents, and named playlists. Update all file references where necessary.'));
-  el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose an opening scene, characters, reference images, and atmospheric playlist tracks.'));
+  el('organize-assets').addEventListener('click', () => ask('Organize my uploaded assets into meaningful reference subfolders, stamps/ tokens, lore documents, and named playlists. Update all file references where necessary.'));
+  el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose an opening scene, characters, reference images, stamp tokens for tactical play, and atmospheric playlist tracks.'));
   el('harvest-doc-shortcut').addEventListener('click', () => openGoogleDialog(true));
   el('import-google-link').addEventListener('click', () => openGoogleDialog(false));
   el('google-link-cancel').addEventListener('click', () => el('google-link-dialog').close());

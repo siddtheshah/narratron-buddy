@@ -102,7 +102,9 @@ def editor_page() -> Iterator[Page]:
                     draft.files = [...initialFiles];
                 }
                 if (request.pathname.endsWith('/generate')) {
-                    const path = 'references/harbor.png';
+                    const body = JSON.parse(options.body);
+                    const isStamp = body.kind === 'stamp';
+                    const path = isStamp ? 'stamps/goblin.png' : 'references/harbor.png';
                     draft.files.push({path, kind: 'image'});
                     draft.draft.revision++;
                     window.accountCredits -= 4;
@@ -114,8 +116,9 @@ def editor_page() -> Iterator[Page]:
                         return {ok: false, status: 402, json: async () => ({detail: 'Each assistant turn requires 0.1 credits. Buy credits using the balance at the top of this page.'})};
                     }
                     window.accountCredits -= 0.1;
+                    const proposal = window.assistantProposal || {message: 'Here are ideas for your world.', writes: [], moves: [], generations: []};
                     return {ok: true, json: async () => ({revision: draft.draft.revision,
-                        proposal: {message: 'Here are ideas for your world.', writes: [], moves: [], generations: []},
+                        proposal,
                         credits: window.accountCredits, credits_charged: 0.1})};
                 }
                 if (request.pathname.endsWith('/google-link')) {
@@ -393,3 +396,40 @@ def test_harvest_google_doc_ui(editor_page: Page) -> None:
     expect(page.locator("#assistant-proposal")).to_be_visible()
     expect(page.locator("#assistant-proposal")).to_contain_text("Review proposed changes")
     expect(page.locator("#assistant-messages")).to_contain_text("Harvested Google Doc into theater.")
+
+
+def test_assistant_proposes_and_generates_stamp_ui(editor_page: Page) -> None:
+    page = editor_page
+    kind_select = page.locator("#generation-kind")
+    assert "Stamp token" in kind_select.locator("option").all_text_contents()
+
+    page.evaluate("""
+        window.assistantProposal = {
+            message: "I propose a goblin scout token for your tactical battlemap.",
+            writes: [],
+            moves: [],
+            generations: [{ kind: "stamp", name: "goblin", prompt: "A goblin scout mini", playlist: "ambient", references: [] }]
+        };
+    """)
+    page.locator("#assistant-input").fill("Set up stamps for our encounter.")
+    page.locator("#assistant-send").click()
+
+    expect(page.locator("#assistant-proposal")).to_be_visible()
+    card = page.locator(".generation-card")
+    expect(card).to_be_visible()
+    expect(card.locator("strong")).to_have_text("Stamp token: goblin")
+    expect(card.locator("p")).to_have_text("A goblin scout mini")
+    expect(card.locator("button")).to_have_text("Generate · 4 Cr")
+
+    # Click generate on the proposed stamp card
+    card.locator("button").click()
+    expect(page.locator("#builder-status")).to_have_text("Saved stamps/goblin.png to your draft.")
+    expect(card.locator("button")).to_have_text("Generated")
+
+    # Verify the stamp folder and file appear in the file tree with the stamp icon
+    stamps_folder = page.locator('details[data-path="stamps"]')
+    expect(stamps_folder).to_be_visible()
+    stamps_folder.locator(":scope > summary").click()
+    stamp_btn = page.locator('.file-button[title="stamps/goblin.png"]')
+    expect(stamp_btn).to_be_visible()
+    expect(stamp_btn).to_have_text("🏷️ goblin.png")

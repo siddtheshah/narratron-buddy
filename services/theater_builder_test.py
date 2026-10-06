@@ -20,6 +20,8 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
 
 @pytest.mark.parametrize(("name", "folder", "expected"), [
     ("hero.png", False, "references/hero.png"),
+    ("stamp_orc.png", False, "stamps/stamp_orc.png"),
+    ("token_hero.png", False, "stamps/token_hero.png"),
     ("rain.mp3", False, "playlists/default/rain.mp3"),
     ("notes.md", False, "lore/notes.txt"),
     ("world/references/people/hero.png", True, "references/people/hero.png"),
@@ -81,13 +83,21 @@ def test_assistant_returns_validated_proposals_without_mutating_draft(tmp_path: 
     store = TheaterBuilderStore(tmp_path)
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     client = MagicMock()
-    proposal = BuilderProposal(message="Add an opening scene.", writes=[{"path": "lore/opening.txt", "content": "A harbor at dawn."}])
+    proposal = BuilderProposal(
+        message="Add an opening scene and stamp.",
+        writes=[{"path": "lore/opening.txt", "content": "A harbor at dawn."}],
+        generations=[{"kind": "stamp", "name": "goblin", "prompt": "Goblin scout token"}],
+    )
     client.models.generate_content.return_value.text = proposal.model_dump_json()
     with patch("services.theater_builder.genai.Client", return_value=client):
         result = store.propose(info, "Develop my world", [], {})
     assert result.writes[0].path == "lore/opening.txt"
+    assert result.generations[0].kind == "stamp"
+    assert result.generations[0].name == "goblin"
     assert not (store.directory(info.theater_id) / "lore/opening.txt").exists()
     client.close.assert_called_once()
+    system_instruction = client.models.generate_content.call_args.kwargs["config"].system_instruction
+    assert "kind 'stamp'" in system_instruction
 
 
 def test_assistant_rejects_unsafe_generated_file_paths(tmp_path: Path) -> None:

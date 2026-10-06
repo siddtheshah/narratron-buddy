@@ -23,7 +23,7 @@ from pricing.pricing_controller import PricingController
 from providers.image_provider import ImageGenerationResult
 from providers.music_provider import MusicGenerationResult
 from services.google_asset_importer import GoogleImportResult
-from services.theater_builder import BuilderProposal, ChatMessage, DraftInfo, TheaterBuilderStore
+from services.theater_builder import BuilderProposal, ChatMessage, DraftInfo, GenerationRequest, TheaterBuilderStore
 from services.live_agent import get_playlists_context
 from services.music_catalog import MusicCatalog
 from storage.theater_repository import TheaterRepository
@@ -142,7 +142,11 @@ def test_stale_revision_cannot_overwrite_saved_changes(builder: BuilderHarness) 
     assert builder.client.post(f"{base}/apply", json={"revision": body["revision"], "proposal": {"message": "Overwrite"}}).status_code == 409
 
 
-@pytest.mark.parametrize(("kind", "cost", "counter"), [("reference", 4.0, "images_created"), ("playlist", 6.0, "music_created")])
+@pytest.mark.parametrize(("kind", "cost", "counter"), [
+    ("reference", 4.0, "images_created"),
+    ("stamp", 4.0, "images_created"),
+    ("playlist", 6.0, "music_created"),
+])
 def test_generated_assets_use_shared_live_providers_and_rates(builder: BuilderHarness, kind: str, cost: float, counter: str) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
@@ -158,7 +162,47 @@ def test_generated_assets_use_shared_live_providers_and_rates(builder: BuilderHa
     assert usage["credit_cost"] == cost
     assert usage[counter] == 1
     assert usage["idempotency_key"].startswith("builder:")
-    assert builder.client.get(f"{base}/file", params={"path": result.json()["path"]}).content == (b"image" if kind == "reference" else b"audio")
+    path = result.json()["path"]
+    if kind == "stamp":
+        assert path.startswith("stamps/harbor_")
+    elif kind == "reference":
+        assert path.startswith("references/harbor_")
+    else:
+        assert path.startswith("playlists/ambient/harbor_")
+    assert builder.client.get(f"{base}/file", params={"path": path}).content == (b"image" if kind in ("reference", "stamp") else b"audio")
+
+
+def test_assistant_proposes_and_generates_stamps(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    proposal = BuilderProposal(
+        message="Add battle tokens",
+        writes=[],
+        moves=[],
+        generations=[GenerationRequest(kind="stamp", name="goblin_scout", prompt="Goblin token")],
+    )
+    builder.database.record_user_usage.return_value = {"credits": 29.9}
+    with patch.object(TheaterBuilderStore, "propose", return_value=proposal), patch("api_server.theater_editor.auth_session_cache.invalidate_user"):
+        result = builder.client.post(f"{base}/assistant", json={"prompt": "Set up stamps for our encounter"})
+    assert result.status_code == 200
+    gen = result.json()["proposal"]["generations"][0]
+    assert gen["kind"] == "stamp"
+    assert gen["name"] == "goblin_scout"
+
+    image = MagicMock()
+    image.generate.return_value = ImageGenerationResult(image_bytes=b"goblin-stamp", mime_type="image/png", provider="mock", model="mock")
+    with patch("api_server.theater_editor.get_image_provider", return_value=image):
+        gen_res = builder.client.post(f"{base}/generate", json={
+            "revision": result.json()["revision"],
+            "kind": gen["kind"],
+            "name": gen["name"],
+            "prompt": gen["prompt"],
+            "references": gen["references"],
+        })
+    assert gen_res.status_code == 200
+    stamp_path = gen_res.json()["path"]
+    assert stamp_path.startswith("stamps/goblin_scout_")
+    assert builder.client.get(f"{base}/file", params={"path": stamp_path}).content == b"goblin-stamp"
 
 
 def test_failed_or_unaffordable_generation_does_not_charge(builder: BuilderHarness) -> None:

@@ -340,7 +340,7 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
     root = store().directory(info.theater_id)
     name = re.sub(r"[^a-zA-Z0-9_-]", "_", body.name).strip("_") or "asset"
     identifier = uuid.uuid4().hex[:12]
-    if body.kind == "reference":
+    if body.kind in ("reference", "stamp"):
         settings = config.get("visuals", {})
         references: list[ImageReference] = []
         for relative in body.references:
@@ -357,7 +357,8 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
         extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(result.mime_type)
         if not result.image_bytes or extension is None:
             raise ValueError("Image provider returned no supported image.")
-        return f"references/{name}_{identifier}{extension}", result.image_bytes
+        target_dir = "stamps" if body.kind == "stamp" else "references"
+        return f"{target_dir}/{name}_{identifier}{extension}", result.image_bytes
     playlist = re.sub(r"[^a-zA-Z0-9_-]", "_", body.playlist).strip("_") or "ambient"
     settings = config.get("music", {})
     provider = get_music_provider(str(settings.get("provider") or "lyria"), settings.get("provider_options") or {})
@@ -379,7 +380,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
         info = await require_draft(request, theater_id)
         check_revision(info, body.revision)
         rates = pricing_controller.get_rates()
-        cost = rates["image_credit_rate" if body.kind == "reference" else "music_credit_rate"]
+        cost = rates["image_credit_rate" if body.kind in ("reference", "stamp") else "music_credit_rate"]
         user = await asyncio.to_thread(db.get_user_by_id, owner_id)
         if not user or user["credits"] < cost:
             raise HTTPException(status_code=402, detail=f"This generation requires {cost:g} credits. Top up on /deploy.")
@@ -392,7 +393,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
             raise HTTPException(status_code=502, detail="Generation failed; no credits were charged.") from error
         try:
             updated = await asyncio.to_thread(db.record_user_usage, owner_id,
-                images_created=1 if body.kind == "reference" else 0,
+                images_created=1 if body.kind in ("reference", "stamp") else 0,
                 music_created=1 if body.kind == "playlist" else 0, credit_cost=cost,
                 idempotency_key=f"builder:{theater_id}:{path}")
         except Exception as error:

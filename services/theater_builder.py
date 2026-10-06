@@ -54,7 +54,7 @@ class FileMove(BaseModel):
 
 
 class GenerationRequest(BaseModel):
-    kind: Literal["reference", "playlist"]
+    kind: Literal["reference", "playlist", "stamp"]
     prompt: str = Field(min_length=1, max_length=4000)
     name: str = Field(min_length=1, max_length=100)
     playlist: str = Field(default="ambient", min_length=1, max_length=80)
@@ -134,6 +134,8 @@ def upload_path(filename: str, folder: bool) -> str:
     name = parts[-1]
     suffix = PurePosixPath(name).suffix.lower()
     if suffix in IMAGE_EXTENSIONS:
+        if name.lower().startswith(("stamp_", "stamp-", "token_", "token-")):
+            return f"stamps/{name}"
         return f"references/{name}"
     if suffix in AUDIO_EXTENSIONS:
         return f"playlists/default/{name}"
@@ -310,13 +312,13 @@ class TheaterBuilderStore:
                         "Use story_planning.adventure_mode and auto_begin for interactive adventures. Keep existing settings unless requested. "
                         "planning.yaml defines named sticky topics, descriptions, fields, render templates and initial string values. "
                         "readfirst_ lore is always loaded; other lore can be fetched on demand. "
-                        "Organize flat uploads using file moves into meaningful subfolders and named playlists. Preserve extensions and avoid overwrites. "
+                        "Organize flat uploads using file moves into meaningful subfolders, stamps/, and named playlists. Preserve extensions and avoid overwrites. "
                         "You may write playlists/name/description.txt to explain a playlist's mood and when to use it. "
                         "Image previews are supplied for up to twelve reference and stamp assets; identify their content when organizing generic filenames. Do not claim to have inspected audio or unshown images. "
-                        "Update lore/config asset paths when moving assets. Generation requests propose one reference image or one playlist track each. "
+                        "Update lore/config asset paths when moving assets. Generation requests propose one reference image, stamp token, or playlist track each (kind: 'reference', 'stamp', or 'playlist'). "
                         "Generated assets are charged only when the user clicks Generate. Use only existing references paths in generation requests. "
-                        "Stamps under stamps/ are movable canvas tokens, not image-generation references. Preserve their directory and never move them into references/ or use them in generation requests. "
-                        "When harvest_docs are provided, thoroughly harvest their world-building, lore, characters, locations, factions, and rules into well-structured files under lore/*.txt (keeping each file under 30KB), configure live_agent.special_instructions with an authentic persona and roleplay instructions, set visuals.style and music.style, configure story_planning and adventure_mode, and propose appropriate reference images and playlist tracks for key figures and locations. "
+                        "Stamps under stamps/ are movable canvas tokens (such as character tokens, minis, monster tokens, items, props, and markers) for 2D battlemaps and virtual tabletop play. Propose generation requests with kind 'stamp' when setting up tokens/stamps for NPCs, heroes, creatures, or props. You may also organize token image uploads into stamps/. Never use stamp files as input references in generation requests, and never move them into references/. "
+                        "When harvest_docs are provided, thoroughly harvest their world-building, lore, characters, locations, factions, and rules into well-structured files under lore/*.txt (keeping each file under 30KB), configure live_agent.special_instructions with an authentic persona and roleplay instructions, set visuals.style and music.style, configure story_planning and adventure_mode, and propose appropriate reference images, stamp tokens for interactive tabletop encounters, and playlist tracks for key figures and locations. "
                         "Explain your proposal briefly and mention any missing assets. Never include executable files or scripts."
                     ),
                 ),

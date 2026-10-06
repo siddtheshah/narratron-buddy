@@ -208,3 +208,8 @@ async def test_import_google_link_for_image_and_doc() -> None:
     assert doc_res.kind == "doc"
     assert doc_res.suggested_path == "lore/zephyr_lore.txt"
     assert "World of Zephyr" in doc_res.text_content
+
+    stamp_res = await import_google_link("https://drive.google.com/file/d/IMG1/view", custom_name="token_hero", client=client)
+    assert stamp_res.kind == "image"
+    assert stamp_res.suggested_path == "stamps/token_hero.png"
+    assert stamp_res.content_bytes == png_bytes
