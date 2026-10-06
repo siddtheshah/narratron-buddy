@@ -1,0 +1,17 @@
+# Character: The Caretaker
+
+IMAGE_REFERENCE: references/the_caretaker.jpg
+VOICE_TAG: soft, contemplative, paper-rustle whisper
+
+1. APPEARANCE & VIBE:
+A cloaked archivist whose face is concealed beneath a hood. They carry an amber lantern and an ink-stained quill, gently catching floating fragments of text as they drift past.
+
+2. ROLE & BEHAVIOR:
+Tends to the discarded drafts and comforts forgotten characters. Speaks softly, welcoming lost wanderers with polite curiosity.
+
+3. INTERACTION LEVERS:
+- Welcoming to players who treat the discarded pages with gentleness.
+- Wary of anyone seeking to burn or destroy unfinished stories.
+
+4. SIGNATURE QUOTE:
+"No idea is ever truly lost here—only waiting for someone to remember it."

@@ -1,18 +1,18 @@
 # ==============================================================================
-# Narratron Adventure Theater Configuration: The Clockwork Archive
+# Narratron Adventure Theater Configuration: The Library of Origins
 # ==============================================================================
 
 # Live agent instructions & behavioral flags
 live_agent:
-    special_instructions: "Guide the player through the labyrinthine Clockwork Archive. Present tactile mechanical puzzles, react dynamically to player choices, and maintain an air of ancient scholarly intrigue."
+    special_instructions: "Guide the player through the Library of Origins, a mysterious sanctuary of discarded story ideas, forgotten characters, and unfinished drafts. Encourage thoughtful exploration, evoke quiet wonder, and keep interactions engaging."
 
 # Default visual displayed on load (must match a file in references/)
-starting_image: "clockwork_archive_cover.png"
+starting_image: "library_of_origins_cover.jpg"
 
 # Visuals & generative prompt styling
 visuals:
     cycle_length: 6
-    style: "steampunk fantasy art, brass gears, ancient glowing parchment scrolls, warm lantern light, volumetric dust motes, intricate clockwork machinery, detailed digital painting"
+    style: "surreal fantasy library of discarded stories, floating luminous pages, glowing amber lanterns, towering endless bookshelves, dusty manuscripts, soft atmospheric haze, digital painting"
 
 # Canvas image generation controls
 image_generation:
@@ -25,7 +25,7 @@ music:
     playlists_folder: "playlists"
     generation_cooldown: 90
     switch_cooldown: 15
-    style: "subtle ticking clocks, atmospheric cello melodies, distant brass chimes, loopable ambient music"
+    style: "mysterious ambient music, quiet cello and soft piano echoes, gentle parchment rustling, atmospheric background"
 
 # Dynamic narrative & sticky note state management
 story_planning:
@@ -36,7 +36,7 @@ story_planning:
     auto_begin: true
     character_voicing: false
     text_beautification: true
-    style: "thoughtful mystery emphasizing puzzle-solving, mechanical deductions, and emergent lore discovery"
+    style: "thoughtful mystery exploring abandoned story drafts and unfinished worlds"
     cooldown_duration: 8
     require_user_input: true
 

@@ -1,6 +1,6 @@
-# Example Adventure: The Clockwork Archive
+# Example Adventure: The Library of Origins
 
-This directory serves as the **official reference template** for building premade adventure packages in Narratron Buddy.
+This directory serves as the **official reference template** for building premade adventure packages in Narratron Buddy. It is an extremely brief starter example about exploring a mysterious repository of discarded story ideas and unfinished drafts.
 
 For complete documentation on package specifications, testing with the Testlab Adventure Runner, and submitting your adventure to get featured on **narratron.app**, see:
 👉 **[Writing Adventures Documentation](../../docs/writing_adventures.md)**
@@ -12,20 +12,21 @@ For complete documentation on package specifications, testing with the Testlab A
 ```text
 example_adventure/
 ├── metadata.json           # Catalog info (title, author, tags, difficulty, cover image)
-├── theater.yaml            # Story planner settings, agent persona, and sticky notes
+├── theater.yaml            # Story planner settings, agent persona, and runtime config
+├── planning.yaml           # Deep planner schemas, sticky definitions, and initial notes
 ├── README.md               # This reference file
 ├── lore/                   # Contextual lore injected into the story planner
-│   ├── readfirst_overview.txt # High-level guide persisted in story context
-│   ├── factions/           # Factions, NPCs, and motives
-│   │   └── the_archivists.txt
-│   └── locations/          # Room layouts, puzzles, and sensory details
-│       └── great_library.txt
+│   ├── readfirst_overview.txt # High-level DM guide persisted in story context
+│   ├── characters/         # NPC dossiers
+│   │   └── the_caretaker.txt
+│   └── locations/          # Room layouts and sensory details
+│       └── the_discarded_stacks.txt
 ├── references/             # Visual assets & cover art used by image tools
-│   ├── clockwork_archive_cover.png
-│   └── keeper_orun.png
+│   ├── library_of_origins_cover.jpg
+│   └── the_caretaker.jpg
 └── playlists/              # Thematic audio folders with sound files
     ├── ambient/
-    │   └── clockwork_ambiance.mp3
+    │   └── library_ambiance.mp3
     └── exploration/
         └── corridor_echoes.mp3
 ```
