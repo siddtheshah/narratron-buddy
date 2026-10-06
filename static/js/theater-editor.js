@@ -11,6 +11,8 @@
   let previewSequence = 0;
   let proposal = null;
   let proposalRevision = null;
+  let generating = false;
+  let asking = false;
   const history = [];
   const pendingWrites = new Map();
   const expandedFolders = new Map();
@@ -42,7 +44,10 @@
   function endpoint(action = '') { return `/api/theater-editor/${encodeURIComponent(state.draft.theater_id)}${action}`; }
   function post(action, body) { return api(endpoint(action), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
   async function run(action, progress) {
-    if (busy) return;
+    if (busy || generating) {
+      if (generating) status('Please wait for asset generation to finish.');
+      return;
+    }
     busy = true;
     document.querySelectorAll('main button').forEach(button => { button.disabled = true; });
     document.querySelectorAll('main input:not([type=file]), main textarea, main select').forEach(input => { input.disabled = true; });
@@ -143,6 +148,7 @@
           expandedFolders.set(parent.dataset.path, true);
           parent = parent.parentElement ? parent.parentElement.closest('.file-folder') : null;
         }
+        button.scrollIntoView({ block: 'nearest' });
       } else {
         button.removeAttribute('aria-current');
       }
@@ -155,7 +161,7 @@
     el('download-file').href = url; el('download-file').hidden = false;
     const isProtected = file.path === 'theater.yaml';
     el('delete-file').hidden = isProtected;
-    el('delete-file').disabled = isProtected;
+    el('delete-file').disabled = isProtected || generating;
     if (file.kind === 'text') {
       try {
         let content = pendingWrites.get(file.path);
@@ -214,14 +220,48 @@
       status(`Uploaded ${files.length} files. Ask the assistant to organize them or develop your world.`);
     }, 'Uploading theater assets…');
   }
-  function message(role, text) {
+  function makeOpenLink(path, text = 'Open asset →') {
+    const link = document.createElement('a');
+    link.className = 'open-asset-link';
+    link.href = '#';
+    link.textContent = text;
+    link.setAttribute('role', 'button');
+    link.setAttribute('aria-label', `Open ${path}`);
+    const handler = e => {
+      e.preventDefault();
+      openAsset(path);
+    };
+    link.addEventListener('click', handler);
+    link.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') handler(e);
+    });
+    return link;
+  }
+  async function openAsset(path) {
+    if (!state || !state.files) return;
+    const file = state.files.find(f => f.path === path);
+    if (file) {
+      await selectFile(file);
+    } else {
+      status(`Could not find ${path} in this draft.`, true);
+    }
+  }
+  function message(role, text, assetPath = null) {
     const node = document.createElement('div'); node.className = `message ${role}`; node.textContent = text;
+    if (assetPath) {
+      node.append(' ', makeOpenLink(assetPath));
+    }
     el('assistant-messages').append(node); el('assistant-messages').scrollTop = el('assistant-messages').scrollHeight;
   }
   async function ask(prompt) {
-    if (!state || !prompt.trim()) return;
-    await run(async () => {
-      await save();
+    if (!state || !prompt.trim() || busy || asking || generating) return;
+    asking = true;
+    el('assistant-send').disabled = true;
+    el('assistant-input').disabled = true;
+    status('Your assistant is shaping a proposal…');
+    try {
+      captureText();
+      if (dirty()) await save();
       message('user', prompt);
       const result = await post('/assistant', { prompt, history: history.slice(-12) });
       if (result.state) render(result.state);
@@ -232,7 +272,13 @@
       renderProposal();
       await checkAuthStatus({ refresh: true });
       status(`Proposal ready. Charged ${result.credits_charged} credits. Review file changes or generate the suggested assets below.`);
-    }, 'Your assistant is shaping a proposal…');
+    } catch (error) {
+      status(error.message, true);
+    } finally {
+      asking = false;
+      el('assistant-send').disabled = false;
+      el('assistant-input').disabled = false;
+    }
   }
   function renderProposal() {
     const container = el('assistant-proposal'); container.replaceChildren();
@@ -252,15 +298,18 @@
     }
     if (proposal.writes.length || proposal.moves.length || (proposal.deletions && proposal.deletions.length)) {
       const button = document.createElement('button'); button.textContent = 'Apply file changes to draft'; button.type = 'button';
-      button.addEventListener('click', () => run(async () => {
-        await save();
-        render(await post('/apply', { revision: proposalRevision, proposal }));
-        for (const generation of proposal.generations) {
-          generation.references = generation.references.map(path => proposal.moves.find(move => move.source === path)?.destination || path);
-        }
-        clearPreview(); button.disabled = true; button.dataset.done = 'true';
-        status('File changes applied and saved to your draft.');
-      }, 'Applying changes…'));
+      button.addEventListener('click', () => {
+        if (generating) { status('Please wait for asset generation to finish before applying changes.', true); return; }
+        run(async () => {
+          await save();
+          render(await post('/apply', { revision: proposalRevision, proposal }));
+          for (const generation of proposal.generations) {
+            generation.references = generation.references.map(path => proposal.moves.find(move => move.source === path)?.destination || path);
+          }
+          clearPreview(); button.disabled = true; button.dataset.done = 'true';
+          status('File changes applied and saved to your draft.');
+        }, 'Applying changes…');
+      });
       container.append(button);
     }
     for (const generation of proposal.generations) {
@@ -270,24 +319,84 @@
       const description = document.createElement('p'); description.textContent = generation.prompt;
       const button = document.createElement('button'); button.type = 'button';
       const isMusic = generation.kind === 'playlist';
-      button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
-      button.addEventListener('click', () => generate(generation, button)); card.append(label, description, button); container.append(card);
+      if (generation.generated_path) {
+        button.textContent = 'Generated';
+        button.dataset.done = 'true';
+        button.disabled = true;
+        const openLink = makeOpenLink(generation.generated_path);
+        card.append(label, description, button, openLink);
+      } else {
+        button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+        if (generating) button.disabled = true;
+        button.addEventListener('click', () => generate(generation, button));
+        card.append(label, description, button);
+      }
+      container.append(card);
     }
     if (!proposal.writes.length && !proposal.moves.length && !(proposal.deletions && proposal.deletions.length) && !proposal.generations.length) container.hidden = true;
   }
   async function generate(request, button) {
-    await run(async () => {
-      await save();
-      const revision = state.draft.revision;
-      const result = await post('/generate', { ...request, revision }); render(result.state);
+    if (busy || generating) {
+      if (generating) status('An asset is already generating. Please wait…');
+      return;
+    }
+    generating = true;
+    captureText();
+    if (dirty()) {
+      try { await save(); } catch (e) { /* ignore */ }
+    }
+    const revision = state.draft.revision;
+    status('Generating your asset. This can take a few minutes…');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Generating…';
+    }
+    if (el('generation-submit')) {
+      el('generation-submit').disabled = true;
+      el('generation-submit').textContent = 'Generating…';
+    }
+    el('assistant-proposal').querySelectorAll('.generation-card button').forEach(btn => {
+      if (btn.dataset.done !== 'true') btn.disabled = true;
+    });
+    try {
+      const result = await post('/generate', { ...request, revision });
+      render(result.state);
       // A generated asset adds a new file, so the same proposal remains applicable.
       if (proposalRevision === revision) proposalRevision = state.draft.revision;
-      if (button) { button.textContent = 'Generated'; button.dataset.done = 'true'; }
+      if (request.kind && request.name && proposal?.generations) {
+        const match = proposal.generations.find(g => g.name === request.name && g.kind === request.kind);
+        if (match) match.generated_path = result.path;
+      }
+      if (button) {
+        button.textContent = 'Generated';
+        button.dataset.done = 'true';
+        button.disabled = true;
+        const openLink = makeOpenLink(result.path);
+        button.insertAdjacentElement('afterend', openLink);
+      }
       await checkAuthStatus({ refresh: true });
-      message('assistant', `Created ${result.path}. Charged ${result.credits_charged} credits.`);
+      message('assistant', `Created ${result.path}. Charged ${result.credits_charged} credits.`, result.path);
       history.push({ role: 'assistant', content: `Created asset: ${result.path}` });
       status(`Saved ${result.path} to your draft.`);
-    }, 'Generating your asset. This can take a few minutes…');
+    } catch (error) {
+      status(error.message, true);
+      if (button) {
+        button.disabled = false;
+        const isMusic = request.kind === 'playlist';
+        button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+      }
+    } finally {
+      generating = false;
+      updateGenerationCost();
+      if (el('assistant-proposal')) {
+        el('assistant-proposal').querySelectorAll('.generation-card button').forEach(btn => {
+          if (btn.dataset.done !== 'true') btn.disabled = false;
+        });
+      }
+      if (el('generation-submit')) {
+        el('generation-submit').disabled = false;
+      }
+    }
   }
   function updateGenerationCost() {
     if (state) {
@@ -452,11 +561,11 @@
   });
   window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('narratron:auth-changed', event => {
-    if (!event.detail.authenticated) { state = null; lastDraftKey = null; pendingWrites.clear(); textDirty = false; nameDirty = false; clearPreview(); history.length = 0; el('assistant-messages').replaceChildren(); el('assistant-proposal').replaceChildren(); el('workspace').hidden = true; el('start-panel').hidden = true; el('login-gate').hidden = false; }
+    if (!event.detail.authenticated) { state = null; lastDraftKey = null; generating = false; asking = false; pendingWrites.clear(); textDirty = false; nameDirty = false; clearPreview(); history.length = 0; el('assistant-messages').replaceChildren(); el('assistant-proposal').replaceChildren(); el('workspace').hidden = true; el('start-panel').hidden = true; el('login-gate').hidden = false; }
   });
   window.onAuthSuccess = mode => { if (mode !== 'logout') initialize(); };
   window.beforeCreditPurchase = async () => {
-    if (busy) throw new Error('Please wait for the current action to finish before purchasing credits.');
+    if (busy || generating) throw new Error('Please wait for the current action to finish before purchasing credits.');
     await save();
   };
   initialize();

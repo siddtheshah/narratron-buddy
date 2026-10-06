@@ -129,6 +129,9 @@ def editor_page() -> Iterator[Page]:
                     draft.files = [...initialFiles];
                 }
                 if (request.pathname.endsWith('/generate')) {
+                    if (window.holdGenerate) {
+                        await new Promise(resolve => { window.releaseGenerate = resolve; });
+                    }
                     const body = JSON.parse(options.body);
                     const isStamp = body.kind === 'stamp';
                     const path = isStamp ? 'stamps/goblin.png' : 'references/harbor.png';
@@ -452,6 +455,8 @@ def test_assistant_proposes_and_generates_stamp_ui(editor_page: Page) -> None:
     card.locator("button").click()
     expect(page.locator("#builder-status")).to_have_text("Saved stamps/goblin.png to your draft.")
     expect(card.locator("button")).to_have_text("Generated")
+    expect(card.locator(".open-asset-link")).to_have_text("Open asset →")
+    expect(page.locator("#assistant-messages .open-asset-link")).to_have_text("Open asset →")
 
     # Verify the stamp folder and file appear in the file tree with the stamp icon
     stamps_folder = page.locator('details[data-path="stamps"]')
@@ -460,6 +465,67 @@ def test_assistant_proposes_and_generates_stamp_ui(editor_page: Page) -> None:
     stamp_btn = page.locator('.file-button[title="stamps/goblin.png"]')
     expect(stamp_btn).to_be_visible()
     expect(stamp_btn).to_have_text("🏷️ goblin.png")
+
+
+def test_starting_proposal_does_not_block_exploring_theater_and_links_to_open_asset(editor_page: Page) -> None:
+    page = editor_page
+    page.evaluate("""
+        window.assistantProposal = {
+            message: "I propose creating a harbor reference image.",
+            writes: [],
+            moves: [],
+            generations: [{ kind: "reference", name: "harbor", prompt: "A misty harbor scene", playlist: "ambient", references: [] }]
+        };
+    """)
+    page.locator("#assistant-input").fill("Propose key scene art.")
+    page.locator("#assistant-send").click()
+
+    expect(page.locator("#assistant-proposal")).to_be_visible()
+    card = page.locator(".generation-card")
+    expect(card).to_be_visible()
+    expect(card.locator("strong")).to_have_text("Reference: harbor")
+    expect(card.locator("button")).to_have_text("Generate · 4 Cr")
+
+    # Enable hold so /generate is delayed
+    page.evaluate("window.holdGenerate = true")
+    card.locator("button").click()
+
+    # While generation is running, the button shows generating
+    expect(card.locator("button")).to_have_text("Generating…")
+    expect(card.locator("button")).to_be_disabled()
+
+    # Crucially, exploring the theater is NOT blocked:
+    # We can open folders and view existing files while generation is in flight
+    page.locator('details[data-path="lore"] > summary').click()
+    guide_btn = page.locator('.file-button[title="lore/guide.txt"]')
+    expect(guide_btn).to_be_visible()
+    guide_btn.click()
+    expect(page.locator("#selected-path")).to_have_text("lore/guide.txt")
+    expect(page.locator("#file-editor")).to_have_value("Contents of lore/guide.txt")
+
+    # Release generation
+    page.evaluate("window.releaseGenerate()")
+
+    # When generation finishes, status updates and card shows Generated
+    expect(page.locator("#builder-status")).to_have_text("Saved references/harbor.png to your draft.")
+    expect(card.locator("button")).to_have_text("Generated")
+
+    # Active exploration view (lore/guide.txt) was not clobbered
+    expect(page.locator("#selected-path")).to_have_text("lore/guide.txt")
+
+    # Both the proposal card and assistant message link to opening the new asset
+    card_open_link = card.locator(".open-asset-link")
+    expect(card_open_link).to_be_visible()
+    expect(card_open_link).to_have_text("Open asset →")
+    msg_open_link = page.locator("#assistant-messages .open-asset-link").last
+    expect(msg_open_link).to_be_visible()
+    expect(msg_open_link).to_have_text("Open asset →")
+
+    # Clicking the link opens the new asset in the editor/preview panel
+    card_open_link.click()
+    expect(page.locator("#selected-path")).to_have_text("references/harbor.png")
+    expect(page.locator("#media-preview img")).to_be_visible()
+    expect(page.locator("#media-preview img")).to_have_attribute("alt", "references/harbor.png")
 
 
 def test_delete_file_from_editor_ui(editor_page: Page) -> None:
