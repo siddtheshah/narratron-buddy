@@ -55,7 +55,13 @@ def format_canvas_state(
     if notepad_tools is not None:
         elements = notepad_tools.get_present_elements()
     elif story is not None:
-        elements = story.get_sticky_notes()
+        elements = [
+            {
+                "name": note.get("topic", note.get("name", "")),
+                "content": note.get("info", note.get("content", "")),
+            }
+            for note in story.get_sticky_notes()
+        ]
 
     if elements:
         rendered_elements = "; ".join(

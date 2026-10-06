@@ -59,6 +59,30 @@ def test_format_canvas_state_includes_present_scene_elements() -> None:
     assert "[Present Scene Elements]: hero: Mara, a cartographer; tone: Hopeful and tense" in state
 
 
+def test_format_canvas_state_includes_sticky_notes_from_story_without_tools() -> None:
+    story = StoryState()
+    notes = [
+        {"topic": "hero", "info": "Mara, a cartographer"},
+        {"topic": "tone", "info": "Hopeful and tense"},
+        {"topic": "objective", "info": ""},
+    ]
+    story.set_sticky_notes(notes)
+
+    state = format_canvas_state(CanvasFixture(story=story))
+
+    assert "[Present Scene Elements]: hero: Mara, a cartographer; tone: Hopeful and tense; objective: " in state
+    assert story.get_sticky_notes() == notes
+
+
+def test_format_canvas_state_includes_legacy_elements_from_story_without_tools() -> None:
+    story = StoryState()
+    story.set_sticky_notes([{"name": "objective", "content": "Find the lost compass"}])
+
+    state = format_canvas_state(CanvasFixture(story=story))
+
+    assert "[Present Scene Elements]: objective: Find the lost compass" in state
+
+
 def test_format_canvas_state_includes_active_characters() -> None:
     theater = MagicMock(theater_id="stage_chars")
     theater.config = MagicMock(return_value={"adventure_mode": True})
