@@ -100,6 +100,12 @@ Create a username and password in your `ngrok_policy.yaml`. This will prevent yo
 ngrok http 8000 --traffic-policy-file ngrok_policy.yaml
 ```
 
+## Virtual Tabletop (VTT) & Game Play
+
+Narratron Buddy can be used as an agentic Virtual Tabletop (VTT):
+- **VTT Guide**: [docs/virtual_tabletop_guide.md](docs/virtual_tabletop_guide.md) — Covers on-demand 2D battlemaps, the Orator Action Wheel, stamp tokens & minis, and running tactical encounters.
+- **Character Sheets & Beyond20**: [docs/beyond20.md](docs/beyond20.md) — Connect D&D Beyond (or Demiplane) rolls directly to the canvas chat and live AI narrator.
+
 ## Creating & Submitting Adventures
 
 Anyone can create custom narrative adventures for Narratron Buddy!
@@ -107,3 +113,4 @@ Anyone can create custom narrative adventures for Narratron Buddy!
 - Check out the template: [adventures/example_adventure](adventures/example_adventure)
 - Adventures can be freely packaged and distributed as standalone folders.
 - To get your adventure featured on **[narratron.app](https://narratron.app)**, ping **`syclonex`** on Discord.
+
