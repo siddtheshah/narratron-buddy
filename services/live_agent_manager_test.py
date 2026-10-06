@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import tempfile
 import time
 import unittest
@@ -23,6 +24,7 @@ from tools.observability_tool import ObservabilityTools
 
 def canvas_observability_fixture(image_path=None, collaboration_enabled=False, doodles=None):
     canvas = MagicMock()
+    canvas.theater = None
     canvas.visual.shown_image_path = image_path
     canvas.visual.shown_image_prompt = None
     canvas.audio.current_playlist = None
@@ -789,6 +791,74 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         self.assertTrue(session.send_canvas_state())
         self.assertFalse(session.send_canvas_state())
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+
+    def test_canvas_capture_is_reusable_and_preserves_previous_annotations(self) -> None:
+        from PIL import Image
+        from components.canvas.doodle_state import DoodleState
+        from components.canvas.visual_state import VisualState
+        from tools.reference_utils import resolve_provider_references
+
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "scene.png"
+            Image.new("RGB", (80, 80), "black").save(image_path)
+            canvas = canvas_observability_fixture(str(image_path), True)
+            canvas.theater = TheaterManager(directory).theater("capture")
+            canvas.doodles = DoodleState(MagicMock())
+            canvas.doodles.doodles = [{
+                "type": "draw", "x0": 0.1, "y0": 0.5, "x1": 0.9, "y1": 0.5,
+                "color": "#ff0000", "size": 5,
+            }]
+            session = self.make_observability_session()
+            session.canvas_state_manager = canvas
+            session.live_request_queue = MagicMock()
+
+            self.assertTrue(session.send_agent_requested_observability())
+            content = session.live_request_queue.send_content.call_args.args[0]
+            capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            self.assertTrue(Path(capture_path).is_absolute())
+            first_capture = Path(capture_path).read_bytes()
+            self.assertEqual(first_capture, content.parts[-1].inline_data.data)
+            self.assertNotEqual(first_capture, image_path.read_bytes())
+            references, error = resolve_provider_references(
+                [capture_path], visual=VisualState(canvas.theater),
+            )
+            self.assertIsNone(error)
+            self.assertEqual(references[0].data, first_capture)
+            self.assertEqual(references[0].mime_type, "image/png")
+            self.assertFalse(session.send_agent_requested_observability())
+
+            canvas.doodles.doodles[0]["color"] = "#00ff00"
+            asyncio.run(session._send_doodle_snapshot())
+            content = session.live_request_queue.send_content.call_args.args[0]
+            next_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            self.assertNotEqual(next_path, capture_path)
+            self.assertEqual(Path(next_path).read_bytes(), content.parts[-1].inline_data.data)
+            self.assertEqual(Path(capture_path).read_bytes(), first_capture)
+            self.assertFalse(session.send_agent_requested_observability())
+            self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+
+    def test_canvas_capture_without_collaboration_and_write_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "scene.jpg"
+            image_path.write_bytes(b"scene-image")
+            canvas = canvas_observability_fixture(str(image_path))
+            canvas.theater = TheaterManager(directory).theater("capture")
+            session = self.make_observability_session()
+            session.canvas_state_manager = canvas
+            session.live_request_queue = MagicMock()
+            self.assertTrue(session.send_agent_requested_observability())
+            content = session.live_request_queue.send_content.call_args.args[0]
+            capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            self.assertEqual(Path(capture_path).read_bytes(), b"scene-image")
+            self.assertIn("reference_images", content.parts[0].text)
+            self.assertEqual(content.parts[-1].inline_data.mime_type, "image/jpeg")
+
+            image_path.write_bytes(b"changed-scene")
+            with patch("services.live_agent_manager.Path.mkdir", side_effect=OSError("disk full")):
+                self.assertTrue(session.send_agent_requested_observability())
+            content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertNotIn("[Canvas Capture]", content.parts[0].text)
+            self.assertEqual(content.parts[-1].inline_data.data, b"changed-scene")
 
     def test_stopped_session_does_not_cache_observability(self) -> None:
         session = self.make_observability_session()

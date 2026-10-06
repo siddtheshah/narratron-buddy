@@ -2,6 +2,7 @@ import asyncio
 from contextlib import aclosing
 from datetime import datetime, timezone
 import json
+import hashlib
 import logging
 import mimetypes
 import threading
@@ -445,6 +446,20 @@ class LiveAgentSession:
         image_changed = image is not None and image != self._last_observability_image
         if not text_changed and not image_changed:
             return False
+        if image is not None:
+            capture_path = self._save_canvas_capture(image)
+            if capture_path is not None:
+                content = content.model_copy(deep=True)
+                reference_text = (
+                    f"\n[Canvas Capture]: {capture_path}\n"
+                    "Use this path in create_image(reference_images=[...]) to draw from "
+                    "the attached canvas capture, including any visible audience annotations."
+                )
+                text_part = next((part for part in content.parts if part.text is not None), None)
+                if text_part is not None:
+                    text_part.text += reference_text
+                else:
+                    content.parts.insert(0, types.Part(text=reference_text.lstrip()))
         if not self.send_content(content, partial=True):
             return False
         if state_text is not None:
@@ -452,6 +467,33 @@ class LiveAgentSession:
         if image is not None:
             self._last_observability_image = image.model_copy(deep=True)
         return True
+
+    def _save_canvas_capture(self, image: types.Part) -> str | None:
+        """Persist the exact observed bytes as an immutable image-tool reference."""
+        canvas = self.canvas_state_manager
+        if canvas is None or canvas.theater is None or image.inline_data is None:
+            return None
+        data = image.inline_data.data
+        if not data:
+            return None
+        extension = mimetypes.guess_extension(image.inline_data.mime_type or "")
+        if extension is None:
+            return None
+        try:
+            directory = canvas.theater.output_dir() / "canvas_captures"
+            directory.mkdir(parents=True, exist_ok=True)
+            path = directory / f"canvas_{hashlib.sha256(data).hexdigest()}{extension}"
+            if not path.exists():
+                temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+                try:
+                    temporary.write_bytes(data)
+                    temporary.replace(path)
+                finally:
+                    temporary.unlink(missing_ok=True)
+            return str(path.resolve())
+        except OSError:
+            logger.exception("Could not save canvas capture for theater %s", self.theater_id)
+            return None
 
     def send_viewer_suggestion(self) -> bool:
         """Deliver the leading audience suggestion as an actionable notification."""

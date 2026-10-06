@@ -28,7 +28,9 @@ class ObservabilityTools(BaseTools):
         """Request the current canvas state when it would help continue the story.
 
         Use sparingly: this interrupts the normal observability cadence and is
-        subject to a cooldown.
+        subject to a cooldown. When an image is available, the update includes
+        a canvas capture path to use in create_image's reference_images. With
+        collaboration enabled, the capture includes visible audience annotations.
         """
         callback = self.on_observability_requested
         logger.info("[ObservabilityTools] Requesting canvas observability")
