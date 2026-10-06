@@ -76,12 +76,23 @@ def render_markdown(markdown_source: str, *, open_in_new_tab: bool = False) -> s
             continue
 
         line = trimmed
+        image = re.fullmatch(r"!\[([^]]*)\]\((/docs/images/[A-Za-z0-9_./-]+)\)", line)
         heading = re.match(r"^(#{1,4})\s+(.+)$", line)
         task_item = re.match(r"^[-*]\s+\[([ xX])\]\s+(.+)$", line)
         unordered_item = re.match(r"^[-*]\s+(.+)$", line)
         ordered_item = re.match(r"^\d+\.\s+(.+)$", line)
 
-        if heading:
+        if image:
+            flush_paragraph()
+            flush_list()
+            alt, url = image.groups()
+            safe_alt = html.escape(alt, quote=True)
+            safe_url = html.escape(url, quote=True)
+            blocks.append(
+                f'<p><a href="{safe_url}" target="_blank" rel="noopener noreferrer">'
+                f'<img src="{safe_url}" alt="{safe_alt}" loading="lazy"></a></p>'
+            )
+        elif heading:
             flush_paragraph()
             flush_list()
             level = len(heading.group(1))

@@ -50,6 +50,9 @@ async def add_cache_control_headers(request: Request, call_next):
 static_dir = PROJECT_ROOT / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# Screenshots and diagrams embedded in the public documentation.
+app.mount("/docs/images", StaticFiles(directory=PROJECT_ROOT / "docs" / "images"), name="docs-images")
+
 # Playlists folder from config (absolute path resolution)
 playlists_folder = str((PROJECT_ROOT / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
 os.makedirs(playlists_folder, exist_ok=True)

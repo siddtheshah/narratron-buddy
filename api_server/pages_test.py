@@ -55,6 +55,25 @@ def test_docs_virtual_tabletop_page_serves_markdown_content():
     assert "Action Wheel" in response
 
 
+def test_virtual_tabletop_guide_images_load_and_references_render_as_lists() -> None:
+    response = pages.read_docs_virtual_tabletop()
+    assert '<pre><code' not in response
+    assert '| :---' not in response
+    assert '<li><strong>Dungeon Hall:</strong>' in response
+    assert '<li><strong>Up — Pin Image:</strong>' in response
+
+    client = TestClient(pages.app)
+    for filename in [
+        "action_wheel_hud.png", "stamp_manager_tray.png",
+        "stamp_roster_setup.jpg", "vtt_encounter_sequence.png",
+    ]:
+        url = f"/docs/images/{filename}"
+        assert f'<img src="{url}"' in response
+        image_response = client.get(url)
+        assert image_response.status_code == 200
+        assert image_response.headers["content-type"].startswith("image/")
+
+
 def test_docs_index_links_to_each_documentation_page():
     response = pages.read_docs()
     assert 'href="/docs/about"' in response
