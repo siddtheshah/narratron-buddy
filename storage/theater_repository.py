@@ -105,6 +105,7 @@ class TheaterRepository:
             (target_dir / "output").mkdir(parents=True, exist_ok=True)
             (target_dir / "references").mkdir(parents=True, exist_ok=True)
             (target_dir / "playlists").mkdir(parents=True, exist_ok=True)
+            (target_dir / "stamps").mkdir(parents=True, exist_ok=True)
             return (target_dir / "theater.json").exists()
 
         if not source.exists():
@@ -115,6 +116,7 @@ class TheaterRepository:
             (target_dir / "output").mkdir(parents=True, exist_ok=True)
             (target_dir / "references").mkdir(parents=True, exist_ok=True)
             (target_dir / "playlists").mkdir(parents=True, exist_ok=True)
+            (target_dir / "stamps").mkdir(parents=True, exist_ok=True)
             return True
         except Exception as e:
             logger.warning("Failed to reconstruct theater %s to %s: %s", theater_id, target_dir, e)

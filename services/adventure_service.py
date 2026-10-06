@@ -261,7 +261,7 @@ class AdventureService:
                         logger.warning("Failed to parse theater.yaml for %s: %s", adventure_id, e)
                 elif rel in ("planning.yaml", "planning.yml") or filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
-                elif "references" in parts or "reference_library" in parts:
+                elif "references" in parts or "reference_library" in parts or "stamps" in parts:
                     if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
                         reference_files.append((rel, content))
                 elif "playlists" in parts:

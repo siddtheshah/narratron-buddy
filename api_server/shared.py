@@ -44,7 +44,7 @@ theaters_folder = str(theater_manager.base_dir)
 async def add_cache_control_headers(request: Request, call_next):
     response = await call_next(request)
     if FLAGS.testing_use_local or request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        response.headers.setdefault("Cache-Control", "no-cache, must-revalidate")
     return response
 
 static_dir = PROJECT_ROOT / "static"

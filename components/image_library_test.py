@@ -21,6 +21,19 @@ class TestImageLibrary:
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_canvas_stamps_are_excluded_from_image_reference_discovery(self) -> None:
+        stamps = self.theater.stamps_dir()
+        stamps.mkdir(parents=True)
+        Image.new("RGB", (10, 10), color="gold").save(stamps / "shovel.png")
+        reference = os.path.join(self.library.reference_dir, "scene.png")
+        Image.new("RGB", (10, 10), color="blue").save(reference)
+        self.library._load_references()
+
+        assert [entry["path"] for entry in self.library.list_references()] == [reference]
+        assert self.library.browse_images() == [reference]
+        assert self.library.find_image_names("shovel") == []
+        assert self.theater.stamps()[0]["name"] == "shovel"
+
     @pytest.mark.parametrize("cover_setting", [
         "references/art/title.png",
         "art/title.png",

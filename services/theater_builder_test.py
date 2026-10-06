@@ -23,6 +23,7 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
     ("rain.mp3", False, "playlists/default/rain.mp3"),
     ("notes.md", False, "lore/notes.txt"),
     ("world/references/people/hero.png", True, "references/people/hero.png"),
+    ("world/stamps/tokens/hero.png", True, "stamps/tokens/hero.png"),
     ("world/playlists/mystery/rain.mp3", True, "playlists/mystery/rain.mp3"),
     ("world/theater.yaml", True, "theater.yaml"),
 ])
@@ -103,13 +104,19 @@ def test_assistant_receives_image_previews_for_unnamed_uploads(tmp_path: Path) -
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     buffer = BytesIO()
     Image.new("RGB", (800, 600), color="blue").save(buffer, format="PNG")
-    store.write_files(info, {"references/IMG_001.png": buffer.getvalue()})
+    store.write_files(info, {
+        "references/IMG_001.png": buffer.getvalue(),
+        "stamps/shovel.png": buffer.getvalue(),
+        "stamps/cart.png": buffer.getvalue(),
+    })
     client = MagicMock()
     client.models.generate_content.return_value.text = '{"message":"Organize the image"}'
     with patch("services.theater_builder.genai.Client", return_value=client):
         store.propose(info, "Organize my uploads", [], {})
     contents = client.models.generate_content.call_args.kwargs["contents"]
+    assert len(contents) == 7
     assert contents[1].text == "Preview of references/IMG_001.png"
+    assert {contents[3].text, contents[5].text} == {"Preview of stamps/cart.png", "Preview of stamps/shovel.png"}
     assert contents[2].inline_data.mime_type == "image/jpeg"
     with Image.open(BytesIO(contents[2].inline_data.data)) as preview:
         assert preview.width <= 512

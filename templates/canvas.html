@@ -5927,6 +5927,8 @@
 
         let isStampManagerOpen = false;
         let cachedUserStamps = null;
+        let cachedTheaterStamps = [];
+        let stampLoadError = '';
         let isFetchingUserStamps = false;
 
         function setStampManagerOpen(open) {
@@ -6048,7 +6050,7 @@
                 localStorage.setItem(getStampUsageStorageKey(), json);
                 localStorage.setItem('narratron_stamp_usage', json);
             } catch (_) {}
-            if (cachedUserStamps && cachedUserStamps.length > 0) {
+            if (cachedUserStamps) {
                 renderStampManagerGrid(cachedUserStamps);
             }
         }
@@ -6059,20 +6061,19 @@
             if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
 
             try {
-                const res = await fetch('/api/users/me/stamps');
-                if (res.status === 401) {
-                    stampManagerGrid.innerHTML = '';
-                    if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
-                    if (stampEmptyMessage) stampEmptyMessage.textContent = 'Please log in to view and use your stamps.';
-                    if (stampManagerCount) stampManagerCount.textContent = '0/10';
-                    if (typeof openAuthModal === 'function') {
-                        openAuthModal('login');
-                    }
-                    return;
-                }
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const stamps = await res.json();
-                cachedUserStamps = Array.isArray(stamps) ? stamps : [];
+                const results = await Promise.allSettled([
+                    fetch('/api/users/me/stamps').then(async res => {
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        return res.json();
+                    }),
+                    fetch(`/api/theaters/${encodeURIComponent(theaterId)}/stamps`).then(async res => {
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        return res.json();
+                    }),
+                ]);
+                cachedUserStamps = results[0].status === 'fulfilled' && Array.isArray(results[0].value) ? results[0].value : [];
+                cachedTheaterStamps = results[1].status === 'fulfilled' && Array.isArray(results[1].value) ? results[1].value : [];
+                stampLoadError = results.some(result => result.status === 'rejected') ? 'Some stamps could not be loaded. Reopen the manager to retry.' : '';
                 renderStampManagerGrid(cachedUserStamps);
             } catch (err) {
                 console.warn('Unable to load user stamps:', err);
@@ -6087,17 +6088,26 @@
         function renderStampManagerGrid(stamps) {
             if (!stampManagerGrid) return;
             stampManagerGrid.innerHTML = '';
-            if (stampManagerCount) stampManagerCount.textContent = `${stamps.length}/10`;
+            if (stampManagerCount) {
+                stampManagerCount.textContent = `${stamps.length}/10`;
+                stampManagerCount.title = `${stamps.length} user stamps · ${cachedTheaterStamps.length} theater stamps`;
+            }
 
-            if (stamps.length === 0) {
+            if (stamps.length === 0 && cachedTheaterStamps.length === 0) {
                 if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
-                if (stampEmptyMessage) stampEmptyMessage.textContent = 'No stamps uploaded yet.';
+                if (stampEmptyMessage) stampEmptyMessage.textContent = stampLoadError || 'No stamps available yet.';
                 return;
             }
             if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
+            if (stampLoadError) {
+                const notice = document.createElement('div');
+                notice.className = 'stamp-section-label';
+                notice.textContent = stampLoadError;
+                stampManagerGrid.appendChild(notice);
+            }
 
             // Stamps in the stamp manager should be ordered from most recently used to least
-            const sortedStamps = [...stamps].sort((a, b) => {
+            const sortStamps = items => [...items].sort((a, b) => {
                 const timeA = getStampLastUsedTimestamp(a.id);
                 const timeB = getStampLastUsedTimestamp(b.id);
                 if (timeA !== timeB) {
@@ -6107,9 +6117,19 @@
                 const idB = Number(b.id) || 0;
                 return idA - idB;
             });
+            const sortedStamps = [...sortStamps(stamps), ...sortStamps(cachedTheaterStamps)];
+            const addSection = (label, divider = false) => {
+                const heading = document.createElement('div');
+                heading.className = `stamp-section-label${divider ? ' stamp-section-divider' : ''}`;
+                heading.textContent = label;
+                stampManagerGrid.appendChild(heading);
+            };
+            addSection('User stamps');
+            if (stamps.length === 0) addSection('No user stamps uploaded yet.');
 
             const canDrag = hasContributorsPermission();
-            sortedStamps.forEach(stamp => {
+            sortedStamps.forEach((stamp, index) => {
+                if (index === stamps.length) addSection('Theater stamps', true);
                 const card = document.createElement('div');
                 card.className = `stamp-card ${canDrag ? 'can-drag' : 'locked'}`;
                 card.draggable = canDrag;
@@ -6208,6 +6228,7 @@
 
                 stampManagerGrid.appendChild(card);
             });
+            if (cachedTheaterStamps.length === 0) addSection('Theater stamps · None provided', true);
         }
 
         function placeStampOnCanvas(stampData, normX, normY) {

@@ -21,6 +21,74 @@ from utils.config_loader import get_theater_default_config
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+@pytest.mark.asyncio
+async def test_theater_stamps_require_access_and_serve_nested_images(tmp_path: Path) -> None:
+    from starlette.requests import Request
+    from components.theater_manager import TheaterManager
+
+    manager = TheaterManager(base_theaters_dir=tmp_path)
+    manager.create_theater("Stamps", "stage", reference_files=[("stamps/tokens/hero.png", b"image")])
+    request = Request({"type": "http", "headers": []})
+    access = AsyncMock()
+    with patch.object(theaters, "_require_canvas_access_async", access), patch.object(theaters, "theater_manager", manager):
+        stamps = await theaters.list_theater_stamps(request, "stage", join_key="KEY")
+        assert stamps[0]["id"] == "theater:stage:tokens/hero.png"
+        response = await theaters.serve_theater_stamp(request, "stage", "tokens/hero.png", join_key="KEY")
+        assert Path(response.path).read_bytes() == b"image"
+        access.assert_awaited_with(request, "stage", join_key="KEY")
+        with pytest.raises(HTTPException) as invalid:
+            await theaters.serve_theater_stamp(request, "stage", "../theater.json")
+        assert invalid.value.status_code == 400
+        with pytest.raises(HTTPException) as missing:
+            await theaters.serve_theater_stamp(request, "stage", "missing.png")
+        assert missing.value.status_code == 404
+        access.side_effect = HTTPException(status_code=403, detail="Access denied")
+        with pytest.raises(HTTPException) as denied:
+            await theaters.list_theater_stamps(request, "stage")
+        assert denied.value.status_code == 403
+        with pytest.raises(HTTPException) as denied_image:
+            await theaters.serve_theater_stamp(request, "stage", "tokens/hero.png")
+        assert denied_image.value.status_code == 403
+
+
+def test_theater_stamp_http_caching_and_revalidation(tmp_path: Path) -> None:
+    from absl.testing import flagsaver
+    from components.theater_manager import TheaterManager
+
+    manager = TheaterManager(base_theaters_dir=tmp_path)
+    manager.create_theater("Stamps", "cached-stage", reference_files=[("stamps/shovel.png", b"stamp-image")])
+    url = "/theaters/cached-stage/stamps/shovel.png"
+    access = AsyncMock()
+    with flagsaver.flagsaver(testing_use_local=True), \
+         patch.object(theaters, "_require_canvas_access_async", access), \
+         patch.object(theaters, "theater_manager", manager), TestClient(app) as client:
+        initial = client.get(url)
+        assert initial.status_code == 200
+        assert initial.content == b"stamp-image"
+        assert initial.headers["cache-control"] == "private, max-age=3600"
+        assert initial.headers["vary"] == "Cookie"
+        etag = initial.headers["etag"]
+        last_modified = initial.headers["last-modified"]
+        for headers in ({"If-None-Match": etag}, {"If-None-Match": f'"other", W/{etag}'}, {"If-Modified-Since": last_modified}):
+            cached = client.get(url, headers=headers)
+            assert cached.status_code == 304
+            assert cached.content == b""
+            assert cached.headers["cache-control"] == "private, max-age=3600"
+            assert cached.headers["etag"] == etag
+            assert cached.headers["vary"] == "Cookie"
+
+        image = manager.theater("cached-stage").stamps_dir() / "shovel.png"
+        image.write_bytes(b"updated-stamp-image")
+        updated = client.get(url, headers={"If-None-Match": etag, "If-Modified-Since": last_modified})
+        assert updated.status_code == 200
+        assert updated.content == b"updated-stamp-image"
+        assert updated.headers["etag"] != etag
+
+        access.side_effect = HTTPException(status_code=403, detail="Access denied")
+        denied = client.get(url, headers={"If-None-Match": updated.headers["etag"]})
+        assert denied.status_code == 403
+
+
 class TestTheaterAPI(BaseTestCase):
 
     def setUp(self):

@@ -39,6 +39,36 @@ class TestTheaterManager(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_stamp_package_import_and_repository_round_trip(self) -> None:
+        from storage.theater_repository import TheaterRepository
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("adventure/stamps/tokens/hero token.png", b"stamp-image")
+        images, playlists, lore, config = extract_asset_package(archive.getvalue())
+        metadata = self.manager.create_theater("Stamps", "stamp-stage", reference_files=images)
+        theater = self.manager.theater("stamp-stage")
+        self.assertNotIn("hero token.png", metadata.mounted_references)
+        self.assertEqual(theater.stamps(), [{
+            "id": "theater:stamp-stage:tokens/hero token.png",
+            "name": "hero token",
+            "url": "/theaters/stamp-stage/stamps/tokens/hero%20token.png",
+        }])
+        (theater.stamps_dir() / "notes.txt").write_text("ignored", encoding="utf-8")
+        self.assertEqual(len(theater.stamps()), 1)
+        repository = TheaterRepository(Path(self.temp_dir.name) / "repository")
+        self.assertTrue(repository.export_theater("stamp-stage", theater.directory()))
+        restored = Path(self.temp_dir.name) / "restored"
+        self.assertTrue(repository.reconstruct_theater("stamp-stage", restored))
+        self.assertEqual((restored / "stamps/tokens/hero token.png").read_bytes(), b"stamp-image")
+
+    def test_stamp_import_rejects_traversal(self) -> None:
+        with self.assertRaises(ValueError):
+            self.manager.create_theater("Invalid", "bad-stamps", reference_files=[("stamps/../escape.png", b"bad")])
+
+    def test_missing_stamp_directory_returns_empty_list(self) -> None:
+        self.assertEqual(self.manager.theater("missing").stamps(), [])
+
     def test_create_deploy_stop_and_destroy_theater(self) -> None:
         theater = self.manager.create_theater(
             name="Fantasy Quest",

@@ -416,7 +416,7 @@ def publish_draft(info: DraftInfo) -> str:
         if not relative.startswith("references/"):
             relative = f"references/{relative}"
         image = safe_asset_path(root, relative) if Path(relative).suffix else None
-        images = [item for item in builder.files(info.theater_id) if item.kind == "image"]
+        images = [item for item in builder.files(info.theater_id) if item.kind == "image" and item.path.startswith("references/")]
         matching_alias = any(Path(item.path).stem == str(starting_image) for item in images)
         if (image is None or not image.is_file()) and not matching_alias:
             raise ValueError("starting_image must point to an existing reference image.")
@@ -428,7 +428,7 @@ def publish_draft(info: DraftInfo) -> str:
     metadata = theater_manager.get_theater(info.theater_id)
     metadata.name = info.name
     metadata.config = theater_config
-    metadata.mounted_references = [item.path.removeprefix("references/") for item in builder.files(info.theater_id) if item.kind == "image"]
+    metadata.mounted_references = [item.path.removeprefix("references/") for item in builder.files(info.theater_id) if item.kind == "image" and item.path.startswith("references/")]
     metadata.mounted_playlists = {}
     for item in builder.files(info.theater_id):
         if item.kind == "audio":

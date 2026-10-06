@@ -399,6 +399,19 @@
     gap: 10px;
 }
 
+.stamp-section-label {
+    grid-column: 1 / -1;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.stamp-section-divider {
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    margin-top: 6px;
+    padding-top: 12px;
+}
+
 .stamp-card {
     position: relative;
     display: flex;

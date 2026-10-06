@@ -10,6 +10,7 @@ import yaml
 
 from fastapi import Request, Response, HTTPException
 from fastapi.responses import FileResponse
+from starlette.staticfiles import NotModifiedResponse, StaticFiles
 from pydantic import BaseModel
 
 from api_server.shared import (
@@ -85,6 +86,36 @@ class RequestBatonRequest(BaseModel):
 # ========================================
 # Theater Asset Dynamic Routes
 # ========================================
+
+@app.get("/api/theaters/{theater_id}/stamps")
+async def list_theater_stamps(
+    request: Request, theater_id: str, join_key: Optional[str] = None,
+) -> list[dict[str, str]]:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    return theater_manager.theater(theater_id).stamps()
+
+
+@app.get("/theaters/{theater_id}/stamps/{filename:path}")
+async def serve_theater_stamp(
+    request: Request, theater_id: str, filename: str, join_key: Optional[str] = None,
+) -> Response:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    root = theater_manager.theater(theater_id).stamps_dir().resolve()
+    image = (root / filename).resolve()
+    if root not in image.parents:
+        raise HTTPException(status_code=400, detail="Invalid stamp path")
+    if not image.is_file() or image.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        raise HTTPException(status_code=404, detail="Theater stamp not found")
+    response = FileResponse(
+        image,
+        stat_result=image.stat(),
+        headers={"Cache-Control": "private, max-age=3600", "Vary": "Cookie"},
+    )
+    if StaticFiles().is_not_modified(response.headers, request.headers):
+        return NotModifiedResponse(response.headers)
+    return response
 
 @app.get("/theaters/{theater_id}/references/{filename:path}")
 async def serve_theater_reference(

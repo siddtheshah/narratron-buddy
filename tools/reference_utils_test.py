@@ -39,6 +39,15 @@ class TestReferenceUtils(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_canvas_stamp_cannot_be_attached_as_generation_reference(self) -> None:
+        stamp_dir = os.path.join(self.temp_dir, "stamps")
+        os.makedirs(stamp_dir)
+        stamp_path = self._create_dummy_image_file("stamps/shovel.png")
+        resolver = DummyPathResolver({"shovel": stamp_path})
+        references, error = resolve_provider_references(["shovel"], visual=resolver)
+        self.assertEqual(references, [])
+        self.assertIn("canvas token", error or "")
+
     def _create_dummy_image_file(self, filename: str, content: bytes = b"dummy_image_data") -> str:
         filepath = os.path.join(self.temp_dir, filename)
         with open(filepath, "wb") as f:

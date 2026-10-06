@@ -257,6 +257,8 @@ def resolve_provider_references(
 
     provider_references: list[ImageReference] = []
     for ref_name, reference_path in resolved_refs:
+        if "stamps" in {part.casefold() for part in Path(reference_path).resolve().parts}:
+            return [], f"Error: Stamp '{ref_name}' is a canvas token and cannot be used as an image-generation reference."
         try:
             data = Path(reference_path).read_bytes()
         except OSError as exc:

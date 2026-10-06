@@ -47,6 +47,34 @@ def test_canvas_html_and_chat_css_stamp_wiring() -> None:
     assert "stamp-resize-handle" in renderer_js
 
 
+def test_production_stamp_manager_separates_sources_and_places_theater_stamps(stamp_page: Page) -> None:
+    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
+    stamp_page.add_script_tag(content="""
+        let cachedTheaterStamps = [{id: 'theater:stage:hero.png', name: 'Theater Hero', url: '/theaters/stage/stamps/hero.png'}];
+        let stampLoadError = '';
+        const stampManagerEmpty = document.getElementById('stamp-manager-empty');
+        const stampEmptyMessage = null;
+        crypto.randomUUID = () => 'test-theater-stamp';
+        function redrawAllDoodles() { renderer.redraw(doodleActions); }
+    """ + render)
+    stamp_page.evaluate("cachedUserStamps = [{id: 1, name: 'User Hero', url: '/api/stamps/1'}]; renderStampManagerGrid(cachedUserStamps)")
+    assert stamp_page.locator(".stamp-section-label").all_text_contents() == ["User stamps", "Theater stamps"]
+    assert stamp_page.locator(".stamp-section-divider").count() == 1
+    assert stamp_page.locator(".stamp-card-name").all_text_contents() == ["User Hero", "Theater Hero"]
+    assert stamp_page.locator("#stamp-manager-count").text_content() == "1/10"
+    assert stamp_page.locator("#stamp-manager-count").get_attribute("title") == "1 user stamps · 1 theater stamps"
+    stamp_page.locator("#chat-open-stamps-btn").click()
+    stamp_page.locator('.stamp-card[data-stamp-id="theater:stage:hero.png"]').drag_to(stamp_page.locator("#image-container"))
+    assert stamp_page.evaluate("doodleActions[0].stamp_id") == "theater:stage:hero.png"
+    assert stamp_page.locator(".stamp-card").count() == 2
+    stamp_page.evaluate("cachedUserStamps = []; renderStampManagerGrid(cachedUserStamps)")
+    assert stamp_page.locator(".stamp-card-name").all_text_contents() == ["Theater Hero"]
+    assert not stamp_page.locator("#stamp-manager-empty").is_visible()
+    stamp_page.evaluate("contributorPermission = false; renderStampManagerGrid(cachedUserStamps)")
+    assert stamp_page.locator(".stamp-card").get_attribute("draggable") == "false"
+
+
 @pytest.fixture
 def stamp_page() -> Iterator[Page]:
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")

@@ -79,6 +79,28 @@ class Theater:
     def references_dir(self) -> Path:
         return self.manager._get_theater_reference_dir(self.theater_id)
 
+    def stamps_dir(self) -> Path:
+        return self.directory() / "stamps"
+
+    def stamps(self) -> list[dict[str, str]]:
+        """List theater stamps with identities distinct from user stamp IDs."""
+        root = self.stamps_dir().resolve()
+        if not root.is_dir():
+            return []
+        stamps: list[dict[str, str]] = []
+        for image in sorted(root.rglob("*")):
+            if not image.is_file() or root not in image.resolve().parents:
+                continue
+            if image.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                continue
+            filename = image.relative_to(root).as_posix()
+            stamps.append({
+                "id": f"theater:{self.theater_id}:{filename}",
+                "name": image.stem,
+                "url": f"/theaters/{quote(self.theater_id, safe='')}/stamps/{quote(filename, safe='/')}",
+            })
+        return stamps
+
     def playlists_dir(self) -> Path:
         return self.manager._get_theater_playlists_dir(self.theater_id)
 
@@ -361,6 +383,7 @@ class TheaterManager:
         reference_dir.mkdir(parents=True)
         playlists_dir.mkdir()
         lore_dir.mkdir()
+        (theater_dir / "stamps").mkdir()
         self._get_theater_output_dir(theater_id).mkdir()
 
         if metadata_json is not None:
@@ -375,6 +398,16 @@ class TheaterManager:
         mounted_references = []
         for relative_filename, content in reference_files or []:
             parts = [part for part in relative_filename.replace("\\", "/").split("/") if part]
+            if "stamps" in parts:
+                stamp_root = (theater_dir / "stamps").resolve()
+                stamp_path = (stamp_root / Path(*parts[parts.index("stamps") + 1:])).resolve()
+                if stamp_root not in stamp_path.parents:
+                    raise ValueError("Invalid stamp path")
+                if stamp_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                    raise ValueError("Unsupported stamp image format")
+                stamp_path.parent.mkdir(parents=True, exist_ok=True)
+                stamp_path.write_bytes(content)
+                continue
             if relative_filename == "metadata.json" or (parts and parts[-1].lower() == "metadata.json"):
                 (theater_dir / "metadata.json").write_bytes(content)
                 continue
