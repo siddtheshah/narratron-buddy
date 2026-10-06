@@ -326,15 +326,18 @@ class LiveAgentSession:
         """Compatibility hook for voice activity detection."""
         self.record_user_input()
 
-    def _setup_tool_callbacks(self):
-        def handle_cooldown_expired(tool_name: str):
+    def _setup_tool_callbacks(self) -> None:
+        def handle_cooldown_expired(tool_name: str) -> None:
             if tool_name in ("process_user_action", "image_cycle"):
                 return
             msg = f"[System Notification] The cooldown for '{tool_name}' has expired. You may now call {tool_name} again."
             logger.info(f"[LiveAgentSession] Cooldown expired notification: {msg}")
             try:
-                content = types.Content(parts=[types.Part(text=msg)])
-                self.send_content(content)
+                content = types.Content(role="system", parts=[types.Part(text=msg)])
+                if tool_name == "request_canvas_observability":
+                    self.send_content(content, partial=True)
+                else:
+                    self.send_content(content)
             except Exception as e:
                 logger.error(f"[LiveAgentSession] Failed to send cooldown expired notification: {e}")
 

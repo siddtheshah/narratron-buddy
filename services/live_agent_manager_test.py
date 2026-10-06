@@ -20,6 +20,7 @@ from services.live_agent_manager import (
     LiveAgentSession,
 )
 from tools.observability_tool import ObservabilityTools
+from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 def canvas_observability_fixture(image_path=None, collaboration_enabled=False, doodles=None):
@@ -693,6 +694,40 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session.send_content.assert_called_once()
         args, _ = session.send_content.call_args
         self.assertIn("create_image", args[0].parts[0].text)
+        self.assertEqual(args[0].role, "system")
+
+    def test_observability_cooldown_is_a_non_triggering_system_message(self) -> None:
+        async def run_test(background_content_is_partial: bool) -> None:
+            theater = MagicMock()
+            theater.config.return_value = {"observability_tool": {"cooldown_duration": 30}}
+            observability_tools = ObservabilityTools(theater, MagicMock())
+            runner = MagicMock()
+            runner.agent.tools = [SimpleNamespace(
+                name="request_canvas_observability",
+                func=observability_tools.request_canvas_observability,
+            )]
+            session = LiveAgentSession(
+                theater_id="observability_cooldown", runner=runner, tool_bundle=MagicMock(),
+            )
+            session.live_request_queue = PriorityLiveRequestQueue(
+                background_content_is_partial=background_content_is_partial,
+            )
+            session.send_notification = MagicMock()
+            session.record_user_input = MagicMock()
+
+            self.assertIsNotNone(observability_tools.on_cooldown_expired)
+            observability_tools.on_cooldown_expired("request_canvas_observability")
+            request = await asyncio.wait_for(session.live_request_queue.get(), timeout=1)
+
+            self.assertEqual(request.content.role, "system")
+            self.assertTrue(request.partial)
+            self.assertIn("request_canvas_observability", request.content.parts[0].text)
+            session.send_notification.assert_not_called()
+            session.record_user_input.assert_not_called()
+
+        for background_content_is_partial in (False, True):
+            with self.subTest(background_content_is_partial=background_content_is_partial):
+                asyncio.run(run_test(background_content_is_partial))
 
     def test_reenable_state_on_reconnect(self):
         import asyncio
