@@ -6,6 +6,7 @@ import asyncio
 import base64
 from collections.abc import AsyncGenerator
 from functools import singledispatchmethod
+from io import BytesIO
 import json
 import logging
 
@@ -15,6 +16,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
 from openai.types.realtime.realtime_conversation_item_user_message_param import Content
+from PIL import Image
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
 from providers.live_agent_provider import LiveAgentProviderError, OpenAIRealtimeConfig
@@ -270,12 +272,28 @@ class OpenAIRealtimeConnection(BaseLlmConnection):
                     user_parts.append({"type": "input_text", "text": part.text})
             elif part.inline_data is not None:
                 blob = part.inline_data
-                if blob.mime_type in {"image/png", "image/jpeg"} and blob.data:
-                    encoded = base64.b64encode(blob.data).decode("ascii")
+                if blob.mime_type in {"image/png", "image/jpeg", "image/webp"} and blob.data:
+                    image_data = blob.data
+                    mime_type = blob.mime_type
+                    if mime_type == "image/webp":
+                        try:
+                            with Image.open(BytesIO(image_data)) as image:
+                                rgba = image.convert("RGBA")
+                                background = Image.new("RGB", image.size, "white")
+                                background.paste(rgba, mask=rgba.getchannel("A"))
+                                with BytesIO() as output:
+                                    background.save(output, format="JPEG", quality=90)
+                                    image_data = output.getvalue()
+                        except OSError as exc:
+                            raise LiveAgentProviderError(
+                                "Could not convert OpenAI WebP content to JPEG"
+                            ) from exc
+                        mime_type = "image/jpeg"
+                    encoded = base64.b64encode(image_data).decode("ascii")
                     user_parts.append(
                         {
                             "type": "input_image",
-                            "image_url": f"data:{blob.mime_type};base64,{encoded}",
+                            "image_url": f"data:{mime_type};base64,{encoded}",
                             "detail": "low",
                         }
                     )

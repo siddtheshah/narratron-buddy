@@ -1,11 +1,13 @@
 """Protocol tests for speech boundaries, serialized turns, and tool delivery."""
 
 import base64
+from io import BytesIO
 import json
 from unittest.mock import AsyncMock, MagicMock
 
 from google.genai import types
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
+from PIL import Image
 from pydantic import JsonValue
 import pytest
 
@@ -451,6 +453,55 @@ async def test_images_are_inline_context_and_close_is_idempotent() -> None:
     await connection.close()
     await connection.close()
     socket.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["RGB", "RGBA"])
+async def test_webp_context_is_converted_to_jpeg(mode: str) -> None:
+    socket = make_socket()
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig())
+    color = (200, 40, 60) if mode == "RGB" else (200, 40, 60, 0)
+    with Image.new(mode, (8, 6), color) as source, BytesIO() as output:
+        source.save(output, format="WEBP", lossless=True)
+        blob = types.Blob(mime_type="image/webp", data=output.getvalue())
+    original_data = blob.data
+    await connection._send_content(
+        types.Content(parts=[types.Part(inline_data=blob)]), partial=True
+    )
+    socket.conversation.item.create.assert_awaited_once()
+    item = socket.conversation.item.create.call_args.kwargs["item"]
+    assert item["role"] == "user"
+    image_part = item["content"][0]
+    prefix, encoded = image_part["image_url"].split(",", 1)
+    assert prefix == "data:image/jpeg;base64"
+    assert image_part["detail"] == "low"
+    with Image.open(BytesIO(base64.b64decode(encoded))) as converted:
+        assert converted.format == "JPEG"
+        assert converted.size == (8, 6)
+        assert converted.mode == "RGB"
+        expected_color = (200, 40, 60) if mode == "RGB" else (255, 255, 255)
+        assert all(
+            abs(actual - expected) <= 3
+            for actual, expected in zip(converted.getpixel((0, 0)), expected_color)
+        )
+    assert blob.mime_type == "image/webp"
+    assert blob.data == original_data
+    socket.response.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data", [b"invalid webp", b""])
+async def test_invalid_webp_context_fails_before_sending(data: bytes) -> None:
+    socket = make_socket()
+    connection = OpenAIRealtimeConnection(socket, "test-model", OpenAIRealtimeConfig())
+    with pytest.raises(LiveAgentProviderError):
+        await connection.send_content(
+            types.Content(parts=[types.Part(
+                inline_data=types.Blob(mime_type="image/webp", data=data)
+            )])
+        )
+    socket.conversation.item.create.assert_not_awaited()
+    socket.response.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
