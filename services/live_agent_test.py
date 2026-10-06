@@ -322,6 +322,26 @@ class TestCreateAgent(unittest.TestCase):
 
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
+    def test_observability_instructions_appear_only_when_enabled(
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock
+    ) -> None:
+        mock_bundle = MagicMock()
+        mock_bundle.tools = []
+        mock_bundle_fn.return_value = mock_bundle
+
+        create_agent(theater=make_test_theater("observed", {"observability_tool": {"enabled": True}}), tool_bundle=mock_bundle)
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertIn("## Canvas Observability", instruction)
+        self.assertIn("request_canvas_observability", instruction)
+        self.assertIn("reference_images` for your next image", instruction)
+
+        create_agent(theater=make_test_theater("unobserved", {}), tool_bundle=mock_bundle)
+        instruction = mock_agent_cls.call_args.kwargs["instruction"]
+        self.assertNotIn("## Canvas Observability", instruction)
+        self.assertNotIn("request_canvas_observability", instruction)
+
+    @patch("services.live_agent.create_tool_bundle_for_session")
+    @patch("services.live_agent.Agent")
     def test_create_agent_renders_instruction_sections_in_order(
         self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock
     ) -> None:

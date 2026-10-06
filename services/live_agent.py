@@ -89,6 +89,11 @@ Canvas observability may supply a `[Canvas Capture]` path. Use it in `create_ima
 {% else %}
 Stage suitable mounted assets with `show_image`.
 {% endif %}
+{% if observability_enabled %}
+## Canvas Observability
+Call `request_canvas_observability` when an audience/viewer suggestion arrives or when the orator asks you to look at, build on, or use the canvas. Do not call it otherwise; it is on a cooldown.
+The resulting `[Canvas Capture]` image path shows the current canvas, including any visible audience annotations.{% if image_generation_enabled %} Pass that path in `create_image`'s `reference_images` for your next image so it builds on what is on screen.{% endif %}
+{% endif %}
 {% if animation_enabled %}
 ## Animation
 Use `create_animation` for requested motion or scenes that clearly benefit. Layered animations play automatically; play a multi-frame animation with `play_animation` when ready and still relevant.
@@ -461,6 +466,7 @@ def create_agent(
         adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
         user_help_enabled=bool(user_help_config.get("enabled", True)),
+        observability_enabled=bool((config.get("observability_tool") or {}).get("enabled", False)),
         audience_suggestions=Template(
             AUDIENCE_SUGGESTIONS_TEMPLATE,
         ).render(
