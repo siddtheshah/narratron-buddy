@@ -114,6 +114,10 @@ class Theater:
     def characters_dir(self) -> Path:
         return self.manager._get_theater_characters_dir(self.theater_id)
 
+    def canvas_captures_dir(self) -> Path:
+        """Directory of observed canvas snapshots; usable as references, never displayable."""
+        return self.output_dir() / "canvas_captures"
+
     def artifacts_dir(self) -> Path:
         return self.manager._get_theater_artifacts_dir(self.theater_id)
 

@@ -1,6 +1,7 @@
 """Canvas WebSocket, chat, orator control, and stats API endpoints."""
 
 import asyncio
+import logging
 from uuid import uuid4
 from typing import Any, Optional, Literal
 
@@ -23,6 +24,8 @@ from api_server.shared import (
     is_contributor,
 )
 from api_server.dependencies import live_agent_manager
+
+logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
@@ -615,12 +618,20 @@ def post_orator_action(
                 f"[Orator Action] The {'canvas visual' if is_image else 'music'} was unpinned. Media generation may resume."
             ))]))
         suite.request_orator_bypass(names)
-        instruction = (
-            "The canvas visual is unpinned. Generate and display a fresh image for the current narrated scene now using create_image with display=True."
-            if is_image else
-            "Music is unpinned. Start different music for the current narrated scene now. Use play_music for an available playlist, "
-            "or create_music if generated music is enabled."
-        )
+        if is_image:
+            if state.ui.viewer_collab_enabled:
+                logger.info("[Orator Action] Triggering forced canvas observability capture.")
+                session.send_agent_requested_observability(force=True)
+            instruction = (
+                "The canvas visual is unpinned. Generate and display a fresh image for the current "
+                "narrated scene now using create_image with display=True."
+            )
+        else:
+            instruction = (
+                "Music is unpinned. Start different music for the current narrated scene now. Use play_music for an available playlist, "
+                "or create_music if generated music is enabled."
+            )
+        logger.info(f"[Orator Action] {instruction}")
         if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
             f"[Orator Action] {instruction} This is an explicit orator request; "
             "the next requested media action bypasses its regular cooldown."

@@ -920,3 +920,16 @@ class TestImageTools(BaseTestCase):
         # Canvas visual state must not have displayed the character image
         self.assertNotEqual(tools.currently_displayed_image_path, char_img)
 
+    def test_show_image_rejects_canvas_captures(self) -> None:
+        tools = self.make_image_tools(self.config, theater_id="capture_test", theater_manager=self.manager)
+        captures_dir = self.manager.theater("capture_test").canvas_captures_dir()
+        captures_dir.mkdir(parents=True, exist_ok=True)
+        capture = captures_dir / "canvas_deadbeef.png"
+        Image.new("RGB", (10, 10), color="red").save(capture)
+
+        res = tools.show_image(str(capture))
+
+        self.assertIn("is a canvas capture and cannot be displayed", res)
+        self.assertIsNone(tools.currently_displayed_image_path)
+        self.assertIsNone(tools.visual.shown_image_path)
+

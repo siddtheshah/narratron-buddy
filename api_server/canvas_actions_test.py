@@ -16,7 +16,9 @@ def action_services() -> Iterator[tuple[MagicMock, MagicMock]]:
     state.visual.orator_cursor = 0
     state.audio.pinned = False
     state.audio.orator_cursor = 0
+    state.ui.viewer_collab_enabled = False
     session = MagicMock(is_alive=True)
+    session.observability_tools = None
     session.send_user_content.return_value = True
     session.send_notification.return_value = True
     manager = MagicMock()
@@ -166,3 +168,70 @@ def test_orator_action_endpoint_response_validation_with_integer_cursor(
     assert data["status"] == "accepted"
     assert data["orator_cursor"] == 7
     assert data["music_orator_cursor"] == 3
+
+
+def test_new_image_triggers_observability_when_collab_enabled(
+    action_services: tuple[MagicMock, MagicMock]
+) -> None:
+    state, session = action_services
+    state.ui.viewer_collab_enabled = True
+    session.observability_tools = None
+
+    with patch.object(canvas.theater_manager, "get_theater_config", return_value={}):
+        canvas.post_orator_action(
+            "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
+        )
+
+    session.send_agent_requested_observability.assert_called_once_with(force=True)
+    session.send_notification.assert_called_once()
+    notification_content = session.send_notification.call_args[0][0]
+    notification_text = notification_content.parts[0].text
+    assert "The observability tool is available" not in notification_text
+    assert "create_image with display=True" in notification_text
+
+
+def test_new_image_does_not_trigger_observability_when_collab_disabled_even_if_tool_enabled_in_config(
+    action_services: tuple[MagicMock, MagicMock]
+) -> None:
+    state, session = action_services
+    state.ui.viewer_collab_enabled = False
+    session.observability_tools = MagicMock()
+
+    with patch.object(
+        canvas.theater_manager,
+        "get_theater_config",
+        return_value={"observability_tool": {"enabled": True}},
+    ):
+        canvas.post_orator_action(
+            "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
+        )
+
+    session.send_agent_requested_observability.assert_not_called()
+    session.send_notification.assert_called_once()
+    notification_content = session.send_notification.call_args[0][0]
+    notification_text = notification_content.parts[0].text
+    assert "The observability tool is available" not in notification_text
+    assert "create_image with display=True" in notification_text
+
+
+def test_new_image_triggers_observability_even_if_tool_disabled_in_config(
+    action_services: tuple[MagicMock, MagicMock]
+) -> None:
+    state, session = action_services
+    state.ui.viewer_collab_enabled = True
+    session.observability_tools = None
+
+    with patch.object(
+        canvas.theater_manager,
+        "get_theater_config",
+        return_value={"observability_tool": {"enabled": False}},
+    ):
+        canvas.post_orator_action(
+            "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
+        )
+
+    session.send_agent_requested_observability.assert_called_once_with(force=True)
+    session.send_notification.assert_called_once()
+    notification_text = session.send_notification.call_args[0][0].parts[0].text
+    assert "The observability tool is available" not in notification_text
+    assert "create_image with display=True" in notification_text

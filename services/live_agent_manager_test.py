@@ -983,7 +983,37 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         finally:
             os.remove(image_path)
 
-    def test_agent_requested_observability_attaches_doodles_with_state(self):
+    def test_agent_requested_observability_forced_sends_even_when_unchanged(self) -> None:
+        mock_runner = MagicMock()
+        mock_runner.agent = MagicMock(tools=[])
+        mock_runner.session_service = MagicMock()
+        session = LiveAgentSession(
+            theater_id="test_forced_observability",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+        )
+        session.live_request_queue = MagicMock()
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as image_file:
+            image_file.write(b"forced-canvas-image")
+            image_path = image_file.name
+        try:
+            session.canvas_state_manager = canvas_observability_fixture(image_path=image_path)
+            session.websockets.add(MagicMock())
+            # First send (normal)
+            self.assertTrue(session.send_agent_requested_observability())
+            self.assertEqual(session.live_request_queue.send_content.call_count, 1)
+
+            # Second send (normal, unchanged -> returns False)
+            self.assertFalse(session.send_agent_requested_observability())
+            self.assertEqual(session.live_request_queue.send_content.call_count, 1)
+
+            # Third send (forced -> sends even though unchanged)
+            self.assertTrue(session.send_agent_requested_observability(force=True))
+            self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+        finally:
+            os.remove(image_path)
+
+    def test_agent_requested_observability_attaches_doodles_with_state(self) -> None:
         """The live model must receive the annotation before it can respond."""
         mock_runner = MagicMock()
         mock_runner.agent = MagicMock(tools=[])

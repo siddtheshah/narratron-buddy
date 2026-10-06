@@ -7996,12 +7996,20 @@
         const canvasContainer = document.getElementById('image-container');
         let canvasSettleTimer = null;
         let canvasRevealFrame = null;
+        let canvasSettleUntil = 0;
 
         function darkenCanvasUntilStable(delay = 120) {
             canvasContainer.classList.add('layout-resizing');
             clearTimeout(canvasSettleTimer);
             cancelAnimationFrame(canvasRevealFrame);
+            const now = Date.now();
+            const targetTime = now + delay;
+            if (targetTime > canvasSettleUntil) {
+                canvasSettleUntil = targetTime;
+            }
+            const effectiveDelay = Math.max(delay, canvasSettleUntil - now);
             canvasSettleTimer = setTimeout(() => {
+                canvasSettleUntil = 0;
                 resizeRendererCanvas();
                 resizeDoodleCanvas();
                 // Let animated renderers paint at the final size before revealing them.
@@ -8010,7 +8018,7 @@
                         canvasContainer.classList.remove('layout-resizing');
                     });
                 });
-            }, delay);
+            }, effectiveDelay);
         }
 
         let canvasLayout = canvasContainer.getBoundingClientRect();

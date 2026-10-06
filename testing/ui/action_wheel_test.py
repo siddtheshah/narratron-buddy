@@ -164,6 +164,7 @@ def test_action_wheel_initializes_on_full_canvas() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1500, "height": 900})
+        page.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
         errors: list[str] = []
         def record_error(error: Error) -> None:
             errors.append(str(error))

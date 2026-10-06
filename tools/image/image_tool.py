@@ -486,6 +486,15 @@ class ImageTools(BaseTools):
             self._trigger_after_tool_call("show_image")
             return f"Successfully displayed {target} to the user with transition '{transition}' and effect '{effect}'."
 
+        captures_dir = self.theater.canvas_captures_dir().resolve()
+        if any(p and Path(p).resolve().is_relative_to(captures_dir) for p in (file_path, resolved_path)):
+            logger.info("[ImageTools] show_image rejected canvas capture '%s'.", file_path)
+            self._trigger_after_tool_call("show_image")
+            return (
+                f"Error: '{file_path}' is a canvas capture and cannot be displayed with show_image. "
+                "Canvas captures may only be used in create_image(reference_images=[...])."
+            )
+
         char_dir = self.theater.characters_dir()
         is_char_path = False
         for p in (file_path, resolved_path):

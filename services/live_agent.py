@@ -89,16 +89,6 @@ Canvas observability may supply a `[Canvas Capture]` path. Use it in `create_ima
 {% else %}
 Stage suitable mounted assets with `show_image`.
 {% endif %}
-{% if observability_enabled %}
-## Canvas Observability
-Call `request_canvas_observability` when an audience/viewer suggestion arrives or when the orator asks you to look at, build on, or use the canvas. Do not call it otherwise; it is on a cooldown.
-The resulting `[Canvas Capture]` image path shows the current canvas, including any visible audience annotations.
-{%- if image_generation_enabled %}
-Pass that reference image path in `create_image`'s `reference_images` for your next image so it builds on what is on screen.
-When doing this, avoid a long, wordy prompt and instead focus on providing context to the additions you see on the canvas. The base image
-characteristics are handled by providing the reference.
-{%- endif %}
-{% endif %}
 {% if animation_enabled %}
 ## Animation
 Use `create_animation` for requested motion or scenes that clearly benefit. Layered animations play automatically; play a multi-frame animation with `play_animation` when ready and still relevant.
@@ -145,11 +135,32 @@ AUDIENCE_SUGGESTIONS_TEMPLATE = """
 The top ranked audience suggestion may be provided from time to time. Use your available tools to bring these suggestions to life.
 If you see one, follow it as long as it does not contradict the orator. Non-sequitur is explicitly allowed for the sake of fun.
 {%- if adventure_mode %}
-For characters and scenes suggestions in adventure mode, if a suggestion says, "Make this character have orange hair", you can use `process_user_action` with a nudge parameter to fulfill it. 
+For characters and scenes suggestions in adventure mode, if a suggestion something like, "Make this character have orange hair", you can use `process_user_action` with a nudge parameter to fulfill it. 
 {%- else %}
 For character and scenes suggestions, use the character_tool or notepad_tool to register these updates. Then use them in other tools to produce canvas updates.
+{% if observability_enabled %} Use observability_tool to see the implicit suggestions on the canvas. {% endif %}
 {%- endif %}
 After noting the suggestions, you should use visual tools (images or animations) or audio tools (music) to satisfy the audience.
+
+{% if observability_enabled %}
+## Canvas Observability
+### Collaborative Image Generation
+Viewing the active canvas is essential for maximal interactivity the orator and their audience.
+Use the observability_tool to accomplish this. This should be used frequently, though it has a cooldown.
+The best time to trigger it is when you have received a viewer suggestion, or the orator has requested it by voice/text.
+
+Call `request_canvas_observability` when an audience/viewer suggestion arrives or when the orator asks you to look at, build on, or use the canvas. Do not call it otherwise; it is on a cooldown.
+{% endif %}
+{%- if image_generation_enabled %}
+### How to use the canvas capture effectively
+You may get a canvas capture from the orator {% if observability_enabled %} or by your observability_tool {% endif %}.
+The resulting `[Canvas Capture]` image path shows the current canvas, including any visible audience annotations.
+
+Follow these steps for the next image created:
+1. Determine what is amusing or intriguing about the drawing within the capture.
+2. Elaborate on that in your prompt for create_image. Do not focus on the previous prompt, focus on the amusing/funny thing.
+3. Pass that reference image path in `create_image`'s `reference_images` for your next image so it builds on what is on screen.
+{%- endif %}
 """
 
 def build_live_agent_config(config: dict | None = None) -> LiveAgentConfig:
@@ -476,6 +487,8 @@ def create_agent(
             AUDIENCE_SUGGESTIONS_TEMPLATE,
         ).render(
             adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
+            observability_enabled=bool((config.get("observability_tool") or {}).get("enabled", False)),
+            image_generation_enabled=bool(config.get("image_generation", {}).get("enabled", True)),
         ).strip()
     ).strip()
     return Agent(

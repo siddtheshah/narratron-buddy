@@ -434,7 +434,12 @@ class LiveAgentSession:
         if self.chat_tools:
             self.chat_tools.on_send_chat_message = handle_session_chat_message
 
-    def _send_observability(self, content: types.Content, state_text: str | None = None) -> bool:
+    def _send_observability(
+        self,
+        content: types.Content,
+        state_text: str | None = None,
+        force: bool = False,
+    ) -> bool:
         """Enqueue changed context without completing a turn; caller holds state_lock.
 
         Track text and visuals separately so alternating text pulses and visual
@@ -444,7 +449,7 @@ class LiveAgentSession:
         image = next((part for part in content.parts or [] if part.inline_data is not None), None)
         text_changed = state_text is not None and state_text != self._last_observability_text
         image_changed = image is not None and image != self._last_observability_image
-        if not text_changed and not image_changed:
+        if not force and not text_changed and not image_changed:
             return False
         if image is not None:
             capture_path = self._save_canvas_capture(image)
@@ -480,7 +485,7 @@ class LiveAgentSession:
         if extension is None:
             return None
         try:
-            directory = canvas.theater.output_dir() / "canvas_captures"
+            directory = canvas.theater.canvas_captures_dir()
             directory.mkdir(parents=True, exist_ok=True)
             path = directory / f"canvas_{hashlib.sha256(data).hexdigest()[:8]}{extension}"
             if not path.exists():
@@ -616,7 +621,7 @@ class LiveAgentSession:
         logger.info("[LiveAgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
         return True
 
-    def send_agent_requested_observability(self) -> bool:
+    def send_agent_requested_observability(self, force: bool = False) -> bool:
         """Send an explicit agent-requested canvas update and defer regular pulses.
 
         Unlike the regular text pulse, this request includes a visual snapshot
@@ -626,7 +631,9 @@ class LiveAgentSession:
         then an asynchronous doodle image made it easy for a live turn to act
         on the unannotated image before the annotation arrived.
         """
-        if not self.websocket_connected:
+        if not self.is_alive:
+            return False
+        if not force and not self.websocket_connected:
             logger.debug(
                 "[LiveAgentSession] User disconnected; suppressing agent-requested canvas update for session %s.",
                 self.theater_id,
@@ -648,7 +655,7 @@ class LiveAgentSession:
                     ))
                 parts.append(image_part)
             try:
-                sent = self._send_observability(types.Content(parts=parts), msg)
+                sent = self._send_observability(types.Content(parts=parts), msg, force=force)
             except Exception as e:
                 logger.error(
                     "[LiveAgentSession] Failed to send agent-requested canvas observability update: %s",
