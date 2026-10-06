@@ -837,6 +837,53 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertFalse(session.send_agent_requested_observability())
             self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
+    def test_canvas_capture_includes_stamp_imagery(self) -> None:
+        import io
+        from PIL import Image
+        from components.canvas.doodle_state import DoodleState
+
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "scene.png"
+            Image.new("RGB", (100, 100), (0, 0, 0)).save(image_path)
+
+            theater = TheaterManager(directory).theater("capture_stamp")
+            stamps_dir = theater.stamps_dir()
+            stamps_dir.mkdir(parents=True, exist_ok=True)
+            stamp_path = stamps_dir / "token.png"
+            Image.new("RGBA", (20, 20), (0, 255, 0, 255)).save(stamp_path)
+
+            canvas = canvas_observability_fixture(str(image_path), True)
+            canvas.theater = theater
+            canvas.doodles = DoodleState(MagicMock(), theater=theater)
+            canvas.doodles.save_stamp({
+                "type": "stamp",
+                "id": "stamp-1",
+                "stamp_id": "theater:capture_stamp:token.png",
+                "url": "/theaters/capture_stamp/stamps/token.png",
+                "name": "Token",
+                "x": 0.5,
+                "y": 0.5,
+                "size": 80.0,
+            })
+
+            session = self.make_observability_session()
+            session.canvas_state_manager = canvas
+            session.live_request_queue = MagicMock()
+
+            self.assertTrue(session.send_agent_requested_observability())
+            content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertIn("[Canvas Capture]: ", content.parts[0].text)
+            capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            self.assertTrue(Path(capture_path).is_file())
+
+            capture_bytes = Path(capture_path).read_bytes()
+            self.assertEqual(capture_bytes, content.parts[-1].inline_data.data)
+
+            with Image.open(io.BytesIO(capture_bytes)) as rendered:
+                center_pixel = rendered.convert("RGB").getpixel((50, 50))
+                # The green stamp imagery must appear in the saved canvas capture
+                self.assertEqual(center_pixel, (0, 255, 0))
+
     def test_canvas_capture_without_collaboration_and_write_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             image_path = Path(directory) / "scene.jpg"

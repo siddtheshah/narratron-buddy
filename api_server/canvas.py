@@ -619,13 +619,16 @@ def post_orator_action(
             ))]))
         suite.request_orator_bypass(names)
         if is_image:
-            if state.ui.viewer_collab_enabled:
-                logger.info("[Orator Action] Triggering forced canvas observability capture.")
-                session.send_agent_requested_observability(force=True)
             instruction = (
                 "The canvas visual is unpinned. Generate and display a fresh image for the current "
                 "narrated scene now using create_image with display=True."
             )
+            if state.ui.viewer_collab_enabled:
+                logger.info("[Orator Action] Triggering forced canvas observability capture.")
+                session.send_agent_requested_observability(force=True)
+                instruction += (
+                    "You must visually understand the image use the audience drawings and stamps to build a modified scene."
+                )
         else:
             instruction = (
                 "Music is unpinned. Start different music for the current narrated scene now. Use play_music for an available playlist, "
@@ -634,7 +637,7 @@ def post_orator_action(
         logger.info(f"[Orator Action] {instruction}")
         if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
             f"[Orator Action] {instruction} This is an explicit orator request; "
-            "the next requested media action bypasses its regular cooldown."
+            "the next requested media action bypasses its regular cooldown, so use it quickly once you have understand user intent."
         ))])):
             suite.cancel_orator_bypass()
             if is_image:

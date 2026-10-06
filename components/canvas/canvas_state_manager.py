@@ -43,7 +43,7 @@ class CanvasStateManager:
             on_visual_changed_fn=self._on_visual_changed,
         )
         self.audio = AudioState(self.notify_changed)
-        self.doodles = DoodleState(self.persist)
+        self.doodles = DoodleState(self.persist, theater=self.theater)
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
         self.story = StoryState(self.persist, self.notify_changed, publish_audio_fn=self.connections.broadcast)

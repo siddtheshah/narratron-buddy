@@ -1,6 +1,7 @@
 import io
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 from PIL import Image
 
 from components.canvas.doodle_state import DoodleState, doodle_snapshot_batches
@@ -335,6 +336,113 @@ def test_stamps_always_under_doodles_layering() -> None:
     types_after_move = [d.get("type") for d in state.doodles]
     assert types_after_move == ["stamp", "stamp", "draw", "text"]
     assert [d.get("id") for d in state.doodles if d.get("type") == "stamp"] == ["stamp-1", "stamp-2"]
+
+
+def test_snapshot_png_renders_stamp_imagery() -> None:
+    import io
+    with tempfile.TemporaryDirectory() as temp_dir:
+        base_path = Path(temp_dir) / "base.png"
+        stamp_path = Path(temp_dir) / "token.png"
+
+        Image.new("RGB", (200, 200), (0, 0, 0)).save(base_path)
+        Image.new("RGBA", (40, 40), (255, 0, 0, 255)).save(stamp_path)
+
+        state = DoodleState(lambda: None)
+        state.save_stamp({
+            "type": "stamp",
+            "id": "stamp-red",
+            "stamp_id": "token.png",
+            "url": str(stamp_path),
+            "name": "RedToken",
+            "x": 0.5,
+            "y": 0.5,
+            "size": 80.0,
+        })
+
+        snapshot_bytes = state.snapshot_png(str(base_path))
+        assert snapshot_bytes is not None
+        assert snapshot_bytes.startswith(b"\x89PNG")
+        assert snapshot_bytes != base_path.read_bytes()
+
+        rendered = Image.open(io.BytesIO(snapshot_bytes)).convert("RGB")
+        center_pixel = rendered.getpixel((100, 100))
+        # Center of base image should now be the red stamp, not black
+        assert center_pixel == (255, 0, 0)
+        # Top-left corner outside the stamp should still be the base black color
+        corner_pixel = rendered.getpixel((5, 5))
+        assert corner_pixel == (0, 0, 0)
+
+
+def test_snapshot_png_renders_theater_stamp() -> None:
+    import io
+    with tempfile.TemporaryDirectory() as temp_dir:
+        base_path = Path(temp_dir) / "base.png"
+        stamps_dir = Path(temp_dir) / "stamps"
+        stamps_dir.mkdir(parents=True, exist_ok=True)
+        stamp_file = stamps_dir / "goblin.png"
+
+        Image.new("RGB", (200, 200), (0, 0, 0)).save(base_path)
+        Image.new("RGBA", (40, 40), (0, 255, 0, 255)).save(stamp_file)
+
+        mock_theater = MagicMock()
+        mock_theater.theater_id = "test_theater"
+        mock_theater.stamps_dir.return_value = stamps_dir
+        mock_theater.manager = None
+
+        state = DoodleState(lambda: None, theater=mock_theater)
+        state.save_stamp({
+            "type": "stamp",
+            "id": "stamp-goblin",
+            "stamp_id": "theater:test_theater:goblin.png",
+            "url": "/theaters/test_theater/stamps/goblin.png",
+            "name": "Goblin",
+            "x": 0.5,
+            "y": 0.5,
+            "size": 80.0,
+        })
+
+        snapshot_bytes = state.snapshot_png(str(base_path))
+        assert snapshot_bytes is not None
+
+        rendered = Image.open(io.BytesIO(snapshot_bytes)).convert("RGB")
+        center_pixel = rendered.getpixel((100, 100))
+        assert center_pixel == (0, 255, 0)
+
+
+def test_snapshot_png_uses_custom_stamp_resolver() -> None:
+    import io
+    with tempfile.TemporaryDirectory() as temp_dir:
+        base_path = Path(temp_dir) / "base.png"
+        Image.new("RGB", (200, 200), (0, 0, 0)).save(base_path)
+
+        buffer = io.BytesIO()
+        Image.new("RGBA", (30, 30), (0, 0, 255, 255)).save(buffer, format="PNG")
+        blue_stamp_bytes = buffer.getvalue()
+
+        def custom_resolver(action: dict[str, str | float | int | bool | list[float] | None]) -> bytes | None:
+            if action.get("id") == "stamp-blue":
+                return blue_stamp_bytes
+            return None
+
+        state = DoodleState(lambda: None, stamp_resolver=custom_resolver)
+        state.save_stamp({
+            "type": "stamp",
+            "id": "stamp-blue",
+            "stamp_id": 999,
+            "url": "/api/stamps/999",
+            "name": "BlueStamp",
+            "x": 0.5,
+            "y": 0.5,
+            "size": 80.0,
+        })
+
+        snapshot_bytes = state.snapshot_png(str(base_path))
+        assert snapshot_bytes is not None
+
+        rendered = Image.open(io.BytesIO(snapshot_bytes)).convert("RGB")
+        center_pixel = rendered.getpixel((100, 100))
+        assert center_pixel == (0, 0, 255)
+
 
 
 
