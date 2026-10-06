@@ -78,9 +78,9 @@ def test_production_stamp_manager_separates_sources_and_places_theater_stamps(st
 @pytest.mark.parametrize("success", [True, False])
 def test_production_stamp_generation_permissions_pending_and_result(stamp_page: Page, success: bool) -> None:
     html = Path("templates/canvas.html").read_text(encoding="utf-8")
-    start = html.index('<form id="stamp-generation-form"')
-    form = html[start:html.index("</form>", start) + len("</form>")]
-    stamp_page.locator("#stamp-manager-body").evaluate("(body, form) => body.insertAdjacentHTML('afterbegin', form)", form)
+    start = html.index('            <div id="stamp-generation-status"')
+    footer = html[start:html.index('    <script type="module">', start)]
+    stamp_page.locator(".stamp-manager-footer").evaluate("(element, footer) => element.outerHTML = footer", footer)
     generation = html[html.index("        let isTheaterStampOwner = false;"):html.index("        function setStampManagerOpen(open) {")]
     render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
     stamp_page.add_script_tag(content="""
@@ -96,6 +96,12 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
         };
         function redrawAllDoodles() { renderer.redraw(doodleActions); }
     """ + generation + render)
+    assert stamp_page.evaluate("""[
+        'THE silver, dragon on a mountain beyond the clouds',
+        'A goblin', 'the and of', 'Un café près du château'
+    ].map(stampNameFromPrompt)""") == [
+        "silver dragon mountain", "goblin", "Stamp", "Un café près",
+    ]
     stamp_page.locator("#chat-open-stamps-btn").click()
     # A contributor / current orator cannot see or submit the owner-only form.
     assert not stamp_page.locator("#stamp-generation-form").is_visible()
@@ -103,16 +109,17 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
     assert stamp_page.evaluate("generationRequests.length") == 0
     stamp_page.evaluate("isTheaterStampOwner = true; updateStampGenerationPermission()")
     assert stamp_page.locator("#stamp-generation-form").is_visible()
-    stamp_page.locator("#stamp-generation-name").fill("Goblin scout")
+    assert stamp_page.locator("#stamp-generation-name").count() == 0
     stamp_page.locator("#stamp-generation-prompt").fill("A green goblin with a spear")
-    stamp_page.locator("#stamp-generation-submit").click()
+    stamp_page.locator("#stamp-generation-prompt").press("Enter")
+    assert stamp_page.locator("#stamp-generation-prompt").input_value() == "A green goblin with a spear"
     assert stamp_page.locator("#stamp-generation-submit").is_disabled()
     assert "Generating your stamp" in stamp_page.locator("#stamp-generation-status").inner_text()
     stamp_page.evaluate("document.getElementById('stamp-generation-form').requestSubmit()")
     assert stamp_page.evaluate("generationRequests.length") == 1
     assert stamp_page.evaluate("generationRequests[0].url") == "/api/theaters/stage/stamps/generate"
     assert stamp_page.evaluate("JSON.parse(generationRequests[0].body)") == {
-        "name": "Goblin scout", "prompt": "A green goblin with a spear",
+        "name": "green goblin spear", "prompt": "A green goblin with a spear",
     }
     if success:
         stamp_page.evaluate("""finishGeneration({ok: true, json: async () => ({
@@ -131,6 +138,60 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
     assert stamp_page.locator("#stamp-generation-submit").is_enabled()
     stamp_page.evaluate("isTheaterStampOwner = false; updateStampGenerationPermission()")
     assert not stamp_page.locator("#stamp-generation-form").is_visible()
+
+
+@pytest.mark.parametrize("viewport_width", [1400, 1000])
+@pytest.mark.parametrize("owner", [True, False])
+def test_stamp_composer_overlays_chat_and_double_click_returns_to_chat(
+    stamp_page: Page, viewport_width: int, owner: bool,
+) -> None:
+    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
+    inline_css = html[html.index("<style>") + len("<style>"):html.index("</style>")]
+    start = html.index('    <div id="chat-sidebar">')
+    sidebar = html[start:html.index('    <script type="module">', start)]
+    stamp_page.goto("about:blank")
+    stamp_page.set_viewport_size({"width": viewport_width, "height": 800})
+    stamp_page.set_content(
+        f"<!DOCTYPE html><style>{chat_css}</style><style>{inline_css}</style>"
+        f"<div style='height:600px'>{sidebar}</div>"
+    )
+    script = html[html.index("        const chatOpenStampsBtn ="):html.index("        function getStampUsageStorageKey()")]
+    stamp_page.add_script_tag(content="""
+        let currentUser = {id: 5, username: 'Alice'};
+        function hasContributorsPermission() { return true; }
+        function updateStampManagerProfileLinks() {}
+        function loadUserStamps() {
+            stampManagerGrid.innerHTML = '<div style="height:1200px">Stamps</div>';
+        }
+    """ + script)
+    stamp_page.evaluate(f"isTheaterStampOwner = {'true' if owner else 'false'}; updateStampGenerationPermission()")
+    stamp_page.locator("#chat-input").evaluate("element => element.style.height = '110px'")
+    chat_box = stamp_page.locator("#chat-input").bounding_box()
+    toggle_box = stamp_page.locator("#chat-open-stamps-btn").bounding_box()
+    assert chat_box is not None
+    assert toggle_box is not None
+    stamp_page.locator("#chat-open-stamps-btn").click()
+    back_box = stamp_page.locator("#stamp-manager-back-chat-btn").bounding_box()
+    assert back_box is not None
+    assert back_box == pytest.approx(toggle_box, abs=1)
+    if owner:
+        prompt_box = stamp_page.locator("#stamp-generation-prompt").bounding_box()
+        assert prompt_box is not None
+        assert prompt_box == pytest.approx(chat_box, abs=1)
+        stamp_page.locator("#stamp-manager-body").evaluate("element => element.scrollTop = 1200")
+        assert stamp_page.locator("#stamp-generation-prompt").bounding_box() == prompt_box
+    profile_box = stamp_page.locator("#stamp-manager-profile-link").bounding_box()
+    assert profile_box is not None
+    assert profile_box["x"] > back_box["x"] + back_box["width"]
+    stamp_page.locator("#stamp-manager-back-chat-btn").click()
+    stamp_page.mouse.dblclick(
+        toggle_box["x"] + toggle_box["width"] / 2,
+        toggle_box["y"] + toggle_box["height"] / 2,
+        delay=100,
+    )
+    assert stamp_page.locator("#panel-body").is_visible()
+    assert not stamp_page.locator("#stamp-manager-pane").is_visible()
 
 
 @pytest.fixture

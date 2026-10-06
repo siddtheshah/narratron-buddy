@@ -3252,15 +3252,6 @@
                 <!-- Populated dynamically based on contributor status -->
             </div>
             <div id="stamp-manager-body" class="stamp-manager-body">
-                <form id="stamp-generation-form" class="stamp-generation-form" hidden>
-                    <strong>Generate a theater stamp</strong>
-                    <label for="stamp-generation-name">Stamp name</label>
-                    <input id="stamp-generation-name" maxlength="100" required placeholder="Goblin scout">
-                    <label for="stamp-generation-prompt">Image prompt</label>
-                    <textarea id="stamp-generation-prompt" maxlength="4000" rows="3" required placeholder="Describe the character, creature, item, or marker…"></textarea>
-                    <button id="stamp-generation-submit" class="panel-btn" type="submit">Generate stamp</button>
-                    <div id="stamp-generation-status" role="status" aria-live="polite">Uses image generation credits. Saved to this theater for everyone to use.</div>
-                </form>
                 <div id="stamp-manager-grid" class="stamp-grid"></div>
                 <div id="stamp-manager-empty" class="stamp-manager-empty" style="display: none;">
                     <div class="empty-icon">🏷️</div>
@@ -3271,13 +3262,18 @@
                     </a>
                 </div>
             </div>
+            <div id="stamp-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits. Saved to this theater for everyone to use.</div>
             <div class="stamp-manager-footer">
-                <a href="/profile" id="stamp-manager-profile-link" target="_blank" class="stamp-manager-footer-link" title="Manage stamps in your profile">
-                    ⚙️ Profile Settings ↗
-                </a>
-                <button type="button" id="stamp-manager-back-chat-btn" class="panel-btn" style="font-size: 0.78rem; padding: 4px 10px;">
-                    ← Back to Chat
-                </button>
+                <form id="stamp-generation-form" class="stamp-generation-form" hidden>
+                    <textarea id="stamp-generation-prompt" maxlength="4000" rows="2" wrap="soft" aria-label="Stamp image prompt" aria-keyshortcuts="Enter" required placeholder="Describe a stamp…" autocomplete="off"></textarea>
+                </form>
+                <div class="chat-composer-actions">
+                    <button type="button" id="stamp-manager-back-chat-btn" class="panel-btn" aria-label="Back to Chat" title="Back to Chat"><span aria-hidden="true">💬</span></button>
+                    <button id="stamp-generation-submit" class="panel-btn" type="submit" form="stamp-generation-form" title="Generate stamp (Enter)" hidden>Generate stamp</button>
+                    <a href="/profile" id="stamp-manager-profile-link" target="_blank" class="stamp-manager-footer-link" aria-label="Profile Settings" title="Manage stamps in your profile">
+                        ⚙️ Profile ↗
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -5950,21 +5946,45 @@
         function updateStampGenerationPermission() {
             const form = document.getElementById('stamp-generation-form');
             if (form) form.hidden = !isTheaterStampOwner;
+            document.getElementById('stamp-generation-submit').hidden = !isTheaterStampOwner;
+            document.getElementById('stamp-generation-status').hidden = !isTheaterStampOwner;
         }
+
+        const stampNameStopwords = new Set((
+            'a an the and or but of for to in on at by with from into onto over under ' +
+            'as is are was were be been being it its this that these those ' +
+            'i me my we our you your he him his she her they them their ' +
+            'some any each all no not so very can could should would will ' +
+            'do does did have has had about up down out through between ' +
+            'who whom whose what when where why how than then there here ' +
+            'both few more most other such only own same too until while ' +
+            'again further once during before after above below against off just now'
+        ).split(' '));
+
+        function stampNameFromPrompt(prompt) {
+            const words = prompt.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu) || [];
+            const name = words.filter(word => !stampNameStopwords.has(word.toLowerCase())).slice(0, 3).join(' ');
+            return (name || 'Stamp').slice(0, 100);
+        }
+
+        document.getElementById('stamp-generation-prompt')?.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' || event.isComposing) return;
+            event.preventDefault();
+            if (!event.repeat) document.getElementById('stamp-generation-form').requestSubmit();
+        });
 
         document.getElementById('stamp-generation-form')?.addEventListener('submit', async event => {
             event.preventDefault();
             if (!isTheaterStampOwner || isGeneratingStamp) return;
-            const nameInput = document.getElementById('stamp-generation-name');
             const promptInput = document.getElementById('stamp-generation-prompt');
             const button = document.getElementById('stamp-generation-submit');
             const status = document.getElementById('stamp-generation-status');
-            const name = nameInput.value.trim();
             const prompt = promptInput.value.trim();
-            if (!name || !prompt) {
-                status.textContent = 'Enter a stamp name and image prompt.';
+            if (!prompt) {
+                status.textContent = 'Enter an image prompt.';
                 return;
             }
+            const name = stampNameFromPrompt(prompt);
             isGeneratingStamp = true;
             button.disabled = true;
             button.textContent = 'Generating…';
@@ -5980,7 +6000,6 @@
                 cachedTheaterStamps = data.stamps;
                 renderStampManagerGrid(cachedUserStamps || []);
                 status.textContent = `Stamp saved to this theater and ready to use. Charged ${data.credits_charged} credits.`;
-                nameInput.value = '';
                 promptInput.value = '';
             } catch (error) {
                 status.textContent = error.message || 'Unable to generate stamp. Please try again.';
@@ -6016,6 +6035,20 @@
             }
             isStampManagerOpen = Boolean(open);
             const panelBody = document.getElementById('panel-body');
+            if (isStampManagerOpen && panelBody && panelBody.style.display !== 'none') {
+                const chatComposer = document.getElementById('chat-form');
+                const chatPrompt = document.getElementById('chat-input');
+                const composerStyle = getComputedStyle(chatComposer);
+                const promptStyle = getComputedStyle(chatPrompt);
+                const footer = stampManagerPane.querySelector('.stamp-manager-footer');
+                footer.style.padding = composerStyle.padding;
+                footer.style.gap = composerStyle.gap;
+                footer.style.margin = composerStyle.margin;
+                const stampPrompt = document.getElementById('stamp-generation-prompt');
+                stampPrompt.style.height = `${chatPrompt.getBoundingClientRect().height}px`;
+                stampPrompt.style.padding = promptStyle.padding;
+                stampPrompt.style.font = promptStyle.font;
+            }
             if (panelBody) panelBody.style.display = isStampManagerOpen ? 'none' : 'flex';
             if (stampManagerPane) stampManagerPane.style.display = isStampManagerOpen ? 'flex' : 'none';
             chatOpenStampsBtn?.classList.toggle('active', isStampManagerOpen);

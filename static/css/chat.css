@@ -319,6 +319,21 @@
     transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
+#chat-form #chat-open-stamps-btn,
+#stamp-manager-back-chat-btn {
+    box-sizing: border-box;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    margin-right: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 1.1rem;
+}
+
 #chat-form #chat-open-stamps-btn:hover,
 #chat-form #chat-open-stamps-btn.active {
     background: rgba(99, 102, 241, 0.25);
@@ -387,6 +402,7 @@
 
 .stamp-manager-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 12px;
     scrollbar-width: thin;
@@ -512,10 +528,10 @@
 
 .stamp-manager-footer {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 12px;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 0.5rem;
+    padding: 1rem;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(0, 0, 0, 0.2);
 }
@@ -669,26 +685,27 @@
 .stamp-generation-form {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px;
-    margin-bottom: 12px;
-    border: 1px solid #475569;
-    border-radius: 8px;
-    font-size: 0.8rem;
+    margin: 0;
 }
 
 .stamp-generation-form[hidden] { display: none; }
-.stamp-generation-form input,
 .stamp-generation-form textarea {
     box-sizing: border-box;
     width: 100%;
-    padding: 8px;
-    border: 1px solid #475569;
-    border-radius: 4px;
-    background: #0f172a;
-    color: #e2e8f0;
-    font: inherit;
+    padding: 0.5rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+    line-height: 1.4;
+    min-height: calc(2lh + 1rem + 2px);
+    resize: vertical;
+    overflow-wrap: anywhere;
 }
 
-#stamp-generation-status { color: #94a3b8; font-size: 0.75rem; }
+#stamp-generation-status { color: #94a3b8; font-size: 0.75rem; padding: 8px 1rem; }
+#stamp-generation-submit { min-height: 36px; font-size: 0.78rem; }
+#stamp-generation-submit[hidden] { display: none; }
+#stamp-manager-profile-link { margin-left: auto; }
 #stamp-generation-submit:disabled { opacity: 0.6; cursor: wait; }
