@@ -332,6 +332,7 @@ def get_payment_history(request: Request) -> dict:
 
 @app.get("/api/pricing")
 def get_pricing_rates(
+    live_agent_tool_calls: Optional[int] = None,
     voice_minutes: Optional[float] = None,
     images_created: Optional[int] = None,
     music_created: Optional[int] = None,
@@ -346,6 +347,8 @@ def get_pricing_rates(
     usd_amount: Optional[float] = None,
 ) -> dict:
     """Retrieve current pricing rates and optionally calculate costs dynamically from PricingController."""
+    if live_agent_tool_calls is not None and live_agent_tool_calls < 0:
+        raise HTTPException(status_code=400, detail="live_agent_tool_calls must be non-negative.")
     if voice_minutes is not None and voice_minutes < 0:
         raise HTTPException(status_code=400, detail="voice_minutes must be non-negative.")
     if images_created is not None and images_created < 0:
@@ -376,7 +379,8 @@ def get_pricing_rates(
 
     calculation = {}
     if (
-        voice_minutes is not None
+        live_agent_tool_calls is not None
+        or voice_minutes is not None
         or images_created is not None
         or music_created is not None
         or story_plans is not None
@@ -394,6 +398,7 @@ def get_pricing_rates(
         lac = layered_animations_created if layered_animations_created is not None else 0
         aa = adventure_actions if adventure_actions is not None else 0
         calculation["usage_credits"] = pricing.calculate_usage_cost(
+            live_agent_tool_calls=live_agent_tool_calls if live_agent_tool_calls is not None else 0,
             voice_minutes=vm, images_created=ic, music_created=mc, story_plans=sp,
             adventure_actions=aa, character_voiced_turns=cvt, interactive_canvas_used=icu,
             layered_animations_created=lac,

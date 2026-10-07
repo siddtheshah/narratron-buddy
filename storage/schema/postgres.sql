@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     salt TEXT NOT NULL,
     credits DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     total_voice_minutes DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    total_live_agent_tool_calls INTEGER NOT NULL DEFAULT 0,
     total_images_created INTEGER NOT NULL DEFAULT 0,
     total_music_created INTEGER NOT NULL DEFAULT 0,
     total_story_plans INTEGER NOT NULL DEFAULT 0,
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique ON users (LOWER(username));
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique ON users (LOWER(email));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS total_live_agent_tool_calls INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_character_voiced_turns INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_interactive_canvas_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS age_attested_at TEXT;
@@ -140,10 +142,12 @@ CREATE TABLE IF NOT EXISTS usage_events (
     character_voiced_turns INTEGER NOT NULL DEFAULT 0,
     interactive_canvas_used INTEGER NOT NULL DEFAULT 0,
     layered_animations_created INTEGER NOT NULL DEFAULT 0,
+    live_agent_tool_calls INTEGER NOT NULL DEFAULT 0,
     credit_cost DOUBLE PRECISION NOT NULL,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS usage_events_user_id_idx ON usage_events(user_id);
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS live_agent_tool_calls INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS character_voiced_turns INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS interactive_canvas_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS layered_animations_created INTEGER NOT NULL DEFAULT 0;

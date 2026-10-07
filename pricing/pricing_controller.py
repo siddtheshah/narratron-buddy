@@ -3,6 +3,7 @@
 import os
 from typing import Dict, Optional
 
+DEFAULT_LIVE_AGENT_TOOL_CALL_CREDIT_RATE = 0.01
 DEFAULT_ADVENTURE_MODE_TOKENS_PER_CALL = 4000
 DEFAULT_ADVENTURE_MODE_CALLS_PER_MINUTE = 5.0
 DEFAULT_CHARACTER_VOICING_TURN_CREDIT_RATE = 0.25
@@ -32,7 +33,15 @@ class PricingController:
         interactive_canvas_credit_rate: Optional[float] = None,
         layered_animation_credit_rate: Optional[float] = None,
         theater_editor_assistant_credit_rate: Optional[float] = None,
+        live_agent_tool_call_credit_rate: Optional[float] = None,
     ) -> None:
+        self.live_agent_tool_call_credit_rate = (
+            live_agent_tool_call_credit_rate
+            if live_agent_tool_call_credit_rate is not None
+            else DEFAULT_LIVE_AGENT_TOOL_CALL_CREDIT_RATE
+        )
+        if self.live_agent_tool_call_credit_rate < 0:
+            raise ValueError("live_agent_tool_call_credit_rate must be non-negative.")
         self.voice_credit_rate = voice_credit_rate if voice_credit_rate is not None else 1.0
         self.image_credit_rate = image_credit_rate if image_credit_rate is not None else 1.0
         self.music_credit_rate = music_credit_rate if music_credit_rate is not None else 2.0
@@ -102,6 +111,10 @@ class PricingController:
             return default
 
         return cls(
+            live_agent_tool_call_credit_rate=_get_float_env(
+                ["LIVE_AGENT_TOOL_CALL_CREDIT_RATE", "PRICING_LIVE_AGENT_TOOL_CALL_CREDIT_RATE"],
+                DEFAULT_LIVE_AGENT_TOOL_CALL_CREDIT_RATE,
+            ),
             voice_credit_rate=_get_float_env(["VOICE_CREDIT_RATE", "PRICING_VOICE_CREDIT_RATE"], 1.0),
             image_credit_rate=_get_float_env(["IMAGE_CREDIT_RATE", "PRICING_IMAGE_CREDIT_RATE"], 1.0),
             music_credit_rate=_get_float_env(["MUSIC_CREDIT_RATE", "PRICING_MUSIC_CREDIT_RATE"], 2.0),
@@ -144,6 +157,7 @@ class PricingController:
     def get_rates(self) -> Dict[str, float]:
         """Return a dictionary of all current rates for polling by the application or frontend."""
         return {
+            "live_agent_tool_call_credit_rate": self.live_agent_tool_call_credit_rate,
             "voice_credit_rate": self.voice_credit_rate,
             "image_credit_rate": self.image_credit_rate,
             "music_credit_rate": self.music_credit_rate,
@@ -174,10 +188,12 @@ class PricingController:
         character_voiced_turns: int = 0,
         interactive_canvas_used: int = 0,
         layered_animations_created: int = 0,
+        live_agent_tool_calls: int = 0,
     ) -> float:
         """Calculate total credit cost for voice, image, music, story-planning/adventure-mode, interactive canvas, and layered animation usage."""
         if (
-            voice_minutes < 0
+            live_agent_tool_calls < 0
+            or voice_minutes < 0
             or images_created < 0
             or music_created < 0
             or story_plans < 0
@@ -187,11 +203,12 @@ class PricingController:
             or layered_animations_created < 0
         ):
             raise ValueError(
-                "Usage parameters (voice_minutes, images_created, music_created, story_plans, adventure_actions, character_voiced_turns, interactive_canvas_used, layered_animations_created) must be non-negative."
+                "Usage parameters (voice_minutes, images_created, music_created, story_plans, adventure_actions, character_voiced_turns, interactive_canvas_used, layered_animations_created, live_agent_tool_calls) must be non-negative."
             )
         total_story_plans = story_plans + adventure_actions
         return (
-            (voice_minutes * self.voice_credit_rate)
+            (live_agent_tool_calls * self.live_agent_tool_call_credit_rate)
+            + (voice_minutes * self.voice_credit_rate)
             + (images_created * self.image_credit_rate)
             + (music_created * self.music_credit_rate)
             + (total_story_plans * self.story_planning_credit_rate)

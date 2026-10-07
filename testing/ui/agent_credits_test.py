@@ -149,7 +149,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
             runner=mock_runner,
             tool_bundle=MagicMock(),
         )
-        session.unbilled_audio_bytes = 1920000  # 1 voice minute
+        session.unbilled_live_agent_tool_calls = 1
         session.close = MagicMock()
 
         # Database record_user_usage returns credits <= 0
@@ -159,7 +159,8 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
 
         kwargs = mock_db.record_user_usage.call_args.kwargs
         self.assertEqual(kwargs["user_id"], 10)
-        self.assertEqual(kwargs["voice_minutes"], 1.0)
+        self.assertEqual(kwargs["voice_minutes"], 0.0)
+        self.assertEqual(kwargs["live_agent_tool_calls"], 1)
         self.assertEqual(kwargs["images_created"], 0)
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:t_exhaust:"))
         # Verify close was invoked due to 0 remaining credits

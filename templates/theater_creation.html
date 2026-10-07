@@ -1444,11 +1444,11 @@
                                 canvas controls (~<span id="rateInteractiveCanvasUsd">$0.01</span> / use)</div>
                         </div>
                         <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                            <div style="font-size: 0.85rem; font-weight: 700; color: #c084fc;">🎙️ Live voice</div>
+                            <div style="font-size: 0.85rem; font-weight: 700; color: #c084fc;">🤖 Live agent tool calls</div>
                             <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
-                                    id="rateVoice">1.0</span> Cr / min</div>
-                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Gemini Live streaming (~<span
-                                    id="rateVoiceUsd">$0.05</span> / min)</div>
+                                    id="rateLiveAgentToolCall">0.01</span> Cr / call</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Every live-agent tool call, including lookups and failed calls (~<span
+                                    id="rateLiveAgentToolCallUsd">$0.0005</span> / call). Generated assets carry additional charges.</div>
                         </div>
                         <div class="pricing-rate-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
                             <div style="font-size: 0.85rem; font-weight: 700; color: #22d3ee;">🖼️ Image generation
@@ -1548,9 +1548,9 @@
                         </div>
                         <div>
                             <label
-                                style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Voice
-                                (Mins)</label>
-                            <input type="number" id="calcVoiceInput" min="0" max="300" step="5" value="30"
+                                style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Live agent
+                                tool calls</label>
+                            <input type="number" id="calcToolCallsInput" min="0" step="1" value="100"
                                 oninput="calculateLivePricingEstimate()"
                                 style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
@@ -1586,15 +1586,13 @@
                             <div
                                 style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600;">
                                 Estimated Session Cost</div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);" id="calcBreakdownText">30 voice
-                                mins +
+                            <div style="font-size: 0.8rem; color: var(--text-muted);" id="calcBreakdownText">100 live-agent
+                                tool calls +
                                 10 images + 2 music tracks + 0 story turns + 1.0 GB/mo</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 1.35rem; font-weight: 800; color: #34d399;" id="calcTotalCredits">⚡
-                                41.0
-                                Cr</div>
-                            <div style="font-size: 0.82rem; color: var(--text-secondary);" id="calcTotalUsd">~$2.05 USD
+                            <div style="font-size: 1.35rem; font-weight: 800; color: #34d399;" id="calcTotalCredits">Calculating…</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary);" id="calcTotalUsd">
                             </div>
                         </div>
                     </div>
@@ -2345,11 +2343,11 @@
                 if (document.getElementById('rateUsdPerCredit')) {
                     document.getElementById('rateUsdPerCredit').innerText = `$${data.usd_per_credit.toFixed(2)}`;
                 }
-                if (document.getElementById('rateVoice')) {
-                    document.getElementById('rateVoice').innerText = data.voice_credit_rate.toFixed(1);
+                if (document.getElementById('rateLiveAgentToolCall')) {
+                    document.getElementById('rateLiveAgentToolCall').innerText = data.live_agent_tool_call_credit_rate.toFixed(3);
                 }
-                if (document.getElementById('rateVoiceUsd')) {
-                    document.getElementById('rateVoiceUsd').innerText = `$${(data.voice_credit_rate * data.usd_per_credit).toFixed(2)}`;
+                if (document.getElementById('rateLiveAgentToolCallUsd')) {
+                    document.getElementById('rateLiveAgentToolCallUsd').innerText = `$${(data.live_agent_tool_call_credit_rate * data.usd_per_credit).toFixed(4)}`;
                 }
                 const storyPlanningRate = data.story_planning_credit_rate ?? 0.5;
                 if (document.getElementById('rateStoryPlanning')) {
@@ -2411,7 +2409,7 @@
         }
 
         async function calculateLivePricingEstimate() {
-            const voiceInput = document.getElementById('calcVoiceInput');
+            const toolCallsInput = document.getElementById('calcToolCallsInput');
             const imagesInput = document.getElementById('calcImagesInput');
             const musicInput = document.getElementById('calcMusicInput');
             const storyTurnsInput = document.getElementById('calcStoryTurnsInput');
@@ -2419,9 +2417,9 @@
             const interactiveCanvasInput = document.getElementById('calcInteractiveCanvasInput');
             const storageInput = document.getElementById('calcStorageInput');
 
-            if (!voiceInput || !imagesInput || !storageInput) return;
+            if (!toolCallsInput || !imagesInput || !storageInput) return;
 
-            const voiceMins = parseFloat(voiceInput.value) || 0;
+            const toolCalls = parseInt(toolCallsInput.value, 10) || 0;
             const images = parseInt(imagesInput.value) || 0;
             const music = musicInput ? (parseInt(musicInput.value) || 0) : 0;
             const storyTurns = storyTurnsInput ? (parseInt(storyTurnsInput.value) || 0) : 0;
@@ -2431,7 +2429,7 @@
 
             try {
                 const queryParams = new URLSearchParams({
-                    voice_minutes: voiceMins,
+                    live_agent_tool_calls: toolCalls,
                     images_created: images,
                     music_created: music,
                     story_plans: storyTurns,
@@ -2457,7 +2455,7 @@
                     }
                     if (document.getElementById('calcBreakdownText')) {
                         const voicingDetail = voicedTurns ? ` + character voicing` : '';
-                        document.getElementById('calcBreakdownText').innerText = `${voiceMins} voice mins + ${images} images + ${music} music tracks + ${storyTurns} story turns${voicingDetail} + ${interactiveCanvasUses} canvas tool uses + ${storageGb} GB/mo`;
+                        document.getElementById('calcBreakdownText').innerText = `${toolCalls} live-agent tool calls + ${images} images + ${music} music tracks + ${storyTurns} story turns${voicingDetail} + ${interactiveCanvasUses} canvas tool uses + ${storageGb} GB/mo`;
                     }
                 }
             } catch (e) {

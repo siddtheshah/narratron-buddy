@@ -119,7 +119,8 @@ class LiveAgentSession:
         self.audio_bytes_received: int = 0
         self.unbilled_images: int = 0
         self.unbilled_music: int = 0
-        self.unbilled_audio_bytes: int = 0
+        self.live_agent_tool_calls_count: int = 0
+        self.unbilled_live_agent_tool_calls: int = 0
         # Batches remain here until their durable idempotency key has been
         # acknowledged, so a timeout can retry the exact same debit safely.
         self.story_plans_count: int = 0
@@ -824,6 +825,7 @@ class LiveAgentSession:
                 async for event in events:
                     function_calls = event.get_function_calls()
                     if function_calls:
+                        self.record_live_agent_tool_calls(len(function_calls))
                         self.live_request_queue.record_model_tool_calls(len(function_calls))
                         for call in function_calls:
                             logger.info(f"[Agent Tool Call] Function: {call.name}, Args: {call.args}")
@@ -1129,21 +1131,26 @@ class LiveAgentSession:
             self.story_plans_count,
         )
         self.flush_usage_to_db()
-    def record_audio_input(self, byte_count: int):
-        """Record incoming PCM audio input stream bytes as time counter proxy and flush usage periodically."""
+
+    def record_live_agent_tool_calls(self, count: int) -> None:
+        """Bill every model-emitted tool call, including lookups and failed calls."""
+        if count <= 0:
+            return
+        self.live_agent_tool_calls_count += count
+        self.unbilled_live_agent_tool_calls += count
+        self.flush_usage_to_db()
+
+    def record_audio_input(self, byte_count: int) -> None:
+        """Track incoming PCM audio for diagnostics without billing input."""
         if byte_count <= 0:
             return
         self.record_user_input()
         self.audio_bytes_received += byte_count
-        self.unbilled_audio_bytes += byte_count
-        # Flush unbilled usage whenever unbilled audio reaches >= 96,000 bytes (~3 seconds of audio)
-        if self.unbilled_audio_bytes >= 96000:
-            self.flush_usage_to_db()
 
-    def flush_usage_to_db(self):
-        """Deduct credits and record cumulative voice minutes / images created / music created in database."""
+    def flush_usage_to_db(self) -> None:
+        """Settle tool-call and generated-output usage with retry-safe event keys."""
         if (
-            self.unbilled_audio_bytes > 0
+            self.unbilled_live_agent_tool_calls > 0
             or self.unbilled_images > 0
             or self.unbilled_music > 0
             or self.unbilled_story_plans > 0
@@ -1153,7 +1160,7 @@ class LiveAgentSession:
         ):
             self._pending_usage_batches.append((
                 f"live-usage:{self.theater_id}:{uuid.uuid4()}",
-                self.unbilled_audio_bytes,
+                self.unbilled_live_agent_tool_calls,
                 self.unbilled_images,
                 self.unbilled_music,
                 self.unbilled_story_plans,
@@ -1161,7 +1168,7 @@ class LiveAgentSession:
                 self.unbilled_interactive_canvas,
                 self.unbilled_layered_animations,
             ))
-            self.unbilled_audio_bytes = 0
+            self.unbilled_live_agent_tool_calls = 0
             self.unbilled_images = 0
             self.unbilled_music = 0
             self.unbilled_story_plans = 0
@@ -1177,12 +1184,12 @@ class LiveAgentSession:
 
         if db_inst and owner_id:
             while self._pending_usage_batches:
-                event_key, unbilled_audio_bytes, unbilled_img, unbilled_mus, unbilled_story_plans, unbilled_character_voiced_turns, unbilled_canvas, unbilled_layered_anim = self._pending_usage_batches[0]
-                unbilled_vm = unbilled_audio_bytes / 1920000.0
+                event_key, unbilled_tool_calls, unbilled_img, unbilled_mus, unbilled_story_plans, unbilled_character_voiced_turns, unbilled_canvas, unbilled_layered_anim = self._pending_usage_batches[0]
                 try:
                     updated_user = db_inst.record_user_usage(
                         user_id=owner_id,
-                        voice_minutes=unbilled_vm,
+                        live_agent_tool_calls=unbilled_tool_calls,
+                        voice_minutes=0.0,
                         images_created=unbilled_img,
                         music_created=unbilled_mus,
                         story_plans=unbilled_story_plans,
@@ -1194,7 +1201,7 @@ class LiveAgentSession:
                     self._pending_usage_batches.pop(0)
                     auth_session_cache.invalidate_user(owner_id)
                     logger.info(
-                        f"[LiveAgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): voice_minutes={unbilled_vm:.4f}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}, character_voiced_turns={unbilled_character_voiced_turns}, interactive_canvas={unbilled_canvas}, layered_animations={unbilled_layered_anim}"
+                        f"[LiveAgentSession] Flushed usage to DB for user {owner_id} (theater {self.theater_id}): live_agent_tool_calls={unbilled_tool_calls}, images={unbilled_img}, music={unbilled_mus}, story_plans={unbilled_story_plans}, character_voiced_turns={unbilled_character_voiced_turns}, interactive_canvas={unbilled_canvas}, layered_animations={unbilled_layered_anim}"
                     )
                     credits_remaining = updated_user.get("credits", 0.0) if updated_user else 1.0
                     if credits_remaining <= 0.0:
@@ -1229,6 +1236,7 @@ class LiveAgentSession:
             "character_voiced_turns": self.character_voiced_turns_count,
             "interactive_canvas_used": self.interactive_canvas_used_count,
             "total_audio_bytes": self.audio_bytes_received,
+            "live_agent_tool_calls": self.live_agent_tool_calls_count,
         }
 
     def _get_database(self) -> Optional[Any]:

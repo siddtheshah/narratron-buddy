@@ -12,6 +12,17 @@ from storage.database import LocalDatabaseManager
 class TestPricingController(BaseTestCase):
     """Test PricingController initialization, env overrides, cost calculation, and rates polling."""
 
+    def test_live_agent_tool_call_rate_and_cost(self) -> None:
+        self.assertAlmostEqual(PricingController().calculate_usage_cost(live_agent_tool_calls=100), 1.0)
+        with patch.dict(os.environ, {"LIVE_AGENT_TOOL_CALL_CREDIT_RATE": "0.05"}):
+            controller = PricingController.from_env()
+        self.assertEqual(controller.get_rates()["live_agent_tool_call_credit_rate"], 0.05)
+        self.assertAlmostEqual(controller.calculate_usage_cost(live_agent_tool_calls=4, images_created=1), 1.2)
+        with self.assertRaises(ValueError):
+            controller.calculate_usage_cost(live_agent_tool_calls=-1)
+        with self.assertRaises(ValueError):
+            PricingController(live_agent_tool_call_credit_rate=-1)
+
     def test_theater_editor_assistant_rate_defaults_and_override(self) -> None:
         self.assertEqual(PricingController().get_rates()["theater_editor_assistant_credit_rate"], 0.1)
         controller = PricingController(theater_editor_assistant_credit_rate=0.2)

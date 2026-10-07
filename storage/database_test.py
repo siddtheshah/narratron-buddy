@@ -645,6 +645,23 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         dep = self.db.get_deployment("theater_pers")
         self.assertIsNotNone(dep["last_billed_at"])
 
+    def test_tool_call_ledger_is_idempotent_and_exposes_totals(self) -> None:
+        initial_credits = self.db.get_user_by_id(self.user["id"])["credits"]
+        first = self.db.record_user_usage(
+            self.user["id"], live_agent_tool_calls=3, idempotency_key="live-calls",
+        )
+        second = asyncio.run(self.db.record_user_usage_async(
+            self.user["id"], live_agent_tool_calls=3, idempotency_key="live-calls",
+        ))
+        self.assertAlmostEqual(first["credits"], initial_credits - 0.03)
+        self.assertEqual(second["credits"], first["credits"])
+        self.assertEqual(second["total_live_agent_tool_calls"], 3)
+        self.assertEqual(self.db.get_user_by_id(self.user["id"])["total_live_agent_tool_calls"], 3)
+        with self.assertRaises(ValueError):
+            self.db.record_user_usage(self.user["id"], live_agent_tool_calls=4, idempotency_key="live-calls")
+        with self.assertRaises(ValueError):
+            self.db.record_user_usage(self.user["id"], live_agent_tool_calls=-1)
+
     def test_record_user_usage_default_pricing_and_totals(self):
         # Initial user has 0.0 credits, 0.0 voice mins, 0 images created, 0 music created
         res = self.db.record_user_usage(self.user["id"], voice_minutes=15.5, images_created=4, music_created=2)

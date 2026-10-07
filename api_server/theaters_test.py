@@ -173,6 +173,12 @@ class TestTheaterAPI(BaseTestCase):
         self.assertAlmostEqual(calc["storage_credits"], 1.98, places=2)
         self.assertEqual(calc["usd_credits"], 200.0)
 
+        calls_res = self.client.get("/api/pricing?live_agent_tool_calls=100")
+        self.assertEqual(calls_res.status_code, 200)
+        self.assertEqual(calls_res.json()["live_agent_tool_call_credit_rate"], 0.01)
+        self.assertAlmostEqual(calls_res.json()["calculation"]["usage_credits"], 1.0)
+        self.assertEqual(self.client.get("/api/pricing?live_agent_tool_calls=-1").status_code, 400)
+
         # Negative query param validation
         bad_res = self.client.get("/api/pricing?voice_minutes=-5")
         self.assertEqual(bad_res.status_code, 400)

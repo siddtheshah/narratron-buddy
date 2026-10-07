@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from components.theater_manager import TheaterManager
 from google.adk.events import Event
+from google.genai import types
 from providers import LiveAgentProvider
 from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
 from services.live_agent_manager import (
@@ -38,6 +39,56 @@ def canvas_observability_fixture(image_path=None, collaboration_enabled=False, d
 
 
 class TestLiveAgentSessionManager(unittest.TestCase):
+    def test_downstream_bills_all_calls_even_when_tool_fails(self) -> None:
+        async def events() -> AsyncGenerator[Event, None]:
+            yield Event(author="agent", content=types.Content(parts=[
+                types.Part(function_call=types.FunctionCall(id="lookup", name="browse_images", args={})),
+                types.Part(function_call=types.FunctionCall(id="failed", name="create_image", args={})),
+            ]))
+            yield Event(author="agent", content=types.Content(parts=[
+                types.Part(function_response=types.FunctionResponse(
+                    id="failed", name="create_image", response={"error": "provider unavailable"},
+                )),
+            ]))
+
+        runner = MagicMock()
+        runner.agent.tools = []
+        runner.session_service.get_session = AsyncMock(return_value=MagicMock())
+        database = MagicMock()
+        database.get_deployment.return_value = {"user_id": 7}
+        database.record_user_usage.return_value = {"credits": 1.0}
+        provider = MagicMock(spec=LiveAgentProvider)
+        provider.id = "alternate"
+        provider.background_content_is_partial = False
+        provider.requires_tool_reminders = False
+        provider.tool_results_bypass_input_window = False
+        provider.run_live.return_value = events()
+        session = LiveAgentSession(
+            theater_id="all_calls", runner=runner, tool_bundle=MagicMock(),
+            provider=provider, database_manager=database,
+        )
+        session.broadcast_text = AsyncMock()
+        asyncio.run(session._run_downstream())
+        database.record_user_usage.assert_called_once()
+        self.assertEqual(database.record_user_usage.call_args.kwargs["live_agent_tool_calls"], 2)
+        self.assertEqual(session.live_agent_tool_calls_count, 2)
+
+    def test_tool_call_billing_retries_same_batch_without_double_counting(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        database = MagicMock()
+        database.get_deployment.return_value = {"user_id": 7}
+        database.record_user_usage.side_effect = [TimeoutError("unknown commit outcome"), {"credits": 1.0}]
+        session = LiveAgentSession(
+            theater_id="retry_calls", runner=runner, tool_bundle=MagicMock(),
+            database_manager=database,
+        )
+        session.record_live_agent_tool_calls(2)
+        session.flush_usage_to_db()
+        self.assertEqual(database.record_user_usage.call_args_list[0], database.record_user_usage.call_args_list[1])
+        self.assertEqual(session.get_usage()["live_agent_tool_calls"], 2)
+        self.assertEqual(session._pending_usage_batches, [])
+
     def test_viewer_suggestion_loop_uses_configured_interval_and_recovers(self) -> None:
         runner = MagicMock()
         runner.agent.tools = []
@@ -1205,7 +1256,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_usage_tracking_and_db_flushing(self):
+    def test_usage_tracking_and_db_flushing(self) -> None:
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_runner = MagicMock()
@@ -1246,13 +1297,18 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         self.assertTrue(kwargs["idempotency_key"].startswith("live-usage:test_usage:"))
         mock_db.record_user_usage.reset_mock()
 
-        # 3. Record PCM audio bytes (1,920,000 bytes = 1.0 minute)
-        # Record 96,000 bytes (triggers automatic flush threshold)
+        # Input audio remains diagnostic usage and never triggers a debit.
         session.record_audio_input(96000)
         self.assertAlmostEqual(session.voice_minutes, 96000 / 1920000.0)
+        session.flush_usage_to_db()
+        mock_db.record_user_usage.assert_not_called()
+
+        session.record_live_agent_tool_calls(3)
+        self.assertEqual(session.get_usage()["live_agent_tool_calls"], 3)
         kwargs = mock_db.record_user_usage.call_args.kwargs
         self.assertEqual(kwargs["user_id"], 123)
-        self.assertEqual(kwargs["voice_minutes"], 96000 / 1920000.0)
+        self.assertEqual(kwargs["voice_minutes"], 0.0)
+        self.assertEqual(kwargs["live_agent_tool_calls"], 3)
         self.assertEqual(kwargs["images_created"], 0)
         self.assertEqual(kwargs["music_created"], 0)
         self.assertEqual(kwargs["story_plans"], 0)

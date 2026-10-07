@@ -550,6 +550,7 @@ class _DatabaseManagerBase:
                     "email": email_clean,
                     "credits": 0.0,
                     "total_voice_minutes": 0.0,
+                    "total_live_agent_tool_calls": 0,
                     "total_images_created": 0,
                     "total_music_created": 0,
                     "total_story_plans": 0,
@@ -577,7 +578,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, username, email, password_hash, salt, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, mic_sensitivity, created_at FROM users WHERE banned_at IS NULL AND (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?))",
+                "SELECT id, username, email, password_hash, salt, credits, total_voice_minutes, total_live_agent_tool_calls, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, mic_sensitivity, created_at FROM users WHERE banned_at IS NULL AND (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?))",
                 (query_val, query_val)
             )
             row = cursor.fetchone()
@@ -593,6 +594,7 @@ class _DatabaseManagerBase:
                     "email": user_dict["email"],
                     "credits": user_dict.get("credits", 0.0),
                     "total_voice_minutes": user_dict.get("total_voice_minutes", 0.0),
+                    "total_live_agent_tool_calls": user_dict.get("total_live_agent_tool_calls", 0),
                     "total_images_created": user_dict.get("total_images_created", 0),
                     "total_music_created": user_dict.get("total_music_created", 0),
                     "total_story_plans": user_dict.get("total_story_plans", 0),
@@ -606,7 +608,7 @@ class _DatabaseManagerBase:
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, mic_sensitivity, created_at FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_live_agent_tool_calls, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, mic_sensitivity, created_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -699,7 +701,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, "
+                "SELECT id, username, email, credits, total_voice_minutes, total_live_agent_tool_calls, total_images_created, "
                 "total_music_created, total_story_plans, total_character_voiced_turns, "
                 "total_interactive_canvas_used, mic_sensitivity, bio, stats_visible, "
                 "lifetime_credits_used, profile_color, created_at, last_active_at "
@@ -922,7 +924,7 @@ class _DatabaseManagerBase:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.total_music_created, u.total_story_plans, u.total_character_voiced_turns, u.total_interactive_canvas_used, u.mic_sensitivity, u.profile_color, u.created_at, s.expires_at
+                SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_live_agent_tool_calls, u.total_images_created, u.total_music_created, u.total_story_plans, u.total_character_voiced_turns, u.total_interactive_canvas_used, u.mic_sensitivity, u.profile_color, u.created_at, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE s.token = ? AND u.banned_at IS NULL
@@ -1211,7 +1213,7 @@ class _DatabaseManagerBase:
             )
             tx_id = cursor.fetchone()["id"]
             
-            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, created_at FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT id, username, email, credits, total_voice_minutes, total_live_agent_tool_calls, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, created_at FROM users WHERE id = ?", (user_id,))
             updated_user = dict(cursor.fetchone())
             conn.commit()
             return {
@@ -1261,7 +1263,7 @@ class _DatabaseManagerBase:
                 tx_id = existing["id"] if isinstance(existing, dict) else existing[0]
                 created_at = existing["created_at"] if isinstance(existing, dict) else existing[1]
             cursor.execute(
-                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, created_at "
+                "SELECT id, username, email, credits, total_voice_minutes, total_live_agent_tool_calls, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, created_at "
                 "FROM users WHERE id = ?", (user_id,)
             )
             updated_user = dict(cursor.fetchone())
@@ -1285,6 +1287,7 @@ class _DatabaseManagerBase:
         layered_animations_created: int = 0,
         credit_cost: Optional[float] = None,
         idempotency_key: Optional[str] = None,
+        live_agent_tool_calls: int = 0,
     ) -> Dict[str, Any]:
         """Record metered usage for a user while simultaneously updating credit balance.
 
@@ -1292,7 +1295,8 @@ class _DatabaseManagerBase:
         """
         layered_animations_created = 0 if layered_animations_created is None else layered_animations_created
         if (
-            voice_minutes < 0
+            live_agent_tool_calls < 0
+            or voice_minutes < 0
             or images_created < 0
             or music_created < 0
             or story_plans < 0
@@ -1301,11 +1305,12 @@ class _DatabaseManagerBase:
             or layered_animations_created < 0
         ):
             raise ValueError(
-                "Usage parameters (voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created) must be non-negative."
+                "Usage parameters (voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, live_agent_tool_calls) must be non-negative."
             )
 
         if credit_cost is None:
             credit_cost = self.pricing_controller.calculate_usage_cost(
+                live_agent_tool_calls=live_agent_tool_calls,
                 voice_minutes=voice_minutes,
                 images_created=images_created,
                 music_created=music_created,
@@ -1326,14 +1331,14 @@ class _DatabaseManagerBase:
                 raise ValueError("User not found.")
             cursor.execute(
                 "INSERT OR IGNORE INTO usage_events "
-                "(idempotency_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, credit_cost, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (event_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, credit_cost, now_iso),
+                "(idempotency_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, live_agent_tool_calls, credit_cost, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event_key, user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, live_agent_tool_calls, credit_cost, now_iso),
             )
             claimed = cursor.rowcount == 1
             if not claimed:
                 cursor.execute(
-                    "SELECT user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, credit_cost FROM usage_events WHERE idempotency_key = ?",
+                    "SELECT user_id, voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, layered_animations_created, live_agent_tool_calls, credit_cost FROM usage_events WHERE idempotency_key = ?",
                     (event_key,),
                 )
                 existing = cursor.fetchone()
@@ -1343,7 +1348,8 @@ class _DatabaseManagerBase:
                 existing_interactive_canvas_used = existing["interactive_canvas_used"] if (existing and "interactive_canvas_used" in existing) else 0
                 existing_layered_animations = existing["layered_animations_created"] if (existing and "layered_animations_created" in existing) else 0
                 if not existing or (
-                    existing["user_id"] != user_id
+                    existing["live_agent_tool_calls"] != live_agent_tool_calls
+                    or existing["user_id"] != user_id
                     or existing["voice_minutes"] != voice_minutes
                     or existing["images_created"] != images_created
                     or existing_music != music_created
@@ -1359,6 +1365,7 @@ class _DatabaseManagerBase:
                     """
                     UPDATE users
                     SET total_voice_minutes = total_voice_minutes + ?,
+                        total_live_agent_tool_calls = total_live_agent_tool_calls + ?,
                         total_images_created = total_images_created + ?,
                         total_music_created = total_music_created + ?,
                         total_story_plans = total_story_plans + ?,
@@ -1368,13 +1375,13 @@ class _DatabaseManagerBase:
                         lifetime_credits_used = lifetime_credits_used + ?
                     WHERE id = ?
                     """,
-                    (voice_minutes, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, credit_cost, credit_cost, user_id),
+                    (voice_minutes, live_agent_tool_calls, images_created, music_created, story_plans, character_voiced_turns, interactive_canvas_used, credit_cost, credit_cost, user_id),
                 )
                 if cursor.rowcount == 0:
                     raise ValueError("User not found.")
 
             cursor.execute(
-                "SELECT id, username, email, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, created_at FROM users WHERE id = ?",
+                "SELECT id, username, email, credits, total_voice_minutes, total_live_agent_tool_calls, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, created_at FROM users WHERE id = ?",
                 (user_id,),
             )
             updated_user = dict(cursor.fetchone())
@@ -1896,11 +1903,13 @@ class _DatabaseManagerBase:
         layered_animations_created: int = 0,
         credit_cost: Optional[float] = None,
         idempotency_key: Optional[str] = None,
+        live_agent_tool_calls: int = 0,
     ) -> Dict[str, Any]:
         """Record user usage asynchronously."""
         return await asyncio.to_thread(
             self.record_user_usage,
             user_id=user_id,
+            live_agent_tool_calls=live_agent_tool_calls,
             voice_minutes=voice_minutes,
             images_created=images_created,
             music_created=music_created,
