@@ -653,7 +653,7 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         second = asyncio.run(self.db.record_user_usage_async(
             self.user["id"], live_agent_tool_calls=3, idempotency_key="live-calls",
         ))
-        self.assertAlmostEqual(first["credits"], initial_credits - 0.03)
+        self.assertAlmostEqual(first["credits"], initial_credits - 0.45)
         self.assertEqual(second["credits"], first["credits"])
         self.assertEqual(second["total_live_agent_tool_calls"], 3)
         self.assertEqual(self.db.get_user_by_id(self.user["id"])["total_live_agent_tool_calls"], 3)

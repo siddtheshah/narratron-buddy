@@ -13,7 +13,7 @@ class TestPricingController(BaseTestCase):
     """Test PricingController initialization, env overrides, cost calculation, and rates polling."""
 
     def test_live_agent_tool_call_rate_and_cost(self) -> None:
-        self.assertAlmostEqual(PricingController().calculate_usage_cost(live_agent_tool_calls=100), 1.0)
+        self.assertAlmostEqual(PricingController().calculate_usage_cost(live_agent_tool_calls=100), 15.0)
         with patch.dict(os.environ, {"LIVE_AGENT_TOOL_CALL_CREDIT_RATE": "0.05"}):
             controller = PricingController.from_env()
         self.assertEqual(controller.get_rates()["live_agent_tool_call_credit_rate"], 0.05)

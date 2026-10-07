@@ -13,7 +13,7 @@ in addition when their existing billing callbacks fire.
 
 Set `LIVE_AGENT_TOOL_CALL_CREDIT_RATE` (or
 `PRICING_LIVE_AGENT_TOOL_CALL_CREDIT_RATE`) to configure credits per call. The
-initial default is `0.01` credits; calibrate it against observed provider costs
+default is `0.15` credits; calibrate it against observed provider costs
 and tool-call volume. Setting it to `0` disables the base call charge.
 
 `/api/pricing` exposes `live_agent_tool_call_credit_rate` and accepts
