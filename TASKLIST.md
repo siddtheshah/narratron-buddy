@@ -1,17 +1,5 @@
 # Narratron Task List
 
-## AI Theater Builder
-- [x] Add a theater-builder option on `/deploy` linking to `/theater-editor`.
-- [x] Require login and theater ownership to create or edit builder projects.
-- [x] Initialize a theater from an uploaded folder or a default template.
-- [x] Provide a side-panel AI assistant to edit and organize the theater.
-- [x] Generate references and playlists at the same credit rates as live generation.
-- [x] Accept user assets, including flat uploads, and organize them into theater folders.
-- [x] Add an edit-in-builder link to each owned theater row on `/deploy`.
-- [x] Deploy the built theater from the editor and open it for testing in `/canvas`.
-- [x] Add a builder link only in the `/canvas` left panel, visible only to the theater owner.
-- [x] Verify authorization, uploads, generation billing, deployment, and navigation.
-
 ## Auth, Security & Monetization
 - [ ] Add rate limits for registration/login, password reset, join-key resolution, uploads, payment attempts, and Live WebSocket connections.
 - [ ] Use secure production auth cookies and CSRF protection for authenticated state-changing endpoints.
@@ -37,11 +25,3 @@
 
 ## Billing
 - [ ] Storage Daemon is not checking file sizes of owned theaters. Need to fix.
-
-## Adventure Mode
-- [ ] Achievements; let adventure writers come up with accomplishments for players to achieve.
-
-## Adventures
-- [ ] Escape room adventure: for hardcore puzzlers. More constrained, but with a freeform hinter. 
-- [ ] The Judge adventure: psychological thriller. Players are continually confronted by Death over the choices
-they make.
