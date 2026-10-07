@@ -174,7 +174,8 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
 
     def send_notification(self, content: types.Content) -> None:
         """Deliver an actionable completion event as a complete model turn."""
-        content.role = "system"
+        if not content.role:
+            content.role = "system"
         req = LiveRequest(content=content, partial=False)
         if self._background_content_is_partial:
             self._priority_content_queue.put_nowait(req)
@@ -184,6 +185,8 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
 
     def send_user_input(self, content: types.Content) -> None:
         """Prioritize typed user input without audio-only activity boundaries."""
+        if not content.role:
+            content.role = "user"
         self._post_user_input_window_active = False
         self._remaining_live_tool_budget = 0
         self._defer_non_audio_until_next_input = False

@@ -25,6 +25,17 @@ class TestPriorityLiveRequestQueue(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_send_notification_preserves_explicit_user_role(self) -> None:
+        async def run_test() -> None:
+            queue = PriorityLiveRequestQueue(background_content_is_partial=False)
+            queue.send_notification(types.Content(role="user", parts=[types.Part(text="[Viewer Suggestion] Open door")]))
+            result = await asyncio.wait_for(queue.get(), timeout=1)
+            self.assertFalse(result.partial)
+            self.assertEqual(result.content.role, "user")
+            self.assertIn("Open door", result.content.parts[0].text)
+
+        asyncio.run(run_test())
+
     def test_tool_results_can_bypass_exhausted_notification_budget(self) -> None:
         async def run_test() -> None:
             queue = PriorityLiveRequestQueue(live_tool_budget=1, tool_results_bypass_input_window=True)

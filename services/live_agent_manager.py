@@ -261,7 +261,8 @@ class LiveAgentSession:
         """Wake the agent for an actionable result without recording player input."""
         if not self.is_alive:
             return False
-        content.role = "system"
+        if not content.role:
+            content.role = "system"
         self.live_request_queue.send_notification(content)
         return True
 
@@ -270,6 +271,8 @@ class LiveAgentSession:
         if not self.is_alive:
             logger.debug(f"[LiveAgentSession] Stopped; suppressing user input for session {self.theater_id}.")
             return False
+        if not content.role:
+            content.role = "user"
         self.record_user_input()
         if hasattr(self.live_request_queue, "send_user_input"):
             self.live_request_queue.send_user_input(content)
@@ -522,7 +525,7 @@ class LiveAgentSession:
                 f"[Viewer Suggestion]: {suggestion['text']} "
                 f"(by {suggestion['author']}, {suggestion['upvote_count']} upvotes)"
             )
-            if not self.send_notification(types.Content(parts=[types.Part(text=text)])):
+            if not self.send_notification(types.Content(role="user", parts=[types.Part(text=text)])):
                 return False
             canvas.chat.consume_top_suggestion()
             self.last_viewer_suggestion_sent = now

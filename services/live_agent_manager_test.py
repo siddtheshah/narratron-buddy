@@ -71,6 +71,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         with patch("services.live_agent_manager.time.monotonic", return_value=100):
             self.assertTrue(session.send_viewer_suggestion())
         content = session.send_notification.call_args.args[0]
+        self.assertEqual(content.role, "user")
         self.assertEqual(content.parts[0].text,
                          "[Viewer Suggestion]: Open the hidden door (by Ada, 2 upvotes)")
         canvas.chat.consume_top_suggestion.assert_called_once_with()
@@ -107,6 +108,24 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         self.assertFalse(session.send_viewer_suggestion())
         session.status = "stopped"
         self.assertFalse(session.send_viewer_suggestion())
+
+    def test_viewer_suggestions_are_marked_as_user_role(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        canvas = canvas_observability_fixture(collaboration_enabled=True)
+        canvas.chat.get_suggestions.return_value = [
+            {"author": "Ada", "text": "Open the hidden door", "upvote_count": 2},
+        ]
+        session = LiveAgentSession(
+            theater_id="suggestions", runner=runner, tool_bundle=MagicMock(),
+            canvas_state_manager=canvas,
+        )
+        session.websockets.add(MagicMock())
+        session.live_request_queue = PriorityLiveRequestQueue(background_content_is_partial=False)
+        self.assertTrue(session.send_viewer_suggestion())
+        req = asyncio.run(session.live_request_queue.get())
+        self.assertEqual(req.content.role, "user")
+        self.assertIn("[Viewer Suggestion]: Open the hidden door", req.content.parts[0].text)
 
     def test_injected_provider_stream_is_closed_when_event_delivery_fails(self) -> None:
         closed: list[bool] = []
