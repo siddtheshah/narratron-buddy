@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import Error, Page, Route, expect, sync_playwright
+from playwright.sync_api import Dialog, Error, Page, Route, expect, sync_playwright
 
 
 @pytest.fixture
@@ -172,3 +172,99 @@ def test_folder_package_still_previews_and_submits_files(deploy_page: Page) -> N
     assert data["folder_theater_config_yaml"] == "image_generation:\n  enabled: false"
     page.evaluate("clearFolderUpload()")
     expect(page.locator("#folderUploadManifest")).not_to_be_visible()
+
+
+def test_deleting_theater_asks_for_confirmation_once_until_reloaded(deploy_page: Page) -> None:
+    page = deploy_page
+
+    setup_mock_theaters = """() => {
+        window.deletedTheaters = [];
+        window.theaterList = [
+            {theater_id: 'theater-alpha', name: 'Alpha Theater', is_owner: true, join_key: 'KEY-ALPHA'},
+            {theater_id: 'theater-beta', name: 'Beta Theater', is_owner: true, join_key: 'KEY-BETA'},
+            {theater_id: 'theater-gamma', name: 'Gamma Theater', is_owner: true, join_key: 'KEY-GAMMA'}
+        ];
+        const origFetch = window.fetch;
+        window.fetch = async (url, options = {}) => {
+            if (url === '/api/theaters') {
+                return {ok: true, json: async () => window.theaterList};
+            }
+            if (options.method === 'DELETE' && url.startsWith('/api/theaters/')) {
+                const id = url.split('/').pop();
+                window.deletedTheaters.push(id);
+                window.theaterList = window.theaterList.filter(t => t.theater_id !== id);
+                return {ok: true, json: async () => ({status: 'ok', theater_id: id})};
+            }
+            return origFetch(url, options);
+        };
+        loadTheaters();
+    }"""
+
+    page.evaluate(setup_mock_theaters)
+    expect(page.locator("#theatersTableBody tr")).to_have_count(3)
+
+    dialog_messages: list[str] = []
+
+    # 1. First delete attempt, user dismisses/cancels confirmation dialog
+    def handle_dismiss(dialog: Dialog) -> None:
+        dialog_messages.append(dialog.message)
+        dialog.dismiss()
+
+    page.once("dialog", handle_dismiss)
+    page.locator("#theatersTableBody tr").first.locator("button.btn-danger").click()
+
+    assert len(dialog_messages) == 1
+    assert "theater-alpha" in dialog_messages[0]
+    # No deletion should have occurred
+    deleted: list[str] = page.evaluate("window.deletedTheaters")
+    assert deleted == []
+    assert page.evaluate("window.theaterDeletionConfirmed") is False
+
+    # 2. Second delete attempt (first confirmed delete), user accepts confirmation dialog
+    def handle_accept(dialog: Dialog) -> None:
+        dialog_messages.append(dialog.message)
+        dialog.accept()
+
+    page.once("dialog", handle_accept)
+    page.locator("#theatersTableBody tr").first.locator("button.btn-danger").click()
+    page.wait_for_function("window.deletedTheaters.includes('theater-alpha')")
+
+    assert len(dialog_messages) == 2
+    assert page.evaluate("window.theaterDeletionConfirmed") is True
+    expect(page.locator("#theatersTableBody tr")).to_have_count(2)
+
+    # 3. Subsequent delete before reload drops confirmation (no dialog is raised)
+    unexpected_dialogs: list[str] = []
+
+    def handle_unexpected(dialog: Dialog) -> None:
+        unexpected_dialogs.append(dialog.message)
+        dialog.accept()
+
+    page.on("dialog", handle_unexpected)
+    page.locator("#theatersTableBody tr").first.locator("button.btn-danger").click()
+    page.wait_for_function("window.deletedTheaters.includes('theater-beta')")
+
+    assert unexpected_dialogs == []
+    expect(page.locator("#theatersTableBody tr")).to_have_count(1)
+
+    # 4. Reloading the page resets the confirmation requirement
+    page.remove_listener("dialog", handle_unexpected)
+    page.reload()
+    assert page.evaluate("window.theaterDeletionConfirmed") is False
+
+    page.evaluate(setup_mock_theaters)
+    expect(page.locator("#theatersTableBody tr")).to_have_count(3)
+
+    reloaded_dialog_messages: list[str] = []
+
+    def handle_reloaded_confirm(dialog: Dialog) -> None:
+        reloaded_dialog_messages.append(dialog.message)
+        dialog.accept()
+
+    page.once("dialog", handle_reloaded_confirm)
+    page.locator("#theatersTableBody tr").first.locator("button.btn-danger").click()
+    page.wait_for_function("window.deletedTheaters.includes('theater-alpha')")
+
+    assert len(reloaded_dialog_messages) == 1
+    assert "theater-alpha" in reloaded_dialog_messages[0]
+

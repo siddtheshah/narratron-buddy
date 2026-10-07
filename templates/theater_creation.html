@@ -2294,8 +2294,15 @@
         }
 
 
+        let theaterDeletionConfirmed = false;
+        window.theaterDeletionConfirmed = false;
+
         async function destroyTheater(theaterId) {
-            if (!confirm(`Are you sure you want to destroy theater ${theaterId}?`)) return;
+            if (!window.theaterDeletionConfirmed && !theaterDeletionConfirmed) {
+                if (!confirm(`Are you sure you want to delete theater ${theaterId}?`)) return;
+                window.theaterDeletionConfirmed = true;
+                theaterDeletionConfirmed = true;
+            }
             try {
                 const res = await fetch(`/api/theaters/${theaterId}`, { method: 'DELETE' });
                 if (!res.ok) {
@@ -2308,6 +2315,8 @@
                 alert('Error destroying theater: ' + err.message);
             }
         }
+        window.destroyTheater = destroyTheater;
+        window.deleteTheater = destroyTheater;
 
         // Pricing Modal Logic & Live Query
         let currentPricingRates = null;
