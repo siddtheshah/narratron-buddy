@@ -99,6 +99,10 @@ function ensureAuthModalDOM() {
           <input type="password" id="regPassword" class="modal-input" placeholder="••••••••"
             onkeypress="if(event.key==='Enter') submitRegister()">
         </div>
+        <label class="modal-age-attestation" for="regAgeAttested">
+          <input type="checkbox" id="regAgeAttested" required>
+          <span>I confirm that I am at least 13 years old.</span>
+        </label>
         <button class="modal-btn-submit" onclick="submitRegister()">Sign Up</button>
         <p style="margin-top: 0.9rem; font-size: 0.78rem; color: var(--text-muted, #94a3b8); text-align: center; line-height: 1.4;">
           By signing up, you agree to our <a href="/terms" target="_blank" style="color: var(--primary, #8b5cf6); text-decoration: underline;">Terms of Service</a> and <a href="/privacy" target="_blank" style="color: var(--primary, #8b5cf6); text-decoration: underline;">Privacy Policy</a>.
@@ -287,7 +291,8 @@ async function submitRegister() {
   const userEl = document.getElementById('regUsername');
   const emailEl = document.getElementById('regEmail');
   const passEl = document.getElementById('regPassword');
-  if (!userEl || !emailEl || !passEl) return;
+  const ageEl = document.getElementById('regAgeAttested');
+  if (!userEl || !emailEl || !passEl || !ageEl) return;
 
   const username = userEl.value.trim();
   const email = emailEl.value.trim();
@@ -303,14 +308,24 @@ async function submitRegister() {
     return;
   }
 
+  if (!ageEl.checked) {
+    if (err) {
+      err.textContent = 'Please confirm that you are at least 13 years old.';
+      err.style.display = 'block';
+    }
+    ageEl.focus();
+    return;
+  }
+
   try {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password })
+      body: JSON.stringify({ username, email, password, age_attested: ageEl.checked })
     });
     const data = await res.json();
     if (res.ok) {
+      ageEl.checked = false;
       closeAuthModal();
       invalidateAuthState();
       await checkAuthStatus();

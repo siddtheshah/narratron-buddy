@@ -421,6 +421,7 @@ async def run_evaluation(audio_path, output_path, port, headless, buffer_time, e
         # Register or login evaluation user
         reg_url = f"http://127.0.0.1:{port}/api/auth/register"
         reg_body = json.dumps({
+            "age_attested": True,
             "username": auth_user,
             "email": auth_email,
             "password": auth_pass

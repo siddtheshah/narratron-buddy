@@ -303,6 +303,18 @@ class TestUserManagementAndAuth(BaseTestCase):
             pass
         super().tearDown()
 
+    def test_registration_persists_attestation_without_marking_internal_users(self) -> None:
+        attested = self.db.register_user("attested", "attested@example.test", "password", age_attested=True)
+        internal = self.db.register_user("internal", "internal@example.test", "password")
+        with self.db._get_connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT age_attested_at, age_attestation_version FROM users WHERE id = ?", (attested["id"],))
+            attestation = cursor.fetchone()
+            assert attestation["age_attested_at"] == attested["created_at"]
+            assert attestation["age_attestation_version"] == "13-plus-v1"
+            cursor.execute("SELECT age_attested_at, age_attestation_version FROM users WHERE id = ?", (internal["id"],))
+            assert cursor.fetchone() == {"age_attested_at": None, "age_attestation_version": None}
+
     def test_register_user_validation_errors(self):
         with self.assertRaises(ValueError) as ctx:
             self.db.register_user("  ", "email@test.com", "pass")

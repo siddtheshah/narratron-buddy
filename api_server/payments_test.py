@@ -33,6 +33,7 @@ class TestPaymentsFlow(BaseTestCase):
         self.username = f"payuser_{os.urandom(4).hex()}"
         self.email = f"{self.username}@example.com"
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": self.username,
             "email": self.email,
             "password": "Password123!"

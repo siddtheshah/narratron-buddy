@@ -5,7 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from absl.testing import flagsaver
-from fastapi import HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.testclient import TestClient
+from pydantic import JsonValue
 
 import object_registry
 from api_server import auth
@@ -16,27 +18,40 @@ def request(*, cookies=None, base_url="http://testserver/"):
     return SimpleNamespace(cookies=cookies or {}, base_url=base_url)
 
 
-def test_register_creates_session_on_registry_database():
+def test_register_creates_session_on_registry_database() -> None:
     registry_db = MagicMock()
     registry_db.register_user.return_value = {"id": 4, "username": "ada"}
     registry_db.create_auth_session.return_value = "session-token"
     response = Response()
 
     with patch.object(object_registry, "db", registry_db):
-        result = auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret"), response)
+        result = auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret", age_attested=True), response)
 
     assert result == {"status": "ok", "user": {"id": 4, "username": "ada"}}
-    registry_db.register_user.assert_called_once_with("ada", "a@b.test", "secret")
+    registry_db.register_user.assert_called_once_with("ada", "a@b.test", "secret", age_attested=True)
     registry_db.create_auth_session.assert_called_once_with(4)
     assert "auth_token=session-token" in response.headers["set-cookie"]
 
 
-def test_register_translates_registry_validation_error():
+def test_register_translates_registry_validation_error() -> None:
     registry_db = MagicMock()
     registry_db.register_user.side_effect = ValueError("email is taken")
     with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException, match="email is taken") as error:
-        auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret"), Response())
+        auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret", age_attested=True), Response())
     assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize("attestation", [{}, {"age_attested": False}, {"age_attested": "true"}, {"age_attested": 1}, {"age_attested": None}])
+def test_register_rejects_missing_false_or_non_boolean_attestation(attestation: dict[str, JsonValue]) -> None:
+    test_app = FastAPI()
+    test_app.post("/register")(auth.register_user)
+    registry_db = MagicMock()
+    with patch.object(object_registry, "db", registry_db), TestClient(test_app) as client:
+        result = client.post("/register", json={"username": "ada", "email": "a@b.test", "password": "secret", **attestation})
+    assert result.status_code in {400, 422}
+    registry_db.register_user.assert_not_called()
+    registry_db.create_auth_session.assert_not_called()
+    assert "set-cookie" not in result.headers
 
 
 def test_login_rejects_unknown_user_without_creating_a_session():

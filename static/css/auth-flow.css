@@ -188,6 +188,25 @@
   text-align: left;
 }
 
+.modal-age-attestation {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+  text-align: left;
+  font-size: 0.88rem;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+}
+
+.modal-age-attestation input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--primary, #8b5cf6);
+}
+
 .modal-form-group label {
   font-size: 0.88rem;
   font-weight: 500;

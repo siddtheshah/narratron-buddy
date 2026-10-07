@@ -323,6 +323,7 @@ class TestTheaterAPI(BaseTestCase):
     def test_auth_registration_and_login_flow(self):
         # Register
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "api_user",
             "email": "api@example.com",
             "password": "Password123"
@@ -339,6 +340,7 @@ class TestTheaterAPI(BaseTestCase):
     def test_create_and_deploy_theater_with_join_key(self):
         # Register and log in
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "creator_user",
             "email": "creator@example.com",
             "password": "Password123"
@@ -381,6 +383,7 @@ class TestTheaterAPI(BaseTestCase):
     def test_get_theater_reuses_access_validation_deployment(self):
         """The metadata endpoint must not look up its deployment twice."""
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "single_lookup_owner",
             "email": "single-lookup@example.com",
             "password": "Password123",
@@ -405,6 +408,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_feature_flags_forwarded_to_theater_config(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "flags_user",
             "email": "flags@example.com",
             "password": "Password123",
@@ -429,6 +433,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_image_generation_can_be_disabled_while_creating_a_theater(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "asset_coordinator",
             "email": "asset-coordinator@example.com",
             "password": "Password123",
@@ -447,6 +452,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_feature_flags_default_to_false_when_omitted(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "flags_default_user",
             "email": "flags-default@example.com",
             "password": "Password123",
@@ -466,6 +472,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_story_planning_style_is_saved_for_adventure_mode(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "style_user",
             "email": "style@example.com",
             "password": "Password123",
@@ -485,6 +492,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_folder_upload_requires_theater_yaml(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "folder_config_user",
             "email": "folder-config@example.com",
             "password": "Password123",
@@ -498,6 +506,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_quick_deploy_adds_default_story_track(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "quick_deploy_user",
             "email": "quick-deploy@example.com",
             "password": "Password123",
@@ -513,6 +522,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_created_theater_yaml_does_not_contain_app_yaml_fields(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "clean_config_user",
             "email": "clean-config@example.com",
             "password": "Password123",
@@ -534,6 +544,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_adventure_creation_mode_enables_adventure_story_planning(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "adventure_user",
             "email": "adventure@example.com",
             "password": "Password123",
@@ -551,6 +562,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_launch_adventure_from_adventures_page_or_deploy_does_not_attach_default_playlist(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "adv_launcher",
             "email": "adv_launcher@example.com",
             "password": "Password123",
@@ -590,6 +602,7 @@ class TestTheaterAPI(BaseTestCase):
         adv_service = AdventureService(Path(__file__).parent.parent / "adventures")
         with patch.object(object_registry, "adventure_service", adv_service):
             self.client.post("/api/auth/register", json={
+                "age_attested": True,
                 "username": "archive_player",
                 "email": "archive_player@example.com",
                 "password": "Password123",
@@ -636,6 +649,7 @@ class TestTheaterAPI(BaseTestCase):
 
     def test_create_and_deploy_theater_with_advanced_config_direct(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "adv_config_user",
             "email": "adv_config@example.com",
             "password": "Password123",
@@ -663,6 +677,7 @@ music:
 
     def test_create_and_deploy_theater_with_invalid_advanced_config(self):
         self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "bad_adv_user",
             "email": "bad_adv@example.com",
             "password": "Password123",
@@ -679,6 +694,7 @@ music:
 
     def test_theater_output_route_uses_theater_bound_output_directory(self):
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "output_tester",
             "email": "output@example.com",
             "password": "Password123",
@@ -700,6 +716,7 @@ music:
 
     def test_theater_owner_can_toggle_viewer_collaboration(self):
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "collab_owner",
             "email": "collab@example.com",
             "password": "Password123",
@@ -723,6 +740,7 @@ music:
 
     def test_destroy_theater_not_on_disk(self):
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "db_delete_user",
             "email": "db_delete@example.com",
             "password": "Password123"
@@ -758,6 +776,7 @@ music:
 
         # Register and log in
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "export_tester",
             "email": "export_tester@example.com",
             "password": "Password123"
@@ -803,6 +822,7 @@ music:
     def test_password_reset_api_flow(self):
         # 1. Register user
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "pw_reset_user",
             "email": "pwreset@example.com",
             "password": "OldPassword123"
@@ -864,6 +884,7 @@ music:
 
         # 2. Register & log in
         reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
             "username": "buyer_user",
             "email": "buyer@example.com",
             "password": "Password123"

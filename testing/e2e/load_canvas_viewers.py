@@ -109,6 +109,7 @@ def create_viewer(base_url: str, run_id: str, index: int) -> Viewer:
         request_json(
             f"{base_url}/api/auth/register",
             {
+                "age_attested": True,
                 "username": username,
                 "email": f"{username}@narratron.test",
                 "password": PASSWORD,

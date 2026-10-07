@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
     lifetime_credits_used DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     profile_color TEXT NOT NULL DEFAULT '#818cf8',
     created_at TEXT NOT NULL,
+    age_attested_at TEXT,
+    age_attestation_version TEXT,
     last_active_at TEXT
 );
 
@@ -26,6 +28,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique ON users (LOWER(us
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique ON users (LOWER(email));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_character_voiced_turns INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_interactive_canvas_used INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS age_attested_at TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS age_attestation_version TEXT;
 
 CREATE TABLE IF NOT EXISTS auth_sessions (
     token TEXT PRIMARY KEY,

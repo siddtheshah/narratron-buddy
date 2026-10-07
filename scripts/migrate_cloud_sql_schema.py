@@ -18,6 +18,8 @@ from storage.database import CloudPostgresDatabaseManager
 
 
 MIGRATIONS = (
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS age_attested_at TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS age_attestation_version TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS total_character_voiced_turns INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS character_voiced_turns INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS total_interactive_canvas_used INTEGER NOT NULL DEFAULT 0",

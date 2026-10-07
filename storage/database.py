@@ -519,7 +519,9 @@ class _DatabaseManagerBase:
             translated = translated.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
         return translated
 
-    def register_user(self, username: str, email: str, password: str) -> Dict:
+    def register_user(
+        self, username: str, email: str, password: str, *, age_attested: bool = False
+    ) -> dict[str, str | int | float | None]:
         """Register a new user account."""
         username_clean = username.strip()
         email_clean = email.strip().lower()
@@ -529,13 +531,15 @@ class _DatabaseManagerBase:
         salt = secrets.token_hex(16)
         password_hash = hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
         created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        age_attested_at = created_at if age_attested else None
+        age_attestation_version = "13-plus-v1" if age_attested else None
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
             try:
                 cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits) VALUES (?, ?, ?, ?, ?, 0.0) RETURNING id",
-                    (username_clean, email_clean, password_hash, salt, created_at)
+                    "INSERT INTO users (username, email, password_hash, salt, created_at, credits, age_attested_at, age_attestation_version) VALUES (?, ?, ?, ?, ?, 0.0, ?, ?) RETURNING id",
+                    (username_clean, email_clean, password_hash, salt, created_at, age_attested_at, age_attestation_version)
                 )
                 user_id = cursor.fetchone()["id"]
                 conn.commit()

@@ -4,7 +4,7 @@ import logging
 import time
 
 from fastapi import Request, Response, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue, StrictBool
 
 from utils.auth_cache import auth_session_cache
 from api_server.shared import FLAGS, SERVER_RUN_ID, app, db, get_current_user
@@ -20,6 +20,7 @@ class RegisterRequest(BaseModel):
     username: str
     email: str
     password: str
+    age_attested: StrictBool = False
 
 class LoginRequest(BaseModel):
     username_or_email: str
@@ -41,11 +42,13 @@ class MicSensitivityRequest(BaseModel):
 # ========================================
 
 @app.post("/api/auth/register")
-def register_user(req: RegisterRequest, response: Response):
+def register_user(req: RegisterRequest, response: Response) -> dict[str, JsonValue]:
+    if not req.age_attested:
+        raise HTTPException(status_code=400, detail="You must confirm that you are at least 13 years old to create an account.")
     started_at = time.monotonic()
     logger.info("Registration request started (username_length=%d).", len(req.username.strip()))
     try:
-        user = db.register_user(req.username, req.email, req.password)
+        user = db.register_user(req.username, req.email, req.password, age_attested=True)
         token = db.create_auth_session(user["id"])
         response.set_cookie(key="auth_token", value=token, httponly=True, max_age=604800)
         logger.info("Registration request completed in %.2fs.", time.monotonic() - started_at)
