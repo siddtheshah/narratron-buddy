@@ -903,8 +903,8 @@ def set_viewer_collab_mode(
     theater_id: str,
     payload: ViewerCollabRequest,
     request: Request,
-):
-    """Enable or disable audience collaboration for a theater owner."""
+) -> dict[str, str | bool]:
+    """Enable or disable audience collaboration for the active orator."""
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -912,8 +912,8 @@ def set_viewer_collab_mode(
     deployment = db.get_deployment(theater_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Active theater not found.")
-    if deployment["user_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Only the theater owner can change collaboration mode.")
+    if not can_control_agent_websocket(deployment, current_user=user):
+        raise HTTPException(status_code=403, detail="Only the active orator can change collaboration mode.")
 
     _state(theater_id).ui.set_viewer_collab_enabled(payload.enabled)
     session = live_agent_manager.get_session(theater_id)

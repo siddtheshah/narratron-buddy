@@ -745,6 +745,100 @@ music:
         self.assertTrue(response.json()["viewer_collab_enabled"])
         self.assertTrue(canvas_states.get(theater_id).ui.viewer_collab_enabled)
 
+    def test_active_orator_baton_holder_can_toggle_collaboration_but_owner_cannot_after_handover(self) -> None:
+        owner_client = self.client
+        reg_res = owner_client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "baton_owner",
+            "email": "baton_owner@example.com",
+            "password": "Password123",
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        create_res = owner_client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Collaboration Baton Theater"},
+        )
+        self.assertEqual(create_res.status_code, 200)
+        theater_id = create_res.json()["theater_id"]
+
+        # Owner is initial active orator
+        response = owner_client.post(
+            f"/api/theaters/{theater_id}/collab",
+            json={"enabled": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["viewer_collab_enabled"])
+
+        # Register a second user (collaborator)
+        orator_client = TestClient(app)
+        reg_orator = orator_client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "baton_orator",
+            "email": "baton_orator@example.com",
+            "password": "Password123",
+        })
+        self.assertEqual(reg_orator.status_code, 200)
+        orator_id = reg_orator.json()["user"]["id"]
+
+        # Owner adds contributor and hands over the baton
+        add_contrib_res = owner_client.post(
+            f"/api/theaters/{theater_id}/baton/contributors",
+            json={"target_user_id": orator_id},
+        )
+        self.assertEqual(add_contrib_res.status_code, 200)
+
+        req_baton_res = owner_client.post(
+            f"/api/theaters/{theater_id}/baton/request",
+            json={"target_user_id": orator_id},
+        )
+        self.assertEqual(req_baton_res.status_code, 200)
+
+        accept_res = orator_client.post(
+            f"/api/theaters/{theater_id}/baton/accept",
+        )
+        self.assertEqual(accept_res.status_code, 200)
+
+        # Baton holder is now the active orator and can toggle collaboration
+        collab_toggle_res = orator_client.post(
+            f"/api/theaters/{theater_id}/collab",
+            json={"enabled": False},
+        )
+        self.assertEqual(collab_toggle_res.status_code, 200)
+        self.assertFalse(collab_toggle_res.json()["viewer_collab_enabled"])
+        self.assertFalse(canvas_states.get(theater_id).ui.viewer_collab_enabled)
+
+        # Owner is no longer active orator and gets 403 Forbidden
+        owner_toggle_res = owner_client.post(
+            f"/api/theaters/{theater_id}/collab",
+            json={"enabled": True},
+        )
+        self.assertEqual(owner_toggle_res.status_code, 403)
+        self.assertEqual(owner_toggle_res.json()["detail"], "Only the active orator can change collaboration mode.")
+
+        # Owner takes back the baton
+        takeback_res = owner_client.post(
+            f"/api/theaters/{theater_id}/baton/takeback",
+        )
+        self.assertEqual(takeback_res.status_code, 200)
+
+        # Owner is active orator again and can toggle collaboration
+        owner_toggle_res2 = owner_client.post(
+            f"/api/theaters/{theater_id}/collab",
+            json={"enabled": True},
+        )
+        self.assertEqual(owner_toggle_res2.status_code, 200)
+        self.assertTrue(owner_toggle_res2.json()["viewer_collab_enabled"])
+        self.assertTrue(canvas_states.get(theater_id).ui.viewer_collab_enabled)
+
+        # Former active orator now gets 403 Forbidden
+        orator_toggle_res2 = orator_client.post(
+            f"/api/theaters/{theater_id}/collab",
+            json={"enabled": False},
+        )
+        self.assertEqual(orator_toggle_res2.status_code, 403)
+        self.assertEqual(orator_toggle_res2.json()["detail"], "Only the active orator can change collaboration mode.")
+
     def test_destroy_theater_not_on_disk(self):
         reg_res = self.client.post("/api/auth/register", json={
             "age_attested": True,

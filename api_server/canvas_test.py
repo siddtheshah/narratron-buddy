@@ -124,17 +124,18 @@ async def test_toggle_microphone_requires_owner_then_notifies_canvas_connections
     second.send_json.assert_awaited_once_with({"type": "toggle_mic"})
 
 
-def test_collaboration_mode_checks_owner_before_updating_registry_state():
+def test_collaboration_mode_checks_active_orator_before_updating_registry_state() -> None:
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3}
     service = MagicMock()
     with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user", return_value={"id": 4}), pytest.raises(HTTPException) as error:
         canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
     assert error.value.status_code == 403
+    assert "Only the active orator can change collaboration mode." in str(error.value.detail)
     service.get.assert_not_called()
 
 
-def test_collaboration_mode_requests_agent_observability_update():
+def test_collaboration_mode_requests_agent_observability_update() -> None:
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3}
     service = MagicMock()
@@ -148,6 +149,33 @@ def test_collaboration_mode_requests_agent_observability_update():
     service.get.assert_called_once_with("stage")
     service.get.return_value.ui.set_viewer_collab_enabled.assert_called_once_with(True)
     session.send_collaboration_toggle_observability.assert_called_once_with()
+
+
+def test_collaboration_mode_allows_active_orator_when_baton_is_handed_over() -> None:
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 7}
+    service = MagicMock()
+    session = MagicMock()
+    manager = MagicMock()
+    manager.get_session.return_value = session
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(object_registry, "live_agent_manager", manager), patch.object(canvas, "get_current_user", return_value={"id": 7}):
+        result = canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
+
+    assert result == {"theater_id": "stage", "viewer_collab_enabled": True}
+    service.get.assert_called_once_with("stage")
+    service.get.return_value.ui.set_viewer_collab_enabled.assert_called_once_with(True)
+    session.send_collaboration_toggle_observability.assert_called_once_with()
+
+
+def test_collaboration_mode_rejects_owner_when_baton_handed_to_another_orator() -> None:
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 7}
+    service = MagicMock()
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user", return_value={"id": 3}), pytest.raises(HTTPException) as error:
+        canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), request())
+    assert error.value.status_code == 403
+    assert "Only the active orator can change collaboration mode." in str(error.value.detail)
+    service.get.assert_not_called()
 
 
 def test_active_orator_can_pin_canvas_and_agent_is_notified():
