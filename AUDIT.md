@@ -51,6 +51,8 @@ Custom purchases accept independent, client-supplied `custom_credits` and `custo
 
 ## 6. [P1] Live AI supports unbilled text and image input
 
+Resolved (Agent lifecycle): `/api/theaters/{theater_id}/agent/start` and `/api/theaters/{theater_id}/agent/stop` require user authentication (returning 401 for anonymous callers) and enforce active orator authorization via `can_control_agent_websocket` (returning 403 for non-orators).
+
 WebSocket text and image input reaches the live AI without a corresponding usage charge. Live billing tracks incoming audio bytes and specific tool callbacks. In normal mode, conversations that avoid chargeable tools can consume AI services without debiting the user's balance. The unauthenticated agent-start endpoint also summons the model, creating another entry point for unmetered interactions.
 
 - Code: `services/live_stream_service.py:235`, `services/live_stream_service.py:277`, `services/live_agent_manager.py:269`, `services/live_agent_manager.py:1181`, `api_server/app.py:147`.

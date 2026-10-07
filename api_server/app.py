@@ -7,7 +7,7 @@ import sys
 import warnings
 
 from dotenv import load_dotenv
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -20,7 +20,7 @@ from api_server import (
     db,
     get_current_user_async,
     can_control_agent_websocket,
-    is_contributor,
+    is_contributor as is_contributor,  # noqa: F401
 )
 from api_server.dependencies import live_agent_manager
 from api_server import can_access_agent_websocket as can_access_agent_websocket  # noqa: F401
@@ -143,9 +143,23 @@ def get_theater_owner_credits(theater_id: str):
 # Agent Lifecycle REST API Endpoints
 # ========================================
 
-@app.post("/api/theaters/{theater_id}/agent/start")
-async def start_agent_endpoint(theater_id: str):
+@app.post("/api/theaters/{theater_id}/agent/start", response_model=None)
+async def start_agent_endpoint(
+    theater_id: str,
+    request: Request,
+) -> JSONResponse | dict[str, str | bool | float]:
     """API endpoint to instantiate/start the agent session in memory if owner has sufficient credits."""
+    current_user = await get_current_user_async(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    deployment = db.get_deployment(theater_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Active theater not found.")
+
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can start the agent.")
+
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
         live_agent_manager.stop_session(theater_id=theater_id)
@@ -176,8 +190,22 @@ async def start_agent_endpoint(theater_id: str):
 
 
 @app.post("/api/theaters/{theater_id}/agent/stop")
-async def stop_agent_endpoint(theater_id: str):
+async def stop_agent_endpoint(
+    theater_id: str,
+    request: Request,
+) -> dict[str, str | bool]:
     """API endpoint to explicitly stop and remove the agent session from memory."""
+    current_user = await get_current_user_async(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    deployment = db.get_deployment(theater_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Active theater not found.")
+
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can stop the agent.")
+
     stopped = live_agent_manager.stop_session(theater_id=theater_id)
     return {
         "status": "stopped" if stopped else "not_found",
@@ -187,7 +215,7 @@ async def stop_agent_endpoint(theater_id: str):
 
 
 @app.get("/api/theaters/{theater_id}/agent/status")
-async def get_agent_status_endpoint(theater_id: str):
+async def get_agent_status_endpoint(theater_id: str) -> dict[str, str | bool | float | None]:
     """API endpoint to check if an agent session is active in memory."""
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:

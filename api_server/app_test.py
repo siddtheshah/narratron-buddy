@@ -4,7 +4,10 @@ import importlib
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from fastapi import HTTPException
+import pytest
 
 import object_registry
 from api_server.app import can_control_agent_websocket, can_access_agent_websocket, is_contributor
@@ -97,32 +100,136 @@ class TestIsContributor(unittest.TestCase):
         self.assertFalse(is_contributor(None, current_user={"id": 42}))
 
 
-def test_start_agent_stops_registry_session_when_owner_has_no_credits():
+def test_start_agent_stops_registry_session_when_owner_has_no_credits() -> None:
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 11}
     registry_db.get_user_by_id.return_value = {"id": 11, "credits": 0}
     manager = MagicMock()
+    req = MagicMock()
 
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "live_agent_manager", manager):
-        response = asyncio.run(app_module.start_agent_endpoint("stage"))
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(object_registry, "live_agent_manager", manager),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 11})),
+    ):
+        response = asyncio.run(app_module.start_agent_endpoint("stage", req))
 
     assert response.status_code == 402
     manager.stop_session.assert_called_once_with(theater_id="stage")
 
 
-def test_start_agent_summons_the_live_session_without_a_microphone_connection():
+def test_start_agent_summons_the_live_session_without_a_microphone_connection() -> None:
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 11}
     registry_db.get_user_by_id.return_value = {"id": 11, "credits": 3.5}
     session = MagicMock(status="active")
     manager = MagicMock()
     manager.get_or_create_session.return_value = session
+    req = MagicMock()
 
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "live_agent_manager", manager):
-        result = asyncio.run(app_module.start_agent_endpoint("stage"))
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(object_registry, "live_agent_manager", manager),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 11})),
+    ):
+        result = asyncio.run(app_module.start_agent_endpoint("stage", req))
 
     assert result["agent_running"] is True
     session.summon.assert_called_once_with()
+
+
+def test_start_agent_rejects_unauthenticated_request() -> None:
+    req = MagicMock()
+    with patch.object(app_module, "get_current_user_async", AsyncMock(return_value=None)):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.start_agent_endpoint("stage", req))
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Authentication required."
+
+
+def test_start_agent_rejects_non_orator() -> None:
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11, "active_orator_id": 11}
+    req = MagicMock()
+
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 99})),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.start_agent_endpoint("stage", req))
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Only the active orator can start the agent."
+
+
+def test_start_agent_allows_transferred_active_orator() -> None:
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11, "active_orator_id": 99}
+    registry_db.get_user_by_id.return_value = {"id": 11, "credits": 5.0}
+    session = MagicMock(status="active")
+    manager = MagicMock()
+    manager.get_or_create_session.return_value = session
+    req = MagicMock()
+
+    # Owner (11) is rejected because active_orator_id is 99
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 11})),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.start_agent_endpoint("stage", req))
+    assert exc_info.value.status_code == 403
+
+    # Active orator (99) is accepted
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(object_registry, "live_agent_manager", manager),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 99})),
+    ):
+        result = asyncio.run(app_module.start_agent_endpoint("stage", req))
+    assert result["agent_running"] is True
+
+
+def test_stop_agent_rejects_unauthenticated_request() -> None:
+    req = MagicMock()
+    with patch.object(app_module, "get_current_user_async", AsyncMock(return_value=None)):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.stop_agent_endpoint("stage", req))
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Authentication required."
+
+
+def test_stop_agent_rejects_non_orator() -> None:
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11, "active_orator_id": 11}
+    req = MagicMock()
+
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 99})),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.stop_agent_endpoint("stage", req))
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Only the active orator can stop the agent."
+
+
+def test_stop_agent_allows_active_orator() -> None:
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11}
+    manager = MagicMock()
+    manager.stop_session.return_value = True
+    req = MagicMock()
+
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(object_registry, "live_agent_manager", manager),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 11})),
+    ):
+        result = asyncio.run(app_module.stop_agent_endpoint("stage", req))
+    assert result["status"] == "stopped"
+    assert result["agent_running"] is False
+    manager.stop_session.assert_called_once_with(theater_id="stage")
 
 
 def test_agent_status_reads_active_session_from_registry_manager():
