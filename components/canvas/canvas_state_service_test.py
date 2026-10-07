@@ -26,36 +26,29 @@ class FakeTheaterManager:
     def theater(self, theater_id: str) -> FakeTheater: return FakeTheater(theater_id, self.root)
 
 
-def test_service_caches_one_manager_per_theater_and_selects_deployed_default(tmp_path: Path) -> None:
+import pytest
+
+
+def test_service_caches_one_manager_per_theater(tmp_path: Path) -> None:
     service = CanvasStateService(FakeTheaterManager(tmp_path))
 
-    default = service.get()
-    explicit = service.get("draft")
+    live = service.get("live")
+    draft = service.get("draft")
 
-    assert default.theater_id == "live"
-    assert service.get("live") is default
-    assert service.get("draft") is explicit
+    assert live.theater_id == "live"
+    assert service.get("live") is live
+    assert service.get("draft") is draft
     assert set(service.states) == {"live", "draft"}
 
 
-def test_service_fallback_when_no_deployed_theater(tmp_path: Path) -> None:
-    class EmptyTheaterManager:
-        def __init__(self, root: Path) -> None:
-            self.root = root
+def test_service_requires_theater_id(tmp_path: Path) -> None:
+    service = CanvasStateService(FakeTheaterManager(tmp_path))
 
-        def list_theaters(self):
-            return []
+    with pytest.raises(ValueError) as excinfo:
+        service.get("")
+    assert "theater_id is required" in str(excinfo.value)
 
-        def theater(self, theater_id: str) -> FakeTheater:
-            return FakeTheater(theater_id, self.root)
-
-    service = CanvasStateService(EmptyTheaterManager(tmp_path))
-
-    # With no deployed theaters and no cached states, defaults to "default"
-    default_mgr = service.get()
-    assert default_mgr.theater_id == "default"
-
-    # When another theater is cached, fallback prefers the non-default cached theater
-    custom_mgr = service.get("my_adventure")
-    assert service.get().theater_id == "my_adventure"
+    with pytest.raises(ValueError) as excinfo:
+        service.get("   ")
+    assert "theater_id is required" in str(excinfo.value)
 

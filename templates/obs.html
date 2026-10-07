@@ -532,11 +532,12 @@
         });
 
         async function fetchLatestImage() {
+            if (!currenttheaterId) return;
             try {
                 const apiParams = new URLSearchParams();
-                if (currenttheaterId) apiParams.set('theater_id', currenttheaterId);
+                apiParams.set('theater_id', currenttheaterId);
                 if (currentJoinKey) apiParams.set('join_key', currentJoinKey);
-                const apiUrl = apiParams.toString() ? `/api/latest?${apiParams.toString()}` : '/api/latest';
+                const apiUrl = `/api/latest?${apiParams.toString()}`;
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 updateSceneDialogue(data.scene_dialogue, data.narration, data.narration_spans);
@@ -636,13 +637,15 @@
 
         // Connect WebSocket for Doodles Sync
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const doodleParams = new URLSearchParams();
-        if (currenttheaterId) doodleParams.set('theater_id', currenttheaterId);
-        if (currentJoinKey) doodleParams.set('join_key', currentJoinKey);
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (doodleParams.toString() ? `?${doodleParams.toString()}` : '');
-        const ws = new WebSocket(wsUrl);
+        let ws = null;
+        if (currenttheaterId) {
+            const doodleParams = new URLSearchParams();
+            doodleParams.set('theater_id', currenttheaterId);
+            if (currentJoinKey) doodleParams.set('join_key', currentJoinKey);
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle?${doodleParams.toString()}`;
+            ws = new WebSocket(wsUrl);
 
-        ws.onmessage = (event) => {
+            ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'doodles_toggle') {
                 doodlesEnabled = Boolean(data.enabled);
@@ -761,11 +764,11 @@
         }
 
         function connectCanvasStateSocket() {
+            if (!currenttheaterId) return;
             const stateParams = new URLSearchParams();
-            if (currenttheaterId) stateParams.set('theater_id', currenttheaterId);
+            stateParams.set('theater_id', currenttheaterId);
             if (currentJoinKey) stateParams.set('join_key', currentJoinKey);
-            const stateWsUrl = `${wsProtocol}//${window.location.host}/ws/canvas-state` +
-                (stateParams.toString() ? `?${stateParams.toString()}` : '');
+            const stateWsUrl = `${wsProtocol}//${window.location.host}/ws/canvas-state?${stateParams.toString()}`;
             canvasStateWs = new WebSocket(stateWsUrl);
             canvasStateWs.onopen = () => {
                 canvasStateReconnectDelay = 1000;

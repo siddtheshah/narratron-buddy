@@ -24,6 +24,7 @@ from api_server.shared import (
     is_contributor,
 )
 from api_server.dependencies import live_agent_manager
+from components.canvas.canvas_state_manager import CanvasStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +96,11 @@ class A2UISurfacePlacement(BaseModel):
 # Canvas & WebSocket Endpoints
 # ========================================
 
-def _state(theater_id: Optional[str] = None):
+def _state(theater_id: str) -> CanvasStateManager:
     """Resolve the theater coordinator before selecting one of its components."""
-    return canvas_states.get(theater_id)
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    return canvas_states.get(theater_id.strip())
 
 
 def _session_notepad(session: Any) -> Any:
@@ -364,12 +367,15 @@ async def websocket_endpoint(
     theater_id: Optional[str] = None,
     join_key: Optional[str] = None,
 ):
-    if theater_id:
-        try:
-            await _require_canvas_access_async(websocket, theater_id, join_key=join_key)
-        except HTTPException:
-            await websocket.close(code=1008)
-            return
+    if not theater_id or not theater_id.strip():
+        await websocket.close(code=1008)
+        return
+    theater_id = theater_id.strip()
+    try:
+        await _require_canvas_access_async(websocket, theater_id, join_key=join_key)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     websocket.state.theater_id = theater_id
     current_user = await get_current_user_async(websocket)
@@ -387,10 +393,9 @@ async def websocket_endpoint(
         "stamps": cs.doodles.stamp_annotations(),
     })
     
-    if theater_id:
-        baton_st = await db.get_theater_baton_state_async(theater_id)
-        if baton_st:
-            await broadcast_baton_update(theater_id, baton_st)
+    baton_st = await db.get_theater_baton_state_async(theater_id)
+    if baton_st:
+        await broadcast_baton_update(theater_id, baton_st)
 
     try:
         while True:
@@ -398,10 +403,9 @@ async def websocket_endpoint(
             await _apply_doodle_message(cs, data, websocket)
     except WebSocketDisconnect:
         _unregister_doodle_websocket(cs, websocket)
-        if theater_id:
-            baton_st = await db.get_theater_baton_state_async(theater_id)
-            if baton_st:
-                await broadcast_baton_update(theater_id, baton_st)
+        baton_st = await db.get_theater_baton_state_async(theater_id)
+        if baton_st:
+            await broadcast_baton_update(theater_id, baton_st)
 
 
 @app.websocket("/ws/canvas-state")
@@ -411,12 +415,15 @@ async def canvas_state_websocket_endpoint(
     join_key: Optional[str] = None,
 ):
     """Notification-only state channel; REST remains the source of truth."""
-    if theater_id:
-        try:
-            await _require_canvas_access_async(websocket, theater_id, join_key=join_key)
-        except HTTPException:
-            await websocket.close(code=1008)
-            return
+    if not theater_id or not theater_id.strip():
+        await websocket.close(code=1008)
+        return
+    theater_id = theater_id.strip()
+    try:
+        await _require_canvas_access_async(websocket, theater_id, join_key=join_key)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     state = _state(theater_id)
     connections = state.connections
@@ -438,25 +445,28 @@ async def canvas_state_websocket_endpoint(
 
 
 @app.api_route("/api/orator/toggle_mic", methods=["GET", "POST"])
-async def trigger_orator_mic_toggle(request: Request, theater_id: Optional[str] = None):
+async def trigger_orator_mic_toggle(request: Request, theater_id: str):
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to control Orator microphone.")
     
-    if theater_id:
-        dep = db.get_deployment(theater_id)
-        if dep and dep["user_id"] != user["id"]:
-            raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can control the Orator microphone.")
+    dep = db.get_deployment(theater_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Active theater not found.")
+    if dep["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can control the Orator microphone.")
 
-    states = [_state(theater_id)] if theater_id else list(canvas_states.states.values())
+    state = _state(theater_id)
     count = 0
-    for state in states:
-        for websocket in list(state.connections.active_ws_connections):
-            try:
-                await websocket.send_json({"type": "toggle_mic"})
-                count += 1
-            except Exception:
-                _unregister_doodle_websocket(state, websocket)
+    for websocket in list(state.connections.active_ws_connections):
+        try:
+            await websocket.send_json({"type": "toggle_mic"})
+            count += 1
+        except Exception:
+            _unregister_doodle_websocket(state, websocket)
     return {"status": "ok", "broadcasted_to": count}
 
 
@@ -470,24 +480,28 @@ def get_orator_config():
 @app.get("/api/latest")
 def get_latest_image(
     request: Request,
-    theater_id: Optional[str] = None,
+    theater_id: str,
     join_key: Optional[str] = None,
 ):
-    if theater_id:
-        _require_canvas_access(request, theater_id, join_key=join_key)
-        theater_dir = theater_manager.theater(theater_id).directory()
-        if not theater_dir.exists():
-            theater_repository.reconstruct_theater(theater_id, theater_dir)
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
+    _require_canvas_access(request, theater_id, join_key=join_key)
+    theater_dir = theater_manager.theater(theater_id).directory()
+    if not theater_dir.exists():
+        theater_repository.reconstruct_theater(theater_id, theater_dir)
     return _state(theater_id).get_latest_state()
 
 @app.get("/api/chat")
 def get_chat(
     request: Request,
-    theater_id: Optional[str] = None,
+    theater_id: str,
     join_key: Optional[str] = None,
 ):
-    if theater_id:
-        _require_canvas_access(request, theater_id, join_key=join_key)
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
+    _require_canvas_access(request, theater_id, join_key=join_key)
     return _state(theater_id).chat.get_messages()
 
 
@@ -749,9 +763,11 @@ def delete_a2ui_surface(surface_id: str, request: Request, theater_id: str):
     return {"status": "deleted", "surface_id": surface_id}
 
 @app.post("/api/chat")
-def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = None):
-    if theater_id:
-        _require_canvas_access(request, theater_id)
+def post_chat(msg: ChatMessage, request: Request, theater_id: str):
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
+    _require_canvas_access(request, theater_id)
 
     user = get_current_user(request, record_activity=False)
     author = user["username"] if user else msg.author.strip()
@@ -781,19 +797,18 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
         if profile_color:
             chat_kwargs["profile_color"] = profile_color
     if msg.roll_data:
-        if theater_id:
-            deployment = db.get_deployment(theater_id)
-            if deployment and not is_contributor(deployment, current_user=user):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Only users with contributors permission can submit dice rolls.",
-                )
+        deployment = db.get_deployment(theater_id)
+        if deployment and not is_contributor(deployment, current_user=user):
+            raise HTTPException(
+                status_code=403,
+                detail="Only users with contributors permission can submit dice rolls.",
+            )
         chat_kwargs["roll_data"] = msg.roll_data
     state = _state(theater_id)
     state.chat.add_message({"text": msg.text, **chat_kwargs})
     state.notify_changed("chat")
 
-    if msg.roll_data and theater_id and state.ui.viewer_collab_enabled:
+    if msg.roll_data and state.ui.viewer_collab_enabled:
         if not msg.roll_data.get("forwarded_to_agent"):
             session = live_agent_manager.get_session(theater_id)
             if session and session.is_alive:
@@ -804,41 +819,44 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: Optional[str] = No
 
 
 @app.get("/api/suggestions")
-def get_suggestions(request: Request, theater_id: Optional[str] = None):
-    if theater_id:
-        _require_canvas_access(request, theater_id)
+def get_suggestions(request: Request, theater_id: str):
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
+    _require_canvas_access(request, theater_id)
     return _state(theater_id).chat.get_suggestions()
 
 
 @app.get("/api/sticky-notes")
-def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
-    if theater_id:
-        _require_canvas_access(request, theater_id)
+def get_sticky_notes(request: Request, theater_id: str):
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
+    _require_canvas_access(request, theater_id)
 
     hidden_stickies = []
-    if theater_id:
-        try:
-            th_cfg = theater_manager.get_theater_config(theater_id)
-            sp_cfg = th_cfg.get("story_planning", {}) if isinstance(th_cfg.get("story_planning"), dict) else {}
-            raw_hidden = sp_cfg.get("hidden_stickies", th_cfg.get("hidden_stickies", []))
-            if isinstance(raw_hidden, (list, tuple, set)):
-                hidden_stickies = [str(x.get("topic", x.get("name", x)) if isinstance(x, dict) else x).strip() for x in raw_hidden if x]
-            elif isinstance(raw_hidden, str):
-                hidden_stickies = [s.strip() for s in raw_hidden.split(",") if s.strip()]
-            elif isinstance(raw_hidden, dict):
-                hidden_stickies = [str(k).strip() for k in raw_hidden.keys() if str(k).strip()]
-            structured = sp_cfg.get("stickies", {})
-            if isinstance(structured, dict):
-                hidden_stickies.extend(
-                    str(topic).strip()
-                    for topic, definition in structured.items()
-                    if isinstance(definition, dict) and definition.get("hidden")
-                )
-                hidden_stickies = list(dict.fromkeys(hidden_stickies))
-        except Exception:
-            hidden_stickies = []
+    try:
+        th_cfg = theater_manager.get_theater_config(theater_id)
+        sp_cfg = th_cfg.get("story_planning", {}) if isinstance(th_cfg.get("story_planning"), dict) else {}
+        raw_hidden = sp_cfg.get("hidden_stickies", th_cfg.get("hidden_stickies", []))
+        if isinstance(raw_hidden, (list, tuple, set)):
+            hidden_stickies = [str(x.get("topic", x.get("name", x)) if isinstance(x, dict) else x).strip() for x in raw_hidden if x]
+        elif isinstance(raw_hidden, str):
+            hidden_stickies = [s.strip() for s in raw_hidden.split(",") if s.strip()]
+        elif isinstance(raw_hidden, dict):
+            hidden_stickies = [str(k).strip() for k in raw_hidden.keys() if str(k).strip()]
+        structured = sp_cfg.get("stickies", {})
+        if isinstance(structured, dict):
+            hidden_stickies.extend(
+                str(topic).strip()
+                for topic, definition in structured.items()
+                if isinstance(definition, dict) and definition.get("hidden")
+            )
+            hidden_stickies = list(dict.fromkeys(hidden_stickies))
+    except Exception:
+        hidden_stickies = []
 
-    session = live_agent_manager.get_session(theater_id) if theater_id else None
+    session = live_agent_manager.get_session(theater_id)
     notepad = _session_notepad(session)
     if notepad and hasattr(notepad, "get_present_sticky_notes"):
         notes = notepad.get_present_sticky_notes()
@@ -852,9 +870,11 @@ def get_sticky_notes(request: Request, theater_id: Optional[str] = None):
 
 
 @app.post("/api/suggestions/upvote")
-def upvote_suggestion(vote: SuggestionVote, request: Request, theater_id: Optional[str] = None):
-    if theater_id:
-        _require_canvas_access(request, theater_id)
+def upvote_suggestion(vote: SuggestionVote, request: Request, theater_id: str):
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
+    _require_canvas_access(request, theater_id)
     state = _state(theater_id)
     if not state.chat.upvote_suggestion(vote.voter, vote.target_author):
         raise HTTPException(status_code=404, detail="Suggestion not found or cannot be upvoted.")
@@ -863,9 +883,11 @@ def upvote_suggestion(vote: SuggestionVote, request: Request, theater_id: Option
 
 
 @app.post("/api/suggestions/withdraw")
-def withdraw_suggestion(withdrawal: SuggestionWithdrawal, request: Request, theater_id: Optional[str] = None):
-    if theater_id:
-        _require_canvas_access(request, theater_id)
+def withdraw_suggestion(withdrawal: SuggestionWithdrawal, request: Request, theater_id: str):
+    if not theater_id or not theater_id.strip():
+        raise HTTPException(status_code=400, detail="theater_id is required.")
+    theater_id = theater_id.strip()
+    _require_canvas_access(request, theater_id)
     state = _state(theater_id)
     if not state.chat.withdraw_suggestion(withdrawal.author):
         raise HTTPException(status_code=404, detail="Suggestion not found.")

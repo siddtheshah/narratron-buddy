@@ -298,61 +298,88 @@ def resolve_join_key(req: ResolveJoinKeyRequest, request: Request, response: Res
     _grant_canvas_access(response, request, meta.theater_id, dep["join_key"])
     return {"status": "ok", "theater_id": meta.theater_id, "name": meta.name, "user_id": dep.get("user_id")}
 
-@app.get("/api/theaters")
-def list_theaters(request: Request):
-    """List all deployed theaters from disk and database without eagerly reconstructing files."""
+class TheaterSummary(BaseModel):
+    theater_id: str
+    name: str = ""
+    status: str = "created"
+    join_key: str = ""
+    created_at: str = ""
+    last_used_at: str = ""
+    is_owner: bool = True
+    mounted_references: list[str] = Field(default_factory=list)
+    mounted_playlists: dict[str, list[str]] = Field(default_factory=dict)
+
+    def __getitem__(self, item: str) -> str | bool | list[str] | dict[str, list[str]]:
+        if item == "theater_id":
+            return self.theater_id
+        if item == "name":
+            return self.name
+        if item == "status":
+            return self.status
+        if item == "join_key":
+            return self.join_key
+        if item == "created_at":
+            return self.created_at
+        if item == "last_used_at":
+            return self.last_used_at
+        if item == "is_owner":
+            return self.is_owner
+        if item == "mounted_references":
+            return self.mounted_references
+        if item == "mounted_playlists":
+            return self.mounted_playlists
+        raise KeyError(item)
+
+    def get(
+        self,
+        item: str,
+        default: str | bool | list[str] | dict[str, list[str]] | None = None,
+    ) -> str | bool | list[str] | dict[str, list[str]] | None:
+        if item in {
+            "theater_id",
+            "name",
+            "status",
+            "join_key",
+            "created_at",
+            "last_used_at",
+            "is_owner",
+            "mounted_references",
+            "mounted_playlists",
+        }:
+            return self[item]
+        return default
+
+
+@app.get("/api/theaters", response_model=list[TheaterSummary])
+def list_theaters(request: Request) -> list[TheaterSummary]:
+    """List deployed theaters for the authenticated user without leaking private canvas state or config."""
     current_user = get_current_user(request)
-    current_user_id = current_user["id"] if current_user else None
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required to view theaters.")
 
-    if current_user_id is not None:
-        # The deploy UI only shows personal sessions for authenticated users.  Do
-        # not load every user's disk and database metadata merely to filter it in
-        # the browser afterwards.
-        result = []
-        for record in db.get_user_theater_records(current_user_id):
-            theater_id = record["theater_id"]
-            disk_metadata = theater_manager.get_theater(theater_id)
-            theater = disk_metadata.model_dump() if disk_metadata else record["metadata"]
-            theater["is_owner"] = True
-            theater["last_used_at"] = record["last_used_at"] or theater.get("created_at") or ""
-            result.append(theater)
-        result.sort(key=lambda theater: theater.get("last_used_at", "") or theater.get("created_at", ""), reverse=True)
-        return result
+    current_user_id = current_user["id"]
+    result: list[TheaterSummary] = []
+    for record in db.get_user_theater_records(current_user_id):
+        theater_id = record["theater_id"]
+        disk_metadata = theater_manager.get_theater(theater_id)
+        raw_meta = disk_metadata.model_dump() if disk_metadata else record.get("metadata", {})
+        last_used = record.get("last_used_at") or raw_meta.get("created_at") or ""
+        summary = TheaterSummary(
+            theater_id=theater_id,
+            name=raw_meta.get("name") or theater_id,
+            status=raw_meta.get("status", "created"),
+            join_key=raw_meta.get("join_key", ""),
+            created_at=raw_meta.get("created_at", ""),
+            last_used_at=last_used,
+            is_owner=True,
+            mounted_references=raw_meta.get("mounted_references", []),
+            mounted_playlists=raw_meta.get("mounted_playlists", {}),
+        )
+        result.append(summary)
 
-    # Get theaters currently on disk
-    disk_theaters = theater_manager.list_theaters()
-    all_theaters_dict = {s.theater_id: s.model_dump() for s in disk_theaters}
-
-    # Add DB theaters that are not on disk yet (without writing files to disk!)
-    for sid in db.get_all_exported_theater_ids():
-        if sid not in all_theaters_dict:
-            db_meta = db.get_theater_metadata_from_db(sid)
-            if db_meta:
-                all_theaters_dict[sid] = db_meta
-
-    # Fetch last_used timestamps map from DB
-    activity_map = db.get_theaters_last_used()
-    deployments_by_theater = db.get_deployments(list(all_theaters_dict))
-
-    result = []
-    for sid, s_dict in all_theaters_dict.items():
-        dep = deployments_by_theater.get(sid)
-        owner_id = dep["user_id"] if dep else None
-        is_owner = (current_user_id is not None and owner_id == current_user_id)
-
-        s_dict["is_owner"] = is_owner
-        last_used = activity_map.get(sid) or s_dict.get("created_at") or ""
-        s_dict["last_used_at"] = last_used
-
-        # Hide join_key if not owner
-        if not is_owner:
-            s_dict["join_key"] = "🔒 Owner Only"
-            
-        result.append(s_dict)
-
-    # Sort: owned theaters first, then by last_used_at desc, then created_at desc
-    result.sort(key=lambda x: (x["is_owner"], x.get("last_used_at", "") or x.get("created_at", "")), reverse=True)
+    result.sort(key=lambda theater: theater.last_used_at or theater.created_at, reverse=True)
     return result
+
 
 @app.get("/api/adventures")
 def list_adventures_endpoint(refresh: bool = False):

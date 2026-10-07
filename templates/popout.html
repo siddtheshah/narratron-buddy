@@ -346,8 +346,8 @@
     <script type="module">
         import { initializeChatEmotes } from '/static/js/chat-emotes.js';
         const urlParams = new URLSearchParams(window.location.search);
-        const theaterId = urlParams.get('theater_id') || 'default';
-        document.getElementById('popout-narratron-theater-id').textContent = `Theater: ${theaterId}`;
+        const theaterId = urlParams.get('theater_id') || '';
+        document.getElementById('popout-narratron-theater-id').textContent = theaterId ? `Theater: ${theaterId}` : 'No Theater Selected';
 
         const ADJECTIVES = ["Cosmic", "Starlight", "Mystic", "Neon", "Quantum", "Shadow", "Solar", "Lunar", "Cyber", "Astral", "Velvet", "Radiant", "Echo", "Ethereal"];
         const NOUNS = ["Wanderer", "Voyager", "Doodler", "Scout", "Bard", "Seeker", "Explorer", "Weaver", "Dreamer", "Pilot", "Scribe", "Nomad"];
@@ -567,8 +567,9 @@
         let lastMsgCount = 0;
 
         async function fetchChat() {
+            if (!theaterId) return;
             try {
-                const res = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
+                const res = await fetch(`/api/chat?theater_id=${encodeURIComponent(theaterId)}`);
                 const messages = await res.json();
                 if (messages.length !== lastMsgCount) {
                     chatMessages.innerHTML = '';
@@ -582,8 +583,9 @@
         }
 
         async function fetchLatestState() {
+            if (!theaterId) return;
             try {
-                const res = await fetch('/api/latest' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
+                const res = await fetch(`/api/latest?theater_id=${encodeURIComponent(theaterId)}`);
                 const data = await res.json();
                 const thought = data.agent_thought && data.agent_thought.text;
                 const isWandering = (thought || '').trim().toLowerCase() === 'wandering';
@@ -624,7 +626,8 @@
             }
             chatInput.value = '';
             try {
-                await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''), {
+                const chatUrl = theaterId ? `/api/chat?theater_id=${encodeURIComponent(theaterId)}` : '/api/chat';
+                await fetch(chatUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ author: currentChatUsername || myUserId, text: text })
@@ -671,9 +674,9 @@
         }
 
         function connectCanvasStateSocket() {
+            if (!theaterId) return;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const socketUrl = `${protocol}//${window.location.host}/ws/canvas-state` +
-                (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : '');
+            const socketUrl = `${protocol}//${window.location.host}/ws/canvas-state?theater_id=${encodeURIComponent(theaterId)}`;
             canvasStateWs = new WebSocket(socketUrl);
             canvasStateWs.onopen = () => {
                 canvasStateReconnectDelay = 1000;

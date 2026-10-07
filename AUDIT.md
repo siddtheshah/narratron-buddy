@@ -4,12 +4,16 @@ Reviewed October 7, 2026. Scope: unauthorized access to non-public user data and
 
 ## 1. [P1] Anonymous access to private theater state
 
+Resolved: default theater fallbacks have been completely removed. `CanvasStateService` strictly requires a non-empty `theater_id` and no longer selects default or deployed theaters. Canvas endpoints (`/api/latest`, `/api/chat`, `/api/sticky-notes`, `/api/suggestions`, `/ws/doodle`, `/ws/canvas-state`, `/api/orator/toggle_mic`) require an explicit `theater_id` and enforce theater-level access authorization (`_require_canvas_access` / `_require_canvas_access_async`) on all calls. Requests omitting `theater_id` are rejected immediately.
+
 Requests to `/api/chat`, `/api/latest`, and `/api/sticky-notes` without `theater_id` skip authorization. `CanvasStateService` then selects a default deployed theater, exposing its private content to unauthenticated callers.
 
 - Code: `api_server/canvas.py:476`, `api_server/canvas.py:489`, `api_server/canvas.py:815`, `components/canvas/canvas_state_service.py:24`.
-- Fix: Resolve the theater first, then require authorization for that theater on every read and write, including requests that omit its ID.
+- Fix: Eliminate default theater fallback; require an explicit `theater_id` and verify caller access on all canvas reads and writes.
 
 ## 2. [P1] Anonymous theater listing exposes saved conversations
+
+Resolved: the unauthenticated theater listing branch has been eliminated. The `/api/theaters` endpoint now requires authentication (returning 401 for anonymous requests) and only returns theaters owned by the authenticated user. Responses use an explicit `TheaterSummary` schema that completely excludes `canvas_state` (persisted chat messages) and private configuration.
 
 The unauthenticated `/api/theaters` branch returns full metadata for all theaters. It hides `join_key` but retains private configuration and `canvas_state`, which includes persisted chat messages.
 

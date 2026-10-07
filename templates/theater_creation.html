@@ -2119,6 +2119,11 @@
             const panelTitle = document.getElementById('theatersPanelTitle');
             try {
                 const res = await fetch('/api/theaters');
+                if (res.status === 401) {
+                    if (panelTitle) panelTitle.innerHTML = `<span>👤</span> Personal Sessions`;
+                    body.innerHTML = `<tr><td colspan="4" class="empty-state">Please log in to view your theaters.</td></tr>`;
+                    return;
+                }
                 const theaters = await res.json();
 
                 if (currentUser) {
