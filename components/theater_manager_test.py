@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+from testing.reference_images import png_bytes
 
 from absl.testing import flagsaver
 
@@ -73,7 +74,7 @@ class TestTheaterManager(unittest.TestCase):
         theater = self.manager.create_theater(
             name="Fantasy Quest",
             theater_id="quest",
-            reference_files=[("references/maps/hero.png", b"image")],
+            reference_files=[("references/maps/hero.png", png_bytes())],
             playlists_data={"ambient": [("rain.mp3", b"audio")]},
             theater_config={"live_agent": {"special_instructions": "painted fantasy"}},
         )

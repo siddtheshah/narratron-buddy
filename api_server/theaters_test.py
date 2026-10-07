@@ -17,6 +17,7 @@ from testing.base import BaseTestCase
 from api_server.app import app, theater_manager, db, FLAGS, canvas_states
 import object_registry
 import api_server.theaters as theaters
+from testing.reference_images import png_bytes
 from utils.config_loader import get_theater_default_config
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -347,7 +348,7 @@ class TestTheaterAPI(BaseTestCase):
         })
         self.assertEqual(reg_res.status_code, 200)
 
-        ref_file = ("hero.png", io.BytesIO(b"fake_hero_bytes"), "image/png")
+        ref_file = ("hero.png", io.BytesIO(png_bytes()), "image/png")
         track_file = ("ambient_01.mp3", io.BytesIO(b"fake_mp3_bytes"), "audio/mpeg")
 
         response = self.client.post(

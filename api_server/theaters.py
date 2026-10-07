@@ -211,7 +211,7 @@ async def serve_theater_reference(
     theater_id: str,
     filename: str,
     join_key: Optional[str] = None,
-):
+) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     ref_dir = theater_manager.theater(theater_id).references_dir()
@@ -220,7 +220,18 @@ async def serve_theater_reference(
         raise HTTPException(status_code=400, detail="Invalid reference path")
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Theater reference file not found")
-    return FileResponse(file_path)
+    from components.reference_images import reference_image_type
+
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+    }
+    try:
+        media_type = await asyncio.to_thread(reference_image_type, file_path.name, file_path.read_bytes())
+    except ValueError:
+        # Existing deployments may contain documents accepted before validation.
+        return FileResponse(file_path, media_type="application/octet-stream", filename=file_path.name, headers=headers)
+    return FileResponse(file_path, media_type=media_type, headers=headers)
 
 @app.get("/theaters/{theater_id}/playlists/{playlist_name}/{filename:path}")
 async def serve_theater_playlist_track(
@@ -758,15 +769,18 @@ async def create_and_deploy_theater(request: Request):
         )
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
-    metadata = theater_manager.create_theater(
-        name=name,
-        theater_id=theater_id,
-        reference_files=reference_files,
-        playlists_data=playlists_data,
-        lore_files=lore_files,
-        theater_config=theater_config,
-        metadata_json=adventure_metadata,
-    )
+    try:
+        metadata = theater_manager.create_theater(
+            name=name,
+            theater_id=theater_id,
+            reference_files=reference_files,
+            playlists_data=playlists_data,
+            lore_files=lore_files,
+            theater_config=theater_config,
+            metadata_json=adventure_metadata,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
 
     # Record deployment & deduct credits (0.0 cost)

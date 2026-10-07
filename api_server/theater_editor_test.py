@@ -22,6 +22,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.visual_state import VisualState
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
+from testing.reference_images import png_bytes
 from providers.image_provider import ImageGenerationResult
 from providers.music_provider import MusicGenerationResult
 from services.google_asset_importer import GoogleImportResult
@@ -386,8 +387,9 @@ def test_existing_theater_requires_owner_before_reconstruction(builder: BuilderH
 
 def test_editing_existing_theater_preserves_live_assets_until_deployed(builder: BuilderHarness) -> None:
     identifier = "theater_existing"
+    image = png_bytes()
     metadata = builder.manager.create_theater(name="Old world", theater_id=identifier,
-        reference_files=[("references/hero.png", b"image")], theater_config={"live_agent": {"special_instructions": "Old world"}})
+        reference_files=[("references/hero.png", image)], theater_config={"live_agent": {"special_instructions": "Old world"}})
     builder.repository.export_theater(identifier, builder.manager.theater(identifier).directory())
     builder.database.get_deployment.return_value = {"user_id": 7, "theater_id": identifier, "join_key": metadata.join_key}
     base = f"/api/theater-editor/{identifier}"
@@ -405,7 +407,7 @@ def test_editing_existing_theater_preserves_live_assets_until_deployed(builder: 
     deployed = builder.client.post(f"{base}/deploy", json={"revision": result.json()["draft"]["revision"]})
     assert deployed.status_code == 200, deployed.text
     assert not (target / "references/hero.png").exists()
-    assert (target / "references/characters/hero.png").read_bytes() == b"image"
+    assert (target / "references/characters/hero.png").read_bytes() == image
     assert not (builder.repository.theater_path(identifier) / "references/hero.png").exists()
     assert builder.manager.get_theater(identifier).join_key == metadata.join_key
 

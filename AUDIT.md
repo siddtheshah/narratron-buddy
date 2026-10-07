@@ -18,6 +18,8 @@ The unauthenticated `/api/theaters` branch returns full metadata for all theater
 
 ## 3. [P0] Uploaded HTML executes under the app's origin
 
+Resolved: reference uploads now require validated PNG, JPEG, WebP, or GIF content. Existing unsupported or invalid references are served as attachment downloads with `application/octet-stream`, `nosniff`, and a sandbox CSP; valid images use an explicit image content type. Regression checks cover direct, folder, ZIP, disguised HTML, and legacy documents.
+
 Reference uploads accept arbitrary content, including HTML, and the reference route serves HTML inline as `text/html` under the application's origin. An attacker can share a reference URL for their own theater, including its join key, with a logged-in victim. JavaScript in that document can read the victim's authenticated APIs and extract private data; HttpOnly cookies do not prevent these authenticated requests.
 
 - Code: `api_server/theaters.py:223`, `api_server/theaters.py:701`, `api_server/theaters.py:729`, `components/theater_manager.py:422`.

@@ -16,6 +16,7 @@ import zipfile
 from pydantic import BaseModel, Field
 
 from absl import flags
+from components.reference_images import reference_image_type
 
 logger = logging.getLogger(__name__)
 
@@ -377,6 +378,13 @@ class TheaterManager:
     def create_theater(self, name: str, theater_id: str, reference_files: Optional[List[tuple[str, bytes]]] = None, playlists_data: Optional[Dict[str, List[tuple[str, bytes]]]] = None, lore_files: Optional[List[tuple[str, bytes]]] = None, theater_config: Optional[Dict] = None, metadata_json: Optional[Any] = None) -> TheaterMetadata:
         # Import lazily so config loading can reuse the theater-root helper.
         from utils.config_loader import get_theater_default_config, save_theater_config
+
+        # Validate the whole batch before creating a workspace or writing assets.
+        for filename, content in reference_files or []:
+            parts = filename.replace("\\", "/").split("/")
+            if "stamps" in parts or parts[-1].lower() in {"metadata.json", "planning.yaml", "planning.yml"}:
+                continue
+            reference_image_type(filename, content)
 
         theater_dir = self._get_theater_dir(theater_id)
         if theater_dir.exists():
