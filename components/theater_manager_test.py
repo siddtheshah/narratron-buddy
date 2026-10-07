@@ -5,15 +5,118 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
+
+import pytest
 from testing.reference_images import png_bytes
 
 from absl.testing import flagsaver
 
 from components.theater_manager import (
     TheaterManager,
+    asset_destination,
     extract_asset_package,
     get_ephemeral_root,
 )
+
+
+@pytest.mark.parametrize("filename", [
+    "references/../../../outside.png", "../references/hero.png",
+    "references/../hero.png", "references\\..\\..\\outside.png",
+    "/references/hero.png", "C:/references/hero.png", "C:hero.png",
+    "\\\\server\\share\\references\\hero.png", "references/C:/hero.png",
+    "references/./hero.png", "references//hero.png", "references/hero.png:stream",
+    "references/.. /hero.png", "references/NUL.png", "",
+    "../planning.yaml", "../metadata.json", "stamps/../hero.png",
+])
+def test_upload_paths_are_rejected_before_any_writes(tmp_path: Path, filename: str) -> None:
+    manager = TheaterManager(tmp_path)
+    with pytest.raises(ValueError):
+        manager.create_theater("Attack", "attack", reference_files=[
+            ("references/safe.png", png_bytes()), (filename, png_bytes()),
+        ])
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("filename", [
+    "lore/../../../outside.txt", "../lore/notes.txt", "/lore/notes.txt",
+    "C:\\lore\\notes.txt", "lore\\..\\notes.txt",
+])
+def test_lore_upload_paths_are_rejected_before_any_writes(tmp_path: Path, filename: str) -> None:
+    with pytest.raises(ValueError):
+        TheaterManager(tmp_path).create_theater("Attack", "attack",
+            reference_files=[("safe.png", png_bytes())], lore_files=[(filename, b"Lore")])
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("playlist", ["../outside", "/outside", "C:\\outside", "C:outside", "..", "nested/name", "nested\\name"])
+def test_playlist_names_are_rejected_before_any_writes(tmp_path: Path, playlist: str) -> None:
+    with pytest.raises(ValueError):
+        TheaterManager(tmp_path).create_theater("Attack", "attack",
+            playlists_data={"safe": [("safe.mp3", b"audio")], playlist: [("song.mp3", b"audio")]})
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("filename", ["../song.mp3", "/song.mp3", "C:track.mp3", "folder\\..\\song.mp3"])
+def test_playlist_track_paths_are_validated_before_flattening(tmp_path: Path, filename: str) -> None:
+    with pytest.raises(ValueError):
+        TheaterManager(tmp_path).create_theater("Attack", "attack", playlists_data={"ambient": [(filename, b"audio")]})
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("theater_id", ["../outside", "/outside", "C:outside", "nested/name", "nested\\name", ""])
+def test_creation_rejects_unsafe_theater_ids(tmp_path: Path, theater_id: str) -> None:
+    with pytest.raises(ValueError):
+        TheaterManager(tmp_path).create_theater("Attack", theater_id)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("filename", [
+    "references/../../../outside.png", "lore/../../../outside.txt",
+    "playlists/../../outside/song.mp3", "../planning.yaml", "/references/hero.png",
+    "C:/references/hero.png", "references\\..\\..\\outside.png", "../ignored.bin", "../directory/",
+])
+def test_zip_rejects_unsafe_paths_before_classification(tmp_path: Path, filename: str) -> None:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("references/safe.png", png_bytes())
+        package.writestr(filename, png_bytes())
+    with pytest.raises(ValueError):
+        references, playlists, lore, _ = extract_asset_package(archive.getvalue())
+        TheaterManager(tmp_path).create_theater("Attack", "attack",
+            reference_files=references, playlists_data=playlists, lore_files=lore)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_resolved_asset_destination_cannot_escape_through_link(tmp_path: Path) -> None:
+    root = tmp_path / "references"
+    root.mkdir()
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"original")
+    requested = root / "linked.png"
+    original_resolve = Path.resolve
+
+    def resolve(path: Path, strict: bool = False) -> Path:
+        # Windows may not grant symlink creation privileges; model its resolution.
+        return outside if path == requested else original_resolve(path, strict=strict)
+
+    with patch.object(Path, "resolve", resolve), pytest.raises(ValueError):
+        asset_destination(root, "linked.png")
+    assert outside.read_bytes() == b"original"
+
+
+def test_valid_package_preserves_nested_assets_and_windows_separators(tmp_path: Path) -> None:
+    image = png_bytes()
+    manager = TheaterManager(tmp_path)
+    metadata = manager.create_theater("Safe", "safe",
+        reference_files=[("adventure\\references\\maps\\hero.png", image), ("planning.yaml", b"scenes: []")],
+        lore_files=[("adventure/lore/world/history.txt", b"History")],
+        playlists_data={"ambient": [("folder\\rain.mp3", b"audio")]})
+    assert metadata.mounted_references.count("maps/hero.png") == 1
+    assert (tmp_path / "safe/references/maps/hero.png").read_bytes() == image
+    assert (tmp_path / "safe/lore/world/history.txt").read_bytes() == b"History"
+    assert (tmp_path / "safe/playlists/ambient/rain.mp3").read_bytes() == b"audio"
+    assert (tmp_path / "safe/planning.yaml").read_bytes() == b"scenes: []"
 
 
 class TestTheaterRootSelection(unittest.TestCase):

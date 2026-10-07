@@ -33,7 +33,7 @@ from services.theater_image_generation import generate_theater_image
 from services.generation_billing import billing_locks as _billing_locks
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
-from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package
+from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package, validate_asset_path
 from utils.config_loader import get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
@@ -727,7 +727,10 @@ async def create_and_deploy_theater(request: Request):
                 elif key in ("asset_folder_files", "asset_files"):
                     # Folder upload with relative path info
                     rel_path = filename.replace("\\", "/")
-                    parts = [p for p in rel_path.split("/") if p]
+                    try:
+                        parts = validate_asset_path(filename)
+                    except ValueError as error:
+                        raise HTTPException(status_code=400, detail=str(error)) from error
                     clean_name = parts[-1] if parts else filename
 
                     if clean_name.lower() == "metadata.json" or filename.lower() == "metadata.json":

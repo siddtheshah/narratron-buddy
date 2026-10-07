@@ -63,3 +63,29 @@ def test_upload_returns_bad_request_for_active_references(tmp_path: Path, field:
         response = client.post("/api/theaters/create-and-deploy", files={field: (filename, b"<script>alert(1)</script>")})
     assert response.status_code == 400
     assert not list(tmp_path.glob("theater_*"))
+
+
+@pytest.mark.parametrize("field,filename", [
+    ("reference_files", "references/../../../outside.png"),
+    ("reference_files", "C:outside.png"),
+    ("asset_folder_files", "references/../../../outside.png"),
+    ("asset_folder_files", "lore/../../../outside.txt"),
+    ("asset_folder_files", "playlists/ambient/../../../outside.mp3"),
+    ("asset_folder_files", "../metadata.json"),
+    ("playlist_../outside", "song.mp3"),
+    ("playlist_ambient", "../song.mp3"),
+    ("asset_zip", "attack.zip"),
+])
+def test_upload_returns_bad_request_for_escaping_paths(tmp_path: Path, field: str, filename: str) -> None:
+    content = png_bytes()
+    if field == "asset_zip":
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("references/../../../outside.png", content)
+        content = archive.getvalue()
+    manager = TheaterManager(tmp_path)
+    with patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), TestClient(app) as client:
+        response = client.post("/api/theaters/create-and-deploy", files={field: (filename, content)})
+    assert response.status_code == 400
+    assert list(tmp_path.iterdir()) == []

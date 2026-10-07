@@ -31,6 +31,8 @@ Reference uploads accept arbitrary content, including HTML, and the reference ro
 
 ## 4. [P1] Upload paths escape theater directories
 
+Resolved: ZIP entries, folder upload paths, and direct asset paths are validated before prefixes or filenames are stripped. Absolute paths, traversal components, Windows drive/UNC paths, and invalid Windows filename components are rejected. Theater creation validates the entire batch before creating its workspace, restricts playlist names to one component, and checks resolved destinations before writing reference, stamp, lore, playlist, metadata, and planning files. Regression tests cover the reported ZIP exploit, direct and folder uploads, mixed separators, playlist paths, resolved link escapes, and valid nested assets.
+
 ZIP and folder reference paths retain `..` components and are written without checking that the resolved destination remains inside the theater's reference directory. Lore paths and playlist names also lack equivalent containment checks. An authenticated uploader can overwrite other theaters' files or writable application files, enabling further data compromise.
 
 - Code: `components/theater_manager.py:422`, `components/theater_manager.py:437`, `components/theater_manager.py:458`.

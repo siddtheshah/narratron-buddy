@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import io
 import json
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import secrets
 import shutil
 from dataclasses import dataclass
@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 MAX_ZIP_BYTES = 10 * 1024 * 1024
 LORE_TEXT_EXTENSION = ".txt"
 MAX_LORE_DOCUMENT_BYTES = 256 * 1024
+WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | {
+    f"{prefix}{number}" for prefix in ("COM", "LPT") for number in "123456789¹²³"
+}
 
 FLAGS = flags.FLAGS
 if "testing_use_local" not in flags.FLAGS:
@@ -31,6 +34,35 @@ if "testing_use_local" not in flags.FLAGS:
         False,
         "Use local ephemeral storage for testing.",
     )
+
+
+def validate_asset_path(filename: str) -> list[str]:
+    """Validate an upload path before stripping package or asset prefixes."""
+    normalized = filename.replace("\\", "/")
+    parts = normalized.split("/")
+    if (
+        not filename
+        or PurePosixPath(normalized).is_absolute()
+        or PureWindowsPath(filename).drive
+        or any(part in {"", ".", ".."} for part in parts)
+        or any(
+            any(character in '<>:"|?*' or ord(character) < 32 for character in part)
+            or part.endswith((".", " "))
+            or part.split(".")[0].upper() in WINDOWS_RESERVED_NAMES
+            for part in parts
+        )
+    ):
+        raise ValueError("Asset paths must be relative paths without traversal or invalid components.")
+    return parts
+
+
+def asset_destination(root: Path, relative_path: str) -> Path:
+    """Resolve an asset destination and reject escapes through existing links."""
+    parts = validate_asset_path(relative_path)
+    destination = (root / Path(*parts)).resolve()
+    if root.resolve() not in destination.parents:
+        raise ValueError("Asset path cannot escape its destination directory.")
+    return destination
 
 
 def get_ephemeral_root() -> Path:
@@ -210,12 +242,14 @@ def extract_asset_package(
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as archive:
             for info in archive.infolist():
+                # Validate directory entries too, before any path classification.
+                parts = validate_asset_path(info.filename.rstrip("/") if info.is_dir() else info.filename)
                 if info.is_dir():
                     continue
                 total_uncompressed += info.file_size
                 if total_uncompressed > max_bytes * 2:
                     raise ValueError("ZIP uncompressed size exceeds allowable limit.")
-                parts = [part for part in info.filename.replace("\\", "/").split("/") if part and part != "__MACOSX"]
+                parts = [part for part in parts if part != "__MACOSX"]
                 if not parts or parts[-1].startswith("."):
                     continue
                 filename, content = parts[-1], archive.read(info.filename)
@@ -380,18 +414,45 @@ class TheaterManager:
         from utils.config_loader import get_theater_default_config, save_theater_config
 
         # Validate the whole batch before creating a workspace or writing assets.
-        for filename, content in reference_files or []:
-            parts = filename.replace("\\", "/").split("/")
-            if "stamps" in parts or parts[-1].lower() in {"metadata.json", "planning.yaml", "planning.yml"}:
-                continue
-            reference_image_type(filename, content)
-
-        theater_dir = self._get_theater_dir(theater_id)
+        theater_parts = validate_asset_path(theater_id)
+        if len(theater_parts) != 1:
+            raise ValueError("Theater ID must be a single path component.")
+        theater_dir = asset_destination(self.base_dir, theater_id)
         if theater_dir.exists():
             raise ValueError(f"Theater with ID '{theater_id}' already exists.")
-        reference_dir = self._get_theater_reference_dir(theater_id)
-        playlists_dir = self._get_theater_playlists_dir(theater_id)
-        lore_dir = self._get_theater_lore_dir(theater_id)
+        reference_dir = theater_dir / "references"
+        playlists_dir = theater_dir / "playlists"
+        lore_dir = theater_dir / "lore"
+        for filename, content in reference_files or []:
+            parts = validate_asset_path(filename)
+            if "stamps" in parts or parts[-1].lower() in {"metadata.json", "planning.yaml", "planning.yml"}:
+                if "stamps" in parts:
+                    asset_destination(theater_dir / "stamps", "/".join(parts[parts.index("stamps") + 1:]))
+                    if Path(parts[-1]).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                        raise ValueError("Unsupported stamp image format")
+                continue
+            relative_name = "/".join(parts[parts.index("references") + 1:]) if "references" in parts else parts[-1]
+            asset_destination(reference_dir, relative_name)
+            reference_image_type(filename, content)
+        for playlist_name, files in (playlists_data or {}).items():
+            if len(validate_asset_path(playlist_name)) != 1:
+                raise ValueError("Playlist names must be a single path component.")
+            playlist_dir = asset_destination(playlists_dir, playlist_name)
+            for filename, _ in files:
+                parts = validate_asset_path(filename)
+                asset_destination(playlist_dir, parts[-1])
+        for filename, content in lore_files or []:
+            parts = validate_asset_path(filename)
+            relative_name = "/".join(parts[parts.index("lore") + 1:]) if "lore" in parts else parts[-1]
+            asset_destination(lore_dir, relative_name)
+            if not parts[-1].lower().endswith(LORE_TEXT_EXTENSION):
+                raise ValueError("Lore documents must be .txt files.")
+            if len(content) > MAX_LORE_DOCUMENT_BYTES:
+                raise ValueError(f"Lore documents must be at most {MAX_LORE_DOCUMENT_BYTES // 1024}KB.")
+            try:
+                content.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise ValueError("Lore documents must be UTF-8 encoded text.") from error
         reference_dir.mkdir(parents=True)
         playlists_dir.mkdir()
         lore_dir.mkdir()
@@ -399,7 +460,7 @@ class TheaterManager:
         self._get_theater_output_dir(theater_id).mkdir()
 
         if metadata_json is not None:
-            meta_file = theater_dir / "metadata.json"
+            meta_file = asset_destination(theater_dir, "metadata.json")
             if isinstance(metadata_json, dict):
                 meta_file.write_text(json.dumps(metadata_json, indent=2), encoding="utf-8")
             elif isinstance(metadata_json, str):
@@ -409,25 +470,20 @@ class TheaterManager:
 
         mounted_references = []
         for relative_filename, content in reference_files or []:
-            parts = [part for part in relative_filename.replace("\\", "/").split("/") if part]
+            parts = validate_asset_path(relative_filename)
             if "stamps" in parts:
-                stamp_root = (theater_dir / "stamps").resolve()
-                stamp_path = (stamp_root / Path(*parts[parts.index("stamps") + 1:])).resolve()
-                if stamp_root not in stamp_path.parents:
-                    raise ValueError("Invalid stamp path")
-                if stamp_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
-                    raise ValueError("Unsupported stamp image format")
+                stamp_path = asset_destination(theater_dir / "stamps", "/".join(parts[parts.index("stamps") + 1:]))
                 stamp_path.parent.mkdir(parents=True, exist_ok=True)
                 stamp_path.write_bytes(content)
                 continue
             if relative_filename == "metadata.json" or (parts and parts[-1].lower() == "metadata.json"):
-                (theater_dir / "metadata.json").write_bytes(content)
+                asset_destination(theater_dir, "metadata.json").write_bytes(content)
                 continue
             if relative_filename in ("planning.yaml", "planning.yml") or (parts and parts[-1].lower() in ("planning.yaml", "planning.yml")):
-                (theater_dir / "planning.yaml").write_bytes(content)
+                asset_destination(theater_dir, "planning.yaml").write_bytes(content)
                 continue
             relative_path = Path(*parts[parts.index("references") + 1:]) if "references" in parts else Path(parts[-1])
-            target = reference_dir / relative_path
+            target = asset_destination(reference_dir, relative_path.as_posix())
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
             mounted_references.append(relative_path.as_posix())
@@ -435,35 +491,27 @@ class TheaterManager:
         if default_references.exists():
             for reference in default_references.iterdir():
                 if reference.is_file() and reference.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-                    target = reference_dir / reference.name
+                    target = asset_destination(reference_dir, reference.name)
                     if not target.exists():
                         shutil.copy2(reference, target)
                         mounted_references.append(reference.name)
 
         mounted_playlists: Dict[str, List[str]] = {}
         for playlist_name, files in (playlists_data or {}).items():
-            playlist_dir = playlists_dir / playlist_name
+            playlist_dir = asset_destination(playlists_dir, playlist_name)
             playlist_dir.mkdir(parents=True, exist_ok=True)
             mounted_playlists[playlist_name] = []
             for filename, content in files:
-                clean_name = Path(filename).name
-                (playlist_dir / clean_name).write_bytes(content)
+                clean_name = validate_asset_path(filename)[-1]
+                asset_destination(playlist_dir, clean_name).write_bytes(content)
                 mounted_playlists[playlist_name].append(clean_name)
 
         for relative_filename, content in lore_files or []:
-            parts = [part for part in relative_filename.replace("\\", "/").split("/") if part]
-            if not parts or parts[-1].lower().endswith(LORE_TEXT_EXTENSION) is False:
-                raise ValueError("Lore documents must be .txt files.")
-            if len(content) > MAX_LORE_DOCUMENT_BYTES:
-                raise ValueError(f"Lore documents must be at most {MAX_LORE_DOCUMENT_BYTES // 1024}KB.")
-            try:
-                content.decode("utf-8")
-            except UnicodeDecodeError as error:
-                raise ValueError("Lore documents must be UTF-8 encoded text.") from error
+            parts = validate_asset_path(relative_filename)
             relative_path = Path(*parts[parts.index("lore") + 1:]) if "lore" in parts else Path(parts[-1])
             if not relative_path.parts:
                 continue
-            target = lore_dir / relative_path
+            target = asset_destination(lore_dir, relative_path.as_posix())
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
 
