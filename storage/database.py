@@ -2125,6 +2125,102 @@ class _DatabaseManagerBase:
     async def delete_user_stamp_async(self, stamp_id: int, user_id: int) -> bool:
         return await asyncio.to_thread(self.delete_user_stamp, stamp_id, user_id)
 
+    def acquire_generation_slot(
+        self,
+        user_id: int,
+        job_type: str,
+        theater_id: str,
+        max_concurrent: int = 3,
+        timeout_seconds: float = 300.0,
+    ) -> str | None:
+        """Acquire a concurrent generation slot for user_id.
+
+        Returns slot_id if acquired, or None if the user is already at max_concurrent active jobs.
+        Expired slots (e.g. from crashed workers) are automatically cleaned up.
+        """
+        if user_id <= 0:
+            raise ValueError("user_id must be a positive integer.")
+        if max_concurrent <= 0:
+            raise ValueError("max_concurrent must be positive.")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive.")
+        if not job_type:
+            raise ValueError("job_type is required.")
+        if not theater_id:
+            raise ValueError("theater_id is required.")
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        now_iso = now.isoformat()
+        expires_at = (now + datetime.timedelta(seconds=timeout_seconds)).isoformat()
+        slot_id = uuid.uuid4().hex
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM generation_slots WHERE expires_at <= ?", (now_iso,))
+            cursor.execute(
+                "SELECT COUNT(*) AS active_count FROM generation_slots WHERE user_id = ? AND expires_at > ?",
+                (user_id, now_iso),
+            )
+            row = cursor.fetchone()
+            count = 0
+            if row is not None:
+                count = int(row["active_count"])
+            if count >= max_concurrent:
+                return None
+            cursor.execute(
+                "INSERT INTO generation_slots (id, user_id, job_type, theater_id, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (slot_id, user_id, job_type, theater_id, now_iso, expires_at),
+            )
+            conn.commit()
+            return slot_id
+
+    def release_generation_slot(self, slot_id: str) -> None:
+        """Release a previously acquired generation slot."""
+        if not slot_id:
+            raise ValueError("slot_id is required.")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM generation_slots WHERE id = ?", (slot_id,))
+            conn.commit()
+
+    def count_active_generation_slots(self, user_id: int) -> int:
+        """Count currently unexpired generation slots for user_id."""
+        if user_id <= 0:
+            raise ValueError("user_id must be a positive integer.")
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM generation_slots WHERE expires_at <= ?", (now_iso,))
+            cursor.execute(
+                "SELECT COUNT(*) AS active_count FROM generation_slots WHERE user_id = ? AND expires_at > ?",
+                (user_id, now_iso),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return 0
+            return int(row["active_count"])
+
+    async def acquire_generation_slot_async(
+        self,
+        user_id: int,
+        job_type: str,
+        theater_id: str,
+        max_concurrent: int = 3,
+        timeout_seconds: float = 300.0,
+    ) -> str | None:
+        return await asyncio.to_thread(
+            self.acquire_generation_slot,
+            user_id,
+            job_type,
+            theater_id,
+            max_concurrent,
+            timeout_seconds,
+        )
+
+    async def release_generation_slot_async(self, slot_id: str) -> None:
+        await asyncio.to_thread(self.release_generation_slot, slot_id)
+
 
 class LocalDatabaseManager(_DatabaseManagerBase):
     """Narratron storage backed by storage.postgresql, used for development and tests."""

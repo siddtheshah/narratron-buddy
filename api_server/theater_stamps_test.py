@@ -149,7 +149,7 @@ def test_storage_failure_removes_partial_stamp_without_charging(stamps: StampHar
 
 
 @pytest.mark.parametrize("credits", [10, 4])
-def test_stamp_jobs_generate_concurrently_and_settle_without_overdraft(
+def test_stamp_jobs_generate_concurrently_and_settle_with_bounded_overdraft(
     stamps: StampHarness, credits: int,
 ) -> None:
     both_generating = Barrier(2)
@@ -178,9 +178,20 @@ def test_stamp_jobs_generate_concurrently_and_settle_without_overdraft(
     # Each TestClient owns a fresh event loop; avoid reusing a previously bound lock.
     with patch.object(theaters, "_billing_locks", {}), ThreadPoolExecutor(max_workers=2) as executor:
         results = sorted(executor.map(submit, ["Goblin", "Dragon"]))
-    expected_count = 2 if credits == 10 else 1
-    assert results == ([200, 200] if credits == 10 else [200, 402])
+    expected_count = 2
+    assert results == [200, 200]
     assert stamps.provider.generate.call_count == 2
     assert stamps.database.record_user_usage.call_count == expected_count
     assert len(stamps.manager.theater("stage").stamps()) == expected_count
     assert account["credits"] == credits - expected_count * 4
+
+
+def test_stamp_generation_beyond_concurrency_cap_rejected_with_429(stamps: StampHarness) -> None:
+    stamps.database.acquire_generation_slot.return_value = None
+    result = stamps.client.post(
+        "/api/theaters/stage/stamps/generate", json={"name": "Dragon", "prompt": "Dragon"},
+    )
+    assert result.status_code == 429
+    assert "Too many concurrent generation jobs" in result.json()["detail"]
+    stamps.provider.generate.assert_not_called()
+    stamps.database.record_user_usage.assert_not_called()

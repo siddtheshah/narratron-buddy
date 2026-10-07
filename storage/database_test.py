@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from queue import Queue
@@ -1138,6 +1139,86 @@ class TestPostgresSchemaAndTables(BaseTestCase):
 
             deleted = await self.db.delete_user_stamp_async(int(stamp["id"]), user_id)
             self.assertTrue(deleted)
+
+        asyncio.run(_run())
+
+    def test_generation_slots_acquire_release_and_cap(self) -> None:
+        user1 = self.db.register_user("slotuser1", "slot1@example.com", "pass123")
+        user2 = self.db.register_user("slotuser2", "slot2@example.com", "pass123")
+        uid1 = int(user1["id"])
+        uid2 = int(user2["id"])
+
+        slot1 = self.db.acquire_generation_slot(uid1, "stamp", "theater1", max_concurrent=3)
+        self.assertIsNotNone(slot1)
+        slot2 = self.db.acquire_generation_slot(uid1, "editor", "theater1", max_concurrent=3)
+        self.assertIsNotNone(slot2)
+        slot3 = self.db.acquire_generation_slot(uid1, "stamp", "theater2", max_concurrent=3)
+        self.assertIsNotNone(slot3)
+        self.assertEqual(self.db.count_active_generation_slots(uid1), 3)
+
+        # 4th slot for user1 is rejected
+        slot4 = self.db.acquire_generation_slot(uid1, "stamp", "theater1", max_concurrent=3)
+        self.assertIsNone(slot4)
+        self.assertEqual(self.db.count_active_generation_slots(uid1), 3)
+
+        # user2 has independent slots
+        user2_slot = self.db.acquire_generation_slot(uid2, "stamp", "theater1", max_concurrent=3)
+        self.assertIsNotNone(user2_slot)
+        self.assertEqual(self.db.count_active_generation_slots(uid2), 1)
+
+        # Release one slot for user1 allows new slot
+        assert slot2 is not None
+        self.db.release_generation_slot(slot2)
+        self.assertEqual(self.db.count_active_generation_slots(uid1), 2)
+        slot5 = self.db.acquire_generation_slot(uid1, "editor", "theater2", max_concurrent=3)
+        self.assertIsNotNone(slot5)
+        self.assertEqual(self.db.count_active_generation_slots(uid1), 3)
+
+    def test_generation_slots_expired_cleanup(self) -> None:
+        user = self.db.register_user("slotexpire", "slotexpire@example.com", "pass123")
+        uid = int(user["id"])
+
+        # Acquire with a 0.2s timeout
+        slot1 = self.db.acquire_generation_slot(uid, "stamp", "theater1", max_concurrent=1, timeout_seconds=0.2)
+        self.assertIsNotNone(slot1)
+        # Immediate attempt is blocked
+        slot2 = self.db.acquire_generation_slot(uid, "stamp", "theater1", max_concurrent=1, timeout_seconds=60.0)
+        self.assertIsNone(slot2)
+
+        # Sleep to let slot1 expire
+        time.sleep(0.3)
+
+        # Expired slot is cleaned up on next acquire attempt
+        slot3 = self.db.acquire_generation_slot(uid, "stamp", "theater1", max_concurrent=1, timeout_seconds=60.0)
+        self.assertIsNotNone(slot3)
+
+    def test_generation_slots_validation(self) -> None:
+        with self.assertRaises(ValueError):
+            self.db.acquire_generation_slot(-1, "stamp", "theater1")
+        with self.assertRaises(ValueError):
+            self.db.acquire_generation_slot(1, "", "theater1")
+        with self.assertRaises(ValueError):
+            self.db.acquire_generation_slot(1, "stamp", "")
+        with self.assertRaises(ValueError):
+            self.db.acquire_generation_slot(1, "stamp", "theater1", max_concurrent=0)
+        with self.assertRaises(ValueError):
+            self.db.acquire_generation_slot(1, "stamp", "theater1", timeout_seconds=0)
+        with self.assertRaises(ValueError):
+            self.db.release_generation_slot("")
+        with self.assertRaises(ValueError):
+            self.db.count_active_generation_slots(-1)
+
+    def test_generation_slots_async_methods(self) -> None:
+        user = self.db.register_user("slotasync", "slotasync@example.com", "pass123")
+        uid = int(user["id"])
+
+        async def _run() -> None:
+            slot = await self.db.acquire_generation_slot_async(uid, "stamp", "theater1")
+            self.assertIsNotNone(slot)
+            assert slot is not None
+            await self.db.release_generation_slot_async(slot)
+            count = self.db.count_active_generation_slots(uid)
+            self.assertEqual(count, 0)
 
         asyncio.run(_run())
 

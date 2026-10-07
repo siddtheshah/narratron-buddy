@@ -76,6 +76,49 @@ def test_production_stamp_manager_separates_sources_and_places_theater_stamps(st
     assert stamp_page.locator(".stamp-card").get_attribute("draggable") == "false"
 
 
+def test_production_stamp_drag_works_when_doodles_disabled(stamp_page: Page) -> None:
+    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
+    stamp_page.add_script_tag(content="""
+        let cachedTheaterStamps = [{id: 'theater:stage:dragon.png', name: 'Theater Dragon', url: '/theaters/stage/stamps/dragon.png'}];
+        const pendingStampGenerations = new Map();
+        let stampLoadError = '';
+        const stampManagerEmpty = document.getElementById('stamp-manager-empty');
+        const stampEmptyMessage = null;
+        let doodlesEnabled = false;
+        let doodlesPersistent = false;
+        let activeOrator = false;
+        function isCurrentOrator() { return activeOrator; }
+        function setDoodlesDisplay(enabled, persistent) {
+            doodlesEnabled = Boolean(enabled);
+            doodlesPersistent = Boolean(persistent);
+            canvas.style.display = doodlesEnabled ? 'block' : 'none';
+        }
+        crypto.randomUUID = () => 'test-dragon-stamp';
+        function redrawAllDoodles() { renderer.redraw(doodleActions); }
+    """ + render)
+    # Contributor (not orator) when doodles are disabled: stamps are locked and cannot be dragged
+    stamp_page.evaluate("activeOrator = false; canvas.style.display = 'none'; doodlesEnabled = false; cachedUserStamps = []; renderStampManagerGrid(cachedUserStamps)")
+    stamp_page.locator("#chat-open-stamps-btn").click()
+    card = stamp_page.locator('.stamp-card[data-stamp-id="theater:stage:dragon.png"]')
+    assert card.get_attribute("draggable") == "false"
+    assert "locked" in card.get_attribute("class")
+    assert "Doodles must be enabled by Orator" in card.get_attribute("title")
+    card.drag_to(stamp_page.locator("#image-container"))
+    assert stamp_page.evaluate("doodleActions.length") == 0
+
+    # Orator when doodles are disabled: allowed to drag and auto-enables doodles
+    stamp_page.evaluate("activeOrator = true; renderStampManagerGrid(cachedUserStamps)")
+    assert card.get_attribute("draggable") == "true"
+    assert "can-drag" in card.get_attribute("class")
+    card.drag_to(stamp_page.locator("#image-container"))
+    stamp = stamp_page.evaluate("doodleActions[0]")
+    assert stamp["stamp_id"] == "theater:stage:dragon.png"
+    assert 0.0 <= stamp["x"] <= 1.0
+    assert 0.0 <= stamp["y"] <= 1.0
+    assert stamp_page.evaluate("doodlesEnabled") is True
+
+
 @pytest.mark.parametrize("success", [True, False])
 def test_production_stamp_generation_permissions_pending_and_result(stamp_page: Page, success: bool) -> None:
     html = Path("templates/canvas.html").read_text(encoding="utf-8")

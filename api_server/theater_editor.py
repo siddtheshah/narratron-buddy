@@ -23,7 +23,11 @@ from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_music_provider
 from services.theater_image_generation import generate_theater_image
-from services.generation_billing import billing_locks as _billing_locks
+from services.generation_billing import (
+    billing_locks as _billing_locks,
+    MAX_CONCURRENT_GENERATION_JOBS,
+    GENERATION_SLOT_TTL_SECONDS,
+)
 from services.google_asset_importer import find_google_urls, import_google_link
 from services.theater_builder import (
     BuilderFile, BuilderProposal, ChatMessage, DraftInfo, FileWrite, GenerationRequest,
@@ -396,33 +400,57 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
 @app.post("/api/theater-editor/{theater_id}/generate")
 async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, request: Request) -> dict[str, JsonValue]:
     owner_id = await require_user(request)
-    async with _billing_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
-        info = await require_draft(request, theater_id)
-        check_revision(info, body.revision)
-        rates = pricing_controller.get_rates()
-        cost = rates["image_credit_rate" if body.kind in ("reference", "stamp") else "music_credit_rate"]
-        user = await asyncio.to_thread(db.get_user_by_id, owner_id)
-        if not user or user["credits"] < cost:
-            raise HTTPException(status_code=402, detail=f"This generation requires {cost:g} credits. Top up on /deploy.")
+    slot_id = await asyncio.to_thread(
+        db.acquire_generation_slot,
+        owner_id,
+        "editor",
+        theater_id,
+        MAX_CONCURRENT_GENERATION_JOBS,
+        GENERATION_SLOT_TTL_SECONDS,
+    )
+    if slot_id is None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many concurrent generation jobs. Maximum {MAX_CONCURRENT_GENERATION_JOBS} allowed.",
+        )
+    try:
+        async with _billing_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
+            info = await require_draft(request, theater_id)
+            check_revision(info, body.revision)
+            rates = pricing_controller.get_rates()
+            cost = rates["image_credit_rate" if body.kind in ("reference", "stamp") else "music_credit_rate"]
+            user = await asyncio.to_thread(db.get_user_by_id, owner_id)
+            if not user or user["credits"] < cost:
+                raise HTTPException(status_code=402, detail=f"This generation requires {cost:g} credits. Top up on /deploy.")
         try:
             path, content = await asyncio.to_thread(generate_asset, info, body)
-            # Validate capacity and persist before charging, just like successful live generation.
-            await asyncio.to_thread(store().write_files, info, {path: content})
         except Exception as error:
             logger.exception("Theater builder asset generation failed")
             raise HTTPException(status_code=502, detail="Generation failed; no credits were charged.") from error
-        try:
-            updated = await asyncio.to_thread(db.record_user_usage, owner_id,
-                images_created=1 if body.kind in ("reference", "stamp") else 0,
-                music_created=1 if body.kind == "playlist" else 0, credit_cost=cost,
-                idempotency_key=f"builder:{theater_id}:{path}")
-        except Exception as error:
-            # Do not leave an unbilled asset available if settlement failed.
-            safe_asset_path(store().directory(theater_id), path).unlink(missing_ok=True)
-            logger.exception("Theater builder billing failed")
-            raise HTTPException(status_code=503, detail="Could not settle generation credits. Please reload the draft.") from error
-        auth_session_cache.invalidate_user(owner_id)
-        return {"path": path, "credits_charged": cost, "credits": float(updated["credits"]), "state": (await asyncio.to_thread(response, info)).model_dump(mode="json")}
+
+        async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+            try:
+                # Validate capacity and persist before charging, just like successful live generation.
+                await asyncio.to_thread(store().write_files, info, {path: content})
+            except Exception as error:
+                logger.exception("Theater builder asset write failed")
+                raise HTTPException(status_code=502, detail="Generation failed; no credits were charged.") from error
+
+        async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
+            try:
+                updated = await asyncio.to_thread(db.record_user_usage, owner_id,
+                    images_created=1 if body.kind in ("reference", "stamp") else 0,
+                    music_created=1 if body.kind == "playlist" else 0, credit_cost=cost,
+                    idempotency_key=f"builder:{theater_id}:{path}")
+            except Exception as error:
+                # Do not leave an unbilled asset available if settlement failed.
+                safe_asset_path(store().directory(theater_id), path).unlink(missing_ok=True)
+                logger.exception("Theater builder billing failed")
+                raise HTTPException(status_code=503, detail="Could not settle generation credits. Please reload the draft.") from error
+            auth_session_cache.invalidate_user(owner_id)
+            return {"path": path, "credits_charged": cost, "credits": float(updated["credits"]), "state": (await asyncio.to_thread(response, info)).model_dump(mode="json")}
+    finally:
+        await asyncio.to_thread(db.release_generation_slot, slot_id)
 
 
 def publish_draft(info: DraftInfo) -> str:

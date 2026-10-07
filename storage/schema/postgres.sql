@@ -216,3 +216,14 @@ CREATE TABLE IF NOT EXISTS user_stamps (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS user_stamps_user_id_idx ON user_stamps(user_id);
+
+CREATE TABLE IF NOT EXISTS generation_slots (
+    id TEXT PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    job_type TEXT NOT NULL,
+    theater_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS generation_slots_user_id_idx ON generation_slots(user_id);
+CREATE INDEX IF NOT EXISTS generation_slots_expires_at_idx ON generation_slots(expires_at);

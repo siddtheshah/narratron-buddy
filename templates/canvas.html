@@ -5393,6 +5393,10 @@
             }
             updateTextAnnotationAvailability();
             refreshCanvasToolInteraction();
+            if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
+                updateStampManagerPermissionBanner();
+                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+            }
         }
 
         if (doodlesToggleBtn) {
@@ -5419,7 +5423,7 @@
             onEditText: action => openTextAnnotationEditor(action),
             onMoveText: (action, previous, commit) => moveTextAnnotation(action, previous, commit),
             stampLayer: document.getElementById('canvas-stamp-layer'),
-            canMoveStamp: () => hasContributorsPermission() && !isPagedBack,
+            canMoveStamp: () => canPlaceStamps() && !isPagedBack,
             onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
             onRemoveStamp: action => removeStampAnnotation(action),
             onSelectStamp: action => selectStampAnnotation(action),
@@ -6070,6 +6074,7 @@
             if (isStampManagerOpen) {
                 updateStampManagerPermissionBanner();
                 updateStampManagerProfileLinks(currentUser);
+                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
                 loadUserStamps();
             }
         }
@@ -6077,10 +6082,16 @@
         function updateStampManagerPermissionBanner() {
             if (!stampManagerPermissionBanner) return;
             const canContribute = hasContributorsPermission();
-            stampManagerPermissionBanner.className = `stamp-manager-permission-banner ${canContribute ? 'contributor' : 'non-contributor'}`;
-            stampManagerPermissionBanner.innerHTML = canContribute
-                ? '✨ <strong>Contributor Active</strong>: Drag any stamp out of this pane and onto the canvas.'
-                : '🔒 <strong>Viewer Mode</strong>: You need contributor permission to place stamps on the canvas.';
+            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
+            const active = canPlaceStamps();
+            stampManagerPermissionBanner.className = `stamp-manager-permission-banner ${active ? 'contributor' : 'non-contributor'}`;
+            if (!canContribute) {
+                stampManagerPermissionBanner.innerHTML = '🔒 <strong>Viewer Mode</strong>: You need contributor permission to place stamps on the canvas.';
+            } else if (!isOrator && typeof doodlesEnabled !== 'undefined' && !doodlesEnabled) {
+                stampManagerPermissionBanner.innerHTML = '✏️ <strong>Doodles are Off</strong>: The Orator must turn on Doodles before contributors can place stamps.';
+            } else {
+                stampManagerPermissionBanner.innerHTML = '✨ <strong>Contributor Active</strong>: Drag any stamp out of this pane and onto the canvas.';
+            }
         }
 
         chatOpenStampsBtn?.addEventListener('click', () => {
@@ -6236,7 +6247,9 @@
             addSection('User stamps');
             if (stamps.length === 0) addSection('No user stamps uploaded yet.');
 
-            const canDrag = hasContributorsPermission();
+            const canContribute = hasContributorsPermission();
+            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
+            const canDrag = canPlaceStamps();
             sortedStamps.forEach((stamp, index) => {
                 if (index === stamps.length) addSection('Theater stamps', true);
                 const card = document.createElement('div');
@@ -6248,7 +6261,9 @@
                 const stampLabel = stamp.name || 'Stamp';
                 card.title = canDrag
                     ? `Drag "${stampLabel}" onto canvas`
-                    : `"${stampLabel}" (Requires Contributor permission to place)`;
+                    : !canContribute
+                        ? `"${stampLabel}" (Requires Contributor permission to place)`
+                        : `"${stampLabel}" (Doodles must be enabled by Orator to place stamps)`;
 
                 const img = document.createElement('img');
                 img.className = 'stamp-card-thumb';
@@ -6270,7 +6285,7 @@
                     card.appendChild(grip);
 
                     card.addEventListener('dragstart', (e) => {
-                        if (!hasContributorsPermission()) {
+                        if (!canPlaceStamps()) {
                             e.preventDefault();
                             return;
                         }
@@ -6279,13 +6294,19 @@
                             name: stamp.name,
                             url: stamp.url,
                         };
-                        e.dataTransfer.setData('application/json', JSON.stringify(payload));
+                        const json = JSON.stringify(payload);
+                        try {
+                            e.dataTransfer.setData('application/json', json);
+                        } catch (_) {}
+                        try {
+                            e.dataTransfer.setData('text/plain', json);
+                        } catch (_) {}
                         e.dataTransfer.effectAllowed = 'copyMove';
                     });
 
                     // Touch / Pointer drag fallback
                     card.addEventListener('pointerdown', (e) => {
-                        if (e.button !== 0 || !hasContributorsPermission()) return;
+                        if (e.button !== 0 || !canPlaceStamps()) return;
                         let moved = false;
                         const startX = e.clientX;
                         const startY = e.clientY;
@@ -6318,8 +6339,12 @@
                             }
                             if (!moved) return;
 
-                            const rect = canvas.getBoundingClientRect();
+                            const targetEl = (canvas && canvas.offsetWidth > 0 && canvas.offsetHeight > 0)
+                                ? canvas
+                                : (imgContainer || canvas);
+                            const rect = targetEl ? targetEl.getBoundingClientRect() : null;
                             if (
+                                rect && rect.width > 0 && rect.height > 0 &&
                                 upEvt.clientX >= rect.left && upEvt.clientX <= rect.right &&
                                 upEvt.clientY >= rect.top && upEvt.clientY <= rect.bottom
                             ) {
@@ -6363,8 +6388,18 @@
             });
         }
 
+        function canPlaceStamps() {
+            if (!hasContributorsPermission()) return false;
+            if (typeof isCurrentOrator === 'function' && isCurrentOrator()) return true;
+            return typeof doodlesEnabled !== 'undefined' ? Boolean(doodlesEnabled) : true;
+        }
+
         function placeStampOnCanvas(stampData, normX, normY) {
-            if (!hasContributorsPermission() || isPagedBack) return;
+            if (!canPlaceStamps() || isPagedBack) return;
+            if (typeof isCurrentOrator === 'function' && isCurrentOrator() && typeof doodlesEnabled !== 'undefined' && !doodlesEnabled) {
+                setDoodlesDisplay(true, doodlesPersistent);
+                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: true, persistent: Boolean(doodlesPersistent) });
+            }
             const myId = (typeof currentUser !== 'undefined' && currentUser && currentUser.id) ? currentUser.id : myUserId;
             const action = {
                 type: 'stamp',
@@ -6400,7 +6435,7 @@
 
         if (imgContainer) {
             imgContainer.addEventListener('dragover', (e) => {
-                if (hasContributorsPermission()) {
+                if (canPlaceStamps()) {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'copy';
                     imgContainer.classList.add('stamp-drag-over');
@@ -6411,14 +6446,26 @@
             });
             imgContainer.addEventListener('drop', (e) => {
                 imgContainer.classList.remove('stamp-drag-over');
-                if (!hasContributorsPermission()) return;
+                if (!canPlaceStamps()) return;
                 try {
-                    const raw = e.dataTransfer.getData('application/json');
+                    let raw = '';
+                    try {
+                        raw = e.dataTransfer.getData('application/json');
+                    } catch (_) {}
+                    if (!raw) {
+                        try {
+                            raw = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
+                        } catch (_) {}
+                    }
                     if (!raw) return;
                     const stampData = JSON.parse(raw);
                     if (!stampData || !stampData.stamp_id) return;
                     e.preventDefault();
-                    const rect = canvas.getBoundingClientRect();
+                    const targetEl = (canvas && canvas.offsetWidth > 0 && canvas.offsetHeight > 0)
+                        ? canvas
+                        : (imgContainer || canvas);
+                    const rect = targetEl ? targetEl.getBoundingClientRect() : null;
+                    if (!rect || !rect.width || !rect.height) return;
                     const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                     const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
                     placeStampOnCanvas(stampData, normX, normY);
@@ -6653,6 +6700,11 @@
                 if (isRecording) stopMicStream();
                 statusIndicator.classList.remove('disconnected');
             }
+
+            if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
+                updateStampManagerPermissionBanner();
+                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+            }
         }
 
         // Initialize as viewer until server state verifies role
@@ -6676,6 +6728,10 @@
                         const isActiveOrator = data.metadata.is_active_orator;
                         const isContributor = data.metadata.is_contributor;
                         window._isContributor = Boolean(isOwner || isActiveOrator || isContributor);
+                        if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
+                            updateStampManagerPermissionBanner();
+                            if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+                        }
                         if (isActiveOrator) {
                             applyRoleUI(true);
                         } else if (!isOwner && !isContributor) {

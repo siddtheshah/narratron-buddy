@@ -3,9 +3,10 @@
 import asyncio
 from io import BytesIO
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Event
+from threading import Barrier, Event
 from typing import TypedDict
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -641,4 +642,46 @@ def test_apply_proposal_executes_deletions(builder: BuilderHarness) -> None:
     paths = [f["path"] for f in apply_result.json()["files"]]
     assert "lore/new_lore.txt" in paths
     assert "lore/old_lore.txt" not in paths
+
+
+def test_draft_generation_beyond_concurrency_cap_rejected_with_429(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    body = {"revision": data["draft"]["revision"], "kind": "reference", "name": "hero", "prompt": "Hero"}
+    builder.database.acquire_generation_slot.return_value = None
+    with patch("api_server.theater_editor.generate_asset") as generate:
+        result = builder.client.post(f"{base}/generate", json=body)
+    assert result.status_code == 429
+    assert "Too many concurrent generation jobs" in result.json()["detail"]
+    generate.assert_not_called()
+    builder.database.record_user_usage.assert_not_called()
+
+
+def test_draft_generations_generate_concurrently(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    both_generating = Barrier(2)
+    account = {"id": 7, "credits": 4.0}
+    builder.database.get_user_by_id.return_value = account
+
+    def fake_generate(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes]:
+        both_generating.wait(timeout=5)
+        return (f"references/{body.name}.png", png_bytes())
+
+    def settle(user_id: int, *, images_created: int = 0, music_created: int = 0, credit_cost: float, idempotency_key: str) -> dict[str, float]:
+        account["credits"] -= credit_cost
+        return {"credits": account["credits"]}
+
+    builder.database.record_user_usage.side_effect = settle
+    with patch("api_server.theater_editor.generate_asset", side_effect=fake_generate), ThreadPoolExecutor(max_workers=2) as executor:
+        def submit(name: str) -> int:
+            return builder.client.post(
+                f"{base}/generate",
+                json={"revision": data["draft"]["revision"], "kind": "reference", "name": name, "prompt": name},
+            ).status_code
+
+        results = sorted(executor.map(submit, ["hero1", "hero2"]))
+    assert results == [200, 200]
+    assert builder.database.record_user_usage.call_count == 2
+    assert account["credits"] == 4.0 - 2 * 4.0
 

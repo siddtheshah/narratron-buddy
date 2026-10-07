@@ -30,7 +30,11 @@ from api_server.shared import (
 from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, pricing_controller
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
-from services.generation_billing import billing_locks as _billing_locks
+from services.generation_billing import (
+    billing_locks as _billing_locks,
+    MAX_CONCURRENT_GENERATION_JOBS,
+    GENERATION_SLOT_TTL_SECONDS,
+)
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package, validate_asset_path
@@ -77,51 +81,64 @@ async def generate_theater_stamp(
     if not name or not prompt:
         raise HTTPException(status_code=422, detail="Enter a stamp name and image prompt.")
     owner_id = int(user["id"])
-    async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
-        cost = pricing_controller.get_rates()["image_credit_rate"]
-        account = await asyncio.to_thread(db.get_user_by_id, owner_id)
-        if not account or account["credits"] < cost:
-            raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
-        root = theater_manager.theater(theater_id).directory()
-        if not (root / "theater.yaml").is_file():
-            if not await asyncio.to_thread(theater_repository.reconstruct_theater, theater_id, root):
-                raise HTTPException(status_code=404, detail="Theater files not found.")
-    # Image jobs can overlap; hold the billing lock only for account checks and settlement.
+    slot_id = await asyncio.to_thread(
+        db.acquire_generation_slot,
+        owner_id,
+        "stamp",
+        theater_id,
+        MAX_CONCURRENT_GENERATION_JOBS,
+        GENERATION_SLOT_TTL_SECONDS,
+    )
+    if slot_id is None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many concurrent generation jobs. Maximum {MAX_CONCURRENT_GENERATION_JOBS} allowed.",
+        )
     try:
-        image = await asyncio.to_thread(generate_theater_image, root, kind="stamp", prompt=prompt, references=[])
-        if not image.image_bytes or image.mime_type != "image/png":
-            raise ValueError("Stamp generation must return a PNG image.")
-    except Exception as error:
-        logger.exception("Theater stamp generation failed")
-        raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
-
-    async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
-        account = await asyncio.to_thread(db.get_user_by_id, owner_id)
-        if not account or account["credits"] < cost:
-            raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
-        filename = ""
+        async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
+            cost = pricing_controller.get_rates()["image_credit_rate"]
+            account = await asyncio.to_thread(db.get_user_by_id, owner_id)
+            if not account or account["credits"] < cost:
+                raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
+            root = theater_manager.theater(theater_id).directory()
+            if not (root / "theater.yaml").is_file():
+                if not await asyncio.to_thread(theater_repository.reconstruct_theater, theater_id, root):
+                    raise HTTPException(status_code=404, detail="Theater files not found.")
+        # Image jobs can overlap; hold the billing lock only for account checks and settlement.
         try:
-            safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or "stamp"
-            filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.png"
-            await asyncio.to_thread(_save_generated_stamp, theater_id, filename, image.image_bytes)
+            image = await asyncio.to_thread(generate_theater_image, root, kind="stamp", prompt=prompt, references=[])
+            if not image.image_bytes or image.mime_type != "image/png":
+                raise ValueError("Stamp generation must return a PNG image.")
         except Exception as error:
-            if filename:
-                await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
             logger.exception("Theater stamp generation failed")
             raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
-        try:
-            updated = await asyncio.to_thread(
-                db.record_user_usage, owner_id, images_created=1, credit_cost=cost,
-                idempotency_key=f"stamp:{theater_id}:{filename}",
-            )
-        except Exception as error:
-            await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
-            logger.exception("Theater stamp billing failed")
-            raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
-        auth_session_cache.invalidate_user(owner_id)
-        stamps = theater_manager.theater(theater_id).stamps()
-    await _broadcast_doodle(canvas_states.get(theater_id), {"type": "theater_stamps_updated", "stamps": stamps})
-    return {"stamps": stamps, "credits_charged": cost, "credits": float(updated["credits"])}
+
+        async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
+            filename = ""
+            try:
+                safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or "stamp"
+                filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.png"
+                await asyncio.to_thread(_save_generated_stamp, theater_id, filename, image.image_bytes)
+            except Exception as error:
+                if filename:
+                    await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
+                logger.exception("Theater stamp generation failed")
+                raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
+            try:
+                updated = await asyncio.to_thread(
+                    db.record_user_usage, owner_id, images_created=1, credit_cost=cost,
+                    idempotency_key=f"stamp:{theater_id}:{filename}",
+                )
+            except Exception as error:
+                await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
+                logger.exception("Theater stamp billing failed")
+                raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
+            auth_session_cache.invalidate_user(owner_id)
+            stamps = theater_manager.theater(theater_id).stamps()
+        await _broadcast_doodle(canvas_states.get(theater_id), {"type": "theater_stamps_updated", "stamps": stamps})
+        return {"stamps": stamps, "credits_charged": cost, "credits": float(updated["credits"])}
+    finally:
+        await asyncio.to_thread(db.release_generation_slot, slot_id)
 
 
 def _session_notepad(session: object) -> object | None:

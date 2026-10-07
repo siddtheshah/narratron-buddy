@@ -53,6 +53,8 @@ Custom purchases accept independent, client-supplied `custom_credits` and `custo
 
 Resolved (Agent lifecycle): `/api/theaters/{theater_id}/agent/start` and `/api/theaters/{theater_id}/agent/stop` require user authentication (returning 401 for anonymous callers) and enforce active orator authorization via `can_control_agent_websocket` (returning 403 for non-orators).
 
+Resolved (Switch to Live Agent Tool Call billing): Live agent now bills based on output, rather than input.
+
 WebSocket text and image input reaches the live AI without a corresponding usage charge. Live billing tracks incoming audio bytes and specific tool callbacks. In normal mode, conversations that avoid chargeable tools can consume AI services without debiting the user's balance. The unauthenticated agent-start endpoint also summons the model, creating another entry point for unmetered interactions.
 
 - Code: `services/live_stream_service.py:235`, `services/live_stream_service.py:277`, `services/live_agent_manager.py:269`, `services/live_agent_manager.py:1181`, `api_server/app.py:147`.
@@ -61,11 +63,25 @@ WebSocket text and image input reaches the live AI without a corresponding usage
 
 ## 7. [P1] Concurrent stamp requests consume AI without billing
 
+Resolved (Concurrent generation jobs): Active stamp and theater-builder generation jobs are capped at three per account across theaters and server processes via database generation slots (`generation_slots`). Requests beyond the cap are rejected immediately with HTTP 429. Generation slots are acquired prior to balance checks and kept occupied through asset generation, persistence, and settlement. The secondary affordability rejection after generation has been removed; every successfully generated and saved asset is billed even if competing work reduced the balance below the quoted rate, preventing unbilled provider usage. Expired slots from crashed workers are automatically reclaimed.
+
 Stamp generation releases the billing lock after checking the balance and before calling the image provider. Multiple requests can therefore pass the initial check with credits for only one image. After generation, later requests fail the second balance check without charging for the AI work already performed.
 
 - Code: `api_server/theaters.py:89`, `api_server/theaters.py:100`.
 - Verification: The existing `test_stamp_jobs_generate_concurrently_and_settle_without_overdraft` test demonstrates two provider calls but only one usage charge when the account has credits for one image.
 - Fix: Reserve credits atomically before calling the provider, then settle or refund the reservation according to the generation outcome. Reservations must work across server processes and all competing spending paths.
+
+### Proposed mitigation (October 7, 2026; not implemented)
+
+The existing live-agent billing policy permits negative balances: usage is charged after it occurs, and the agent stops when settlement reports a balance of zero or less. Strict prepaid reservations are therefore not required for the proposed stamp fix. The default image price is 1 credit, subject to configuration overrides.
+
+- Cap each account at three active stamp/editor generation jobs, shared across its theaters and server processes. Reject requests beyond the cap with HTTP 429 rather than queueing them with an earlier credit check. Live-agent billing remains outside this cap for now.
+- Acquire a generation slot before reading the current database balance, and require enough credits for the quoted generation cost immediately before calling the provider.
+- Charge every successfully generated and saved asset, even if competing work has reduced the balance below the cost. Remove the second affordability rejection that currently leaves completed provider work unbilled. Keep the slot occupied through settlement so later jobs see the updated balance; uncertain settlement outcomes require idempotent retry/reconciliation, and crashed workers require slot recovery.
+- At the default image price, three concurrent images admitted with a starting balance of 1 credit can leave a balance of -2 credits. This bounds exposure from simultaneous image requests while preserving the existing overdraft policy; competing spending and differently priced generation can increase the overdraft.
+- Introduce a separate asset-access policy: block access to assets owned by an account whose balance is below zero until it tops up. A zero balance blocks new paid generation but preserves existing asset access. Enforce the owner's balance on direct asset URLs and collaborator/join-key access, while keeping payment and account-management routes available. Previously downloaded or cached assets cannot be revoked by this policy.
+
+These measures are intended to limit concurrent provider spending and discourage negative-balance abuse. They do not eliminate overdrafts or resolve the separate live-AI metering concerns in issue 6.
 
 ## Verification and limitations
 
