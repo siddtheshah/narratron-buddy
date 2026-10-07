@@ -220,6 +220,7 @@ def read_sitemap() -> Response:
         "/docs/writing-adventures",
         "/docs/beyond20",
         "/docs/virtual-tabletop",
+        "/docs/feedback-and-reporting",
         "/terms",
         "/privacy",
     ]
@@ -435,6 +436,26 @@ def read_docs_virtual_tabletop() -> str:
     )
 
 
+@app.get("/docs/feedback-and-reporting", response_class=HTMLResponse)
+def read_docs_feedback_and_reporting() -> str:
+    """Serve public instructions for feedback and theater reporting."""
+    doc_path = PROJECT_ROOT / "docs" / "theater_feedback_and_reports.md"
+    content = render_about_markdown(doc_path.read_text(encoding="utf-8"))
+    return render_page_template(
+        "about.html",
+        active_page="docs-feedback-and-reporting",
+        extra_replacements={
+            "<!-- ABOUT_CONTENT -->": content,
+            "<title>About Narratron</title>": "<title>Feedback and Reporting · Docs · Narratron</title>",
+        },
+        seo_metadata=SeoMetadata(
+            title="Feedback and Reporting | Narratron Docs",
+            description="Report theater activity, file a bug, or suggest an improvement.",
+            path="/docs/feedback-and-reporting",
+        ),
+    )
+
+
 @app.get("/terms", response_class=HTMLResponse)
 @app.get("/terms-of-service", response_class=HTMLResponse)
 @app.get("/terms-of-use", response_class=HTMLResponse)
@@ -496,6 +517,7 @@ def rebuild_docs_search_index() -> int:
         DocsSearchPage("Writing adventures", "/docs/writing-adventures", read_docs_writing_adventures()),
         DocsSearchPage("Beyond20 dice rolls", "/docs/beyond20", read_docs_beyond20()),
         DocsSearchPage("Virtual tabletop guide", "/docs/virtual-tabletop", read_docs_virtual_tabletop()),
+        DocsSearchPage("Feedback and Reporting", "/docs/feedback-and-reporting", read_docs_feedback_and_reporting()),
         DocsSearchPage("Terms of Service", "/docs/terms", read_terms()),
         DocsSearchPage("Privacy Policy", "/docs/privacy", read_privacy()),
     ]

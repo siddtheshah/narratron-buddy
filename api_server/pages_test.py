@@ -49,6 +49,17 @@ def test_docs_theater_yaml_page_reads_the_reference_template():
     assert "nodes_ahead" not in response
 
 
+def test_feedback_guide_has_a_public_page_and_search_results() -> None:
+    response = pages.read_docs_feedback_and_reporting()
+    assert "Feedback and Reporting" in response
+    assert "Feedback/Report Theater" in response
+    assert "Send Report" in response
+    assert 'href="/docs/feedback-and-reporting"' in response
+    pages.rebuild_docs_search_index()
+    results = pages.search_docs(q="malicious activity", limit=8)
+    assert "/docs/feedback-and-reporting" in str(results)
+
+
 def test_docs_virtual_tabletop_page_serves_markdown_content():
     response = pages.read_docs_virtual_tabletop()
     assert "Virtual Tabletop" in response

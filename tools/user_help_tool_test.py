@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from tools.user_help_tool import UserHelpTool
+from tools.user_help_tool import ensure_doc_citation, normalize_doc_links
 
 
 def make_tool(tmp_path: Path) -> UserHelpTool:
@@ -171,4 +172,16 @@ def test_user_help_tool_agent_instructions_direct_concise_answers_and_doc_citati
     assert "Always cite links to the relevant documentation for any answer" in instructions
     assert "/docs/virtual-tabletop" in instructions
     assert "/docs/theater-yaml" in instructions
+
+
+def test_feedback_guide_is_discoverable_readable_and_citable(tmp_path: Path) -> None:
+    tool = make_tool(tmp_path)
+    tool.help_roots = tool._default_help_roots()
+    assert "docs/theater_feedback_and_reports.md (doc URL: /docs/feedback-and-reporting)" in tool.list_help_files()
+    assert "theater_feedback_and_reports.md" in tool.search_help_files("Feedback/Report Theater")
+    assert "Send Report" in tool.read_help_file("/docs/feedback-and-reporting")
+    assert "/docs/feedback-and-reporting" in tool._create_agent().instruction
+    assert normalize_doc_links("[Feedback](docs/theater_feedback_and_reports.md)") == "[Feedback](/docs/feedback-and-reporting)"
+    for question in ("How do I report a malicious theater?", "How do I file a bug?", "Where can I suggest an improvement?"):
+        assert "[Feedback and Reporting](/docs/feedback-and-reporting)" in ensure_doc_citation("Open the left-hand menu.", question)
 

@@ -12,6 +12,7 @@ __pycache__/
 output/
 scratch/
 theaters/
+flagged_theaters/
 stamps/
 ephemeral/
 adventures/*

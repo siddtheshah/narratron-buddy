@@ -3278,6 +3278,7 @@
     </div>
 
     <script type="module">
+        import { setupTheaterReport } from '/static/js/theater-report.js';
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
         import { initializeActionWheel } from "/static/js/action-wheel.js?v=secondary-20261007-2";
         import { initializeChatController } from "/static/js/chat-controller.js";
@@ -8795,6 +8796,7 @@
         window.closeMicConfigModal = closeMicConfigModal;
         window.openTheaterConfigModal = openTheaterConfigModal;
         window.closeTheaterConfigModal = closeTheaterConfigModal;
+        setupTheaterReport(theaterId, closePulloutMenu);
     </script>
 
     <!-- Pullout Navigation & Help Menu Drawer -->
@@ -8842,39 +8844,25 @@
                 </div>
 
                 <div>
-                    <div class="pullout-section-title">Orator & Audio Settings</div>
+                    <div class="pullout-section-title">Settings</div>
                     <div class="pullout-menu-list">
                         <button id="menu-item-mic-config" class="pullout-menu-item">
                             <span class="pullout-item-icon">🎙️</span>
-                            <span>Input Configuration</span>
+                            <span>Input Settings</span>
                         </button>
-                    </div>
-                </div>
 
-                <div>
-                    <div class="pullout-section-title">Theater Settings</div>
-                    <div class="pullout-menu-list">
                         <button id="menu-item-theater-config" class="pullout-menu-item"
                             title="Access and edit theater.yaml configuration">
                             <span class="pullout-item-icon">⚙️</span>
                             <span>Edit theater.yaml</span>
                         </button>
-                    </div>
-                </div>
 
-                <div>
-                    <div class="pullout-section-title">Performance</div>
-                    <div class="pullout-menu-list">
                         <label class="pullout-menu-item" for="minimal-mode-input">
                             <span class="pullout-item-icon">⚡</span>
                             <span style="flex: 1;">Minimal Mode</span>
-                            <input id="minimal-mode-input" type="checkbox" aria-describedby="minimal-mode-hint">
+                            <input id="minimal-mode-input" type="checkbox">
                         </label>
-                        <div id="minimal-mode-hint"
-                            style="padding: 0 0.75rem; color: #94a3b8; font-size: 0.75rem; line-height: 1.35;">
-                            Keeps only the image and doodles. Disables image effects, blur/glass layers, shadows, and UI
-                            animation.
-                        </div>
+
                     </div>
                 </div>
 
@@ -8893,10 +8881,46 @@
                             <span class="pullout-item-icon">📹</span>
                             <span>Copy OBS Source Link</span>
                         </button>
+                        <button id="menu-item-report" class="pullout-menu-item">
+                            <span class="pullout-item-icon">⚑</span>
+                            <span>Feedback/Report Theater</span>
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
+
+    <div id="report-theater-modal" class="modal-overlay" role="dialog" aria-modal="true"
+        aria-labelledby="report-theater-title" aria-hidden="true" inert>
+        <form id="report-theater-form" class="modal-card">
+            <h2 id="report-theater-title">Report Theater</h2>
+            <p>Report malicious activity, file a bug, or suggest an improvement. Sign in to submit a report.</p>
+            <p id="report-theater-description">Malicious activity reports include a theater snapshot for review.</p>
+            <label for="report-theater-reason">Report type</label>
+            <select id="report-theater-reason" required style="display: block; width: 100%; margin: 0.5rem 0 1rem; padding: 0.6rem;">
+                <option value="">Select a report type</option>
+                <optgroup label="Malicious activity">
+                <option value="harmful_content">Harmful content</option>
+                <option value="harassment">Harassment or bullying</option>
+                <option value="sexual_content">Inappropriate sexual content</option>
+                <option value="illegal_content">Illegal content</option>
+                <option value="other">Other</option>
+                </optgroup>
+                <optgroup label="Product feedback">
+                    <option value="bug">Bug report</option>
+                    <option value="suggestion">Improvement suggestion</option>
+                </optgroup>
+            </select>
+            <label for="report-theater-details">What happened?</label>
+            <textarea id="report-theater-details" required maxlength="4000" rows="5"
+                style="display: block; width: 100%; box-sizing: border-box; margin-top: 0.5rem; padding: 0.6rem;"></textarea>
+            <p id="report-theater-result" role="status" aria-live="polite"></p>
+            <div class="clip-share-actions">
+                <button id="report-theater-submit" type="submit">Send Report</button>
+                <button id="report-theater-close" type="button" class="clip-cancel">Cancel</button>
+            </div>
+        </form>
     </div>
 
     <div id="clip-share-modal" class="clip-share-modal" role="dialog" aria-modal="true"

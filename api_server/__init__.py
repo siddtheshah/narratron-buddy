@@ -26,6 +26,7 @@ from api_server.shared import (  # noqa: F401
 import api_server.auth  # noqa: F401
 import api_server.payments  # noqa: F401
 import api_server.theaters  # noqa: F401
+import api_server.reporting  # noqa: F401
 import api_server.canvas  # noqa: F401
 import api_server.profiles  # noqa: F401
 import api_server.pages  # noqa: F401

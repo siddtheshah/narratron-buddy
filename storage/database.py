@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 import logging
 import re
 from dotenv import load_dotenv
+from pydantic import JsonValue
 from pricing.pricing_controller import PricingController
 
 load_dotenv()
@@ -576,7 +577,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, username, email, password_hash, salt, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, mic_sensitivity, created_at FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)",
+                "SELECT id, username, email, password_hash, salt, credits, total_voice_minutes, total_images_created, total_music_created, total_story_plans, total_character_voiced_turns, total_interactive_canvas_used, mic_sensitivity, created_at FROM users WHERE banned_at IS NULL AND (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?))",
                 (query_val, query_val)
             )
             row = cursor.fetchone()
@@ -924,7 +925,7 @@ class _DatabaseManagerBase:
                 SELECT u.id, u.username, u.email, u.credits, u.total_voice_minutes, u.total_images_created, u.total_music_created, u.total_story_plans, u.total_character_voiced_turns, u.total_interactive_canvas_used, u.mic_sensitivity, u.profile_color, u.created_at, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON s.user_id = u.id
-                WHERE s.token = ?
+                WHERE s.token = ? AND u.banned_at IS NULL
                 """,
                 (token,)
             )
@@ -1388,6 +1389,131 @@ class _DatabaseManagerBase:
                 (user_id,)
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def record_user_feedback(
+        self, reporter_user_id: int, category: str, details: str, theater_id: str | None = None,
+    ) -> int:
+        """Store product feedback independently of the moderation queue."""
+        if category not in ("bug", "suggestion") or not details.strip():
+            raise ValueError("Select a feedback category and enter a description")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO user_feedback
+                (reporter_user_id, category, details, theater_id, created_at)
+                VALUES (?, ?, ?, ?, ?) RETURNING id""",
+                (reporter_user_id, category, details.strip(), theater_id,
+                 datetime.datetime.now(datetime.timezone.utc).isoformat()),
+            )
+            return int(cursor.fetchone()["id"])
+
+    def list_user_feedback(
+        self, category: str, status: str = "pending", limit: int = 100,
+    ) -> list[dict[str, JsonValue]]:
+        """Trusted bug/suggestion queue with reporter identity and theater context."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT f.*, u.username AS reporter_username
+                FROM user_feedback f LEFT JOIN users u ON u.id = f.reporter_user_id
+                WHERE f.category = ? AND f.status = ?
+                ORDER BY f.created_at, f.id LIMIT ?""",
+                (category, status, max(1, min(limit, 500))),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def review_user_feedback(
+        self, report_id: int, reviewer_user_id: int, status: str, notes: str,
+    ) -> bool:
+        """Record feedback triage from trusted operator tooling."""
+        if status not in ("reviewed", "dismissed", "actioned"):
+            raise ValueError("Invalid review status")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE user_feedback SET status = ?, reviewed_at = ?,
+                reviewer_user_id = ?, review_notes = ? WHERE id = ?""",
+                (status, datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                 reviewer_user_id, notes, report_id),
+            )
+            return cursor.rowcount > 0
+
+    def record_theater_report(
+        self, theater_id: str, theater_name: str, owner_user_id: int,
+        active_orator_user_id: int, reporter_user_id: int, reason: str,
+        details: str, content_sha256: str, storage_path: str,
+    ) -> int:
+        """Link each report to reusable evidence in a single transaction."""
+        snapshot_id = f"{theater_id}_{content_sha256}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO theater_report_snapshots
+                (snapshot_id, theater_id, content_sha256, storage_path, created_at)
+                VALUES (?, ?, ?, ?, ?) ON CONFLICT (theater_id, content_sha256) DO NOTHING""",
+                (snapshot_id, theater_id, content_sha256, storage_path, now),
+            )
+            cursor.execute(
+                """INSERT INTO theater_reports
+                (theater_id, theater_name, owner_user_id, active_orator_user_id,
+                 reporter_user_id, reason, details, snapshot_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                (theater_id, theater_name, owner_user_id, active_orator_user_id,
+                 reporter_user_id, reason, details, snapshot_id, now),
+            )
+            return int(cursor.fetchone()["id"])
+
+    def list_theater_reports(self, status: str = "pending", limit: int = 100) -> list[dict[str, JsonValue]]:
+        """Trusted moderation queue, including evidence and account identities."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT r.*, s.storage_path, s.content_sha256,
+                   owner.username AS owner_username, owner.email AS owner_email,
+                   owner.banned_at AS owner_banned_at,
+                   orator.username AS active_orator_username,
+                   reporter.username AS reporter_username
+                FROM theater_reports r JOIN theater_report_snapshots s USING (snapshot_id)
+                LEFT JOIN users owner ON owner.id = r.owner_user_id
+                LEFT JOIN users orator ON orator.id = r.active_orator_user_id
+                LEFT JOIN users reporter ON reporter.id = r.reporter_user_id
+                WHERE r.status = ? ORDER BY r.created_at, r.id LIMIT ?""",
+                (status, max(1, min(limit, 500))),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def review_theater_report(
+        self, report_id: int, reviewer_user_id: int, status: str, notes: str,
+    ) -> bool:
+        """Update a report from trusted moderation tooling only."""
+        if status not in ("reviewed", "dismissed", "actioned"):
+            raise ValueError("Invalid review status")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE theater_reports SET status = ?, reviewed_at = ?,
+                reviewer_user_id = ?, review_notes = ? WHERE id = ?""",
+                (status, datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                 reviewer_user_id, notes, report_id),
+            )
+            return cursor.rowcount > 0
+
+    def ban_user(self, user_id: int, reason: str) -> bool:
+        """Ban an account and revoke sessions from trusted moderation tooling."""
+        if not reason.strip():
+            raise ValueError("A ban reason is required")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET banned_at = ?, ban_reason = ? WHERE id = ?",
+                (datetime.datetime.now(datetime.timezone.utc).isoformat(), reason.strip(), user_id),
+            )
+            updated = cursor.rowcount > 0
+            cursor.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
+        from utils.auth_cache import auth_session_cache
+        auth_session_cache.invalidate_user(user_id)
+        return updated
 
     def get_deployment(self, theater_id: str) -> Optional[Dict]:
         with self._get_connection() as conn:

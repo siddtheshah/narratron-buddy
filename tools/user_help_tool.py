@@ -31,6 +31,7 @@ _DOC_URL_BY_FILE: dict[str, str] = {
     "virtual_tabletop_guide.md": "/docs/virtual-tabletop",
     "beyond20.md": "/docs/beyond20",
     "writing_adventures.md": "/docs/writing-adventures",
+    "theater_feedback_and_reports.md": "/docs/feedback-and-reporting",
     "theater_yaml_docs.html": "/docs/theater-yaml",
     "ideas.html": "/docs/ideas",
     "about.html": "/docs/about",
@@ -45,6 +46,7 @@ _DOC_FILE_BY_URL: dict[str, str] = {
     "/docs/vtt": "virtual_tabletop_guide.md",
     "/docs/beyond20": "beyond20.md",
     "/docs/writing-adventures": "writing_adventures.md",
+    "/docs/feedback-and-reporting": "theater_feedback_and_reports.md",
     "/docs/theater-yaml": "theater_yaml_docs.html",
     "/docs/ideas": "ideas.html",
     "/docs/about": "about.html",
@@ -75,7 +77,9 @@ def ensure_doc_citation(answer: str, question: str) -> str:
     if re.search(r"\[[^\]]+\]\((?:/docs[^\)]*|https?://[^\)]*)\)", answer):
         return answer
     lower = f"{question} {answer}".casefold()
-    if any(k in lower for k in ["battlemap", "action wheel", "action-wheel", "wheel", "vtt", "tabletop", "stamp", "mini", "token"]):
+    if any(k in lower for k in ["report", "feedback", "bug", "suggestion", "improvement", "malicious", "harassment"]):
+        fallback_link = "[Feedback and Reporting](/docs/feedback-and-reporting)"
+    elif any(k in lower for k in ["battlemap", "action wheel", "action-wheel", "wheel", "vtt", "tabletop", "stamp", "mini", "token"]):
         fallback_link = "[Virtual Tabletop Guide](/docs/virtual-tabletop)"
     elif any(k in lower for k in ["theater.yaml", "config", "setting", "yaml", "live_agent", "persona"]):
         fallback_link = "[theater.yaml Reference](/docs/theater-yaml)"
@@ -236,6 +240,7 @@ class UserHelpTool(BaseTools):
                 "- Always cite links to the relevant documentation for any answer using Markdown links (e.g. [Guide Name](/docs/...)). "
                 "Every answer must include at least one documentation citation link.\n\n"
                 "Canonical documentation guides available:\n"
+                "- [Feedback and Reporting](/docs/feedback-and-reporting): Reporting malicious theater activity, filing bugs, and suggesting improvements through Feedback/Report Theater.\n"
                 "- [Virtual Tabletop Guide](/docs/virtual-tabletop): 2D battlemaps, Orator Action Wheel, stamps, tokens & minis, tactical movement, and Beyond20 rolls.\n"
                 "- [theater.yaml Reference](/docs/theater-yaml): Configuration reference covering all sections, settings, live_agent, canvas, visuals, and audio.\n"
                 "- [Writing Adventures Guide](/docs/writing-adventures): Authoring interactive adventures, world lore, and scene design.\n"
