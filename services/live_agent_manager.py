@@ -458,9 +458,10 @@ class LiveAgentSession:
         if not force and not text_changed and not image_changed:
             return False
         if image is not None:
+            content = content.model_copy(deep=True)
+            content.role = "user"
             capture_path = self._save_canvas_capture(image)
             if capture_path is not None:
-                content = content.model_copy(deep=True)
                 reference_text = (
                     f"\n[Canvas Capture]: {capture_path}\n"
                     "Use this path in create_image(reference_images=[...]) to draw from "
@@ -759,10 +760,13 @@ class LiveAgentSession:
                 self.canvas_state_manager.visual.shown_image_path,
             )
             if snapshot and self.websocket_connected:
-                content = types.Content(parts=[
-                    types.Part(text="[Viewer Annotations]: A composite canvas image with audience annotations is attached."),
-                    types.Part(inline_data=types.Blob(mime_type="image/png", data=snapshot)),
-                ])
+                content = types.Content(
+                    role="user",
+                    parts=[
+                        types.Part(text="[Viewer Annotations]: A composite canvas image with audience annotations is attached."),
+                        types.Part(inline_data=types.Blob(mime_type="image/png", data=snapshot)),
+                    ],
+                )
                 with self.state_lock:
                     self._send_observability(content)
         except Exception:

@@ -868,6 +868,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
             self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertEqual(content.role, "user")
             capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
             self.assertTrue(Path(capture_path).is_absolute())
             first_capture = Path(capture_path).read_bytes()
@@ -884,6 +885,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas.doodles.doodles[0]["color"] = "#00ff00"
             asyncio.run(session._send_doodle_snapshot())
             content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertEqual(content.role, "user")
             next_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
             self.assertNotEqual(next_path, capture_path)
             self.assertEqual(Path(next_path).read_bytes(), content.parts[-1].inline_data.data)
@@ -926,6 +928,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
             self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertEqual(content.role, "user")
             self.assertIn("[Canvas Capture]: ", content.parts[0].text)
             capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
             self.assertTrue(Path(capture_path).is_file())
