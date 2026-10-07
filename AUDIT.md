@@ -35,7 +35,7 @@ ZIP and folder reference paths retain `..` components and are written without ch
 
 ## 5. [P0] Buyers control both credit quantity and payment amount
 
-Resolved: custom credits are calculated from the server exchange rate, with finite input validation, a USD 0.50 minimum, and whole-cent amounts. Checkout verification and signed webhooks recompute the entitlement and validate paid status, payment mode, currency, and actual settled amount before granting credits. Direct charges also require the expected amount received. Regression tests cover underpayment, inflated metadata, invalid amounts, delayed payments, and duplicate settlement.
+Resolved: custom credit sales are disabled. Purchase requests accept only fixed server-defined packages and reject custom fields; checkout verification and signed webhooks also reject custom or missing package metadata. Settlement validates paid status, payment mode, currency, actual amount, and credit quantity against the selected package. Direct charges require the expected amount received. Regression tests cover custom purchase rejection, underpayment, inflated metadata, delayed payments, and duplicate settlement.
 
 Custom purchases accept independent, client-supplied `custom_credits` and `custom_usd` values. These become checkout metadata, and settlement trusts that metadata when granting credits. An attacker can request millions of credits for a tiny payment. Positive amounts below half a cent also round to zero in the generated checkout request; whether such a checkout completes depends on Stripe behavior and was not tested live.
 

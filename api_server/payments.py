@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Optional, TypedDict
 
 from fastapi import Request, HTTPException
-from pydantic import BaseModel, FiniteFloat
+from pydantic import BaseModel, ConfigDict
 import stripe
 
 from api_server.shared import app, db, get_current_user, FLAGS
@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class BuyCreditsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     package_id: Optional[str] = None
-    custom_credits: Optional[FiniteFloat] = None
-    custom_usd: Optional[FiniteFloat] = None
     payment_method: Optional[str] = None
     card_number: Optional[str] = None
     card_exp: Optional[str] = None
@@ -64,13 +64,6 @@ def _usd_cents(amount: Decimal) -> int:
     return int(cents)
 
 
-def _custom_credits(amount: Decimal) -> float:
-    rate = Decimal(str(PricingController.from_env().credits_per_usd))
-    if not rate.is_finite() or rate <= 0:
-        raise ValueError("Invalid server credit exchange rate.")
-    return float(amount * rate)
-
-
 def _settled_checkout_credits(
     metadata: dict[str, str], amount_total: int, currency: str,
     payment_status: str, mode: str,
@@ -81,14 +74,13 @@ def _settled_checkout_credits(
     amount = Decimal(metadata.get("usd_amount", "0"))
     if amount_total != _usd_cents(amount):
         raise ValueError("Settled payment amount does not match the purchase.")
-    package_id = metadata.get("package_id", "custom")
-    if package_id == "custom":
-        credits = _custom_credits(amount)
-    else:
-        package = CREDIT_PACKAGES[package_id]
-        if amount != Decimal(str(package["amount_usd"])):
-            raise ValueError("Payment does not match the server package price.")
-        credits = package["credits"]
+    package_id = metadata.get("package_id", "")
+    if package_id not in CREDIT_PACKAGES:
+        raise ValueError("Checkout must reference a supported credit package.")
+    package = CREDIT_PACKAGES[package_id]
+    if amount != Decimal(str(package["amount_usd"])):
+        raise ValueError("Payment does not match the server package price.")
+    credits = package["credits"]
     if Decimal(metadata.get("credits_to_add", "0")) != Decimal(str(credits)):
         raise ValueError("Credit quantity does not match server pricing.")
     user_id = int(metadata["user_id"])
@@ -112,27 +104,13 @@ def buy_credits(req: BuyCreditsRequest, request: Request) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to purchase credits.")
 
-    package_id = req.package_id
-    if package_id is None and req.custom_credits is None and req.custom_usd is None:
-        package_id = "starter"
-    if package_id in CREDIT_PACKAGES:
-        pkg = CREDIT_PACKAGES[package_id]
-        credits_to_add = pkg["credits"]
-        usd_amount = pkg["amount_usd"]
-        amount_cents = _usd_cents(Decimal(str(usd_amount)))
-    elif package_id in (None, "custom") and req.custom_usd is not None:
-        try:
-            amount = Decimal(str(req.custom_usd))
-            amount_cents = _usd_cents(amount)
-            credits_to_add = _custom_credits(amount)
-            if req.custom_credits is not None and Decimal(str(req.custom_credits)) != Decimal(str(credits_to_add)):
-                raise ValueError("Custom credits must match the server exchange rate.")
-            usd_amount = float(amount)
-            package_id = "custom"
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-    else:
-        raise HTTPException(status_code=400, detail="Invalid package or credit amount specified.")
+    package_id = "starter" if req.package_id is None else req.package_id
+    if package_id not in CREDIT_PACKAGES:
+        raise HTTPException(status_code=400, detail="Invalid credit package specified.")
+    pkg = CREDIT_PACKAGES[package_id]
+    credits_to_add = pkg["credits"]
+    usd_amount = pkg["amount_usd"]
+    amount_cents = _usd_cents(Decimal(str(usd_amount)))
 
     # Older clients submit card fields without naming a payment method.  Keep
     # those requests on the card-validation path; package-only requests use
@@ -193,18 +171,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request) -> dict:
     # Stripe Checkout Session (Redirect flow)
     if req.checkout_mode or payment_method in ("stripe_checkout", "stripe"):
         try:
-            line_item = (
-                {"price": pkg["price_id"], "quantity": 1}
-                if package_id in CREDIT_PACKAGES
-                else {
-                    "price_data": {
-                        "currency": "usd",
-                        "product_data": {"name": f"Narratron Credits - {credits_to_add:.0f} Cr"},
-                        "unit_amount": amount_cents,
-                    },
-                    "quantity": 1,
-                }
-            )
+            line_item = {"price": pkg["price_id"], "quantity": 1}
             session = stripe.checkout.Session.create(
                 line_items=[line_item],
                 mode="payment",

@@ -108,11 +108,12 @@ class TestPaymentsFlow(BaseTestCase):
                     "payment_status": "paid",
                     "mode": "payment",
                     "currency": "usd",
-                    "amount_total": 250,
+                    "amount_total": 500,
                     "metadata": {
                         "user_id": str(user["id"]),
-                        "credits_to_add": "50.0",
-                        "usd_amount": "2.50"
+                        "package_id": "starter",
+                        "credits_to_add": "100.0",
+                        "usd_amount": "5.00"
                     }
                 }
             }
@@ -123,7 +124,7 @@ class TestPaymentsFlow(BaseTestCase):
 
         duplicate = self.client.post("/api/payments/webhook", json=payload)
         self.assertEqual(duplicate.status_code, 200)
-        self.assertEqual(db.get_user_by_id(user["id"])["credits"], starting_credits + 50.0)
+        self.assertEqual(db.get_user_by_id(user["id"])["credits"], starting_credits + 100.0)
 
     def test_verify_session_credits_a_checkout_session_once(self):
         """A browser retry cannot credit an already-settled Checkout session."""
@@ -133,8 +134,8 @@ class TestPaymentsFlow(BaseTestCase):
         starting_credits = user["credits"]
         checkout_session = MagicMock(
             payment_status="paid",
-            mode="payment", currency="usd", amount_total=125,
-            metadata={"user_id": str(user["id"]), "credits_to_add": "25", "usd_amount": "1.25"},
+            mode="payment", currency="usd", amount_total=500,
+            metadata={"user_id": str(user["id"]), "package_id": "starter", "credits_to_add": "100", "usd_amount": "5"},
         )
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
              patch("api_server.payments.stripe.checkout.Session.retrieve", return_value=checkout_session):
@@ -143,25 +144,35 @@ class TestPaymentsFlow(BaseTestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(first.json()["credits_added"], 25.0)
+        self.assertEqual(first.json()["credits_added"], 100.0)
         self.assertEqual(second.json()["credits_added"], 0.0)
-        self.assertEqual(db.get_user_by_id(user["id"])["credits"], starting_credits + 25.0)
+        self.assertEqual(db.get_user_by_id(user["id"])["credits"], starting_credits + 100.0)
 
-    def test_custom_purchase_uses_server_rate_and_integer_cents(self) -> None:
+    def test_fixed_packages_and_default_use_configured_prices(self) -> None:
         FLAGS.allow_mock_payments = False
         FLAGS.testing_use_local = False
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example", "CREDITS_PER_USD": "20"}), \
-             patch("api_server.payments.stripe.checkout.Session.create", return_value=MagicMock(id="cs_custom", url="https://checkout.example/custom")) as create:
-            response = self.client.post("/api/payments/buy-credits", json={"custom_usd": 1.25})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(create.call_args.kwargs["line_items"][0]["price_data"]["unit_amount"], 125)
-        self.assertEqual(create.call_args.kwargs["metadata"]["credits_to_add"], "25.0")
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
+             patch("api_server.payments.stripe.checkout.Session.create", return_value=MagicMock(id="cs_fixed", url="https://checkout.example/fixed")) as create:
+            for package_id in (None, "starter", "pro", "ultra"):
+                with self.subTest(package_id=package_id):
+                    purchase = {} if package_id is None else {"package_id": package_id}
+                    response = self.client.post("/api/payments/buy-credits", json=purchase)
+                    self.assertEqual(response.status_code, 200)
+                    selected = package_id or "starter"
+                    package = payments.CREDIT_PACKAGES[selected]
+                    self.assertEqual(create.call_args.kwargs["line_items"], [{"price": package["price_id"], "quantity": 1}])
+                    self.assertEqual(create.call_args.kwargs["metadata"]["package_id"], selected)
+                    self.assertEqual(create.call_args.kwargs["metadata"]["credits_to_add"], str(package["credits"]))
 
-    def test_invalid_custom_purchases_never_reach_stripe(self) -> None:
+    def test_custom_purchases_never_reach_stripe(self) -> None:
         FLAGS.allow_mock_payments = False
         FLAGS.testing_use_local = False
         with patch("api_server.payments.stripe.checkout.Session.create") as create:
             for purchase in (
+                {"custom_credits": 100, "custom_usd": 5},
+                {"custom_usd": 5}, {"custom_credits": 100},
+                {"package_id": "custom"},
+                {"package_id": "starter", "custom_credits": 100, "custom_usd": 5},
                 {"custom_credits": 1000000, "custom_usd": 0.001},
                 {"custom_credits": 1000000, "custom_usd": 0.50},
                 {"custom_usd": 0.49}, {"custom_usd": 1.001},
@@ -181,13 +192,15 @@ class TestPaymentsFlow(BaseTestCase):
         user = self.client.get("/api/auth/me").json()["user"]
         for changes in (
             {"amount_total": 50}, {"currency": "eur"}, {"mode": "subscription"},
-            {"metadata": {"user_id": str(user["id"]), "credits_to_add": "1000000", "usd_amount": "1.25"}},
+            {"metadata": {"user_id": str(user["id"]), "package_id": "starter", "credits_to_add": "1000000", "usd_amount": "5"}},
             {"metadata": {"user_id": str(user["id"]), "package_id": "ultra", "credits_to_add": "1000", "usd_amount": "1.25"}},
+            {"metadata": {"user_id": str(user["id"]), "package_id": "custom", "credits_to_add": "100", "usd_amount": "5"}},
+            {"metadata": {"user_id": str(user["id"]), "credits_to_add": "100", "usd_amount": "5"}},
         ):
             session_data = {
                 "id": "cs_invalid", "payment_status": "paid", "mode": "payment",
-                "currency": "usd", "amount_total": 125,
-                "metadata": {"user_id": str(user["id"]), "credits_to_add": "25", "usd_amount": "1.25"},
+                "currency": "usd", "amount_total": 500,
+                "metadata": {"user_id": str(user["id"]), "package_id": "starter", "credits_to_add": "100", "usd_amount": "5"},
             }
             session_data.update(changes)
             with self.subTest(changes=changes), \
