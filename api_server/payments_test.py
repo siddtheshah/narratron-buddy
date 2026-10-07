@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
+from absl.testing import flagsaver
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
@@ -16,10 +17,9 @@ import object_registry
 
 
 class TestPaymentsFlow(BaseTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
-        FLAGS.allow_mock_payments = True
-        FLAGS.testing_use_local = True
+        self.enterContext(flagsaver.flagsaver(allow_mock_payments=True, testing_use_local=True))
         self.test_dir = tempfile.mkdtemp()
         theater_manager.base_dir = Path(self.test_dir).resolve()
         theater_manager.base_dir.mkdir(parents=True, exist_ok=True)
@@ -40,10 +40,9 @@ class TestPaymentsFlow(BaseTestCase):
         })
         self.assertEqual(reg_res.status_code, 200)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         super().tearDown()
-        if hasattr(self, "test_dir") and os.path.exists(self.test_dir):
-            shutil.rmtree(self.test_dir, ignore_errors=True)
+        shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_mock_mode_detection(self):
         """Verify _is_mock_payment_mode returns True under testing flag or mock payment method."""
@@ -106,6 +105,10 @@ class TestPaymentsFlow(BaseTestCase):
             "data": {
                 "object": {
                     "id": "cs_webhook_test_123",
+                    "payment_status": "paid",
+                    "mode": "payment",
+                    "currency": "usd",
+                    "amount_total": 250,
                     "metadata": {
                         "user_id": str(user["id"]),
                         "credits_to_add": "50.0",
@@ -130,6 +133,7 @@ class TestPaymentsFlow(BaseTestCase):
         starting_credits = user["credits"]
         checkout_session = MagicMock(
             payment_status="paid",
+            mode="payment", currency="usd", amount_total=125,
             metadata={"user_id": str(user["id"]), "credits_to_add": "25", "usd_amount": "1.25"},
         )
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
@@ -142,6 +146,92 @@ class TestPaymentsFlow(BaseTestCase):
         self.assertEqual(first.json()["credits_added"], 25.0)
         self.assertEqual(second.json()["credits_added"], 0.0)
         self.assertEqual(db.get_user_by_id(user["id"])["credits"], starting_credits + 25.0)
+
+    def test_custom_purchase_uses_server_rate_and_integer_cents(self) -> None:
+        FLAGS.allow_mock_payments = False
+        FLAGS.testing_use_local = False
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example", "CREDITS_PER_USD": "20"}), \
+             patch("api_server.payments.stripe.checkout.Session.create", return_value=MagicMock(id="cs_custom", url="https://checkout.example/custom")) as create:
+            response = self.client.post("/api/payments/buy-credits", json={"custom_usd": 1.25})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(create.call_args.kwargs["line_items"][0]["price_data"]["unit_amount"], 125)
+        self.assertEqual(create.call_args.kwargs["metadata"]["credits_to_add"], "25.0")
+
+    def test_invalid_custom_purchases_never_reach_stripe(self) -> None:
+        FLAGS.allow_mock_payments = False
+        FLAGS.testing_use_local = False
+        with patch("api_server.payments.stripe.checkout.Session.create") as create:
+            for purchase in (
+                {"custom_credits": 1000000, "custom_usd": 0.001},
+                {"custom_credits": 1000000, "custom_usd": 0.50},
+                {"custom_usd": 0.49}, {"custom_usd": 1.001},
+                {"custom_usd": -5}, {"custom_usd": 1000000},
+                {"custom_usd": "Infinity"}, {"custom_usd": "NaN"},
+                {"custom_credits": "NaN", "custom_usd": 1},
+                {"package_id": "unknown", "custom_usd": 5},
+            ):
+                with self.subTest(purchase=purchase):
+                    response = self.client.post("/api/payments/buy-credits", json=purchase)
+                    self.assertIn(response.status_code, (400, 422))
+            create.assert_not_called()
+
+    def test_settlement_rejects_underpayment_tampered_credits_and_wrong_currency(self) -> None:
+        FLAGS.allow_mock_payments = False
+        FLAGS.testing_use_local = False
+        user = self.client.get("/api/auth/me").json()["user"]
+        for changes in (
+            {"amount_total": 50}, {"currency": "eur"}, {"mode": "subscription"},
+            {"metadata": {"user_id": str(user["id"]), "credits_to_add": "1000000", "usd_amount": "1.25"}},
+            {"metadata": {"user_id": str(user["id"]), "package_id": "ultra", "credits_to_add": "1000", "usd_amount": "1.25"}},
+        ):
+            session_data = {
+                "id": "cs_invalid", "payment_status": "paid", "mode": "payment",
+                "currency": "usd", "amount_total": 125,
+                "metadata": {"user_id": str(user["id"]), "credits_to_add": "25", "usd_amount": "1.25"},
+            }
+            session_data.update(changes)
+            with self.subTest(changes=changes), \
+                 patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
+                 patch("api_server.payments.stripe.checkout.Session.retrieve", return_value=MagicMock(**session_data)), \
+                 patch("api_server.payments.stripe.Webhook.construct_event", return_value={"type": "checkout.session.completed", "data": {"object": session_data}}), \
+                 patch("api_server.payments.db.add_stripe_session_credits") as add:
+                response = self.client.get("/api/payments/verify-session?session_id=cs_invalid")
+                self.assertEqual(response.status_code, 400)
+                with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_example"}):
+                    webhook = self.client.post("/api/payments/webhook", content=b"event", headers={"stripe-signature": "signature"})
+                self.assertEqual(webhook.status_code, 400)
+                add.assert_not_called()
+
+    def test_unpaid_webhook_is_ignored_and_delayed_payment_can_settle(self) -> None:
+        user = self.client.get("/api/auth/me").json()["user"]
+        session_data = {
+            "id": "cs_delayed", "payment_status": "unpaid", "mode": "payment",
+            "currency": "usd", "amount_total": 500,
+            "metadata": {"user_id": str(user["id"]), "package_id": "starter", "credits_to_add": "100", "usd_amount": "5"},
+        }
+        payload = {"type": "checkout.session.completed", "data": {"object": session_data}}
+        with patch("api_server.payments.db.add_stripe_session_credits") as add:
+            response = self.client.post("/api/payments/webhook", json=payload)
+            self.assertEqual(response.status_code, 200)
+            add.assert_not_called()
+            session_data["payment_status"] = "paid"
+            payload["type"] = "checkout.session.async_payment_succeeded"
+            response = self.client.post("/api/payments/webhook", json=payload)
+            self.assertEqual(response.status_code, 200)
+            add.assert_called_once_with(user["id"], 100.0, 5.0, "cs_delayed", "stripe_webhook")
+
+    def test_direct_payment_checks_actual_received_amount(self) -> None:
+        FLAGS.allow_mock_payments = False
+        FLAGS.testing_use_local = False
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
+             patch("api_server.payments.stripe.PaymentMethod.create", return_value=MagicMock(id="pm_example")), \
+             patch("api_server.payments.stripe.PaymentIntent.create", return_value=MagicMock(status="succeeded", currency="usd", amount_received=1)), \
+             patch("api_server.payments.db.add_user_credits") as add:
+            response = self.client.post("/api/payments/buy-credits", json={
+                "package_id": "starter", "payment_method": "card", "card_number": "4242424242424242",
+            })
+            self.assertEqual(response.status_code, 400)
+            add.assert_not_called()
 
     def test_webhook_requires_signature_outside_test_mode(self):
         FLAGS.allow_mock_payments = False

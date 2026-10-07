@@ -3,10 +3,11 @@
 import json
 import logging
 import os
-from typing import Optional
+from decimal import Decimal
+from typing import Optional, TypedDict
 
 from fastapi import Request, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, FiniteFloat
 import stripe
 
 from api_server.shared import app, db, get_current_user, FLAGS
@@ -19,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 class BuyCreditsRequest(BaseModel):
     package_id: Optional[str] = None
-    custom_credits: Optional[float] = None
-    custom_usd: Optional[float] = None
+    custom_credits: Optional[FiniteFloat] = None
+    custom_usd: Optional[FiniteFloat] = None
     payment_method: Optional[str] = None
     card_number: Optional[str] = None
     card_exp: Optional[str] = None
@@ -33,7 +34,14 @@ class BuyCreditsRequest(BaseModel):
 # Payments & Credit Top-Up API Endpoints
 # ========================================
 
-CREDIT_PACKAGES = {
+class CreditPackage(TypedDict):
+    credits: float
+    amount_usd: float
+    name: str
+    price_id: str
+
+
+CREDIT_PACKAGES: dict[str, CreditPackage] = {
     "starter": {
         "credits": 100.0, "amount_usd": 5.00, "name": "Starter Pack",
         "price_id": "price_1TzbWlRjBSgVFVM6b6ByPtVn",
@@ -48,32 +56,81 @@ CREDIT_PACKAGES = {
     },
 }
 
+
+def _usd_cents(amount: Decimal) -> int:
+    cents = amount * 100
+    if not cents.is_finite() or cents != cents.to_integral_value() or not 50 <= cents <= 99999999:
+        raise ValueError("Payment must be USD 0.50 to 999,999.99 in whole cents.")
+    return int(cents)
+
+
+def _custom_credits(amount: Decimal) -> float:
+    rate = Decimal(str(PricingController.from_env().credits_per_usd))
+    if not rate.is_finite() or rate <= 0:
+        raise ValueError("Invalid server credit exchange rate.")
+    return float(amount * rate)
+
+
+def _settled_checkout_credits(
+    metadata: dict[str, str], amount_total: int, currency: str,
+    payment_status: str, mode: str,
+) -> tuple[int, float, float]:
+    """Recompute the entitlement and check the actual paid currency and amount."""
+    if payment_status != "paid" or mode != "payment" or currency != "usd":
+        raise ValueError("Checkout must be a paid USD payment.")
+    amount = Decimal(metadata.get("usd_amount", "0"))
+    if amount_total != _usd_cents(amount):
+        raise ValueError("Settled payment amount does not match the purchase.")
+    package_id = metadata.get("package_id", "custom")
+    if package_id == "custom":
+        credits = _custom_credits(amount)
+    else:
+        package = CREDIT_PACKAGES[package_id]
+        if amount != Decimal(str(package["amount_usd"])):
+            raise ValueError("Payment does not match the server package price.")
+        credits = package["credits"]
+    if Decimal(metadata.get("credits_to_add", "0")) != Decimal(str(credits)):
+        raise ValueError("Credit quantity does not match server pricing.")
+    user_id = int(metadata["user_id"])
+    if user_id <= 0:
+        raise ValueError("Invalid purchase owner.")
+    return user_id, credits, float(amount)
+
+
 def _is_mock_payment_mode(payment_method: Optional[str] = None) -> bool:
     """Allow simulated payment only when an explicit test flag enables it."""
-    if getattr(FLAGS, "allow_mock_payments", False):
+    if FLAGS.allow_mock_payments:
         return True
-    if getattr(FLAGS, "testing_use_local", False):
+    if FLAGS.testing_use_local:
         return True
     return False
 
 
 @app.post("/api/payments/buy-credits")
-def buy_credits(req: BuyCreditsRequest, request: Request):
+def buy_credits(req: BuyCreditsRequest, request: Request) -> dict:
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to purchase credits.")
 
-    if req.package_id and req.package_id in CREDIT_PACKAGES:
-        pkg = CREDIT_PACKAGES[req.package_id]
+    package_id = req.package_id
+    if package_id is None and req.custom_credits is None and req.custom_usd is None:
+        package_id = "starter"
+    if package_id in CREDIT_PACKAGES:
+        pkg = CREDIT_PACKAGES[package_id]
         credits_to_add = pkg["credits"]
         usd_amount = pkg["amount_usd"]
-    elif req.custom_credits and req.custom_credits > 0 and req.custom_usd and req.custom_usd > 0:
-        credits_to_add = req.custom_credits
-        usd_amount = req.custom_usd
-    elif req.package_id is None and req.custom_credits is None:
-        pkg = CREDIT_PACKAGES["starter"]
-        credits_to_add = pkg["credits"]
-        usd_amount = pkg["amount_usd"]
+        amount_cents = _usd_cents(Decimal(str(usd_amount)))
+    elif package_id in (None, "custom") and req.custom_usd is not None:
+        try:
+            amount = Decimal(str(req.custom_usd))
+            amount_cents = _usd_cents(amount)
+            credits_to_add = _custom_credits(amount)
+            if req.custom_credits is not None and Decimal(str(req.custom_credits)) != Decimal(str(credits_to_add)):
+                raise ValueError("Custom credits must match the server exchange rate.")
+            usd_amount = float(amount)
+            package_id = "custom"
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
     else:
         raise HTTPException(status_code=400, detail="Invalid package or credit amount specified.")
 
@@ -138,12 +195,12 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
         try:
             line_item = (
                 {"price": pkg["price_id"], "quantity": 1}
-                if req.package_id in CREDIT_PACKAGES
+                if package_id in CREDIT_PACKAGES
                 else {
                     "price_data": {
                         "currency": "usd",
                         "product_data": {"name": f"Narratron Credits - {credits_to_add:.0f} Cr"},
-                        "unit_amount": int(round(usd_amount * 100)),
+                        "unit_amount": amount_cents,
                     },
                     "quantity": 1,
                 }
@@ -155,7 +212,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
                     "user_id": str(user["id"]),
                     "credits_to_add": str(credits_to_add),
                     "usd_amount": str(usd_amount),
-                    "package_id": req.package_id or "custom",
+                    "package_id": package_id,
                 },
                 success_url=f"{base_url}/deploy?payment=success&session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{base_url}/deploy?payment=cancelled",
@@ -193,14 +250,14 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
             billing_details={"name": req.card_name or user.get("username", "Customer")},
         )
         intent = stripe.PaymentIntent.create(
-            amount=int(round(usd_amount * 100)),
+            amount=amount_cents,
             currency="usd",
             payment_method=pm.id,
             confirm=True,
             automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
             metadata={"user_id": str(user["id"]), "credits_to_add": str(credits_to_add)},
         )
-        if intent.status == "succeeded":
+        if intent.status == "succeeded" and intent.currency == "usd" and intent.amount_received == amount_cents:
             result = db.add_user_credits(user["id"], credits_to_add, usd_amount, "stripe_live")
             auth_session_cache.invalidate_user(user["id"])
             return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
@@ -212,7 +269,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request):
 
 
 @app.get("/api/payments/verify-session")
-def verify_stripe_session(session_id: str, request: Request):
+def verify_stripe_session(session_id: str, request: Request) -> dict:
     """Verify completed Stripe Checkout session and credit user account."""
     user = get_current_user(request)
     if not user:
@@ -232,10 +289,10 @@ def verify_stripe_session(session_id: str, request: Request):
     try:
         session = stripe.checkout.Session.retrieve(session_id)
         if session.payment_status == "paid":
-            meta = session.metadata or {}
-            meta_user_id = int(meta.get("user_id", 0))
-            credits_to_add = float(meta.get("credits_to_add", 0.0))
-            usd_amount = float(meta.get("usd_amount", 0.0))
+            meta_user_id, credits_to_add, usd_amount = _settled_checkout_credits(
+                session.metadata or {}, session.amount_total, session.currency,
+                session.payment_status, session.mode,
+            )
 
             if meta_user_id == user["id"] and credits_to_add > 0:
                 result = db.add_stripe_session_credits(
@@ -243,14 +300,16 @@ def verify_stripe_session(session_id: str, request: Request):
                 )
                 auth_session_cache.invalidate_user(user["id"])
                 return {"status": "ok", "verified": True, "credits_added": credits_to_add, **result}
-            return {"status": "ok", "verified": True, "user": user}
+            raise HTTPException(status_code=403, detail="Checkout belongs to another user.")
         return {"status": "pending", "verified": False, "detail": "Payment not completed."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to verify Stripe session: {e}")
 
 
 @app.post("/api/payments/webhook")
-async def stripe_webhook(request: Request):
+async def stripe_webhook(request: Request) -> dict:
     """Stripe Webhook listener for asynchronous payment settlement."""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
@@ -270,30 +329,34 @@ async def stripe_webhook(request: Request):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Webhook signature error: {e}")
 
-    event_type = event.get("type") if isinstance(event, dict) else getattr(event, "type", None)
-    data_obj = event.get("data", {}).get("object", {}) if isinstance(event, dict) else getattr(getattr(event, "data", None), "object", {})
-
-    if event_type == "checkout.session.completed":
-        metadata = data_obj.get("metadata", {})
-        user_id = metadata.get("user_id")
-        credits_to_add = metadata.get("credits_to_add")
-        usd_amount = metadata.get("usd_amount")
-
-        session_id = data_obj.get("id")
-        if user_id and credits_to_add and session_id:
+    if event["type"] in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        data_obj = event["data"]["object"]
+        # A completed session can still be awaiting a delayed payment method.
+        if data_obj.get("payment_status") != "paid":
+            return {"status": "ok"}
+        try:
+            user_id, credits_to_add, usd_amount = _settled_checkout_credits(
+                data_obj.get("metadata", {}), data_obj.get("amount_total", 0),
+                data_obj.get("currency", ""), data_obj["payment_status"], data_obj.get("mode", ""),
+            )
+            session_id = data_obj["id"]
+            if not session_id:
+                raise ValueError("Missing checkout session ID.")
             db.add_stripe_session_credits(
-                int(user_id),
-                float(credits_to_add),
-                float(usd_amount or 0.0),
+                user_id,
+                credits_to_add,
+                usd_amount,
                 session_id,
                 "stripe_webhook",
             )
-            auth_session_cache.invalidate_user(int(user_id))
+            auth_session_cache.invalidate_user(user_id)
+        except (ValueError, KeyError, TypeError, ArithmeticError) as error:
+            raise HTTPException(status_code=400, detail="Invalid settled checkout purchase.") from error
 
     return {"status": "ok"}
 
 @app.get("/api/payments/history")
-def get_payment_history(request: Request):
+def get_payment_history(request: Request) -> dict:
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to view payment history.")
@@ -314,7 +377,7 @@ def get_pricing_rates(
     gb_amount: Optional[float] = None,
     days: Optional[float] = 1.0,
     usd_amount: Optional[float] = None,
-):
+) -> dict:
     """Retrieve current pricing rates and optionally calculate costs dynamically from PricingController."""
     if voice_minutes is not None and voice_minutes < 0:
         raise HTTPException(status_code=400, detail="voice_minutes must be non-negative.")
