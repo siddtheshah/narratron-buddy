@@ -3279,7 +3279,7 @@
 
     <script type="module">
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
-        import { initializeActionWheel } from "/static/js/action-wheel.js?v=freeform-20261005-1";
+        import { initializeActionWheel } from "/static/js/action-wheel.js?v=secondary-20261007-2";
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
 
@@ -3851,6 +3851,7 @@
         const actionWheel = initializeActionWheel({
             isOrator: isCurrentOrator,
             canvasTarget: document.getElementById('image-container'),
+            onOpen: () => { isDrawing = false; flushDrawBatch(); },
             onRebindStart: () => {
                 isRebindingHotkey = false;
                 isRebindingTextHotkey = false;
@@ -9247,21 +9248,28 @@
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 12px;">
-                <button id="menu-item-hotkey" class="pullout-menu-item"
-                    title="Click to rebind Orator mic toggle hotkey">
-                    <span class="pullout-item-icon">⌨️</span>
-                    <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
-                </button>
-
-                <button id="action-wheel-rebind" type="button" class="pullout-menu-item"
-                    title="Click, then press any mouse button or key combination to rebind the action wheel">
-                    <span class="pullout-item-icon">🖱</span>
-                    <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
-                </button>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+                    <button id="action-wheel-rebind" type="button" class="pullout-menu-item"
+                        style="min-width: 0;"
+                        title="Click, then press any mouse button or key combination to rebind the action wheel">
+                        <span class="pullout-item-icon">🖱</span>
+                        <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
+                    </button>
+                    <button id="action-wheel-2-rebind" type="button" class="pullout-menu-item" style="min-width: 0;"
+                        title="Click, then press a mouse button, Left + Right mouse, or key combination to rebind Action Wheel 2">
+                        <span class="pullout-item-icon">🖱</span>
+                        <span id="action-wheel-2-binding-label">Action Wheel 2: Left + Right mouse</span>
+                    </button>
+                </div>
                 <button id="menu-item-text-hotkey" class="pullout-menu-item"
                     title="Click to rebind Orator text input hotkey">
                     <span class="pullout-item-icon">💬</span>
                     <span id="menu-text-hotkey-display">Text Input Hotkey: Shift + Space</span>
+                </button>
+                <button id="menu-item-hotkey" class="pullout-menu-item"
+                    title="Click to rebind Orator mic toggle hotkey">
+                    <span class="pullout-item-icon">⌨️</span>
+                    <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
                 </button>
 
                 <div class="pullout-menu-item"
@@ -9495,7 +9503,7 @@
             z-index: 5;
         }
 
-        #action-wheel-rebind.rebinding {
+        #action-wheel-rebind.rebinding, #action-wheel-2-rebind.rebinding {
             background: rgba(234, 179, 8, .25);
             color: #fef08a;
         }
@@ -9561,13 +9569,24 @@
             user-select: none;
         }
     </style>
+    <style>
+        #orator-action-wheel [data-secondary] { display: none; }
+        #orator-action-wheel[data-mode="secondary"] [data-primary] { display: none; }
+        #orator-action-wheel[data-mode="secondary"] [data-secondary] { display: block; }
+        #orator-action-wheel[data-mode="secondary"] {
+            background: linear-gradient(to bottom,
+                var(--sec-up) 0% 49.7%, var(--wheel-divider) 49.7% 50.3%, var(--sec-down) 50.3% 100%);
+        }
+    </style>
     <div id="orator-action-wheel" role="group" aria-label="Orator action wheel" hidden>
-        <span class="wheel-action" data-direction="up">📌<br>Pin image</span>
-        <span class="wheel-action" data-direction="upright">🖼<br>New image</span>
-        <span class="wheel-action" data-direction="downright">♫<br>New music</span>
-        <span class="wheel-action" data-direction="down">📌<br>Pin music</span>
-        <span class="wheel-action" data-direction="downleft">⏮♫<br>Prev music</span>
-        <span class="wheel-action" data-direction="upleft">⏮🖼<br>Prev image</span>
+        <span class="wheel-action" data-primary data-direction="up">📌<br>Pin image</span>
+        <span class="wheel-action" data-primary data-direction="upright">🖼<br>New image</span>
+        <span class="wheel-action" data-primary data-direction="downright">♫<br>New music</span>
+        <span class="wheel-action" data-primary data-direction="down">📌<br>Pin music</span>
+        <span class="wheel-action" data-primary data-direction="downleft">⏮♫<br>Prev music</span>
+        <span class="wheel-action" data-primary data-direction="upleft">⏮🖼<br>Prev image</span>
+        <span class="wheel-action" data-secondary data-direction="up">📖<br>Update Story</span>
+        <span class="wheel-action" data-secondary data-direction="down">🎛<br>Update UI</span>
         <span class="wheel-center">Release<br>to cancel</span>
     </div>
     <div id="action-wheel-status" role="status" aria-live="polite" hidden

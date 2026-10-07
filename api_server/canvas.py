@@ -60,6 +60,7 @@ class OratorAction(BaseModel):
         "new_music", "new_image",
         "previous_music", "previous_image", "next_image",
         "toggle_music_pin", "toggle_canvas_pin",
+        "update_story", "update_ui",
     ]
 
 
@@ -592,14 +593,42 @@ def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request)
 def post_orator_action(
     theater_id: str, payload: OratorAction, request: Request
 ) -> OratorActionResponse:
-    """Apply an authorized action wheel selection and relay media intent to Narratron."""
+    """Apply an authorized action wheel selection and relay intent to Narratron."""
     _require_canvas_access(request, theater_id)
     deployment = db.get_deployment(theater_id)
     if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
         raise HTTPException(status_code=403, detail="Only the active orator can use the action wheel.")
     state = _state(theater_id)
     session = live_agent_manager.get_session(theater_id)
-    if payload.action in ("new_image", "new_music"):
+    if payload.action in ("update_story", "update_ui"):
+        if not session or not session.is_alive:
+            raise HTTPException(status_code=409, detail="Connect Narratron before requesting an update.")
+        if payload.action == "update_story":
+            adventure_mode = session.config.get("story_planning", {}).get("adventure_mode", False)
+            instruction = (
+                "Treat the audience intent and canvas annotations as an out-of-character story nudge "
+                "in Adventure Mode. Carry this nudge into the next genuine player action through the "
+                "process_user_action nudge parameter, and use it for upcoming visuals. Preserve player "
+                "agency and established continuity; do not invent a player action to advance the story."
+                if adventure_mode
+                else "Update the notepad and character manager from the audience intent and canvas "
+                "annotations using update_sticky_note and create_or_update_character as appropriate. "
+                "Register relevant scene and character changes for the ongoing story."
+            )
+        else:
+            instruction = (
+                "Update the interactive canvas UI for the current story and audience intent using the "
+                "available interactive canvas tools. Refresh relevant controls and information."
+            )
+        if state.ui.viewer_collab_enabled:
+            if not session.send_agent_requested_observability(force=True):
+                raise HTTPException(status_code=409, detail="Narratron could not receive the canvas capture.")
+            instruction += " Use the accompanying canvas capture, including audience drawings, stamps, and text annotations."
+        if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
+            f"[Orator Action] {instruction} This is an explicit orator request."
+        ))])):
+            raise HTTPException(status_code=409, detail="Narratron could not receive the action.")
+    elif payload.action in ("new_image", "new_music"):
         is_image = payload.action == "new_image"
         if not session or not session.is_alive:
             raise HTTPException(status_code=409, detail="Connect Narratron before requesting new media.")

@@ -18,6 +18,7 @@ def action_services() -> Iterator[tuple[MagicMock, MagicMock]]:
     state.audio.orator_cursor = 0
     state.ui.viewer_collab_enabled = False
     session = MagicMock(is_alive=True)
+    session.config = {}
     session.observability_tools = None
     session.send_user_content.return_value = True
     session.send_notification.return_value = True
@@ -104,6 +105,60 @@ def test_rejected_generation_cancels_bypass(action_services: tuple[MagicMock, Ma
 def test_invalid_action_action_is_rejected() -> None:
     with pytest.raises(ValidationError):
         canvas.OratorAction(action="diagonal")
+
+
+@pytest.mark.parametrize("action,intent", [("update_story", "notepad and character manager"), ("update_ui", "interactive canvas UI")])
+@pytest.mark.parametrize("collaboration", [True, False])
+def test_secondary_action_sends_intent_and_collaboration_capture(
+    action_services: tuple[MagicMock, MagicMock], action: str, intent: str, collaboration: bool
+) -> None:
+    state, session = action_services
+    state.ui.viewer_collab_enabled = collaboration
+    session.send_agent_requested_observability.return_value = True
+    result = canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
+    assert result["status"] == "accepted"
+    if collaboration:
+        session.send_agent_requested_observability.assert_called_once_with(force=True)
+        assert session.method_calls[0][0] == "send_agent_requested_observability"
+    else:
+        session.send_agent_requested_observability.assert_not_called()
+    session.send_notification.assert_called_once()
+    assert intent in session.send_notification.call_args[0][0].parts[0].text
+    state.visual.set_pinned.assert_not_called()
+    state.audio.set_pinned.assert_not_called()
+    session.image_tools.request_orator_bypass.assert_not_called()
+    session.music_tools.request_orator_bypass.assert_not_called()
+
+
+def test_adventure_story_update_is_a_nudge_for_next_action_and_visuals(
+    action_services: tuple[MagicMock, MagicMock]
+) -> None:
+    _, session = action_services
+    session.config = {"story_planning": {"adventure_mode": True}}
+    canvas.post_orator_action("stage", canvas.OratorAction(action="update_story"), Request({"type": "http"}))
+    instruction = session.send_notification.call_args[0][0].parts[0].text
+    assert "process_user_action nudge parameter" in instruction
+    assert "upcoming visuals" in instruction
+    assert "do not invent a player action" in instruction
+    assert "update_sticky_note" not in instruction
+
+
+@pytest.mark.parametrize("action", ["update_story", "update_ui"])
+@pytest.mark.parametrize("failure", ["disconnected", "capture", "notification"])
+def test_secondary_action_reports_delivery_failure(
+    action_services: tuple[MagicMock, MagicMock], action: str, failure: str
+) -> None:
+    state, session = action_services
+    state.ui.viewer_collab_enabled = True
+    session.is_alive = failure != "disconnected"
+    session.send_agent_requested_observability.return_value = failure != "capture"
+    session.send_notification.return_value = failure != "notification"
+    with pytest.raises(HTTPException) as error:
+        canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
+    assert error.value.status_code == 409
+    state.persist.assert_not_called()
+    if failure != "notification":
+        session.send_notification.assert_not_called()
 
 
 def test_previous_image_action_success_and_failure(action_services: tuple[MagicMock, MagicMock]) -> None:

@@ -21,6 +21,7 @@ def wheel_page() -> Iterator[Page]:
 
         def serve(route: Route) -> None:
             route.fulfill(body=markup + '''<button id="action-wheel-rebind"><span id="action-wheel-binding-label"></span></button>
+                <button id="action-wheel-2-rebind"><span id="action-wheel-2-binding-label"></span></button>
                 <div id="action-wheel-status" hidden></div><input id="text">'''
                 + '<script>' + script + '</script>', content_type="text/html")
 
@@ -51,6 +52,133 @@ def test_freeform_native_mouse_rebinding(wheel_page: Page, button: str, name: st
     assert page.evaluate("window.sent") == ["previous_image"]
     page.reload()
     assert name in page.locator("#action-wheel-binding-label").inner_text()
+
+
+@pytest.mark.parametrize("first,second", [("left", "right"), ("right", "left")])
+@pytest.mark.parametrize("dy,action", [(-80, "update_story"), (80, "update_ui")])
+@pytest.mark.parametrize("release_first", [True, False])
+def test_secondary_wheel_mouse_chord(
+    wheel_page: Page, first: str, second: str, dy: int, action: str, release_first: bool
+) -> None:
+    page = wheel_page
+    page.mouse.move(400, 300)
+    page.mouse.down(button=first)
+    page.mouse.down(button=second)
+    wheel = page.locator("#orator-action-wheel")
+    assert wheel.get_attribute("data-mode") == "secondary"
+    assert page.locator('[data-secondary][data-direction="up"]').is_visible()
+    assert page.locator('[data-primary][data-direction="up"]').is_hidden()
+    page.mouse.move(400, 300 + dy)
+    page.mouse.up(button=first if release_first else second)
+    page.mouse.up(button=second if release_first else first)
+    page.wait_for_function("window.sent.length === 1")
+    assert page.evaluate("window.sent") == [action]
+    assert wheel.is_hidden()
+
+
+def test_secondary_wheel_cancels_without_firing_primary(wheel_page: Page) -> None:
+    page = wheel_page
+    page.mouse.move(400, 300)
+    page.mouse.down(button="right")
+    page.mouse.move(460, 260)
+    page.mouse.down(button="left")
+    page.mouse.up(button="left")
+    page.mouse.up(button="right")
+    assert page.evaluate("window.sent") == []
+    page.mouse.move(400, 300)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    page.mouse.move(400, 220)
+    page.keyboard.press("Escape")
+    page.mouse.up(button="right")
+    page.mouse.up(button="left")
+    assert page.evaluate("window.sent") == []
+
+
+def test_secondary_wheel_requires_orator(wheel_page: Page) -> None:
+    page = wheel_page
+    page.evaluate("window.isOrator = false")
+    page.mouse.move(400, 300)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    assert page.locator("#orator-action-wheel").is_hidden()
+    page.mouse.move(400, 220)
+    page.mouse.up(button="right")
+    page.mouse.up(button="left")
+    assert page.evaluate("window.sent") == []
+
+
+def test_secondary_wheel_rebinds_mouse_and_persists(wheel_page: Page) -> None:
+    page = wheel_page
+    page.click("#action-wheel-2-rebind")
+    page.mouse.click(400, 300, button="middle")
+    assert "Middle mouse" in page.locator("#action-wheel-2-binding-label").inner_text()
+    assert "Right mouse" in page.locator("#action-wheel-binding-label").inner_text()
+    page.reload()
+    assert "Middle mouse" in page.locator("#action-wheel-2-binding-label").inner_text()
+    page.mouse.move(400, 300)
+    page.mouse.down(button="middle")
+    assert page.locator("#orator-action-wheel").get_attribute("data-mode") == "secondary"
+    page.mouse.move(400, 220)
+    page.mouse.up(button="middle")
+    assert page.evaluate("window.sent") == ["update_story"]
+
+
+def test_secondary_wheel_rebinds_keyboard_combo(wheel_page: Page) -> None:
+    page = wheel_page
+    page.click("#action-wheel-2-rebind")
+    page.keyboard.press("Control+Shift+U")
+    assert "Ctrl + Shift + U" in page.locator("#action-wheel-2-binding-label").inner_text()
+    page.mouse.move(400, 300)
+    page.keyboard.down("Control")
+    page.keyboard.down("Shift")
+    page.keyboard.down("U")
+    assert page.locator("#orator-action-wheel").get_attribute("data-mode") == "secondary"
+    page.mouse.move(400, 380)
+    page.keyboard.up("U")
+    page.keyboard.up("Shift")
+    page.keyboard.up("Control")
+    assert page.evaluate("window.sent") == ["update_ui"]
+    page.mouse.move(400, 300)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    assert page.locator("#orator-action-wheel").get_attribute("data-mode") == "primary"
+    page.mouse.up(button="right")
+    page.mouse.up(button="left")
+    assert page.evaluate("window.sent") == ["update_ui"]
+
+
+@pytest.mark.parametrize("first,second", [("left", "right"), ("right", "left")])
+def test_secondary_wheel_can_rebind_to_default_chord(wheel_page: Page, first: str, second: str) -> None:
+    page = wheel_page
+    page.click("#action-wheel-2-rebind")
+    page.mouse.move(400, 300)
+    page.mouse.down(button=first)
+    page.mouse.down(button=second)
+    page.mouse.up(button=first)
+    page.mouse.up(button=second)
+    assert "Left + Right mouse" in page.locator("#action-wheel-2-binding-label").inner_text()
+    assert page.evaluate("JSON.parse(localStorage.getItem('narratron_action_wheel_2_binding')).type") == "chord"
+    page.mouse.down(button=first)
+    page.mouse.down(button=second)
+    page.mouse.move(400, 220)
+    page.mouse.up(button=second)
+    page.mouse.up(button=first)
+    assert page.evaluate("window.sent") == ["update_story"]
+
+
+def test_secondary_rebinding_cancel_and_conflict(wheel_page: Page) -> None:
+    page = wheel_page
+    page.click("#action-wheel-2-rebind")
+    page.mouse.click(400, 300, button="right")
+    assert "Already used" in page.locator("#action-wheel-2-binding-label").inner_text()
+    page.keyboard.press("Escape")
+    assert "Left + Right mouse" in page.locator("#action-wheel-2-binding-label").inner_text()
+    page.click("#action-wheel-2-rebind")
+    page.mouse.click(400, 300, button="left")
+    assert "not left click" in page.locator("#action-wheel-2-binding-label").inner_text()
+    page.keyboard.press("Escape")
+    assert page.evaluate("localStorage.getItem('narratron_action_wheel_2_binding')") is None
 
 
 def test_left_click_cannot_be_bound(wheel_page: Page) -> None:
@@ -253,7 +381,7 @@ def test_action_wheel_in_browser() -> None:
             assert page.locator("#orator-action-wheel").is_visible()
             assert page.locator("#orator-action-wheel").evaluate("el => el.style.left") == "400px"
             page.mouse.move(400 + dx, 300 + dy)
-            assert page.locator(f'[data-direction="{direction}"]').evaluate("el => el.classList.contains('selected')")
+            assert page.locator(f'[data-primary][data-direction="{direction}"]').evaluate("el => el.classList.contains('selected')")
             page.mouse.up(button="right")
             assert page.locator("#orator-action-wheel").is_hidden()
             page.wait_for_function("expected => window.sent.at(-1) === expected", arg=action)
@@ -261,8 +389,8 @@ def test_action_wheel_in_browser() -> None:
             "toggle_canvas_pin", "new_image", "new_music", "toggle_music_pin", "previous_music", "previous_image"
         ]
         page.evaluate("window.wheelController.updateState(true, true)")
-        assert "Unpin image" in page.locator('[data-direction="up"]').inner_text()
-        assert "Unpin music" in page.locator('[data-direction="down"]').inner_text()
+        assert "Unpin image" in page.locator('[data-primary][data-direction="up"]').inner_text()
+        assert "Unpin music" in page.locator('[data-primary][data-direction="down"]').inner_text()
         page.mouse.move(400, 300)
         page.mouse.down(button="right")
         page.mouse.move(400, 220)
@@ -299,13 +427,13 @@ def test_action_wheel_in_browser() -> None:
         page.mouse.move(460, 260)
         page.mouse.up(button="middle")
         page.wait_for_function("window.sent.length === 7")
-        assert "Pin image" in page.locator('[data-direction="up"]').inner_text()
+        assert "Pin image" in page.locator('[data-primary][data-direction="up"]').inner_text()
         page.mouse.move(400, 300)
         page.mouse.down(button="middle")
         page.mouse.move(460, 340)
         page.mouse.up(button="middle")
         page.wait_for_function("window.sent.length === 8")
-        assert "Pin music" in page.locator('[data-direction="down"]').inner_text()
+        assert "Pin music" in page.locator('[data-primary][data-direction="down"]').inner_text()
         assert page.evaluate("window.sent") == [
             "toggle_canvas_pin", "new_image", "new_music", "toggle_music_pin", "previous_music", "previous_image", "new_image", "new_music"
         ]
