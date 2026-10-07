@@ -906,7 +906,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             item.className = "canvas-stamp-annotation";
             item.dataset.annotationId = action.id;
             item.tabIndex = 0;
-            item.title = "Drag to move; click to select and resize; press Delete to remove";
+            item.title = "Drag to move; click to select, resize and rotate; press Delete to remove";
 
             const img = document.createElement("img");
             img.src = action.url;
@@ -918,6 +918,61 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             resizeHandle.className = "stamp-resize-handle";
             resizeHandle.title = "Drag to resize stamp";
             item.appendChild(resizeHandle);
+
+            const rotateHandle = document.createElement("button");
+            rotateHandle.type = "button";
+            rotateHandle.className = "stamp-rotate-handle";
+            rotateHandle.title = "Drag to rotate stamp; use Left/Right arrows for 15° steps";
+            rotateHandle.setAttribute("aria-label", "Rotate stamp");
+            rotateHandle.textContent = "↻";
+            item.appendChild(rotateHandle);
+
+            let rotateDrag = null;
+            rotateHandle.addEventListener("pointerdown", event => {
+                event.stopPropagation();
+                if (event.button !== 0 || !canMoveStamp() || !item.classList.contains("movable")) return;
+                event.preventDefault();
+                const rect = stampLayer.getBoundingClientRect();
+                const centerX = rect.left + Number(item.annotation.x) * rect.width;
+                const centerY = rect.top + Number(item.annotation.y) * rect.height;
+                rotateDrag = {
+                    original: item.annotation, centerX, centerY,
+                    startAngle: Math.atan2(event.clientY - centerY, event.clientX - centerX),
+                };
+                rotateHandle.setPointerCapture(event.pointerId);
+            });
+            rotateHandle.addEventListener("pointermove", event => {
+                if (!rotateDrag || !canMoveStamp()) return;
+                const angle = Math.atan2(event.clientY - rotateDrag.centerY, event.clientX - rotateDrag.centerX);
+                const degrees = (Number(rotateDrag.original.rotation) || 0) + (angle - rotateDrag.startAngle) * 180 / Math.PI;
+                const rotation = ((Math.round(degrees) % 360) + 360) % 360;
+                onMoveStamp({ ...rotateDrag.original, rotation }, rotateDrag.original, false);
+            });
+            const finishRotation = event => {
+                if (!rotateDrag) return;
+                const finished = rotateDrag;
+                rotateDrag = null;
+                if (rotateHandle.hasPointerCapture(event.pointerId)) rotateHandle.releasePointerCapture(event.pointerId);
+                if (event.type === "pointerup" && canMoveStamp()) {
+                    if ((Number(item.annotation.rotation) || 0) !== (Number(finished.original.rotation) || 0)) {
+                        onMoveStamp(item.annotation, finished.original, true);
+                    }
+                } else {
+                    onMoveStamp(finished.original, finished.original, false);
+                }
+            };
+            rotateHandle.addEventListener("pointerup", finishRotation);
+            rotateHandle.addEventListener("pointercancel", finishRotation);
+            rotateHandle.addEventListener("lostpointercapture", finishRotation);
+            rotateHandle.addEventListener("keydown", event => {
+                if (!canMoveStamp() || !item.classList.contains("movable")) return;
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                event.stopPropagation();
+                const step = event.key === "ArrowRight" ? 15 : -15;
+                const rotation = ((Number(item.annotation.rotation) || 0) + step + 360) % 360;
+                onMoveStamp({ ...item.annotation, rotation }, item.annotation, true);
+            });
 
             let resizeDrag = null;
             resizeHandle.addEventListener("pointerdown", event => {
@@ -942,7 +997,11 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 if (!rect || !rect.width || !rect.height) return;
                 const centerX = rect.left + Number(resizeDrag.original.x) * rect.width;
                 const centerY = rect.top + Number(resizeDrag.original.y) * rect.height;
-                const dist = Math.max(Math.abs(event.clientX - centerX), Math.abs(event.clientY - centerY));
+                const angle = (Number(resizeDrag.original.rotation) || 0) * Math.PI / 180;
+                const dx = event.clientX - centerX;
+                const dy = event.clientY - centerY;
+                const dist = Math.max(Math.abs(dx * Math.cos(angle) + dy * Math.sin(angle)),
+                    Math.abs(-dx * Math.sin(angle) + dy * Math.cos(angle)));
                 const currentPixelSize = dist * 2;
                 const refWidth = 1000;
                 const normalizedSize = Math.round((currentPixelSize / rect.width) * refWidth);
@@ -1048,7 +1107,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         item.style.height = `${renderedSize}px`;
         item.style.left = `${Number(action.x) * 100}%`;
         item.style.top = `${Number(action.y) * 100}%`;
-        item.style.transform = "translate(-50%, -50%)";
+        item.style.transform = `translate(-50%, -50%) rotate(${Number(action.rotation) || 0}deg)`;
         const img = item.querySelector("img");
         if (img && img.getAttribute("src") !== action.url) {
             img.src = action.url;

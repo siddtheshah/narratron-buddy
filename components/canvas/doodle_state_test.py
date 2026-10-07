@@ -242,10 +242,11 @@ def test_stamp_move_and_remove() -> None:
     assert len(state.stamp_annotations()) == 1
 
     # Move existing stamp by ID
-    state.save_stamp({**stamp, "x": 0.45, "y": 0.65})
+    state.save_stamp({**stamp, "x": 0.45, "y": 0.65, "rotation": 90})
     assert len(state.stamp_annotations()) == 1
     assert state.stamp_annotations()[0]["x"] == 0.45
     assert state.stamp_annotations()[0]["y"] == 0.65
+    assert state.stamp_annotations()[0]["rotation"] == 90
 
     # Serialization and loading
     reloaded = DoodleState(lambda: None)
@@ -371,6 +372,26 @@ def test_snapshot_png_renders_stamp_imagery() -> None:
         # Top-left corner outside the stamp should still be the base black color
         corner_pixel = rendered.getpixel((5, 5))
         assert corner_pixel == (0, 0, 0)
+
+
+def test_snapshot_png_rotates_stamp_clockwise(tmp_path: Path) -> None:
+    base_path = tmp_path / "base.png"
+    stamp_path = tmp_path / "stamp.png"
+    Image.new("RGB", (1000, 1000), (0, 0, 0)).save(base_path)
+    stamp_image = Image.new("RGBA", (80, 40), (255, 0, 0, 255))
+    stamp_image.paste((0, 0, 255, 255), (40, 0, 80, 40))
+    stamp_image.save(stamp_path)
+    state = DoodleState(lambda: None)
+    state.save_stamp({
+        "type": "stamp", "id": "rotated", "stamp_id": 1, "user_id": 1,
+        "url": str(stamp_path), "x": 0.5, "y": 0.5, "size": 80, "rotation": 90,
+    })
+    snapshot = state.snapshot_png(str(base_path))
+    assert snapshot is not None
+    with Image.open(io.BytesIO(snapshot)) as rendered:
+        assert rendered.getpixel((500, 470))[:3] == (255, 0, 0)
+        assert rendered.getpixel((500, 530))[:3] == (0, 0, 255)
+        assert rendered.getpixel((470, 500))[:3] == (0, 0, 0)
 
 
 def test_snapshot_png_renders_theater_stamp() -> None:

@@ -267,7 +267,8 @@ async def test_stamp_message_rejects_non_contributor() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stamp_message_accepts_contributor() -> None:
+@pytest.mark.parametrize("rotation", [0, 90, -45, 450])
+async def test_stamp_message_accepts_contributor(rotation: float) -> None:
     sender = MagicMock()
     sender.state.theater_id = "stage"
     sender.send_json = AsyncMock()
@@ -280,6 +281,11 @@ async def test_stamp_message_accepts_contributor() -> None:
         "name": "Dragon", "url": "/api/stamps/5", "size": 80,
         "client_message_id": "stamp-2", "id": "stamp-uuid-2",
     }
+    if rotation:
+        message["rotation"] = rotation
+    other_client = MagicMock()
+    other_client.send_json = AsyncMock()
+    state.connections.active_ws_connections = [sender, other_client]
 
     with patch.object(canvas.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
@@ -294,8 +300,24 @@ async def test_stamp_message_accepts_contributor() -> None:
         "x": 0.4,
         "y": 0.6,
         "size": 80.0,
+        "rotation": rotation % 360,
     })
+    other_client.send_json.assert_awaited_once_with(state.doodles.save_stamp.call_args.args[0])
     sender.send_json.assert_awaited_once_with({"type": "doodle_ack", "client_message_id": "stamp-2"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rotation", ["invalid", "nan", "inf", "-inf", None])
+async def test_stamp_message_rejects_invalid_rotation(rotation: str | None) -> None:
+    sender = MagicMock()
+    sender.state.theater_id = None
+    sender.send_json = AsyncMock()
+    state = _text_annotation_state(sender, collab_enabled=False)
+    await canvas._apply_doodle_message(state, {
+        "type": "stamp", "id": "stamp-rotation", "stamp_id": 5,
+        "x": 0.5, "y": 0.5, "size": 80, "rotation": rotation,
+    }, sender)
+    state.doodles.save_stamp.assert_not_called()
 
 
 @pytest.mark.asyncio

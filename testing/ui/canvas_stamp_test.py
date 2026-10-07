@@ -684,6 +684,80 @@ def test_stamp_resizing_via_handle_and_wheel(stamp_page: Page) -> None:
     assert stamp.evaluate("el => el.style.height") == f"{new_size}px"
 
 
+def test_stamp_rotation_handle_commit_resize_and_replay(stamp_page: Page) -> None:
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.5, 0.5)')
+    stamp = stamp_page.locator(".canvas-stamp-annotation").first
+    handle = stamp.locator(".stamp-rotate-handle")
+    assert not handle.is_visible()
+    stamp.click()
+    box = handle.bounding_box()
+    stamp_box = stamp.bounding_box()
+    resize_box = stamp.locator(".stamp-resize-handle").bounding_box()
+    assert box is not None and stamp_box is not None and resize_box is not None
+    assert box["x"] < stamp_box["x"] and box["y"] < stamp_box["y"]
+    assert resize_box["x"] > stamp_box["x"] and resize_box["y"] > stamp_box["y"]
+    center_x = stamp_box["x"] + stamp_box["width"] / 2
+    center_y = stamp_box["y"] + stamp_box["height"] / 2
+    start_x = box["x"] + box["width"] / 2
+    start_y = box["y"] + box["height"] / 2
+    stamp_page.mouse.move(start_x, start_y)
+    stamp_page.mouse.down()
+    stamp_page.mouse.move(center_x - (start_y - center_y), center_y + (start_x - center_x), steps=10)
+    stamp_page.mouse.up()
+    assert stamp_page.evaluate("doodleActions[0].rotation") == 90
+    assert stamp_page.evaluate('sent.filter(m => m.type === "stamp").at(-1).rotation') == 90
+    assert stamp_page.evaluate("[doodleActions[0].x, doodleActions[0].y, doodleActions[0].size]") == [0.5, 0.5, 80]
+    assert stamp.evaluate("el => el.style.transform") == "translate(-50%, -50%) rotate(90deg)"
+    # Resize in the rotated stamp's local coordinates, retaining its angle.
+    box = stamp.locator(".stamp-resize-handle").bounding_box()
+    assert box is not None
+    stamp_page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    stamp_page.mouse.down()
+    stamp_page.mouse.move(center_x - 75, center_y + 75)
+    stamp_page.mouse.up()
+    assert stamp_page.evaluate("doodleActions[0].size") == 150
+    assert stamp_page.evaluate("doodleActions[0].rotation") == 90
+    stamp_page.evaluate("renderer.redraw([]); renderer.redraw(doodleActions)")
+    assert stamp.evaluate("el => el.style.transform") == "translate(-50%, -50%) rotate(90deg)"
+
+
+@pytest.mark.parametrize("finish", ["pointercancel", "lostpointercapture", "permission_revoked"])
+def test_stamp_rotation_cancel_restores_original(stamp_page: Page, finish: str) -> None:
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.5, 0.5)')
+    stamp = stamp_page.locator(".canvas-stamp-annotation").first
+    stamp.click()
+    handle = stamp.locator(".stamp-rotate-handle")
+    box = handle.bounding_box()
+    assert box is not None
+    stamp_page.evaluate("sent.length = 0")
+    stamp_page.mouse.move(box["x"] + 12, box["y"] + 12)
+    stamp_page.mouse.down()
+    stamp_page.mouse.move(550, 250)
+    assert 0 < stamp_page.evaluate("doodleActions[0].rotation") < 360
+    if finish == "permission_revoked":
+        stamp_page.evaluate("contributorPermission = false")
+        stamp_page.mouse.up()
+    else:
+        handle.dispatch_event(finish, {"pointerId": 1})
+        stamp_page.mouse.up()
+    assert stamp_page.evaluate("doodleActions[0].rotation || 0") == 0
+    assert stamp_page.evaluate('sent.filter(m => m.type === "stamp").length') == 0
+    stamp_page.evaluate("contributorPermission = false")
+    handle.press("ArrowRight")
+    assert stamp_page.evaluate("doodleActions[0].rotation || 0") == 0
+
+
+def test_stamp_rotation_keyboard_steps_wrap(stamp_page: Page) -> None:
+    stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.5, 0.5)')
+    stamp = stamp_page.locator(".canvas-stamp-annotation").first
+    stamp.click()
+    handle = stamp.locator(".stamp-rotate-handle")
+    handle.press("ArrowLeft")
+    assert stamp_page.evaluate("doodleActions[0].rotation") == 345
+    handle.press("ArrowRight")
+    assert stamp_page.evaluate("doodleActions[0].rotation") == 0
+
+
 def test_stamp_hover_cursor_styles(stamp_page: Page) -> None:
     # 1. Canvas stamp cursor: grab on hover, grabbing on active
     stamp_page.evaluate('placeStampOnCanvas({stamp_id: 10, name: "Dragon", url: "/api/stamps/10"}, 0.5, 0.5)')

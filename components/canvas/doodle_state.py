@@ -370,6 +370,9 @@ class DoodleState:
                         base_size = max(16.0, float(str(action.get("size") or 80.0)))
                         target_size = max(16, round(base_size * stamp_scale))
                         stamp_img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+                        rotation = float(str(action.get("rotation") or 0)) % 360
+                        if rotation:
+                            stamp_img = stamp_img.rotate(-rotation, resample=Image.Resampling.BICUBIC, expand=True)
                         stamp_w, stamp_h = stamp_img.size
 
                         center_x = float(str(action.get("x") or 0.5)) * width

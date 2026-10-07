@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 from uuid import uuid4
 from typing import Any, Optional, Literal
 
@@ -299,9 +300,10 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
         try:
             x, y = float(data.get("x")), float(data.get("y"))
             size = float(data.get("size", 80))
+            rotation = float(data.get("rotation", 0))
         except (TypeError, ValueError):
             return
-        if not (0 <= x <= 1 and 0 <= y <= 1 and 10 <= size <= 512):
+        if not (0 <= x <= 1 and 0 <= y <= 1 and 10 <= size <= 512 and math.isfinite(rotation)):
             return
         url = str(data.get("url") or f"/api/stamps/{stamp_id}")
         name = str(data.get("name") or "Stamp")[:100]
@@ -316,6 +318,7 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
             "x": x,
             "y": y,
             "size": size,
+            "rotation": rotation % 360,
         }
         state.doodles.save_stamp(stamp_action)
         await _broadcast_doodle(state, stamp_action, sender)
