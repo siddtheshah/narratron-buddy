@@ -435,6 +435,15 @@
       color: var(--text-main);
       text-decoration: underline;
     }
+    .visitor-help { width: min(100%, 620px); margin: 24px auto; padding: 24px;
+      border: 1px solid var(--glass-border); border-radius: 16px; background: var(--glass-bg, #17172dcc); }
+    .visitor-help h2 { margin-top: 0; }
+    .visitor-help form { display: flex; gap: 10px; flex-wrap: wrap; }
+    .visitor-help input { flex: 1; min-width: 180px; }
+    #visitor-help-log { max-height: 360px; overflow: auto; text-align: left; overflow-wrap: anywhere; }
+    #visitor-help-log article { border-top: 1px solid var(--glass-border); padding: 12px 0; }
+    #visitor-help-log a { color: #c4b5fd; }
+    #visitor-help-log pre { overflow: auto; }
   </style>
 </head>
 
@@ -470,6 +479,18 @@
       </div>
       <div id="errorMessage" class="error-msg"></div>
     </div>
+
+    <section class="visitor-help" aria-labelledby="visitor-help-title">
+      <h2 id="visitor-help-title">Ask about Narratron</h2>
+      <p>Learn how theaters, adventures, visuals, and music work. Free — no sign-in needed.</p>
+      <div id="visitor-help-log" role="log" aria-live="polite"></div>
+      <form id="visitor-help-form">
+        <input id="visitor-help-question" class="join-input" aria-label="Question about Narratron"
+          placeholder="What can I do with Narratron?" maxlength="2000" required>
+        <button class="join-btn" type="submit">Ask</button>
+      </form>
+      <p id="visitor-help-status" role="status"></p>
+    </section>
 
     <aside class="host-theater-card" aria-label="Host a theater">
       <div style="text-align: center; width: 100%;">
@@ -567,6 +588,7 @@
     Narratron &copy; 2026 &middot; <a href="/terms">Terms of Service</a> &middot; <a href="/privacy">Privacy Policy</a>
   </footer>
 
+  <script src="/static/js/user-help.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>
   <script>
     const carouselSlides = [...document.querySelectorAll('.carousel-slide')];

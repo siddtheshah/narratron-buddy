@@ -24,6 +24,14 @@ Narratron intentionally **does not** manage stat blocks, inventory, spell slots,
 
 For step-by-step extension configuration, see [Beyond20 Integration Guide](/docs/beyond20).
 
+### Private interface help
+
+To ask about Narratron controls, type a question in canvas chat and click **?** to reveal the credit cost. Click it again to send your question privately. Moving the pointer away, leaving the button with the keyboard, or editing the question resets the button. You can also send `/help` followed by your question. Sign in first. A completed answer charges your own account, including when someone else owns the theater. Failed research does not charge credits.
+
+Your question and answer appear only in your current browser tab. They are cleared when you reload and are excluded from shared chat and theater chat exports. Help works without starting the theater's live agent.
+
+Outside a theater, use **Ask about Narratron** on the front page to learn about the platform for free, without signing in.
+
 ---
 
 ## 2. Generating 2D Tactical Battlemaps & Grids

@@ -3213,7 +3213,15 @@
                 <textarea id="chat-input" rows="2" wrap="soft" aria-label="Chat message" placeholder="Type an idea..."
                     autocomplete="off" required></textarea>
                 <div class="chat-composer-actions">
-                    <button type="button" id="chat-open-stamps-btn" aria-label="Stamps" title="Open Stamp Manager">Stamps</button>
+                    <button type="button" id="chat-open-stamps-btn" aria-label="Stamps" title="Open Stamp Manager">
+                        <svg width="22" height="22" viewBox="0 0 28 28" fill="none" aria-hidden="true" focusable="false">
+                            <rect x="3" y="7" width="17" height="18" rx="4" fill="#2dd4bf" transform="rotate(-12 3 7)" />
+                            <rect x="8" y="4" width="17" height="21" rx="4" fill="#a78bfa" stroke="#ddd6fe" stroke-width="1.2" />
+                            <rect x="10.5" y="6.5" width="12" height="16" rx="2" fill="#6d28d9" />
+                            <path d="m16.5 9 1.7 3.5 3.8.6-2.8 2.7.7 3.8-3.4-1.8-3.4 1.8.7-3.8-2.8-2.7 3.8-.6Z" fill="#fde68a" />
+                            <path d="M5 2v4M3 4h4M25 1v4M23 3h4" stroke="#f9a8d4" stroke-width="1.6" stroke-linecap="round" />
+                        </svg>
+                    </button>
                     <div class="chat-emotes-control">
                         <button type="button" data-chat-emotes-toggle aria-label="Emotes" aria-expanded="false"
                             aria-controls="chat-emotes-palette" title="Add an emote"><span
@@ -3221,6 +3229,8 @@
                         <div id="chat-emotes-palette" class="chat-emotes-palette" role="group"
                             aria-label="Emotes palette" hidden></div>
                     </div>
+                    <button type="submit" data-chat-command="help" title="Show private help price"
+                        aria-label="Show private help price">?</button>
                     <button type="submit" data-chat-command="suggest" aria-label="Send suggestion"
                         aria-keyshortcuts="Control+Enter" title="Send as a suggestion (Ctrl+Enter)"><span
                             aria-hidden="true">💡</span></button>

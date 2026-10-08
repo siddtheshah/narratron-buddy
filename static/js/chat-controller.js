@@ -54,6 +54,8 @@ export function initializeChatController(options = {}) {
     let currentChatUsername = "";
     let isAuthenticatedUser = false;
     let lastChatFingerprint = "";
+    const privateHelpMessages = [];
+    let helpPending = false;
     let suggestionsHidden = false;
 
     let nameDisplay = initialNameDisplay || null;
@@ -423,7 +425,7 @@ export function initializeChatController(options = {}) {
         try {
             const res = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
             if (!res.ok) return;
-            const messages = await res.json();
+            const messages = [...await res.json(), ...privateHelpMessages];
             const fingerprint = JSON.stringify(messages);
             if (fingerprint !== lastChatFingerprint) {
                 const isNearBottom = (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) < 120;
@@ -446,9 +448,95 @@ export function initializeChatController(options = {}) {
         }
     }
 
+    async function askPrivateHelp(question) {
+        if (helpPending) throw new Error('Please wait for your help answer.');
+        helpPending = true;
+        if (helpButton) {
+            helpButton.disabled = true;
+            helpButton.textContent = '…';
+            helpButton.setAttribute('aria-label', 'Researching private help');
+        }
+        try {
+            const res = await fetch(`/api/user-help?theater_id=${encodeURIComponent(theaterId)}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                if (res.status === 401 && onOpenLogin) onOpenLogin();
+                throw new Error(result.detail || 'Help is unavailable. Please try again.');
+            }
+            privateHelpMessages.push(
+                { author: 'You (private help)', text: question },
+                { ...result, author: 'Narratron User Help (only you)' },
+            );
+            await fetchChat(true);
+            return result;
+        } finally {
+            helpPending = false;
+            if (helpButton) { helpButton.disabled = false; resetHelpButton(); }
+        }
+    }
+
+    const helpButton = chatForm?.querySelector('[data-chat-command="help"]');
+    let helpPriceShown = false;
+    let helpRevealVersion = 0;
+
+    function resetHelpButton() {
+        helpRevealVersion += 1;
+        helpPriceShown = false;
+        if (!helpButton || helpPending) return;
+        helpButton.classList.remove('help-price-shown');
+        helpButton.textContent = '?';
+        helpButton.title = 'Show private help price';
+        helpButton.setAttribute('aria-label', helpButton.title);
+    }
+
+    if (helpButton) {
+        helpButton.addEventListener('click', async event => {
+            if (helpPriceShown && !helpPending) return;
+            event.preventDefault();
+            if (helpPending || helpButton.disabled) return;
+            const revealVersion = ++helpRevealVersion;
+            helpButton.disabled = true;
+            helpButton.textContent = '…';
+            try {
+                const res = await fetch('/api/user-help');
+                if (!res.ok) throw new Error('Could not load help price. Click to retry.');
+                const info = await res.json();
+                if (revealVersion !== helpRevealVersion) return;
+                if (!Number.isFinite(info.canvas_credit_cost)) throw new Error('Could not load help price. Click to retry.');
+                helpPriceShown = true;
+                helpButton.classList.add('help-price-shown');
+                const price = document.createElement('span');
+                price.className = 'help-credit-price';
+                price.textContent = `${info.canvas_credit_cost} cr`;
+                helpButton.replaceChildren(document.createTextNode('? · '), price);
+                helpButton.title = `Click again to send privately · ${info.canvas_credit_cost} credits from your account`;
+                helpButton.setAttribute('aria-label', helpButton.title);
+            } catch (error) {
+                if (revealVersion !== helpRevealVersion) return;
+                resetHelpButton();
+                helpButton.title = error.message;
+                helpButton.setAttribute('aria-label', error.message);
+            } finally {
+                helpButton.disabled = false;
+            }
+        });
+        helpButton.addEventListener('mouseleave', resetHelpButton);
+        helpButton.addEventListener('blur', resetHelpButton);
+        chatInput?.addEventListener('input', resetHelpButton);
+    }
+
     // --- Message Submission Pipeline ---
     async function postChatMessage({ author, text, rollData = null }) {
         if (!text || !text.trim()) return null;
+
+        if (/^\/help(?:\s|$)/i.test(text)) {
+            const question = text.replace(/^\/help\s*/i, '').trim();
+            if (!question) throw new Error('Enter a question after /help.');
+            return askPrivateHelp(question);
+        }
 
         const effectiveAuthor = author || currentChatUsername || 'Adventurer';
         const body = {
@@ -505,6 +593,10 @@ export function initializeChatController(options = {}) {
                 text = `/suggest ${text}`;
             }
 
+            if (e.submitter?.dataset.chatCommand === 'help' && !/^\/help(?:\s|$)/i.test(text)) {
+                text = `/help ${text}`;
+            }
+            resetHelpButton();
             chatInput.value = '';
             try {
                 const result = await postChatMessage({
@@ -514,13 +606,16 @@ export function initializeChatController(options = {}) {
 
                 // Forward non-suggestion message to Live Agent if orator
                 const agentWs = getAgentWs();
-                if (result && result.type !== 'suggestion' && isCurrentOrator() && agentWs && agentWs.readyState === WebSocket.OPEN) {
+                if (result && result.type !== 'suggestion' && result.type !== 'user_help' && isCurrentOrator() && agentWs && agentWs.readyState === WebSocket.OPEN) {
                     agentWs.send(JSON.stringify({
                         type: "text",
                         text: text
                     }));
                 }
             } catch (err) {
+                chatInput.value = text.replace(/^\/help\s*/i, '');
+                privateHelpMessages.push({ author: 'Chat', text: err.message });
+                await fetchChat(true);
                 console.error("Failed to submit chat:", err);
             }
         });
