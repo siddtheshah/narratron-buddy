@@ -427,13 +427,13 @@ def test_action_wheel_in_browser() -> None:
         page.mouse.move(460, 260)
         page.mouse.up(button="middle")
         page.wait_for_function("window.sent.length === 7")
-        assert "Pin image" in page.locator('[data-primary][data-direction="up"]').inner_text()
+        assert "Unpin image" in page.locator('[data-primary][data-direction="up"]').inner_text()
         page.mouse.move(400, 300)
         page.mouse.down(button="middle")
         page.mouse.move(460, 340)
         page.mouse.up(button="middle")
         page.wait_for_function("window.sent.length === 8")
-        assert "Pin music" in page.locator('[data-primary][data-direction="down"]').inner_text()
+        assert "Unpin music" in page.locator('[data-primary][data-direction="down"]').inner_text()
         assert page.evaluate("window.sent") == [
             "toggle_canvas_pin", "new_image", "new_music", "toggle_music_pin", "previous_music", "previous_image", "new_image", "new_music"
         ]

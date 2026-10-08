@@ -46,14 +46,14 @@ def test_force_action_requests_scoped_bypass(
     assert session.send_notification.call_args[0][0].role == "system"
     state.persist.assert_called_once()
     if action == "new_image":
-        state.visual.set_pinned.assert_called_once_with(False)
+        state.visual.set_pinned.assert_not_called()
         state.visual.request_immediate_image.assert_called_once()
     else:
-        state.audio.set_pinned.assert_called_once_with(False)
+        state.audio.set_pinned.assert_not_called()
 
 
 @pytest.mark.parametrize("action", ["new_image", "new_music"])
-def test_request_new_media_unpins_first_when_pinned(
+def test_request_new_media_preserves_pin_state(
     action_services: tuple[MagicMock, MagicMock], action: str
 ) -> None:
     state, session = action_services
@@ -61,13 +61,14 @@ def test_request_new_media_unpins_first_when_pinned(
     state.audio.pinned = True
     result = canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
     if action == "new_image":
-        state.visual.set_pinned.assert_called_once_with(False)
+        state.visual.set_pinned.assert_not_called()
     else:
-        state.audio.set_pinned.assert_called_once_with(False)
-    session.send_content.assert_called_once()
-    call_content = session.send_content.call_args[0][0]
-    assert call_content.role == "system"
-    assert "was unpinned" in call_content.parts[0].text
+        state.audio.set_pinned.assert_not_called()
+    session.send_content.assert_not_called()
+    instruction = session.send_notification.call_args[0][0].parts[0].text
+    assert "one-time pass" in instruction
+    assert result["pinned"] is True
+    assert result["music_pinned"] is True
     assert result["status"] == "accepted"
 
 

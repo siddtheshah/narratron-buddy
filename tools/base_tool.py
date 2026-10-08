@@ -122,20 +122,26 @@ CANVAS_PINNED_MESSAGE = (
 )
 
 
-def blocked_when_canvas_pinned(func: Callable):
+def blocked_when_canvas_pinned(func: Callable[..., ReturnT]) -> Callable[..., Union[ReturnT, str]]:
     """Return a clear tool response without starting visual work while pinned."""
     @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        visual = getattr(getattr(self, "canvas_manager", None), "visual", None)
-        # Require the concrete state flag so permissive MagicMock-based tool
-        # fixtures (and legacy canvas implementations) remain unpinned.
-        if getattr(visual, "pinned", False) is True:
-            trigger_cb = getattr(self, "_trigger_after_tool_call", None)
-            if callable(trigger_cb):
-                trigger_cb(func.__name__)
+    def wrapper(self: BaseTools, *args: ArgT, **kwargs: ArgT) -> Union[ReturnT, str]:
+        if self.canvas_manager.visual.pinned and not self.has_orator_pin_bypass(func.__name__):
+            self._trigger_after_tool_call(func.__name__)
             return CANVAS_PINNED_MESSAGE
         return func(self, *args, **kwargs)
 
+    return wrapper
+
+
+def blocked_when_music_pinned(func: Callable[..., ReturnT]) -> Callable[..., Union[ReturnT, str]]:
+    """Keep autonomous music calls from entering the cooldown queue while pinned."""
+    @functools.wraps(func)
+    def wrapper(self: BaseTools, *args: ArgT, **kwargs: ArgT) -> Union[ReturnT, str]:
+        if self.canvas_manager.audio.pinned and not self.has_orator_pin_bypass(func.__name__):
+            self._trigger_after_tool_call(func.__name__)
+            return "Error: Music is pinned by the orator; keep the current track."
+        return func(self, *args, **kwargs)
     return wrapper
 
 
@@ -502,6 +508,7 @@ class BaseTools:
         self._cycle_cooldown_lock = threading.Lock()
         self._orator_bypass_tools: set[str] = set()
         self._orator_bypass_until: float = 0.0
+        self._orator_pin_tools: set[str] = set()
         self._in_flight_tools: Set[str] = set()
         self._in_flight_lock = threading.Lock()
         self._last_call_failed: Dict[str, bool] = {}
@@ -865,11 +872,25 @@ class BaseTools:
         """Allow one requested action within a minute, keeping in-flight serialization."""
         with self._cycle_cooldown_lock:
             self._orator_bypass_tools = set(tool_names)
+            self._orator_pin_tools = set(tool_names)
             self._orator_bypass_until = time.monotonic() + 60.0
 
     def cancel_orator_bypass(self) -> None:
         with self._cycle_cooldown_lock:
             self._orator_bypass_tools.clear()
+            self._orator_pin_tools.clear()
+
+    def has_orator_pin_bypass(self, tool_name: str) -> bool:
+        with self._cycle_cooldown_lock:
+            return tool_name in self._orator_pin_tools and time.monotonic() <= self._orator_bypass_until
+
+    def consume_orator_pin_bypass(self, tool_name: str) -> bool:
+        """Reserve the one-time pin allowance for this call and its background result."""
+        with self._cycle_cooldown_lock:
+            allowed = tool_name in self._orator_pin_tools and time.monotonic() <= self._orator_bypass_until
+            if tool_name in self._orator_pin_tools:
+                self._orator_pin_tools.clear()
+            return allowed
 
     def _consume_orator_bypass(self, tool_name: str) -> None:
         """Called under the cycle lock before checking cooldown or duplicates."""

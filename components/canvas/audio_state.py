@@ -25,8 +25,8 @@ class AudioState:
     def music_orator_cursor(self, value: int | None) -> None:
         self.orator_cursor = value
 
-    def update_music(self, music_id: str, tracks: list[str]) -> None:
-        if self.pinned:
+    def update_music(self, music_id: str, tracks: list[str], *, allow_pinned: bool = False) -> None:
+        if self.pinned and not allow_pinned:
             return
         self.current_music_id = self.current_playlist = music_id
         self.current_playlist_tracks = list(tracks)

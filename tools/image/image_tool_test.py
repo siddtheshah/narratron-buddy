@@ -104,6 +104,22 @@ class TestImageTools(BaseTestCase):
         self.assertFalse(tools.is_in_flight("create_image"))
 
     @patch("tools.image.image_tool.get_image_provider")
+    def test_orator_image_replaces_pinned_canvas_once(self, mock_get_provider: MagicMock) -> None:
+        mock_get_provider.return_value.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(self.config, theater_id="pinned_pass", theater_manager=self.manager)
+        tools.visual.set_pinned(True)
+        tools.visual.request_immediate_image()
+        tools.request_orator_bypass({"create_image"})
+        tools.create_image("requested scene", image_name="requested")
+        tools.join_generation()
+        assert tools.visual.pinned is True
+        assert tools.visual.shown_image_path
+        assert tools.create_image("another scene", image_name="another") == CANVAS_PINNED_MESSAGE
+        assert tools.show_image("requested") == CANVAS_PINNED_MESSAGE
+        mock_get_provider.return_value.generate.assert_called_once()
+        assert not tools._pending_cycle_calls
+
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_uses_configured_provider(self, mock_get_provider):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
@@ -406,6 +422,7 @@ class TestImageTools(BaseTestCase):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         mock_canvas_service = MagicMock()
+        mock_canvas_service.visual.pinned = False
         tools = self.make_image_tools(
             self.config,
             theater_id="webp_test",
@@ -454,6 +471,7 @@ class TestImageTools(BaseTestCase):
 
     def test_show_image_sends_compressed_webp_to_canvas_state_service(self):
         mock_canvas_service = MagicMock()
+        mock_canvas_service.visual.pinned = False
         tools = self.make_image_tools(
             self.config,
             theater_id="show_webp_test",
@@ -793,6 +811,7 @@ class TestImageTools(BaseTestCase):
     def test_show_image_silently_rejects_narratron_avatar(self) -> None:
         """Calling show_image with narratron_avatar returns success but does not update the canvas."""
         mock_canvas_service = MagicMock()
+        mock_canvas_service.visual.pinned = False
         tools = self.make_image_tools(
             self.config,
             theater_id="avatar_reject_test",
@@ -812,6 +831,7 @@ class TestImageTools(BaseTestCase):
     def test_show_image_silently_rejects_narratron_avatar_alias_variations(self) -> None:
         """Aliases, hyphenated names, and extensions for narratron_avatar are all silently rejected."""
         mock_canvas_service = MagicMock()
+        mock_canvas_service.visual.pinned = False
         tools = self.make_image_tools(
             self.config,
             theater_id="avatar_variations_test",
@@ -838,6 +858,7 @@ class TestImageTools(BaseTestCase):
     def test_show_image_silently_rejects_narratron_avatar_in_adventure_mode(self) -> None:
         """In adventure mode, silent rejection of narratron_avatar resets the story plan completed flag."""
         mock_canvas_service = MagicMock()
+        mock_canvas_service.visual.pinned = False
         tools = self.make_image_tools(
             self.config,
             theater_id="avatar_adv_test",

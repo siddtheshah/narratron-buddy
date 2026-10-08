@@ -655,20 +655,12 @@ def post_orator_action(
         if suite is None:
             raise HTTPException(status_code=409, detail="The requested media tools are unavailable.")
         names = {"create_image"} if is_image else {"create_music", "play_music"}
-        was_pinned = state.visual.pinned if is_image else state.audio.pinned
         if is_image:
-            state.visual.set_pinned(False)
             state.visual.request_immediate_image()
-        else:
-            state.audio.set_pinned(False)
-        if was_pinned and session and session.is_alive:
-            session.send_content(types.Content(role="system", parts=[types.Part(text=(
-                f"[Orator Action] The {'canvas visual' if is_image else 'music'} was unpinned. Media generation may resume."
-            ))]))
         suite.request_orator_bypass(names)
         if is_image:
             instruction = (
-                "The canvas visual is unpinned. Generate and display a fresh image for the current "
+                "Generate and display a fresh image for the current "
                 "narrated scene now using create_image with display=True."
             )
             if state.ui.viewer_collab_enabled:
@@ -679,20 +671,17 @@ def post_orator_action(
                 )
         else:
             instruction = (
-                "Music is unpinned. Start different music for the current narrated scene now. Use play_music for an available playlist, "
+                "Start different music for the current narrated scene now. Use play_music for an available playlist, "
                 "or create_music if generated music is enabled."
             )
         logger.info(f"[Orator Action] {instruction}")
         if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
             f"[Orator Action] {instruction} This is an explicit orator request; "
-            "the next requested media action bypasses its regular cooldown, so use it quickly once you have understand user intent."
+            "the next requested media action has a one-time pass through pin protection and its regular cooldown. Pin state stays unchanged; after this request, keep pinned media unchanged. Use the pass within one minute."
         ))])):
             suite.cancel_orator_bypass()
             if is_image:
                 state.visual.cancel_immediate_image()
-                state.visual.set_pinned(was_pinned)
-            else:
-                state.audio.set_pinned(was_pinned)
             raise HTTPException(status_code=409, detail="Narratron could not receive the action.")
     elif payload.action == "previous_image":
         if not state.visual.previous_image():

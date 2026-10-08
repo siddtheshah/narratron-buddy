@@ -1067,6 +1067,7 @@ class TestAnimationTools(BaseTestCase):
             video_url="https://fal.media/act.mp4",
         )
         canvas_state_service = MagicMock()
+        canvas_state_service.visual.pinned = False
         theater = self.manager.theater("test_theater")
         theater.manager.get_theater_config = MagicMock(return_value={
             "visuals": {"model": "gemini"},

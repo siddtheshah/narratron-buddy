@@ -37,6 +37,34 @@ class TestMusicTools(BaseTestCase):
         assert "pinned" in tools.pause_music()
         assert tools.canvas_manager.audio.current_music_id == "ambient"
 
+    def test_orator_switch_preserves_pin_and_consumes_shared_pass(self) -> None:
+        tools = self.music_tools
+        tools.play_music("ambient")
+        tools.canvas_manager.audio.set_pinned(True)
+        tools.request_orator_bypass({"create_music", "play_music"})
+        assert "Successfully" in tools.play_music("combat")
+        assert tools.canvas_manager.audio.pinned is True
+        assert tools.canvas_manager.audio.current_music_id == "combat"
+        assert "pinned" in tools.play_music("ambient")
+        assert "pinned" in tools.create_music("another track")
+        assert not tools._pending_cycle_calls
+
+    def test_orator_generated_music_plays_while_remaining_pinned(self) -> None:
+        tools = self.music_tools
+        tools.play_music("ambient")
+        tools.canvas_manager.audio.set_pinned(True)
+        provider = MagicMock()
+        provider.generate.return_value = MusicGenerationResult(
+            audio_bytes=b"music", mime_type="audio/mpeg", provider="lyria", model="test"
+        )
+        tools._music_provider = provider
+        tools.request_orator_bypass({"create_music", "play_music"})
+        assert "started in background" in tools.create_music("fresh tune", handle="fresh")
+        tools.join_generation(timeout=5.0)
+        assert tools.canvas_manager.audio.current_music_id == "fresh"
+        assert tools.canvas_manager.audio.pinned is True
+        assert "pinned" in tools.play_music("combat")
+
     def test_orator_switch_bypasses_cooldown_once(self) -> None:
         tools = self.music_tools
         tools.switch_cooldown = 60.0

@@ -13,7 +13,7 @@ from providers import (
     MusicProviderError,
     get_music_provider,
 )
-from tools.base_tool import BaseTools, logged_tool_call, with_cycle_cooldown
+from tools.base_tool import BaseTools, blocked_when_music_pinned, logged_tool_call, with_cycle_cooldown
 from tools.tool_metadata import terminal
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
@@ -191,7 +191,8 @@ class MusicTools(BaseTools):
         Returns:
             A status string indicating background generation has started.
         """
-        if self.canvas_manager.audio.pinned:
+        allow_pinned = self.consume_orator_pin_bypass("create_music")
+        if self.canvas_manager.audio.pinned and not allow_pinned:
             return "Error: Music is pinned by the orator; keep the current track."
         effective_prompt = self._apply_default_style(prompt)
         logger.debug("[MusicTools] create_music requested for theater=%s handle=%s.", self.active_theater_id, handle)
@@ -213,7 +214,7 @@ class MusicTools(BaseTools):
                 "[MusicTools] Reused catalog music id=%s score=%.2f for theater=%s as %s",
                 match["id"], match["score"], self.active_theater_id, filename,
             )
-            self._play_music_internal(alias_key)
+            self._play_music_internal(alias_key, allow_pinned=allow_pinned)
             return f"Reused a matching private catalog track (similarity {match['score']:.2f}) and started playing it as '{alias_key}'."
 
         cooldown_error = self.check_cooldown("create_music", "generating another music track")
@@ -266,7 +267,7 @@ class MusicTools(BaseTools):
                         except Exception as cb_err:
                             logger.error(f"[MusicTools] Callback on_music_created error: {cb_err}")
 
-                    self._play_music_internal(alias_key)
+                    self._play_music_internal(alias_key, allow_pinned=allow_pinned)
                 else:
                     logger.error("[MusicTools] Provider returned no binary audio data.")
             except MusicProviderError as e:
@@ -281,15 +282,15 @@ class MusicTools(BaseTools):
         handle_msg = f" with handle '{handle}'" if handle else ""
         return f"Music generation started in background{handle_msg} for prompt: '{effective_prompt[:80]}'. It will automatically play when ready."
 
-    def _play_music_internal(self, music_id: str) -> str:
-        if self.canvas_manager.audio.pinned:
+    def _play_music_internal(self, music_id: str, *, allow_pinned: bool = False) -> str:
+        if self.canvas_manager.audio.pinned and not allow_pinned:
             return "Error: Music is pinned by the orator; keep the current track."
         try:
             tracks = self._resolve_music_tracks(music_id)
             if not tracks:
                 return f"Error: Music or playlist '{music_id}' not found."
 
-            self.canvas_manager.audio.update_music(music_id, tracks)
+            self.canvas_manager.audio.update_music(music_id, tracks, allow_pinned=allow_pinned)
             if self.on_play_music:
                 self.on_play_music(music_id, tracks)
 
@@ -301,6 +302,7 @@ class MusicTools(BaseTools):
             return f"Error playing music: {e}"
 
     @terminal
+    @blocked_when_music_pinned
     @with_cycle_cooldown(
         action_desc="playing another music track",
         duration=lambda tools: tools.switch_cooldown,
@@ -316,7 +318,7 @@ class MusicTools(BaseTools):
             A status message indicating success or failure.
         """
         logger.debug("[MusicTools] play_music requested for theater=%s music_id=%s.", self.active_theater_id, music_id)
-        return self._play_music_internal(music_id)
+        return self._play_music_internal(music_id, allow_pinned=self.consume_orator_pin_bypass("play_music"))
 
     @terminal
     @logged_tool_call

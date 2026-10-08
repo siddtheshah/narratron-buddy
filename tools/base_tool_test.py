@@ -90,6 +90,20 @@ class SampleTools(BaseTools):
 
 
 class TestBaseTools(BaseTestCase):
+    def test_pin_pass_is_scoped_shared_and_expires(self) -> None:
+        tools = self.base_tools
+        tools.request_orator_bypass({"create_music", "play_music"})
+        assert not tools.has_orator_pin_bypass("pause_music")
+        assert tools.consume_orator_pin_bypass("play_music")
+        assert not tools.consume_orator_pin_bypass("create_music")
+        tools.request_orator_bypass({"create_music"})
+        tools._orator_bypass_until = 0.0
+        assert not tools.has_orator_pin_bypass("create_music")
+        assert not tools.consume_orator_pin_bypass("create_music")
+        tools.request_orator_bypass({"create_music"})
+        tools.cancel_orator_bypass()
+        assert not tools.consume_orator_pin_bypass("create_music")
+
     def test_orator_bypass_is_one_use_and_ignores_duplicates(self) -> None:
         sample = self.make_sample({"cooldown_duration": 10.0})
         sample.cycle_tool("same scene")

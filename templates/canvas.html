@@ -3878,14 +3878,6 @@
                 }
             },
             sendAction: async (action) => {
-                if (action === 'new_image' && canvasPinned) {
-                    canvasPinned = false;
-                    updateCanvasPinButton();
-                    actionWheel.updateState(false, musicPinned);
-                } else if (action === 'new_music' && musicPinned) {
-                    musicPinned = false;
-                    actionWheel.updateState(canvasPinned, false);
-                }
                 const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action }),

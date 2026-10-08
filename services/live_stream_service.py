@@ -50,7 +50,8 @@ def format_canvas_state(
     if visual is not None and visual.pinned:
         parts.append(
             "[Canvas Pin]: The orator has pinned the current canvas. Do not request image or "
-            "animation changes until it is unpinned; those tools will decline while pinned."
+            "animation changes until it is unpinned; those tools will decline while pinned. "
+            "An explicit Orator Action for a new image grants one create_image call while preserving the pin."
         )
 
     elements: list[dict[str, str]] = []

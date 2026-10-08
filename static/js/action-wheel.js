@@ -199,11 +199,6 @@ export function initializeActionWheel({
         if (!direction || !isOrator()) return;
         busy = true;
         const action = activeActions[direction];
-        if (action === 'new_image' && currentCanvasPinned) {
-            controller.updateState(false, currentMusicPinned);
-        } else if (action === 'new_music' && currentMusicPinned) {
-            controller.updateState(currentCanvasPinned, false);
-        }
         if (action === 'previous_image' && typeof onPreviousImage === 'function') {
             try { onPreviousImage(); } catch (_) {}
         }

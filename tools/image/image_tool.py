@@ -15,7 +15,7 @@ from providers import (
     ImageProviderError,
     get_image_provider,
 )
-from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
+from tools.base_tool import BaseTools, CANVAS_PINNED_MESSAGE, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
 from tools.tool_metadata import terminal
 from utils.image_utils import (
     compress_image_to_webp,
@@ -256,6 +256,9 @@ class ImageTools(BaseTools):
         Returns:
             A string indicating that background image generation has started, or an error message.
         """
+        allow_pinned = self.consume_orator_pin_bypass("create_image")
+        if self.visual.pinned and not allow_pinned:
+            return CANVAS_PINNED_MESSAGE
         if not isinstance(image_name, str) or not image_name.strip():
             res = "Error: image_name is required when creating an image."
             self._trigger_after_tool_call("create_image")
@@ -396,6 +399,7 @@ class ImageTools(BaseTools):
                                 prompt=metadata_prompt,
                                 priority=PRIORITY_CREATE,
                                 source="create_image",
+                                allow_pinned=allow_pinned,
                                 url_for_path=self.theater.get_url_for_path,
                             )
                             if update_res.get("status") == "displayed":

@@ -77,10 +77,10 @@ The **Action Wheel** is a circular radial gesture HUD that provides the **Active
 ### Radial Action Reference
 
 - **Up — Pin Image:** Lock the current battlemap so subsequent dialogue and scene assistance keep it on screen. Repeat the gesture to unpin it.
-- **Up-Right — New Image:** Request the next room or scene image. This automatically unpins a pinned map.
+- **Up-Right — New Image:** Request the next room or scene image. This replaces the map once while preserving its pin state.
 - **Up-Left — Previous Image:** Return to the previous scene or battlemap in the session history.
 - **Down — Pin Music:** Retain the current soundtrack during the encounter. Repeat the gesture to unpin it.
-- **Down-Right — New Music:** Request a new background soundtrack, such as a transition from exploration to combat. This automatically unpins pinned music.
+- **Down-Right — New Music:** Request a new background soundtrack, such as a transition from exploration to combat. This changes the music once while preserving its pin state.
 - **Down-Left — Previous Music:** Return to the previous background track.
 
 ### Customizing Action Wheel Bindings

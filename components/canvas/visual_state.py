@@ -250,6 +250,7 @@ class VisualState:
         prompt: str = "",
         priority: int = PRIORITY_SHOW,
         source: str = "show_image",
+        allow_pinned: bool = False,
         url_for_path: Optional[Callable[[str], str]] = None,
     ) -> dict[str, Any]:
         """Request an image update on the canvas, paced by the visual cycle.
@@ -271,6 +272,7 @@ class VisualState:
             "type": "image",
             "path": path,
             "display_path": display_path or path,
+            "allow_pinned": allow_pinned,
             "transition": transition or "crossfade",
             "effect": effect or "gleam3",
             "prompt": prompt,
@@ -353,7 +355,9 @@ class VisualState:
         force_immediate = bool(item.get("force_immediate", False))
 
         with self._cycle_lock:
-            if self.pinned:
+            if item.get("allow_pinned", False):
+                force_immediate = True
+            if self.pinned and not item.get("allow_pinned", False):
                 return {
                     "status": "blocked",
                     "resource": item,
