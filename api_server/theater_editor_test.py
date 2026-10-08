@@ -684,4 +684,6 @@ def test_draft_generations_generate_concurrently(builder: BuilderHarness) -> Non
     assert results == [200, 200]
     assert builder.database.record_user_usage.call_count == 2
     assert account["credits"] == 4.0 - 2 * 4.0
+    final_draft = builder.client.get(base).json()["draft"]
+    assert final_draft["revision"] == data["draft"]["revision"] + 2
 

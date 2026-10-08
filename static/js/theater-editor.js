@@ -11,7 +11,8 @@
   let previewSequence = 0;
   let proposal = null;
   let proposalRevision = null;
-  let generating = false;
+  let activeGenerations = 0;
+  const generatingKeys = new Set();
   let asking = false;
   const history = [];
   const pendingWrites = new Map();
@@ -44,8 +45,8 @@
   function endpoint(action = '') { return `/api/theater-editor/${encodeURIComponent(state.draft.theater_id)}${action}`; }
   function post(action, body) { return api(endpoint(action), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
   async function run(action, progress) {
-    if (busy || generating) {
-      if (generating) status('Please wait for asset generation to finish.');
+    if (busy || activeGenerations > 0) {
+      if (activeGenerations > 0) status('Please wait for asset generation to finish.');
       return;
     }
     busy = true;
@@ -55,7 +56,7 @@
     try { await action(); } catch (error) { status(error.message, true); }
     finally {
       busy = false;
-      document.querySelectorAll('main button').forEach(button => { button.disabled = button.dataset.done === 'true'; });
+      document.querySelectorAll('main button').forEach(button => { button.disabled = button.dataset.done === 'true' || button.dataset.generating === 'true'; });
       document.querySelectorAll('main input:not([type=file]), main textarea, main select').forEach(input => { input.disabled = false; });
     }
   }
@@ -161,7 +162,7 @@
     el('download-file').href = url; el('download-file').hidden = false;
     const isProtected = file.path === 'theater.yaml';
     el('delete-file').hidden = isProtected;
-    el('delete-file').disabled = isProtected || generating;
+    el('delete-file').disabled = isProtected || (activeGenerations > 0);
     if (file.kind === 'text') {
       try {
         let content = pendingWrites.get(file.path);
@@ -254,7 +255,7 @@
     el('assistant-messages').append(node); el('assistant-messages').scrollTop = el('assistant-messages').scrollHeight;
   }
   async function ask(prompt) {
-    if (!state || !prompt.trim() || busy || asking || generating) return;
+    if (!state || !prompt.trim() || busy || asking || activeGenerations > 0) return;
     asking = true;
     el('assistant-send').disabled = true;
     el('assistant-input').disabled = true;
@@ -299,7 +300,7 @@
     if (proposal.writes.length || proposal.moves.length || (proposal.deletions && proposal.deletions.length)) {
       const button = document.createElement('button'); button.textContent = 'Apply file changes to draft'; button.type = 'button';
       button.addEventListener('click', () => {
-        if (generating) { status('Please wait for asset generation to finish before applying changes.', true); return; }
+        if (activeGenerations > 0) { status('Please wait for asset generation to finish before applying changes.', true); return; }
         run(async () => {
           await save();
           render(await post('/apply', { revision: proposalRevision, proposal }));
@@ -319,15 +320,20 @@
       const description = document.createElement('p'); description.textContent = generation.prompt;
       const button = document.createElement('button'); button.type = 'button';
       const isMusic = generation.kind === 'playlist';
+      const key = `${generation.kind}:${generation.name}:${generation.playlist || ''}`;
       if (generation.generated_path) {
         button.textContent = 'Generated';
         button.dataset.done = 'true';
         button.disabled = true;
         const openLink = makeOpenLink(generation.generated_path);
         card.append(label, description, button, openLink);
+      } else if (generatingKeys.has(key)) {
+        button.textContent = 'Generating…';
+        button.dataset.generating = 'true';
+        button.disabled = true;
+        card.append(label, description, button);
       } else {
         button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
-        if (generating) button.disabled = true;
         button.addEventListener('click', () => generate(generation, button));
         card.append(label, description, button);
       }
@@ -336,43 +342,48 @@
     if (!proposal.writes.length && !proposal.moves.length && !(proposal.deletions && proposal.deletions.length) && !proposal.generations.length) container.hidden = true;
   }
   async function generate(request, button) {
-    if (busy || generating) {
-      if (generating) status('An asset is already generating. Please wait…');
-      return;
+    if (busy) return;
+    const key = `${request.kind}:${request.name}:${request.playlist || ''}`;
+    if (generatingKeys.has(key)) return;
+    if (button && (button.disabled || button.dataset.generating === 'true')) return;
+
+    generatingKeys.add(key);
+    activeGenerations++;
+    const isManualSubmit = button && button.id === 'generation-submit';
+    if (button) {
+      button.disabled = true;
+      button.dataset.generating = 'true';
+      button.textContent = 'Generating…';
     }
-    generating = true;
+
     captureText();
     if (dirty()) {
       try { await save(); } catch (e) { /* ignore */ }
     }
     const revision = state.draft.revision;
-    status('Generating your asset. This can take a few minutes…');
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Generating…';
-    }
-    if (el('generation-submit')) {
-      el('generation-submit').disabled = true;
-      el('generation-submit').textContent = 'Generating…';
-    }
-    el('assistant-proposal').querySelectorAll('.generation-card button').forEach(btn => {
-      if (btn.dataset.done !== 'true') btn.disabled = true;
-    });
+    status(activeGenerations > 1 ? `Generating asset (${activeGenerations} in progress)…` : 'Generating your asset. This can take a few minutes…');
+
     try {
       const result = await post('/generate', { ...request, revision });
       render(result.state);
       // A generated asset adds a new file, so the same proposal remains applicable.
-      if (proposalRevision === revision) proposalRevision = state.draft.revision;
+      if (proposalRevision !== null) proposalRevision = state.draft.revision;
       if (request.kind && request.name && proposal?.generations) {
         const match = proposal.generations.find(g => g.name === request.name && g.kind === request.kind);
         if (match) match.generated_path = result.path;
       }
       if (button) {
-        button.textContent = 'Generated';
-        button.dataset.done = 'true';
-        button.disabled = true;
-        const openLink = makeOpenLink(result.path);
-        button.insertAdjacentElement('afterend', openLink);
+        delete button.dataset.generating;
+        if (isManualSubmit) {
+          button.disabled = false;
+          updateGenerationCost();
+        } else {
+          button.textContent = 'Generated';
+          button.dataset.done = 'true';
+          button.disabled = true;
+          const openLink = makeOpenLink(result.path);
+          button.insertAdjacentElement('afterend', openLink);
+        }
       }
       await checkAuthStatus({ refresh: true });
       message('assistant', `Created ${result.path}. Charged ${result.credits_charged} credits.`, result.path);
@@ -381,25 +392,26 @@
     } catch (error) {
       status(error.message, true);
       if (button) {
+        delete button.dataset.generating;
         button.disabled = false;
-        const isMusic = request.kind === 'playlist';
-        button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+        if (isManualSubmit) {
+          updateGenerationCost();
+        } else {
+          const isMusic = request.kind === 'playlist';
+          button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+        }
       }
     } finally {
-      generating = false;
-      updateGenerationCost();
-      if (el('assistant-proposal')) {
-        el('assistant-proposal').querySelectorAll('.generation-card button').forEach(btn => {
-          if (btn.dataset.done !== 'true') btn.disabled = false;
-        });
-      }
-      if (el('generation-submit')) {
-        el('generation-submit').disabled = false;
+      generatingKeys.delete(key);
+      activeGenerations = Math.max(0, activeGenerations - 1);
+      if (selected) {
+        const isProtected = selected.path === 'theater.yaml';
+        el('delete-file').disabled = isProtected || (activeGenerations > 0);
       }
     }
   }
   function updateGenerationCost() {
-    if (state) {
+    if (state && el('generation-submit') && el('generation-submit').dataset.generating !== 'true') {
       const isMusic = el('generation-kind').value === 'playlist';
       el('generation-submit').textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
     }
@@ -522,9 +534,31 @@
   el('google-link-form').addEventListener('submit', event => { event.preventDefault(); submitGoogleLink(); });
   el('generation-kind').addEventListener('change', updateGenerationCost);
   el('generation-form').addEventListener('submit', event => {
-    event.preventDefault(); generate({ kind: el('generation-kind').value, name: el('generation-name').value, playlist: el('generation-playlist').value || 'ambient', prompt: el('generation-prompt').value, references: [] });
+    event.preventDefault();
+    if (el('generation-submit').disabled || el('generation-submit').dataset.generating === 'true') return;
+    generate({
+      kind: el('generation-kind').value,
+      name: el('generation-name').value,
+      playlist: el('generation-playlist').value || 'ambient',
+      prompt: el('generation-prompt').value,
+      references: []
+    }, el('generation-submit'));
   });
-  el('new-file').addEventListener('click', () => el('new-file-dialog').showModal());
+  el('new-file').addEventListener('click', () => {
+    el('new-file-path').value = '';
+    el('new-file-dialog').showModal();
+    el('new-file-path').focus();
+  });
+  el('new-file-cancel').addEventListener('click', () => el('new-file-dialog').close('cancel'));
+  el('new-file-dialog').addEventListener('click', event => {
+    if (event.target === el('new-file-dialog')) el('new-file-dialog').close('cancel');
+  });
+  el('new-file-dialog').addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      el('new-file-dialog').close('cancel');
+    }
+  });
   el('new-file-dialog').addEventListener('close', () => {
     if (el('new-file-dialog').returnValue !== 'create') return;
     const path = el('new-file-path').value.trim();
@@ -561,11 +595,11 @@
   });
   window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('narratron:auth-changed', event => {
-    if (!event.detail.authenticated) { state = null; lastDraftKey = null; generating = false; asking = false; pendingWrites.clear(); textDirty = false; nameDirty = false; clearPreview(); history.length = 0; el('assistant-messages').replaceChildren(); el('assistant-proposal').replaceChildren(); el('workspace').hidden = true; el('start-panel').hidden = true; el('login-gate').hidden = false; }
+    if (!event.detail.authenticated) { state = null; lastDraftKey = null; activeGenerations = 0; generatingKeys.clear(); asking = false; pendingWrites.clear(); textDirty = false; nameDirty = false; clearPreview(); history.length = 0; el('assistant-messages').replaceChildren(); el('assistant-proposal').replaceChildren(); el('workspace').hidden = true; el('start-panel').hidden = true; el('login-gate').hidden = false; }
   });
   window.onAuthSuccess = mode => { if (mode !== 'logout') initialize(); };
   window.beforeCreditPurchase = async () => {
-    if (busy || generating) throw new Error('Please wait for the current action to finish before purchasing credits.');
+    if (busy || activeGenerations > 0) throw new Error('Please wait for the current action to finish before purchasing credits.');
     await save();
   };
   initialize();

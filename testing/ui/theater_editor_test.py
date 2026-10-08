@@ -133,8 +133,14 @@ def editor_page() -> Iterator[Page]:
                         await new Promise(resolve => { window.releaseGenerate = resolve; });
                     }
                     const body = JSON.parse(options.body);
+                    if (window.holdGenerations && window.holdGenerations[body.name]) {
+                        await new Promise(resolve => {
+                            window.releaseGenerations = window.releaseGenerations || {};
+                            window.releaseGenerations[body.name] = resolve;
+                        });
+                    }
                     const isStamp = body.kind === 'stamp';
-                    const path = isStamp ? 'stamps/goblin.png' : 'references/harbor.png';
+                    const path = isStamp ? `stamps/${body.name || 'goblin'}.png` : `references/${body.name || 'harbor'}.png`;
                     draft.files.push({path, kind: 'image'});
                     draft.draft.revision++;
                     window.accountCredits -= 4;
@@ -587,4 +593,172 @@ def test_assistant_proposes_deletions_ui(editor_page: Page) -> None:
     expect(page.locator("#builder-status")).to_have_text("File changes applied and saved to your draft.")
     expect(page.locator("#file-count")).to_have_text("6 files")
     expect(page.locator('.file-button[title="lore/guide.txt"]')).not_to_be_visible()
+
+
+def test_concurrent_image_generations_do_not_block_each_other_in_ui(editor_page: Page) -> None:
+    page = editor_page
+    page.evaluate("""
+        window.assistantProposal = {
+            message: "I propose creating reference artwork for the harbor and a ship.",
+            writes: [],
+            moves: [],
+            generations: [
+                { kind: "reference", name: "harbor", prompt: "A misty harbor scene", playlist: "ambient", references: [] },
+                { kind: "reference", name: "ship", prompt: "A wooden sailing ship", playlist: "ambient", references: [] }
+            ]
+        };
+    """)
+    page.locator("#assistant-input").fill("Propose key scene art.")
+    page.locator("#assistant-send").click()
+
+    expect(page.locator("#assistant-proposal")).to_be_visible()
+    cards = page.locator(".generation-card")
+    expect(cards).to_have_count(2)
+
+    harbor_card = cards.nth(0)
+    ship_card = cards.nth(1)
+
+    expect(harbor_card.locator("strong")).to_have_text("Reference: harbor")
+    expect(harbor_card.locator("button")).to_have_text("Generate · 4 Cr")
+    expect(harbor_card.locator("button")).to_be_enabled()
+
+    expect(ship_card.locator("strong")).to_have_text("Reference: ship")
+    expect(ship_card.locator("button")).to_have_text("Generate · 4 Cr")
+    expect(ship_card.locator("button")).to_be_enabled()
+
+    # Hold both generations in flight
+    page.evaluate("window.holdGenerations = { harbor: true, ship: true };")
+
+    # Start harbor generation
+    harbor_card.locator("button").click()
+
+    # Harbor button shows generating and is disabled
+    expect(harbor_card.locator("button")).to_have_text("Generating…")
+    expect(harbor_card.locator("button")).to_be_disabled()
+
+    # Crucially, ship generation button is NOT blocked or disabled!
+    expect(ship_card.locator("button")).to_have_text("Generate · 4 Cr")
+    expect(ship_card.locator("button")).to_be_enabled()
+
+    # Manual generation submit button is also NOT blocked
+    manual_btn = page.locator("#generation-submit")
+    expect(manual_btn).to_be_enabled()
+
+    # Start ship generation while harbor is still generating
+    ship_card.locator("button").click()
+
+    # Now both buttons show generating
+    expect(ship_card.locator("button")).to_have_text("Generating…")
+    expect(ship_card.locator("button")).to_be_disabled()
+    expect(harbor_card.locator("button")).to_have_text("Generating…")
+    expect(harbor_card.locator("button")).to_be_disabled()
+
+    # Release harbor generation
+    page.evaluate("window.releaseGenerations.harbor();")
+
+    # Harbor card finishes: button changes to Generated, open asset link appears
+    expect(harbor_card.locator("button")).to_have_text("Generated")
+    expect(harbor_card.locator("button")).to_be_disabled()
+    expect(harbor_card.locator(".open-asset-link")).to_have_text("Open asset →")
+
+    # Ship card is STILL generating in flight and not disrupted
+    expect(ship_card.locator("button")).to_have_text("Generating…")
+    expect(ship_card.locator("button")).to_be_disabled()
+
+    # Release ship generation
+    page.evaluate("window.releaseGenerations.ship();")
+
+    # Ship card finishes: button changes to Generated, open asset link appears
+    expect(ship_card.locator("button")).to_have_text("Generated")
+    expect(ship_card.locator("button")).to_be_disabled()
+    expect(ship_card.locator(".open-asset-link")).to_have_text("Open asset →")
+
+    # Both files were added to the draft
+    expect(page.locator("#file-count")).to_have_text("9 files")
+
+
+def test_proposal_and_manual_generation_do_not_block_each_other(editor_page: Page) -> None:
+    page = editor_page
+    page.evaluate("""
+        window.assistantProposal = {
+            message: "I propose creating a harbor reference image.",
+            writes: [],
+            moves: [],
+            generations: [
+                { kind: "reference", name: "harbor", prompt: "A misty harbor scene", playlist: "ambient", references: [] }
+            ]
+        };
+    """)
+    page.locator("#assistant-input").fill("Propose key scene art.")
+    page.locator("#assistant-send").click()
+
+    expect(page.locator("#assistant-proposal")).to_be_visible()
+    harbor_card = page.locator(".generation-card").first
+
+    page.locator(".manual-generation > summary").click()
+    page.locator("#generation-name").fill("lighthouse")
+    page.locator("#generation-prompt").fill("A tall beacon lighthouse.")
+
+    # Hold both
+    page.evaluate("window.holdGenerations = { harbor: true, lighthouse: true };")
+
+    # Click harbor generate
+    harbor_card.locator("button").click()
+    expect(harbor_card.locator("button")).to_have_text("Generating…")
+
+    # Manual generate is still clickable
+    manual_submit = page.locator("#generation-submit")
+    expect(manual_submit).to_be_enabled()
+    manual_submit.click()
+    expect(manual_submit).to_have_text("Generating…")
+    expect(manual_submit).to_be_disabled()
+
+    # Release harbor
+    page.evaluate("window.releaseGenerations.harbor();")
+    expect(harbor_card.locator("button")).to_have_text("Generated")
+
+    # Manual submit is still in flight
+    expect(manual_submit).to_have_text("Generating…")
+    expect(manual_submit).to_be_disabled()
+
+    # Release lighthouse
+    page.evaluate("window.releaseGenerations.lighthouse();")
+    expect(manual_submit).to_have_text("Generate · 4 Cr")
+    expect(manual_submit).to_be_enabled()
+
+
+def test_create_text_file_dialog_can_escape_without_creating_file(editor_page: Page) -> None:
+    page = editor_page
+    expect(page.locator("#file-count")).to_have_text("7 files")
+
+    # 1. Escape via Cancel button
+    page.locator("#new-file").click()
+    dialog = page.locator("#new-file-dialog")
+    expect(dialog).to_be_visible()
+    expect(page.locator("#new-file-path")).to_have_value("")
+
+    # Click Cancel
+    page.locator("#new-file-cancel").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#file-count")).to_have_text("7 files")
+
+    # 2. Escape via Keyboard Escape key
+    page.locator("#new-file").click()
+    expect(dialog).to_be_visible()
+    page.locator("#new-file-path").fill("lore/abandoned.txt")
+
+    # Press Escape key
+    page.keyboard.press("Escape")
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#file-count")).to_have_text("7 files")
+    expect(page.locator('.file-button[title="lore/abandoned.txt"]')).not_to_be_visible()
+
+    # Reopening resets the path input
+    page.locator("#new-file").click()
+    expect(dialog).to_be_visible()
+    expect(page.locator("#new-file-path")).to_have_value("")
+    page.keyboard.press("Escape")
+    expect(dialog).not_to_be_visible()
+
+
 

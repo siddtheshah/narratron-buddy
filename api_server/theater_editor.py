@@ -430,6 +430,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
 
         async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
             try:
+                info = await require_draft(request, theater_id)
                 # Validate capacity and persist before charging, just like successful live generation.
                 await asyncio.to_thread(store().write_files, info, {path: content})
             except Exception as error:
