@@ -18,6 +18,7 @@
 .folder-name{min-width:0;overflow-wrap:anywhere}
 .folder-count{margin-left:auto;color:var(--muted);font-size:.68rem;flex-shrink:0}
 .file-children{margin-left:1rem;border-left:1px solid var(--line)}
+.empty-folder-hint{display:block;padding:.4rem 1rem;font-size:.72rem;color:var(--muted);font-style:italic}
 .panel-heading-title{display:flex;align-items:center;gap:.5rem}
 .assistant-panel{overflow:visible}
 .assistant-panel .panel-heading{border-top-left-radius:11px;border-top-right-radius:11px}

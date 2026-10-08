@@ -5,7 +5,7 @@ import unittest
 
 from absl.testing import flagsaver
 
-from storage.theater_repository import TheaterRepository, ensure_theaters_root, get_theaters_root
+from storage.theater_repository import TheaterRepository, get_theaters_root
 
 
 class TestTheaterRootSelection(unittest.TestCase):
@@ -46,6 +46,7 @@ class TheaterRepositoryTest(unittest.TestCase):
         ok = self.repo.export_theater(theater_id, source_theater)
         self.assertTrue(ok)
         self.assertTrue(self.repo.theater_exists(theater_id))
+        self.assertTrue((self.repo.theater_path(theater_id) / "characters").is_dir())
 
         # Metadata
         meta = self.repo.get_theater_metadata(theater_id)
@@ -57,6 +58,7 @@ class TheaterRepositoryTest(unittest.TestCase):
         recon_ok = self.repo.reconstruct_theater(theater_id, target_dir)
         self.assertTrue(recon_ok)
         self.assertTrue((target_dir / "theater.json").exists())
+        self.assertTrue((target_dir / "characters").is_dir())
         self.assertEqual((target_dir / "output" / "img.png").read_bytes(), b"image-bytes-123")
         self.assertEqual((target_dir / "references" / "ref.jpg").read_bytes(), b"ref-bytes-456")
 

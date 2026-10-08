@@ -100,6 +100,9 @@
       }
       node.files.push(file);
     }
+    if (!root.folders.has('characters')) {
+      root.folders.set('characters', { folders: new Map(), files: [], count: 0 });
+    }
     function appendFiles(parent, files) {
       for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
         const button = document.createElement('button'); button.type = 'button'; button.className = 'file-button';
@@ -122,6 +125,12 @@
         summary.append(label, count);
         const contents = document.createElement('div'); contents.className = 'file-children';
         appendFolders(contents, child, path); appendFiles(contents, child.files);
+        if (child.files.length === 0 && child.folders.size === 0) {
+          const emptyHint = document.createElement('span');
+          emptyHint.className = 'empty-folder-hint';
+          emptyHint.textContent = name === 'characters' ? 'No character portraits yet (characters/<Name>/1.png)' : 'Empty folder';
+          contents.append(emptyHint);
+        }
         folder.append(summary, contents); parent.append(folder);
       }
     }

@@ -471,6 +471,40 @@ def test_editing_existing_theater_preserves_live_assets_until_deployed(builder: 
     assert builder.manager.get_theater(identifier).join_key == metadata.join_key
 
 
+def test_opening_existing_theater_preserves_characters_folder_and_portraits(builder: BuilderHarness) -> None:
+    identifier = "theater_with_chars"
+    image = png_bytes()
+    metadata = builder.manager.create_theater(
+        name="Cast world",
+        theater_id=identifier,
+        reference_files=[
+            ("references/stage.png", image),
+            ("characters/Arthur Modella/1.png", image),
+        ],
+        theater_config={"live_agent": {"special_instructions": "Cast world"}},
+    )
+    builder.repository.export_theater(identifier, builder.manager.theater(identifier).directory())
+    builder.database.get_deployment.return_value = {"user_id": 7, "theater_id": identifier, "join_key": metadata.join_key}
+    base = f"/api/theater-editor/{identifier}"
+
+    opened = builder.client.get(base)
+    assert opened.status_code == 200, opened.text
+    data = opened.json()
+    paths = {f["path"] for f in data["files"]}
+    assert "characters/Arthur Modella/1.png" in paths
+
+    # Verify character file can be read from draft endpoint
+    read_res = builder.client.get(f"{base}/file?path=characters/Arthur%20Modella/1.png")
+    assert read_res.status_code == 200
+    assert read_res.content == image
+
+    # Reopening an existing draft also preserves characters
+    reopened = builder.client.get(base)
+    assert reopened.status_code == 200
+    reopened_paths = {f["path"] for f in reopened.json()["files"]}
+    assert "characters/Arthur Modella/1.png" in reopened_paths
+
+
 def test_organized_assets_are_listed_served_and_resolved_on_canvas(builder: BuilderHarness) -> None:
     data = builder.create()
     identifier = data["draft"]["theater_id"]

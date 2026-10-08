@@ -233,3 +233,53 @@ def test_assistant_proposes_character_portraits_and_system_instruction(tmp_path:
     assert "characters/<Character Name>" in system_instruction
     assert "kind 'character'" in system_instruction
 
+
+def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_path: Path) -> None:
+    source = tmp_path / "source_theater"
+    source.mkdir()
+    (source / "theater.yaml").write_text("live_agent: {}\n", encoding="utf-8")
+    (source / "characters").mkdir()
+    (source / "characters" / "Arthur Modella").mkdir()
+    (source / "characters" / "Arthur Modella" / "1.png").write_bytes(b"arthur_png")
+    # Loose character file in source
+    (source / "characters" / "Grim Vallos.png").write_bytes(b"grim_png")
+    # Session updated character
+    (source / "output" / "artifacts" / "updated_characters" / "Lyra").mkdir(parents=True)
+    (source / "output" / "artifacts" / "updated_characters" / "Lyra" / "1.png").write_bytes(b"lyra_png")
+
+    store = TheaterBuilderStore(tmp_path / "storage")
+    info = store.create(7, "Preserved", "live_agent: {}\n", theater_id="theater_char", source=source)
+    draft_dir = store.directory(info.theater_id)
+
+    assert (draft_dir / "characters").is_dir()
+    files = {item.path: item for item in store.files(info.theater_id)}
+    assert "characters/Arthur Modella/1.png" in files
+    assert "characters/Grim Vallos/1.png" in files
+    assert "characters/Lyra/1.png" in files
+    assert (draft_dir / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
+    assert (draft_dir / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
+    assert (draft_dir / "characters" / "Lyra" / "1.png").read_bytes() == b"lyra_png"
+
+    # Test copy_to also keeps characters directory
+    target = tmp_path / "target_theater"
+    target.mkdir()
+    store.copy_to(info, target)
+    assert (target / "characters").is_dir()
+    assert (target / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
+
+
+def test_existing_draft_syncs_characters_from_source_on_reopen(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path / "storage")
+    info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen", source=None, populate_default=False)
+    # Draft created without characters
+    source = tmp_path / "source_theater"
+    source.mkdir()
+    (source / "characters" / "Grim Vallos").mkdir(parents=True)
+    (source / "characters" / "Grim Vallos" / "1.png").write_bytes(b"grim_png")
+
+    store.sync_source_characters(info, source)
+    draft_dir = store.directory(info.theater_id)
+    assert (draft_dir / "characters").is_dir()
+    assert (draft_dir / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
+
+

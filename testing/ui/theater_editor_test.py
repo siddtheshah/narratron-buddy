@@ -202,8 +202,14 @@ def test_nested_folders_expand_with_mouse_and_keyboard(editor_page: Page, width:
     expect(page.locator("#file-count")).to_have_text("7 files")
     expect(page.locator('.file-button[title="theater.yaml"]')).to_be_visible()
     assert page.locator("#file-list > details > summary .folder-name").all_text_contents() == [
-        "lore", "playlists", "references",
+        "characters", "lore", "playlists", "references",
     ]
+    chars_folder = page.locator('#file-list > details[data-path="characters"]')
+    expect(chars_folder).to_be_visible()
+    expect(chars_folder.locator(":scope > summary .folder-count")).to_have_text("0")
+    chars_folder.locator(":scope > summary").click()
+    expect(chars_folder.locator(".empty-folder-hint")).to_have_text("No character portraits yet (characters/<Name>/1.png)")
+
     lore = page.locator('details[data-path="lore"]')
     captain = page.locator('.file-button[title="lore/characters/captain.txt"]')
     expect(captain).not_to_be_visible()

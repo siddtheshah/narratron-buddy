@@ -131,7 +131,11 @@ def upload_path(filename: str, folder: bool) -> str:
         parts = parts[1:]
     relative = "/".join(parts)
     # Validate the original path before normalization can hide traversal.
-    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "lore", "characters"}:
+    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "lore"}:
+        return relative
+    if parts[0] == "characters":
+        if len(parts) == 2 and PurePosixPath(parts[1]).suffix.lower() in IMAGE_EXTENSIONS:
+            return f"characters/{PurePosixPath(parts[1]).stem}/1{PurePosixPath(parts[1]).suffix.lower()}"
         return relative
     name = parts[-1]
     suffix = PurePosixPath(name).suffix.lower()
@@ -155,6 +159,47 @@ class TheaterBuilderStore:
             raise ValueError("Invalid theater ID.")
         return self.root / theater_id
 
+    def ensure_directories(self, theater_id: str) -> None:
+        root = self.directory(theater_id)
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "characters").mkdir(parents=True, exist_ok=True)
+        (root / "references").mkdir(parents=True, exist_ok=True)
+        (root / "playlists").mkdir(parents=True, exist_ok=True)
+        (root / "lore").mkdir(parents=True, exist_ok=True)
+        (root / "stamps").mkdir(parents=True, exist_ok=True)
+
+    def sync_source_characters(self, info: DraftInfo, source: Path) -> None:
+        root = self.directory(info.theater_id)
+        self.ensure_directories(info.theater_id)
+        source_chars = source / "characters"
+        if source_chars.is_dir():
+            for item in source_chars.rglob("*"):
+                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+                    relative = item.relative_to(source).as_posix()
+                    parts = relative.split("/")
+                    if len(parts) == 2:
+                        relative = f"characters/{item.stem}/1{item.suffix.lower()}"
+                    try:
+                        target_file = safe_asset_path(root, relative)
+                    except ValueError:
+                        continue
+                    if not target_file.exists():
+                        target_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, target_file)
+        session_chars = source / "output" / "artifacts" / "updated_characters"
+        if session_chars.is_dir():
+            for item in session_chars.rglob("*"):
+                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+                    rel = item.relative_to(session_chars).as_posix()
+                    char_rel = f"characters/{rel}"
+                    try:
+                        target_file = safe_asset_path(root, char_rel)
+                    except ValueError:
+                        continue
+                    if not target_file.exists():
+                        target_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, target_file)
+
     def load(self, theater_id: str) -> DraftInfo | None:
         manifest = self.directory(theater_id) / "editor.json"
         return DraftInfo.model_validate_json(manifest.read_text(encoding="utf-8")) if manifest.is_file() else None
@@ -170,29 +215,47 @@ class TheaterBuilderStore:
         identifier = theater_id or f"theater_{uuid.uuid4().hex}"
         info = DraftInfo(theater_id=identifier, owner_id=owner_id, name=name, source_id=theater_id)
         root = self.directory(identifier)
-        root.mkdir(parents=True, exist_ok=True)
+        self.ensure_directories(identifier)
         files: dict[str, bytes] = {}
         if source is not None:
             for item in source.rglob("*"):
                 if item.is_file():
                     relative = item.relative_to(source).as_posix()
+                    parts = relative.split("/")
+                    if len(parts) == 2 and parts[0] == "characters" and item.suffix.lower() in IMAGE_EXTENSIONS:
+                        relative = f"characters/{item.stem}/1{item.suffix.lower()}"
                     try:
-                        safe_asset_path(source, relative)
                         safe_asset_path(root, relative)
                     except ValueError:
                         continue
                     files[relative] = item.read_bytes()
+            session_chars = source / "output" / "artifacts" / "updated_characters"
+            if session_chars.is_dir():
+                for item in session_chars.rglob("*"):
+                    if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+                        rel = item.relative_to(session_chars).as_posix()
+                        char_rel = f"characters/{rel}"
+                        if char_rel not in files:
+                            try:
+                                safe_asset_path(root, char_rel)
+                                files[char_rel] = item.read_bytes()
+                            except ValueError:
+                                continue
         files.setdefault("theater.yaml", default_yaml.encode("utf-8"))
         if source is None and populate_default:
             files["lore/readfirst_overview.txt"] = b"Describe your world, its characters, and the opening scene here.\n"
             project_root = Path(__file__).resolve().parent.parent
             for asset in (project_root / "reference_library").glob("*"):
                 if asset.is_file() and asset.suffix.lower() in IMAGE_EXTENSIONS:
-                    files[f"references/{asset.name}"] = asset.read_bytes()
+                    data = asset.read_bytes()
+                    files[f"references/{asset.name}"] = data
+                    if "avatar" in asset.stem.lower():
+                        files[f"characters/Narratron/1{asset.suffix.lower()}"] = data
             default_track = project_root / "playlists" / "default" / "new story.mp3"
             if default_track.is_file():
                 files["playlists/default/new_story.mp3"] = default_track.read_bytes()
         self.write_files(info, files)
+        self.ensure_directories(identifier)
         return info
 
     def files(self, theater_id: str) -> list[BuilderFile]:
@@ -268,6 +331,8 @@ class TheaterBuilderStore:
             del_target.unlink()
             parent = del_target.parent
             while parent != resolved_root and parent.is_dir() and not any(parent.iterdir()):
+                if parent.parent == resolved_root and parent.name in {"characters", "references", "stamps", "playlists", "lore"}:
+                    break
                 parent.rmdir()
                 parent = parent.parent
         for move in operations:
@@ -288,6 +353,11 @@ class TheaterBuilderStore:
         """Publish the draft's package files; preserve runtime output and canvas state."""
         root = self.directory(info.theater_id)
         draft_files = {item.path for item in self.files(info.theater_id)}
+        (target / "characters").mkdir(parents=True, exist_ok=True)
+        (target / "references").mkdir(parents=True, exist_ok=True)
+        (target / "playlists").mkdir(parents=True, exist_ok=True)
+        (target / "lore").mkdir(parents=True, exist_ok=True)
+        (target / "stamps").mkdir(parents=True, exist_ok=True)
         # Remove package files absent from the draft, including assets moved by the assistant.
         for item in list(target.rglob("*")):
             if item.is_file():
