@@ -218,8 +218,7 @@ class ImageTools(BaseTools):
         """Return True if ref is identified as a character reference."""
         if self.reference_manager is None:
             return False
-        return ReferenceManager.is_character_reference(
-            self.reference_manager,
+        return self.reference_manager.is_character_reference(
             ref=ref,
             resolved_path=resolved_path,
             lookup_result=lookup_result,
@@ -281,8 +280,7 @@ class ImageTools(BaseTools):
                 return res
         
         if self.reference_manager is not None:
-            provider_references, ref_error = ReferenceManager.resolve_provider_references(
-                self.reference_manager,
+            provider_references, ref_error = self.reference_manager.resolve_provider_references(
                 reference_images=reference_images,
                 prompt=image_prompt,
                 visual=self.visual,

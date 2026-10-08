@@ -35,7 +35,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
 from components.canvas.visual_state import VisualState
-from components.reference_manager import CharacterLookupResult, ReferenceManager
+from components.reference_manager import ReferenceManager
 
 
 logger = logging.getLogger(__name__)
@@ -169,22 +169,6 @@ class AnimationTools(BaseTools):
         thread = getattr(self, "_last_generation_thread", None)
         if thread and thread.is_alive():
             thread.join(timeout=timeout)
-
-    def _is_character_reference(
-        self,
-        ref: str,
-        resolved_path: Optional[str] = None,
-        lookup_result: Optional[CharacterLookupResult] = None,
-    ) -> bool:
-        """Return True if ref is identified as a character reference."""
-        if self.reference_manager is None:
-            return False
-        return ReferenceManager.is_character_reference(
-            self.reference_manager,
-            ref=ref,
-            resolved_path=resolved_path,
-            lookup_result=lookup_result,
-        )
 
     @terminal
     @blocked_when_canvas_pinned
@@ -761,8 +745,7 @@ class AnimationTools(BaseTools):
         scene_prompt: str = "",
     ) -> tuple[list[ImageReference], Optional[str]]:
         if self.reference_manager is not None:
-            return ReferenceManager.resolve_provider_references(
-                self.reference_manager,
+            return self.reference_manager.resolve_provider_references(
                 reference_images=reference_images,
                 prompt=scene_prompt,
                 visual=self.visual,

@@ -29,8 +29,6 @@ class ReferenceToolProvider(Protocol):
     def get_present_characters(self) -> list[Character]:
         ...
 
-CharacterToolProvider = ReferenceToolProvider
-
 
 def format_canvas_state(
     canvas_state_manager: Optional[CanvasStateManager],

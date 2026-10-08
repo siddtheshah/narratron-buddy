@@ -141,8 +141,4 @@ class ReferenceTool(BaseTools):
         return self.reference_manager.count()
 
 
-CharacterTool = ReferenceTool
-CharacterTools = ReferenceTool
-ReferenceTools = ReferenceTool
-
-__all__ = ["ReferenceTool", "ReferenceTools", "CharacterTool", "CharacterTools"]
+__all__ = ["ReferenceTool"]
