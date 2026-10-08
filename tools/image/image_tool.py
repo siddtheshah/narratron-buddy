@@ -77,6 +77,7 @@ class ImageTools(BaseTools):
         self._story_plan_completed: bool = not self.adventure_mode
         self._story_plan_lock: threading.Lock = threading.Lock()
         self.is_generating: bool = False
+        self._last_generation_thread: Optional[threading.Thread] = None
         
         self.references_manifest = self.image_library.references_manifest
         if self.visual:
@@ -205,7 +206,7 @@ class ImageTools(BaseTools):
 
     def join_generation(self, timeout: float = 10.0) -> None:
         """Helper for unit tests or teardown to wait for background image generation thread."""
-        thread = getattr(self, "_last_generation_thread", None)
+        thread = self._last_generation_thread
         if thread and thread.is_alive():
             thread.join(timeout=timeout)
 
@@ -226,7 +227,9 @@ class ImageTools(BaseTools):
 
     @terminal
     @blocked_when_canvas_pinned
-    @with_cycle_cooldown(action_desc="generating another image")
+    @with_cycle_cooldown(
+        action_desc="generating another image", tool_name="image_cycle", hold_until_released=True,
+    )
     def create_image(
         self,
         image_prompt: str,
@@ -258,7 +261,7 @@ class ImageTools(BaseTools):
         """
         allow_pinned = self.consume_orator_pin_bypass("create_image")
         if self.visual.pinned and not allow_pinned:
-            return CANVAS_PINNED_MESSAGE
+            return f"Error: {CANVAS_PINNED_MESSAGE}"
         if not isinstance(image_name, str) or not image_name.strip():
             res = "Error: image_name is required when creating an image."
             self._trigger_after_tool_call("create_image")
@@ -299,11 +302,9 @@ class ImageTools(BaseTools):
             if self.adventure_mode:
                 self._story_plan_completed = False
 
-        self.record_tool_call("create_image")
-
-        def _worker():
-            self._set_canvas_activity(True)
+        def _worker() -> None:
             try:
+                self._set_canvas_activity(True)
                 saved_paths = []
                 provider = self._get_image_provider()
                 logger.debug(
@@ -410,14 +411,18 @@ class ImageTools(BaseTools):
                             if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
                                 show_img(webp_filepath)
                 else:
+                    self.record_tool_failure("image_cycle")
                     logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
             except ImageProviderError as e:
+                self.record_tool_failure("image_cycle")
                 logger.error("[ImageTools] Image provider '%s' failed: %s", self.image_model, e)
             except Exception as e:
+                self.record_tool_failure("image_cycle")
                 logger.error(f"[ImageTools] Error generating image in background: {e}")
             finally:
                 self._set_canvas_activity(False)
                 self._trigger_after_tool_call("create_image")
+                self._on_cycle_tool_completed("image_cycle")
 
         t = threading.Thread(target=_worker, daemon=True)
         self._last_generation_thread = t
@@ -451,14 +456,14 @@ class ImageTools(BaseTools):
 
     @terminal
     @blocked_when_canvas_pinned
-    @with_cycle_cooldown(action_desc="showing another image")
+    @with_cycle_cooldown(action_desc="showing another image", tool_name="image_cycle")
     def show_image(
         self,
         file_path: str,
         transition: str = "crossfade",
         effect: str = "gleam3",
     ) -> str:
-        """Sets an image to be displayed in the next cycle, or displays immediately if no image is currently shown.
+        """Display an image when the current visual has had its minimum screen time, or queue it.
 
         Args:
             file_path: The file path or friendly name/alias of the image to show.
@@ -567,10 +572,9 @@ class ImageTools(BaseTools):
                 self._currently_displayed_image_effect = effect
                 res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
             elif status == "blocked":
-                logger.info(f"[ImageTools] show_image called for '{file_path}', but create_image already has priority for next cycle.")
-                res = f"Image '{file_path}' was not queued because a generated image already has priority for the next cycle."
+                res = f"Error: {update_res['message']}"
             else:
-                res = f"Image '{file_path}' queued for the next image cycle with transition '{transition}' and effect '{effect}'."
+                res = f"Image '{file_path}' queued for its turn on the canvas with transition '{transition}' and effect '{effect}'."
         else:
             self._currently_displayed_image_path = resolved_path
             self._currently_displayed_image_transition = transition

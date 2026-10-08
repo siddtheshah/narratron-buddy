@@ -2,6 +2,7 @@ import io
 import os
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +10,7 @@ from PIL import Image, PngImagePlugin
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
-from providers import ImageGenerationResult, TextResponseProvider
+from providers import ImageGenerationRequest, ImageGenerationResult, ImageProviderError, TextResponseProvider
 from testing.base import BaseTestCase
 from testing.reference_manager_fixture import make_reference_manager
 from tools.image import ImageTools
@@ -213,7 +214,7 @@ class TestImageTools(BaseTestCase):
 
         # 2. Subsequent call: queues for next cycle
         res2 = tools.show_image("scene2.jpg")
-        self.assertIn("queued for the next image cycle", res2)
+        self.assertIn("queued for its turn on the canvas", res2)
         self.assertEqual(visual.current_cycle_visual["path"], img1)
         self.assertEqual(visual.next_cycle_image["path"], img2)
 
@@ -248,7 +249,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(canvas_state.get_latest_state()["latest"], "/theaters/starting_image/references/opening%20scene.jpg")
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_image_has_priority_over_show_image_in_next_cycle(self, mock_get_provider):
+    def test_create_image_and_show_image_keep_separate_canvas_queue_slots(self, mock_get_provider: MagicMock) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         tools = self.make_image_tools(self.config, theater_id="priority_test", theater_manager=self.manager)
@@ -269,20 +270,22 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(visual.next_cycle_image["path"], img_staged)
         self.assertEqual(visual.next_cycle_image["priority"], visual.PRIORITY_SHOW)
 
-        # Now create_image completes in background -> should override staged show_image
+        # Generation joins behind the saved image already waiting.
         tools.create_image("a shining diamond", image_name="shining_diamond", display=True)
         tools.join_generation()
 
         self.assertIsNotNone(visual.next_cycle_image)
-        self.assertEqual(visual.next_cycle_image["priority"], visual.PRIORITY_CREATE)
-        self.assertEqual(visual.next_cycle_image["source"], "create_image")
+        self.assertEqual([item["source"] for item in visual.pending_visuals], ["show_image", "create_image"])
 
-        # Calling show_image now cannot override the higher-priority create_image
-        blocked_res = tools.show_image("ref.jpg")
-        self.assertIn("already has priority", blocked_res)
-        self.assertEqual(visual.next_cycle_image["source"], "create_image")
+        # A newer saved image replaces only its own source's slot.
+        queued_res = tools.show_image("ref.jpg")
+        self.assertIn("queued", queued_res)
+        self.assertEqual(visual.next_cycle_image["path"], img_ref)
+        self.assertEqual(len(visual.pending_visuals), 2)
 
-        # Roll over cycle -> generated image becomes current
+        # Both sources get a turn in order.
+        advanced = visual.advance_cycle()
+        self.assertEqual(advanced["source"], "show_image")
         advanced = visual.advance_cycle()
         self.assertEqual(advanced["source"], "create_image")
         visual.stop_cycle()
@@ -401,7 +404,7 @@ class TestImageTools(BaseTestCase):
         tools.record_story_plan_completed()
         self.assertTrue(tools.is_story_plan_completed)
         res4 = tools.show_image("test_card.jpg")
-        self.assertIn("queued for the next image cycle", res4)
+        self.assertIn("queued for its turn on the canvas", res4)
         self.assertFalse(tools.is_story_plan_completed)
 
     @patch("tools.image.image_tool.get_image_provider")
@@ -554,7 +557,7 @@ class TestImageTools(BaseTestCase):
 
         # 3. Request new image -> cannot evict active animation; queues for next cycle
         res = tools.show_image("scene2.jpg")
-        self.assertIn("queued for the next image cycle", res)
+        self.assertIn("queued for its turn on the canvas", res)
         self.assertEqual(tools.visual.current_cycle_visual["type"], "video")
         self.assertEqual(tools.visual.next_cycle_image["path"], img2)
         self.assertIsNotNone(c_state.visual.shown_video_animation)
@@ -567,7 +570,7 @@ class TestImageTools(BaseTestCase):
         self.assertIsNone(c_state.visual.shown_video_animation)
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_image_takes_priority_when_animation_is_active(self, mock_get_provider):
+    def test_images_queue_without_evicting_active_animation(self, mock_get_provider: MagicMock) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         canvas_state_service = CanvasStateService(self.manager)
@@ -605,18 +608,20 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(tools.visual.next_cycle_image["priority"], tools.visual.PRIORITY_CREATE)
         self.assertIsNotNone(c_state.visual.shown_video_animation)
 
-        # Calling show_image cannot override the higher-priority created image in next cycle
-        blocked = tools.show_image("scene1.jpg")
-        self.assertIn("already has priority", blocked)
+        # A saved image joins behind generation while the animation remains visible.
+        queued = tools.show_image("scene1.jpg")
+        self.assertIn("queued", queued)
 
         # Advance cycle promotes created image and clears active animation
         promoted = tools.visual.advance_cycle()
         self.assertIn("ruins", promoted["path"])
         self.assertEqual(tools.visual.current_cycle_visual["path"], promoted["path"])
-        self.assertIsNone(tools.visual.next_cycle_image)
+        self.assertEqual(tools.visual.next_cycle_image["path"], img1)
         self.assertIsNone(c_state.visual.shown_video_animation)
+        tools.visual.advance_cycle()
+        self.assertIsNone(tools.visual.next_cycle_image)
 
-    def test_show_image_cycle_cooldown_schedules_and_updates(self):
+    def test_show_image_cycle_cooldown_schedules_and_updates(self) -> None:
         tools = self.make_image_tools(self.config, theater_id="cooldown_show", theater_manager=self.manager)
         tools.cooldown_duration = 10.0
         img1 = os.path.join(tools.reference_dir, "pic1.jpg")
@@ -635,12 +640,12 @@ class TestImageTools(BaseTestCase):
         res3 = tools.show_image("pic3.jpg")
         self.assertEqual(res3, "Tool 'show_image' parameters updated for next cycle.")
 
-        pending = tools.get_pending_cycle_call("show_image")
+        pending = tools.get_pending_cycle_call("image_cycle")
         self.assertIsNotNone(pending)
         self.assertEqual(pending["args"], ("pic3.jpg",))
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_image_cycle_cooldown_schedules_and_updates(self, mock_get_provider):
+    def test_create_image_cycle_cooldown_schedules_and_updates(self, mock_get_provider: MagicMock) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         tools = self.make_image_tools(self.config, theater_id="cooldown_create", theater_manager=self.manager)
@@ -655,11 +660,154 @@ class TestImageTools(BaseTestCase):
         res3 = tools.create_image("scene three", image_name="img3", display=False)
         self.assertEqual(res3, "Tool 'create_image' parameters updated for next cycle.")
 
-        pending = tools.get_pending_cycle_call("create_image")
+        pending = tools.get_pending_cycle_call("image_cycle")
         self.assertIsNotNone(pending)
         self.assertEqual(pending["args"], ("scene three",))
         self.assertEqual(pending["kwargs"], {"image_name": "img3", "display": False})
         tools.join_generation()
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_image_tools_share_one_pending_slot_across_methods(self, mock_get_provider: MagicMock) -> None:
+        mock_get_provider.return_value.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(self.config, theater_id="shared_slot", theater_manager=self.manager)
+        tools.cooldown_duration = 9.0
+        path = Path(tools.reference_dir) / "forest.jpg"
+        Image.new("RGB", (10, 10), "green").save(path)
+        with patch.object(ImageTools, "_schedule_cooldown_timer"):
+            tools.show_image(str(path))
+            assert "scheduled" in tools.create_image("castle", image_name="castle")
+            assert "parameters updated" in tools.show_image(str(path), effect="dream")
+            pending = tools.get_pending_cycle_call("image_cycle")
+            assert pending is not None
+            assert pending["func"].__name__ == "show_image"
+            assert pending["kwargs"] == {"effect": "dream"}
+            assert len(tools._pending_cycle_calls) == 1
+            tools._last_call_times.clear()
+            tools.acquire_in_flight("image_cycle")
+            assert tools._execute_pending_cycle_call("image_cycle")
+            assert tools.visual.next_cycle_image["effect"] == "dream"
+            mock_get_provider.return_value.generate.assert_not_called()
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_generation_holds_shared_flight_beyond_cooldown(self, mock_get_provider: MagicMock) -> None:
+        tools = self.make_image_tools(self.config, theater_id="slow_generation", theater_manager=self.manager)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def generate(_request: ImageGenerationRequest) -> ImageGenerationResult:
+            entered.set()
+            assert release.wait(5)
+            return self._provider_result()
+
+        mock_get_provider.return_value.generate.side_effect = generate
+        tools.on_cooldown_expired = MagicMock()
+        tools.cooldown_duration = 9.0
+        with patch.object(ImageTools, "_schedule_cooldown_timer"), patch.object(tools, "_dispatch_pending_cycle_call") as dispatch:
+            try:
+                assert "started" in tools.create_image("forest", image_name="forest")
+                assert entered.wait(5)
+                tools._last_call_times.clear()
+                assert tools.is_in_flight("image_cycle")
+                # Identical text in a different method must not be swallowed as a duplicate.
+                assert "scheduled" in tools.show_image("forest")
+                assert tools.get_pending_cycle_call("image_cycle") is not None
+                dispatch.assert_not_called()
+                tools.on_cooldown_expired.assert_not_called()
+            finally:
+                release.set()
+                tools.join_generation()
+            dispatch.assert_called_once_with("image_cycle")
+            assert tools._execute_pending_cycle_call("image_cycle")
+            assert not tools.is_in_flight("image_cycle")
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_deferred_generation_holds_flight_and_failure_allows_retry(self, mock_get_provider: MagicMock) -> None:
+        tools = self.make_image_tools(self.config, theater_id="deferred_failure", theater_manager=self.manager)
+        path = Path(tools.reference_dir) / "forest.jpg"
+        Image.new("RGB", (10, 10), "green").save(path)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def generate(_request: ImageGenerationRequest) -> ImageGenerationResult:
+            entered.set()
+            assert release.wait(5)
+            raise ImageProviderError("provider unavailable")
+
+        mock_get_provider.return_value.generate.side_effect = generate
+        tools.cooldown_duration = 9.0
+        with patch.object(ImageTools, "_schedule_cooldown_timer"):
+            tools.show_image(str(path))
+            tools.create_image("castle", image_name="castle")
+            tools._last_call_times.clear()
+            tools.acquire_in_flight("image_cycle")
+            try:
+                assert tools._execute_pending_cycle_call("image_cycle")
+                assert entered.wait(5)
+                assert tools.is_in_flight("image_cycle")
+            finally:
+                release.set()
+                tools.join_generation()
+            assert not tools.is_in_flight("image_cycle")
+            assert tools.get_cooldown_remaining("image_cycle") == 0.0
+            mock_get_provider.return_value.generate.side_effect = None
+            mock_get_provider.return_value.generate.return_value = self._provider_result()
+            assert "started" in tools.create_image("castle", image_name="castle")
+            tools.join_generation()
+
+    def test_invalid_image_request_releases_shared_cooldown(self) -> None:
+        tools = self.make_image_tools(self.config, theater_id="invalid_shared", theater_manager=self.manager)
+        tools.cooldown_duration = 9.0
+        with patch.object(ImageTools, "_schedule_cooldown_timer"):
+            assert "Error:" in tools.create_image("forest", image_name="")
+            assert not tools.is_in_flight("image_cycle")
+            assert tools.get_cooldown_remaining("image_cycle") == 0.0
+            assert "Error:" in tools.show_image("missing")
+            assert not tools._pending_cycle_calls
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_orator_pass_bypasses_shared_image_cooldown(self, mock_get_provider: MagicMock) -> None:
+        tools = self.make_image_tools(self.config, theater_id="shared_pass", theater_manager=self.manager)
+        mock_get_provider.return_value.generate.return_value = self._provider_result()
+        tools.cooldown_duration = 9.0
+        path = Path(tools.reference_dir) / "forest.jpg"
+        Image.new("RGB", (10, 10), "green").save(path)
+        with patch.object(ImageTools, "_schedule_cooldown_timer"):
+            tools.show_image(str(path))
+            tools.show_image(str(path), effect="dream")
+            tools.request_orator_bypass({"create_image"})
+            tools.visual.request_immediate_image()
+            assert "started" in tools.create_image("castle", image_name="castle")
+            tools.join_generation()
+            assert not tools._pending_cycle_calls
+            assert tools.visual.current_cycle_visual["source"] == "create_image"
+            assert "scheduled" in tools.show_image(str(path), effect="haze")
+            tools.cancel_pending_cycle_call("image_cycle")
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_shared_timer_executes_latest_call_without_agent_retry(self, mock_get_provider: MagicMock) -> None:
+        tools = self.make_image_tools(self.config, theater_id="shared_timer", theater_manager=self.manager)
+        mock_get_provider.return_value.generate.return_value = self._provider_result()
+        tools.cooldown_duration = 0.05
+        path = Path(tools.reference_dir) / "forest.jpg"
+        Image.new("RGB", (10, 10), "green").save(path)
+        finished = threading.Event()
+
+        def after_call(tool_name: str, _canvas_info: dict[str, str]) -> None:
+            if tool_name == "show_image" and tools.visual.next_cycle_image is not None:
+                finished.set()
+
+        tools.on_after_tool_call = after_call
+        try:
+            tools.show_image(str(path))
+            assert "scheduled" in tools.create_image("castle", image_name="castle")
+            assert "parameters updated" in tools.show_image(str(path), effect="dream")
+            assert finished.wait(5)
+            assert tools.visual.next_cycle_image["effect"] == "dream"
+            mock_get_provider.return_value.generate.assert_not_called()
+        finally:
+            tools.cancel_pending_cycle_call("image_cycle")
+            for timer in list(tools._cooldown_timers.values()):
+                timer.cancel()
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_auto_adds_reference_manager_references(self, mock_get_provider) -> None:

@@ -8,7 +8,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Literal, Optional, Tuple, TypeAlias, TypedDict, Union
 
 from components.theater_manager import Theater
 from utils.image_utils import (
@@ -22,6 +22,33 @@ logger = logging.getLogger("components.canvas.visual_state")
 
 PRIORITY_SHOW = 1
 PRIORITY_CREATE = 2
+
+VisualValue: TypeAlias = Union[str, bool, int, float, None, list["VisualValue"], dict[str, "VisualValue"]]
+
+
+class VisualResource(TypedDict, total=False):
+    type: str
+    path: str
+    raw_path: str
+    display_path: str
+    allow_pinned: bool
+    force_immediate: bool
+    transition: str
+    effect: str
+    prompt: str
+    priority: int
+    source: str
+    id: str
+    manifest: dict[str, VisualValue]
+    frame_paths: list[str]
+    url_for_path: Optional[Callable[[str], str]]
+
+
+class VisualUpdateResult(TypedDict):
+    status: Literal["displayed", "queued", "blocked"]
+    resource: VisualResource
+    message: str
+
 
 class VisualState:
     PRIORITY_SHOW = PRIORITY_SHOW
@@ -51,8 +78,10 @@ class VisualState:
         self._cycle_lock = threading.RLock()
         self._cycle_timer: Optional[threading.Timer] = None
         self._cycle_active: bool = False
-        self.current_cycle_visual: Optional[dict] = None
-        self.next_cycle_image: Optional[dict] = None
+        self.current_cycle_visual: Optional[VisualResource] = None
+        self.pending_visuals: list[VisualResource] = []
+        self._visual_display_started_at: float = time.monotonic()
+        self._queue_timer_revision: int = 0
 
         # Visual assets are shared by all visual tools.  Keeping aliases on the
         # canvas makes lookup independent of whichever tool produced an asset.
@@ -74,6 +103,17 @@ class VisualState:
         self._history_index: int | None = None
         self.orator_cursor: int | None = None
 
+    @property
+    def next_cycle_image(self) -> Optional[VisualResource]:
+        """Compatibility view of the first waiting visual, including animations."""
+        with self._cycle_lock:
+            return self.pending_visuals[0] if self.pending_visuals else None
+
+    @next_cycle_image.setter
+    def next_cycle_image(self, resource: Optional[VisualResource]) -> None:
+        with self._cycle_lock:
+            self.pending_visuals = [resource] if resource is not None else []
+
     def request_immediate_image(self) -> None:
         """Display the next explicitly requested generated image without cycle pacing."""
         with self._cycle_lock:
@@ -93,10 +133,7 @@ class VisualState:
             if pinned:
                 self._orator_image_until = 0.0
                 self.next_cycle_image = None
-                if self._cycle_timer:
-                    self._cycle_timer.cancel()
-                    self._cycle_timer = None
-                self._cycle_active = False
+                self.stop_cycle()
         if self.notify_changed_fn:
             self.notify_changed_fn("latest")
         return True
@@ -252,7 +289,7 @@ class VisualState:
         source: str = "show_image",
         allow_pinned: bool = False,
         url_for_path: Optional[Callable[[str], str]] = None,
-    ) -> dict[str, Any]:
+    ) -> VisualUpdateResult:
         """Request an image update on the canvas, paced by the visual cycle.
 
         Args:
@@ -268,7 +305,7 @@ class VisualState:
         Returns:
             dict with 'status' ('displayed' | 'queued' | 'blocked'), 'resource', and 'message'.
         """
-        item = {
+        item: VisualResource = {
             "type": "image",
             "path": path,
             "display_path": display_path or path,
@@ -293,7 +330,7 @@ class VisualState:
         source: str = "play_animation",
         force_immediate: bool = False,
         url_for_path: Optional[Callable[[str], str]] = None,
-    ) -> dict[str, Any]:
+    ) -> VisualUpdateResult:
         """Request an animation update on the canvas.
 
         Args:
@@ -309,7 +346,7 @@ class VisualState:
         Returns:
             dict with 'status' ('displayed' | 'queued' | 'blocked'), 'resource', and 'message'.
         """
-        item: dict[str, Any] = {
+        item: VisualResource = {
             "type": animation_type,
             "id": id,
             "prompt": prompt,
@@ -335,7 +372,7 @@ class VisualState:
         self,
         resource: Optional[Union[dict[str, Any], str]] = None,
         **kwargs: Any,
-    ) -> dict[str, Any]:
+    ) -> VisualUpdateResult:
         """Generic visual update dispatch accepting dict or keyword arguments."""
         if isinstance(resource, str):
             kwargs.setdefault("path", resource)
@@ -350,8 +387,8 @@ class VisualState:
             data = kwargs.pop("manifest", kwargs.pop("frame_paths", kwargs.pop("data", {})))
             return self.update_animation(res_type, data, **kwargs)
 
-    def _enqueue_or_display(self, item: dict[str, Any]) -> dict[str, Any]:
-        """Internal pacing logic for scheduling or immediately displaying a visual resource."""
+    def _enqueue_or_display(self, item: VisualResource) -> VisualUpdateResult:
+        """Give each source a fair turn after the current visual's minimum screen time."""
         force_immediate = bool(item.get("force_immediate", False))
 
         with self._cycle_lock:
@@ -369,13 +406,15 @@ class VisualState:
             has_active = self.has_active_visual()
             is_cold_start = not has_active
 
-            display_immediately = force_immediate or is_cold_start
+            dwell_finished = self.cycle_length > 0 and self._display_time_remaining() <= 0
+            display_immediately = force_immediate or is_cold_start or (dwell_finished and not self.pending_visuals)
 
             if display_immediately:
                 self.current_cycle_visual = item
                 self.next_cycle_image = None
+                self.stop_cycle()
                 self._apply_visual(item)
-                self._schedule_next_cycle_tick()
+                self._visual_display_started_at = time.monotonic()
                 target_desc = item.get("raw_path") or item.get("path") or item.get("id") or item.get("type")
                 return {
                     "status": "displayed",
@@ -383,35 +422,23 @@ class VisualState:
                     "message": f"Successfully displayed {target_desc} with transition '{item.get('transition', 'crossfade')}' and effect '{item.get('effect', 'gleam3')}'."
                 }
 
-            item_priority = int(item.get("priority", self.PRIORITY_SHOW))
-            if (
-                self.next_cycle_image
-                and int(self.next_cycle_image.get("priority", 0)) >= self.PRIORITY_CREATE
-                and item_priority < self.PRIORITY_CREATE
-            ):
-                target_desc = item.get("raw_path") or item.get("path") or item.get("id") or item.get("type")
-                logger.info(
-                    "[VisualState] update_visual rejected for '%s': higher-priority visual already queued.",
-                    target_desc,
-                )
-                return {
-                    "status": "blocked",
-                    "resource": item,
-                    "message": "Visual resource was not queued because a higher-priority resource already has priority for the next cycle."
-                }
-
-            self.next_cycle_image = item
-            if not self._cycle_active and self.cycle_length > 0:
-                self._schedule_next_cycle_tick()
+            source = item.get("source", item.get("type", "image"))
+            for index, pending in enumerate(self.pending_visuals):
+                if pending.get("source", pending.get("type", "image")) == source:
+                    self.pending_visuals[index] = item
+                    break
+            else:
+                self.pending_visuals.append(item)
+            self._schedule_next_cycle_tick()
 
             target_desc = item.get("raw_path") or item.get("path") or item.get("id") or item.get("type")
             return {
                 "status": "queued",
                 "resource": item,
-                "message": f"Visual resource '{target_desc}' queued for the next cycle with transition '{item.get('transition', 'crossfade')}' and effect '{item.get('effect', 'gleam3')}'."
+                "message": f"Visual resource '{target_desc}' queued for its turn with transition '{item.get('transition', 'crossfade')}' and effect '{item.get('effect', 'gleam3')}'."
             }
 
-    def _apply_visual(self, resource: dict[str, Any]) -> bool:
+    def _apply_visual(self, resource: VisualResource) -> bool:
         """Apply a visual resource to the canvas and notify listeners."""
         res_type = resource.get("type") or ("image" if resource.get("path") else "unknown")
         url_for_path = resource.get("url_for_path") or self.theater.get_url_for_path
@@ -444,6 +471,7 @@ class VisualState:
             changed = self.show_triframe(frame_paths, prompt=prompt, url_for_path=url_for_path)
 
         self.current_cycle_visual = resource
+        self._visual_display_started_at = time.monotonic()
 
         if self.on_visual_changed_fn:
             try:
@@ -469,38 +497,37 @@ class VisualState:
 
         return changed
 
-    def advance_cycle(self) -> Optional[dict]:
-        """Advance to the next visual cycle.
-
-        If next_cycle_image is set, promote it to current_cycle_visual,
-        display it on the canvas, and clear next_cycle_image.
-        If next_cycle_image is None, retain current visual.
-        Returns the new current_cycle_visual.
-        """
+    def advance_cycle(self) -> Optional[VisualResource]:
+        """Explicitly promote the first waiting visual, retaining the rest of the queue."""
         with self._cycle_lock:
             if self.pinned:
                 return self.current_cycle_visual
-            if self.next_cycle_image is not None:
-                staged = self.next_cycle_image
-                self.next_cycle_image = None
+            if self.pending_visuals:
+                staged = self.pending_visuals.pop(0)
                 logger.info(
                     "[VisualState] Cycle rollover: displaying new visual resource (source=%s)",
                     staged.get("source"),
                 )
                 self._apply_visual(staged)
                 self.current_cycle_visual = staged
+                self._schedule_next_cycle_tick()
                 return self.current_cycle_visual
             else:
-                logger.debug("[VisualState] Cycle rollover: no next visual staged, retaining current visual.")
+                self.stop_cycle()
                 return self.current_cycle_visual
 
+    def _display_time_remaining(self) -> float:
+        return max(0.0, self.cycle_length - (time.monotonic() - self._visual_display_started_at))
+
     def _schedule_next_cycle_tick(self) -> None:
+        """Schedule only the remaining screen time, and only while a visual is waiting."""
         with self._cycle_lock:
-            if self._cycle_timer:
-                self._cycle_timer.cancel()
-                self._cycle_timer = None
-            if self.cycle_length > 0:
-                self._cycle_timer = threading.Timer(self.cycle_length, self._on_cycle_tick)
+            self.stop_cycle()
+            if self.pending_visuals and not self.pinned and self.cycle_length > 0:
+                self._cycle_timer = threading.Timer(
+                    self._display_time_remaining(), self._on_cycle_tick,
+                    args=(self._queue_timer_revision,),
+                )
                 self._cycle_timer.daemon = True
                 self._cycle_timer.start()
                 self._cycle_active = True
@@ -508,18 +535,23 @@ class VisualState:
     def stop_cycle(self) -> None:
         """Stop the background visual cycle timer."""
         with self._cycle_lock:
+            self._queue_timer_revision += 1
             if self._cycle_timer:
                 self._cycle_timer.cancel()
                 self._cycle_timer = None
             self._cycle_active = False
 
-    def _on_cycle_tick(self) -> None:
-        try:
+    def _on_cycle_tick(self, revision: Optional[int] = None) -> None:
+        with self._cycle_lock:
+            if revision is not None and revision != self._queue_timer_revision:
+                return
+            if self.pinned or not self.pending_visuals:
+                self.stop_cycle()
+                return
+            if self._display_time_remaining() > 0:
+                self._schedule_next_cycle_tick()
+                return
             self.advance_cycle()
-        finally:
-            with self._cycle_lock:
-                if self._cycle_active and self.cycle_length > 0:
-                    self._schedule_next_cycle_tick()
 
     def __del__(self) -> None:
         try:
@@ -788,6 +820,7 @@ class VisualState:
         changed = (file_path != self.shown_image_path or effect != self.shown_image_effect)
         if changed or not self.shown_image_time:
             self.shown_image_time = time.time()
+            self._visual_display_started_at = time.monotonic()
         self.shown_image_path, self.shown_image_prompt = file_path, prompt
         self.shown_image_transition, self.shown_image_effect = transition, effect
         if clear_animation:
@@ -856,6 +889,7 @@ class VisualState:
             self.shown_image_transition = str(target.get("transition") or "crossfade")
             self.shown_image_effect = str(target.get("effect") or "gleam3")
             self.shown_image_time = time.time()
+            self._visual_display_started_at = time.monotonic()
             self.image_revision += 1
 
             anim = target.get("animation")

@@ -393,13 +393,20 @@ story_planning:
               <dd>Appended to generated-image and animation prompts unless the prompt supplies its own style. Leave
                 blank for no extra direction.</dd>
               <dt><code>cycle_length</code> <span class="type">number, seconds</span></dt>
-              <dd>Sets the visual-cycle interval. Set to <code>0</code> or a negative value to prevent the background
-                timer from running.</dd>
+              <dd>Minimum screen time for each image or animation. Default: <code>8</code>. A ready visual
+                appears immediately when the current visual has already had this much screen time and the
+                queue is empty. Set to <code>0</code> or a negative value for manual queue advancement.</dd>
             </dl>
-            <h3>How the visual cycle works</h3>
-            <p>The cycle is a one-visual staging queue, not a slideshow of every generated asset. The first successful
-              image or animation appears immediately and starts a timer. Later visual requests are staged as the single
-              next visual, which is promoted on each <code>cycle_length</code> tick.</p>
+            <h3>How the canvas visual queue works</h3>
+            <p>Saved images, generated images, and animations share a queue in canvas state. The first visual appears
+              immediately. Later ready visuals wait only for the current visual's remaining minimum screen time,
+              then take turns in arrival order. Each source keeps its newest waiting visual: a replacement retains
+              that source's queue position without discarding another source's work. With the three tool sources,
+              at most three visuals wait. A timer runs only while the queue contains a waiting visual.</p>
+            <p>With an 8-second minimum, a visual ready after the current visual has been shown for 12 seconds
+              appears immediately. If a generated image and an animation arrive 2 and 3 seconds after a new visual,
+              they appear at 8 and 16 seconds respectively. Pinning the canvas clears the queue; an explicit orator
+              image override clears waiting visuals and displays the requested image immediately.</p>
           </section>
 
           <section class="section" id="image-generation">
@@ -410,8 +417,18 @@ story_planning:
               <dt><code>enabled</code> <span class="type">boolean</span></dt>
               <dd>Enables the create-image tool. Default: <code>true</code>.</dd>
               <dt><code>cooldown_duration</code> <span class="type">number, seconds</span></dt>
-              <dd>Minimum delay between image-generation requests. Default: <code>6</code>.</dd>
+              <dd>Shared minimum interval between <code>show_image</code> and <code>create_image</code>
+                executions. Default: <code>9</code>. Starts when execution begins, overlapping generation
+                rather than adding a delay after it. Calls during cooldown or generation return promptly;
+                the latest call to either tool replaces the single pending request. Generation finishes
+                before another image-tool execution starts. Failed requests clear the cooldown.</dd>
             </dl>
+            <p>The tool cooldown controls work admission; the canvas queue controls screen time. The default
+              9-second shared cooldown overlaps generation. Once ready, an image waits only for the current
+              visual's remaining screen time and any sources ahead of it in the queue. Long tool cooldowns
+              therefore often allow immediate display, without a fixed cycle tick adding latency. Reduce
+              <code>cycle_length</code> to shorten screen time during bursts; reduce the shared cooldown to
+              admit fresh requests sooner, at the cost of more generation.</p>
           </section>
 
           <section class="section" id="animation">

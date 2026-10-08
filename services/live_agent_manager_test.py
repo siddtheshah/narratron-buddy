@@ -765,6 +765,9 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         planner_tools.on_cooldown_expired("process_user_action")
         session.send_content.assert_not_called()
 
+        image_tools.on_cooldown_expired("image_cycle")
+        session.send_content.assert_not_called()
+
         # Trigger cooldown expired for create_image -> Should send content
         image_tools.on_cooldown_expired("create_image")
         session.send_content.assert_called_once()

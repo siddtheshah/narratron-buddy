@@ -13,6 +13,7 @@ observability_tool:
     cooldown_duration: 30
 
 visuals:
+    # Minimum screen time per visual; a waiting queue advances when this expires.
     cycle_length: 8
     style: "charming"
 
@@ -22,6 +23,7 @@ image_generation:
     enabled: true
     # Hide starting_image and its display copy from the agent's image library.
     exclude_starter: true
+    # Shared by show_image and create_image; starts at invocation, overlaps generation.
     cooldown_duration: 9
 
 animation:

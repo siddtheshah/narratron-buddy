@@ -776,9 +776,9 @@ class AnimationTools(BaseTools):
             self._trigger_after_tool_call("play_animation")
             status = res.get("status")
             if status == "queued":
-                return f"Video animation '{animation_id}' queued for the next visual cycle."
+                return f"Video animation '{animation_id}' queued for its turn on the canvas."
             elif status == "blocked":
-                return f"Animation '{animation_id}' was not queued because a higher-priority resource already has priority for the next cycle."
+                return f"Error: {res['message']}"
             return f"Playing video animation '{animation_id}'."
 
         manifest = self._find_layered_animation(animation_id)
@@ -794,9 +794,9 @@ class AnimationTools(BaseTools):
             self._trigger_after_tool_call("play_animation")
             status = res.get("status")
             if status == "queued":
-                return f"Layered animation '{animation_id}' queued for the next visual cycle."
+                return f"Layered animation '{animation_id}' queued for its turn on the canvas."
             elif status == "blocked":
-                return f"Animation '{animation_id}' was not queued because a higher-priority resource already has priority for the next cycle."
+                return f"Error: {res['message']}"
             return f"Playing layered animation '{animation_id}'."
 
         frame_paths = self._find_triframe_animation(animation_id)
@@ -812,9 +812,9 @@ class AnimationTools(BaseTools):
             self._trigger_after_tool_call("play_animation")
             status = res.get("status")
             if status == "queued":
-                return f"Animation '{animation_id}' queued for the next visual cycle."
+                return f"Animation '{animation_id}' queued for its turn on the canvas."
             elif status == "blocked":
-                return f"Animation '{animation_id}' was not queued because a higher-priority resource already has priority for the next cycle."
+                return f"Error: {res['message']}"
             return f"Playing animation '{animation_id}'."
 
         return f"Error: Animation '{animation_id}' was not found."

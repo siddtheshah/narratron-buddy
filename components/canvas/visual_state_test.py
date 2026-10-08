@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 import time
 from typing import Any
@@ -1118,6 +1119,106 @@ def test_resolve_reference_fallback(tmp_path: Path) -> None:
 # 11. Visual cycle and pacing
 # ---------------------------------------------------------------------------
 
+def test_ready_visual_after_minimum_screen_time_displays_without_waiting() -> None:
+    state = VisualState(make_theater(config={"visuals": {"cycle_length": 8}}))
+    with patch("components.canvas.visual_state.time.monotonic", return_value=100.0) as clock, \
+            patch("components.canvas.visual_state.threading.Timer") as timer:
+        assert state.update_image("opening.png")["status"] == "displayed"
+        clock.return_value = 109.0
+        assert state.update_animation("video", {"video_path": "clip.mp4"}, id="clip")["status"] == "displayed"
+        assert state.current_cycle_visual["id"] == "clip"
+        assert not state.pending_visuals
+        timer.assert_not_called()
+
+
+def test_queue_gives_three_sources_screen_time_and_keeps_newest_per_source() -> None:
+    state = VisualState(make_theater(config={"visuals": {"cycle_length": 8}}))
+    with patch("components.canvas.visual_state.time.monotonic", return_value=100.0) as clock, \
+            patch("components.canvas.visual_state.threading.Timer") as timer:
+        state.update_image("opening.png")
+        clock.return_value = 102.0
+        assert state.update_image("generated.png", source="create_image")["status"] == "queued"
+        old_revision = state._queue_timer_revision
+        assert timer.call_args.args[0] == 6.0
+        clock.return_value = 103.0
+        state.update_animation("video", {"video_path": "old.mp4"}, id="old")
+        clock.return_value = 104.0
+        state.update_image("latest.png", source="create_image")
+        clock.return_value = 105.0
+        state.update_image("saved.png", source="show_image")
+        clock.return_value = 107.0
+        state.update_animation("video", {"video_path": "latest.mp4"}, id="latest")
+        assert [item["source"] for item in state.pending_visuals] == ["create_image", "play_animation", "show_image"]
+        assert timer.call_args.args[0] == 1.0
+
+        clock.return_value = 108.0
+        state._on_cycle_tick(old_revision)
+        assert state.current_cycle_visual["path"] == "opening.png"
+        state._on_cycle_tick(state._queue_timer_revision)
+        assert state.current_cycle_visual["path"] == "latest.png"
+        assert timer.call_args.args[0] == 8.0
+        clock.return_value = 115.0
+        state._on_cycle_tick(state._queue_timer_revision)
+        assert state.current_cycle_visual["source"] == "create_image"
+        assert timer.call_args.args[0] == 1.0
+        clock.return_value = 116.0
+        state._on_cycle_tick(state._queue_timer_revision)
+        assert state.current_cycle_visual["id"] == "latest"
+        clock.return_value = 124.0
+        state._on_cycle_tick(state._queue_timer_revision)
+        assert state.current_cycle_visual["path"] == "saved.png"
+        assert not state.pending_visuals
+        assert state._cycle_timer is None
+        assert not state._cycle_active
+
+
+def test_pin_and_orator_override_clear_all_waiting_sources() -> None:
+    state = VisualState(make_theater(config={"visuals": {"cycle_length": 8}}))
+    with patch("components.canvas.visual_state.time.monotonic", return_value=100.0), \
+            patch("components.canvas.visual_state.threading.Timer"):
+        state.update_image("opening.png")
+        state.update_image("generated.png", source="create_image")
+        state.update_animation("video", {"video_path": "clip.mp4"}, id="clip")
+        revision = state._queue_timer_revision
+        assert len(state.pending_visuals) == 2
+        state.set_pinned(True)
+        assert not state.pending_visuals
+        state._on_cycle_tick(revision)
+        assert state.current_cycle_visual["path"] == "opening.png"
+        state.set_pinned(False)
+        state.update_image("generated.png", source="create_image")
+        state.update_animation("video", {"video_path": "clip.mp4"}, id="clip")
+        revision = state._queue_timer_revision
+        state.request_immediate_image()
+        assert state.update_image("requested.png", source="create_image")["status"] == "displayed"
+        assert not state.pending_visuals
+        assert state._cycle_timer is None
+        state._on_cycle_tick(revision)
+        assert state.current_cycle_visual["path"] == "requested.png"
+        assert state.update_image("later.png")["status"] == "queued"
+
+
+def test_queue_timer_promotes_visual_without_more_tool_calls() -> None:
+    state = VisualState(make_theater(config={"visuals": {"cycle_length": 0.03}}))
+    displayed = threading.Event()
+
+    def on_changed(_changed: bool) -> None:
+        if state.shown_video_animation is not None:
+            displayed.set()
+
+    state.on_visual_changed_fn = on_changed
+    try:
+        state.update_image("opening.png")
+        state.update_animation("video", {"video_path": "clip.mp4"}, id="clip")
+        assert displayed.wait(5)
+        with state._cycle_lock:
+            assert state.current_cycle_visual["id"] == "clip"
+            assert not state.pending_visuals
+            assert state._cycle_timer is None
+    finally:
+        state.stop_cycle()
+
+
 def test_update_image_cold_start_displays_immediately(tmp_path: Path) -> None:
     theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
@@ -1176,7 +1277,7 @@ def test_advance_cycle_promotes_next_and_resets(tmp_path: Path) -> None:
     assert state.current_cycle_visual["path"] == img2
 
 
-def test_priority_create_overrides_priority_show(tmp_path: Path) -> None:
+def test_visual_queue_preserves_sources_and_replaces_newest_per_source(tmp_path: Path) -> None:
     theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     state = VisualState(theater)
 
@@ -1192,15 +1293,18 @@ def test_priority_create_overrides_priority_show(tmp_path: Path) -> None:
     assert res_show["status"] == "queued"
     assert state.next_cycle_image["path"] == img2
 
-    # PRIORITY_CREATE overrides PRIORITY_SHOW
+    # Generation joins the queue without discarding a waiting saved image.
     res_create = state.update_image(img3, priority=VisualState.PRIORITY_CREATE, source="create_image")
     assert res_create["status"] == "queued"
-    assert state.next_cycle_image["path"] == img3
+    assert [item["path"] for item in state.pending_visuals] == [img2, img3]
 
-    # Subsequent PRIORITY_SHOW is blocked
-    res_blocked = state.update_image(img4, priority=VisualState.PRIORITY_SHOW, source="show_image")
-    assert res_blocked["status"] == "blocked"
-    assert state.next_cycle_image["path"] == img3
+    # A newer saved image keeps that source's position and leaves generation intact.
+    res_updated = state.update_image(img4, priority=VisualState.PRIORITY_SHOW, source="show_image")
+    assert res_updated["status"] == "queued"
+    assert [item["path"] for item in state.pending_visuals] == [img4, img3]
+    assert state.advance_cycle()["path"] == img4
+    assert state.advance_cycle()["path"] == img3
+    assert not state.pending_visuals
 
 
 def test_update_animation_and_active_animation_overrides(tmp_path: Path) -> None:
