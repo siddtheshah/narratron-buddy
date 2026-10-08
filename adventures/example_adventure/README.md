@@ -21,9 +21,11 @@ example_adventure/
 │   │   └── the_caretaker.txt
 │   └── locations/          # Room layouts and sensory details
 │       └── the_discarded_stacks.txt
+├── characters/             # Character reference portraits
+│   └── The Caretaker/
+│       └── 1.jpg
 ├── references/             # Visual assets & cover art used by image tools
-│   ├── library_of_origins_cover.jpg
-│   └── the_caretaker.jpg
+│   └── library_of_origins_cover.jpg
 └── playlists/              # Thematic audio folders with sound files
     ├── ambient/
     │   └── library_ambiance.mp3

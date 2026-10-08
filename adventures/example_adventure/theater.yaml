@@ -21,7 +21,7 @@ image_generation:
 
 # Audio & Playlist configuration
 music:
-    use_generated_music: false
+    use_generated_music: true
     playlists_folder: "playlists"
     generation_cooldown: 90
     switch_cooldown: 15
