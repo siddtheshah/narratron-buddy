@@ -103,10 +103,14 @@
     }
 
     header,
-    main,
     footer {
       position: relative;
       z-index: 2;
+    }
+
+    main {
+      position: relative;
+      z-index: 20;
     }
 
 
@@ -435,15 +439,417 @@
       color: var(--text-main);
       text-decoration: underline;
     }
-    .visitor-help { width: min(100%, 620px); margin: 24px auto; padding: 24px;
-      border: 1px solid var(--glass-border); border-radius: 16px; background: var(--glass-bg, #17172dcc); }
-    .visitor-help h2 { margin-top: 0; }
-    .visitor-help form { display: flex; gap: 10px; flex-wrap: wrap; }
-    .visitor-help input { flex: 1; min-width: 180px; }
-    #visitor-help-log { max-height: 360px; overflow: auto; text-align: left; overflow-wrap: anywhere; }
-    #visitor-help-log article { border-top: 1px solid var(--glass-border); padding: 12px 0; }
-    #visitor-help-log a { color: #c4b5fd; }
-    #visitor-help-log pre { overflow: auto; }
+    /* Floating Bank-Style Chat Support Panel & Launcher */
+    .visitor-help {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 12px;
+      pointer-events: none;
+      width: auto;
+      max-width: calc(100vw - 32px);
+      margin: 0;
+      padding: 0;
+      background: none;
+      border: none;
+    }
+
+    .visitor-help-launcher,
+    .visitor-help-launcher * {
+      pointer-events: auto;
+    }
+
+    .visitor-help-launcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 20px;
+      border-radius: 9999px;
+      background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(124, 58, 237, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+      user-select: none;
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+    }
+
+    .visitor-help-launcher:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 12px 28px rgba(124, 58, 237, 0.55), 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .visitor-help-launcher:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    .visitor-help-launcher-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .visitor-help-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+      animation: pulse-dot 2s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+
+    .visitor-help-launcher.is-hidden,
+    .visitor-help.is-open .visitor-help-launcher,
+    .visitor-help:has(.is-open) .visitor-help-launcher {
+      display: none !important;
+    }
+
+    .visitor-help-panel {
+      pointer-events: auto;
+      display: none;
+      flex-direction: column;
+      width: 380px;
+      max-width: calc(100vw - 32px);
+      height: 520px;
+      max-height: calc(100vh - 48px);
+      border-radius: 20px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 35px rgba(124, 58, 237, 0.2);
+      overflow: hidden;
+    }
+
+    .visitor-help-panel.is-open {
+      display: flex;
+      animation: visitor-help-slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes visitor-help-slide-up {
+      from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .visitor-help-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      background: rgba(30, 27, 75, 0.7);
+      border-bottom: 1px solid var(--glass-border);
+    }
+
+    .visitor-help-header-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .visitor-help-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(236, 72, 153, 0.35));
+      border: 1px solid rgba(139, 92, 246, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+
+    .visitor-help-header h2 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .visitor-help-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .visitor-help-online-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      display: inline-block;
+    }
+
+    .visitor-help-close-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-muted);
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .visitor-help-close-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: var(--text-main);
+      transform: scale(1.08);
+    }
+
+    .visitor-help-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: rgba(10, 15, 30, 0.4);
+    }
+
+    #visitor-help-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(139, 92, 246, 0.3) transparent;
+    }
+
+    .visitor-help-welcome {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 8px;
+    }
+
+    .visitor-help-welcome .welcome-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      color: #c4b5fd;
+      padding: 3px 8px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+    }
+
+    .visitor-help-welcome p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+
+    .visitor-help-suggestions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .help-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #ddd6fe;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .help-chip:hover {
+      background: rgba(139, 92, 246, 0.15);
+      border-color: rgba(139, 92, 246, 0.35);
+      color: #fff;
+      transform: translateX(3px);
+    }
+
+    #visitor-help-log article {
+      border-top: 1px solid var(--glass-border);
+      padding: 12px 0 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #visitor-help-log article:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .visitor-help-user-query {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.88rem;
+      color: #e2e8f0;
+      font-weight: 600;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 10px;
+      padding: 8px 12px;
+      align-self: flex-start;
+      max-width: 90%;
+    }
+
+    .visitor-help-bot-reply {
+      color: #cbd5e1;
+      font-size: 0.88rem;
+      line-height: 1.55;
+      padding: 4px 6px;
+    }
+
+    #visitor-help-log a {
+      color: #c4b5fd;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    #visitor-help-log a:hover {
+      color: #fff;
+    }
+
+    #visitor-help-log pre {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px;
+      overflow-x: auto;
+      font-size: 0.82rem;
+    }
+
+    .visitor-help-upgrade-btn {
+      align-self: flex-start;
+      margin-top: 6px;
+      font-size: 0.8rem;
+      padding: 6px 12px;
+    }
+
+    .visitor-help-footer {
+      padding: 12px 16px 14px;
+      background: rgba(15, 23, 42, 0.8);
+      border-top: 1px solid var(--glass-border);
+    }
+
+    #visitor-help-status {
+      font-size: 0.78rem;
+      color: #f43f5e;
+      min-height: 1.1em;
+      margin-bottom: 6px;
+      padding: 0 4px;
+    }
+
+    .visitor-help-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 4px 6px 4px 12px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .visitor-help-form:focus-within {
+      border-color: rgba(139, 92, 246, 0.7);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+    }
+
+    .visitor-help-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.88rem;
+      min-width: 0;
+    }
+
+    .visitor-help-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .visitor-help-submit-btn {
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      border: none;
+      color: white;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .visitor-help-submit-btn:hover:not(:disabled) {
+      transform: scale(1.05);
+    }
+
+    .visitor-help-submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .visitor-help-footnote {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 480px) {
+      .visitor-help {
+        bottom: 16px;
+        right: 16px;
+        max-width: calc(100vw - 32px);
+      }
+      .visitor-help-panel {
+        width: calc(100vw - 32px);
+        max-width: 380px;
+        height: min(480px, calc(100vh - 90px));
+      }
+      .visitor-help-launcher {
+        padding: 10px 16px;
+        font-size: 0.88rem;
+      }
+    }
   </style>
 </head>
 
@@ -481,15 +887,68 @@
     </div>
 
     <section class="visitor-help" aria-labelledby="visitor-help-title">
-      <h2 id="visitor-help-title">Ask about Narratron</h2>
-      <p>Get free basic answers and relevant guides. Sign in for personalized help at the price shown.</p>
-      <div id="visitor-help-log" role="log" aria-live="polite"></div>
-      <form id="visitor-help-form">
-        <input id="visitor-help-question" class="join-input" aria-label="Question about Narratron"
-          placeholder="What can I do with Narratron?" maxlength="2000" required>
-        <button class="join-btn" type="submit">Ask</button>
-      </form>
-      <p id="visitor-help-status" role="status"></p>
+      <!-- Minimized Chat Support Launcher -->
+      <button type="button" class="visitor-help-launcher" id="visitor-help-launcher" aria-expanded="false" aria-controls="visitor-help-panel" aria-label="Open Understand Narratron panel">
+        <span class="visitor-help-launcher-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </span>
+        <span class="visitor-help-launcher-text">Understand Narratron</span>
+        <span class="visitor-help-status-dot" aria-hidden="true"></span>
+      </button>
+
+      <!-- Expandable Support Chat Panel Window -->
+      <div class="visitor-help-panel" id="visitor-help-panel" role="region" aria-label="Support chat window">
+        <header class="visitor-help-header">
+          <div class="visitor-help-header-info">
+            <div class="visitor-help-avatar" aria-hidden="true">✨</div>
+            <div>
+              <h2 id="visitor-help-title">Understand Narratron</h2>
+              <div class="visitor-help-subtitle">
+                <span class="visitor-help-online-indicator"></span> Instant answers &amp; guides
+              </div>
+            </div>
+          </div>
+          <button type="button" class="visitor-help-close-btn" id="visitor-help-close" aria-label="Minimize support chat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </header>
+
+        <div class="visitor-help-body">
+          <div id="visitor-help-log" role="log" aria-live="polite">
+            <div class="visitor-help-welcome" id="visitor-help-welcome">
+              <div class="welcome-badge">🤖 AI Guide</div>
+              <p>Hi! Ask questions about Narratron, Adventure Mode, or hosting a theater:</p>
+              <div class="visitor-help-suggestions">
+                <button type="button" class="help-chip" data-help-query="What is Adventure Mode?">🗺️ What is Adventure Mode?</button>
+                <button type="button" class="help-chip" data-help-query="How do I join or host a theater?">🎭 How do I host a theater?</button>
+                <button type="button" class="help-chip" data-help-query="Is Narratron free to use?">💡 Is Narratron free?</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="visitor-help-footer">
+          <p id="visitor-help-status" role="status" aria-live="polite"></p>
+          <form id="visitor-help-form" class="visitor-help-form">
+            <input id="visitor-help-question" class="visitor-help-input" aria-label="Question about Narratron"
+              placeholder="Ask about Narratron..." maxlength="2000" required autocomplete="off">
+            <button class="visitor-help-submit-btn" type="submit" aria-label="Send question">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </form>
+          <div class="visitor-help-footnote">
+            Free basic answers · Powered by Narratron
+          </div>
+        </footer>
+      </div>
     </section>
 
     <aside class="host-theater-card" aria-label="Host a theater">
@@ -588,7 +1047,7 @@
     Narratron &copy; 2026 &middot; <a href="/terms">Terms of Service</a> &middot; <a href="/privacy">Privacy Policy</a>
   </footer>
 
-  <script src="/static/js/user-help.js" defer></script>
+  <script src="/static/js/user-help.js?v=20261008-support-chat" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>
   <script>
     const carouselSlides = [...document.querySelectorAll('.carousel-slide')];

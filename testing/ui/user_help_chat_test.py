@@ -103,6 +103,9 @@ def test_visitor_help_is_free_and_displays_errors() -> None:
             };
         """)
         page.add_script_tag(content=Path("static/js/user-help.js").read_text(encoding="utf-8"))
+        assert not page.locator('#visitor-help-panel').is_visible()
+        page.locator('#visitor-help-launcher').click()
+        assert page.locator('#visitor-help-panel').is_visible()
         page.locator('#visitor-help-question').fill('What is Narratron?')
         page.locator('#visitor-help-form button').click()
         page.wait_for_function("document.querySelector('#visitor-help-log').textContent.includes('Explore')")
@@ -121,5 +124,9 @@ def test_visitor_help_is_free_and_displays_errors() -> None:
         page.wait_for_function("document.querySelector('#visitor-help-status').textContent === 'Please wait a moment.'")
         assert page.locator('#visitor-help-question').input_value() == 'What else?'
         assert page.locator('#visitor-help-form button').is_enabled()
+        page.locator('#visitor-help-close').click()
+        assert not page.locator('#visitor-help-panel').is_visible()
+        page.locator('#visitor-help-launcher').click()
+        assert page.locator('#visitor-help-panel').is_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         browser.close()
