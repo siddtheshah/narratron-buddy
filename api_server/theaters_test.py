@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+import zipfile
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +21,67 @@ import api_server.theaters as theaters
 from testing.reference_images import png_bytes
 from utils.config_loader import get_theater_default_config
 from unittest.mock import AsyncMock, MagicMock, patch
+
+
+@pytest.mark.parametrize("source", ["adventure", "folder", "zip"])
+def test_deployment_preserves_character_folders(tmp_path: Path, source: str) -> None:
+    from absl.testing import flagsaver
+    from PIL import Image
+    from components.theater_manager import TheaterManager
+    from services.adventure_service import AdventureService
+
+    manager = TheaterManager(base_theaters_dir=tmp_path / "theaters")
+    adventures_root = tmp_path / "adventures"
+    adventure_dir = adventures_root / "portrait-quest"
+    image = png_bytes()
+    second_portrait = io.BytesIO()
+    Image.new("RGB", (1, 1), color="blue").save(second_portrait, format="PNG")
+    assets = {
+        "characters/Arthur Modella/1.png": image,
+        "characters/Arthur Modella/2.png": second_portrait.getvalue(),
+        "characters/Grim Vallos/1.png": image,
+        "references/locations/forest.png": image,
+        "lore/characters/arthur.txt": b"Arthur guards the forest.",
+        "theater.yaml": b"live_agent:\n  special_instructions: Guide the quest.\n",
+    }
+    for relative_path, content in assets.items():
+        destination = adventure_dir / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+
+    form = {"name": "Portrait Quest", "creation_mode": "adventure" if source == "adventure" else "folder"}
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    if source == "adventure":
+        form["preset_adventure_id"] = "portrait-quest"
+    elif source == "folder":
+        form["folder_theater_config_yaml"] = assets["theater.yaml"].decode("utf-8")
+        files = [("asset_folder_files", (f"Portrait Quest/{path}", content, "application/octet-stream"))
+                 for path, content in assets.items()]
+    else:
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as package:
+            for path, content in assets.items():
+                package.writestr(f"Portrait Quest/{path}", content)
+        files = [("asset_zip", ("Portrait Quest.zip", archive.getvalue(), "application/zip"))]
+
+    with flagsaver.flagsaver(testing_use_local=True), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 42})), \
+         patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "db", MagicMock()), \
+         patch.object(theaters, "_export_canvas_theater_async", AsyncMock()), \
+         patch.object(object_registry, "adventure_service", AdventureService(adventures_root)), \
+         TestClient(app) as client:
+        response = client.post("/api/theaters/create-and-deploy", data=form, files=files)
+
+    assert response.status_code == 200, response.text
+    theater_id = response.json()["theater_id"]
+    deployed_dir = manager.theater(theater_id).directory()
+    for path, content in assets.items():
+        if path != "theater.yaml":
+            assert (deployed_dir / path).read_bytes() == content
+    assert response.json()["theater"]["status"] == "deployed"
+    assert not (deployed_dir / "references/1.png").exists()
+    assert not (deployed_dir / "references/2.png").exists()
 
 
 @pytest.mark.asyncio
