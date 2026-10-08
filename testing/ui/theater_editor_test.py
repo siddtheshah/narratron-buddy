@@ -177,6 +177,14 @@ def editor_page() -> Iterator[Page]:
                         state: structuredClone(draft), message: `Imported ${path} from Google.`
                     })};
                 }
+                if (request.pathname.endsWith('/clear-output')) {
+                    window.clearedOutput = true;
+                    return {ok: true, json: async () => structuredClone(draft)};
+                }
+                if (request.pathname.endsWith('/download')) {
+                    window.downloadedDraft = true;
+                    return {ok: true, blob: async () => new Blob(['mock zip'], {type: 'application/zip'})};
+                }
                 return {ok: true, json: async () => structuredClone(draft)};
             };
         """)
@@ -759,6 +767,47 @@ def test_create_text_file_dialog_can_escape_without_creating_file(editor_page: P
     expect(page.locator("#new-file-path")).to_have_value("")
     page.keyboard.press("Escape")
     expect(dialog).not_to_be_visible()
+
+
+def test_download_draft_button_triggers_download(editor_page: Page) -> None:
+    page = editor_page
+    download_btn = page.locator("#download-draft")
+    expect(download_btn).to_be_visible()
+    expect(download_btn).to_have_text("Download draft")
+    download_btn.click()
+    expect(page.locator("#builder-status")).to_have_text("Draft theater downloaded.")
+
+
+def test_clear_output_button_dialog_flow(editor_page: Page) -> None:
+    page = editor_page
+    clear_btn = page.locator("#clear-output")
+    expect(clear_btn).to_be_visible()
+    expect(clear_btn).to_have_text("Clear output")
+
+    dialog = page.locator("#clear-output-dialog")
+    expect(dialog).not_to_be_visible()
+
+    # 1. Open dialog and cancel
+    clear_btn.click()
+    expect(dialog).to_be_visible()
+    page.locator("#clear-output-cancel").click()
+    expect(dialog).not_to_be_visible()
+    assert not page.evaluate("() => window.clearedOutput")
+
+    # 2. Open dialog and cancel via Escape
+    clear_btn.click()
+    expect(dialog).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(dialog).not_to_be_visible()
+    assert not page.evaluate("() => window.clearedOutput")
+
+    # 3. Open dialog and confirm clear
+    clear_btn.click()
+    expect(dialog).to_be_visible()
+    page.locator("#confirm-clear-output-btn").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_have_text("Output folder cleared.")
+    assert page.evaluate("() => window.clearedOutput")
 
 
 

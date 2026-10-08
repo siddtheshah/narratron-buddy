@@ -512,6 +512,16 @@
   el('file-editor').addEventListener('input', () => { textDirty = true; updateSaveState(); });
   el('draft-name').addEventListener('input', () => { nameDirty = true; updateSaveState(); });
   el('save-draft').addEventListener('click', () => run(async () => { await save(); status('Draft saved.'); }, 'Saving draft…'));
+  el('download-draft').addEventListener('click', () => run(async () => {
+    await save();
+    const link = document.createElement('a');
+    link.href = endpoint('/download');
+    link.download = `${state.draft.name || state.draft.theater_id}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    status('Draft theater downloaded.');
+  }, 'Preparing draft theater download…'));
   el('reload-draft').addEventListener('click', () => { if (!dirty() || confirm('Discard unsaved edits and reload the saved draft?')) run(() => load(state.draft.theater_id), 'Reloading draft…'); });
   el('deploy-draft').addEventListener('click', () => run(async () => {
     await save(); const result = await post('/deploy', { revision: state.draft.revision });
@@ -592,6 +602,37 @@
     if (selected && selected.path !== 'theater.yaml') {
       performDelete(selected.path);
     }
+  });
+  async function performClearOutput() {
+    if (!state) return;
+    await run(async () => {
+      const next = await post('/clear-output', { revision: state.draft.revision });
+      render(next);
+      status('Output folder cleared.');
+    }, 'Clearing output folder…');
+  }
+  el('clear-output').addEventListener('click', () => {
+    if (!state) return;
+    if (typeof el('clear-output-dialog').showModal === 'function') {
+      el('clear-output-dialog').showModal();
+    } else if (confirm('Are you sure you want to clear the output folder? All generated scene images, animations, and session logs will be permanently deleted.')) {
+      performClearOutput();
+    }
+  });
+  el('clear-output-cancel').addEventListener('click', () => el('clear-output-dialog').close());
+  el('clear-output-dialog').addEventListener('click', event => {
+    if (event.target === el('clear-output-dialog')) el('clear-output-dialog').close();
+  });
+  el('clear-output-dialog').addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      el('clear-output-dialog').close();
+    }
+  });
+  el('clear-output-dialog').querySelector('form').addEventListener('submit', event => {
+    event.preventDefault();
+    el('clear-output-dialog').close();
+    performClearOutput();
   });
   window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('narratron:auth-changed', event => {

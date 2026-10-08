@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
+import io
 import logging
 from pathlib import Path
 import re
+import shutil
 from typing import Iterator
 import uuid
+import zipfile
 
 from fastapi import File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 import yaml
 
@@ -65,6 +68,10 @@ class ApplyProposalRequest(BaseModel):
 
 class RevisionRequest(BaseModel):
     revision: int
+
+
+class ClearOutputRequest(BaseModel):
+    revision: int | None = None
 
 
 class DeleteDraftFileRequest(BaseModel):
@@ -512,3 +519,70 @@ async def deploy_draft(theater_id: str, body: RevisionRequest, request: Request)
         with invalid_input():
             canvas_url = await asyncio.to_thread(publish_draft, info)
         return {"theater_id": info.theater_id, "canvas_url": canvas_url}
+
+
+def _clear_directory_contents(target: Path) -> int:
+    if not target.is_dir():
+        return 0
+    cleared = 0
+    for item in list(target.iterdir()):
+        if item.is_dir():
+            shutil.rmtree(item)
+            cleared += 1
+        elif item.is_file():
+            item.unlink()
+            cleared += 1
+    return cleared
+
+
+@app.post("/api/theater-editor/{theater_id}/clear-output")
+@app.delete("/api/theater-editor/{theater_id}/output")
+async def clear_draft_output(theater_id: str, request: Request, body: ClearOutputRequest | None = None) -> DraftResponse:
+    async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+        info = await require_draft(request, theater_id)
+        if body is not None and body.revision is not None:
+            check_revision(info, body.revision)
+
+        output_targets: list[Path] = [
+            theater_manager.theater(info.theater_id).output_dir(),
+            store().directory(info.theater_id) / "output",
+            theater_repository.theater_path(info.theater_id) / "output",
+        ]
+        if info.source_id is not None:
+            output_targets.append(theater_manager.theater(info.source_id).output_dir())
+            output_targets.append(theater_repository.theater_path(info.source_id) / "output")
+
+        seen_targets: set[Path] = set()
+        for target in output_targets:
+            resolved = target.resolve()
+            if resolved not in seen_targets:
+                seen_targets.add(resolved)
+                await asyncio.to_thread(_clear_directory_contents, target)
+
+        live_agent_manager.stop_session(info.theater_id)
+        if info.source_id is not None:
+            live_agent_manager.stop_session(info.source_id)
+
+        return await asyncio.to_thread(response, info)
+
+
+@app.get("/api/theater-editor/{theater_id}/download")
+@app.get("/api/theater-editor/{theater_id}/export")
+async def download_draft(theater_id: str, request: Request) -> Response:
+    info = await require_draft(request, theater_id)
+    builder = store()
+    root = builder.directory(info.theater_id)
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for file_info in builder.files(info.theater_id):
+            with invalid_input():
+                file_path = safe_asset_path(root, file_info.path)
+            if file_path.is_file():
+                archive.write(file_path, arcname=file_info.path)
+    zip_buffer.seek(0)
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", info.name).strip("_") or info.theater_id
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_name}.zip"',
+        "Cache-Control": "no-store",
+    }
+    return Response(content=zip_buffer.getvalue(), media_type="application/zip", headers=headers)

@@ -42,6 +42,8 @@
           <button class="secondary" id="new-draft" type="button">New theater</button>
           <button class="secondary" id="reload-draft" type="button">Reload</button>
           <button class="secondary" id="save-draft" type="button">Save draft</button>
+          <button class="secondary" id="download-draft" type="button">Download draft</button>
+          <button class="secondary danger-btn" id="clear-output" type="button">Clear output</button>
           <button id="deploy-draft" type="button">Deploy & test →</button>
         </div>
       </div>
@@ -93,6 +95,7 @@
     <dialog id="new-file-dialog"><form method="dialog"><h2>Create a text file</h2><label for="new-file-path">Path</label><input id="new-file-path" placeholder="lore/characters/cartographer.txt" required><div class="dialog-actions"><button class="secondary" type="button" id="new-file-cancel" value="cancel">Cancel</button><button value="create" id="new-file-submit">Create</button></div></form></dialog>
     <dialog id="google-link-dialog"><form id="google-link-form"><h2>Link from Google</h2><p class="dialog-hint">Import an image from Google Drive or harvest a Google Doc with your assistant.<br>Set link sharing to <em>Anyone with the link can view</em>.</p><label for="google-link-url">Google Link</label><input id="google-link-url" type="url" placeholder="https://drive.google.com/file/d/... or https://docs.google.com/document/d/..." required><label for="google-link-name">Custom asset name (optional)</label><input id="google-link-name" maxlength="100" placeholder="e.g. hero_portrait or world_lore"><div id="google-doc-options" class="google-dialog-options" hidden><label class="checkbox-label"><input type="checkbox" id="google-doc-harvest" checked><span><strong>Harvest with AI Assistant</strong> (creates lore files, persona &amp; styles)</span></label><label for="google-harvest-prompt">Harvest instructions (optional)</label><textarea id="google-harvest-prompt" rows="2" maxlength="2000" placeholder="e.g. Focus on faction rivalries and set up an interactive adventure"></textarea></div><div class="dialog-actions"><button class="secondary" type="button" id="google-link-cancel">Cancel</button><button type="submit" id="google-link-submit">Import Link</button></div></form></dialog>
     <dialog id="delete-file-dialog"><form method="dialog"><h2>Delete file</h2><p id="delete-file-prompt" class="dialog-hint">Are you sure you want to delete this file?</p><div class="dialog-actions"><button class="secondary" value="cancel" type="button" id="delete-file-cancel">Cancel</button><button class="danger-btn" value="delete" id="confirm-delete-btn" type="submit">Delete</button></div></form></dialog>
+    <dialog id="clear-output-dialog"><form method="dialog"><h2>Clear output folder</h2><p id="clear-output-prompt" class="dialog-hint">Are you sure you want to clear the output folder? All generated scene images, animations, and session logs will be permanently deleted.</p><div class="dialog-actions"><button class="secondary" value="cancel" type="button" id="clear-output-cancel">Cancel</button><button class="danger-btn" value="clear" id="confirm-clear-output-btn" type="submit">Clear output</button></div></form></dialog>
   </main>
 </body>
 </html>

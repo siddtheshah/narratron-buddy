@@ -2,6 +2,7 @@
 
 import asyncio
 from io import BytesIO
+import zipfile
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -101,6 +102,8 @@ def test_drafts_require_login_and_owner_for_every_action(builder: BuilderHarness
     assert builder.client.post(f"{base}/generate", json={"revision": 1, "kind": "reference", "name": "Hero", "prompt": "Hero"}).status_code == 403
     assert builder.client.post(f"{base}/deploy", json={"revision": 1}).status_code == 403
     assert builder.client.post(f"{base}/upload", data={"revision": 1}, files={"files": ("hero.png", b"image")}).status_code == 403
+    assert builder.client.get(f"{base}/download").status_code == 403
+    assert builder.client.post(f"{base}/clear-output", json={"revision": 1}).status_code == 403
     builder.database.record_user_usage.assert_not_called()
 
 
@@ -686,4 +689,63 @@ def test_draft_generations_generate_concurrently(builder: BuilderHarness) -> Non
     assert account["credits"] == 4.0 - 2 * 4.0
     final_draft = builder.client.get(base).json()["draft"]
     assert final_draft["revision"] == data["draft"]["revision"] + 2
+
+
+def test_download_draft_returns_zip_archive(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+
+    builder.client.headers["x-test-user"] = "8"
+    assert builder.client.get(f"{base}/download").status_code == 403
+    builder.client.headers["x-test-user"] = "7"
+
+    save_result = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"],
+        "name": "Custom Theater",
+        "writes": [{"path": "lore/history.txt", "content": "Ancient history"}],
+    })
+    assert save_result.status_code == 200
+
+    download_result = builder.client.get(f"{base}/download")
+    assert download_result.status_code == 200
+    assert download_result.headers["content-type"] == "application/zip"
+    assert 'filename="Custom_Theater.zip"' in download_result.headers["content-disposition"]
+
+    with zipfile.ZipFile(BytesIO(download_result.content), "r") as archive:
+        names = archive.namelist()
+        assert "theater.yaml" in names
+        assert "lore/history.txt" in names
+        assert archive.read("lore/history.txt") == b"Ancient history"
+
+
+def test_clear_draft_output_removes_output_files(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+
+    builder.client.headers["x-test-user"] = "8"
+    assert builder.client.post(f"{base}/clear-output", json={"revision": data["draft"]["revision"]}).status_code == 403
+    builder.client.headers["x-test-user"] = "7"
+
+    output_dir = builder.manager.theater(identifier).output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = output_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    (images_dir / "scene.png").write_bytes(b"scene_data")
+    (output_dir / "story_log.jsonl").write_text('{"event": "start"}', encoding="utf-8")
+    assert (images_dir / "scene.png").is_file()
+    assert (output_dir / "story_log.jsonl").is_file()
+
+    result = builder.client.post(f"{base}/clear-output", json={"revision": data["draft"]["revision"]})
+    assert result.status_code == 200
+    assert result.json()["draft"]["theater_id"] == identifier
+
+    assert output_dir.is_dir()
+    assert not (images_dir / "scene.png").exists()
+    assert not (output_dir / "story_log.jsonl").exists()
+    assert list(output_dir.iterdir()) == []
+
+    file_result = builder.client.get(f"{base}/file?path=theater.yaml")
+    assert file_result.status_code == 200
 

@@ -34,6 +34,7 @@
 .danger-btn{background:#2a161c;border:1px solid #5a2533;color:#fca5a5;font-size:.75rem;padding:.38rem .7rem;border-radius:8px;transition:all .15s ease;cursor:pointer}
 .danger-btn:hover{background:#3d1c25;border-color:#832b3e;color:#fecdd3}
 .danger-btn:disabled{opacity:.5;cursor:not-allowed}
+.toolbar-actions .danger-btn{font-size:inherit;padding:.65rem .9rem}
 .proposal-deletion{color:#fca5a5;font-size:.78rem;margin:.4rem 0;line-height:1.5;display:flex;align-items:center;gap:.4rem}
 .open-asset-link{display:inline-flex;align-items:center;margin-left:.7rem;font-size:.78rem;font-weight:500;color:var(--accent);text-decoration:underline;cursor:pointer;vertical-align:middle}
 .open-asset-link:hover{color:#c7d2fe;text-decoration:underline}
