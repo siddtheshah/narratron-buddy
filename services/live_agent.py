@@ -27,6 +27,7 @@ from tools.character_tool import CharacterTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from tools.user_help_tool import UserHelpTool
+from services.user_help_service import DEFAULT_USER_HELP_MODEL
 from providers import (
     LiveAgentConfig,
     LiveAgentProvider,
@@ -316,7 +317,7 @@ def create_tool_bundle_for_session(
         user_help_tools = UserHelpTool(
             theater,
             canvas_manager=canvas_manager,
-            model=str(user_help_config.get("model") or story_planning_config.get("planner_model", "gemini-3.7-flash")),
+            model=str(user_help_config.get("model") or DEFAULT_USER_HELP_MODEL),
             max_output_tokens=int(user_help_config.get("max_output_tokens", 1_200)),
         )
         tools.append(user_help_tools.user_help_tool)

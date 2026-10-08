@@ -13,7 +13,7 @@ from api_server.shared import app, db, get_current_user_async, _require_canvas_a
 from services.generation_billing import billing_locks
 from services.user_help_catalog import UserHelpCatalog
 from services.user_help_limits import HelpRateLimitError, UserHelpLimits
-from services.user_help_service import HelpUnavailableError, UserHelpService
+from services.user_help_service import DEFAULT_USER_HELP_MODEL, HelpUnavailableError, UserHelpService
 from utils.auth_cache import auth_session_cache
 from utils.markdown import render_markdown
 
@@ -50,7 +50,7 @@ def help_cost() -> float:
 
 
 async def research(question: str) -> str:
-    service = UserHelpService(model=os.environ.get("USER_HELP_MODEL", "gemini-3.7-flash"))
+    service = UserHelpService(model=os.environ.get("USER_HELP_MODEL", DEFAULT_USER_HELP_MODEL))
     try:
         return await service.answer(question)
     except HelpUnavailableError as error:

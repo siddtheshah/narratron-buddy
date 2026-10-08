@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import TheaterManager
+from services.user_help_service import DEFAULT_USER_HELP_MODEL
 from tools.user_help_tool import UserHelpTool
-from utils.config_loader import get_app_config
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_QUESTIONS = (
@@ -31,14 +31,6 @@ _DEFAULT_QUESTIONS = (
 )
 
 
-def _configured_model() -> str:
-    app_config = get_app_config()
-    story_planning = app_config.get("story_planning", {})
-    story_planning = story_planning if type(story_planning) is dict else {}
-    model = str(story_planning.get("planner_model", "gemini-3.7-flash")).strip()
-    return model or "gemini-3.7-flash"
-
-
 def _parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ask live UI-help questions using the current local help files.")
     parser.add_argument(
@@ -47,7 +39,7 @@ def _parse_arguments() -> argparse.Namespace:
         dest="questions",
         help="A question to ask. Repeat to ask multiple questions; overrides the built-in Adventure Mode checks.",
     )
-    parser.add_argument("--model", default=_configured_model(), help="ADK model used by the help agent.")
+    parser.add_argument("--model", default=DEFAULT_USER_HELP_MODEL, help="ADK model used by the help agent.")
     parser.add_argument("--theater-id", default="default", help="Theater whose cooldown and configuration apply.")
     return parser.parse_args()
 

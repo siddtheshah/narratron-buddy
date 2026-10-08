@@ -17,6 +17,8 @@ from google.genai import types
 
 
 
+DEFAULT_USER_HELP_MODEL = "gemini-3.5-flash-lite"
+
 _TEXT_FILE_SUFFIXES = frozenset({".html", ".md"})
 _MAX_SEARCH_CALLS = 3
 _MAX_READ_CALLS = 3
