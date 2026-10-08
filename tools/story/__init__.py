@@ -1,8 +1,8 @@
 """Story tool package with an explicit composition root and isolated modules."""
 
-from components.character_manager import (
+from components.reference_manager import (
     Character,
-    CharacterManager,
+    ReferenceManager,
     PlayerCharacter,
     DEFAULT_MAX_ACTIVE_CHARACTERS,
     MAX_ACTIVE_CHARACTERS,
@@ -71,7 +71,7 @@ ReflectAndRetry = ReflectAndRetryToolPlugin
 __all__ = [
     "LoreLibrary",
     "Notepad",
-    "CharacterManager",
+    "ReferenceManager",
     "Character",
     "PlayerCharacter",
     "StoryPlanningModule",

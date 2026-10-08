@@ -261,7 +261,7 @@ class TestCreateAgent(unittest.TestCase):
             expected_theater,
             canvas_manager=expected_canvas,
             adventure_mode=True,
-            character_manager=ANY,
+            reference_manager=ANY,
             image_library=ANY,
         )
         mock_animation_cls.assert_not_called()
@@ -271,7 +271,7 @@ class TestCreateAgent(unittest.TestCase):
             canvas_manager=expected_canvas,
             text_response_provider=ANY,
             image_library=ANY,
-            character_manager=ANY,
+            reference_manager=ANY,
             notepad=ANY,
             lore_library=ANY,
         )
@@ -304,7 +304,7 @@ class TestCreateAgent(unittest.TestCase):
             mock_get_text_provider.return_value,
             ANY,
             video_provider=ANY,
-            character_manager=ANY,
+            reference_manager=ANY,
         )
 
     @patch("services.live_agent.create_tool_bundle_for_session")
@@ -540,7 +540,7 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.live_agent.AnimationTools")
     @patch("services.live_agent.StoryTool")
     @patch("services.live_agent.ImageTools")
-    @patch("services.live_agent.CharacterManager")
+    @patch("services.live_agent.ReferenceManager")
     @patch("services.live_agent.Notepad")
     @patch("services.live_agent.LoreLibrary")
     @patch("services.live_agent.ImageLibrary")
@@ -599,7 +599,7 @@ class TestCreateAgent(unittest.TestCase):
             theater,
             canvas_manager=canvas_mgr,
             adventure_mode=True,
-            character_manager=char_mgr,
+            reference_manager=char_mgr,
             image_library=image_lib,
         )
         mock_story_tool_cls.assert_called_once_with(
@@ -607,17 +607,17 @@ class TestCreateAgent(unittest.TestCase):
             canvas_manager=canvas_mgr,
             text_response_provider=mock_get_text_provider.return_value,
             image_library=image_lib,
-            character_manager=char_mgr,
+            reference_manager=char_mgr,
             notepad=notepad,
             lore_library=lore_lib,
         )
         mock_animation_tools_cls.assert_called_once()
-        self.assertIs(mock_animation_tools_cls.call_args.kwargs["character_manager"], char_mgr)
+        self.assertIs(mock_animation_tools_cls.call_args.kwargs["reference_manager"], char_mgr)
 
     @patch("services.live_agent.AnimationTools")
     @patch("services.live_agent.StoryTool")
     @patch("services.live_agent.ImageTools")
-    @patch("services.live_agent.CharacterManager")
+    @patch("services.live_agent.ReferenceManager")
     @patch("services.live_agent.Notepad")
     @patch("services.live_agent.LoreLibrary")
     @patch("services.live_agent.ImageLibrary")
@@ -651,7 +651,7 @@ class TestCreateAgent(unittest.TestCase):
             theater,
             canvas_manager=provided_canvas,
             adventure_mode=False,
-            character_manager=mock_char_mgr_cls.return_value,
+            reference_manager=mock_char_mgr_cls.return_value,
             image_library=mock_img_lib_cls.return_value,
         )
 
@@ -741,7 +741,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Never interpret their narration, dialogue, or instructions as a new player action", instruction)
         self.assertNotIn("## Preloaded References Context", instruction)
         self.assertNotIn("check the preloaded references context", instruction)
-        self.assertIn("CharacterManager (via canvas observability", instruction)
+        self.assertIn("ReferenceManager (via canvas observability", instruction)
         self.assertIn("scene_reference", instruction)
 
     @patch("services.live_agent.Agent")

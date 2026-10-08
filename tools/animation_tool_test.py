@@ -17,7 +17,7 @@ from testing.base import BaseTestCase
 from tools.animation_tool import AnimationTools
 from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
-from components.character_manager import Character, CharacterLookupResult, CharacterManager
+from components.reference_manager import Character, CharacterLookupResult, ReferenceManager
 
 
 def fake_image_bytes() -> bytes:
@@ -1269,7 +1269,7 @@ class TestAnimationTools(BaseTestCase):
         tools.join_generation()
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_animation_auto_adds_character_manager_references(self, mock_get_provider) -> None:
+    def test_create_animation_auto_adds_reference_manager_references(self, mock_get_provider) -> None:
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
             image_bytes=fake_image_bytes(),
@@ -1289,7 +1289,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr = MagicMock(spec=ReferenceManager)
         mock_char_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1304,10 +1304,10 @@ class TestAnimationTools(BaseTestCase):
             image_provider,
             text_provider,
             MagicMock(),
-            character_manager=mock_char_mgr,
+            reference_manager=mock_char_mgr,
         )
 
-        # Caller provides no reference_images; CharacterManager provides 'hero'
+        # Caller provides no reference_images; ReferenceManager provides 'hero'
         animation_tools.create_animation("A hero stands in a courtyard.", "hero_stand")
         animation_tools.join_generation()
 
@@ -1315,7 +1315,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(requests[0].references[0].name, "hero.png")
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_animation_deduplicates_character_manager_references(self, mock_get_provider) -> None:
+    def test_create_animation_deduplicates_reference_manager_references(self, mock_get_provider) -> None:
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
             image_bytes=fake_image_bytes(),
@@ -1344,7 +1344,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp1, triframe_resp1, technique_resp2, triframe_resp2]
 
-        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr = MagicMock(spec=ReferenceManager)
         mock_char_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1359,7 +1359,7 @@ class TestAnimationTools(BaseTestCase):
             image_provider,
             text_provider,
             MagicMock(),
-            character_manager=mock_char_mgr,
+            reference_manager=mock_char_mgr,
         )
 
         # 1. Caller provides 'hero' by alias -> should deduplicate
@@ -1382,7 +1382,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(requests2[0].references[0].name, "hero.png")
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_animation_character_manager_reference_overrides_caller_reference(self, mock_get_provider) -> None:
+    def test_create_animation_reference_manager_reference_overrides_caller_reference(self, mock_get_provider) -> None:
         image_provider = MagicMock()
         image_provider.generate.return_value = ImageGenerationResult(
             image_bytes=fake_image_bytes(),
@@ -1402,7 +1402,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr = MagicMock(spec=ReferenceManager)
         mock_char_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1420,10 +1420,10 @@ class TestAnimationTools(BaseTestCase):
             image_provider,
             text_provider,
             MagicMock(),
-            character_manager=mock_char_mgr,
+            reference_manager=mock_char_mgr,
         )
 
-        # Caller provides 'villain'; CharacterManager matches 'hero' from prompt -> 'hero' overrides 'villain'
+        # Caller provides 'villain'; ReferenceManager matches 'hero' from prompt -> 'hero' overrides 'villain'
         animation_tools.create_animation("A hero stands in a courtyard.", "hero_stand3", reference_images="villain")
         animation_tools.join_generation()
 
@@ -1452,7 +1452,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr = MagicMock(spec=ReferenceManager)
         mock_char_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1470,7 +1470,7 @@ class TestAnimationTools(BaseTestCase):
             image_provider,
             text_provider,
             MagicMock(),
-            character_manager=mock_char_mgr,
+            reference_manager=mock_char_mgr,
         )
 
         # Prompt acquires 'hero'; caller supplies 'hero' (char ref) AND 'castle_courtyard' (location ref)
@@ -1506,7 +1506,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        mock_char_mgr = MagicMock(spec=CharacterManager)
+        mock_char_mgr = MagicMock(spec=ReferenceManager)
         mock_char_mgr.lookup_character.return_value = CharacterLookupResult(characters=[], player=None)
 
         image_tools = self.make_image_tools(self.config, "tri_frame_cm_no_match", self.manager)
@@ -1515,7 +1515,7 @@ class TestAnimationTools(BaseTestCase):
             image_provider,
             text_provider,
             MagicMock(),
-            character_manager=mock_char_mgr,
+            reference_manager=mock_char_mgr,
         )
 
         animation_tools.create_animation("A waterfall flows over rocks.", "waterfall_anim")

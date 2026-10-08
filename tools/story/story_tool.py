@@ -16,7 +16,7 @@ from components.theater_manager import Theater
 from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
 from tools.base_tool import BaseTools, with_cycle_cooldown
 from tools.tool_metadata import terminal
-from components.character_manager import CharacterManager
+from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule
@@ -59,7 +59,7 @@ class StoryTool(BaseTools):
         image_library: Optional[ImageLibrary] = None,
         image_provider: ImageProvider | None = None,
         speech_provider: SpeechProvider | None = None,
-        character_manager: Optional[CharacterManager] = None,
+        reference_manager: Optional[ReferenceManager] = None,
         notepad: Optional[Notepad] = None,
         lore_library: Optional[LoreLibrary] = None,
     ) -> None:
@@ -99,8 +99,8 @@ class StoryTool(BaseTools):
 
         self.lore_library = lore_library if lore_library is not None else LoreLibrary(theater=theater)
         self.image_library = image_library if image_library is not None else ImageLibrary(theater=theater)
-        if character_manager is not None:
-            self.character_manager = character_manager
+        if reference_manager is not None:
+            self.reference_manager = reference_manager
         else:
             visuals_config = raw_config.get("visuals", {})
             visuals_config = visuals_config if type(visuals_config) is dict else {}
@@ -118,7 +118,7 @@ class StoryTool(BaseTools):
             if speech_provider is None and canvas_manager.story is not None:
                 speech_provider = canvas_manager.story.speech_provider
             story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
-            self.character_manager = CharacterManager(
+            self.reference_manager = ReferenceManager(
                 theater=theater,
                 text_response_provider=text_response_provider,
                 notepad=self.notepad,
@@ -147,7 +147,7 @@ class StoryTool(BaseTools):
             canvas_manager=canvas_manager,
             lore_library=self.lore_library,
             image_library=self.image_library,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             session_service=self.planning_session_service,
             session_id=self.planning_session_id,
             notepad=self.notepad,
@@ -157,7 +157,7 @@ class StoryTool(BaseTools):
             theater=theater,
             canvas_manager=canvas_manager,
             lore_library=self.lore_library,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             notepad=self.notepad,
             session_service=self.response_session_service,
             session_id=self.response_session_id,
@@ -182,7 +182,7 @@ class StoryTool(BaseTools):
         story = self.canvas_manager.story
         if not story or not hasattr(story, "update_character_voice_tags"):
             return
-        characters = self.character_manager.export_characters()
+        characters = self.reference_manager.export_characters()
         tag_map = {
             char.name: char.voice_tags or [char.gender]
             for char in characters

@@ -106,7 +106,7 @@ class Character(BaseModel):
 
     The manager owns this schema because voice and visual identity are
     lifecycle concerns, not details of one particular story responder.
-    ``voice_id`` and image binding fields are assigned by CharacterManager and
+    ``voice_id`` and image binding fields are assigned by ReferenceManager and
     survive subsequent character updates and session restoration.
     """
 
@@ -464,7 +464,7 @@ def _voice_tag_gender(tags: list[str]) -> str:
     return ""
 
 
-class CharacterManager:
+class ReferenceManager:
     """Own character generation, lookup, and session-scoped character state."""
 
     def __init__(
@@ -593,7 +593,7 @@ class CharacterManager:
                     pass
                 characters.append(Character.model_validate(item))
             except Exception as exc:
-                logger.warning("[CharacterManager] Skipping invalid initial character: %s (%s)", item, exc)
+                logger.warning("[ReferenceManager] Skipping invalid initial character: %s (%s)", item, exc)
         return characters
 
     @property
@@ -973,7 +973,7 @@ class CharacterManager:
                     )
                 )
             except OSError as exc:
-                logger.warning("[CharacterManager] Could not read previous reference %s: %s", prev_file, exc)
+                logger.warning("[ReferenceManager] Could not read previous reference %s: %s", prev_file, exc)
 
         prompt = (
             f"Single-character reference portrait of {character.name}. "
@@ -1009,9 +1009,9 @@ class CharacterManager:
                 "description": f"Character reference portrait for {character.name} (iteration {next_num}).",
             }
         except (ImageProviderError, OSError, ValueError) as exc:
-            logger.warning("[CharacterManager] Could not create portrait for %s: %s", character.name, exc)
+            logger.warning("[ReferenceManager] Could not create portrait for %s: %s", character.name, exc)
         except Exception:
-            logger.exception("[CharacterManager] Unexpected portrait failure for %s", character.name)
+            logger.exception("[ReferenceManager] Unexpected portrait failure for %s", character.name)
         return None
 
     def _bind_character_image(self, character: Character) -> None:
@@ -1091,7 +1091,7 @@ class CharacterManager:
                     )
                 )
             except OSError as exc:
-                logger.warning("[CharacterManager] Could not read previous reference %s: %s", prev_file, exc)
+                logger.warning("[ReferenceManager] Could not read previous reference %s: %s", prev_file, exc)
 
         prompt = (
             f"Single-character reference portrait of player character {name_label}. "
@@ -1126,9 +1126,9 @@ class CharacterManager:
                 "description": f"Player character reference portrait for {name_label} (iteration {next_num}).",
             }
         except (ImageProviderError, OSError, ValueError) as exc:
-            logger.warning("[CharacterManager] Could not create portrait for player %s: %s", name_label, exc)
+            logger.warning("[ReferenceManager] Could not create portrait for player %s: %s", name_label, exc)
         except Exception:
-            logger.exception("[CharacterManager] Unexpected player portrait failure for %s", name_label)
+            logger.exception("[ReferenceManager] Unexpected player portrait failure for %s", name_label)
         return None
 
     def _bind_player_image(self, player: PlayerCharacter) -> None:
@@ -1164,7 +1164,7 @@ class CharacterManager:
                 exclude=used,
             )
         except Exception as exc:
-            logger.warning("[CharacterManager] Could not select voice for %s: %s", character.name, exc)
+            logger.warning("[ReferenceManager] Could not select voice for %s: %s", character.name, exc)
 
     @staticmethod
     def _profile_description(character: Character) -> str:
@@ -1596,7 +1596,7 @@ class CharacterManager:
                 if not clean_tags and generated.voice_tags:
                     clean_tags = normalize_voice_tags(generated.voice_tags, supported_tags)
             except Exception as exc:
-                logger.warning("[CharacterManager] Character profile generation failed: %s", exc)
+                logger.warning("[ReferenceManager] Character profile generation failed: %s", exc)
 
         clean_personality = clean_personality or "Enigmatic and watchful."
         clean_motivation = clean_motivation or "Survive and prosper in the current scene."
@@ -1653,7 +1653,7 @@ class CharacterManager:
         try:
             return self.speech_provider.get_supported_voice_tags()
         except Exception as exc:
-            logger.warning("[CharacterManager] Unable to list speech voice tags: %s", exc)
+            logger.warning("[ReferenceManager] Unable to list speech voice tags: %s", exc)
             return {"gender": ("female", "male", "nonbinary")}
 
     @staticmethod
@@ -1671,7 +1671,7 @@ class CharacterManager:
             try:
                 char_update = Character.model_validate(raw_update)
             except Exception as exc:
-                logger.warning("[CharacterManager] Invalid character update ignored: %s (%s)", raw_update, exc)
+                logger.warning("[ReferenceManager] Invalid character update ignored: %s (%s)", raw_update, exc)
                 continue
 
             character = self.create_or_update_character(
@@ -1716,7 +1716,7 @@ class CharacterManager:
             try:
                 character_model = Character.model_validate(character).model_copy(deep=True)
             except Exception as exc:
-                logger.warning("[CharacterManager] Skipping invalid character record: %s (%s)", character, exc)
+                logger.warning("[ReferenceManager] Skipping invalid character record: %s (%s)", character, exc)
                 continue
 
             if not character_model.alias:
@@ -1754,7 +1754,7 @@ class CharacterManager:
 __all__ = [
     "Character",
     "PlayerCharacter",
-    "CharacterManager",
+    "ReferenceManager",
     "DEFAULT_MAX_ACTIVE_CHARACTERS",
     "MAX_ACTIVE_CHARACTERS",
     "SUPPORTED_VOICE_TAGS",

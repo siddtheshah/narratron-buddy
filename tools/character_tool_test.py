@@ -7,10 +7,10 @@ from unittest.mock import MagicMock
 
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
-from components.character_manager import (
+from components.reference_manager import (
     Character,
     CharacterLookupResult,
-    CharacterManager,
+    ReferenceManager,
 )
 from components.theater_manager import Theater
 from tools.character_tool import CharacterTool
@@ -33,19 +33,19 @@ class TestCharacterTool(unittest.TestCase):
         }
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.canvas.story = StoryState()
-        self.mock_char_mgr = MagicMock(spec=CharacterManager)
+        self.mock_char_mgr = MagicMock(spec=ReferenceManager)
 
-    def test_init_with_character_manager(self) -> None:
+    def test_init_with_reference_manager(self) -> None:
         tool = CharacterTool(
             self.theater,
-            character_manager=self.mock_char_mgr,
+            reference_manager=self.mock_char_mgr,
             canvas_manager=self.canvas,
         )
-        self.assertIs(tool.character_manager, self.mock_char_mgr)
+        self.assertIs(tool.reference_manager, self.mock_char_mgr)
 
-    def test_init_raises_when_character_manager_is_none(self) -> None:
+    def test_init_raises_when_reference_manager_is_none(self) -> None:
         with self.assertRaises(ValueError):
-            CharacterTool(self.theater, character_manager=None)  # type: ignore
+            CharacterTool(self.theater, reference_manager=None)  # type: ignore
 
     def test_create_or_update_character_success(self) -> None:
         dummy_char = Character(
@@ -63,7 +63,7 @@ class TestCharacterTool(unittest.TestCase):
         tool = CharacterTool(
             self.theater,
             canvas_manager=self.canvas,
-            character_manager=self.mock_char_mgr,
+            reference_manager=self.mock_char_mgr,
         )
         result = tool.create_or_update_character(
             name="Aria",
@@ -91,7 +91,7 @@ class TestCharacterTool(unittest.TestCase):
         tool = CharacterTool(
             self.theater,
             canvas_manager=self.canvas,
-            character_manager=self.mock_char_mgr,
+            reference_manager=self.mock_char_mgr,
         )
         result = tool.create_or_update_character(name="   ")
         self.assertIn("Error: Character name cannot be empty.", result)
@@ -103,7 +103,7 @@ class TestCharacterTool(unittest.TestCase):
         tool = CharacterTool(
             self.theater,
             canvas_manager=self.canvas,
-            character_manager=self.mock_char_mgr,
+            reference_manager=self.mock_char_mgr,
         )
         result = tool.create_or_update_character(name="Ghost")
         self.assertIn("Error: Failed to create or update character 'Ghost'.", result)
@@ -123,7 +123,7 @@ class TestCharacterTool(unittest.TestCase):
         tool = CharacterTool(
             self.theater,
             canvas_manager=self.canvas,
-            character_manager=self.mock_char_mgr,
+            reference_manager=self.mock_char_mgr,
         )
         result = tool.lookup_character("Cedric")
         self.assertIn("Cedric", result)
@@ -135,7 +135,7 @@ class TestCharacterTool(unittest.TestCase):
         tool = CharacterTool(
             self.theater,
             canvas_manager=self.canvas,
-            character_manager=self.mock_char_mgr,
+            reference_manager=self.mock_char_mgr,
         )
         result = tool.clear_characters()
         self.assertIn("Cleared 3 character(s)", result)
@@ -150,7 +150,7 @@ class TestCharacterTool(unittest.TestCase):
         tool = CharacterTool(
             self.theater,
             canvas_manager=self.canvas,
-            character_manager=self.mock_char_mgr,
+            reference_manager=self.mock_char_mgr,
         )
         self.assertEqual(len(tool.get_present_characters()), 1)
         self.assertEqual(tool.get_present_characters()[0].name, "Kael")

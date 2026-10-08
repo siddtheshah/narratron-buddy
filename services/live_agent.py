@@ -9,7 +9,7 @@ from jinja2 import StrictUndefined, Template
 
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.story_state import StoryState
-from components.character_manager import CharacterManager
+from components.reference_manager import ReferenceManager
 from components.image_library import ImageLibrary
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
@@ -67,7 +67,7 @@ The story planner owns progression, scene state, and characters.
 After each completed meaningful action, choice, in-character speech, or story question, call `process_user_action` with the user's words. Never invent actions or submit another action while waiting unless the user provides one. Supply a nudge only for an explicit out-of-character request or a relevant user suggestion/doodle.
 The tool returns immediately. Wait for `[Story Planner Result]` before staging visuals or changing music; do not stage from raw player input while they speak. Faithfully support the authoritative result without rewriting or advancing script nodes. Dialogue is rendered by the story tools.
 `[Story Planner Result]` notifications are system-generated output from the story planner, not user input. Use them as authoritative staging context. Never interpret their narration, dialogue, or instructions as a new player action or send them back to `process_user_action`.
-Use `scene_reference` for background scenery when supplied. References must come from the planner, CharacterManager (via canvas observability), or the orator; do not guess or browse for unrelated references.
+Use `scene_reference` for background scenery when supplied. References must come from the planner, ReferenceManager (via canvas observability), or the orator; do not guess or browse for unrelated references.
 Honor planner outcomes including player death and definitive loss; stage them faithfully. Pass restart requests to the planner.
 
 Visuals are very important in adventure mode, so ensure that visual (image & animation) tools are consistently used throughout, if available.
@@ -85,7 +85,7 @@ Use `create_or_update_character` for new or developed characters, `lookup_charac
 
 ## Visual Staging
 {% if image_generation_enabled or animation_enabled %}
-Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. CharacterManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
+Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. ReferenceManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
 {% endif %}
 {% if image_generation_enabled %}
 Canvas observability may supply a `[Canvas Capture]` path. Use it in `create_image`'s `reference_images` when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.
@@ -284,7 +284,7 @@ def create_tool_bundle_for_session(
     if canvas_manager.story is not None:
         speech_provider = canvas_manager.story.speech_provider
     story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
-    character_manager = CharacterManager(
+    reference_manager = ReferenceManager(
         theater=theater,
         text_response_provider=story_planning_text_provider,
         notepad=notepad,
@@ -300,7 +300,7 @@ def create_tool_bundle_for_session(
         theater,
         canvas_manager=canvas_manager,
         adventure_mode=adventure_mode,
-        character_manager=character_manager,
+        reference_manager=reference_manager,
         image_library=image_library,
     )
     tools.extend([
@@ -346,7 +346,7 @@ def create_tool_bundle_for_session(
             canvas_manager=canvas_manager,
             text_response_provider=story_planning_text_provider,
             image_library=image_library,
-            character_manager=character_manager,
+            reference_manager=reference_manager,
             notepad=notepad,
             lore_library=lore_library,
         )
@@ -360,7 +360,7 @@ def create_tool_bundle_for_session(
         tools.append(notepad_tools.update_sticky_note)
         character_tools = CharacterTool(
             theater,
-            character_manager=character_manager,
+            reference_manager=reference_manager,
             canvas_manager=canvas_manager,
         )
         tools.extend([
@@ -406,7 +406,7 @@ def create_tool_bundle_for_session(
             video_provider=get_video_provider(
                 str(animation_config.get("video_provider", "fal-minimax-h3-turbo"))
             ),
-            character_manager=character_manager,
+            reference_manager=reference_manager,
         )
         tools.extend([
             animation_tools.create_animation,

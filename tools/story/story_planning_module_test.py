@@ -9,7 +9,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
-from components.character_manager import Character, CharacterLookupResult, CharacterManager, PlayerCharacter
+from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.image_library import ImageLibrary
 from components.notepad import Notepad
@@ -107,7 +107,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=MagicMock(spec=CharacterManager),
+                reference_manager=MagicMock(spec=ReferenceManager),
                 session_service=MagicMock(spec=InMemorySessionService),
                 session_id="planning-boundary-session",
                 notepad=Notepad(theater, canvas_manager=canvas),
@@ -116,7 +116,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
     def test_uses_injected_provider_and_lore_library(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
         image_library = MagicMock(spec=ImageLibrary)
-        character_manager = MagicMock(spec=CharacterManager)
+        reference_manager = MagicMock(spec=ReferenceManager)
         theater = MagicMock(spec=Theater)
         theater.theater_id = "planning-boundary"
         theater.config.return_value = {"story_planning": {"max_sticky_notes": 7}}
@@ -133,7 +133,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 image_library=image_library,
                 session_service=session_service,
                 session_id="planning-boundary-session",
@@ -142,7 +142,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
         self.assertIs(module.lore_library, lore_library)
         self.assertIs(module.image_library, image_library)
-        self.assertIs(module.character_manager, character_manager)
+        self.assertIs(module.reference_manager, reference_manager)
         self.assertIs(module.theater, theater)
         self.assertIs(module.canvas_manager, canvas)
         self.assertIs(module.session_service, session_service)
@@ -154,24 +154,24 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         mock_result = CharacterLookupResult(
             characters=[Character(name="Lyra", gender="female", description="Mystic scholar")]
         )
-        character_manager.lookup_character.return_value = mock_result
+        reference_manager.lookup_character.return_value = mock_result
         self.assertEqual(module.lookup_character("Lyra"), mock_result)
-        character_manager.lookup_character.assert_called_once_with("Lyra")
+        reference_manager.lookup_character.assert_called_once_with("Lyra")
 
     def test_delegates_player_and_character_management(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
-        character_manager = MagicMock(spec=CharacterManager)
-        character_manager.get_player_character.return_value = PlayerCharacter(
+        reference_manager = MagicMock(spec=ReferenceManager)
+        reference_manager.get_player_character.return_value = PlayerCharacter(
             name="Valen", image_description="Armored knight", reference="valen_img"
         )
-        character_manager.update_player_character.return_value = PlayerCharacter(
+        reference_manager.update_player_character.return_value = PlayerCharacter(
             name="Valen", image_description="Armored knight", reference="valen_img"
         )
-        character_manager.create_or_update_character.return_value = Character(
+        reference_manager.create_or_update_character.return_value = Character(
             name="Soran", alias="soran", gender="male", personality="Brave"
         )
         module = self._make_module(lore_library)
-        module.character_manager = character_manager
+        module.reference_manager = reference_manager
 
         player = module.get_player_character()
         self.assertEqual(player.name, "Valen")
@@ -181,11 +181,11 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
         update_msg = module.update_player_character(name="Valen", image_description="Armored knight")
         self.assertIn("Valen", update_msg)
-        character_manager.update_player_character.assert_called_once()
+        reference_manager.update_player_character.assert_called_once()
 
         char_msg = module.create_or_update_character(name="Soran", personality="Brave")
         self.assertIn("Soran", char_msg)
-        character_manager.create_or_update_character.assert_called_once()
+        reference_manager.create_or_update_character.assert_called_once()
 
     def test_initializes_with_reflect_and_retry_plugin_by_default(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
@@ -205,7 +205,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=MagicMock(spec=CharacterManager),
+                reference_manager=MagicMock(spec=ReferenceManager),
                 session_service=session_service,
                 session_id="default-plugin-session",
                 notepad=Notepad(theater, canvas_manager=canvas),
@@ -239,7 +239,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=MagicMock(spec=CharacterManager),
+                reference_manager=MagicMock(spec=ReferenceManager),
                 session_service=session_service,
                 session_id="restart-session",
                 notepad=Notepad(theater, canvas_manager=canvas),
@@ -377,7 +377,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
     def test_rejects_missing_injected_dependencies(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
-        character_manager = MagicMock(spec=CharacterManager)
+        reference_manager = MagicMock(spec=ReferenceManager)
         theater = MagicMock(spec=Theater)
         theater.theater_id = "planning-boundary"
         theater.config.return_value = {}
@@ -391,7 +391,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=None,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
                 notepad=notepad,
@@ -401,7 +401,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=None,
                 lore_library=lore_library,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
                 notepad=notepad,
@@ -411,17 +411,17 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=None,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
                 notepad=notepad,
             )
-        with self.assertRaisesRegex(ValueError, "character_manager is required"):
+        with self.assertRaisesRegex(ValueError, "reference_manager is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=None,
+                reference_manager=None,
                 session_service=session_service,
                 session_id="planning-boundary-session",
                 notepad=notepad,
@@ -431,7 +431,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 session_service=None,
                 session_id="planning-boundary-session",
                 notepad=notepad,
@@ -441,7 +441,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="",
                 notepad=notepad,
@@ -451,7 +451,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 theater=theater,
                 canvas_manager=canvas,
                 lore_library=lore_library,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
                 notepad=None,
@@ -461,7 +461,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 class TestStoryPlanningModuleState(unittest.TestCase):
     def setUp(self) -> None:
         self.lore_library = MagicMock(spec=LoreLibrary)
-        self.character_manager = MagicMock(spec=CharacterManager)
+        self.reference_manager = MagicMock(spec=ReferenceManager)
         self.theater = MagicMock(spec=Theater)
         self.theater.theater_id = "planning_theater"
         self.theater.read_planning_schema.return_value = None
@@ -491,7 +491,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             theater=theater or self.theater,
             canvas_manager=self.canvas,
             lore_library=self.lore_library,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             session_service=self.session_service,
             session_id=session_id,
             notepad=Notepad(theater or self.theater, canvas_manager=self.canvas),

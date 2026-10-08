@@ -10,7 +10,7 @@ from providers import TextResponseProvider
 
 from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
 from tools.story import StoryTool
-from components.character_manager import Character, CharacterManager, PlayerCharacter
+from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.theater_manager import TheaterManager
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
 from tools.character_tool import CharacterTool
@@ -45,9 +45,9 @@ class CanvasFixture:
 
 
 def test_format_canvas_state_includes_available_character_visual_tags() -> None:
-    manager = MagicMock(spec=CharacterManager)
+    manager = MagicMock(spec=ReferenceManager)
     manager.available_character_images.return_value = {"Arthur Modella": "session/1.png", "Grim Vallos": "session/2.png"}
-    state = format_canvas_state(None, character_manager=manager)
+    state = format_canvas_state(None, reference_manager=manager)
     assert "[Available Character Visuals]: <Arthur Modella>, <Grim Vallos>" in state
     assert "latest character portraits automatically" in state
     assert "[Active Characters]" not in state
@@ -58,18 +58,18 @@ def test_format_canvas_state_includes_available_character_visual_tags() -> None:
 
 def test_format_canvas_state_reads_current_character_catalog_without_story_sync(tmp_path: Path) -> None:
     theater = TheaterManager(tmp_path).theater("stage")
-    manager = CharacterManager(theater, MagicMock(spec=TextResponseProvider))
+    manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
     story = StoryState()
     canvas = CanvasFixture(story=story)
-    assert "[Available Character Visuals]" not in format_canvas_state(canvas, character_manager=manager)
+    assert "[Available Character Visuals]" not in format_canvas_state(canvas, reference_manager=manager)
 
     portrait = theater.updated_characters_dir() / "Arthur_Modella" / "1.png"
     portrait.parent.mkdir(parents=True)
     Image.new("RGB", (8, 8), "blue").save(portrait)
-    assert "[Available Character Visuals]: <Arthur Modella>" in format_canvas_state(canvas, character_manager=manager)
+    assert "[Available Character Visuals]: <Arthur Modella>" in format_canvas_state(canvas, reference_manager=manager)
 
     portrait.unlink()
-    assert "[Available Character Visuals]" not in format_canvas_state(canvas, character_manager=manager)
+    assert "[Available Character Visuals]" not in format_canvas_state(canvas, reference_manager=manager)
     assert "available_character_images" not in story.serialize()
 
 
@@ -165,7 +165,7 @@ def test_format_canvas_state_includes_characters_from_character_tool() -> None:
     ]
     char_tool = CharacterTool(
         theater,
-        character_manager=char_mgr,
+        reference_manager=char_mgr,
         canvas_manager=canvas,  # type: ignore[arg-type]
     )
 
@@ -182,7 +182,7 @@ def test_format_canvas_state_omits_character_image_handles_for_npcs() -> None:
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
     )
-    elements.character_manager.create_or_update_character(
+    elements.reference_manager.create_or_update_character(
         name="Lyra",
         gender="female",
         personality="Curious",
@@ -208,7 +208,7 @@ def test_format_canvas_state_omits_character_image_handles_for_player() -> None:
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
     )
-    elements.character_manager.set_player_character(
+    elements.reference_manager.set_player_character(
         PlayerCharacter(
             name="Valen",
             reference="valen_img",

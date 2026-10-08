@@ -30,7 +30,7 @@ from components.canvas.story_state import (
 )
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from components.character_manager import CharacterLookupResult, CharacterManager, PlayerCharacter
+from components.reference_manager import CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.image_library import ImageLibrary
 from components.notepad import (
@@ -233,7 +233,7 @@ class StoryPlanningModule:
         theater: Theater,
         canvas_manager: CanvasStateManager,
         lore_library: LoreLibrary,
-        character_manager: CharacterManager,
+        reference_manager: ReferenceManager,
         session_service: InMemorySessionService,
         session_id: str,
         notepad: Notepad,
@@ -246,8 +246,8 @@ class StoryPlanningModule:
             raise ValueError("canvas_manager is required.")
         if lore_library is None:
             raise ValueError("lore_library is required.")
-        if character_manager is None:
-            raise ValueError("character_manager is required.")
+        if reference_manager is None:
+            raise ValueError("reference_manager is required.")
         if session_service is None:
             raise ValueError("session_service is required.")
         if not session_id:
@@ -260,7 +260,7 @@ class StoryPlanningModule:
         self.canvas_manager = canvas_manager
         self.lore_library = lore_library
         self.image_library = image_library or ImageLibrary(theater)
-        self.character_manager = character_manager
+        self.reference_manager = reference_manager
         self._deep_read_lore_calls_this_run = 0
         self._deep_search_lore_calls_this_run = 0
         self._deep_lore_calls_lock = Lock()
@@ -411,15 +411,15 @@ class StoryPlanningModule:
 
     def lookup_character(self, query: str = "") -> CharacterLookupResult:
         """List all session characters or search by name or trait."""
-        return self.character_manager.lookup_character(query).for_model_context()
+        return self.reference_manager.lookup_character(query).for_model_context()
 
     def get_player_character(self) -> PlayerCharacter | None:
         """Return the canonical persisted identity and visual reference for the player character."""
-        return self.character_manager.get_player_character()
+        return self.reference_manager.get_player_character()
 
     def get_player_character_info(self) -> str:
         """Retrieve the canonical player character identity and visual reference."""
-        player = self.character_manager.get_player_character()
+        player = self.reference_manager.get_player_character()
         if not player:
             return "No player character has been canonically established yet."
         return player.describe()
@@ -431,7 +431,7 @@ class StoryPlanningModule:
         reference: str = "",
     ) -> str:
         """Canonically manage or update the player character's name, visual description, or image reference."""
-        player = self.character_manager.update_player_character(
+        player = self.reference_manager.update_player_character(
             name=name,
             image_description=image_description,
             reference=reference or None,
@@ -450,7 +450,7 @@ class StoryPlanningModule:
         image_reference: str = "",
     ) -> str:
         """Canonically create or update an NPC record in the character manager."""
-        char = self.character_manager.create_or_update_character(
+        char = self.reference_manager.create_or_update_character(
             name=name,
             description=description,
             personality=personality,
@@ -606,7 +606,7 @@ class StoryPlanningModule:
             note["topic"]: note["info"]
             for note in self.notepad.get_present_sticky_notes()
         }
-        current_pc_obj = self.character_manager.get_player_character()
+        current_pc_obj = self.reference_manager.get_player_character()
         current_pc: Optional[PlayerCharacterState] = None
         if current_pc_obj is not None:
             current_pc = PlayerCharacterState(
@@ -614,7 +614,7 @@ class StoryPlanningModule:
                 image_description=current_pc_obj.image_description,
                 reference=current_pc_obj.reference,
             )
-        current_chars_list = self.character_manager.get_present_characters()
+        current_chars_list = self.reference_manager.get_present_characters()
         current_chars: dict[str, CharacterState] = {
             c.name: CharacterState(
                 name=c.name,
@@ -817,7 +817,7 @@ class StoryPlanningModule:
             note["topic"]: note["info"]
             for note in self.notepad.get_present_sticky_notes()
         }
-        current_pc_obj = self.character_manager.get_player_character()
+        current_pc_obj = self.reference_manager.get_player_character()
         current_pc: Optional[PlayerCharacterState] = None
         if current_pc_obj is not None:
             current_pc = PlayerCharacterState(
@@ -825,7 +825,7 @@ class StoryPlanningModule:
                 image_description=current_pc_obj.image_description,
                 reference=current_pc_obj.reference,
             )
-        current_chars_list = self.character_manager.get_present_characters()
+        current_chars_list = self.reference_manager.get_present_characters()
         current_chars: dict[str, CharacterState] = {
             c.name: CharacterState(
                 name=c.name,

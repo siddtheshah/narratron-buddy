@@ -28,7 +28,7 @@ from google.genai import types
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from components.character_manager import Character, CharacterLookupResult, CharacterManager, PlayerCharacter
+from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_models import (
@@ -39,7 +39,7 @@ from tools.story.story_models import (
 )
 
 # Compatibility import path.  The schema itself is owned by
-# CharacterManager, not by this responder module.
+# ReferenceManager, not by this responder module.
 ResponseCharacter = Character
 
 STORY_LOG_CONTEXT_LINES = 200
@@ -289,7 +289,7 @@ class StoryResponseModule:
         canvas_manager: CanvasStateManager,
         notepad: Notepad,
         lore_library: LoreLibrary,
-        character_manager: CharacterManager,
+        reference_manager: ReferenceManager,
         session_service: InMemorySessionService,
         session_id: str,
     ):
@@ -297,8 +297,8 @@ class StoryResponseModule:
             raise ValueError("notepad is required.")
         if lore_library is None:
             raise ValueError("lore_library is required.")
-        if character_manager is None:
-            raise ValueError("character_manager is required.")
+        if reference_manager is None:
+            raise ValueError("reference_manager is required.")
         if session_service is None:
             raise ValueError("session_service is required.")
         if not session_id:
@@ -313,9 +313,9 @@ class StoryResponseModule:
         self._in_flight_lock = Lock()
 
         self.lore_library = lore_library
-        self.character_manager = character_manager
-        if self.character_manager.story_state is None and self.canvas_manager is not None:
-            self.character_manager.story_state = self.canvas_manager.story
+        self.reference_manager = reference_manager
+        if self.reference_manager.story_state is None and self.canvas_manager is not None:
+            self.reference_manager.story_state = self.canvas_manager.story
 
         # Lore budgets and activity belong to the immediate-response turn.
         self._read_lore_calls_this_turn = 0
@@ -691,26 +691,26 @@ class StoryResponseModule:
     # Character Management
     @property
     def _characters(self) -> OrderedDict[str, Dict[str, Any]]:
-        return self.character_manager._characters
+        return self.reference_manager._characters
 
     @property
     def _characters_lock(self) -> Lock:
-        return self.character_manager._characters_lock
+        return self.reference_manager._characters_lock
 
     @property
     def max_active_characters(self) -> int:
-        return self.character_manager.max_active_characters
+        return self.reference_manager.max_active_characters
 
     @max_active_characters.setter
     def max_active_characters(self, value: int) -> None:
-        self.character_manager.max_active_characters = value
+        self.reference_manager.max_active_characters = value
 
     def get_present_characters(self) -> list[Character]:
-        return self.character_manager.get_present_characters()
+        return self.reference_manager.get_present_characters()
 
     def lookup_character(self, query: str = "") -> CharacterLookupResult:
         """List all session characters or search by name or trait."""
-        return self.character_manager.lookup_character(query).for_model_context()
+        return self.reference_manager.lookup_character(query).for_model_context()
 
     def create_or_update_character(
         self,
@@ -730,9 +730,9 @@ class StoryResponseModule:
         assigned in serialized story state so the character remains consistent across initializations.
         """
         logger.debug(f"[StoryResponseModule] create_or_update_character called for character {name} ; ref {image_reference}")
-        if self.character_manager.story_state is None and self.canvas_manager is not None:
-            self.character_manager.story_state = self.canvas_manager.story
-        profile = self.character_manager.create_or_update_character(
+        if self.reference_manager.story_state is None and self.canvas_manager is not None:
+            self.reference_manager.story_state = self.canvas_manager.story
+        profile = self.reference_manager.create_or_update_character(
             name=name,
             description=description,
             personality=personality,
@@ -749,7 +749,7 @@ class StoryResponseModule:
 
     def clear_scene(self) -> str:
         """Remove characters from the current scene while preserving durable story context."""
-        char_count = self.character_manager.clear_scene()
+        char_count = self.reference_manager.clear_scene()
         logger.debug(
             "[StoryResponseModule] Cleared %d character(s); preserved sticky notes and story context (theater=%s).",
             char_count,
@@ -759,11 +759,11 @@ class StoryResponseModule:
 
     def get_player_character(self) -> PlayerCharacter | None:
         """Return the canonical persisted identity and visual reference for the player character."""
-        return self.character_manager.get_player_character()
+        return self.reference_manager.get_player_character()
 
     def get_player_reference(self) -> str | None:
         """Return the canonical image reference identifier for the player character."""
-        return self.character_manager.get_player_reference()
+        return self.reference_manager.get_player_reference()
 
     def update_player_character(
         self,
@@ -772,7 +772,7 @@ class StoryResponseModule:
         reference: str = "",
     ) -> str:
         """Canonically manage or update the player character's name, visual description, or image reference."""
-        player = self.character_manager.update_player_character(
+        player = self.reference_manager.update_player_character(
             name=name,
             image_description=image_description,
             reference=reference or None,
@@ -832,9 +832,9 @@ class StoryResponseModule:
         story_state = build_story_context_prompt(
             elements=self.notepad.get_present_elements(),
             characters=self.get_present_characters(),
-            total_characters=self.character_manager.count(),
+            total_characters=self.reference_manager.count(),
             changed_topics=changed_topics,
-            player_character=self.character_manager.get_player_character(),
+            player_character=self.reference_manager.get_player_character(),
         )
         return build_responder_turn_prompt(
             story_state=story_state,
@@ -1172,7 +1172,7 @@ class StoryResponseModule:
             "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),
             "die_rolls": die_rolls,
         }
-        player_char = self.character_manager.get_player_character()
+        player_char = self.reference_manager.get_player_character()
         result["player_character"] = player_char.for_model_context().model_dump(exclude_none=True) if player_char else None
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
@@ -1210,9 +1210,9 @@ class StoryResponseModule:
             turn_id = self._turn_id
 
         result = dict(planning_state)
-        player_char = self.character_manager.export_player_character()
+        player_char = self.reference_manager.export_player_character()
         result.update({
-            "characters": [character.model_dump(exclude_none=True) for character in self.character_manager.export_characters()],
+            "characters": [character.model_dump(exclude_none=True) for character in self.reference_manager.export_characters()],
             "turn_id": turn_id,
             "last_scene_reaction": dict(self._last_scene_reaction),
         })
@@ -1228,18 +1228,18 @@ class StoryResponseModule:
         if raw_characters:
             try:
                 characters = [Character.model_validate(c) for c in raw_characters]
-                self.character_manager.import_characters(characters)
+                self.reference_manager.import_characters(characters)
             except Exception as exc:
                 logger.warning("[StoryResponseModule] Error importing characters from response state: %s", exc)
-                self.character_manager.import_characters([])
+                self.reference_manager.import_characters([])
         else:
-            self.character_manager.import_characters([])
+            self.reference_manager.import_characters([])
 
         raw_player = state.get("player_character")
         if raw_player:
             try:
                 player_model = PlayerCharacter.model_validate(raw_player)
-                self.character_manager.import_player_character(player_model)
+                self.reference_manager.import_player_character(player_model)
             except Exception as exc:
                 logger.warning("[StoryResponseModule] Error importing player character from response state: %s", exc)
 
@@ -1274,7 +1274,7 @@ class StoryResponseModule:
         try:
             story = self.canvas_manager.story
             story.set_story_planning_state(self.export_response_state())
-            characters = self.character_manager.export_characters()
+            characters = self.reference_manager.export_characters()
             tag_map = {
                 char.name: char.voice_tags or [char.gender]
                 for char in characters

@@ -11,7 +11,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
-from components.character_manager import Character, CharacterManager
+from components.reference_manager import Character, ReferenceManager
 from services.audio_codecs import LiveAudioDecoder
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ def format_canvas_state(
     canvas_state_manager: Optional[CanvasStateManager],
     notepad_tools: Optional[NotepadToolProvider] = None,
     character_tools: Optional[CharacterToolProvider] = None,
-    character_manager: CharacterManager | None = None,
+    reference_manager: ReferenceManager | None = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
     visual = canvas_state_manager.visual if canvas_state_manager is not None else None
@@ -90,7 +90,7 @@ def format_canvas_state(
             rendered_char_list.append(desc)
         parts.append(f"[Active Characters]: {'; '.join(rendered_char_list)}")
 
-    available_images = character_manager.available_character_images() if character_manager is not None else {}
+    available_images = reference_manager.available_character_images() if reference_manager is not None else {}
     if available_images:
         names = ", ".join(f"<{name}>" for name in available_images)
         parts.append(

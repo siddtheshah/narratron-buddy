@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from typing import Optional, Protocol, Union
 
-from components.character_manager import CharacterLookupResult, CharacterManager
+from components.reference_manager import CharacterLookupResult, ReferenceManager
 from providers import ImageReference
 
 logger = logging.getLogger(__name__)
@@ -22,12 +22,12 @@ class ImagePathResolver(Protocol):
 
 def is_character_reference(
     ref: str,
-    character_manager: Optional[CharacterManager] = None,
+    reference_manager: Optional[ReferenceManager] = None,
     resolved_path: Optional[str] = None,
     lookup_result: Optional[CharacterLookupResult] = None,
 ) -> bool:
     """Return True if ref is identified as a character reference."""
-    if character_manager is None:
+    if reference_manager is None:
         return False
 
     ref_clean = str(ref).strip()
@@ -66,8 +66,8 @@ def is_character_reference(
                 if re.search(r"\b" + re.escape(player_name) + r"\b", ref_words):
                     return True
 
-    # 2. Check against all known character references from character_manager
-    all_char_refs = character_manager.get_character_references()
+    # 2. Check against all known character references from reference_manager
+    all_char_refs = reference_manager.get_character_references()
     if type(all_char_refs) is list:
         for c_ref in all_char_refs:
             c_clean = str(c_ref).strip().lower()
@@ -88,7 +88,7 @@ def is_character_reference(
             return True
         parent_name = p.parent.name
         if parent_name and parent_name.lower() not in ("references", "images", "artifacts", "output", "characters", "."):
-            res = character_manager.get_latest_reference_path_for_character(parent_name)
+            res = reference_manager.get_latest_reference_path_for_character(parent_name)
             if type(res) is str and res.strip():
                 return True
 
@@ -163,11 +163,11 @@ def get_reference_label(
 def resolve_provider_references(
     reference_images: Union[list[str], str, None],
     prompt: str = "",
-    character_manager: Optional[CharacterManager] = None,
+    reference_manager: Optional[ReferenceManager] = None,
     visual: Optional[ImagePathResolver] = None,
     caller_label: str = "Tool",
 ) -> tuple[list[ImageReference], Optional[str]]:
-    """Resolve and attach references from character_manager and caller reference images.
+    """Resolve and attach references from reference_manager and caller reference images.
 
     Handles character reference lookup from prompt, caller overrides, deduplication,
     path verification, and loading bytes into ImageReference objects.
@@ -181,12 +181,12 @@ def resolve_provider_references(
     lookup_result: Optional[CharacterLookupResult] = None
     tagged_names = list(dict.fromkeys(name.strip() for name in re.findall(r"<([^<>]+)>", prompt) if name.strip()))
 
-    if tagged_names and character_manager is None:
+    if tagged_names and reference_manager is None:
         return [], "Error: Character visuals require a character manager."
 
-    if tagged_names and character_manager is not None:
+    if tagged_names and reference_manager is not None:
         for name in tagged_names:
-            path = character_manager.get_character_visual_path(name)
+            path = reference_manager.get_character_visual_path(name)
             if path is None:
                 return [], f"Error: Character visual '<{name}>' not found. Use an available character name."
             normalized = os.path.normcase(os.path.abspath(path))
@@ -195,8 +195,8 @@ def resolve_provider_references(
                 char_seen_keys.add(name.casefold())
                 char_resolved_refs.append((name, path))
 
-    if character_manager is not None and not tagged_names:
-        lookup_result = character_manager.lookup_character(prompt, name_only=True)
+    if reference_manager is not None and not tagged_names:
+        lookup_result = reference_manager.lookup_character(prompt, name_only=True)
         for ref in lookup_result.get_character_references():
             ref_clean = str(ref).strip()
             ref_key = ref_clean.casefold()
@@ -205,8 +205,8 @@ def resolve_provider_references(
             ref_path = None
             if os.path.isfile(ref_clean):
                 ref_path = ref_clean
-            elif character_manager is not None:
-                res = character_manager.get_latest_reference_path_for_character(ref_clean)
+            elif reference_manager is not None:
+                res = reference_manager.get_latest_reference_path_for_character(ref_clean)
                 if type(res) is str and res.strip():
                     ref_path = res.strip()
             if ref_path is None and visual is not None:
@@ -234,8 +234,8 @@ def resolve_provider_references(
             ref_key = ref.casefold()
 
             latest_char_path: Optional[str] = None
-            if character_manager is not None:
-                res = character_manager.get_latest_reference_path_for_character(ref)
+            if reference_manager is not None:
+                res = reference_manager.get_latest_reference_path_for_character(ref)
                 if type(res) is str and res.strip():
                     latest_char_path = res.strip()
 
@@ -246,7 +246,7 @@ def resolve_provider_references(
             if ref_path is None:
                 if char_resolved_refs and is_character_reference(
                     ref,
-                    character_manager=character_manager,
+                    reference_manager=reference_manager,
                     lookup_result=lookup_result,
                 ):
                     continue
@@ -259,11 +259,11 @@ def resolve_provider_references(
 
             if char_resolved_refs and is_character_reference(
                 ref,
-                character_manager=character_manager,
+                reference_manager=reference_manager,
                 resolved_path=ref_path,
                 lookup_result=lookup_result,
             ):
-                logger.debug(f"[{caller_label}] Caller character reference '{ref}' overridden by character_manager.")
+                logger.debug(f"[{caller_label}] Caller character reference '{ref}' overridden by reference_manager.")
                 continue
 
             seen_keys.add(ref_key)

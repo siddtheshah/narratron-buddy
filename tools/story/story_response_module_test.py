@@ -13,7 +13,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from components.image_library import ImageLibrary
-from components.character_manager import Character, CharacterManager, PlayerCharacter
+from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_response_module import (
@@ -35,7 +35,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.provider = MagicMock(spec=TextResponseProvider)
         self.lore_library = MagicMock(spec=LoreLibrary)
-        self.character_manager = MagicMock(spec=CharacterManager)
+        self.reference_manager = MagicMock(spec=ReferenceManager)
         self.session_service = MagicMock(spec=InMemorySessionService)
         self.session_id = "response-boundary-session"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
@@ -61,14 +61,14 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
 
         self.assertIs(module.notepad, self.notepad)
         self.assertIs(module.lore_library, self.lore_library)
-        self.assertIs(module.character_manager, self.character_manager)
+        self.assertIs(module.reference_manager, self.reference_manager)
         self.assertIs(module.session_service, self.session_service)
         self.assertEqual(module.session_id, self.session_id)
 
@@ -84,7 +84,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
@@ -111,7 +111,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
@@ -135,7 +135,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
         )
@@ -155,7 +155,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
@@ -174,7 +174,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
@@ -199,17 +199,17 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=None,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
-        with self.assertRaisesRegex(ValueError, "character_manager is required"):
+        with self.assertRaisesRegex(ValueError, "reference_manager is required"):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=None,
+                reference_manager=None,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
@@ -219,7 +219,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=None,
                 session_id=self.session_id,
             )
@@ -229,7 +229,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=self.notepad,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id="",
             )
@@ -239,7 +239,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
                 canvas_manager=self.canvas,
                 notepad=None,
                 lore_library=self.lore_library,
-                character_manager=self.character_manager,
+                reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
             )
@@ -272,7 +272,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.image_provider.generate.side_effect = RuntimeError("not used")
         self.speech_provider = MagicMock(spec=SpeechProvider)
         self.speech_provider.select_voice.return_value = "voice_default"
-        self.character_manager = CharacterManager(
+        self.reference_manager = ReferenceManager(
             theater=self.theater,
             text_response_provider=self.provider,
             notepad=self.notepad,
@@ -285,7 +285,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             canvas_manager=self.canvas,
             notepad=self.notepad,
             lore_library=self.lore_library,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             session_service=InMemorySessionService(),
             session_id="response-test-session",
         )
@@ -475,7 +475,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             name="Arthur", image_description="A wizard", reference="private_alias",
             reference_path="private/Arthur/1.png", reference_source="existing",
         )
-        with patch.object(self.module.character_manager, "get_player_character", return_value=player), patch.object(
+        with patch.object(self.module.reference_manager, "get_player_character", return_value=player), patch.object(
             self.module,
             "_run_responder_agent",
             return_value=scene_delta,
@@ -616,23 +616,23 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         self.lore_library = MagicMock(spec=LoreLibrary)
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.session_service = MagicMock(spec=InMemorySessionService)
-        self.character_manager = MagicMock(spec=CharacterManager)
+        self.reference_manager = MagicMock(spec=ReferenceManager)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             notepad=self.notepad,
             lore_library=self.lore_library,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             session_service=self.session_service,
             session_id="test_session",
         )
 
     def test_delegates_player_character_management(self) -> None:
-        self.character_manager.get_player_character.return_value = PlayerCharacter(
+        self.reference_manager.get_player_character.return_value = PlayerCharacter(
             name="Valen", image_description="Armored knight", reference="valen_img"
         )
-        self.character_manager.get_player_reference.return_value = "valen_img"
-        self.character_manager.update_player_character.return_value = PlayerCharacter(
+        self.reference_manager.get_player_reference.return_value = "valen_img"
+        self.reference_manager.update_player_character.return_value = PlayerCharacter(
             name="Valen", image_description="Armored knight", reference="valen_img"
         )
 
@@ -642,7 +642,7 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
 
         res = self.module.update_player_character(name="Valen", image_description="Armored knight")
         self.assertIn("Valen", res)
-        self.character_manager.update_player_character.assert_called_once()
+        self.reference_manager.update_player_character.assert_called_once()
 
     def test_build_story_context_prompt_includes_player_character(self) -> None:
         player = PlayerCharacter(
@@ -662,7 +662,7 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
 
 
     def test_delegates_create_or_update_character(self) -> None:
-        self.character_manager.create_or_update_character.return_value = Character(
+        self.reference_manager.create_or_update_character.return_value = Character(
             name="Cedric", gender="male", image_reference="private_alias",
             image_reference_path="private/Cedric/1.png",
         )
@@ -670,8 +670,8 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         self.assertEqual(res["name"], "Cedric")
         self.assertIsNone(res.image_reference)
         self.assertIsNone(res.image_reference_path)
-        self.assertEqual(self.character_manager.create_or_update_character.return_value.image_reference, "private_alias")
-        self.character_manager.create_or_update_character.assert_called_once_with(
+        self.assertEqual(self.reference_manager.create_or_update_character.return_value.image_reference, "private_alias")
+        self.reference_manager.create_or_update_character.assert_called_once_with(
             name="Cedric",
             description="",
             personality="",
@@ -699,13 +699,13 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.lore_library.get_lore_context.return_value = "Lore docs: space_history.md"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.session_service = MagicMock(spec=InMemorySessionService)
-        self.character_manager = MagicMock(spec=CharacterManager)
+        self.reference_manager = MagicMock(spec=ReferenceManager)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             notepad=self.notepad,
             lore_library=self.lore_library,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             session_service=self.session_service,
             session_id="prompt_test_session",
         )
@@ -743,10 +743,10 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.notepad.update_sticky_note("Mission", "Reach the bridge")
 
         player = PlayerCharacter(name="Zara", image_description="Cybernetic pilot", reference="zara_ref")
-        self.character_manager.get_player_character.return_value = player
+        self.reference_manager.get_player_character.return_value = player
         char = Character(name="Kaelen", personality="Stoic", motivation="Survive", quirk="Tinkers with gadgets", voice_tags=["male"])
-        self.character_manager.get_present_characters.return_value = [char]
-        self.character_manager.count.return_value = 1
+        self.reference_manager.get_present_characters.return_value = [char]
+        self.reference_manager.count.return_value = 1
 
         prompt = self.module._build_responder_turn_prompt("I slice the security console.", nudge="Alert nearby guards")
 

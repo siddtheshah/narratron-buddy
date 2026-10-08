@@ -10,7 +10,7 @@ from components.canvas.story_state import (
     speaker_key,
 )
 from providers.speech_provider import SpeechProvider, SpeechProviderError, SpeechSynthesisResult
-from components.character_manager import Character
+from components.reference_manager import Character
 
 
 def test_story_state_isolated_from_other_theaters() -> None:

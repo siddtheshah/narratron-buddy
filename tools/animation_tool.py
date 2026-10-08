@@ -35,7 +35,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
 from components.canvas.visual_state import VisualState
-from components.character_manager import CharacterLookupResult, CharacterManager
+from components.reference_manager import CharacterLookupResult, ReferenceManager
 from tools.reference_utils import is_character_reference, resolve_provider_references
 
 
@@ -95,13 +95,13 @@ class AnimationTools(BaseTools):
         layered_provider: FalQwenLayeredProvider,
         image_provider: Optional[ImageProvider] = None,
         video_provider: Optional[VideoProvider] = None,
-        character_manager: Optional[CharacterManager] = None,
+        reference_manager: Optional[ReferenceManager] = None,
     ):
         super().__init__(
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.character_manager: Optional[CharacterManager] = character_manager
+        self.reference_manager: Optional[ReferenceManager] = reference_manager
         animation_config = self.config.get("animation", {})
         visuals_config = self.config.get("visuals", {})
         self.animation_config = animation_config if isinstance(animation_config, dict) else {}
@@ -178,7 +178,7 @@ class AnimationTools(BaseTools):
         """Return True if ref is identified as a character reference."""
         return is_character_reference(
             ref=ref,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             resolved_path=resolved_path,
             lookup_result=lookup_result,
         )
@@ -760,7 +760,7 @@ class AnimationTools(BaseTools):
         return resolve_provider_references(
             reference_images=reference_images,
             prompt=scene_prompt,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             visual=self.visual,
             caller_label="AnimationTools",
         )

@@ -9,10 +9,10 @@ import unittest
 from typing import Optional
 from unittest.mock import MagicMock
 
-from components.character_manager import (
+from components.reference_manager import (
     Character,
     CharacterLookupResult,
-    CharacterManager,
+    ReferenceManager,
     PlayerCharacter,
 )
 from tools.reference_utils import (
@@ -48,7 +48,7 @@ class TestReferenceUtils(unittest.TestCase):
         self.assertEqual(references, [])
         self.assertIn("canvas token", error or "")
 
-    def test_character_prompt_tag_requires_character_manager(self) -> None:
+    def test_character_prompt_tag_requires_reference_manager(self) -> None:
         references, error = resolve_provider_references(None, "<Arthur Modella> waves.")
         self.assertEqual(references, [])
         self.assertIn("require a character manager", error or "")
@@ -62,96 +62,96 @@ class TestReferenceUtils(unittest.TestCase):
     # --- is_character_reference tests ---
 
     def test_is_character_reference_returns_false_when_manager_none(self) -> None:
-        self.assertFalse(is_character_reference("hero", character_manager=None))
+        self.assertFalse(is_character_reference("hero", reference_manager=None))
 
     def test_is_character_reference_returns_false_for_empty_ref(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
-        self.assertFalse(is_character_reference("", character_manager=mock_mgr))
-        self.assertFalse(is_character_reference("   ", character_manager=mock_mgr))
+        mock_mgr = MagicMock(spec=ReferenceManager)
+        self.assertFalse(is_character_reference("", reference_manager=mock_mgr))
+        self.assertFalse(is_character_reference("   ", reference_manager=mock_mgr))
 
     def test_is_character_reference_matches_lookup_result_character_name(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         char = Character(name="Aria", gender="female", alias="The Bard", image_reference="aria_ref")
         lookup = CharacterLookupResult(characters=[char])
 
-        self.assertTrue(is_character_reference("Aria", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("aria", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("The Bard", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("aria_ref", character_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("Aria", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("aria", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("The Bard", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("aria_ref", reference_manager=mock_mgr, lookup_result=lookup))
 
     def test_is_character_reference_matches_lookup_result_character_stem(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         char = Character(name="Kael", gender="male", image_reference="/images/kael_portrait.png")
         lookup = CharacterLookupResult(characters=[char])
 
-        self.assertTrue(is_character_reference("kael_portrait", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("kael_portrait.png", character_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("kael_portrait", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("kael_portrait.png", reference_manager=mock_mgr, lookup_result=lookup))
 
     def test_is_character_reference_matches_lookup_result_character_word_boundary(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         char = Character(name="Cedric", gender="male")
         lookup = CharacterLookupResult(characters=[char])
 
-        self.assertTrue(is_character_reference("cedric_standing", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("sir-cedric-armor", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertFalse(is_character_reference("cedricus", character_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("cedric_standing", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("sir-cedric-armor", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertFalse(is_character_reference("cedricus", reference_manager=mock_mgr, lookup_result=lookup))
 
     def test_is_character_reference_matches_lookup_result_player(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         player = PlayerCharacter(name="Valen", reference="valen_hero.png", reference_path="/path/to/valen_hero.png")
         lookup = CharacterLookupResult(player=player)
 
-        self.assertTrue(is_character_reference("Valen", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("valen_hero", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("/path/to/valen_hero.png", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertTrue(is_character_reference("valen_running", character_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("Valen", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("valen_hero", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("/path/to/valen_hero.png", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertTrue(is_character_reference("valen_running", reference_manager=mock_mgr, lookup_result=lookup))
 
-    def test_is_character_reference_matches_character_manager_get_character_references(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
+    def test_is_character_reference_matches_reference_manager_get_character_references(self) -> None:
+        mock_mgr = MagicMock(spec=ReferenceManager)
         elena_file = os.path.abspath(self._create_dummy_image_file("elena.png"))
         mock_mgr.get_character_references.return_value = ["morgan_v1", elena_file]
 
-        self.assertTrue(is_character_reference("morgan_v1", character_manager=mock_mgr))
-        self.assertTrue(is_character_reference("morgan_v1.png", character_manager=mock_mgr))
-        self.assertTrue(is_character_reference("elena", character_manager=mock_mgr))
+        self.assertTrue(is_character_reference("morgan_v1", reference_manager=mock_mgr))
+        self.assertTrue(is_character_reference("morgan_v1.png", reference_manager=mock_mgr))
+        self.assertTrue(is_character_reference("elena", reference_manager=mock_mgr))
         self.assertTrue(
             is_character_reference(
                 "custom_query",
-                character_manager=mock_mgr,
+                reference_manager=mock_mgr,
                 resolved_path=elena_file,
             )
         )
 
     def test_is_character_reference_matches_filename_tags(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.get_character_references.return_value = []
 
-        self.assertTrue(is_character_reference("hero_character.png", character_manager=mock_mgr))
-        self.assertTrue(is_character_reference("scene_player_character_1", character_manager=mock_mgr))
-        self.assertTrue(is_character_reference("npc_portrait.jpg", character_manager=mock_mgr))
-        self.assertTrue(is_character_reference("character_concept", character_manager=mock_mgr))
+        self.assertTrue(is_character_reference("hero_character.png", reference_manager=mock_mgr))
+        self.assertTrue(is_character_reference("scene_player_character_1", reference_manager=mock_mgr))
+        self.assertTrue(is_character_reference("npc_portrait.jpg", reference_manager=mock_mgr))
+        self.assertTrue(is_character_reference("character_concept", reference_manager=mock_mgr))
 
     def test_is_character_reference_returns_false_for_non_character(self) -> None:
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.get_character_references.return_value = ["hero"]
         lookup = CharacterLookupResult(characters=[Character(name="hero", gender="nonbinary")])
 
-        self.assertFalse(is_character_reference("castle_courtyard", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertFalse(is_character_reference("forest_path_day.png", character_manager=mock_mgr, lookup_result=lookup))
-        self.assertFalse(is_character_reference("magic_sword", character_manager=mock_mgr, lookup_result=lookup))
+        self.assertFalse(is_character_reference("castle_courtyard", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertFalse(is_character_reference("forest_path_day.png", reference_manager=mock_mgr, lookup_result=lookup))
+        self.assertFalse(is_character_reference("magic_sword", reference_manager=mock_mgr, lookup_result=lookup))
 
     # --- resolve_provider_references tests ---
 
     def test_resolve_provider_references_empty_inputs(self) -> None:
-        refs, err = resolve_provider_references(None, prompt="", character_manager=None, visual=None)
+        refs, err = resolve_provider_references(None, prompt="", reference_manager=None, visual=None)
         self.assertEqual(refs, [])
         self.assertIsNone(err)
 
-    def test_resolve_provider_references_from_character_manager_prompt(self) -> None:
+    def test_resolve_provider_references_from_reference_manager_prompt(self) -> None:
         hero_file = self._create_dummy_image_file("hero.png", b"hero_png_data")
         resolver = DummyPathResolver({"hero": hero_file})
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="Hero", gender="nonbinary", image_reference="hero")]
         )
@@ -159,7 +159,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=None,
             prompt="Hero walking across a meadow",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -174,13 +174,13 @@ class TestReferenceUtils(unittest.TestCase):
         jpeg_file = self._create_dummy_image_file("villain.jpg", b"jpeg_data")
         resolver = DummyPathResolver({"hero": webp_file, "villain": jpeg_file})
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[])
 
         refs, err = resolve_provider_references(
             reference_images=["hero", "villain"],
             prompt="Action scene",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -197,7 +197,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images="tree, rock",
             prompt="Nature landscape",
-            character_manager=None,
+            reference_manager=None,
             visual=resolver,
         )
 
@@ -212,7 +212,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["non_existent_ref"],
             prompt="Some scene",
-            character_manager=None,
+            reference_manager=None,
             visual=resolver,
         )
 
@@ -223,7 +223,7 @@ class TestReferenceUtils(unittest.TestCase):
         hero_file = self._create_dummy_image_file("hero.png", b"hero_data")
         resolver = DummyPathResolver({"hero": hero_file})
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         char = Character(name="hero", gender="nonbinary", image_reference="hero")
         mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[char])
         mock_mgr.get_character_references.return_value = ["hero"]
@@ -233,7 +233,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["hero_portrait"],
             prompt="hero walks into the woods",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -241,23 +241,23 @@ class TestReferenceUtils(unittest.TestCase):
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0].name, "hero.png")
 
-    def test_resolve_provider_references_character_manager_overrides_caller_character(self) -> None:
+    def test_resolve_provider_references_reference_manager_overrides_caller_character(self) -> None:
         hero_file = self._create_dummy_image_file("hero.png", b"hero_bytes")
         villain_file = self._create_dummy_image_file("villain.png", b"villain_bytes")
         resolver = DummyPathResolver({"hero": hero_file, "villain": villain_file})
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
         mock_mgr.get_character_references.return_value = ["hero", "villain"]
 
         # Prompt matches "hero". Caller specifies "villain". "villain" is a character ref,
-        # so it gets overridden by character_manager's match.
+        # so it gets overridden by reference_manager's match.
         refs, err = resolve_provider_references(
             reference_images="villain",
             prompt="hero in a forest",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -270,7 +270,7 @@ class TestReferenceUtils(unittest.TestCase):
         castle_file = self._create_dummy_image_file("castle_courtyard.png", b"castle_bytes")
         resolver = DummyPathResolver({"hero": hero_file, "castle_courtyard": castle_file})
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -281,7 +281,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["hero", "castle_courtyard"],
             prompt="hero at the castle courtyard",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -295,7 +295,7 @@ class TestReferenceUtils(unittest.TestCase):
         hero_file = self._create_dummy_image_file("hero.png", b"hero_bytes")
         resolver = DummyPathResolver({"hero": hero_file, "hero_alias": hero_file})
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -304,7 +304,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["hero_alias"],
             prompt="hero in tavern",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -319,7 +319,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["ghost"],
             prompt="scene",
-            character_manager=None,
+            reference_manager=None,
             visual=resolver,
         )
 
@@ -351,7 +351,7 @@ class TestReferenceUtils(unittest.TestCase):
             "ancient_ruins": forest_file,
         })
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(
             characters=[
                 Character(name="Captain Nova", gender="female", image_reference="nova_ref"),
@@ -362,7 +362,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["ancient_ruins"],
             prompt="Captain Nova and Dr. Aris exploring ancient ruins",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -384,7 +384,7 @@ class TestReferenceUtils(unittest.TestCase):
         with open(iter2, "wb") as f:
             f.write(b"iter2_bytes")
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[])
         mock_mgr.get_character_references.return_value = []
         mock_mgr.get_latest_reference_path_for_character.side_effect = lambda query: (
@@ -397,7 +397,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["Soran"],
             prompt="A scenic forest view",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
         self.assertIsNone(err)
@@ -416,7 +416,7 @@ class TestReferenceUtils(unittest.TestCase):
         with open(iter2, "wb") as f:
             f.write(b"iter2_bytes")
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[])
         mock_mgr.get_character_references.return_value = []
         mock_mgr.get_latest_reference_path_for_character.side_effect = lambda query: (
@@ -429,7 +429,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["references/Soran/1.png"],
             prompt="Action scene",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
         self.assertIsNone(err)
@@ -466,7 +466,7 @@ class TestReferenceUtils(unittest.TestCase):
         with open(iter2, "wb") as f:
             f.write(b"player_iter2_bytes")
 
-        mock_mgr = MagicMock(spec=CharacterManager)
+        mock_mgr = MagicMock(spec=ReferenceManager)
         player = PlayerCharacter(name="Valen", reference="references/Valen/2.png", reference_path=iter2)
         mock_mgr.lookup_character.return_value = CharacterLookupResult(characters=[], player=player)
         mock_mgr.get_character_references.return_value = []
@@ -480,7 +480,7 @@ class TestReferenceUtils(unittest.TestCase):
         refs, err = resolve_provider_references(
             reference_images=["player"],
             prompt="Dramatic battle",
-            character_manager=mock_mgr,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
         self.assertIsNone(err)

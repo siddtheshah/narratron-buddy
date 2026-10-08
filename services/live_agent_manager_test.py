@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from components.theater_manager import TheaterManager
-from components.character_manager import CharacterManager
+from components.reference_manager import ReferenceManager
 from google.adk.events import Event
 from google.genai import types
 from providers import LiveAgentProvider
@@ -669,8 +669,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         class AssetOnlyImageTools:
             def __init__(self):
-                self.character_manager = MagicMock(spec=CharacterManager)
-                self.character_manager.available_character_images.return_value = {}
+                self.reference_manager = MagicMock(spec=ReferenceManager)
+                self.reference_manager.available_character_images.return_value = {}
                 self.on_after_tool_call = None
                 self.on_image_created = None
                 self.record_story_plan_completed = MagicMock()
@@ -698,7 +698,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session.websockets.add(MagicMock())
 
         self.assertIs(session.image_tools, image_tools)
-        self.assertIs(session.character_manager, image_tools.character_manager)
+        self.assertIs(session.reference_manager, image_tools.reference_manager)
         planner_tools.on_scene_reaction({"narration": "The path opens."})
 
         image_tools.record_story_plan_completed.assert_called_once()
@@ -742,7 +742,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         class MockImageTools:
             def __init__(self):
-                self.character_manager: CharacterManager | None = None
+                self.reference_manager: ReferenceManager | None = None
                 self.on_cooldown_expired = None
 
             def create_image(self, prompt):
@@ -1371,7 +1371,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
     def test_completed_image_flushes_usage_after_agent_failure(self):
         class ImageTools:
             def __init__(self):
-                self.character_manager: CharacterManager | None = None
+                self.reference_manager: ReferenceManager | None = None
                 self.on_image_created = None
 
             def create_image(self, prompt):
@@ -1737,8 +1737,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_notepad_tools = MagicMock()
         mock_character_tools = MagicMock()
         mock_image_tools = MagicMock(spec=ImageTools)
-        mock_manager = MagicMock(spec=CharacterManager)
-        mock_image_tools.character_manager = mock_manager
+        mock_manager = MagicMock(spec=ReferenceManager)
+        mock_image_tools.reference_manager = mock_manager
 
         with patch("services.live_agent_manager.get_bound_tool_instance") as mock_get_tool:
             def side_effect(agent: MagicMock, tool_name: str) -> MagicMock | None:
@@ -1760,7 +1760,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             )
             self.assertIs(session.notepad_tools, mock_notepad_tools)
             self.assertIs(session.character_tools, mock_character_tools)
-            self.assertIs(session.character_manager, mock_manager)
+            self.assertIs(session.reference_manager, mock_manager)
 
             session.live_request_queue = MagicMock()
             session.websockets.add(MagicMock())

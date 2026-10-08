@@ -6,10 +6,10 @@ import logging
 from typing import Optional
 
 from components.canvas_state import CanvasStateManager
-from components.character_manager import (
+from components.reference_manager import (
     Character,
     CharacterLookupResult,
-    CharacterManager,
+    ReferenceManager,
 )
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, logged_tool_call
@@ -24,13 +24,13 @@ class CharacterTool(BaseTools):
     def __init__(
         self,
         theater: Theater,
-        character_manager: CharacterManager,
+        reference_manager: ReferenceManager,
         canvas_manager: Optional[CanvasStateManager] = None,
     ) -> None:
         super().__init__(theater=theater, canvas_manager=canvas_manager)
-        if character_manager is None:
-            raise ValueError("character_manager is required.")
-        self.character_manager = character_manager
+        if reference_manager is None:
+            raise ValueError("reference_manager is required.")
+        self.reference_manager = reference_manager
 
     @terminal
     @logged_tool_call
@@ -65,7 +65,7 @@ class CharacterTool(BaseTools):
             return "Error: Character name cannot be empty."
 
         clean_tags: list[str] = [t.strip() for t in voice_tags.split(",") if t.strip()] if voice_tags else []
-        character = self.character_manager.create_or_update_character(
+        character = self.reference_manager.create_or_update_character(
             name=clean_name,
             description=description,
             personality=personality,
@@ -89,7 +89,7 @@ class CharacterTool(BaseTools):
         Returns:
             Human-readable list and descriptions of matching characters.
         """
-        result: CharacterLookupResult = self.character_manager.lookup_character(query=query)
+        result: CharacterLookupResult = self.reference_manager.lookup_character(query=query)
         return result.describe()
 
     @terminal
@@ -100,20 +100,20 @@ class CharacterTool(BaseTools):
         Returns:
             Status message indicating how many characters were cleared.
         """
-        count = self.character_manager.clear_scene()
+        count = self.reference_manager.clear_scene()
         return f"Cleared {count} character(s) from the scene."
 
     def get_present_characters(self) -> list[Character]:
         """Return the active characters currently present in the scene."""
-        return self.character_manager.get_present_characters()
+        return self.reference_manager.get_present_characters()
 
     def get_character_references(self) -> list[str]:
         """Return unique image reference identifiers for active characters."""
-        return self.character_manager.get_character_references()
+        return self.reference_manager.get_character_references()
 
     def count(self) -> int:
         """Return the total count of known characters."""
-        return self.character_manager.count()
+        return self.reference_manager.count()
 
 
 CharacterTools = CharacterTool

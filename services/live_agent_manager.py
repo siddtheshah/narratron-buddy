@@ -30,7 +30,7 @@ from utils.config_loader import get_theater_config
 from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.theater_manager import TheaterManager
-from components.character_manager import CharacterManager
+from components.reference_manager import ReferenceManager
 from utils.auth_cache import auth_session_cache
 
 logger = logging.getLogger(__name__)
@@ -164,8 +164,8 @@ class LiveAgentSession:
             get_bound_tool_instance(self.agent, "create_image")
             or get_bound_tool_instance(self.agent, "show_image")
         )
-        self.character_manager: CharacterManager | None = (
-            self.image_tools.character_manager if self.image_tools is not None else None
+        self.reference_manager: ReferenceManager | None = (
+            self.image_tools.reference_manager if self.image_tools is not None else None
         )
         self.animation_tools = get_bound_tool_instance(self.agent, "create_animation")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
@@ -574,7 +574,7 @@ class LiveAgentSession:
             ):
                 return False
             msg = format_canvas_state(
-                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.character_manager,
+                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.reference_manager,
             )
             try:
                 sent = self._send_observability(types.Content(parts=[types.Part(text=msg)]), msg)
@@ -617,7 +617,7 @@ class LiveAgentSession:
                 return False
 
             msg = format_canvas_state(
-                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.character_manager,
+                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.reference_manager,
             )
             try:
                 sent = self._send_observability(types.Content(parts=[types.Part(text=msg)]), msg)
@@ -664,7 +664,7 @@ class LiveAgentSession:
         now = time.monotonic()
         with self.state_lock:
             msg = format_canvas_state(
-                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.character_manager,
+                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.reference_manager,
             )
             parts = [types.Part(text=msg)]
             image_part = self._get_current_canvas_image_part()

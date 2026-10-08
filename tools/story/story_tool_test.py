@@ -22,7 +22,7 @@ class TestStoryToolComposition(unittest.TestCase):
 
     def test_initializes_modules_with_shared_dependencies(self) -> None:
         with (
-            patch("tools.story.story_tool.CharacterManager") as character_type,
+            patch("tools.story.story_tool.ReferenceManager") as character_type,
             patch("tools.story.story_tool.LoreLibrary") as lore_type,
             patch("tools.story.story_tool.StoryPlanningModule") as planning_type,
             patch("tools.story.story_tool.StoryResponseModule") as response_type,
@@ -48,8 +48,8 @@ class TestStoryToolComposition(unittest.TestCase):
         response_kwargs = response_type.call_args.kwargs
         self.assertIs(planning_kwargs["lore_library"], lore)
         self.assertIs(response_kwargs["lore_library"], lore)
-        self.assertIs(planning_kwargs["character_manager"], characters)
-        self.assertIs(response_kwargs["character_manager"], characters)
+        self.assertIs(planning_kwargs["reference_manager"], characters)
+        self.assertIs(response_kwargs["reference_manager"], characters)
         self.assertNotIn("text_response_provider", planning_kwargs)
         self.assertNotIn("text_response_provider", response_kwargs)
         self.assertNotIn("planning_module", response_kwargs)
@@ -64,13 +64,13 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertNotEqual(planning_kwargs["session_id"], response_kwargs["session_id"])
         self.assertNotIn("config", planning_kwargs)
         self.assertIs(tool.lore_library, lore)
-        self.assertIs(tool.character_manager, characters)
+        self.assertIs(tool.reference_manager, characters)
         self.assertIs(tool.planning_module, planning)
         self.assertIs(tool.response_module, response)
 
     def test_wires_cross_module_callbacks_after_construction(self) -> None:
         with (
-            patch("tools.story.story_tool.CharacterManager") as character_type,
+            patch("tools.story.story_tool.ReferenceManager") as character_type,
             patch("tools.story.story_tool.LoreLibrary"),
             patch("tools.story.story_tool.StoryPlanningModule"),
             patch("tools.story.story_tool.StoryResponseModule") as response_type,
@@ -87,7 +87,7 @@ class TestStoryToolComposition(unittest.TestCase):
 
     def test_delegates_public_surface_to_response_module(self) -> None:
         with (
-            patch("tools.story.story_tool.CharacterManager"),
+            patch("tools.story.story_tool.ReferenceManager"),
             patch("tools.story.story_tool.LoreLibrary"),
             patch("tools.story.story_tool.StoryPlanningModule"),
             patch("tools.story.story_tool.StoryResponseModule") as response_type,
@@ -102,7 +102,7 @@ class TestStoryToolComposition(unittest.TestCase):
 
     def test_process_user_action_cycle_cooldown(self) -> None:
         with (
-            patch("tools.story.story_tool.CharacterManager"),
+            patch("tools.story.story_tool.ReferenceManager"),
             patch("tools.story.story_tool.LoreLibrary"),
             patch("tools.story.story_tool.StoryPlanningModule"),
             patch("tools.story.story_tool.StoryResponseModule") as response_type,
@@ -129,7 +129,7 @@ class TestStoryToolComposition(unittest.TestCase):
 
     def test_process_user_action_swallows_duplicate_calls(self) -> None:
         with (
-            patch("tools.story.story_tool.CharacterManager"),
+            patch("tools.story.story_tool.ReferenceManager"),
             patch("tools.story.story_tool.LoreLibrary"),
             patch("tools.story.story_tool.StoryPlanningModule"),
             patch("tools.story.story_tool.StoryResponseModule") as response_type,
@@ -153,7 +153,7 @@ class TestStoryToolComposition(unittest.TestCase):
 
     def test_process_user_action_timeout_failure_disables_swallowing(self) -> None:
         with (
-            patch("tools.story.story_tool.CharacterManager"),
+            patch("tools.story.story_tool.ReferenceManager"),
             patch("tools.story.story_tool.LoreLibrary"),
             patch("tools.story.story_tool.StoryPlanningModule"),
             patch("tools.story.story_tool.StoryResponseModule") as response_type,
@@ -314,7 +314,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         speech_provider = MagicMock()
         speech_provider.select_voice.return_value = "voice_female_1"
         self.story_state.enable_scene_speech(speech_provider)
-        self.tool.character_manager.speech_provider = speech_provider
+        self.tool.reference_manager.speech_provider = speech_provider
 
         scene_delta = {
             "narration": "A hooded figure emerges from the fog.",
@@ -345,7 +345,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         speech_provider = MagicMock()
         speech_provider.select_voice.return_value = "voice_nb_1"
         self.story_state.enable_scene_speech(speech_provider)
-        self.tool.character_manager.speech_provider = speech_provider
+        self.tool.reference_manager.speech_provider = speech_provider
 
         scene_delta = {
             "narration": "A spirit drifts near.",
@@ -372,7 +372,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         self.assertEqual(self.story_state.get_character_voice("Echo"), "voice_nb_1")
 
     def test_sync_character_voice_tags_updates_story_state(self) -> None:
-        self.tool.character_manager.import_characters([
+        self.tool.reference_manager.import_characters([
             {"name": "Gwen", "gender": "female"},
             {"name": "Boran", "gender": "male"},
             {"name": "Zephyr", "gender": "nonbinary"},

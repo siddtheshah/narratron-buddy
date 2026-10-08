@@ -27,7 +27,7 @@ from components.canvas_state import CanvasStateManager
 from components.canvas.visual_state import VisualState, PRIORITY_SHOW, PRIORITY_CREATE
 from components.theater_manager import Theater
 from components.image_library import ImageLibrary
-from components.character_manager import CharacterLookupResult, CharacterManager
+from components.reference_manager import CharacterLookupResult, ReferenceManager
 from tools.reference_utils import is_character_reference, resolve_provider_references
 
 logger = logging.getLogger(__name__)
@@ -38,14 +38,14 @@ class ImageTools(BaseTools):
         theater: Theater,
         canvas_manager: CanvasStateManager,
         adventure_mode: bool = False,
-        character_manager: Optional[CharacterManager] = None,
+        reference_manager: Optional[ReferenceManager] = None,
         image_library: Optional[ImageLibrary] = None,
     ):
         super().__init__(
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.character_manager: Optional[CharacterManager] = character_manager
+        self.reference_manager: Optional[ReferenceManager] = reference_manager
 
         image_config = self.config.get("image_generation", {})
         visuals_config = self.config.get("visuals", {})
@@ -217,7 +217,7 @@ class ImageTools(BaseTools):
         """Return True if ref is identified as a character reference."""
         return is_character_reference(
             ref=ref,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             resolved_path=resolved_path,
             lookup_result=lookup_result,
         )
@@ -280,7 +280,7 @@ class ImageTools(BaseTools):
         provider_references, ref_error = resolve_provider_references(
             reference_images=reference_images,
             prompt=image_prompt,
-            character_manager=self.character_manager,
+            reference_manager=self.reference_manager,
             visual=self.visual,
             caller_label="ImageTools",
         )
@@ -330,8 +330,8 @@ class ImageTools(BaseTools):
                     ref_names: list[str] = []
                     character_names = {
                         re.sub(r"[\W_]+", " ", name).strip().casefold(): name
-                        for name in self.character_manager.available_character_images()
-                    } if self.character_manager is not None else {}
+                        for name in self.reference_manager.available_character_images()
+                    } if self.reference_manager is not None else {}
                     for ref in provider_references:
                         ref_name = ref.name.strip()
                         character_name = character_names.get(re.sub(r"[\W_]+", " ", ref.label or "").strip().casefold())
