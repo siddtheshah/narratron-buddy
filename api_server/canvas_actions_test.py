@@ -118,7 +118,9 @@ def test_secondary_action_sends_intent_and_collaboration_capture(
     result = canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
     assert result["status"] == "accepted"
     if collaboration:
-        session.send_agent_requested_observability.assert_called_once_with(force=True)
+        session.send_agent_requested_observability.assert_called_once_with(
+            force=True, include_capture_reference=action != "update_story"
+        )
         assert session.method_calls[0][0] == "send_agent_requested_observability"
     else:
         session.send_agent_requested_observability.assert_not_called()

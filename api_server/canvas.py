@@ -638,7 +638,9 @@ def post_orator_action(
                 "available interactive canvas tools. Refresh relevant controls and information."
             )
         if state.ui.viewer_collab_enabled:
-            if not session.send_agent_requested_observability(force=True):
+            if not session.send_agent_requested_observability(
+                force=True, include_capture_reference=payload.action != "update_story"
+            ):
                 raise HTTPException(status_code=409, detail="Narratron could not receive the canvas capture.")
             instruction += " Use the accompanying canvas capture, including audience drawings, stamps, and text annotations."
         if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(

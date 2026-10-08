@@ -944,6 +944,29 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertFalse(session.send_agent_requested_observability())
             self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
+    def test_story_snapshot_omits_capture_reference_and_preserves_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            canvas = canvas_observability_fixture(collaboration_enabled=True)
+            canvas.theater = TheaterManager(directory).theater("story_snapshot")
+            canvas.doodles.has_visible_annotations.return_value = True
+            canvas.doodles.snapshot_png.return_value = b"annotated-png"
+            session = self.make_observability_session()
+            session.canvas_state_manager = canvas
+            session.live_request_queue = MagicMock()
+
+            self.assertTrue(session.send_agent_requested_observability(
+                force=True, include_capture_reference=False,
+            ))
+
+            content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertEqual(content.role, "user")
+            text = "\n".join(part.text for part in content.parts if part.text is not None)
+            self.assertNotIn("[Canvas Capture]", text)
+            self.assertNotIn("reference_images", text)
+            self.assertIn("audience annotations", text)
+            self.assertEqual(content.parts[-1].inline_data.data, b"annotated-png")
+            self.assertFalse(canvas.theater.canvas_captures_dir().exists())
+
     def test_canvas_capture_includes_stamp_imagery(self) -> None:
         import io
         from PIL import Image

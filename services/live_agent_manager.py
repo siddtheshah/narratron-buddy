@@ -446,6 +446,7 @@ class LiveAgentSession:
         content: types.Content,
         state_text: str | None = None,
         force: bool = False,
+        include_capture_reference: bool = True,
     ) -> bool:
         """Enqueue changed context without completing a turn; caller holds state_lock.
 
@@ -461,7 +462,7 @@ class LiveAgentSession:
         if image is not None:
             content = content.model_copy(deep=True)
             content.role = "user"
-            capture_path = self._save_canvas_capture(image)
+            capture_path = self._save_canvas_capture(image) if include_capture_reference else None
             if capture_path is not None:
                 reference_text = (
                     f"\n[Canvas Capture]: {capture_path}\n"
@@ -629,7 +630,9 @@ class LiveAgentSession:
         logger.info("[LiveAgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
         return True
 
-    def send_agent_requested_observability(self, force: bool = False) -> bool:
+    def send_agent_requested_observability(
+        self, force: bool = False, *, include_capture_reference: bool = True
+    ) -> bool:
         """Send an explicit agent-requested canvas update and defer regular pulses.
 
         Unlike the regular text pulse, this request includes a visual snapshot
@@ -638,6 +641,8 @@ class LiveAgentSession:
         the *same* content item as the state text.  Sending the base image and
         then an asynchronous doodle image made it easy for a live turn to act
         on the unannotated image before the annotation arrived.
+        Disable include_capture_reference for updates that only need to inspect
+        the snapshot, without saving an image-tool reference or advertising it.
         """
         if not self.is_alive:
             return False
@@ -663,7 +668,10 @@ class LiveAgentSession:
                     ))
                 parts.append(image_part)
             try:
-                sent = self._send_observability(types.Content(parts=parts), msg, force=force)
+                sent = self._send_observability(
+                    types.Content(parts=parts), msg, force=force,
+                    include_capture_reference=include_capture_reference,
+                )
             except Exception as e:
                 logger.error(
                     "[LiveAgentSession] Failed to send agent-requested canvas observability update: %s",
