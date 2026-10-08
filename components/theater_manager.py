@@ -152,6 +152,14 @@ class Theater:
         """Session-owned character images and generated portrait iterations."""
         return self.artifacts_dir() / "updated_references" / "characters"
 
+    def scenes_dir(self) -> Path:
+        """Author-owned scene images shipped with this theater."""
+        return self.references_dir() / "scenes"
+
+    def updated_scenes_dir(self) -> Path:
+        """Session-owned scene images and generated scene iterations."""
+        return self.artifacts_dir() / "updated_references" / "scenes"
+
     def canvas_captures_dir(self) -> Path:
         """Directory of observed canvas snapshots; usable as references, never displayable."""
         return self.output_dir() / "canvas_captures"

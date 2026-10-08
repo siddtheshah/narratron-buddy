@@ -1,6 +1,7 @@
 """Dependency-boundary tests for ``StoryResponseModule``."""
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from absl.testing import flagsaver
@@ -249,6 +250,8 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
     def setUp(self) -> None:
         self.theater = MagicMock(spec=Theater)
         self.theater.theater_id = "response_theater"
+        self.theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+        self.theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
         self.theater.lore_documents.return_value = ["lore.txt"]
         self.theater.read_lore_document.return_value = (
             "Lore details about the realm."

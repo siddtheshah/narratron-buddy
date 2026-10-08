@@ -278,6 +278,14 @@ The `references/` folder contains environment images, maps, cover art, and artif
 
 ---
 
+### Scene imagery (`references/scenes/`)
+
+Store each scene's images in its own folder, for example `references/scenes/Old Harbor/1.png`, `2.png`. PNG, JPEG, and WebP are supported; the highest numbered iteration is used. Loose images directly under `references/scenes/` are ignored.
+
+During play, scene images are copied into `output/artifacts/updated_references/scenes/`. Updated imagery is saved there as new numbered iterations, leaving the authored images unchanged. Existing session images are preserved across restarts.
+
+To preserve session updates for future play, copy the desired images back into the authored scene folder. To reset a scene to its authored imagery, remove its folder under `output/artifacts/updated_references/scenes/` before starting a new session.
+
 ### Character portraits (`references/characters/`)
 
 Each character must have its own folder, with portrait iterations such as `references/characters/Arthur Modella/1.png`, `2.png`. Loose files directly under `references/characters/` are unsupported; the character folder provides room for richer character data in the future. Supported formats are PNG, JPEG, and WebP. The highest numbered iteration is used; a non-numbered portrait can serve as the initial image.

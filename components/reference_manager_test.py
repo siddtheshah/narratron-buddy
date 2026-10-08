@@ -62,6 +62,8 @@ class TestReferenceManager(unittest.TestCase):
 
     def setUp(self) -> None:
         self.theater = MagicMock(spec=Theater)
+        self.theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+        self.theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
         self.theater.characters_dir.return_value = Path("/nonexistent/base_characters")
         self.theater.updated_characters_dir.return_value = Path("/nonexistent/characters")
         self.theater.references_dir.return_value = Path("/nonexistent/references")
@@ -83,6 +85,119 @@ class TestReferenceManager(unittest.TestCase):
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
         )
+
+    def test_scene_updates_preserve_authored_images_and_survive_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.scenes_dir() / "Old Harbor" / "1.png"
+            authored.parent.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(authored)
+            original = authored.read_bytes()
+            payload = BytesIO()
+            Image.new("RGB", (8, 8), "orange").save(payload, "PNG")
+            self.image_provider.generate.side_effect = None
+            self.image_provider.generate.return_value = ImageGenerationResult(
+                image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="scene",
+            )
+            manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider, scene_image_style="Watercolor")
+            initial = manager.create_or_update_scene("Old Harbor", "A quiet harbor")
+            self.assertIsNotNone(initial)
+            assert initial is not None
+            self.image_provider.generate.assert_not_called()
+            manager.create_or_update_scene("old_harbor", "A quiet harbor")
+            self.image_provider.generate.assert_not_called()
+            updated = manager.create_or_update_scene("Old Harbor", "The harbor at sunset")
+            self.assertIsNotNone(updated)
+            assert updated is not None
+            expected = theater.updated_scenes_dir() / "Old_Harbor" / "2.png"
+            self.assertEqual(updated["path"], str(expected))
+            self.assertEqual(updated["alias"], "output/artifacts/updated_references/scenes/Old_Harbor/2.png")
+            request = self.image_provider.generate.call_args.args[0]
+            self.assertEqual(request.references[0].data, original)
+            self.assertEqual(request.aspect_ratio, "16:9")
+            self.assertIn("Watercolor", request.prompt)
+            self.assertIn("sunset", request.prompt)
+            manager.create_or_update_scene("Old Harbor", "The harbor at sunset")
+            self.image_provider.generate.assert_called_once()
+            self.assertEqual(authored.read_bytes(), original)
+            self.assertEqual(list(authored.parent.iterdir()), [authored])
+            # A newly authored iteration must not overwrite a session's identity.
+            Image.new("RGB", (8, 8), "green").save(authored.parent / "3.png")
+            restored = ReferenceManager(theater, self.provider)
+            self.assertEqual(restored.available_scene_images(), {"Old Harbor": str(expected)})
+            for query in ("Old Harbor", "old_harbor", str(authored), initial["alias"]):
+                self.assertEqual(restored.get_latest_reference_path_for_scene(query), str(expected))
+            self.assertIsNone(restored.get_scene_visual_path("Old"))
+            self.assertIsNone(restored.get_latest_reference_path_for_scene(""))
+
+    def test_scene_creation_chains_iterations_across_supported_formats(self) -> None:
+        for mime, image_format, extension in (("image/png", "PNG", ".png"), ("image/jpeg", "JPEG", ".jpg"), ("image/webp", "WEBP", ".webp")):
+            with self.subTest(mime=mime), tempfile.TemporaryDirectory() as directory:
+                theater = Theater(TheaterManager(directory), "stage")
+                payload = BytesIO()
+                Image.new("RGB", (8, 8), "blue").save(payload, image_format)
+                self.image_provider.reset_mock()
+                self.image_provider.generate.side_effect = None
+                self.image_provider.generate.return_value = ImageGenerationResult(
+                    image_bytes=payload.getvalue(), mime_type=mime, provider="fake", model="scene",
+                )
+                manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider)
+                first = manager.create_or_update_scene("Forest", "Tall trees")
+                assert first is not None
+                self.assertEqual(Path(first["path"]).name, f"1{extension}")
+                self.assertEqual(self.image_provider.generate.call_args.args[0].references, [])
+                second = manager.create_or_update_scene("Forest", "Burning trees")
+                assert second is not None
+                self.assertEqual(Path(second["path"]).name, f"2{extension}")
+                reference = self.image_provider.generate.call_args.args[0].references[0]
+                self.assertEqual(reference.mime_type, mime)
+                self.assertEqual(reference.data, Path(first["path"]).read_bytes())
+
+    def test_scene_image_imports_use_session_copies(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            source = theater.references_dir() / "harbor.webp"
+            source.parent.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(source)
+            manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider)
+            entry = manager.create_or_update_scene("Harbor", image_reference="references/harbor.webp")
+            assert entry is not None
+            copied = theater.updated_scenes_dir() / "Harbor" / "1.webp"
+            self.assertEqual(entry["path"], str(copied))
+            self.assertEqual(copied.read_bytes(), source.read_bytes())
+            self.assertEqual(manager.create_or_update_scene("Harbor", image_reference=entry["alias"]), entry)
+            self.assertEqual(list(copied.parent.iterdir()), [copied])
+            self.image_provider.generate.assert_not_called()
+            with self.assertRaisesRegex(ValueError, "supported image"):
+                manager.create_or_update_scene("Harbor", image_reference="missing.png")
+
+    def test_scene_generation_failure_preserves_previous_iteration_and_allows_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.scenes_dir() / "Forest" / "1.png"
+            authored.parent.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(authored)
+            manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider)
+            first = manager.create_or_update_scene("Forest", "Tall trees")
+            self.assertEqual(manager.create_or_update_scene("Forest", "Burning trees"), first)
+            self.assertEqual(manager.create_or_update_scene("Forest", "Burning trees"), first)
+            self.assertEqual(self.image_provider.generate.call_count, 2)
+            self.assertIsNone(manager.create_or_update_scene("Missing", "A new location"))
+            without_provider = ReferenceManager(theater, self.provider)
+            self.assertIsNone(without_provider.create_or_update_scene("Missing"))
+            self.assertEqual(without_provider.create_or_update_scene("Forest"), first)
+
+    def test_scene_library_ignores_loose_images_and_rejects_invalid_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            theater.scenes_dir().mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(theater.scenes_dir() / "Forest.png")
+            manager = ReferenceManager(theater, self.provider)
+            self.assertEqual(manager.available_scene_images(), {})
+            self.assertFalse(theater.updated_scenes_dir().exists())
+            for name in ("", " ", ".", ".."):
+                with self.assertRaises(ValueError):
+                    manager.create_or_update_scene(name)
 
     def test_requires_theater(self) -> None:
         with self.assertRaisesRegex(ValueError, "theater is required"):
@@ -389,6 +504,8 @@ class TestReferenceManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "lyra.png")
             Image.new("RGB", (10, 10), color="pink").save(ref_path)
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
@@ -422,6 +539,8 @@ class TestReferenceManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Mira" / "1.png")
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
@@ -448,6 +567,8 @@ class TestReferenceManager(unittest.TestCase):
             iter2_output = str(Path(directory) / "Soran" / "2.png")
 
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
@@ -537,6 +658,8 @@ class TestReferenceManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "hero.png")
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
@@ -577,6 +700,8 @@ class TestReferenceManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Valen" / "1.png")
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
@@ -606,6 +731,8 @@ class TestReferenceManager(unittest.TestCase):
             iter2_output = str(Path(directory) / "Valen" / "2.png")
 
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
@@ -881,6 +1008,8 @@ class TestReferenceManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "lady_lux.jpg")
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
@@ -912,6 +1041,8 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (10, 10), color="gray").save(gen_path)
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
@@ -941,6 +1072,8 @@ class TestReferenceManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "retro_pulsar.jpg")
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
             theater = MagicMock(spec=Theater)
+            theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
+            theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
             theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)

@@ -36,6 +36,8 @@ def test_character_images_in_uploaded_package_preserve_named_folders(tmp_path: P
     theater = manager.theater("stage")
     assert theater.characters_dir() == tmp_path / "stage" / "references" / "characters"
     assert theater.updated_characters_dir() == tmp_path / "stage" / "output" / "artifacts" / "updated_references" / "characters"
+    assert theater.scenes_dir() == tmp_path / "stage" / "references" / "scenes"
+    assert theater.updated_scenes_dir() == tmp_path / "stage" / "output" / "artifacts" / "updated_references" / "scenes"
 
 
 def test_loose_character_portrait_upload_is_rejected_before_writes(tmp_path: Path) -> None:

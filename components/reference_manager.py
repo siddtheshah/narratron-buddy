@@ -1,4 +1,4 @@
-"""Shared character generation and session character state."""
+"""Shared character state and session character and scene imagery."""
 
 from __future__ import annotations
 
@@ -465,7 +465,7 @@ def _voice_tag_gender(tags: list[str]) -> str:
 
 
 class ReferenceManager:
-    """Own character generation, lookup, and session-scoped character state."""
+    """Own character state and session-scoped character and scene imagery."""
 
     def __init__(
         self,
@@ -476,6 +476,7 @@ class ReferenceManager:
         image_provider: Optional[ImageProvider] = None,
         speech_provider: Optional[SpeechProvider] = None,
         character_image_style: str = "",
+        scene_image_style: str = "",
     ) -> None:
         if theater is None:
             raise ValueError("theater is required.")
@@ -486,12 +487,16 @@ class ReferenceManager:
         self.image_provider: Optional[ImageProvider] = image_provider
         self.speech_provider: Optional[SpeechProvider] = speech_provider
         self.character_image_style = str(character_image_style or "").strip()
+        self.scene_image_style = scene_image_style.strip()
+        self._scene_descriptions: dict[str, str] = {}
+        self._scene_images_lock = Lock()
         self.max_active_characters = DEFAULT_MAX_ACTIVE_CHARACTERS
         self._characters: dict[str, Character] = {}
         self._characters_lock = Lock()
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
         self._seed_character_images()
+        self._seed_reference_images(self.theater.scenes_dir(), self.scenes_dir)
         self._sync_story_state()
 
     @property
@@ -503,8 +508,11 @@ class ReferenceManager:
 
     def _seed_character_images(self) -> None:
         """Copy authored portraits without overwriting existing session iterations."""
-        source = self.theater.characters_dir()
-        destination = self.characters_dir
+        self._seed_reference_images(self.theater.characters_dir(), self.characters_dir)
+
+    @staticmethod
+    def _seed_reference_images(source: Path, destination: Path | None) -> None:
+        """Copy named authored images only when a session folder has no images."""
         if destination is None or not source.is_dir():
             return
         existing = {
@@ -522,11 +530,151 @@ class ReferenceManager:
                 continue
             name = relative.parts[0]
             target_dir = get_character_reference_dir(destination, name)
-            # Once a character has session images, the session owns its identity.
+            # Once a named reference has session images, the session owns its identity.
             if target_dir.name in existing:
                 continue
             target_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(image, target_dir / image.name)
+
+    @property
+    def scenes_dir(self) -> Path:
+        """Writable session scene library; authored images remain in the theater."""
+        return self.theater.updated_scenes_dir()
+
+    def _scene_reference_dir(self, name: str) -> Path:
+        key = self._slug_key(name)
+        root = self.scenes_dir
+        if root.is_dir():
+            for directory in sorted(root.iterdir()):
+                if directory.is_dir() and self._slug_key(directory.name) == key:
+                    return directory
+        directory = root / get_character_folder_name(name)
+        if not directory.resolve().is_relative_to(root.resolve()) or directory.resolve() == root.resolve():
+            raise ValueError("Scene name must identify a folder inside the scene library.")
+        return directory
+
+    def available_scene_images(self) -> dict[str, str]:
+        """List each named scene's latest session image."""
+        root = self.scenes_dir
+        if not root.is_dir():
+            return {}
+        images: dict[str, str] = {}
+        for directory in sorted(root.iterdir()):
+            if directory.is_dir():
+                latest = get_latest_iteration_file(directory)
+                if latest is not None:
+                    images[directory.name.replace("_", " ")] = str(latest)
+        return images
+
+    def get_scene_visual_path(self, name: str) -> str | None:
+        """Resolve an exact scene name or canonical slug, without partial matching."""
+        key = self._slug_key(name)
+        if not key:
+            return None
+        for available_name, path in self.available_scene_images().items():
+            if key == self._slug_key(available_name):
+                return path
+        return None
+
+    def get_latest_reference_path_for_scene(self, query: str) -> str | None:
+        """Resolve a scene name, folder path, or iteration path to its latest image."""
+        clean = query.strip()
+        if not clean:
+            return None
+        path = self.get_scene_visual_path(clean)
+        if path is not None:
+            return path
+        requested = Path(clean)
+        name = requested.parent.name if requested.suffix.lower() in IMAGE_EXTENSIONS else requested.name
+        return self.get_scene_visual_path(name)
+
+    def _scene_image_entry(self, name: str, image: Path) -> dict[str, str]:
+        return {
+            "name": f"{image.parent.name}_{image.stem}",
+            "alias": f"output/artifacts/updated_references/scenes/{image.parent.name}/{image.name}",
+            "path": str(image),
+            "title": f"Reference: {name}",
+            "description": f"Scene reference for {name}.",
+        }
+
+    def create_or_update_scene(
+        self, name: str, description: str = "", image_reference: str | None = None,
+    ) -> dict[str, str] | None:
+        """Bind or generate scene imagery and return its session reference entry.
+
+        Existing images are reused on first binding. A changed nonempty description
+        generates a new iteration using the previous image for visual continuity.
+        An explicit image reference imports an image into the session library.
+        Generation failures preserve the previous image.
+        """
+        name = name.strip()
+        if not self._slug_key(name):
+            raise ValueError("Scene name cannot be empty.")
+        with self._scene_images_lock:
+            directory = self._scene_reference_dir(name)
+            previous = get_latest_iteration_file(directory)
+            key = self._slug_key(name)
+            clean_description = description.strip()
+            if image_reference:
+                resolved = self.get_latest_reference_path_for_scene(image_reference)
+                source = Path(resolved or image_reference)
+                if not source.is_file():
+                    source = self.theater.directory() / image_reference
+                if not source.is_file() or source.suffix.lower() not in IMAGE_EXTENSIONS:
+                    raise ValueError("Scene image reference must identify a supported image file.")
+                if source.parent.resolve() != directory.resolve():
+                    directory.mkdir(parents=True, exist_ok=True)
+                    destination = directory / f"{get_next_iteration_number(directory)}{source.suffix.lower()}"
+                    shutil.copy2(source, destination)
+                previous = get_latest_iteration_file(directory)
+            elif previous is None or (
+                clean_description and key in self._scene_descriptions
+                and clean_description != self._scene_descriptions[key]
+            ):
+                generated = self._generate_scene_reference(name, clean_description, directory, previous)
+                if generated is not None:
+                    previous = generated
+                else:
+                    return self._scene_image_entry(name, previous) if previous is not None else None
+            if clean_description:
+                self._scene_descriptions[key] = clean_description
+            return self._scene_image_entry(name, previous) if previous is not None else None
+
+    def _generate_scene_reference(
+        self, name: str, description: str, directory: Path, previous: Path | None,
+    ) -> Path | None:
+        if self.image_provider is None:
+            return None
+        prompt = (
+            f"Scene reference image of {name}. "
+            f"Environment: {description or 'distinctive adventure location'}. "
+            "Wide establishing view, consistent landmarks and spatial layout, no text, no collage."
+        )
+        if self.scene_image_style:
+            prompt += f" Style: {self.scene_image_style}."
+        try:
+            references: list[ImageReference] = []
+            if previous is not None:
+                suffix = previous.suffix.lower()
+                mime = "image/png" if suffix == ".png" else "image/webp" if suffix == ".webp" else "image/jpeg"
+                references.append(ImageReference(name=previous.name, data=previous.read_bytes(), mime_type=mime, label=name))
+            result = self.image_provider.generate(ImageGenerationRequest(
+                prompt=prompt, references=references, aspect_ratio="16:9",
+            ))
+            image = Image.open(BytesIO(result.image_bytes)).convert("RGB")
+            directory.mkdir(parents=True, exist_ok=True)
+            iteration = get_next_iteration_number(directory)
+            ext = ".webp" if result.mime_type == "image/webp" else ".jpg" if result.mime_type in ("image/jpeg", "image/jpg") else ".png"
+            output = directory / f"{iteration}{ext}"
+            exif = image.getexif()
+            embed_image_metadata(exif, f"Scene reference for {name} (iteration {iteration}). {prompt}")
+            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
+            return output
+        except (ImageProviderError, OSError, ValueError) as exc:
+            logger.warning("[ReferenceManager] Could not create scene image for %s: %s", name, exc)
+        except Exception:
+            logger.exception("[ReferenceManager] Unexpected scene image failure for %s", name)
+        return None
 
     def available_character_images(self) -> dict[str, str]:
         """List named session portraits, including characters outside the active scene."""
