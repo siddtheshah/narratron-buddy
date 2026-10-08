@@ -177,8 +177,8 @@ def editor_page() -> Iterator[Page]:
                         state: structuredClone(draft), message: `Imported ${path} from Google.`
                     })};
                 }
-                if (request.pathname.endsWith('/clear-output')) {
-                    window.clearedOutput = true;
+                if (request.pathname.endsWith('/reset')) {
+                    window.resetTheater = true;
                     return {ok: true, json: async () => structuredClone(draft)};
                 }
                 if (request.pathname.endsWith('/download')) {
@@ -778,36 +778,36 @@ def test_download_draft_button_triggers_download(editor_page: Page) -> None:
     expect(page.locator("#builder-status")).to_have_text("Draft theater downloaded.")
 
 
-def test_clear_output_button_dialog_flow(editor_page: Page) -> None:
+def test_reset_theater_button_dialog_flow(editor_page: Page) -> None:
     page = editor_page
-    clear_btn = page.locator("#clear-output")
-    expect(clear_btn).to_be_visible()
-    expect(clear_btn).to_have_text("Clear output")
+    reset_btn = page.locator("#reset-theater")
+    expect(reset_btn).to_be_visible()
+    expect(reset_btn).to_have_text("Reset Theater")
 
-    dialog = page.locator("#clear-output-dialog")
+    dialog = page.locator("#reset-theater-dialog")
     expect(dialog).not_to_be_visible()
 
     # 1. Open dialog and cancel
-    clear_btn.click()
+    reset_btn.click()
     expect(dialog).to_be_visible()
-    page.locator("#clear-output-cancel").click()
+    page.locator("#reset-theater-cancel").click()
     expect(dialog).not_to_be_visible()
-    assert not page.evaluate("() => window.clearedOutput")
+    assert not page.evaluate("() => window.resetTheater")
 
     # 2. Open dialog and cancel via Escape
-    clear_btn.click()
+    reset_btn.click()
     expect(dialog).to_be_visible()
     page.keyboard.press("Escape")
     expect(dialog).not_to_be_visible()
-    assert not page.evaluate("() => window.clearedOutput")
+    assert not page.evaluate("() => window.resetTheater")
 
-    # 3. Open dialog and confirm clear
-    clear_btn.click()
+    # 3. Open dialog and confirm reset
+    reset_btn.click()
     expect(dialog).to_be_visible()
-    page.locator("#confirm-clear-output-btn").click()
+    page.locator("#confirm-reset-theater-btn").click()
     expect(dialog).not_to_be_visible()
-    expect(page.locator("#builder-status")).to_have_text("Output folder cleared.")
-    assert page.evaluate("() => window.clearedOutput")
+    expect(page.locator("#builder-status")).to_have_text("Theater reset.")
+    assert page.evaluate("() => window.resetTheater")
 
 
 

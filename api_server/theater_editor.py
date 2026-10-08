@@ -22,6 +22,7 @@ from api_server.dependencies import live_agent_manager, pricing_controller
 from api_server.pages import SeoMetadata, render_page_template
 from api_server.shared import app, config, db, get_current_user_async, theater_manager, theater_repository
 from api_server.theater_access_cache import theater_access_cache
+from components.theater_manager import TheaterMetadata
 from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_music_provider
@@ -70,8 +71,11 @@ class RevisionRequest(BaseModel):
     revision: int
 
 
-class ClearOutputRequest(BaseModel):
+class ResetTheaterRequest(BaseModel):
     revision: int | None = None
+
+
+ClearOutputRequest = ResetTheaterRequest
 
 
 class DeleteDraftFileRequest(BaseModel):
@@ -478,11 +482,18 @@ def publish_draft(info: DraftInfo) -> str:
         if (image is None or not image.is_file()) and not matching_alias:
             raise ValueError("starting_image must point to an existing reference image.")
     target = theater_manager.theater(info.theater_id).directory()
-    if info.source_id is None:
+    if info.source_id is None and not target.exists():
         theater_manager.create_theater(name=info.name, theater_id=info.theater_id, theater_config=theater_config)
     live_agent_manager.stop_session(info.theater_id)
     builder.copy_to(info, target)
     metadata = theater_manager.get_theater(info.theater_id)
+    if metadata is None:
+        join_key = ""
+        if info.source_id is not None:
+            deployment = db.get_deployment(info.source_id)
+            if deployment and deployment.get("join_key"):
+                join_key = str(deployment["join_key"])
+        metadata = TheaterMetadata(theater_id=info.theater_id, name=info.name, config=theater_config, join_key=join_key or f"KEY-{uuid.uuid4().hex[:6].upper()}")
     metadata.name = info.name
     metadata.config = theater_config
     metadata.mounted_references = [item.path.removeprefix("references/") for item in builder.files(info.theater_id) if item.kind == "image" and item.path.startswith("references/")]
@@ -535,9 +546,21 @@ def _clear_directory_contents(target: Path) -> int:
     return cleared
 
 
-@app.post("/api/theater-editor/{theater_id}/clear-output")
-@app.delete("/api/theater-editor/{theater_id}/output")
-async def clear_draft_output(theater_id: str, request: Request, body: ClearOutputRequest | None = None) -> DraftResponse:
+def _remove_files(files: list[Path]) -> int:
+    removed = 0
+    seen_files: set[Path] = set()
+    for file_target in files:
+        resolved = file_target.resolve()
+        if resolved not in seen_files:
+            seen_files.add(resolved)
+            if file_target.is_file():
+                file_target.unlink()
+                removed += 1
+    return removed
+
+
+@app.post("/api/theater-editor/{theater_id}/reset")
+async def reset_theater_draft(theater_id: str, request: Request, body: ResetTheaterRequest | None = None) -> DraftResponse:
     async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
         info = await require_draft(request, theater_id)
         if body is not None and body.revision is not None:
@@ -548,9 +571,18 @@ async def clear_draft_output(theater_id: str, request: Request, body: ClearOutpu
             store().directory(info.theater_id) / "output",
             theater_repository.theater_path(info.theater_id) / "output",
         ]
+        theater_json_targets: list[Path] = [
+            theater_manager.theater(info.theater_id).directory() / "theater.json",
+            theater_manager.theater(info.theater_id).directory() / "theater_state.json",
+            store().directory(info.theater_id) / "theater.json",
+            theater_repository.theater_path(info.theater_id) / "theater.json",
+        ]
         if info.source_id is not None:
             output_targets.append(theater_manager.theater(info.source_id).output_dir())
             output_targets.append(theater_repository.theater_path(info.source_id) / "output")
+            theater_json_targets.append(theater_manager.theater(info.source_id).directory() / "theater.json")
+            theater_json_targets.append(theater_manager.theater(info.source_id).directory() / "theater_state.json")
+            theater_json_targets.append(theater_repository.theater_path(info.source_id) / "theater.json")
 
         seen_targets: set[Path] = set()
         for target in output_targets:
@@ -559,9 +591,14 @@ async def clear_draft_output(theater_id: str, request: Request, body: ClearOutpu
                 seen_targets.add(resolved)
                 await asyncio.to_thread(_clear_directory_contents, target)
 
+        await asyncio.to_thread(_remove_files, theater_json_targets)
+
         live_agent_manager.stop_session(info.theater_id)
         if info.source_id is not None:
             live_agent_manager.stop_session(info.source_id)
+        theater_access_cache.invalidate_theater(info.theater_id)
+        if info.source_id is not None:
+            theater_access_cache.invalidate_theater(info.source_id)
 
         return await asyncio.to_thread(response, info)
 

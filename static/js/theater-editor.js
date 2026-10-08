@@ -603,37 +603,49 @@
       performDelete(selected.path);
     }
   });
-  async function performClearOutput() {
+  async function performResetTheater() {
     if (!state) return;
     await run(async () => {
-      const next = await post('/clear-output', { revision: state.draft.revision });
+      const next = await post('/reset', { revision: state.draft.revision });
       render(next);
-      status('Output folder cleared.');
-    }, 'Clearing output folder…');
+      status('Theater reset.');
+    }, 'Resetting theater…');
   }
-  el('clear-output').addEventListener('click', () => {
-    if (!state) return;
-    if (typeof el('clear-output-dialog').showModal === 'function') {
-      el('clear-output-dialog').showModal();
-    } else if (confirm('Are you sure you want to clear the output folder? All generated scene images, animations, and session logs will be permanently deleted.')) {
-      performClearOutput();
+  const resetBtn = el('reset-theater');
+  const resetDialog = el('reset-theater-dialog');
+  const resetCancel = el('reset-theater-cancel');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (!state) return;
+      if (resetDialog && typeof resetDialog.showModal === 'function') {
+        resetDialog.showModal();
+      } else if (confirm('Are you sure you want to reset this theater? All generated output and theater state will be permanently deleted.')) {
+        performResetTheater();
+      }
+    });
+  }
+  if (resetCancel && resetDialog) {
+    resetCancel.addEventListener('click', () => resetDialog.close());
+  }
+  if (resetDialog) {
+    resetDialog.addEventListener('click', event => {
+      if (event.target === resetDialog) resetDialog.close();
+    });
+    resetDialog.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        resetDialog.close();
+      }
+    });
+    const form = resetDialog.querySelector('form');
+    if (form) {
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        resetDialog.close();
+        performResetTheater();
+      });
     }
-  });
-  el('clear-output-cancel').addEventListener('click', () => el('clear-output-dialog').close());
-  el('clear-output-dialog').addEventListener('click', event => {
-    if (event.target === el('clear-output-dialog')) el('clear-output-dialog').close();
-  });
-  el('clear-output-dialog').addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      el('clear-output-dialog').close();
-    }
-  });
-  el('clear-output-dialog').querySelector('form').addEventListener('submit', event => {
-    event.preventDefault();
-    el('clear-output-dialog').close();
-    performClearOutput();
-  });
+  }
   window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('narratron:auth-changed', event => {
     if (!event.detail.authenticated) { state = null; lastDraftKey = null; activeGenerations = 0; generatingKeys.clear(); asking = false; pendingWrites.clear(); textDirty = false; nameDirty = false; clearPreview(); history.length = 0; el('assistant-messages').replaceChildren(); el('assistant-proposal').replaceChildren(); el('workspace').hidden = true; el('start-panel').hidden = true; el('login-gate').hidden = false; }

@@ -443,6 +443,12 @@ async def get_theater(theater_id: str, request: Request):
         theater_repository.reconstruct_theater(theater_id, theater_dir)
 
     meta = theater_manager.get_theater(theater_id)
+    if not meta and theater_dir.exists() and (theater_dir / "theater.yaml").is_file():
+        theater_config = theater_manager.get_theater_config(theater_id)
+        name_val = str(deployment.get("name") or theater_id)
+        join_key_val = str(deployment.get("join_key") or "")
+        meta = TheaterMetadata(theater_id=theater_id, name=name_val, join_key=join_key_val or "KEY-test", config=theater_config, status="deployed")
+        theater_manager._save_metadata(meta)
     if not meta:
         raise HTTPException(status_code=404, detail="Theater not found")
     

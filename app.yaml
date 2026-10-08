@@ -56,8 +56,8 @@ live_agent:
     openai:
         max_output_tokens: 1024
         max_response_turns: 6
-        post_instructions_token_limit: 6000
-        retention_ratio: 0.6
+        post_instructions_token_limit: 4000
+        retention_ratio: 0.5
 
 text_beautifier_model: "gemini-3.5-flash-lite"
 suggestion_model: "gemini-3.6-flash"
