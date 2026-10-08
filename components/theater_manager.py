@@ -150,7 +150,7 @@ class Theater:
 
     def updated_characters_dir(self) -> Path:
         """Session-owned character images and generated portrait iterations."""
-        return self.artifacts_dir() / "updated_characters"
+        return self.artifacts_dir() / "updated_references" / "characters"
 
     def canvas_captures_dir(self) -> Path:
         """Directory of observed canvas snapshots; usable as references, never displayable."""
@@ -315,7 +315,7 @@ class TheaterManager:
         return self._get_theater_dir(theater_id) / "output"
 
     def _get_theater_characters_dir(self, theater_id: str) -> Path:
-        return self._get_theater_dir(theater_id) / "characters"
+        return self._get_theater_dir(theater_id) / "references" / "characters"
 
     def _get_theater_artifacts_dir(self, theater_id: str) -> Path:
         return self._get_theater_output_dir(theater_id) / "artifacts"
@@ -428,7 +428,7 @@ class TheaterManager:
         reference_dir = theater_dir / "references"
         playlists_dir = theater_dir / "playlists"
         lore_dir = theater_dir / "lore"
-        characters_dir = theater_dir / "characters"
+        characters_dir = theater_dir / "references" / "characters"
         for filename, content in reference_files or []:
             parts = validate_asset_path(filename)
             if "stamps" in parts or parts[-1].lower() in {"metadata.json", "planning.yaml", "planning.yml"}:
@@ -438,10 +438,10 @@ class TheaterManager:
                         raise ValueError("Unsupported stamp image format")
                 continue
             relative_name = "/".join(parts[parts.index("references") + 1:]) if "references" in parts else parts[-1]
-            if "characters" in parts and "references" not in parts:
+            if "characters" in parts:
                 character_parts = parts[parts.index("characters") + 1:]
                 if len(character_parts) < 2:
-                    raise ValueError("Character portraits must be inside characters/<Character Name>/.")
+                    raise ValueError("Character portraits must be inside references/characters/<Character Name>/.")
                 relative_name = "/".join(character_parts)
                 asset_destination(characters_dir, relative_name)
                 reference_image_type(filename, content)
@@ -497,7 +497,7 @@ class TheaterManager:
             if relative_filename in ("planning.yaml", "planning.yml") or (parts and parts[-1].lower() in ("planning.yaml", "planning.yml")):
                 asset_destination(theater_dir, "planning.yaml").write_bytes(content)
                 continue
-            if "characters" in parts and "references" not in parts:
+            if "characters" in parts:
                 relative_name = "/".join(parts[parts.index("characters") + 1:])
                 target = asset_destination(characters_dir, relative_name)
                 target.parent.mkdir(parents=True, exist_ok=True)

@@ -273,7 +273,7 @@ def test_assistant_proposes_and_generates_characters(builder: BuilderHarness) ->
         })
     assert gen_res.status_code == 200
     char_path1 = gen_res.json()["path"]
-    assert char_path1 == "characters/Arthur Modella/1.png"
+    assert char_path1 == "references/characters/Arthur Modella/1.png"
     assert builder.client.get(f"{base}/file", params={"path": char_path1}).content == b"arthur-portrait-1"
 
     # Second generation for the same character increments iteration to 2.png
@@ -288,7 +288,7 @@ def test_assistant_proposes_and_generates_characters(builder: BuilderHarness) ->
         })
     assert gen_res2.status_code == 200
     char_path2 = gen_res2.json()["path"]
-    assert char_path2 == "characters/Arthur Modella/2.png"
+    assert char_path2 == "references/characters/Arthur Modella/2.png"
     assert builder.client.get(f"{base}/file", params={"path": char_path2}).content == b"arthur-portrait-2"
 
     # Verify deployment publishes characters to the live theater
@@ -456,17 +456,17 @@ def test_editing_existing_theater_preserves_live_assets_until_deployed(builder: 
     assert opened.status_code == 200
     data = opened.json()
     result = builder.client.post(f"{base}/apply", json={"revision": data["draft"]["revision"], "proposal": {
-        "message": "Organize the hero", "moves": [{"source": "references/hero.png", "destination": "references/characters/hero.png"}],
-        "writes": [{"path": "lore/hero.txt", "content": "image_reference: references/characters/hero.png"}],
+        "message": "Organize the hero", "moves": [{"source": "references/hero.png", "destination": "references/people/hero.png"}],
+        "writes": [{"path": "lore/hero.txt", "content": "image_reference: references/people/hero.png"}],
     }})
     assert result.status_code == 200, result.text
     target = builder.manager.theater(identifier).directory()
     assert (target / "references/hero.png").exists()
-    assert not (target / "references/characters/hero.png").exists()
+    assert not (target / "references/people/hero.png").exists()
     deployed = builder.client.post(f"{base}/deploy", json={"revision": result.json()["draft"]["revision"]})
     assert deployed.status_code == 200, deployed.text
     assert not (target / "references/hero.png").exists()
-    assert (target / "references/characters/hero.png").read_bytes() == image
+    assert (target / "references/people/hero.png").read_bytes() == image
     assert not (builder.repository.theater_path(identifier) / "references/hero.png").exists()
     assert builder.manager.get_theater(identifier).join_key == metadata.join_key
 
@@ -479,7 +479,7 @@ def test_opening_existing_theater_preserves_characters_folder_and_portraits(buil
         theater_id=identifier,
         reference_files=[
             ("references/stage.png", image),
-            ("characters/Arthur Modella/1.png", image),
+            ("references/characters/Arthur Modella/1.png", image),
         ],
         theater_config={"live_agent": {"special_instructions": "Cast world"}},
     )
@@ -491,10 +491,10 @@ def test_opening_existing_theater_preserves_characters_folder_and_portraits(buil
     assert opened.status_code == 200, opened.text
     data = opened.json()
     paths = {f["path"] for f in data["files"]}
-    assert "characters/Arthur Modella/1.png" in paths
+    assert "references/characters/Arthur Modella/1.png" in paths
 
     # Verify character file can be read from draft endpoint
-    read_res = builder.client.get(f"{base}/file?path=characters/Arthur%20Modella/1.png")
+    read_res = builder.client.get(f"{base}/file?path=references/characters/Arthur%20Modella/1.png")
     assert read_res.status_code == 200
     assert read_res.content == image
 
@@ -502,7 +502,7 @@ def test_opening_existing_theater_preserves_characters_folder_and_portraits(buil
     reopened = builder.client.get(base)
     assert reopened.status_code == 200
     reopened_paths = {f["path"] for f in reopened.json()["files"]}
-    assert "characters/Arthur Modella/1.png" in reopened_paths
+    assert "references/characters/Arthur Modella/1.png" in reopened_paths
 
 
 def test_organized_assets_are_listed_served_and_resolved_on_canvas(builder: BuilderHarness) -> None:
@@ -510,8 +510,8 @@ def test_organized_assets_are_listed_served_and_resolved_on_canvas(builder: Buil
     identifier = data["draft"]["theater_id"]
     base = f"/api/theater-editor/{identifier}"
     uploaded = builder.client.post(f"{base}/upload", data={"revision": data["draft"]["revision"], "folder": "true"}, files=[
-        ("files", ("world/theater.yaml", b"live_agent: {}\nvisuals:\n  cycle_length: 0\nstarting_image: references/characters/hero.png\n")),
-        ("files", ("world/references/characters/hero.png", b"image")),
+        ("files", ("world/theater.yaml", b"live_agent: {}\nvisuals:\n  cycle_length: 0\nstarting_image: references/people/hero.png\n")),
+        ("files", ("world/references/people/hero.png", b"image")),
         ("files", ("world/playlists/Boss fight/chapter 1/theme#1.aac", b"audio")),
         ("files", ("world/playlists/Boss fight/description.txt", b"Escalating tension")),
     ])
@@ -519,11 +519,11 @@ def test_organized_assets_are_listed_served_and_resolved_on_canvas(builder: Buil
     deployed = builder.client.post(f"{base}/deploy", json={"revision": uploaded.json()["draft"]["revision"]})
     assert deployed.status_code == 200, deployed.text
     theater = builder.manager.theater(identifier)
-    hero = theater.references_dir() / "characters/hero.png"
-    assert theater.get_url_for_path(str(hero)) == f"/theaters/{identifier}/references/characters/hero.png"
-    assert VisualState._find_starting_reference(theater, "references/characters/hero.png") == hero.resolve()
+    hero = theater.references_dir() / "people/hero.png"
+    assert theater.get_url_for_path(str(hero)) == f"/theaters/{identifier}/references/people/hero.png"
+    assert VisualState._find_starting_reference(theater, "references/people/hero.png") == hero.resolve()
     visual = VisualState(theater)
-    assert visual.resolve_image_path("references/characters/hero.png") == str(hero)
+    assert visual.resolve_image_path("references/people/hero.png") == str(hero)
     tools = MusicTools(theater, CanvasStateService(builder.manager).get(identifier), MagicMock(spec=MusicCatalog))
     tracks = tools._resolve_music_tracks("Boss fight")
     assert tracks == [f"/theaters/{identifier}/playlists/Boss%20fight/chapter%201/theme%231.aac"]
@@ -535,7 +535,7 @@ def test_organized_assets_are_listed_served_and_resolved_on_canvas(builder: Buil
         assert builder.client.get(tracks[0]).content == b"audio"
         metadata = builder.client.get(f"/api/theaters/{identifier}")
         assert metadata.status_code == 200, metadata.text
-        assert metadata.json()["references"][0]["filename"] == "characters/hero.png"
+        assert metadata.json()["references"][0]["filename"] == "people/hero.png"
         assert metadata.json()["playlists"]["Boss fight"][0]["filename"] == "chapter 1/theme#1.aac"
         assert builder.client.get(f"/theaters/{identifier}/playlists/Boss%20fight/..%2F..%2Ftheater.yaml").status_code == 400
 

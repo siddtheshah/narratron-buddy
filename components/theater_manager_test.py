@@ -20,27 +20,30 @@ from components.theater_manager import (
 )
 
 
-def test_character_images_in_uploaded_package_stay_out_of_references(tmp_path: Path) -> None:
+def test_character_images_in_uploaded_package_preserve_named_folders(tmp_path: Path) -> None:
     manager = TheaterManager(tmp_path)
     image = png_bytes()
     package_bytes = io.BytesIO()
     with zipfile.ZipFile(package_bytes, "w") as package:
-        package.writestr("assets/characters/Arthur Modella/1.png", image)
-        package.writestr("assets/characters/Grim Vallos/1.png", image)
+        package.writestr("assets/references/characters/Arthur Modella/1.png", image)
+        package.writestr("assets/references/characters/Grim Vallos/1.png", image)
     reference_files, playlists_data, lore_files, _ = extract_asset_package(package_bytes.getvalue())
     manager.create_theater("Stage", "stage", reference_files=reference_files, playlists_data=playlists_data, lore_files=lore_files)
-    assert (tmp_path / "stage/characters/Arthur Modella/1.png").read_bytes() == image
-    assert (tmp_path / "stage/characters/Grim Vallos/1.png").read_bytes() == image
+    assert (tmp_path / "stage/references/characters/Arthur Modella/1.png").read_bytes() == image
+    assert (tmp_path / "stage/references/characters/Grim Vallos/1.png").read_bytes() == image
     assert not (tmp_path / "stage/references/1.png").exists()
     assert not (tmp_path / "stage/references/Grim Vallos.png").exists()
+    theater = manager.theater("stage")
+    assert theater.characters_dir() == tmp_path / "stage" / "references" / "characters"
+    assert theater.updated_characters_dir() == tmp_path / "stage" / "output" / "artifacts" / "updated_references" / "characters"
 
 
 def test_loose_character_portrait_upload_is_rejected_before_writes(tmp_path: Path) -> None:
     manager = TheaterManager(tmp_path)
     with pytest.raises(ValueError, match="must be inside"):
         manager.create_theater("Stage", "stage", reference_files=[
-            ("characters/Grim Vallos/1.png", png_bytes()),
-            ("characters/Arthur Modella.png", png_bytes()),
+            ("references/characters/Grim Vallos/1.png", png_bytes()),
+            ("references/characters/Arthur Modella.png", png_bytes()),
         ])
     assert list(tmp_path.iterdir()) == []
 
@@ -53,7 +56,7 @@ def test_loose_character_portrait_upload_is_rejected_before_writes(tmp_path: Pat
     "references/./hero.png", "references//hero.png", "references/hero.png:stream",
     "references/.. /hero.png", "references/NUL.png", "",
     "../planning.yaml", "../metadata.json", "stamps/../hero.png",
-    "characters/../../outside.png", "characters/Arthur/../1.png",
+    "references/characters/../../outside.png", "references/characters/Arthur/../1.png",
 ])
 def test_upload_paths_are_rejected_before_any_writes(tmp_path: Path, filename: str) -> None:
     manager = TheaterManager(tmp_path)

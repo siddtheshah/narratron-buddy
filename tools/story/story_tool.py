@@ -48,7 +48,7 @@ class StoryTool(BaseTools):
     ``StoryResponseModule`` and ``StoryPlanningModule`` deliberately receive
     their dependencies instead of constructing one another. This class is the
     single composition root for the character provider, shared lore library,
-    character manager, and ADK session context.
+    reference manager, and ADK session context.
     """
 
     def __init__(

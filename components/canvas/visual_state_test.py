@@ -26,6 +26,24 @@ def test_visual_state_requires_theater() -> None:
         VisualState()  # type: ignore[call-arg]
 
 
+def test_nested_character_portraits_are_not_scene_image_aliases(tmp_path: Path) -> None:
+    theater = Mock(spec=Theater)
+    theater.theater_id = "stage"
+    theater.references_dir.return_value = tmp_path / "references"
+    theater.characters_dir.return_value = tmp_path / "references" / "characters"
+    theater.image_artifacts_dir.return_value = tmp_path / "output" / "artifacts" / "images"
+    portrait = theater.characters_dir() / "Arthur" / "1.png"
+    portrait.parent.mkdir(parents=True)
+    portrait.write_bytes(b"portrait")
+    scene = theater.references_dir() / "harbor.png"
+    scene.write_bytes(b"scene")
+    state = VisualState(theater)
+
+    for alias in (str(portrait), "references/characters/Arthur/1.png", "characters/Arthur/1.png", "1.png"):
+        assert state.resolve_image_path(alias) is None
+    assert state.resolve_image_path("harbor") == str(scene)
+
+
 def test_orator_image_bypasses_display_cycle_once() -> None:
     state = VisualState(make_theater())
     state.current_cycle_visual = {"type": "image", "path": "current.png"}

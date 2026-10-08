@@ -48,7 +48,7 @@ def editor_page() -> Iterator[Page]:
             window.paymentMode = 'success';
             window.assistantMode = 'success';
             const initialFiles = [
-                {path: 'references/characters/captain.png', kind: 'image'},
+                {path: 'references/people/captain.png', kind: 'image'},
                 {path: 'lore/guide.txt', kind: 'text'},
                 {path: 'playlists/Boss fight/chapter 1/theme#1.aac', kind: 'audio'},
                 {path: 'lore/characters/crew/rookie.txt', kind: 'text'},
@@ -202,13 +202,14 @@ def test_nested_folders_expand_with_mouse_and_keyboard(editor_page: Page, width:
     expect(page.locator("#file-count")).to_have_text("7 files")
     expect(page.locator('.file-button[title="theater.yaml"]')).to_be_visible()
     assert page.locator("#file-list > details > summary .folder-name").all_text_contents() == [
-        "characters", "lore", "playlists", "references",
+        "lore", "playlists", "references",
     ]
-    chars_folder = page.locator('#file-list > details[data-path="characters"]')
+    page.locator('details[data-path="references"] > summary').click()
+    chars_folder = page.locator('details[data-path="references/characters"]')
     expect(chars_folder).to_be_visible()
     expect(chars_folder.locator(":scope > summary .folder-count")).to_have_text("0")
     chars_folder.locator(":scope > summary").click()
-    expect(chars_folder.locator(".empty-folder-hint")).to_have_text("No character portraits yet (characters/<Name>/1.png)")
+    expect(chars_folder.locator(".empty-folder-hint")).to_have_text("No character portraits yet (references/characters/<Name>/1.png)")
 
     lore = page.locator('details[data-path="lore"]')
     captain = page.locator('.file-button[title="lore/characters/captain.txt"]')
@@ -267,9 +268,9 @@ def test_edits_and_folder_choices_survive_save_and_reload(editor_page: Page) -> 
 def test_nested_assets_preview_and_new_files_join_the_tree(editor_page: Page) -> None:
     page = editor_page
     page.locator('details[data-path="references"] > summary').click()
-    page.locator('details[data-path="references/characters"] > summary').click()
-    page.locator('.file-button[title="references/characters/captain.png"]').click()
-    expect(page.locator("#media-preview img")).to_have_attribute("alt", "references/characters/captain.png")
+    page.locator('details[data-path="references/people"] > summary').click()
+    page.locator('.file-button[title="references/people/captain.png"]').click()
+    expect(page.locator("#media-preview img")).to_have_attribute("alt", "references/people/captain.png")
     expect(page.locator("#media-preview")).to_be_visible()
     page.locator('details[data-path="playlists"] > summary').click()
     page.locator('details[data-path="playlists/Boss fight"] > summary').click()

@@ -100,8 +100,12 @@
       }
       node.files.push(file);
     }
-    if (!root.folders.has('characters')) {
-      root.folders.set('characters', { folders: new Map(), files: [], count: 0 });
+    if (!root.folders.has('references')) {
+      root.folders.set('references', { folders: new Map(), files: [], count: 0 });
+    }
+    const references = root.folders.get('references');
+    if (!references.folders.has('characters')) {
+      references.folders.set('characters', { folders: new Map(), files: [], count: 0 });
     }
     function appendFiles(parent, files) {
       for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -109,7 +113,7 @@
         button.dataset.path = file.path;
         button.classList.toggle('active', selected?.path === file.path);
         if (selected?.path === file.path) button.setAttribute('aria-current', 'true');
-        button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.path.startsWith('characters/') ? '👤' : (file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡'))} ${file.path.split('/').pop()}`;
+        button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.path.startsWith('references/characters/') ? '👤' : (file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡'))} ${file.path.split('/').pop()}`;
         button.title = file.path; button.addEventListener('click', () => selectFile(file)); parent.append(button);
       }
     }
@@ -128,7 +132,7 @@
         if (child.files.length === 0 && child.folders.size === 0) {
           const emptyHint = document.createElement('span');
           emptyHint.className = 'empty-folder-hint';
-          emptyHint.textContent = name === 'characters' ? 'No character portraits yet (characters/<Name>/1.png)' : 'Empty folder';
+          emptyHint.textContent = path === 'references/characters' ? 'No character portraits yet (references/characters/<Name>/1.png)' : 'Empty folder';
           contents.append(emptyHint);
         }
         folder.append(summary, contents); parent.append(folder);
@@ -543,8 +547,8 @@
     window.history.replaceState(null, '', '/theater-editor'); status('');
   });
   el('assistant-form').addEventListener('submit', event => { event.preventDefault(); ask(el('assistant-input').value.trim()); });
-  el('organize-assets').addEventListener('click', () => ask('Organize my uploaded assets into meaningful reference subfolders, characters/ folders, stamps/ tokens, lore documents, and named playlists. Update all file references where necessary.'));
-  el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose an opening scene, characters (with lore dossiers and characters/ portraits), reference images, stamp tokens for tactical play, and atmospheric playlist tracks.'));
+  el('organize-assets').addEventListener('click', () => ask('Organize my uploaded assets into meaningful reference subfolders, references/characters/ folders, stamps/ tokens, lore documents, and named playlists. Update all file references where necessary.'));
+  el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose an opening scene, characters (with lore dossiers and references/characters/ portraits), reference images, stamp tokens for tactical play, and atmospheric playlist tracks.'));
   el('harvest-doc-shortcut').addEventListener('click', () => openGoogleDialog(true));
   el('import-google-link').addEventListener('click', () => openGoogleDialog(false));
   el('google-link-cancel').addEventListener('click', () => el('google-link-dialog').close());

@@ -51,7 +51,7 @@ class TestReferenceUtils(unittest.TestCase):
     def test_character_prompt_tag_requires_reference_manager(self) -> None:
         references, error = resolve_provider_references(None, "<Arthur Modella> waves.")
         self.assertEqual(references, [])
-        self.assertIn("require a character manager", error or "")
+        self.assertIn("require a reference manager", error or "")
 
     def _create_dummy_image_file(self, filename: str, content: bytes = b"dummy_image_data") -> str:
         filepath = os.path.join(self.temp_dir, filename)

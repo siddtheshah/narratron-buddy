@@ -107,7 +107,7 @@ def test_invalid_action_action_is_rejected() -> None:
         canvas.OratorAction(action="diagonal")
 
 
-@pytest.mark.parametrize("action,intent", [("update_story", "notepad and character manager"), ("update_ui", "interactive canvas UI")])
+@pytest.mark.parametrize("action,intent", [("update_story", "notepad and reference manager"), ("update_ui", "interactive canvas UI")])
 @pytest.mark.parametrize("collaboration", [True, False])
 def test_secondary_action_sends_intent_and_collaboration_capture(
     action_services: tuple[MagicMock, MagicMock], action: str, intent: str, collaboration: bool

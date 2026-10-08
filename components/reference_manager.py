@@ -837,7 +837,7 @@ class ReferenceManager:
         if char_dir is not None and char_dir.is_dir():
             latest = get_latest_iteration_file(char_dir)
             if latest is not None and latest.is_file():
-                alias = f"output/artifacts/updated_characters/{char_dir.name}/{latest.name}"
+                alias = f"output/artifacts/updated_references/characters/{char_dir.name}/{latest.name}"
                 return {
                     "name": f"{char_dir.name}_{latest.stem}",
                     "alias": alias,
@@ -1000,7 +1000,7 @@ class ReferenceManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Character reference for {character.name} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
-            alias = f"output/artifacts/updated_characters/{char_dir.name}/{output.name}"
+            alias = f"output/artifacts/updated_references/characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",
                 "alias": alias,
@@ -1037,7 +1037,7 @@ class ReferenceManager:
     def _session_reference_entry(self, name: str, image: Path) -> dict[str, str]:
         """Bind imported references to a writable session copy."""
         if image.parent.resolve() == self.theater.characters_dir().resolve():
-            raise ValueError("Character portraits must be inside characters/<Character Name>/.")
+            raise ValueError("Character portraits must be inside references/characters/<Character Name>/.")
         directory = self._character_reference_dir(name)
         if directory is None:
             raise ValueError("Session character directory is required.")
@@ -1050,7 +1050,7 @@ class ReferenceManager:
             shutil.copy2(image, destination)
             image = destination
         return {
-            "alias": f"output/artifacts/updated_characters/{directory.name}/{image.name}",
+            "alias": f"output/artifacts/updated_references/characters/{directory.name}/{image.name}",
             "path": str(image),
         }
 
@@ -1117,7 +1117,7 @@ class ReferenceManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Player character reference for {name_label} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
-            alias = f"output/artifacts/updated_characters/{char_dir.name}/{output.name}"
+            alias = f"output/artifacts/updated_references/characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",
                 "alias": alias,

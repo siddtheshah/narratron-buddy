@@ -13,7 +13,7 @@ from services.theater_builder import (
 )
 
 
-@pytest.mark.parametrize("path", ["../secret.txt", "references/../../secret.png", "/references/a.png", "references/C:/a.png", "references/CON.png", "references/a.png.", "editor.json", "output/file.txt", "lore/script.py", "characters/hero.png"])
+@pytest.mark.parametrize("path", ["../secret.txt", "references/../../secret.png", "/references/a.png", "references/C:/a.png", "references/CON.png", "references/a.png.", "editor.json", "output/file.txt", "lore/script.py", "references/characters/hero.png"])
 def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -> None:
     with pytest.raises(ValueError):
         safe_asset_path(tmp_path, path)
@@ -27,8 +27,10 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
     ("notes.md", False, "lore/notes.txt"),
     ("world/references/people/hero.png", True, "references/people/hero.png"),
     ("world/stamps/tokens/hero.png", True, "stamps/tokens/hero.png"),
-    ("world/characters/Arthur Modella/1.png", True, "characters/Arthur Modella/1.png"),
-    ("characters/Arthur Modella/1.png", False, "characters/Arthur Modella/1.png"),
+    ("world/characters/Arthur Modella/1.png", True, "references/characters/Arthur Modella/1.png"),
+    ("world/references/characters/Arthur Modella/1.png", True, "references/characters/Arthur Modella/1.png"),
+    ("references/characters/Arthur Modella.jpg", False, "references/characters/Arthur Modella/1.jpg"),
+    ("references/characters/Arthur Modella/1.png", False, "references/characters/Arthur Modella/1.png"),
     ("world/playlists/mystery/rain.mp3", True, "playlists/mystery/rain.mp3"),
     ("world/theater.yaml", True, "theater.yaml"),
 ])
@@ -47,10 +49,10 @@ def test_invalid_batch_does_not_partially_write_or_move_files(tmp_path: Path) ->
     store.write_files(info, {"references/hero.png": b"image"})
     revision = info.revision
     with pytest.raises(ValueError):
-        store.write_files(info, {"theater.yaml": b"[invalid, config]"}, [FileMove(source="references/hero.png", destination="references/characters/hero.png")])
+        store.write_files(info, {"theater.yaml": b"[invalid, config]"}, [FileMove(source="references/hero.png", destination="references/people/hero.png")])
     assert info.revision == revision
     assert (store.directory(info.theater_id) / "references/hero.png").read_bytes() == b"image"
-    assert not (store.directory(info.theater_id) / "references/characters/hero.png").exists()
+    assert not (store.directory(info.theater_id) / "references/people/hero.png").exists()
 
 
 def test_draft_publish_removes_moved_assets_but_preserves_runtime_output(tmp_path: Path) -> None:
@@ -62,10 +64,10 @@ def test_draft_publish_removes_moved_assets_but_preserves_runtime_output(tmp_pat
     store.copy_to(info, target)
     (target / "output").mkdir()
     (target / "output/session.txt").write_text("runtime", encoding="utf-8")
-    store.write_files(info, {}, [FileMove(source="references/hero.png", destination="references/characters/hero.png")])
+    store.write_files(info, {}, [FileMove(source="references/hero.png", destination="references/people/hero.png")])
     store.copy_to(info, target)
     assert not (target / "references/hero.png").exists()
-    assert (target / "references/characters/hero.png").read_bytes() == b"image"
+    assert (target / "references/people/hero.png").read_bytes() == b"image"
     assert (target / "output/session.txt").read_text(encoding="utf-8") == "runtime"
 
 
@@ -208,10 +210,10 @@ def test_assistant_proposes_deletions_and_validates_them(tmp_path: Path) -> None
 
 
 def test_character_paths_allowed_in_safe_asset_path(tmp_path: Path) -> None:
-    portrait = safe_asset_path(tmp_path, "characters/Arthur Modella/1.png")
-    assert portrait == tmp_path / "characters" / "Arthur Modella" / "1.png"
-    nested_portrait = safe_asset_path(tmp_path, "characters/Grim Vallos/alt/2.webp")
-    assert nested_portrait == tmp_path / "characters" / "Grim Vallos" / "alt" / "2.webp"
+    portrait = safe_asset_path(tmp_path, "references/characters/Arthur Modella/1.png")
+    assert portrait == tmp_path / "references" / "characters" / "Arthur Modella" / "1.png"
+    nested_portrait = safe_asset_path(tmp_path, "references/characters/Grim Vallos/alt/2.webp")
+    assert nested_portrait == tmp_path / "references" / "characters" / "Grim Vallos" / "alt" / "2.webp"
 
 
 def test_assistant_proposes_character_portraits_and_system_instruction(tmp_path: Path) -> None:
@@ -230,7 +232,7 @@ def test_assistant_proposes_character_portraits_and_system_instruction(tmp_path:
     assert result.generations[0].kind == "character"
     assert result.generations[0].name == "Arthur Modella"
     system_instruction = client.models.generate_content.call_args.kwargs["config"].system_instruction
-    assert "characters/<Character Name>" in system_instruction
+    assert "references/characters/<Character Name>" in system_instruction
     assert "kind 'character'" in system_instruction
 
 
@@ -238,34 +240,34 @@ def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_
     source = tmp_path / "source_theater"
     source.mkdir()
     (source / "theater.yaml").write_text("live_agent: {}\n", encoding="utf-8")
-    (source / "characters").mkdir()
-    (source / "characters" / "Arthur Modella").mkdir()
-    (source / "characters" / "Arthur Modella" / "1.png").write_bytes(b"arthur_png")
+    (source / "references" / "characters").mkdir(parents=True)
+    (source / "references" / "characters" / "Arthur Modella").mkdir()
+    (source / "references" / "characters" / "Arthur Modella" / "1.png").write_bytes(b"arthur_png")
     # Loose character file in source
-    (source / "characters" / "Grim Vallos.png").write_bytes(b"grim_png")
+    (source / "references" / "characters" / "Grim Vallos.png").write_bytes(b"grim_png")
     # Session updated character
-    (source / "output" / "artifacts" / "updated_characters" / "Lyra").mkdir(parents=True)
-    (source / "output" / "artifacts" / "updated_characters" / "Lyra" / "1.png").write_bytes(b"lyra_png")
+    (source / "output" / "artifacts" / "updated_references" / "characters" / "Lyra").mkdir(parents=True)
+    (source / "output" / "artifacts" / "updated_references" / "characters" / "Lyra" / "1.png").write_bytes(b"lyra_png")
 
     store = TheaterBuilderStore(tmp_path / "storage")
     info = store.create(7, "Preserved", "live_agent: {}\n", theater_id="theater_char", source=source)
     draft_dir = store.directory(info.theater_id)
 
-    assert (draft_dir / "characters").is_dir()
+    assert (draft_dir / "references" / "characters").is_dir()
     files = {item.path: item for item in store.files(info.theater_id)}
-    assert "characters/Arthur Modella/1.png" in files
-    assert "characters/Grim Vallos/1.png" in files
-    assert "characters/Lyra/1.png" in files
-    assert (draft_dir / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
-    assert (draft_dir / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
-    assert (draft_dir / "characters" / "Lyra" / "1.png").read_bytes() == b"lyra_png"
+    assert "references/characters/Arthur Modella/1.png" in files
+    assert "references/characters/Grim Vallos/1.png" in files
+    assert "references/characters/Lyra/1.png" in files
+    assert (draft_dir / "references" / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
+    assert (draft_dir / "references" / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
+    assert (draft_dir / "references" / "characters" / "Lyra" / "1.png").read_bytes() == b"lyra_png"
 
     # Test copy_to also keeps characters directory
     target = tmp_path / "target_theater"
     target.mkdir()
     store.copy_to(info, target)
-    assert (target / "characters").is_dir()
-    assert (target / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
+    assert (target / "references" / "characters").is_dir()
+    assert (target / "references" / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
 
 
 def test_existing_draft_syncs_characters_from_source_on_reopen(tmp_path: Path) -> None:
@@ -274,12 +276,12 @@ def test_existing_draft_syncs_characters_from_source_on_reopen(tmp_path: Path) -
     # Draft created without characters
     source = tmp_path / "source_theater"
     source.mkdir()
-    (source / "characters" / "Grim Vallos").mkdir(parents=True)
-    (source / "characters" / "Grim Vallos" / "1.png").write_bytes(b"grim_png")
+    (source / "references" / "characters" / "Grim Vallos").mkdir(parents=True)
+    (source / "references" / "characters" / "Grim Vallos" / "1.png").write_bytes(b"grim_png")
 
     store.sync_source_characters(info, source)
     draft_dir = store.directory(info.theater_id)
-    assert (draft_dir / "characters").is_dir()
-    assert (draft_dir / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
+    assert (draft_dir / "references" / "characters").is_dir()
+    assert (draft_dir / "references" / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
 
 

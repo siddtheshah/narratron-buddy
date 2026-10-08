@@ -140,6 +140,8 @@ class VisualState:
             if not root.exists():
                 continue
             for image_path in root.rglob("*"):
+                if image_path.is_relative_to(root / "characters"):
+                    continue
                 if image_path.is_file() and image_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
                     relative = image_path.relative_to(root).as_posix()
                     self.register_image(str(image_path), image_path.name, relative, f"{root.name}/{relative}")
@@ -158,7 +160,7 @@ class VisualState:
                         return None
                 except (ValueError, OSError):
                     pass
-            if {"characters", "updated_characters"}.intersection(part.lower() for part in direct_path.parts):
+            if {"characters", "updated_references"}.intersection(part.lower() for part in direct_path.parts):
                 return None
             return str(direct_path)
 
@@ -187,6 +189,8 @@ class VisualState:
                 root / f"{requested}.webp",
             ):
                 if candidate.is_file():
+                    if candidate.is_relative_to(root / "characters"):
+                        continue
                     self.register_image(str(candidate), requested)
                     return str(candidate)
         return None

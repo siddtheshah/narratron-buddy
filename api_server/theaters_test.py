@@ -37,9 +37,9 @@ def test_deployment_preserves_character_folders(tmp_path: Path, source: str) -> 
     second_portrait = io.BytesIO()
     Image.new("RGB", (1, 1), color="blue").save(second_portrait, format="PNG")
     assets = {
-        "characters/Arthur Modella/1.png": image,
-        "characters/Arthur Modella/2.png": second_portrait.getvalue(),
-        "characters/Grim Vallos/1.png": image,
+        "references/characters/Arthur Modella/1.png": image,
+        "references/characters/Arthur Modella/2.png": second_portrait.getvalue(),
+        "references/characters/Grim Vallos/1.png": image,
         "references/locations/forest.png": image,
         "lore/characters/arthur.txt": b"Arthur guards the forest.",
         "theater.yaml": b"live_agent:\n  special_instructions: Guide the quest.\n",

@@ -628,7 +628,7 @@ def post_orator_action(
                 "process_user_action nudge parameter, and use it for upcoming visuals. Preserve player "
                 "agency and established continuity; do not invent a player action to advance the story."
                 if adventure_mode
-                else "Update the notepad and character manager from the audience intent and canvas "
+                else "Update the notepad and reference manager from the audience intent and canvas "
                 "annotations using update_sticky_note and create_or_update_character as appropriate. "
                 "Register relevant scene and character changes for the ongoing story."
             )

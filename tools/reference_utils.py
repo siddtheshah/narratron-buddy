@@ -84,7 +84,7 @@ def is_character_reference(
         if not target:
             continue
         p = Path(target)
-        if {"characters", "updated_characters"}.intersection(part.lower() for part in p.parts):
+        if {"characters", "updated_references"}.intersection(part.lower() for part in p.parts):
             return True
         parent_name = p.parent.name
         if parent_name and parent_name.lower() not in ("references", "images", "artifacts", "output", "characters", "."):
@@ -182,7 +182,7 @@ def resolve_provider_references(
     tagged_names = list(dict.fromkeys(name.strip() for name in re.findall(r"<([^<>]+)>", prompt) if name.strip()))
 
     if tagged_names and reference_manager is None:
-        return [], "Error: Character visuals require a character manager."
+        return [], "Error: Character visuals require a reference manager."
 
     if tagged_names and reference_manager is not None:
         for name in tagged_names:

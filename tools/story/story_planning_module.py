@@ -449,7 +449,7 @@ class StoryPlanningModule:
         gender: Optional[str] = None,
         image_reference: str = "",
     ) -> str:
-        """Canonically create or update an NPC record in the character manager."""
+        """Canonically create or update an NPC record in the reference manager."""
         char = self.reference_manager.create_or_update_character(
             name=name,
             description=description,

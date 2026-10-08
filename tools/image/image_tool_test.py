@@ -919,11 +919,13 @@ class TestImageTools(BaseTestCase):
         Image.new("RGB", (10, 10), color="brown").save(ref_img)
         tools._load_references()
 
-        # 3. Character image specifically created under output/characters/
+        # 3. Character portrait under references/characters/<Name>/
         char_dir = os.path.join(str(theater.characters_dir()), "Soran")
         os.makedirs(char_dir, exist_ok=True)
         char_img = os.path.join(char_dir, "1.png")
         Image.new("RGB", (10, 10), color="purple").save(char_img)
+        tools._load_references()
+        self.assertNotIn(char_img, [entry["path"] for entry in tools.list_references()])
 
         # Character image must not be in browse_images
         browsed = tools.browse_images()

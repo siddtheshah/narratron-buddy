@@ -390,7 +390,7 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (10, 10), color="pink").save(ref_path)
             theater = MagicMock(spec=Theater)
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
-            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
@@ -405,7 +405,7 @@ class TestReferenceManager(unittest.TestCase):
             manager.create_or_update_character("Lyra", personality="Brave", motivation="Learn", quirk="Hums", gender="female")
 
             character = manager.export_characters()[0]
-            self.assertEqual(character["image_reference"], "output/artifacts/updated_characters/Lyra/1.png")
+            self.assertEqual(character["image_reference"], "output/artifacts/updated_references/characters/Lyra/1.png")
             self.assertEqual(Path(character.image_reference_path).read_bytes(), Path(ref_path).read_bytes())
             self.assertTrue(Path(character.image_reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(character["voice_id"], "voice_lyra")
@@ -538,7 +538,7 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
             theater = MagicMock(spec=Theater)
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
-            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
@@ -554,7 +554,7 @@ class TestReferenceManager(unittest.TestCase):
                 image_description="Tall knight in etched plate armor",
             )
             self.assertEqual(player.name, "Valen")
-            self.assertEqual(player.reference, "output/artifacts/updated_characters/Valen/1.png")
+            self.assertEqual(player.reference, "output/artifacts/updated_references/characters/Valen/1.png")
             self.assertEqual(Path(player.reference_path).read_bytes(), Path(ref_path).read_bytes())
             self.assertTrue(Path(player.reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(player.reference_source, "existing")
@@ -882,7 +882,7 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
             theater = MagicMock(spec=Theater)
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
-            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
@@ -898,7 +898,7 @@ class TestReferenceManager(unittest.TestCase):
             )
 
             self.assertIsNotNone(char)
-            self.assertEqual(char.image_reference, "output/artifacts/updated_characters/Lady_Lux/1.jpg")
+            self.assertEqual(char.image_reference, "output/artifacts/updated_references/characters/Lady_Lux/1.jpg")
             self.assertEqual(Path(char.image_reference_path).read_bytes(), Path(ref_path).read_bytes())
             self.assertTrue(Path(char.image_reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(char["image_reference_source"], "existing")
@@ -913,7 +913,7 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
             theater = MagicMock(spec=Theater)
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
-            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
@@ -929,7 +929,7 @@ class TestReferenceManager(unittest.TestCase):
             )
 
             self.assertIsNotNone(char)
-            self.assertEqual(char.image_reference, "output/artifacts/updated_characters/Lady_Lux/1.jpg")
+            self.assertEqual(char.image_reference, "output/artifacts/updated_references/characters/Lady_Lux/1.jpg")
             self.assertEqual(Path(char.image_reference_path).read_bytes(), Path(ref_path).read_bytes())
             self.assertTrue(Path(char.image_reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(char["image_reference_source"], "existing")
@@ -942,7 +942,7 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
             theater = MagicMock(spec=Theater)
             theater.characters_dir.return_value = Path("/nonexistent/base_characters")
-            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "references" / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
@@ -955,7 +955,7 @@ class TestReferenceManager(unittest.TestCase):
             )
 
             self.assertEqual(player.name, "Retro Pulsar")
-            self.assertEqual(player.reference, "output/artifacts/updated_characters/Retro_Pulsar/1.jpg")
+            self.assertEqual(player.reference, "output/artifacts/updated_references/characters/Retro_Pulsar/1.jpg")
             self.assertEqual(Path(player.reference_path).read_bytes(), Path(ref_path).read_bytes())
             self.assertTrue(Path(player.reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(player.reference_source, "existing")

@@ -391,7 +391,7 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
         references: list[ImageReference] = []
         for relative in body.references:
             path = safe_asset_path(root, relative)
-            if not (relative.startswith("references/") or relative.startswith("characters/")) or not path.is_file():
+            if not relative.startswith("references/") or not path.is_file():
                 raise ValueError("Generation references must be existing reference or character images.")
             references.append(ImageReference(name=path.name, data=path.read_bytes(), mime_type=asset_mime(path)))
         result = generate_theater_image(root, kind=body.kind, prompt=body.prompt, references=references)
@@ -400,7 +400,7 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
             raise ValueError("Image provider returned no supported image.")
         if body.kind == "character":
             char_folder = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", body.name.strip()).strip(". ") or name
-            char_dir = root / "characters" / char_folder
+            char_dir = root / "references" / "characters" / char_folder
             iteration = 1
             if char_dir.is_dir():
                 nums = [
@@ -409,7 +409,7 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
                 ]
                 if nums:
                     iteration = max(nums) + 1
-            return f"characters/{char_folder}/{iteration}{extension}", result.image_bytes
+            return f"references/characters/{char_folder}/{iteration}{extension}", result.image_bytes
         target_dir = "stamps" if body.kind == "stamp" else "references"
         return f"{target_dir}/{name}_{identifier}{extension}", result.image_bytes
     playlist = re.sub(r"[^a-zA-Z0-9_-]", "_", body.playlist).strip("_") or "ambient"

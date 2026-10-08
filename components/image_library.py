@@ -37,8 +37,10 @@ class ImageLibrary:
         self._load_references()
 
     def _is_image(self, path: str) -> bool:
-        """Identify library images, excluding the configured cover and display copy."""
+        """Identify scene images, excluding character portraits and configured cover art."""
         image = Path(path)
+        if image.is_relative_to(Path(self.reference_dir) / "characters"):
+            return False
         return image.suffix.lower() in IMAGE_EXTENSIONS and (
             not self._exclude_starter or image.stem != self._cover_stem
         )

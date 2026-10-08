@@ -513,7 +513,7 @@ class ImageTools(BaseTools):
                 if char_dir is not None and p_obj.resolve().is_relative_to(Path(char_dir).resolve()):
                     is_char_path = True
                     break
-                if {"characters", "updated_characters"}.intersection(part.lower() for part in p_obj.parts):
+                if {"characters", "updated_references"}.intersection(part.lower() for part in p_obj.parts):
                     is_char_path = True
                     break
             except (ValueError, OSError):
