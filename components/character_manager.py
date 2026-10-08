@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 from threading import Lock
 from io import BytesIO
 from pathlib import Path
@@ -165,6 +166,12 @@ class Character(BaseModel):
         tags = f" [Voice: {', '.join(self.voice_tags)}]" if self.voice_tags else ""
         return f"Created character '{self.name}'. Personality: {self.personality}. Motivation: {self.motivation}. Quirk: {self.quirk}{tags}."
 
+    def for_model_context(self) -> Character:
+        """Expose character traits while keeping image bindings internal."""
+        return self.model_copy(update={
+            "image_reference": None, "image_reference_path": None, "image_reference_source": None,
+        })
+
     @field_validator("name")
     @classmethod
     def normalize_name(cls, value: str) -> str:
@@ -292,9 +299,13 @@ class PlayerCharacter(BaseModel):
         parts = [f"Player Character: '{self.name or 'Unnamed Explorer'}'"]
         if self.image_description:
             parts.append(f"Visual: {self.image_description}")
-        if self.reference:
-            parts.append(f"Image Reference: {self.reference}")
         return " | ".join(parts)
+
+    def for_model_context(self) -> PlayerCharacter:
+        """Expose player identity while keeping image bindings internal."""
+        return self.model_copy(update={
+            "reference": None, "reference_path": None, "reference_source": None,
+        })
 
 
 class GeneratedCharacterProfile(BaseModel):
@@ -310,6 +321,13 @@ class CharacterLookupResult(BaseModel):
     query: str = ""
     characters: list[Character] = Field(default_factory=list)
     player: PlayerCharacter | None = None
+
+    def for_model_context(self) -> CharacterLookupResult:
+        """Return a model-facing result without portrait paths or aliases."""
+        return self.model_copy(update={
+            "characters": [character.for_model_context() for character in self.characters],
+            "player": self.player.for_model_context() if self.player is not None else None,
+        })
 
     @property
     def total_count(self) -> int:
@@ -345,9 +363,8 @@ class CharacterLookupResult(BaseModel):
         )
         lines: list[str] = [heading]
         if self.player is not None:
-            ref_info = f" [Image Reference: {self.player.reference}]" if self.player.reference else ""
             vis_info = f" Visual: {self.player.image_description}" if self.player.image_description else ""
-            lines.append(f"- [Player Character] {self.player.name or 'Unnamed Explorer'}:{vis_info}{ref_info}")
+            lines.append(f"- [Player Character] {self.player.name or 'Unnamed Explorer'}:{vis_info}")
         for character in self.characters:
             tags = (
                 f" [Voice: {', '.join(character.voice_tags)}]"
@@ -474,14 +491,77 @@ class CharacterManager:
         self._characters_lock = Lock()
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
+        self._seed_character_images()
         self._sync_story_state()
 
     @property
     def characters_dir(self) -> Path | None:
-        val = self.theater.characters_dir()
+        val = self.theater.updated_characters_dir()
         if val is None or not str(val).strip():
             return None
         return Path(val)
+
+    def _seed_character_images(self) -> None:
+        """Copy authored portraits without overwriting existing session iterations."""
+        source = self.theater.characters_dir()
+        destination = self.characters_dir
+        if destination is None or not source.is_dir():
+            return
+        existing = {
+            directory.name
+            for directory in destination.iterdir()
+            if directory.is_dir() and get_latest_iteration_file(directory) is not None
+        } if destination.is_dir() else set()
+        for image in sorted(source.rglob("*")):
+            if not image.is_file() or image.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            if not image.resolve().is_relative_to(source.resolve()):
+                continue
+            relative = image.relative_to(source)
+            if len(relative.parts) < 2:
+                continue
+            name = relative.parts[0]
+            target_dir = get_character_reference_dir(destination, name)
+            # Once a character has session images, the session owns its identity.
+            if target_dir.name in existing:
+                continue
+            target_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(image, target_dir / image.name)
+
+    def available_character_images(self) -> dict[str, str]:
+        """List named session portraits, including characters outside the active scene."""
+        root = self.characters_dir
+        if root is None or not root.is_dir():
+            return {}
+        images: dict[str, str] = {}
+        for directory in sorted(root.iterdir()):
+            if not directory.is_dir():
+                continue
+            latest = get_latest_iteration_file(directory)
+            if latest is not None:
+                character = self._existing_character(directory.name)
+                name = character.name if character is not None else directory.name.replace("_", " ")
+                images[name] = str(latest)
+        player = self.get_player_character()
+        if player is not None and player.reference_path and Path(player.reference_path).is_file():
+            images[player.name or "Player"] = self.get_latest_reference_path_for_character(player.name or "player") or player.reference_path
+        return images
+
+    def get_character_visual_path(self, name: str) -> str | None:
+        """Resolve an explicit prompt tag by exact name or alias, never a partial name."""
+        key = self._slug_key(name)
+        if not key:
+            return None
+        character = self._existing_character(name)
+        if character is not None:
+            return self.get_latest_reference_path_for_character(character.name)
+        player = self.get_player_character()
+        if player is not None and key in {self._slug_key(player.name), "player"}:
+            return self.get_latest_reference_path_for_character(player.name or "player")
+        for available_name, path in self.available_character_images().items():
+            if key == self._slug_key(available_name):
+                return path
+        return None
 
     @property
     def references_dir(self) -> Path | None:
@@ -644,17 +724,18 @@ class CharacterManager:
         chars_dir = self.characters_dir
         if chars_dir is not None:
             return chars_dir
-        refs_dir = self.references_dir
-        if refs_dir is not None:
-            return refs_dir
         return None
 
     def _character_reference_dir(self, name: str) -> Path | None:
         base_dir = self._characters_base_dir()
         if base_dir is None:
             return None
-        folder_name = get_character_folder_name(name)
-        return base_dir / folder_name
+        key = self._slug_key(name)
+        if base_dir.is_dir():
+            for directory in sorted(base_dir.iterdir()):
+                if directory.is_dir() and self._slug_key(directory.name) == key:
+                    return directory
+        return base_dir / get_character_folder_name(name)
 
     def get_latest_reference_path_for_character(self, query: str) -> str | None:
         """Return the filesystem path to the latest iteration reference for query."""
@@ -690,7 +771,7 @@ class CharacterManager:
                 if player.reference_path and Path(player.reference_path).is_file():
                     return player.reference_path
 
-        # 2. Check by path or folder structure under output/characters or reference_dir
+        # 2. Resolve names and iteration aliases within the session character library.
         base_dir = self._characters_base_dir()
         req_path = Path(clean)
         candidates = [req_path.stem, req_path.name]
@@ -726,16 +807,8 @@ class CharacterManager:
                         return player.reference_path
 
             if base_dir is not None and base_dir.is_dir():
-                cand_dir = get_character_reference_dir(base_dir, cand_clean)
-                if cand_dir.is_dir():
-                    latest = get_latest_iteration_file(cand_dir)
-                    if latest is not None and latest.is_file():
-                        return str(latest)
-
-            ref_base = self.references_dir
-            if ref_base is not None and ref_base.is_dir():
-                cand_dir = get_character_reference_dir(ref_base, cand_clean)
-                if cand_dir.is_dir():
+                cand_dir = self._character_reference_dir(cand_clean)
+                if cand_dir is not None and cand_dir.is_dir():
                     latest = get_latest_iteration_file(cand_dir)
                     if latest is not None and latest.is_file():
                         return str(latest)
@@ -759,16 +832,12 @@ class CharacterManager:
         if not requested:
             return None
 
-        # Check if requested matches a character directory under output/characters with iterations
+        # Resolve the latest session iteration first.
         char_dir = self._character_reference_dir(requested)
         if char_dir is not None and char_dir.is_dir():
             latest = get_latest_iteration_file(char_dir)
             if latest is not None and latest.is_file():
-                chars_dir = self.characters_dir
-                if chars_dir is not None and chars_dir.resolve() == char_dir.parent.resolve():
-                    alias = f"output/characters/{char_dir.name}/{latest.name}"
-                else:
-                    alias = f"references/{char_dir.name}/{latest.name}"
+                alias = f"output/artifacts/updated_characters/{char_dir.name}/{latest.name}"
                 return {
                     "name": f"{char_dir.name}_{latest.stem}",
                     "alias": alias,
@@ -780,8 +849,9 @@ class CharacterManager:
         # Check if requested is an exact file path that exists
         req_p = Path(requested)
         if req_p.is_file():
-            is_char_path = "characters" in [p.lower() for p in req_p.parts]
-            alias = f"output/characters/{req_p.parent.name}/{req_p.name}" if is_char_path else req_p.stem
+            if req_p.parent.resolve() == self.theater.characters_dir().resolve():
+                return None
+            alias = req_p.stem
             return {
                 "name": req_p.stem,
                 "alias": alias,
@@ -930,11 +1000,7 @@ class CharacterManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Character reference for {character.name} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
-            chars_dir = self.characters_dir
-            if chars_dir is not None and chars_dir.resolve() == char_dir.parent.resolve():
-                alias = f"output/characters/{char_dir.name}/{output.name}"
-            else:
-                alias = f"references/{char_dir.name}/{output.name}"
+            alias = f"output/artifacts/updated_characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",
                 "alias": alias,
@@ -949,7 +1015,10 @@ class CharacterManager:
         return None
 
     def _bind_character_image(self, character: Character) -> None:
-        if character.image_reference_path:
+        if character.image_reference_path and Path(character.image_reference_path).is_file():
+            entry = self._session_reference_entry(character.name, Path(character.image_reference_path))
+            character.image_reference = entry["alias"]
+            character.image_reference_path = entry["path"]
             return
         requested = character.image_reference
         # A character name is a safe fallback only when an image's name/alias
@@ -960,9 +1029,30 @@ class CharacterManager:
             entry = self._generate_character_reference(character)
         if entry is None:
             return
+        entry = self._session_reference_entry(character.name, Path(entry["path"]))
         character.image_reference = entry.get("alias", "")
         character.image_reference_path = entry.get("path", "")
         character.image_reference_source = source
+
+    def _session_reference_entry(self, name: str, image: Path) -> dict[str, str]:
+        """Bind imported references to a writable session copy."""
+        if image.parent.resolve() == self.theater.characters_dir().resolve():
+            raise ValueError("Character portraits must be inside characters/<Character Name>/.")
+        directory = self._character_reference_dir(name)
+        if directory is None:
+            raise ValueError("Session character directory is required.")
+        root = self.characters_dir
+        if root is not None and image.resolve().is_relative_to(root.resolve()):
+            directory = image.parent
+        if image.parent.resolve() != directory.resolve():
+            directory.mkdir(parents=True, exist_ok=True)
+            destination = directory / f"{get_next_iteration_number(directory)}{image.suffix.lower()}"
+            shutil.copy2(image, destination)
+            image = destination
+        return {
+            "alias": f"output/artifacts/updated_characters/{directory.name}/{image.name}",
+            "path": str(image),
+        }
 
     def _generate_player_reference(
         self,
@@ -982,11 +1072,8 @@ class CharacterManager:
         else:
             prev_file = get_latest_iteration_file(char_dir)
 
-        if (
-            prev_file is not None
-            and prev_file.parent.is_dir()
-            and prev_file.parent.name.lower() not in ("references", "images", "artifacts", "output", "characters", ".")
-        ):
+        root = self.characters_dir
+        if prev_file is not None and root is not None and prev_file.resolve().is_relative_to(root.resolve()):
             char_dir = prev_file.parent
 
         request_references: list[ImageReference] = []
@@ -1030,11 +1117,7 @@ class CharacterManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Player character reference for {name_label} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
-            chars_dir = self.characters_dir
-            if chars_dir is not None and chars_dir.resolve() == char_dir.parent.resolve():
-                alias = f"output/characters/{char_dir.name}/{output.name}"
-            else:
-                alias = f"references/{char_dir.name}/{output.name}"
+            alias = f"output/artifacts/updated_characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",
                 "alias": alias,
@@ -1049,7 +1132,10 @@ class CharacterManager:
         return None
 
     def _bind_player_image(self, player: PlayerCharacter) -> None:
-        if player.reference_path:
+        if player.reference_path and Path(player.reference_path).is_file():
+            entry = self._session_reference_entry(player.name or "player", Path(player.reference_path))
+            player.reference = entry["alias"]
+            player.reference_path = entry["path"]
             return
         requested = player.reference
         entry = self._reference_entry(requested) or (self._reference_entry(player.name) if player.name else None)
@@ -1058,6 +1144,7 @@ class CharacterManager:
             entry = self._generate_player_reference(player)
         if entry is None:
             return
+        entry = self._session_reference_entry(player.name or "player", Path(entry["path"]))
         player.reference = entry.get("alias") or entry.get("name") or str(entry.get("path", ""))
         player.reference_path = entry.get("path", "")
         player.reference_source = source

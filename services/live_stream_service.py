@@ -11,7 +11,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
-from components.character_manager import Character
+from components.character_manager import Character, CharacterManager
 from services.audio_codecs import LiveAudioDecoder
 
 if TYPE_CHECKING:
@@ -34,6 +34,7 @@ def format_canvas_state(
     canvas_state_manager: Optional[CanvasStateManager],
     notepad_tools: Optional[NotepadToolProvider] = None,
     character_tools: Optional[CharacterToolProvider] = None,
+    character_manager: CharacterManager | None = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
     visual = canvas_state_manager.visual if canvas_state_manager is not None else None
@@ -71,13 +72,9 @@ def format_canvas_state(
 
     player = story.get_player_character() if story is not None else None
     if player is not None:
-        player_ref = player.reference
-        if player_ref and str(player_ref).strip():
-            player_name = player.name or "Player"
-            player_details = [f"Image Reference: {str(player_ref).strip()}"]
-            if player.image_description and str(player.image_description).strip():
-                player_details.insert(0, f"Visual: {str(player.image_description).strip()}")
-            parts.append(f"[Player Character]: {player_name} ({', '.join(player_details)})")
+        player_name = player.name or "Player"
+        visual_description = f" (Visual: {player.image_description.strip()})" if player.image_description.strip() else ""
+        parts.append(f"[Player Character]: {player_name}{visual_description}")
 
     characters = []
     if story is not None:
@@ -89,26 +86,17 @@ def format_canvas_state(
         rendered_char_list: list[str] = []
         for c in characters:
             desc = f"{c['name']} (Personality: {c.get('personality', 'N/A')}, Motivation: {c.get('motivation', 'N/A')}, Quirk: {c.get('quirk', 'N/A')}"
-            img_ref = c.get("image_reference")
-            if img_ref and str(img_ref).strip():
-                desc += f", Image Reference: {str(img_ref).strip()}"
             desc += ")"
             rendered_char_list.append(desc)
         parts.append(f"[Active Characters]: {'; '.join(rendered_char_list)}")
 
-    char_refs: list[str] = []
-    if story is not None:
-        raw_refs = story.get_character_references()
-        char_refs = [str(r).strip() for r in raw_refs if str(r).strip()]
-
-    if not char_refs and characters:
-        for c in characters:
-            ref = c.get("image_reference")
-            if ref and str(ref).strip() and str(ref).strip() not in char_refs:
-                char_refs.append(str(ref).strip())
-
-    if char_refs:
-        parts.append(f"[Character Image References]: {', '.join(char_refs)}")
+    available_images = character_manager.available_character_images() if character_manager is not None else {}
+    if available_images:
+        names = ", ".join(f"<{name}>" for name in available_images)
+        parts.append(
+            f"[Available Character Visuals]: {names}. Use these exact tags in visual prompts "
+            "to attach the latest character portraits automatically."
+        )
 
     return "\n".join(parts)
 

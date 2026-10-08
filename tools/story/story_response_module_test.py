@@ -471,7 +471,11 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "scene_reference": "references/ruined_shrine.png",
         }
 
-        with patch.object(
+        player = PlayerCharacter(
+            name="Arthur", image_description="A wizard", reference="private_alias",
+            reference_path="private/Arthur/1.png", reference_source="existing",
+        )
+        with patch.object(self.module.character_manager, "get_player_character", return_value=player), patch.object(
             self.module,
             "_run_responder_agent",
             return_value=scene_delta,
@@ -481,6 +485,8 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertEqual(result["narration"], scene_delta["narration"])
         self.assertEqual(result["scene_label"], "Ruined Shrine")
         self.assertEqual(result["scene_reference"], "references/ruined_shrine.png")
+        self.assertEqual(result["player_character"], {"name": "Arthur", "image_description": "A wizard"})
+        self.assertEqual(player.reference_path, "private/Arthur/1.png")
         self.story_state.set_scene.assert_called_once_with(
             scene_delta["narration"],
             [{"speaker": "Kaelen", "text": "Stay quiet.", "kind": "speech"}],
@@ -652,13 +658,19 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         self.assertIn("Canonical player character:", prompt)
         self.assertIn("Kael", prompt)
         self.assertIn("Young archer in green cloak", prompt)
-        self.assertIn("kael_ref", prompt)
+        self.assertNotIn("kael_ref", prompt)
 
 
     def test_delegates_create_or_update_character(self) -> None:
-        self.character_manager.create_or_update_character.return_value = {"name": "Cedric", "gender": "male"}
+        self.character_manager.create_or_update_character.return_value = Character(
+            name="Cedric", gender="male", image_reference="private_alias",
+            image_reference_path="private/Cedric/1.png",
+        )
         res = self.module.create_or_update_character(name="Cedric", gender="male")
         self.assertEqual(res["name"], "Cedric")
+        self.assertIsNone(res.image_reference)
+        self.assertIsNone(res.image_reference_path)
+        self.assertEqual(self.character_manager.create_or_update_character.return_value.image_reference, "private_alias")
         self.character_manager.create_or_update_character.assert_called_once_with(
             name="Cedric",
             description="",

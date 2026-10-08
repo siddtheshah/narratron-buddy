@@ -202,9 +202,10 @@ class AnimationTools(BaseTools):
         - 'video' for cinematic, continuous motion or fluid natural action scenes
 
         Args:
-            scene_prompt: Detailed prompt describing the scene to animate.
+            scene_prompt: Detailed scene prompt. Use <Character Name> tags from Available
+                Character Visuals to attach their latest portraits automatically.
             animation_name: Friendly name used for saved animation files.
-            reference_images: Optional image aliases or paths to preserve.
+            reference_images: Optional non-character image aliases or paths to use.
             technique: Optional manual override ('triframe', 'layered', or 'video').
 
         Returns:

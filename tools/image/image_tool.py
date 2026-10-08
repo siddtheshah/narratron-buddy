@@ -237,10 +237,11 @@ class ImageTools(BaseTools):
 
         Args:
             image_prompt: The prompt describing the image to generate. Always use the explicit
-                Character Name when describing characters or actions so character manager
-                references are automatically pulled in.
+                <Character Name> tags from Available Character Visuals when describing
+                characters or actions so their latest portraits are automatically attached.
             image_name: Required friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
-            reference_images: Optional reference image name(s) or file path(s) to adapt style or visual context.
+            reference_images: Optional non-character reference names or paths (e.g. a canvas capture).
+                Character references are specified with <Character Name> tags in the prompt.
             display: Whether to automatically display the image on the canvas upon creation (default True).
             effect: Optional canvas animation effect; defaults to gleam3. Supported values: none,
                 gleam3 - Best all-rounder, especially good for drama. 
@@ -327,8 +328,15 @@ class ImageTools(BaseTools):
                     webp_filepath = os.path.join(out_folder, webp_filename)
                      
                     ref_names: list[str] = []
+                    character_names = {
+                        re.sub(r"[\W_]+", " ", name).strip().casefold(): name
+                        for name in self.character_manager.available_character_images()
+                    } if self.character_manager is not None else {}
                     for ref in provider_references:
                         ref_name = ref.name.strip()
+                        character_name = character_names.get(re.sub(r"[\W_]+", " ", ref.label or "").strip().casefold())
+                        if character_name is not None:
+                            ref_name = f"<{character_name}>"
                         if ref_name and ref_name not in ref_names:
                             ref_names.append(ref_name)
 
@@ -505,7 +513,7 @@ class ImageTools(BaseTools):
                 if char_dir is not None and p_obj.resolve().is_relative_to(Path(char_dir).resolve()):
                     is_char_path = True
                     break
-                if "characters" in [part.lower() for part in p_obj.parts]:
+                if {"characters", "updated_characters"}.intersection(part.lower() for part in p_obj.parts):
                     is_char_path = True
                     break
             except (ValueError, OSError):

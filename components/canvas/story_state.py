@@ -419,8 +419,6 @@ class StoryState:
                 parts: list[str] = [f"Name: {pc.name or 'Unnamed Explorer'}"]
                 if pc.image_description:
                     parts.append(f"Visual: {pc.image_description}")
-                if pc.reference:
-                    parts.append(f"Image Reference: {pc.reference}")
                 pc_diff = " | ".join(parts)
             else:
                 pc_diff = "(Player character removed)"
@@ -428,17 +426,15 @@ class StoryState:
         character_diffs: list[str] = []
         for name, c in chars.items():
             if name not in previous.characters:
-                ref = f" | Image Reference: {c.image_reference}" if c.image_reference else ""
                 character_diffs.append(
                     f"+ Added {name}: Personality: {c.personality or 'N/A'} | "
-                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}{ref}"
+                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}"
                 )
         for name, c in chars.items():
             if name in previous.characters and c != previous.characters[name]:
-                ref = f" | Image Reference: {c.image_reference}" if c.image_reference else ""
                 character_diffs.append(
                     f"~ Updated {name}: Personality: {c.personality or 'N/A'} | "
-                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}{ref}"
+                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}"
                 )
         for name in previous.characters:
             if name not in chars:

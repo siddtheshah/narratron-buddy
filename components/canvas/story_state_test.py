@@ -795,8 +795,8 @@ def test_story_state_create_snapshot_and_diff() -> None:
         previous=prev_snapshot,
         current_pc=PlayerCharacterState(name="Hero", image_description="A wounded warrior", reference="hero_portrait"),
         current_chars={
-            "Guide": CharacterState(name="Guide", personality="Helpful", motivation="Run away", quirk="Hums"),
-            "Villain": CharacterState(name="Villain", personality="Cruel", motivation="Rule all", quirk="Laughs"),
+            "Guide": CharacterState(name="Guide", personality="Helpful", motivation="Run away", quirk="Hums", image_reference="private/guide/2.png"),
+            "Villain": CharacterState(name="Villain", personality="Cruel", motivation="Rule all", quirk="Laughs", image_reference="villain_alias"),
         },
         recent_images=[
             {"name": "castle_gate", "alias": "gate"},
@@ -813,11 +813,12 @@ def test_story_state_create_snapshot_and_diff() -> None:
 
     # Check player character diff
     assert "A wounded warrior" in diff_result.player_character_diff
-    assert "hero_portrait" in diff_result.player_character_diff
+    assert "hero_portrait" not in diff_result.player_character_diff
 
     # Check character diffs
     assert any("Updated Guide" in d for d in diff_result.character_diffs)
     assert any("Added Villain" in d for d in diff_result.character_diffs)
+    assert all("private/guide/2.png" not in d and "villain_alias" not in d for d in diff_result.character_diffs)
 
     # Check image diffs
     assert len(diff_result.new_images) == 1

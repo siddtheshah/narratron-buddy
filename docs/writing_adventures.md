@@ -11,7 +11,8 @@ A **Narratron Adventure** is a self-contained content package that turns Narratr
 - **Narrative Logic & Agent Persona (`theater.yaml`)**: Custom instructions, story planning rules, persistent "sticky note" tracking, art direction, and pacing controls for Google Gemini.
 - **Package Metadata (`metadata.json`)**: Title, description, genre tags, author credits, difficulty, and player count.
 - **Lore Context (`lore/`)**: Deep backstory, world lore, factions, secrets, and NPC motivations provided directly to the language model.
-- **Visual References (`references/`)**: Character portraits, maps, item designs, and cover artwork used to guide generative image tools.
+- **Characters (`characters/`)**: One folder per character containing its portrait iterations.
+- **Visual References (`references/`)**: Maps, item designs, environment images, and cover artwork used to guide generative image tools.
 - **Atmospheric Audio (`playlists/`)**: Loopable background music, ambient soundscapes, and thematic tracks organized into switchable playlists.
 
 ---
@@ -88,9 +89,11 @@ adventures/my-custom-adventure/
 │   │   └── rebels.txt
 │   └── locations/
 │       └── citadel.txt
-├── references/             # Character art, location images, and cover art
-│   ├── cover.png
-│   └── protagonist.png
+├── characters/             # One folder per character
+│   └── Keeper Orun/
+│       └── 1.png
+├── references/             # Location images and cover art
+│   └── cover.png
 └── playlists/              # Thematic audio folders with sound files
     ├── ambient/
     │   └── wind_whispers.mp3
@@ -233,17 +236,17 @@ Because it is always persisted in story context, **it is best practice to use `r
 #### Best Practices for Authoring Lore
 
 1. **Annotate Visual Reference Paths in Lore**:
-   When writing lore for characters, locations, artifacts, or factions that have corresponding visual assets in `references/`, annotate the reference path directly in the lore document itself:
+   Store character portraits in the top-level `characters/` folder and annotate the canonical character name in its lore. Locations, artifacts, and factions can continue using paths under `references/`:
    ```text
    # Character Info: Keeper Orun
    Orun is a seven-foot-tall brass automaton with an etched porcelain face mask and glowing amber optic lenses.
    Speaks with a rhythmic, deliberate cadence, often punctuated by a soft clicking in his chest.
    
-   image_reference: references/keeper_orun.png
+   image_reference: Keeper Orun
    ```
-   *(Or simply `image_reference: keeper_orun.png`)*
+   Place the corresponding portrait inside `characters/Keeper Orun/`, for example `characters/Keeper Orun/1.png`.
 
-   **Why this is a best practice**: When the story planner reads the lore file during play, having the reference path annotated directly in the lore allows the agent to immediately know the exact asset name to call with `show_image` or anchor visual prompts without guesswork or hallucinating file paths.
+   **Why this is a best practice**: When the story planner reads the lore file during play, using the canonical character name lets the planner bind the correct portrait and the live agent use `<Keeper Orun>` in visual prompts.
 
 2. **Organize by Domain**: Split detailed worldbuilding into clear subdirectories:
    - `lore/readfirst_overview.txt`: High-level guide, timeline, and DM roadmap (persisted).
@@ -268,10 +271,28 @@ Because it is always persisted in story context, **it is best practice to use `r
 
 ### 4.4. Visual References (`references/`)
 
-The `references/` folder contains images that represent characters, environments, maps, or artifacts.
+The `references/` folder contains environment images, maps, cover art, and artifacts. Character portraits belong in the top-level `characters/` folder.
 - Images can be in `.png`, `.jpg`, `.jpeg`, or `.webp` format.
 - **Cover Image**: Every adventure should have a cover image (e.g. `references/cover.png`). Reference this filename in `metadata.json` and `starting_image` in `theater.yaml`.
-- During play, the agent can call `list_references` or `show_image` to present these pre-made visual assets to players. Annotating `image_reference: references/<filename>` in your lore documents ensures the agent automatically and reliably binds visual assets to specific characters and scenes.
+- During play, the agent can call `list_references` or `show_image` to present these pre-made visual assets to players. Annotating `image_reference: references/<filename>` in your lore documents ensures the agent automatically and reliably binds visual assets to scenes and other non-character assets.
+
+---
+
+### Character portraits (`characters/`)
+
+Each character must have its own folder, with portrait iterations such as `characters/Arthur Modella/1.png`, `2.png`. Loose files directly under `characters/` are unsupported; the character folder provides room for richer character data in the future. Supported formats are PNG, JPEG, and WebP. The highest numbered iteration is used; a non-numbered portrait can serve as the initial image.
+
+When the character manager starts, it copies authored images into `output/artifacts/updated_characters/`. Existing session folders are preserved when the manager restarts. Character creation, appearance changes, and player-character updates operate on this session library. The authored `characters/` folder stays unchanged.
+
+The live agent sees all available character visual names in canvas observability, including characters outside the active scene. Character image file paths and aliases stay internal; model-facing character context and tool results use names and traits. Image and animation prompts attach the latest portraits through tags:
+
+```text
+<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>.
+```
+
+Tags match complete character names or aliases, ignoring case and normalizing spaces/underscores. Repeated tags attach one portrait. Unknown tags return an error so the agent can correct the name. Character references need no separate `reference_images` argument; that argument remains available for canvas captures and other non-character references. Scene tags are not implemented yet.
+
+To keep an updated appearance for future play, manually copy the desired session portraits into the theater's authored `characters/` folder. To start over from authored portraits, remove the corresponding session character folder before the manager starts. Legacy `references/` images can still be bound through `create_or_update_character(image_reference=...)`; they are copied into the session library before further edits.
 
 ---
 

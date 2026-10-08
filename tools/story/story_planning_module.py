@@ -196,13 +196,13 @@ The following images were generated since the last heartbeat:
 
 {% if player_character -%}
 # Canonical Player Character
-- Name: {{ player_character.name or 'Unnamed Explorer' }}{% if player_character.image_description %} | Visual: {{ player_character.image_description }}{% endif %}{% if player_character.reference %} | Image Reference: {{ player_character.reference }}{% endif %}
+- Name: {{ player_character.name or 'Unnamed Explorer' }}{% if player_character.image_description %} | Visual: {{ player_character.image_description }}{% endif %}
 
 {% endif -%}
 {% if characters -%}
 # Canonical Active Characters
 {% for char in characters -%}
-- {{ char.name }}: Personality: {{ char.personality or 'N/A' }} | Motivation: {{ char.motivation or 'N/A' }} | Quirk: {{ char.quirk or 'N/A' }}{% if char.image_reference %} | Image Reference: {{ char.image_reference }}{% endif %}
+- {{ char.name }}: Personality: {{ char.personality or 'N/A' }} | Motivation: {{ char.motivation or 'N/A' }} | Quirk: {{ char.quirk or 'N/A' }}
 {% endfor -%}
 
 {% endif -%}
@@ -411,7 +411,7 @@ class StoryPlanningModule:
 
     def lookup_character(self, query: str = "") -> CharacterLookupResult:
         """List all session characters or search by name or trait."""
-        return self.character_manager.lookup_character(query)
+        return self.character_manager.lookup_character(query).for_model_context()
 
     def get_player_character(self) -> PlayerCharacter | None:
         """Return the canonical persisted identity and visual reference for the player character."""
@@ -436,8 +436,7 @@ class StoryPlanningModule:
             image_description=image_description,
             reference=reference or None,
         )
-        ref_info = f" Image reference: {player.reference}." if player.reference else ""
-        return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}.{ref_info}"
+        return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}."
 
     def create_or_update_character(
         self,
@@ -463,8 +462,7 @@ class StoryPlanningModule:
         )
         if not char:
             return f"Failed to update character '{name}'."
-        ref_info = f" Image reference: {char.image_reference}." if char.image_reference else ""
-        return f"Canonically updated character '{char.name}' (alias: {char.alias}).{ref_info}"
+        return f"Canonically updated character '{char.name}' (alias: {char.alias})."
 
     def find_image_names(self, query: str = "") -> list[dict[str, str]]:
         """Find available image aliases and names for use in sticky notes.

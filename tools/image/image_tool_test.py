@@ -9,7 +9,7 @@ from PIL import Image, PngImagePlugin
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
-from providers import ImageGenerationResult
+from providers import ImageGenerationResult, TextResponseProvider
 from testing.base import BaseTestCase
 from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
@@ -61,6 +61,36 @@ class TestImageTools(BaseTestCase):
             provider="hybrid-flux-gemini",
             model="fal-ai/flux-2/klein/9b",
         )
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_prompt_tags_attach_session_portraits_without_reference_field(self, mock_get_provider: MagicMock) -> None:
+        theater = self.manager.theater("tagged_characters")
+        (theater.characters_dir() / "Arthur Modella").mkdir(parents=True)
+        Image.new("RGB", (8, 8), "green").save(theater.characters_dir() / "Arthur Modella" / "1.png")
+        character_manager = CharacterManager(theater, MagicMock(spec=TextResponseProvider))
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(
+            self.config, theater_id=theater.theater_id, theater_manager=self.manager,
+            character_manager=character_manager,
+        )
+        prompt = "<Arthur Modella> flashes a wand."
+        tools.create_image(prompt, image_name="wand_flash", display=False)
+        tools.join_generation()
+        request = provider.generate.call_args.args[0]
+        self.assertIn(prompt, request.prompt)
+        self.assertEqual(len(request.references), 1)
+        self.assertEqual(request.references[0].label, "Arthur Modella")
+        self.assertEqual(request.references[0].data, (theater.characters_dir() / "Arthur Modella" / "1.png").read_bytes())
+        image_files = list(theater.image_artifacts_dir().glob("*.jpg"))
+        self.assertEqual(len(image_files), 1)
+        with Image.open(image_files[0]) as image:
+            metadata = str(image.getexif())
+        self.assertIn("References: <Arthur Modella>", metadata)
+        self.assertNotIn("References: 1.png", metadata)
+        path = character_manager.get_character_visual_path("Arthur Modella")
+        self.assertIsNone(tools.visual.resolve_image_path(path))
+        self.assertIn("Error", tools.show_image(path))
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_pinned_canvas_blocks_image_generation_and_display(self, mock_get_provider):

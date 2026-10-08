@@ -14,7 +14,8 @@ from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
 from components.character_manager import Character, CharacterManager, PlayerCharacter, normalize_voice_tags
 from components.notepad import Notepad
-from components.theater_manager import Theater
+from components.theater_manager import Theater, TheaterManager
+from tools.reference_utils import resolve_provider_references
 
 
 class TestNormalizeVoiceTags(unittest.TestCase):
@@ -29,9 +30,40 @@ class TestNormalizeVoiceTags(unittest.TestCase):
 
 
 class TestCharacterManager(unittest.TestCase):
+    def test_model_context_hides_bindings_without_changing_persisted_characters(self) -> None:
+        character = Character(
+            name="Arthur Modella", gender="male", description="A wizard",
+            image_reference="portrait_alias", image_reference_path="private/Arthur/2.png",
+            image_reference_source="generated",
+        )
+        player = PlayerCharacter(
+            name="Grim Vallos", image_description="A knight", reference="player_alias",
+            reference_path="private/Grim/1.png", reference_source="existing",
+        )
+        lookup = self.manager.lookup_character()
+        lookup.characters = [character]
+        lookup.player = player
+        model_context = lookup.for_model_context()
+
+        self.assertEqual(model_context.characters[0].name, "Arthur Modella")
+        self.assertEqual(model_context.characters[0].description, "A wizard")
+        self.assertIsNone(model_context.characters[0].image_reference)
+        self.assertIsNone(model_context.characters[0].image_reference_path)
+        self.assertIsNone(model_context.characters[0].image_reference_source)
+        self.assertEqual(model_context.player.image_description, "A knight")
+        self.assertIsNone(model_context.player.reference)
+        self.assertIsNone(model_context.player.reference_path)
+        self.assertIsNone(model_context.player.reference_source)
+        self.assertEqual(character.image_reference_path, "private/Arthur/2.png")
+        self.assertEqual(player.reference_path, "private/Grim/1.png")
+        self.assertNotIn("player_alias", player.describe())
+        self.assertNotIn("player_alias", lookup.describe())
+        self.assertNotIn("private/", model_context.model_dump_json(exclude_none=True))
+
     def setUp(self) -> None:
         self.theater = MagicMock(spec=Theater)
-        self.theater.characters_dir.return_value = Path("/nonexistent/characters")
+        self.theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+        self.theater.updated_characters_dir.return_value = Path("/nonexistent/characters")
         self.theater.references_dir.return_value = Path("/nonexistent/references")
         self.provider = MagicMock(spec=TextResponseProvider)
         self.notepad = MagicMock(spec=Notepad)
@@ -357,7 +389,8 @@ class TestCharacterManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "lyra.png")
             Image.new("RGB", (10, 10), color="pink").save(ref_path)
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
                 theater,
@@ -372,8 +405,9 @@ class TestCharacterManager(unittest.TestCase):
             manager.create_or_update_character("Lyra", personality="Brave", motivation="Learn", quirk="Hums", gender="female")
 
             character = manager.export_characters()[0]
-            self.assertEqual(character["image_reference"], "lyra")
-            self.assertEqual(character["image_reference_path"], ref_path)
+            self.assertEqual(character["image_reference"], "output/artifacts/updated_characters/Lyra/1.png")
+            self.assertEqual(Path(character.image_reference_path).read_bytes(), Path(ref_path).read_bytes())
+            self.assertTrue(Path(character.image_reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(character["voice_id"], "voice_lyra")
             speech_provider.select_voice.assert_called_once()
 
@@ -388,7 +422,8 @@ class TestCharacterManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Mira" / "1.png")
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(directory)
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
                 theater,
@@ -413,7 +448,8 @@ class TestCharacterManager(unittest.TestCase):
             iter2_output = str(Path(directory) / "Soran" / "2.png")
 
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(directory)
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
                 theater,
@@ -501,7 +537,8 @@ class TestCharacterManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "hero.png")
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
                 theater,
@@ -517,16 +554,17 @@ class TestCharacterManager(unittest.TestCase):
                 image_description="Tall knight in etched plate armor",
             )
             self.assertEqual(player.name, "Valen")
-            self.assertEqual(player.reference, "hero")
-            self.assertEqual(player.reference_path, ref_path)
+            self.assertEqual(player.reference, "output/artifacts/updated_characters/Valen/1.png")
+            self.assertEqual(Path(player.reference_path).read_bytes(), Path(ref_path).read_bytes())
+            self.assertTrue(Path(player.reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(player.reference_source, "existing")
-            self.assertEqual(manager.get_player_reference(), "hero")
+            self.assertEqual(manager.get_player_reference(), player.reference)
 
             # Calling update again preserves bindings unless reference is updated
             updated = manager.update_player_character(image_description="Armor now tarnished")
             self.assertEqual(updated.image_description, "Armor now tarnished")
-            self.assertEqual(updated.reference, "hero")
-            self.assertEqual(updated.reference_path, ref_path)
+            self.assertEqual(updated.reference, player.reference)
+            self.assertEqual(updated.reference_path, player.reference_path)
 
     def test_character_manager_generates_player_portrait_when_missing(self) -> None:
         image = Image.new("RGB", (8, 8), "blue")
@@ -539,7 +577,8 @@ class TestCharacterManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = str(Path(directory) / "Valen" / "1.png")
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(directory)
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
                 theater,
@@ -567,7 +606,8 @@ class TestCharacterManager(unittest.TestCase):
             iter2_output = str(Path(directory) / "Valen" / "2.png")
 
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(directory)
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(directory)
             theater.references_dir.return_value = Path(directory)
             manager = CharacterManager(
                 theater,
@@ -841,7 +881,8 @@ class TestCharacterManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "lady_lux.jpg")
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
                 theater,
@@ -857,8 +898,9 @@ class TestCharacterManager(unittest.TestCase):
             )
 
             self.assertIsNotNone(char)
-            self.assertEqual(char["image_reference"], "lady_lux")
-            self.assertEqual(char["image_reference_path"], ref_path)
+            self.assertEqual(char.image_reference, "output/artifacts/updated_characters/Lady_Lux/1.jpg")
+            self.assertEqual(Path(char.image_reference_path).read_bytes(), Path(ref_path).read_bytes())
+            self.assertTrue(Path(char.image_reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(char["image_reference_source"], "existing")
             provider.generate.assert_not_called()
 
@@ -870,7 +912,8 @@ class TestCharacterManager(unittest.TestCase):
             Image.new("RGB", (10, 10), color="gray").save(gen_path)
             Image.new("RGB", (10, 10), color="yellow").save(ref_path)
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
                 theater,
@@ -886,8 +929,9 @@ class TestCharacterManager(unittest.TestCase):
             )
 
             self.assertIsNotNone(char)
-            self.assertEqual(char["image_reference"], "lady_lux")
-            self.assertEqual(char["image_reference_path"], ref_path)
+            self.assertEqual(char.image_reference, "output/artifacts/updated_characters/Lady_Lux/1.jpg")
+            self.assertEqual(Path(char.image_reference_path).read_bytes(), Path(ref_path).read_bytes())
+            self.assertTrue(Path(char.image_reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(char["image_reference_source"], "existing")
             provider.generate.assert_not_called()
 
@@ -897,7 +941,8 @@ class TestCharacterManager(unittest.TestCase):
             ref_path = str(Path(ref_dir) / "retro_pulsar.jpg")
             Image.new("RGB", (10, 10), color="blue").save(ref_path)
             theater = MagicMock(spec=Theater)
-            theater.characters_dir.return_value = Path(ref_dir) / "characters"
+            theater.characters_dir.return_value = Path("/nonexistent/base_characters")
+            theater.updated_characters_dir.return_value = Path(ref_dir) / "characters"
             theater.references_dir.return_value = Path(ref_dir)
             manager = CharacterManager(
                 theater,
@@ -910,10 +955,99 @@ class TestCharacterManager(unittest.TestCase):
             )
 
             self.assertEqual(player.name, "Retro Pulsar")
-            self.assertEqual(player.reference, "retro_pulsar")
-            self.assertEqual(player.reference_path, ref_path)
+            self.assertEqual(player.reference, "output/artifacts/updated_characters/Retro_Pulsar/1.jpg")
+            self.assertEqual(Path(player.reference_path).read_bytes(), Path(ref_path).read_bytes())
+            self.assertTrue(Path(player.reference_path).is_relative_to(theater.updated_characters_dir()))
             self.assertEqual(player.reference_source, "existing")
             provider.generate.assert_not_called()
+
+
+    def test_authored_characters_are_copied_and_tags_resolve_without_active_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            base = theater.characters_dir()
+            (base / "Grim Vallos").mkdir(parents=True)
+            (base / "Arthur Modella").mkdir()
+            Image.new("RGB", (8, 8), "red").save(base / "Arthur Modella" / "1.png")
+            Image.new("RGB", (8, 8), "blue").save(base / "Grim Vallos" / "1.png")
+            Image.new("RGB", (8, 8), "green").save(base / "Grim Vallos" / "2.png")
+            manager = CharacterManager(theater, self.provider, story_state=self.story_state)
+
+            references, error = resolve_provider_references(
+                None, "<Arthur Modella> steps back from <Grim Vallos> as <Arthur Modella> waves.",
+                character_manager=manager,
+            )
+
+            self.assertIsNone(error)
+            self.assertEqual([ref.label for ref in references], ["Arthur Modella", "Grim Vallos"])
+            self.assertEqual(references[0].data, (base / "Arthur Modella" / "1.png").read_bytes())
+            self.assertEqual(references[1].data, (base / "Grim Vallos" / "2.png").read_bytes())
+            self.assertTrue((theater.updated_characters_dir() / "Grim_Vallos" / "1.png").is_file())
+            self.assertEqual(manager.count(), 0)
+            self.assertEqual(set(manager.available_character_images()), {"Arthur Modella", "Grim Vallos"})
+
+    def test_character_updates_and_reinitialization_preserve_authored_images(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.characters_dir() / "Arthur Modella" / "1.png"
+            authored.parent.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(authored)
+            original = authored.read_bytes()
+            payload = BytesIO()
+            Image.new("RGB", (8, 8), "orange").save(payload, "PNG")
+            provider = MagicMock(spec=ImageProvider)
+            provider.generate.return_value = ImageGenerationResult(
+                image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="portrait",
+            )
+            manager = CharacterManager(theater, self.provider, image_provider=provider)
+            manager.create_or_update_character("Arthur Modella", description="A wizard", gender="male", personality="Wise", motivation="Learn", quirk="Hums")
+            provider.generate.assert_not_called()
+            manager.create_or_update_character("Arthur Modella", description="A wizard with orange hair")
+            updated = theater.updated_characters_dir() / "Arthur_Modella" / "2.png"
+            self.assertEqual(manager.get_character_visual_path("Arthur Modella"), str(updated))
+            self.assertEqual(provider.generate.call_args.args[0].references[0].data, original)
+            self.assertEqual(authored.read_bytes(), original)
+            self.assertEqual(list(authored.parent.iterdir()), [authored])
+
+            restored = CharacterManager(theater, self.provider)
+            self.assertEqual(restored.get_character_visual_path("Arthur Modella"), str(updated))
+            references, error = resolve_provider_references(None, "<Arthur Modella> smiles.", character_manager=restored)
+            self.assertIsNone(error)
+            self.assertEqual(references[0].data, updated.read_bytes())
+
+    def test_loose_authored_portraits_are_not_discovered_or_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            theater.characters_dir().mkdir(parents=True)
+            portrait = theater.characters_dir() / "Arthur Modella.png"
+            Image.new("RGB", (8, 8), "blue").save(portrait)
+            manager = CharacterManager(theater, self.provider)
+
+            self.assertEqual(manager.available_character_images(), {})
+            self.assertIsNone(manager.get_character_visual_path("Arthur Modella"))
+            self.assertIsNone(manager._reference_entry(str(portrait)))
+            self.assertFalse(theater.updated_characters_dir().exists())
+            references, error = resolve_provider_references(None, "<Arthur Modella> waves.", character_manager=manager)
+            self.assertEqual(references, [])
+            self.assertIn("not found", error or "")
+            with self.assertRaisesRegex(ValueError, "must be inside"):
+                manager._session_reference_entry("Arthur Modella", portrait)
+
+    def test_prompt_tags_do_not_match_partial_names_or_unmarked_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            theater.characters_dir().mkdir(parents=True)
+            for name in ("Ann", "Anna"):
+                (theater.characters_dir() / name).mkdir()
+                Image.new("RGB", (8, 8), "blue").save(theater.characters_dir() / name / "1.png")
+            manager = CharacterManager(theater, self.provider)
+            references, error = resolve_provider_references(None, "<Anna> waves to Ann.", character_manager=manager)
+            self.assertIsNone(error)
+            self.assertEqual([ref.label for ref in references], ["Anna"])
+            for name in ("An", "Ann.png", "Missing"):
+                references, error = resolve_provider_references(None, f"<{name}> waves.", character_manager=manager)
+                self.assertEqual(references, [])
+                self.assertIn("not found", error or "")
 
 
 if __name__ == "__main__":

@@ -84,7 +84,7 @@ def is_character_reference(
         if not target:
             continue
         p = Path(target)
-        if "characters" in [part.lower() for part in p.parts]:
+        if {"characters", "updated_characters"}.intersection(part.lower() for part in p.parts):
             return True
         parent_name = p.parent.name
         if parent_name and parent_name.lower() not in ("references", "images", "artifacts", "output", "characters", "."):
@@ -179,8 +179,23 @@ def resolve_provider_references(
     char_seen_keys: set[str] = set()
     char_seen_paths: set[str] = set()
     lookup_result: Optional[CharacterLookupResult] = None
+    tagged_names = list(dict.fromkeys(name.strip() for name in re.findall(r"<([^<>]+)>", prompt) if name.strip()))
 
-    if character_manager is not None:
+    if tagged_names and character_manager is None:
+        return [], "Error: Character visuals require a character manager."
+
+    if tagged_names and character_manager is not None:
+        for name in tagged_names:
+            path = character_manager.get_character_visual_path(name)
+            if path is None:
+                return [], f"Error: Character visual '<{name}>' not found. Use an available character name."
+            normalized = os.path.normcase(os.path.abspath(path))
+            if normalized not in char_seen_paths:
+                char_seen_paths.add(normalized)
+                char_seen_keys.add(name.casefold())
+                char_resolved_refs.append((name, path))
+
+    if character_manager is not None and not tagged_names:
         lookup_result = character_manager.lookup_character(prompt, name_only=True)
         for ref in lookup_result.get_character_references():
             ref_clean = str(ref).strip()
@@ -275,6 +290,8 @@ def resolve_provider_references(
             resolved_path=reference_path,
             lookup_result=lookup_result,
         )
+        if tagged_names and ref_name in tagged_names:
+            label = ref_name
         provider_references.append(
             ImageReference(
                 name=Path(reference_path).name,

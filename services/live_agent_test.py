@@ -28,6 +28,8 @@ def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = 
     theater.music_artifacts_dir.return_value = base_dir / "music"
     theater.playlists_dir.return_value = base_dir / "playlists"
     theater.artifacts_dir.return_value = base_dir / "artifacts"
+    theater.characters_dir.return_value = base_dir / "characters"
+    theater.updated_characters_dir.return_value = base_dir / "artifacts" / "updated_characters"
     theater.references.return_value = []
     theater.playlists.return_value = {}
     theater.lore_documents.return_value = []
@@ -106,7 +108,7 @@ class TestCreateAgent(unittest.TestCase):
 
     def test_image_tool_character_naming_instruction_informs_agent(self) -> None:
         self.assertIn(
-            'Use explicit character names in `create_image` prompts so CharacterManager binds their references.',
+            'Use the exact `<Character Name>` tags from [Available Character Visuals]',
             AGENT_INSTRUCTION_TEMPLATE,
         )
 

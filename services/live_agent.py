@@ -84,8 +84,10 @@ Use `create_or_update_character` for new or developed characters, `lookup_charac
 {% endif %}
 
 ## Visual Staging
+{% if image_generation_enabled or animation_enabled %}
+Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. CharacterManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
+{% endif %}
 {% if image_generation_enabled %}
-Use explicit character names in `create_image` prompts so CharacterManager binds their references. Provide a concise unique image name and only highly relevant references. Choose visual effects only when they support the scene.
 Canvas observability may supply a `[Canvas Capture]` path. Use it in `create_image`'s `reference_images` when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.
 {% else %}
 Stage suitable mounted assets with `show_image`.

@@ -94,7 +94,7 @@ Active characters, personalities, motivations & distinct quirks:
 
 {% if player_character -%}
 Canonical player character:
-- Name: {{ player_character.name or 'Unnamed Explorer' }}{% if player_character.image_description %} | Visual: {{ player_character.image_description }}{% endif %}{% if player_character.reference %} | Image Reference: {{ player_character.reference }}{% endif %}
+- Name: {{ player_character.name or 'Unnamed Explorer' }}{% if player_character.image_description %} | Visual: {{ player_character.image_description }}{% endif %}
 
 {% endif -%}
 """
@@ -710,7 +710,7 @@ class StoryResponseModule:
 
     def lookup_character(self, query: str = "") -> CharacterLookupResult:
         """List all session characters or search by name or trait."""
-        return self.character_manager.lookup_character(query)
+        return self.character_manager.lookup_character(query).for_model_context()
 
     def create_or_update_character(
         self,
@@ -744,7 +744,7 @@ class StoryResponseModule:
         )
         if profile is not None:
             self.save_to_session_state()
-        return profile
+        return profile.for_model_context() if profile is not None else None
 
 
     def clear_scene(self) -> str:
@@ -777,8 +777,7 @@ class StoryResponseModule:
             image_description=image_description,
             reference=reference or None,
         )
-        ref_info = f" Image reference: {player.reference}." if player.reference else ""
-        return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}.{ref_info}"
+        return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}."
 
     # ADK Responder Agent
     def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
@@ -1174,7 +1173,7 @@ class StoryResponseModule:
             "die_rolls": die_rolls,
         }
         player_char = self.character_manager.get_player_character()
-        result["player_character"] = player_char.model_dump(exclude_none=True) if player_char else None
+        result["player_character"] = player_char.for_model_context().model_dump(exclude_none=True) if player_char else None
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
         self.save_to_session_state()

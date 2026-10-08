@@ -158,7 +158,7 @@ class VisualState:
                         return None
                 except (ValueError, OSError):
                     pass
-            if "characters" in [part.lower() for part in direct_path.parts]:
+            if {"characters", "updated_characters"}.intersection(part.lower() for part in direct_path.parts):
                 return None
             return str(direct_path)
 

@@ -48,6 +48,11 @@ class TestReferenceUtils(unittest.TestCase):
         self.assertEqual(references, [])
         self.assertIn("canvas token", error or "")
 
+    def test_character_prompt_tag_requires_character_manager(self) -> None:
+        references, error = resolve_provider_references(None, "<Arthur Modella> waves.")
+        self.assertEqual(references, [])
+        self.assertIn("require a character manager", error or "")
+
     def _create_dummy_image_file(self, filename: str, content: bytes = b"dummy_image_data") -> str:
         filepath = os.path.join(self.temp_dir, filename)
         with open(filepath, "wb") as f:

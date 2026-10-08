@@ -781,7 +781,8 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         )
         self.assertIn("# Canonical Player Character", rendered)
         self.assertIn("Aiden", rendered)
-        self.assertIn("aiden_portrait", rendered)
+        self.assertNotIn("aiden_portrait", rendered)
+        self.assertNotIn("lyra_portrait", rendered)
         self.assertIn("# Canonical Active Characters", rendered)
         self.assertIn("Lyra", rendered)
 
