@@ -6,11 +6,18 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 import re
 from threading import RLock
-from typing import Iterable
+from typing import Iterable, TypedDict
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import FeatureUnion
 
+
+class DocsSearchResult(TypedDict):
+    title: str
+    page_title: str
+    href: str
+    excerpt: str
+    score: float
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -189,7 +196,7 @@ class DocsSearchIndex:
             self._matrix = matrix
         return len(chunks)
 
-    def search(self, query: str, limit: int = 8) -> list[dict[str, object]]:
+    def search(self, query: str, limit: int = 8) -> list[DocsSearchResult]:
         clean_query = _clean_text(query)[:200]
         if not clean_query:
             return []
@@ -217,7 +224,7 @@ class DocsSearchIndex:
                 ranked.append((adjusted_score, index))
         ranked.sort(key=lambda item: item[0], reverse=True)
 
-        results: list[dict[str, object]] = []
+        results: list[DocsSearchResult] = []
         seen_hrefs: set[str] = set()
         for score, index in ranked:
             chunk = chunks[index]

@@ -26,14 +26,15 @@ def test_canvas_help_is_private_and_skips_the_live_agent() -> None:
         page.add_script_tag(content="""
             window.requests = []; window.forwarded = []; window.broadcasted = [];
             window.fetch = async (url, options) => {
-                if (url === '/api/user-help' && window.delayPrice) {
-                    await new Promise(resolve => { window.releasePrice = resolve; });
-                }
                 if (options?.method === 'POST') {
-                    window.requests.push({url, body: JSON.parse(options.body)});
-                    return {ok: true, json: async () => ({type: 'user_help', text: 'Private answer', html: '<p>Private answer</p>'})};
+                    const body = JSON.parse(options.body);
+                    window.requests.push({url, body});
+                    const text = body.personalized ? 'Researched answer' : 'Private answer';
+                    return {ok: true, json: async () => ({type: 'user_help', text, html: `<p>${text}</p>`,
+                        help_mode: body.personalized ? 'personalized' : 'basic', can_personalize: true,
+                        personalized_credit_cost: 0.15})};
                 }
-                return {ok: true, json: async () => url === '/api/user-help' ? {canvas_credit_cost: 0.15} : []};
+                return {ok: true, json: async () => []};
             };
         """)
         page.add_script_tag(content=emotes + script + """
@@ -50,15 +51,6 @@ def test_canvas_help_is_private_and_skips_the_live_agent() -> None:
         page.locator('#chat-input').fill('How do I start?')
         assert page.locator('[data-chat-command="help"]').inner_text() == '?'
         page.locator('[data-chat-command="help"]').click()
-        page.wait_for_function("document.querySelector('[data-chat-command=help]').textContent.includes('0.15 cr')")
-        assert page.evaluate("window.requests") == []
-        assert page.locator('#chat-input').input_value() == 'How do I start?'
-        page.mouse.move(0, 0)
-        assert page.locator('[data-chat-command="help"]').inner_text() == '?'
-        page.locator('[data-chat-command="help"]').click()
-        page.wait_for_function("document.querySelector('[data-chat-command=help]').textContent.includes('0.15 cr')")
-        assert page.evaluate("window.requests") == []
-        page.locator('[data-chat-command="help"]').click()
         page.wait_for_function("document.querySelector('#chat-messages').textContent.includes('Private answer')")
         assert page.evaluate("window.requests") == [{"url": "/api/user-help?theater_id=stage", "body": {"question": "How do I start?"}}]
         assert page.evaluate("window.forwarded") == []
@@ -67,20 +59,17 @@ def test_canvas_help_is_private_and_skips_the_live_agent() -> None:
         assert page.locator('#chat-messages').inner_text().count('Private answer') == 1
         assert 'only you' in page.locator('#chat-messages').inner_text()
         assert page.locator('[data-chat-command="help"]').inner_text() == '?'
-        page.locator('#chat-input').fill('Another question')
-        page.locator('[data-chat-command="help"]').click()
-        page.wait_for_function("document.querySelector('[data-chat-command=help]').textContent.includes('0.15 cr')")
-        page.locator('#chat-input').fill('A changed question')
-        assert page.locator('[data-chat-command="help"]').inner_text() == '?'
-        assert len(page.evaluate("window.requests")) == 1
-        page.evaluate("window.delayPrice = true")
-        page.locator('[data-chat-command="help"]').click()
-        page.wait_for_function("typeof window.releasePrice === 'function'")
-        page.mouse.move(0, 0)
-        page.evaluate("window.releasePrice()")
-        page.wait_for_function("!document.querySelector('[data-chat-command=help]').disabled")
-        assert page.locator('[data-chat-command="help"]').inner_text() == '?'
-        assert len(page.evaluate("window.requests")) == 1
+        assert page.locator('[data-chat-command="help"]').get_attribute('title') == 'Find basic help and documentation (free)'
+        upgrade = page.get_by_role('button', name='Personalized help · 0.15 cr')
+        assert upgrade.count() == 1
+        assert len(page.evaluate('window.requests')) == 1
+        upgrade.click()
+        page.wait_for_function("document.querySelector('#chat-messages').textContent.includes('Researched answer')")
+        assert page.evaluate('window.requests[1].body') == {
+            'question': 'How do I start?', 'personalized': True, 'quoted_credit_cost': 0.15,
+        }
+        assert page.evaluate('window.forwarded') == []
+        assert page.evaluate('window.broadcasted') == []
         browser.close()
 
 
@@ -104,8 +93,13 @@ def test_visitor_help_is_free_and_displays_errors() -> None:
             window.requests = [];
             window.fetch = async (url, options) => {
                 window.requests.push({url, body: JSON.parse(options.body)});
-                const ok = window.requests.length === 1;
-                return {ok, json: async () => ok ? {html: '<p>Explore <a href="/docs">Docs</a>.</p>'} : {detail: 'Please wait a moment.'}};
+                const body = JSON.parse(options.body);
+                const ok = window.requests.length <= 2;
+                return {ok, json: async () => ok ? {
+                    html: body.personalized ? '<p>Researched answer</p>' : '<p>Explore <a href="/docs">Docs</a>.</p>',
+                    help_mode: body.personalized ? 'personalized' : 'basic', can_personalize: true,
+                    personalized_credit_cost: 0.15,
+                } : {detail: 'Please wait a moment.'}};
             };
         """)
         page.add_script_tag(content=Path("static/js/user-help.js").read_text(encoding="utf-8"))
@@ -114,6 +108,14 @@ def test_visitor_help_is_free_and_displays_errors() -> None:
         page.wait_for_function("document.querySelector('#visitor-help-log').textContent.includes('Explore')")
         assert page.evaluate("window.requests[0]") == {"url": "/api/user-help", "body": {"question": "What is Narratron?"}}
         assert page.locator('#visitor-help-log a').get_attribute('href') == '/docs'
+        upgrade = page.get_by_role('button', name='Personalized help · 0.15 cr')
+        assert upgrade.count() == 1
+        assert len(page.evaluate('window.requests')) == 1
+        upgrade.click()
+        page.wait_for_function("document.querySelector('#visitor-help-log').textContent.includes('Researched answer')")
+        assert page.evaluate('window.requests[1].body') == {
+            'question': 'What is Narratron?', 'personalized': True, 'quoted_credit_cost': 0.15,
+        }
         page.locator('#visitor-help-question').fill('What else?')
         page.locator('#visitor-help-form button').click()
         page.wait_for_function("document.querySelector('#visitor-help-status').textContent === 'Please wait a moment.'")

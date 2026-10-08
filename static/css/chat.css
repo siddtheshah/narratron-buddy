@@ -309,6 +309,17 @@
 }
 
 /* Stamp Manager & Canvas Stamp Styling */
+.help-upgrade-btn {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border: 1px solid rgba(167, 139, 250, 0.4);
+    border-radius: 6px;
+    background: rgba(139, 92, 246, 0.15);
+    color: #ddd6fe;
+    font: inherit;
+    cursor: pointer;
+}
+
 #chat-form:has(#chat-open-stamps-btn) {
     padding: 8px 10px;
     gap: 0;
@@ -379,16 +390,6 @@
 #chat-form:has(#chat-open-stamps-btn) button[data-chat-command="help"] {
     padding: 4px;
     line-height: 1.15;
-}
-
-#chat-form:has(#chat-open-stamps-btn) button.help-price-shown {
-    flex-direction: column;
-    gap: 1px;
-}
-
-.help-credit-price {
-    font-size: 0.625rem;
-    white-space: nowrap;
 }
 
 #chat-form #chat-open-stamps-btn:hover,

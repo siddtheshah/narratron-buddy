@@ -9,6 +9,7 @@ from threading import Lock
 from uuid import uuid4
 
 from google.adk.agents import Agent
+from google.adk.agents.run_config import RunConfig
 from google.adk.apps.app import App
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -245,6 +246,7 @@ class UserHelpService:
                 user_id="user_help",
                 session_id=uuid4().hex,
                 new_message=types.Content(role="user", parts=[types.Part(text=question)]),
+                run_config=RunConfig(max_llm_calls=8),
             ):
                 if event.is_final_response() and event.content and event.content.parts:
                     answer = "".join(part.text or "" for part in event.content.parts).strip()

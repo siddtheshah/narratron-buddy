@@ -26,7 +26,11 @@ For step-by-step extension configuration, see [Beyond20 Integration Guide](/docs
 
 ### Private interface help
 
-To ask about Narratron controls, type a question in canvas chat and click **?** to reveal the credit cost. Click it again to send your question privately. Moving the pointer away, leaving the button with the keyboard, or editing the question resets the button. You can also send `/help` followed by your question. Sign in first. A completed answer charges your own account, including when someone else owns the theater. Failed research does not charge credits.
+Type a question in canvas chat and click **?**, or send `/help` followed by your question. Basic help is free: common questions get prepared answers, and more detailed questions get links to the closest matching documentation. Anyone with access to the theater can use it.
+
+For a researched answer, sign in and click **Personalized help** beneath a basic response. The button shows the cost before you send. Successful research charges your own account, including in someone else's theater; failed research does not charge credits. The front-page assistant uses the same free and paid tiers.
+
+Personalized help has a 15-second cooldown, user and connection hourly limits, and a cap on simultaneous research requests. Basic help uses separate, more generous limits and makes no model calls.
 
 Your question and answer appear only in your current browser tab. They are cleared when you reload and are excluded from shared chat and theater chat exports. Help works without starting the theater's live agent.
 

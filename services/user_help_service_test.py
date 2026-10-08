@@ -40,9 +40,10 @@ def test_provider_failure_raises_instead_of_returning_a_billable_answer(
         raise failure
         yield Event(author="user_help")
 
-    with patch.object(service._runner, "run_async", return_value=failed_events()):
+    with patch.object(service._runner, "run_async", return_value=failed_events()) as run:
         with pytest.raises(HelpUnavailableError):
             asyncio.run(service.answer("How?"))
+    assert run.call_args.kwargs["run_config"].max_llm_calls == 8
 
 
 def test_user_help_agent_browses_matching_template_and_documentation_files(tmp_path: Path) -> None:

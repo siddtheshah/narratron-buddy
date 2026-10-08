@@ -353,6 +353,34 @@ export function initializeChatController(options = {}) {
 
         div.appendChild(prefixSpan);
         div.appendChild(textSpan);
+        if (isHelp && msg.help_mode === 'basic' && msg.help_question) {
+            const upgrade = document.createElement('button');
+            upgrade.type = 'button';
+            upgrade.className = 'help-upgrade-btn';
+            upgrade.textContent = msg.can_personalize
+                ? `Personalized help · ${msg.personalized_credit_cost} cr`
+                : 'Sign in for personalized help';
+            if (msg.can_personalize) {
+                upgrade.title = `Research this question for ${msg.personalized_credit_cost} credits from your account`;
+            }
+            upgrade.addEventListener('click', async () => {
+                if (!msg.can_personalize) {
+                    if (chatInput) chatInput.value = msg.help_question;
+                    if (onOpenLogin) onOpenLogin();
+                    return;
+                }
+                upgrade.disabled = true;
+                try {
+                    await askPrivateHelp(msg.help_question, true, msg.personalized_credit_cost);
+                } catch (error) {
+                    privateHelpMessages.push({ author: 'Help', text: error.message });
+                    await fetchChat(true);
+                } finally {
+                    upgrade.disabled = false;
+                }
+            });
+            div.appendChild(upgrade);
+        }
         return div;
     }
 
@@ -448,7 +476,7 @@ export function initializeChatController(options = {}) {
         }
     }
 
-    async function askPrivateHelp(question) {
+    async function askPrivateHelp(question, personalized = false, quotedCreditCost = null) {
         if (helpPending) throw new Error('Please wait for your help answer.');
         helpPending = true;
         if (helpButton) {
@@ -459,7 +487,9 @@ export function initializeChatController(options = {}) {
         try {
             const res = await fetch(`/api/user-help?theater_id=${encodeURIComponent(theaterId)}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question }),
+                body: JSON.stringify({ question, ...(personalized ? {
+                    personalized: true, quoted_credit_cost: quotedCreditCost,
+                } : {}) }),
             });
             const result = await res.json();
             if (!res.ok) {
@@ -468,7 +498,7 @@ export function initializeChatController(options = {}) {
             }
             privateHelpMessages.push(
                 { author: 'You (private help)', text: question },
-                { ...result, author: 'Narratron User Help (only you)' },
+                { ...result, author: 'Narratron User Help (only you)', help_question: question },
             );
             await fetchChat(true);
             return result;
@@ -479,53 +509,11 @@ export function initializeChatController(options = {}) {
     }
 
     const helpButton = chatForm?.querySelector('[data-chat-command="help"]');
-    let helpPriceShown = false;
-    let helpRevealVersion = 0;
-
     function resetHelpButton() {
-        helpRevealVersion += 1;
-        helpPriceShown = false;
         if (!helpButton || helpPending) return;
-        helpButton.classList.remove('help-price-shown');
         helpButton.textContent = '?';
-        helpButton.title = 'Show private help price';
+        helpButton.title = 'Find basic help and documentation (free)';
         helpButton.setAttribute('aria-label', helpButton.title);
-    }
-
-    if (helpButton) {
-        helpButton.addEventListener('click', async event => {
-            if (helpPriceShown && !helpPending) return;
-            event.preventDefault();
-            if (helpPending || helpButton.disabled) return;
-            const revealVersion = ++helpRevealVersion;
-            helpButton.disabled = true;
-            helpButton.textContent = '…';
-            try {
-                const res = await fetch('/api/user-help');
-                if (!res.ok) throw new Error('Could not load help price. Click to retry.');
-                const info = await res.json();
-                if (revealVersion !== helpRevealVersion) return;
-                if (!Number.isFinite(info.canvas_credit_cost)) throw new Error('Could not load help price. Click to retry.');
-                helpPriceShown = true;
-                helpButton.classList.add('help-price-shown');
-                const price = document.createElement('span');
-                price.className = 'help-credit-price';
-                price.textContent = `${info.canvas_credit_cost} cr`;
-                helpButton.replaceChildren(document.createTextNode('? · '), price);
-                helpButton.title = `Click again to send privately · ${info.canvas_credit_cost} credits from your account`;
-                helpButton.setAttribute('aria-label', helpButton.title);
-            } catch (error) {
-                if (revealVersion !== helpRevealVersion) return;
-                resetHelpButton();
-                helpButton.title = error.message;
-                helpButton.setAttribute('aria-label', error.message);
-            } finally {
-                helpButton.disabled = false;
-            }
-        });
-        helpButton.addEventListener('mouseleave', resetHelpButton);
-        helpButton.addEventListener('blur', resetHelpButton);
-        chatInput?.addEventListener('input', resetHelpButton);
     }
 
     // --- Message Submission Pipeline ---
