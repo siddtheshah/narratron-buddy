@@ -25,16 +25,19 @@ class NotepadToolProvider(Protocol):
     def get_present_elements(self) -> list[dict[str, str]]:
         ...
 
-class CharacterToolProvider(Protocol):
+class ReferenceToolProvider(Protocol):
     def get_present_characters(self) -> list[Character]:
         ...
+
+CharacterToolProvider = ReferenceToolProvider
 
 
 def format_canvas_state(
     canvas_state_manager: Optional[CanvasStateManager],
     notepad_tools: Optional[NotepadToolProvider] = None,
-    character_tools: Optional[CharacterToolProvider] = None,
+    character_tools: Optional[ReferenceToolProvider] = None,
     reference_manager: ReferenceManager | None = None,
+    reference_tools: Optional[ReferenceToolProvider] = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
     visual = canvas_state_manager.visual if canvas_state_manager is not None else None
@@ -79,8 +82,9 @@ def format_canvas_state(
     characters = []
     if story is not None:
         characters = story.get_present_characters()
-    if not characters and character_tools is not None:
-        characters = character_tools.get_present_characters()
+    ref_tools = reference_tools if reference_tools is not None else character_tools
+    if not characters and ref_tools is not None:
+        characters = ref_tools.get_present_characters()
 
     if characters:
         rendered_char_list: list[str] = []

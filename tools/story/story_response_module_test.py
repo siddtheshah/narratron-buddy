@@ -673,7 +673,6 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         self.assertEqual(res["name"], "Cedric")
         self.assertIsNone(res.image_reference)
         self.assertIsNone(res.image_reference_path)
-        self.assertEqual(self.reference_manager.create_or_update_character.return_value.image_reference, "private_alias")
         self.reference_manager.create_or_update_character.assert_called_once_with(
             name="Cedric",
             description="",
@@ -682,7 +681,20 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
             quirk="",
             voice_tags=None,
             gender="male",
-            image_reference="",
+        )
+
+    def test_delegates_create_or_update_scene(self) -> None:
+        self.reference_manager.create_or_update_scene.return_value = {
+            "name": "Ruined Keep",
+            "path": "scenes/ruined_keep/1.png",
+            "alias": "ruined_keep",
+        }
+        res = self.module.create_or_update_scene("Ruined Keep", "Dark ruins")
+        self.assertIn("Ruined Keep", res)
+        self.assertNotIn("scenes/ruined_keep/1.png", res)
+        self.reference_manager.create_or_update_scene.assert_called_once_with(
+            name="Ruined Keep",
+            description="Dark ruins",
         )
 
 

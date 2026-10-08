@@ -6,7 +6,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from typing import Optional
+from typing import Optional, Union
 from unittest.mock import MagicMock
 
 from components.reference_manager import (
@@ -14,12 +14,49 @@ from components.reference_manager import (
     CharacterLookupResult,
     ReferenceManager,
     PlayerCharacter,
+    ImagePathResolver,
 )
+from providers import ImageReference
 from tools.reference_utils import (
     get_reference_label,
-    is_character_reference,
-    resolve_provider_references,
 )
+
+
+def is_character_reference(
+    ref: str,
+    reference_manager: Optional[ReferenceManager] = None,
+    resolved_path: Optional[str] = None,
+    lookup_result: Optional[CharacterLookupResult] = None,
+) -> bool:
+    """Test patch helper to invoke ReferenceManager.is_character_reference raw."""
+    if reference_manager is None:
+        return False
+    return ReferenceManager.is_character_reference(
+        reference_manager,
+        ref=ref,
+        resolved_path=resolved_path,
+        lookup_result=lookup_result,
+    )
+
+
+
+def resolve_provider_references(
+    reference_images: Union[list[str], str, None] = None,
+    prompt: str = "",
+    reference_manager: Optional[ReferenceManager] = None,
+    visual: Optional[ImagePathResolver] = None,
+    caller_label: str = "Test",
+) -> tuple[list[ImageReference], Optional[str]]:
+    """Test patch helper to invoke ReferenceManager.resolve_provider_references raw."""
+    if reference_manager is None:
+        return [], "Error: Character visuals require a reference manager."
+    return ReferenceManager.resolve_provider_references(
+        reference_manager,
+        reference_images=reference_images,
+        prompt=prompt,
+        visual=visual,
+        caller_label=caller_label,
+    )
 
 
 class DummyPathResolver:
@@ -44,7 +81,8 @@ class TestReferenceUtils(unittest.TestCase):
         os.makedirs(stamp_dir)
         stamp_path = self._create_dummy_image_file("stamps/shovel.png")
         resolver = DummyPathResolver({"shovel": stamp_path})
-        references, error = resolve_provider_references(["shovel"], visual=resolver)
+        mock_mgr = MagicMock(spec=ReferenceManager)
+        references, error = resolve_provider_references(["shovel"], visual=resolver, reference_manager=mock_mgr)
         self.assertEqual(references, [])
         self.assertIn("canvas token", error or "")
 
@@ -143,7 +181,8 @@ class TestReferenceUtils(unittest.TestCase):
     # --- resolve_provider_references tests ---
 
     def test_resolve_provider_references_empty_inputs(self) -> None:
-        refs, err = resolve_provider_references(None, prompt="", reference_manager=None, visual=None)
+        mock_mgr = MagicMock(spec=ReferenceManager)
+        refs, err = resolve_provider_references(None, prompt="", reference_manager=mock_mgr, visual=None)
         self.assertEqual(refs, [])
         self.assertIsNone(err)
 
@@ -193,11 +232,12 @@ class TestReferenceUtils(unittest.TestCase):
         img1 = self._create_dummy_image_file("tree.png", b"tree_data")
         img2 = self._create_dummy_image_file("rock.png", b"rock_data")
         resolver = DummyPathResolver({"tree": img1, "rock": img2})
+        mock_mgr = MagicMock(spec=ReferenceManager)
 
         refs, err = resolve_provider_references(
             reference_images="tree, rock",
             prompt="Nature landscape",
-            reference_manager=None,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -208,11 +248,12 @@ class TestReferenceUtils(unittest.TestCase):
 
     def test_resolve_provider_references_missing_reference_returns_error(self) -> None:
         resolver = DummyPathResolver({})
+        mock_mgr = MagicMock(spec=ReferenceManager)
 
         refs, err = resolve_provider_references(
             reference_images=["non_existent_ref"],
             prompt="Some scene",
-            reference_manager=None,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 
@@ -315,11 +356,12 @@ class TestReferenceUtils(unittest.TestCase):
     def test_resolve_provider_references_handles_unreadable_file(self) -> None:
         bad_path = os.path.join(self.temp_dir, "non_existent_folder", "ghost.png")
         resolver = DummyPathResolver({"ghost": bad_path})
+        mock_mgr = MagicMock(spec=ReferenceManager)
 
         refs, err = resolve_provider_references(
             reference_images=["ghost"],
             prompt="scene",
-            reference_manager=None,
+            reference_manager=mock_mgr,
             visual=resolver,
         )
 

@@ -1,4 +1,4 @@
-from tools.character_tool import CharacterTool
+from tools.reference_tool import ReferenceTool
 from tools.tool_bundle import ToolBundle
 
-__all__ = ["CharacterTool", "ToolBundle"]
+__all__ = ["ReferenceTool", "ToolBundle"]

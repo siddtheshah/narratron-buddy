@@ -1,4 +1,4 @@
-"""Character tool for ordinary, non-adventure narration sessions."""
+"""Reference tool for character and scene management in narration sessions."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ from tools.tool_metadata import terminal
 logger = logging.getLogger(__name__)
 
 
-class CharacterTool(BaseTools):
-    """Expose character management capabilities for non-adventure narration sessions."""
+class ReferenceTool(BaseTools):
+    """Expose character and scene reference management capabilities for narration sessions."""
 
     def __init__(
         self,
@@ -43,7 +43,6 @@ class CharacterTool(BaseTools):
         quirk: str = "",
         gender: str = "",
         voice_tags: str = "",
-        image_reference: str = "",
     ) -> str:
         """Add or update an NPC character in the current narration session.
 
@@ -55,7 +54,6 @@ class CharacterTool(BaseTools):
             quirk: Distinguishing habit, mannerism, or verbal quirk.
             gender: Explicit character gender ('male', 'female', or 'nonbinary').
             voice_tags: Comma-separated speech voice tags (e.g. 'female, calm').
-            image_reference: Optional image alias or file path to associate with this character.
 
         Returns:
             A human-readable confirmation with the updated character profile.
@@ -73,11 +71,38 @@ class CharacterTool(BaseTools):
             quirk=quirk,
             gender=gender if gender else None,
             voice_tags=clean_tags if clean_tags else None,
-            image_reference=image_reference,
         )
         if character is None:
             return f"Error: Failed to create or update character '{clean_name}'."
         return character.describe()
+
+    @terminal
+    @logged_tool_call
+    def create_or_update_scene(
+        self,
+        name: str,
+        description: str = "",
+    ) -> str:
+        """Add or update a scene reference in the current narration session.
+
+        Args:
+            name: Scene's canonical name or location.
+            description: Visual concept and environment description.
+
+        Returns:
+            A human-readable confirmation of the scene reference.
+        """
+        clean_name = str(name or "").strip()
+        if not clean_name:
+            return "Error: Scene name cannot be empty."
+
+        entry = self.reference_manager.create_or_update_scene(
+            name=clean_name,
+            description=description,
+        )
+        if entry is None:
+            return f"Error: Failed to create or update scene '{clean_name}'."
+        return f"Created scene reference for '{clean_name}'."
 
     @logged_tool_call
     def lookup_character(self, query: str = "") -> str:
@@ -116,6 +141,8 @@ class CharacterTool(BaseTools):
         return self.reference_manager.count()
 
 
-CharacterTools = CharacterTool
+CharacterTool = ReferenceTool
+CharacterTools = ReferenceTool
+ReferenceTools = ReferenceTool
 
-__all__ = ["CharacterTool", "CharacterTools"]
+__all__ = ["ReferenceTool", "ReferenceTools", "CharacterTool", "CharacterTools"]

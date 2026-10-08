@@ -175,10 +175,12 @@ class LiveAgentSession:
         self.notepad_tools = (
             get_bound_tool_instance(self.agent, "update_sticky_note")
         )
-        self.character_tools = (
-            get_bound_tool_instance(self.agent, "create_character")
+        self.reference_tools = (
+            get_bound_tool_instance(self.agent, "create_or_update_character")
+            or get_bound_tool_instance(self.agent, "create_character")
             or get_bound_tool_instance(self.agent, "update_character")
         )
+        self.character_tools = self.reference_tools
         self.music_tools = get_bound_tool_instance(self.agent, "play_music")
         self.observability_tools = get_bound_tool_instance(
             self.agent,
@@ -187,10 +189,6 @@ class LiveAgentSession:
         self.interactive_canvas_tools = get_bound_tool_instance(
             self.agent,
             "update_interactive_canvas",
-        )
-        self.character_tools = get_bound_tool_instance(
-            self.agent,
-            "create_or_update_character",
         )
 
         self._setup_tool_callbacks()

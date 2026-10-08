@@ -367,6 +367,11 @@ class StoryTool(BaseTools):
         return self.notepad.max_named_elements
 
     @terminal
+    def create_or_update_scene(self, name: str, description: str = "") -> str:
+        """Create or update a scene reference visual by name and concept description."""
+        return self.response_module.create_or_update_scene(name=name, description=description)
+
+    @terminal
     def update_sticky_note(self, topic: str, info: str) -> str:
         """Insert or replace one sticky note in the current scene."""
         return self.notepad.update_sticky_note(topic, info)

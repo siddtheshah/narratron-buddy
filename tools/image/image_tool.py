@@ -28,7 +28,6 @@ from components.canvas.visual_state import VisualState, PRIORITY_SHOW, PRIORITY_
 from components.theater_manager import Theater
 from components.image_library import ImageLibrary
 from components.reference_manager import CharacterLookupResult, ReferenceManager
-from tools.reference_utils import is_character_reference, resolve_provider_references
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,9 @@ class ImageTools(BaseTools):
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.reference_manager: Optional[ReferenceManager] = reference_manager
+        self.reference_manager: Optional[ReferenceManager] = (
+            reference_manager if reference_manager is not None else (ReferenceManager(theater=theater) if theater is not None else None)
+        )
 
         image_config = self.config.get("image_generation", {})
         visuals_config = self.config.get("visuals", {})
@@ -215,9 +216,11 @@ class ImageTools(BaseTools):
         lookup_result: Optional[CharacterLookupResult] = None,
     ) -> bool:
         """Return True if ref is identified as a character reference."""
-        return is_character_reference(
+        if self.reference_manager is None:
+            return False
+        return ReferenceManager.is_character_reference(
+            self.reference_manager,
             ref=ref,
-            reference_manager=self.reference_manager,
             resolved_path=resolved_path,
             lookup_result=lookup_result,
         )
@@ -277,13 +280,16 @@ class ImageTools(BaseTools):
                 self._trigger_after_tool_call("create_image")
                 return res
         
-        provider_references, ref_error = resolve_provider_references(
-            reference_images=reference_images,
-            prompt=image_prompt,
-            reference_manager=self.reference_manager,
-            visual=self.visual,
-            caller_label="ImageTools",
-        )
+        if self.reference_manager is not None:
+            provider_references, ref_error = ReferenceManager.resolve_provider_references(
+                self.reference_manager,
+                reference_images=reference_images,
+                prompt=image_prompt,
+                visual=self.visual,
+                caller_label="ImageTools",
+            )
+        else:
+            provider_references, ref_error = [], None
         if ref_error is not None:
             self._trigger_after_tool_call("create_image")
             return ref_error

@@ -36,7 +36,6 @@ from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
 from components.canvas.visual_state import VisualState
 from components.reference_manager import CharacterLookupResult, ReferenceManager
-from tools.reference_utils import is_character_reference, resolve_provider_references
 
 
 logger = logging.getLogger(__name__)
@@ -101,7 +100,9 @@ class AnimationTools(BaseTools):
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.reference_manager: Optional[ReferenceManager] = reference_manager
+        self.reference_manager: Optional[ReferenceManager] = (
+            reference_manager if reference_manager is not None else (ReferenceManager(theater=theater) if theater is not None else None)
+        )
         animation_config = self.config.get("animation", {})
         visuals_config = self.config.get("visuals", {})
         self.animation_config = animation_config if isinstance(animation_config, dict) else {}
@@ -176,9 +177,11 @@ class AnimationTools(BaseTools):
         lookup_result: Optional[CharacterLookupResult] = None,
     ) -> bool:
         """Return True if ref is identified as a character reference."""
-        return is_character_reference(
+        if self.reference_manager is None:
+            return False
+        return ReferenceManager.is_character_reference(
+            self.reference_manager,
             ref=ref,
-            reference_manager=self.reference_manager,
             resolved_path=resolved_path,
             lookup_result=lookup_result,
         )
@@ -757,13 +760,15 @@ class AnimationTools(BaseTools):
         reference_images: Union[list[str], str, None],
         scene_prompt: str = "",
     ) -> tuple[list[ImageReference], Optional[str]]:
-        return resolve_provider_references(
-            reference_images=reference_images,
-            prompt=scene_prompt,
-            reference_manager=self.reference_manager,
-            visual=self.visual,
-            caller_label="AnimationTools",
-        )
+        if self.reference_manager is not None:
+            return ReferenceManager.resolve_provider_references(
+                self.reference_manager,
+                reference_images=reference_images,
+                prompt=scene_prompt,
+                visual=self.visual,
+                caller_label="AnimationTools",
+            )
+        return [], None
 
     @terminal
     @blocked_when_canvas_pinned

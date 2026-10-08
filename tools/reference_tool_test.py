@@ -1,4 +1,4 @@
-"""Unit tests for CharacterTool in tools/character_tool.py."""
+"""Unit tests for ReferenceTool in tools/reference_tool.py."""
 
 from __future__ import annotations
 
@@ -13,13 +13,13 @@ from components.reference_manager import (
     ReferenceManager,
 )
 from components.theater_manager import Theater
-from tools.character_tool import CharacterTool
+from tools.reference_tool import ReferenceTool
 
 
-class TestCharacterTool(unittest.TestCase):
+class TestReferenceTool(unittest.TestCase):
     def setUp(self) -> None:
         self.theater = MagicMock(spec=Theater)
-        self.theater.theater_id = "test-character-tool"
+        self.theater.theater_id = "test-reference-tool"
         self.theater.config.return_value = {
             "story_planning": {
                 "adventure_mode": False,
@@ -33,19 +33,19 @@ class TestCharacterTool(unittest.TestCase):
         }
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.canvas.story = StoryState()
-        self.mock_char_mgr = MagicMock(spec=ReferenceManager)
+        self.mock_ref_mgr = MagicMock(spec=ReferenceManager)
 
     def test_init_with_reference_manager(self) -> None:
-        tool = CharacterTool(
+        tool = ReferenceTool(
             self.theater,
-            reference_manager=self.mock_char_mgr,
+            reference_manager=self.mock_ref_mgr,
             canvas_manager=self.canvas,
         )
-        self.assertIs(tool.reference_manager, self.mock_char_mgr)
+        self.assertIs(tool.reference_manager, self.mock_ref_mgr)
 
     def test_init_raises_when_reference_manager_is_none(self) -> None:
         with self.assertRaises(ValueError):
-            CharacterTool(self.theater, reference_manager=None)  # type: ignore
+            ReferenceTool(self.theater, reference_manager=None)  # type: ignore
 
     def test_create_or_update_character_success(self) -> None:
         dummy_char = Character(
@@ -58,12 +58,12 @@ class TestCharacterTool(unittest.TestCase):
             voice_tags=["female", "calm"],
             image_reference="aria_ref",
         )
-        self.mock_char_mgr.create_or_update_character.return_value = dummy_char
+        self.mock_ref_mgr.create_or_update_character.return_value = dummy_char
 
-        tool = CharacterTool(
+        tool = ReferenceTool(
             self.theater,
             canvas_manager=self.canvas,
-            reference_manager=self.mock_char_mgr,
+            reference_manager=self.mock_ref_mgr,
         )
         result = tool.create_or_update_character(
             name="Aria",
@@ -73,10 +73,9 @@ class TestCharacterTool(unittest.TestCase):
             quirk="Taps her lute nervously",
             gender="female",
             voice_tags="female, calm",
-            image_reference="aria_ref",
         )
         self.assertIn("Aria", result)
-        self.mock_char_mgr.create_or_update_character.assert_called_once_with(
+        self.mock_ref_mgr.create_or_update_character.assert_called_once_with(
             name="Aria",
             description="A wandering minstrel.",
             personality="Charming and resourceful",
@@ -84,26 +83,25 @@ class TestCharacterTool(unittest.TestCase):
             quirk="Taps her lute nervously",
             gender="female",
             voice_tags=["female", "calm"],
-            image_reference="aria_ref",
         )
 
     def test_create_or_update_character_empty_name(self) -> None:
-        tool = CharacterTool(
+        tool = ReferenceTool(
             self.theater,
             canvas_manager=self.canvas,
-            reference_manager=self.mock_char_mgr,
+            reference_manager=self.mock_ref_mgr,
         )
         result = tool.create_or_update_character(name="   ")
         self.assertIn("Error: Character name cannot be empty.", result)
-        self.mock_char_mgr.create_or_update_character.assert_not_called()
+        self.mock_ref_mgr.create_or_update_character.assert_not_called()
 
     def test_create_or_update_character_failed_generation(self) -> None:
-        self.mock_char_mgr.create_or_update_character.return_value = None
+        self.mock_ref_mgr.create_or_update_character.return_value = None
 
-        tool = CharacterTool(
+        tool = ReferenceTool(
             self.theater,
             canvas_manager=self.canvas,
-            reference_manager=self.mock_char_mgr,
+            reference_manager=self.mock_ref_mgr,
         )
         result = tool.create_or_update_character(name="Ghost")
         self.assertIn("Error: Failed to create or update character 'Ghost'.", result)
@@ -114,48 +112,90 @@ class TestCharacterTool(unittest.TestCase):
             gender="male",
             personality="Brave knight",
         )
-        self.mock_char_mgr.lookup_character.return_value = CharacterLookupResult(
+        self.mock_ref_mgr.lookup_character.return_value = CharacterLookupResult(
             query="Cedric",
             characters=[dummy_char],
             player=None,
         )
 
-        tool = CharacterTool(
+        tool = ReferenceTool(
             self.theater,
             canvas_manager=self.canvas,
-            reference_manager=self.mock_char_mgr,
+            reference_manager=self.mock_ref_mgr,
         )
         result = tool.lookup_character("Cedric")
         self.assertIn("Cedric", result)
-        self.mock_char_mgr.lookup_character.assert_called_once_with(query="Cedric")
+        self.mock_ref_mgr.lookup_character.assert_called_once_with(query="Cedric")
 
     def test_clear_characters(self) -> None:
-        self.mock_char_mgr.clear_scene.return_value = 3
+        self.mock_ref_mgr.clear_scene.return_value = 3
 
-        tool = CharacterTool(
+        tool = ReferenceTool(
             self.theater,
             canvas_manager=self.canvas,
-            reference_manager=self.mock_char_mgr,
+            reference_manager=self.mock_ref_mgr,
         )
         result = tool.clear_characters()
         self.assertIn("Cleared 3 character(s)", result)
-        self.mock_char_mgr.clear_scene.assert_called_once()
+        self.mock_ref_mgr.clear_scene.assert_called_once()
 
     def test_delegated_state_accessors(self) -> None:
         dummy_char = Character(name="Kael", gender="male")
-        self.mock_char_mgr.get_present_characters.return_value = [dummy_char]
-        self.mock_char_mgr.get_character_references.return_value = ["kael_ref"]
-        self.mock_char_mgr.count.return_value = 1
+        self.mock_ref_mgr.get_present_characters.return_value = [dummy_char]
+        self.mock_ref_mgr.get_character_references.return_value = ["kael_ref"]
+        self.mock_ref_mgr.count.return_value = 1
 
-        tool = CharacterTool(
+        tool = ReferenceTool(
             self.theater,
             canvas_manager=self.canvas,
-            reference_manager=self.mock_char_mgr,
+            reference_manager=self.mock_ref_mgr,
         )
         self.assertEqual(len(tool.get_present_characters()), 1)
         self.assertEqual(tool.get_present_characters()[0].name, "Kael")
         self.assertEqual(tool.get_character_references(), ["kael_ref"])
         self.assertEqual(tool.count(), 1)
+
+    def test_create_or_update_scene_success(self) -> None:
+        self.mock_ref_mgr.create_or_update_scene.return_value = {
+            "name": "Ruined_Shrine_1",
+            "alias": "output/artifacts/updated_references/scenes/Ruined_Shrine/1.png",
+            "path": "/path/to/1.png",
+        }
+        tool = ReferenceTool(
+            self.theater,
+            canvas_manager=self.canvas,
+            reference_manager=self.mock_ref_mgr,
+        )
+        result = tool.create_or_update_scene(
+            name="Ruined Shrine",
+            description="Ancient stone shrine covered in moss",
+        )
+        self.assertEqual(result, "Created scene reference for 'Ruined Shrine'.")
+        self.assertNotIn("/path/to/1.png", result)
+        self.mock_ref_mgr.create_or_update_scene.assert_called_once_with(
+            name="Ruined Shrine",
+            description="Ancient stone shrine covered in moss",
+        )
+
+    def test_create_or_update_scene_empty_name(self) -> None:
+        tool = ReferenceTool(
+            self.theater,
+            canvas_manager=self.canvas,
+            reference_manager=self.mock_ref_mgr,
+        )
+        result = tool.create_or_update_scene(name="   ")
+        self.assertIn("Error: Scene name cannot be empty.", result)
+        self.mock_ref_mgr.create_or_update_scene.assert_not_called()
+
+    def test_create_or_update_scene_failure(self) -> None:
+        self.mock_ref_mgr.create_or_update_scene.return_value = None
+        tool = ReferenceTool(
+            self.theater,
+            canvas_manager=self.canvas,
+            reference_manager=self.mock_ref_mgr,
+        )
+        result = tool.create_or_update_scene(name="Deep Cave")
+        self.assertIn("Error: Failed to create or update scene 'Deep Cave'.", result)
 
 
 if __name__ == "__main__":

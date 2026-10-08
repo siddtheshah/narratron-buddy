@@ -15,7 +15,6 @@ from services.quirk_service import QuirkGeneratorService
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter, normalize_voice_tags
 from components.notepad import Notepad
 from components.theater_manager import Theater, TheaterManager
-from tools.reference_utils import resolve_provider_references
 
 
 class TestNormalizeVoiceTags(unittest.TestCase):
@@ -1106,9 +1105,8 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (8, 8), "green").save(base / "Grim Vallos" / "2.png")
             manager = ReferenceManager(theater, self.provider, story_state=self.story_state)
 
-            references, error = resolve_provider_references(
+            references, error = manager.resolve_provider_references(
                 None, "<Arthur Modella> steps back from <Grim Vallos> as <Arthur Modella> waves.",
-                reference_manager=manager,
             )
 
             self.assertIsNone(error)
@@ -1144,7 +1142,7 @@ class TestReferenceManager(unittest.TestCase):
 
             restored = ReferenceManager(theater, self.provider)
             self.assertEqual(restored.get_character_visual_path("Arthur Modella"), str(updated))
-            references, error = resolve_provider_references(None, "<Arthur Modella> smiles.", reference_manager=restored)
+            references, error = restored.resolve_provider_references(None, "<Arthur Modella> smiles.")
             self.assertIsNone(error)
             self.assertEqual(references[0].data, updated.read_bytes())
 
@@ -1160,7 +1158,7 @@ class TestReferenceManager(unittest.TestCase):
             self.assertIsNone(manager.get_character_visual_path("Arthur Modella"))
             self.assertIsNone(manager._reference_entry(str(portrait)))
             self.assertFalse(theater.updated_characters_dir().exists())
-            references, error = resolve_provider_references(None, "<Arthur Modella> waves.", reference_manager=manager)
+            references, error = manager.resolve_provider_references(None, "<Arthur Modella> waves.")
             self.assertEqual(references, [])
             self.assertIn("not found", error or "")
             with self.assertRaisesRegex(ValueError, "must be inside"):
@@ -1174,14 +1172,25 @@ class TestReferenceManager(unittest.TestCase):
                 (theater.characters_dir() / name).mkdir()
                 Image.new("RGB", (8, 8), "blue").save(theater.characters_dir() / name / "1.png")
             manager = ReferenceManager(theater, self.provider)
-            references, error = resolve_provider_references(None, "<Anna> waves to Ann.", reference_manager=manager)
+            references, error = manager.resolve_provider_references(None, "<Anna> waves to Ann.")
             self.assertIsNone(error)
             self.assertEqual([ref.label for ref in references], ["Anna"])
             for name in ("An", "Ann.png", "Missing"):
-                references, error = resolve_provider_references(None, f"<{name}> waves.", reference_manager=manager)
+                references, error = manager.resolve_provider_references(None, f"<{name}> waves.")
                 self.assertEqual(references, [])
                 self.assertIn("not found", error or "")
+
+    def test_reference_manager_is_character_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            manager = ReferenceManager(theater, self.provider)
+            self.assertFalse(manager.is_character_reference(""))
+            self.assertFalse(manager.is_character_reference("   "))
+            self.assertFalse(manager.is_character_reference("landscape_scene.png"))
+            self.assertTrue(manager.is_character_reference("hero_character.png"))
+            self.assertTrue(manager.is_character_reference("npc_portrait.jpg"))
 
 
 if __name__ == "__main__":
     unittest.main()
+

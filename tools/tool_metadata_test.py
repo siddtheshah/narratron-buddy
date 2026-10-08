@@ -4,7 +4,7 @@ from functools import wraps
 from inspect import signature
 
 from tools.animation_tool import AnimationTools
-from tools.character_tool import CharacterTool
+from tools.reference_tool import ReferenceTool
 from tools.chat_tool import ChatTools
 from tools.image.image_tool import ImageTools
 from tools.interactive_canvas_tool import InteractiveCanvasTools
@@ -59,7 +59,7 @@ def test_finalized_actions_are_terminal_and_lookups_are_not() -> None:
         MusicTools.create_music, MusicTools.play_music, MusicTools.pause_music,
         MusicTools.resume_music,
         AnimationTools.create_animation, AnimationTools.play_animation,
-        CharacterTool.create_or_update_character, CharacterTool.clear_characters,
+        ReferenceTool.create_or_update_character, ReferenceTool.create_or_update_scene, ReferenceTool.clear_characters,
         NotepadTool.update_sticky_note,
         StoryTool.process_user_action, StoryTool.update_sticky_note,
         InteractiveCanvasTools.update_interactive_canvas,
@@ -70,7 +70,7 @@ def test_finalized_actions_are_terminal_and_lookups_are_not() -> None:
     for lookup in (
         ImageTools.browse_images, ImageTools.search_image_by_metadata,
         ImageTools.list_references, AnimationTools.browse_animations,
-        CharacterTool.lookup_character, ObservabilityTools.request_canvas_observability,
+        ReferenceTool.lookup_character, ObservabilityTools.request_canvas_observability,
         UserHelpService.list_help_files, UserHelpService.search_help_files,
         UserHelpService.read_help_file,
     ):

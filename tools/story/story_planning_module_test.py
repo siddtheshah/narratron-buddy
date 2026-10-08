@@ -187,6 +187,19 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertIn("Soran", char_msg)
         reference_manager.create_or_update_character.assert_called_once()
 
+        reference_manager.create_or_update_scene.return_value = {
+            "name": "Tower",
+            "path": "scenes/tower/1.png",
+            "alias": "tower",
+        }
+        scene_msg = module.create_or_update_scene(name="Tower", description="High tower")
+        self.assertIn("Tower", scene_msg)
+        self.assertNotIn("scenes/tower/1.png", scene_msg)
+        reference_manager.create_or_update_scene.assert_called_once_with(
+            name="Tower",
+            description="High tower",
+        )
+
     def test_initializes_with_reflect_and_retry_plugin_by_default(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
         theater = MagicMock(spec=Theater)

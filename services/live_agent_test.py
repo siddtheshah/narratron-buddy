@@ -122,7 +122,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Non-sequitur is explicitly allowed for the sake of fun.", rendered)
         self.assertIn("process_user_action", rendered)
         self.assertIn("nudge parameter", rendered)
-        self.assertNotIn("character_tool or notepad_tool", rendered)
+        self.assertNotIn("reference_tool or notepad_tool", rendered)
 
     def test_audience_suggestions_template_storytelling_mode(self) -> None:
         from jinja2 import Template
@@ -130,7 +130,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("## Audience Suggestions", rendered)
         self.assertIn("The top ranked audience suggestion may be provided from time to time.", rendered)
         self.assertIn("Non-sequitur is explicitly allowed for the sake of fun.", rendered)
-        self.assertIn("character_tool or notepad_tool", rendered)
+        self.assertIn("reference_tool or notepad_tool", rendered)
         self.assertNotIn("process_user_action", rendered)
         self.assertNotIn("nudge parameter", rendered)
 
@@ -412,7 +412,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("## Audience Suggestions", instruction)
         self.assertIn("process_user_action", instruction)
         self.assertIn("nudge parameter", instruction)
-        self.assertNotIn("character_tool or notepad_tool", instruction)
+        self.assertNotIn("reference_tool or notepad_tool", instruction)
 
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
@@ -428,7 +428,7 @@ class TestCreateAgent(unittest.TestCase):
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Audience Suggestions", instruction)
-        self.assertIn("character_tool or notepad_tool", instruction)
+        self.assertIn("reference_tool or notepad_tool", instruction)
         self.assertNotIn("nudge parameter", instruction)
 
     @patch("services.live_agent.get_text_response_provider")
@@ -765,7 +765,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("## Preloaded References Context", instruction)
 
     @patch("services.live_agent.get_text_response_provider")
-    def test_create_tool_bundle_character_tool_conditional_on_adventure_mode(
+    def test_create_tool_bundle_reference_tool_conditional_on_adventure_mode(
         self, mock_get_text_provider: MagicMock
     ) -> None:
         from services.live_agent import create_tool_bundle_for_session

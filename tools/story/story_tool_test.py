@@ -383,6 +383,12 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         self.assertEqual(self.story_state.get_character_voice_tags("Boran"), ["male"])
         self.assertEqual(self.story_state.get_character_voice_tags("Zephyr"), ["nonbinary"])
 
+    def test_create_or_update_scene_delegation(self) -> None:
+        with patch.object(self.tool.response_module, "create_or_update_scene", return_value="Scene 'Citadel' is set.") as mock_scene:
+            result = self.tool.create_or_update_scene("Citadel", "Ancient fortress")
+            mock_scene.assert_called_once_with(name="Citadel", description="Ancient fortress")
+            self.assertEqual(result, "Scene 'Citadel' is set.")
+
 
 if __name__ == "__main__":
     unittest.main()

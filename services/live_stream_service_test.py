@@ -13,7 +13,7 @@ from tools.story import StoryTool
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.theater_manager import TheaterManager
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
-from tools.character_tool import CharacterTool
+from tools.reference_tool import ReferenceTool
 from tools.notepad_tool import NotepadTool
 
 
@@ -128,7 +128,7 @@ def test_format_canvas_state_includes_active_characters() -> None:
 
     state = format_canvas_state(
         CanvasFixture(),
-        character_tools=elements,
+        reference_tools=elements,
     )
 
     assert "[Active Characters]: Vaelen (Personality: Brave, Motivation: Find the talisman, Quirk: Flips a coin on choices)" in state
@@ -149,7 +149,7 @@ def test_format_canvas_state_includes_elements_from_notepad_tool() -> None:
     assert "[Present Scene Elements]: objective: Find the lost compass" in state
 
 
-def test_format_canvas_state_includes_characters_from_character_tool() -> None:
+def test_format_canvas_state_includes_characters_from_reference_tool() -> None:
     theater = MagicMock(theater_id="stage_char_tool")
     theater.config = MagicMock(return_value={})
     canvas = CanvasFixture()
@@ -163,13 +163,13 @@ def test_format_canvas_state_includes_characters_from_character_tool() -> None:
             quirk="Whistles quietly",
         )
     ]
-    char_tool = CharacterTool(
+    ref_tool = ReferenceTool(
         theater,
         reference_manager=char_mgr,
         canvas_manager=canvas,  # type: ignore[arg-type]
     )
 
-    state = format_canvas_state(canvas, character_tools=char_tool)
+    state = format_canvas_state(canvas, reference_tools=ref_tool)
     assert "[Active Characters]: Rowan (Personality: Stealthy, Motivation: Freedom, Quirk: Whistles quietly)" in state
 
 

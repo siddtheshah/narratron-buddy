@@ -907,7 +907,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         from PIL import Image
         from components.canvas.doodle_state import DoodleState
         from components.canvas.visual_state import VisualState
-        from tools.reference_utils import resolve_provider_references
+        from components.reference_manager import ReferenceManager
 
         with tempfile.TemporaryDirectory() as directory:
             image_path = Path(directory) / "scene.png"
@@ -931,7 +931,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             first_capture = Path(capture_path).read_bytes()
             self.assertEqual(first_capture, content.parts[-1].inline_data.data)
             self.assertNotEqual(first_capture, image_path.read_bytes())
-            references, error = resolve_provider_references(
+            ref_mgr = ReferenceManager(canvas.theater)
+            references, error = ref_mgr.resolve_provider_references(
                 [capture_path], visual=VisualState(canvas.theater),
             )
             self.assertIsNone(error)
@@ -1731,11 +1732,11 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertIn("layered", content_arg.parts[0].text)
             self.assertIn("ready to play", content_arg.parts[0].text)
 
-    def test_session_binds_notepad_and_character_tools_and_passes_to_format_canvas_state(self) -> None:
+    def test_session_binds_notepad_and_reference_tools_and_passes_to_format_canvas_state(self) -> None:
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_notepad_tools = MagicMock()
-        mock_character_tools = MagicMock()
+        mock_reference_tools = MagicMock()
         mock_image_tools = MagicMock(spec=ImageTools)
         mock_manager = MagicMock(spec=ReferenceManager)
         mock_image_tools.reference_manager = mock_manager
@@ -1747,7 +1748,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 if tool_name == "update_sticky_note":
                     return mock_notepad_tools
                 if tool_name in ("create_or_update_character", "create_character", "update_character"):
-                    return mock_character_tools
+                    return mock_reference_tools
                 return None
 
             mock_get_tool.side_effect = side_effect
@@ -1759,7 +1760,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 config={"live_agent": {"observability_startup_delay": 0}},
             )
             self.assertIs(session.notepad_tools, mock_notepad_tools)
-            self.assertIs(session.character_tools, mock_character_tools)
+            self.assertIs(session.reference_tools, mock_reference_tools)
+            self.assertIs(session.character_tools, mock_reference_tools)
             self.assertIs(session.reference_manager, mock_manager)
 
             session.live_request_queue = MagicMock()
@@ -1775,7 +1777,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 mock_format_canvas_state.assert_called_once_with(
                     session.canvas_state_manager,
                     mock_notepad_tools,
-                    mock_character_tools,
+                    mock_reference_tools,
                     mock_manager,
                 )
 

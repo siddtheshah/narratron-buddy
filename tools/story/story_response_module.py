@@ -130,8 +130,9 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
   - **Player Reactionary Rolls (`procedural=False`, default)**: Use for resolving player actions, skill checks, contests, or direct consequences of player decisions. These rolls are visibly animated and displayed on the canvas for the player.
   - **Procedural Rolls (`procedural=True`)**: Use for background procedural generation, random encounter tables, weather, NPC demeanor, or hidden world checks. These rolls are hidden from the canvas.
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
-- **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated. If lore specifies an image reference file, ensure it is used in this function.
-- **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name, visual appearance description, or image reference when established or clarified.
+- **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated.
+- **Scene Reference (`create_or_update_scene`)**: Call `create_or_update_scene` to establish or update scenery and location reference visuals by name and concept description.
+- **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name or visual appearance description when established or clarified.
 
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
@@ -141,7 +142,6 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Character Generation
 - Important characters should always be generated with `create_or_update_character` before writing dialogue for them.
-  - Your lore files will often specify an image reference to attach to the character. If so, include it in the image reference field.
   - You can look up the character using `lookup_character` to see if they have already been created.
 - Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
 - If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
@@ -149,14 +149,14 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Scene Labeling & Reference
 - **Scene Labeling**: Ensure the scene has a label (`scene_label`). The location name is generally a good choice. Keep using that label until a major shift occurs.
-- **Scene Reference**: If established in lore or reference assets for the current location or background scenery, provide the reference image identifier or path in `scene_reference` to signal the live agent which reference image to use for background scenery. If no specific reference image exists for this scenery, set it to null.
+- **Scene Reference**: If established in lore or reference assets for the current location or background scenery, provide the scene name or label in `scene_reference` to signal the live agent which scene reference to use for background scenery. If no specific reference exists for this scenery, set it to null. Use `create_or_update_scene` to create or update scene references.
 {% if style -%}
 
 # Typical Response Procedure
 
 1. Search lore library for relevant context using `search_lore`
 2. Read relevant lore documents using `read_lore`
-3. Create or update characters using `create_or_update_character`
+3. Create or update characters using `create_or_update_character` and scenes using `create_or_update_scene`
 4. Update player character using `update_player_character`
 5. Finalize scene reaction.
 
@@ -721,7 +721,6 @@ class StoryResponseModule:
         quirk: str = "",
         voice_tags: Optional[list[str]] = None,
         gender: Optional[str] = None,
-        image_reference: str = "",
     ) -> Optional[Character]:
         """Create or update an NPC profile with an explicit gender ('male', 'female', or 'nonbinary').
 
@@ -729,7 +728,7 @@ class StoryResponseModule:
         If the character is to be created per the story module's views, prioritizes traits
         assigned in serialized story state so the character remains consistent across initializations.
         """
-        logger.debug(f"[StoryResponseModule] create_or_update_character called for character {name} ; ref {image_reference}")
+        logger.debug(f"[StoryResponseModule] create_or_update_character called for character {name}")
         if self.reference_manager.story_state is None and self.canvas_manager is not None:
             self.reference_manager.story_state = self.canvas_manager.story
         profile = self.reference_manager.create_or_update_character(
@@ -740,12 +739,27 @@ class StoryResponseModule:
             quirk=quirk,
             voice_tags=voice_tags,
             gender=gender,
-            image_reference=image_reference,
         )
         if profile is not None:
             self.save_to_session_state()
         return profile.for_model_context() if profile is not None else None
 
+    def create_or_update_scene(
+        self,
+        name: str,
+        description: str = "",
+    ) -> str:
+        """Create or update a scene reference visual by name and concept description."""
+        clean_name = str(name).strip()
+        if not clean_name:
+            return "Scene name cannot be empty."
+        entry = self.reference_manager.create_or_update_scene(
+            name=clean_name,
+            description=str(description).strip(),
+        )
+        if entry is None:
+            return f"Failed to generate or resolve scene reference for '{clean_name}'."
+        return f"Scene reference for '{clean_name}' is set."
 
     def clear_scene(self) -> str:
         """Remove characters from the current scene while preserving durable story context."""
@@ -769,13 +783,11 @@ class StoryResponseModule:
         self,
         name: str = "",
         image_description: str = "",
-        reference: str = "",
     ) -> str:
-        """Canonically manage or update the player character's name, visual description, or image reference."""
+        """Canonically manage or update the player character's name or visual description."""
         player = self.reference_manager.update_player_character(
             name=name,
             image_description=image_description,
-            reference=reference or None,
         )
         return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}."
 
@@ -884,6 +896,7 @@ class StoryResponseModule:
                 self.lookup_character,
                 self.update_player_character,
                 self.create_or_update_character,
+                self.create_or_update_scene,
                 self.roll_dice,
             ],
             output_schema=SceneReaction,

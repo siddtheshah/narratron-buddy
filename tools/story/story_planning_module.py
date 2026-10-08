@@ -77,7 +77,7 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 - For you, accuracy is more important than speed.
 
 # Character, Lore, and Image Tools
-You can canonically manage the player character using `update_player_character` (name, visual description, image reference) and query them with `get_player_character_info`. You can canonically create or update NPC records using `create_or_update_character` and look up all characters using `lookup_character`.
+You can canonically manage the player character using `update_player_character` (name, visual description) and query them with `get_player_character_info`. You can canonically create or update NPC records using `create_or_update_character`, manage scenery and locations using `create_or_update_scene`, and look up all characters using `lookup_character`.
 Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an older mounted or generated image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
@@ -428,13 +428,11 @@ class StoryPlanningModule:
         self,
         name: str = "",
         image_description: str = "",
-        reference: str = "",
     ) -> str:
-        """Canonically manage or update the player character's name, visual description, or image reference."""
+        """Canonically manage or update the player character's name or visual description."""
         player = self.reference_manager.update_player_character(
             name=name,
             image_description=image_description,
-            reference=reference or None,
         )
         return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}."
 
@@ -447,7 +445,6 @@ class StoryPlanningModule:
         quirk: str = "",
         voice_tags: Optional[list[str]] = None,
         gender: Optional[str] = None,
-        image_reference: str = "",
     ) -> str:
         """Canonically create or update an NPC record in the reference manager."""
         char = self.reference_manager.create_or_update_character(
@@ -458,11 +455,27 @@ class StoryPlanningModule:
             quirk=quirk,
             voice_tags=voice_tags,
             gender=gender,
-            image_reference=image_reference,
         )
         if not char:
             return f"Failed to update character '{name}'."
         return f"Canonically updated character '{char.name}' (alias: {char.alias})."
+
+    def create_or_update_scene(
+        self,
+        name: str,
+        description: str = "",
+    ) -> str:
+        """Canonically create or update a scene record in the reference manager."""
+        clean_name = str(name).strip()
+        if not clean_name:
+            return "Scene name cannot be empty."
+        entry = self.reference_manager.create_or_update_scene(
+            name=clean_name,
+            description=str(description).strip(),
+        )
+        if entry is None:
+            return f"Failed to generate or resolve scene reference for '{clean_name}'."
+        return f"Scene reference for '{clean_name}' is set."
 
     def find_image_names(self, query: str = "") -> list[dict[str, str]]:
         """Find available image aliases and names for use in sticky notes.
@@ -547,6 +560,7 @@ class StoryPlanningModule:
                 self.get_player_character_info,
                 self.update_player_character,
                 self.create_or_update_character,
+                self.create_or_update_scene,
                 self.find_image_names,
                 self.notepad.check_schema,
                 self.notepad.update_sticky_note,

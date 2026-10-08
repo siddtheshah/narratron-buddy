@@ -23,7 +23,7 @@ from services.music_catalog import MusicCatalog
 from tools.observability_tool import ObservabilityTools
 from tools.story import StoryTool
 from tools.notepad_tool import NotepadTool
-from tools.character_tool import CharacterTool
+from tools.reference_tool import ReferenceTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from tools.user_help_tool import UserHelpTool
@@ -80,7 +80,7 @@ Use the preloaded references for named characters and places; browse only when a
 Track the ongoing state of the world with notepad_tool.
 Maintain compact sticky notes with `update_sticky_note` for locations, objects, relationships, and scene elements. Mark departed elements '(absent)' rather than losing their descriptions.
 ## Character Management
-Use `create_or_update_character` for new or developed characters, `lookup_character` for known details, and `clear_characters` when moving to an entirely new setting/story. Keep appearance, personality, voice, and references consistent.
+Use `create_or_update_character` for new or developed characters, `create_or_update_scene` for scenery and locations, `lookup_character` for known details, and `clear_characters` when moving to an entirely new setting/story. Keep appearance, personality, voice, and references consistent.
 {% endif %}
 
 ## Visual Staging
@@ -140,7 +140,7 @@ If you see one, follow it as long as it does not contradict the orator. Non-sequ
 {%- if adventure_mode %}
 For characters and scenes suggestions in adventure mode, if a suggestion something like, "Make this character have orange hair", you can use `process_user_action` with a nudge parameter to fulfill it. 
 {%- else %}
-For character and scenes suggestions, use the character_tool or notepad_tool to register these updates. Then use them in other tools to produce canvas updates.
+For character and scenes suggestions, use the reference_tool or notepad_tool to register these updates. Then use them in other tools to produce canvas updates.
 {% if observability_enabled %} Use observability_tool to see the implicit suggestions on the canvas. {% endif %}
 {%- endif %}
 After noting the suggestions, you should use visual tools (images or animations) or audio tools (music) to satisfy the audience.
@@ -358,15 +358,16 @@ def create_tool_bundle_for_session(
             notepad=notepad,
         )
         tools.append(notepad_tools.update_sticky_note)
-        character_tools = CharacterTool(
+        reference_tools = ReferenceTool(
             theater,
             reference_manager=reference_manager,
             canvas_manager=canvas_manager,
         )
         tools.extend([
-            character_tools.create_or_update_character,
-            character_tools.lookup_character,
-            character_tools.clear_characters,
+            reference_tools.create_or_update_character,
+            reference_tools.create_or_update_scene,
+            reference_tools.lookup_character,
+            reference_tools.clear_characters,
         ])
 
     interactive_canvas_config = config.get("interactive_canvas", {})
