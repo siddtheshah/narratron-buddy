@@ -11,7 +11,7 @@ from providers.registry import get_image_provider
 
 
 def generate_theater_image(
-    root: Path, *, kind: Literal["reference", "stamp"], prompt: str,
+    root: Path, *, kind: Literal["reference", "stamp", "character"], prompt: str,
     references: list[ImageReference],
 ) -> ImageGenerationResult:
     settings = TypeAdapter(dict[str, JsonValue]).validate_python(
@@ -31,6 +31,15 @@ def generate_theater_image(
         )
         request = ImageGenerationRequest(
             prompt=prompt, references=references, aspect_ratio="1:1", background="transparent",
+        )
+    elif kind == "character":
+        prompt += (
+            "\nSingle-character reference portrait. "
+            "Square head-and-shoulders portrait, clear face and silhouette, neutral background, "
+            "consistent costume details, no text, no collage."
+        )
+        request = ImageGenerationRequest(
+            prompt=prompt, references=references, aspect_ratio="1:1", background="opaque",
         )
     else:
         request = ImageGenerationRequest(prompt=prompt, references=references, background="opaque")

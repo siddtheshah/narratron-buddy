@@ -244,6 +244,61 @@ def test_generated_stamp_preserves_png_alpha_in_draft_and_published_theater(buil
     assert (builder.repository.theater_path(identifier) / path).read_bytes() == buffer.getvalue()
 
 
+def test_assistant_proposes_and_generates_characters(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    proposal = BuilderProposal(
+        message="Add captain character",
+        writes=[],
+        moves=[],
+        generations=[GenerationRequest(kind="character", name="Arthur Modella", prompt="Captain Arthur Modella")],
+    )
+    builder.database.record_user_usage.return_value = {"credits": 29.9}
+    with patch.object(TheaterBuilderStore, "propose", return_value=proposal), patch("api_server.theater_editor.auth_session_cache.invalidate_user"):
+        result = builder.client.post(f"{base}/assistant", json={"prompt": "Create our captain character"})
+    assert result.status_code == 200
+    gen = result.json()["proposal"]["generations"][0]
+    assert gen["kind"] == "character"
+    assert gen["name"] == "Arthur Modella"
+
+    image = MagicMock()
+    image.generate.return_value = ImageGenerationResult(image_bytes=b"arthur-portrait-1", mime_type="image/png", provider="mock", model="mock")
+    with patch("services.theater_image_generation.get_image_provider", return_value=image):
+        gen_res = builder.client.post(f"{base}/generate", json={
+            "revision": result.json()["revision"],
+            "kind": gen["kind"],
+            "name": gen["name"],
+            "prompt": gen["prompt"],
+            "references": gen["references"],
+        })
+    assert gen_res.status_code == 200
+    char_path1 = gen_res.json()["path"]
+    assert char_path1 == "characters/Arthur Modella/1.png"
+    assert builder.client.get(f"{base}/file", params={"path": char_path1}).content == b"arthur-portrait-1"
+
+    # Second generation for the same character increments iteration to 2.png
+    image.generate.return_value = ImageGenerationResult(image_bytes=b"arthur-portrait-2", mime_type="image/png", provider="mock", model="mock")
+    with patch("services.theater_image_generation.get_image_provider", return_value=image):
+        gen_res2 = builder.client.post(f"{base}/generate", json={
+            "revision": gen_res.json()["state"]["draft"]["revision"],
+            "kind": gen["kind"],
+            "name": gen["name"],
+            "prompt": "Evolved portrait",
+            "references": [char_path1],
+        })
+    assert gen_res2.status_code == 200
+    char_path2 = gen_res2.json()["path"]
+    assert char_path2 == "characters/Arthur Modella/2.png"
+    assert builder.client.get(f"{base}/file", params={"path": char_path2}).content == b"arthur-portrait-2"
+
+    # Verify deployment publishes characters to the live theater
+    published = builder.client.post(f"{base}/deploy", json={"revision": gen_res2.json()["state"]["draft"]["revision"]})
+    assert published.status_code == 200
+    identifier = data["draft"]["theater_id"]
+    assert (builder.repository.theater_path(identifier) / char_path1).read_bytes() == b"arthur-portrait-1"
+    assert (builder.repository.theater_path(identifier) / char_path2).read_bytes() == b"arthur-portrait-2"
+
+
 def test_failed_or_unaffordable_generation_does_not_charge(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"

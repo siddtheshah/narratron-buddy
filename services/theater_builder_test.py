@@ -8,11 +8,12 @@ import pytest
 from PIL import Image
 
 from services.theater_builder import (
-    BuilderProposal, FileMove, TheaterBuilderStore, safe_asset_path, upload_path,
+    BuilderProposal, FileMove, FileWrite, GenerationRequest, TheaterBuilderStore,
+    safe_asset_path, upload_path,
 )
 
 
-@pytest.mark.parametrize("path", ["../secret.txt", "references/../../secret.png", "/references/a.png", "references/C:/a.png", "references/CON.png", "references/a.png.", "editor.json", "output/file.txt", "lore/script.py"])
+@pytest.mark.parametrize("path", ["../secret.txt", "references/../../secret.png", "/references/a.png", "references/C:/a.png", "references/CON.png", "references/a.png.", "editor.json", "output/file.txt", "lore/script.py", "characters/hero.png"])
 def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -> None:
     with pytest.raises(ValueError):
         safe_asset_path(tmp_path, path)
@@ -26,6 +27,8 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
     ("notes.md", False, "lore/notes.txt"),
     ("world/references/people/hero.png", True, "references/people/hero.png"),
     ("world/stamps/tokens/hero.png", True, "stamps/tokens/hero.png"),
+    ("world/characters/Arthur Modella/1.png", True, "characters/Arthur Modella/1.png"),
+    ("characters/Arthur Modella/1.png", False, "characters/Arthur Modella/1.png"),
     ("world/playlists/mystery/rain.mp3", True, "playlists/mystery/rain.mp3"),
     ("world/theater.yaml", True, "theater.yaml"),
 ])
@@ -202,4 +205,31 @@ def test_assistant_proposes_deletions_and_validates_them(tmp_path: Path) -> None
     bad_client.models.generate_content.return_value.text = bad_proposal.model_dump_json()
     with patch("services.theater_builder.genai.Client", return_value=bad_client), pytest.raises(ValueError, match="Cannot delete theater.yaml."):
         store.propose(info, "Delete theater.yaml", [], {})
+
+
+def test_character_paths_allowed_in_safe_asset_path(tmp_path: Path) -> None:
+    portrait = safe_asset_path(tmp_path, "characters/Arthur Modella/1.png")
+    assert portrait == tmp_path / "characters" / "Arthur Modella" / "1.png"
+    nested_portrait = safe_asset_path(tmp_path, "characters/Grim Vallos/alt/2.webp")
+    assert nested_portrait == tmp_path / "characters" / "Grim Vallos" / "alt" / "2.webp"
+
+
+def test_assistant_proposes_character_portraits_and_system_instruction(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    client = MagicMock()
+    proposal = BuilderProposal(
+        message="Add character dossier and portrait.",
+        writes=[FileWrite(path="lore/characters/arthur.txt", content="Arthur Modella, the harbor captain.")],
+        generations=[GenerationRequest(kind="character", name="Arthur Modella", prompt="Portrait of Arthur Modella, weathered captain")],
+    )
+    client.models.generate_content.return_value.text = proposal.model_dump_json()
+    with patch("services.theater_builder.genai.Client", return_value=client):
+        result = store.propose(info, "Create a harbor captain character", [], {})
+    assert len(result.generations) == 1
+    assert result.generations[0].kind == "character"
+    assert result.generations[0].name == "Arthur Modella"
+    system_instruction = client.models.generate_content.call_args.kwargs["config"].system_instruction
+    assert "characters/<Character Name>" in system_instruction
+    assert "kind 'character'" in system_instruction
 

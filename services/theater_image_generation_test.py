@@ -35,3 +35,20 @@ def test_reference_uses_flare_scene_prompt_and_selected_references(tmp_path: Pat
     assert request.aspect_ratio == "16:9"
     assert request.references == references
     assert request.prompt == "A misty harbor\nStyle: Painted fantasy"
+
+
+def test_character_uses_flare_square_portrait_instructions(tmp_path: Path) -> None:
+    (tmp_path / "theater.yaml").write_text("visuals:\n  style: Oil painting\n", encoding="utf-8")
+    references = [ImageReference(name="previous_iter.png", data=b"char", mime_type="image/png")]
+    provider = MagicMock()
+    with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
+        generate_theater_image(tmp_path, kind="character", prompt="Arthur Modella, harbor captain", references=references)
+    resolve.assert_called_once_with("openai-gpt-image-flare")
+    request = provider.generate.call_args.args[0]
+    assert request.background == "opaque"
+    assert request.aspect_ratio == "1:1"
+    assert request.references == references
+    assert "Arthur Modella, harbor captain" in request.prompt
+    assert "Style: Oil painting" in request.prompt
+    assert "Single-character reference portrait" in request.prompt
+    assert "Square head-and-shoulders portrait" in request.prompt

@@ -106,7 +106,7 @@
         button.dataset.path = file.path;
         button.classList.toggle('active', selected?.path === file.path);
         if (selected?.path === file.path) button.setAttribute('aria-current', 'true');
-        button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡')} ${file.path.split('/').pop()}`;
+        button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.path.startsWith('characters/') ? '👤' : (file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡'))} ${file.path.split('/').pop()}`;
         button.title = file.path; button.addEventListener('click', () => selectFile(file)); parent.append(button);
       }
     }
@@ -315,7 +315,7 @@
     }
     for (const generation of proposal.generations) {
       const card = document.createElement('div'); card.className = 'generation-card';
-      const kindLabel = generation.kind === 'reference' ? 'Reference' : (generation.kind === 'stamp' ? 'Stamp token' : 'Playlist track');
+      const kindLabel = generation.kind === 'reference' ? 'Reference' : (generation.kind === 'stamp' ? 'Stamp token' : (generation.kind === 'character' ? 'Character portrait' : 'Playlist track'));
       const label = document.createElement('strong'); label.textContent = `${kindLabel}: ${generation.name}`;
       const description = document.createElement('p'); description.textContent = generation.prompt;
       const button = document.createElement('button'); button.type = 'button';
@@ -534,8 +534,8 @@
     window.history.replaceState(null, '', '/theater-editor'); status('');
   });
   el('assistant-form').addEventListener('submit', event => { event.preventDefault(); ask(el('assistant-input').value.trim()); });
-  el('organize-assets').addEventListener('click', () => ask('Organize my uploaded assets into meaningful reference subfolders, stamps/ tokens, lore documents, and named playlists. Update all file references where necessary.'));
-  el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose an opening scene, characters, reference images, stamp tokens for tactical play, and atmospheric playlist tracks.'));
+  el('organize-assets').addEventListener('click', () => ask('Organize my uploaded assets into meaningful reference subfolders, characters/ folders, stamps/ tokens, lore documents, and named playlists. Update all file references where necessary.'));
+  el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose an opening scene, characters (with lore dossiers and characters/ portraits), reference images, stamp tokens for tactical play, and atmospheric playlist tracks.'));
   el('harvest-doc-shortcut').addEventListener('click', () => openGoogleDialog(true));
   el('import-google-link').addEventListener('click', () => openGoogleDialog(false));
   el('google-link-cancel').addEventListener('click', () => el('google-link-dialog').close());

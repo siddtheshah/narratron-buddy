@@ -1,6 +1,6 @@
 # Character: The Caretaker
 
-IMAGE_REFERENCE: references/the_caretaker.jpg
+IMAGE_REFERENCE: The Caretaker
 VOICE_TAG: soft, contemplative, paper-rustle whisper
 
 1. APPEARANCE & VIBE:

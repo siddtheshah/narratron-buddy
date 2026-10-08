@@ -381,17 +381,29 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
     root = store().directory(info.theater_id)
     name = re.sub(r"[^a-zA-Z0-9_-]", "_", body.name).strip("_") or "asset"
     identifier = uuid.uuid4().hex[:12]
-    if body.kind in ("reference", "stamp"):
+    if body.kind in ("reference", "stamp", "character"):
         references: list[ImageReference] = []
         for relative in body.references:
             path = safe_asset_path(root, relative)
-            if not relative.startswith("references/") or not path.is_file():
-                raise ValueError("Generation references must be existing reference images.")
+            if not (relative.startswith("references/") or relative.startswith("characters/")) or not path.is_file():
+                raise ValueError("Generation references must be existing reference or character images.")
             references.append(ImageReference(name=path.name, data=path.read_bytes(), mime_type=asset_mime(path)))
         result = generate_theater_image(root, kind=body.kind, prompt=body.prompt, references=references)
         extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(result.mime_type)
         if not result.image_bytes or extension is None:
             raise ValueError("Image provider returned no supported image.")
+        if body.kind == "character":
+            char_folder = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", body.name.strip()).strip(". ") or name
+            char_dir = root / "characters" / char_folder
+            iteration = 1
+            if char_dir.is_dir():
+                nums = [
+                    int(p.stem) for p in char_dir.iterdir()
+                    if p.is_file() and p.stem.isdigit()
+                ]
+                if nums:
+                    iteration = max(nums) + 1
+            return f"characters/{char_folder}/{iteration}{extension}", result.image_bytes
         target_dir = "stamps" if body.kind == "stamp" else "references"
         return f"{target_dir}/{name}_{identifier}{extension}", result.image_bytes
     playlist = re.sub(r"[^a-zA-Z0-9_-]", "_", body.playlist).strip("_") or "ambient"
@@ -429,7 +441,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
             info = await require_draft(request, theater_id)
             check_revision(info, body.revision)
             rates = pricing_controller.get_rates()
-            cost = rates["image_credit_rate" if body.kind in ("reference", "stamp") else "music_credit_rate"]
+            cost = rates["image_credit_rate" if body.kind in ("reference", "stamp", "character") else "music_credit_rate"]
             user = await asyncio.to_thread(db.get_user_by_id, owner_id)
             if not user or user["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"This generation requires {cost:g} credits. Top up on /deploy.")
@@ -451,7 +463,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
             try:
                 updated = await asyncio.to_thread(db.record_user_usage, owner_id,
-                    images_created=1 if body.kind in ("reference", "stamp") else 0,
+                    images_created=1 if body.kind in ("reference", "stamp", "character") else 0,
                     music_created=1 if body.kind == "playlist" else 0, credit_cost=cost,
                     idempotency_key=f"builder:{theater_id}:{path}")
             except Exception as error:
