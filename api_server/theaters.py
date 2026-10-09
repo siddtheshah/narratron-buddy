@@ -25,8 +25,10 @@ from api_server.shared import (
     _require_canvas_access_async,
     _safe_path_param,
     _grant_canvas_access,
+    can_control_agent_websocket,
     PROJECT_ROOT
 )
+from google.genai import types
 from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, pricing_controller
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
@@ -37,7 +39,14 @@ from services.generation_billing import (
 )
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
-from components.theater_manager import MAX_LORE_DOCUMENT_BYTES, TheaterMetadata, extract_asset_package, validate_asset_path
+from components.theater_manager import (
+    MAX_LORE_DOCUMENT_BYTES,
+    TheaterMetadata,
+    TheaterScene,
+    TheaterCharacter,
+    extract_asset_package,
+    validate_asset_path,
+)
 from utils.config_loader import get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
@@ -201,6 +210,96 @@ async def list_theater_stamps(
     return theater_manager.theater(theater_id).stamps()
 
 
+class PushSceneRequest(BaseModel):
+    name: str = ""
+    scene_id: Optional[str] = None
+
+
+@app.get("/api/theaters/{theater_id}/scenes")
+async def list_theater_scenes(
+    request: Request, theater_id: str, join_key: Optional[str] = None,
+) -> list[TheaterScene]:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    deployment = db.get_deployment(theater_id)
+    current_user = await get_current_user_async(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can access theater scenes.")
+    return theater_manager.theater(theater_id).scenes()
+
+
+@app.get("/api/theaters/{theater_id}/characters")
+async def list_theater_characters(
+    request: Request, theater_id: str, join_key: Optional[str] = None,
+) -> list[TheaterCharacter]:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    deployment = db.get_deployment(theater_id)
+    current_user = await get_current_user_async(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can access theater characters.")
+    return theater_manager.theater(theater_id).characters()
+
+
+@app.post("/api/theaters/{theater_id}/scenes/push")
+async def push_theater_scene(
+    payload: PushSceneRequest,
+    request: Request,
+    theater_id: str,
+    join_key: Optional[str] = None,
+) -> dict[str, str]:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    deployment = db.get_deployment(theater_id)
+    current_user = await get_current_user_async(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can push scenes to the canvas.")
+
+    scenes = theater_manager.theater(theater_id).scenes()
+    target_scene: Optional[TheaterScene] = None
+    req_name = payload.name.strip().lower()
+    req_id = (payload.scene_id or "").strip()
+    for s in scenes:
+        if req_id and s["id"] == req_id:
+            target_scene = s
+            break
+        if req_name and (s["name"].strip().lower() == req_name or s["name"].replace("_", " ").strip().lower() == req_name):
+            target_scene = s
+            break
+
+    if target_scene is None:
+        raise HTTPException(status_code=404, detail=f"Scene '{payload.name}' not found.")
+    if not target_scene["path"]:
+        raise HTTPException(status_code=400, detail=f"Scene '{target_scene['name']}' has no image to display.")
+
+    state = canvas_states.get(theater_id)
+    update_res = state.visual.update_image(
+        path=target_scene["path"],
+        display_path=None,
+        allow_pinned=True,
+        transition="crossfade",
+        effect="gleam3",
+        prompt=target_scene["description"] or target_scene["name"],
+        source="show_image",
+        url_for_path=theater_manager.theater(theater_id).get_url_for_path,
+    )
+    state.persist()
+
+    session = live_agent_manager.get_session(theater_id)
+    if session is not None and session.is_alive:
+        session.send_content(types.Content(role="system", parts=[types.Part(text=(
+            f"[Orator Action] The active orator changed the scene to '{target_scene['name']}'."
+        ))]))
+
+    return {
+        "status": "ok",
+        "scene_name": target_scene["name"],
+        "scene_id": target_scene["id"],
+        "url": target_scene["url"],
+        "message": update_res["message"],
+    }
+
+
 @app.get("/theaters/{theater_id}/stamps/{filename:path}")
 async def serve_theater_stamp(
     request: Request, theater_id: str, filename: str, join_key: Optional[str] = None,
@@ -242,13 +341,22 @@ async def serve_theater_reference(
     headers = {
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "sandbox; default-src 'none'",
+        "Cache-Control": "private, max-age=3600",
+        "Vary": "Cookie",
     }
+    stat_result = file_path.stat()
     try:
         media_type = await asyncio.to_thread(reference_image_type, file_path.name, file_path.read_bytes())
     except ValueError:
         # Existing deployments may contain documents accepted before validation.
-        return FileResponse(file_path, media_type="application/octet-stream", filename=file_path.name, headers=headers)
-    return FileResponse(file_path, media_type=media_type, headers=headers)
+        fallback_resp = FileResponse(file_path, media_type="application/octet-stream", filename=file_path.name, headers=headers, stat_result=stat_result)
+        if StaticFiles().is_not_modified(fallback_resp.headers, request.headers):
+            return NotModifiedResponse(fallback_resp.headers)
+        return fallback_resp
+    response = FileResponse(file_path, media_type=media_type, headers=headers, stat_result=stat_result)
+    if StaticFiles().is_not_modified(response.headers, request.headers):
+        return NotModifiedResponse(response.headers)
+    return response
 
 @app.get("/theaters/{theater_id}/playlists/{playlist_name}/{filename:path}")
 async def serve_theater_playlist_track(
@@ -293,7 +401,14 @@ async def serve_theater_output(
                 file_path = found[0]
             else:
                 raise HTTPException(status_code=404, detail="Theater output file not found")
-    return FileResponse(file_path)
+    output_headers = {
+        "Cache-Control": "private, max-age=3600",
+        "Vary": "Cookie",
+    }
+    response = FileResponse(file_path, headers=output_headers, stat_result=file_path.stat())
+    if StaticFiles().is_not_modified(response.headers, request.headers):
+        return NotModifiedResponse(response.headers)
+    return response
 
 # ========================================
 # Deployer & Theater API Endpoints

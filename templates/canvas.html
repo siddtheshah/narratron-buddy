@@ -3250,12 +3250,23 @@
         <div id="stamp-manager-pane">
             <div class="stamp-manager-header">
                 <div class="stamp-manager-header-title">
-                    <span aria-hidden="true">🏷️</span>
-                    <span>Stamp Manager</span>
+                    <span aria-hidden="true" id="stamp-manager-header-icon">🏷️</span>
+                    <span id="stamp-manager-header-title">Stamp Manager</span>
                     <span id="stamp-manager-count" class="stamp-manager-count-badge">0/10</span>
                 </div>
                 <button type="button" id="close-stamp-manager-btn" class="panel-btn" title="Back to Chat" style="font-size: 0.78rem; padding: 4px 8px;">
                     ✕ Back to Chat
+                </button>
+            </div>
+            <div id="stamp-manager-tabs" class="stamp-manager-tabs" style="display: none;">
+                <button type="button" class="stamp-tab-btn active" id="stamp-tab-stamps" data-tab="stamps">
+                    🏷️ Stamps
+                </button>
+                <button type="button" class="stamp-tab-btn" id="stamp-tab-scenes" data-tab="scenes">
+                    🎬 Scenes
+                </button>
+                <button type="button" class="stamp-tab-btn" id="stamp-tab-characters" data-tab="characters">
+                    👤 Characters
                 </button>
             </div>
             <div id="stamp-manager-permission-banner" class="stamp-manager-permission-banner non-contributor">
@@ -3270,6 +3281,18 @@
                     <a href="/profile" id="stamp-manager-empty-profile-btn" target="_blank" class="panel-btn" style="margin-top: 8px; font-size: 0.78rem; text-decoration: none; padding: 5px 12px; color: #a5b4fc;">
                         Go to Profile ↗
                     </a>
+                </div>
+                <div id="scenes-manager-grid" class="scenes-grid" style="display: none;"></div>
+                <div id="scenes-manager-empty" class="stamp-manager-empty" style="display: none;">
+                    <div class="empty-icon">🎬</div>
+                    <div id="scenes-empty-message" style="font-weight: 500;">No scenes found.</div>
+                    <div style="font-size: 0.78rem; color: #64748b;">This adventure has no predefined scenes.</div>
+                </div>
+                <div id="characters-manager-grid" class="characters-grid" style="display: none;"></div>
+                <div id="characters-manager-empty" class="stamp-manager-empty" style="display: none;">
+                    <div class="empty-icon">👤</div>
+                    <div id="characters-empty-message" style="font-weight: 500;">No characters found.</div>
+                    <div style="font-size: 0.78rem; color: #64748b;">This adventure has no predefined characters.</div>
                 </div>
             </div>
             <div id="stamp-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits. Saved to this theater for everyone to use.</div>
@@ -5947,9 +5970,26 @@
         const stampManagerCount = document.getElementById('stamp-manager-count');
         const stampManagerPermissionBanner = document.getElementById('stamp-manager-permission-banner');
 
+        const stampManagerTabs = document.getElementById('stamp-manager-tabs');
+        const stampTabStampsBtn = document.getElementById('stamp-tab-stamps');
+        const stampTabScenesBtn = document.getElementById('stamp-tab-scenes');
+        const stampTabCharactersBtn = document.getElementById('stamp-tab-characters');
+        const scenesManagerGrid = document.getElementById('scenes-manager-grid');
+        const scenesManagerEmpty = document.getElementById('scenes-manager-empty');
+        const scenesEmptyMessage = document.getElementById('scenes-empty-message');
+        const charactersManagerGrid = document.getElementById('characters-manager-grid');
+        const charactersManagerEmpty = document.getElementById('characters-manager-empty');
+        const charactersEmptyMessage = document.getElementById('characters-empty-message');
+
         let isStampManagerOpen = false;
+        let activeStampManagerTab = 'stamps';
         let cachedUserStamps = null;
         let cachedTheaterStamps = [];
+        let cachedTheaterScenes = null;
+        let cachedTheaterCharacters = null;
+        let isFetchingTheaterScenes = false;
+        let isFetchingTheaterCharacters = false;
+        let isPushingScene = false;
         let stampLoadError = '';
         let isFetchingUserStamps = false;
         let isTheaterStampOwner = false;
@@ -6076,10 +6116,19 @@
             if (stampManagerPane) stampManagerPane.style.display = isStampManagerOpen ? 'flex' : 'none';
             chatOpenStampsBtn?.classList.toggle('active', isStampManagerOpen);
             if (isStampManagerOpen) {
-                updateStampManagerPermissionBanner();
-                updateStampManagerProfileLinks(currentUser);
-                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
-                loadUserStamps();
+                if (typeof updateStampTabsVisibility === 'function') updateStampTabsVisibility();
+                if (activeStampManagerTab === 'stamps') {
+                    updateStampManagerPermissionBanner();
+                    updateStampManagerProfileLinks(currentUser);
+                    if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+                    loadUserStamps();
+                } else if (activeStampManagerTab === 'scenes') {
+                    if (cachedTheaterScenes) renderScenesManagerGrid(cachedTheaterScenes);
+                    if (typeof loadTheaterScenes === 'function') loadTheaterScenes();
+                } else if (activeStampManagerTab === 'characters') {
+                    if (cachedTheaterCharacters) renderCharactersManagerGrid(cachedTheaterCharacters);
+                    if (typeof loadTheaterCharacters === 'function') loadTheaterCharacters();
+                }
             }
         }
 
@@ -6106,6 +6155,15 @@
         });
         stampManagerBackChatBtn?.addEventListener('click', () => {
             setStampManagerOpen(false);
+        });
+        stampTabStampsBtn?.addEventListener('click', () => {
+            if (typeof switchStampManagerTab === 'function') switchStampManagerTab('stamps');
+        });
+        stampTabScenesBtn?.addEventListener('click', () => {
+            if (typeof switchStampManagerTab === 'function') switchStampManagerTab('scenes');
+        });
+        stampTabCharactersBtn?.addEventListener('click', () => {
+            if (typeof switchStampManagerTab === 'function') switchStampManagerTab('characters');
         });
         document.getElementById('stamp-manager-empty-profile-btn')?.addEventListener('click', (e) => {
             if (!currentUser || !currentUser.id) {
@@ -6211,18 +6269,19 @@
         function renderStampManagerGrid(stamps) {
             if (!stampManagerGrid) return;
             stampManagerGrid.innerHTML = '';
-            if (stampManagerCount) {
+            const isStampsActive = typeof activeStampManagerTab === 'undefined' || activeStampManagerTab === 'stamps';
+            if (stampManagerCount && isStampsActive) {
                 stampManagerCount.textContent = `${stamps.length}/10`;
                 stampManagerCount.title = `${stamps.length} user stamps · ${cachedTheaterStamps.length} theater stamps` +
                     (pendingStampGenerations.size ? ` · ${pendingStampGenerations.size} generating` : '');
             }
 
             if (stamps.length === 0 && cachedTheaterStamps.length === 0 && pendingStampGenerations.size === 0) {
-                if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
+                if (stampManagerEmpty && isStampsActive) stampManagerEmpty.style.display = 'flex';
                 if (stampEmptyMessage) stampEmptyMessage.textContent = stampLoadError || 'No stamps available yet.';
                 return;
             }
-            if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
+            if (stampManagerEmpty && isStampsActive) stampManagerEmpty.style.display = 'none';
             if (stampLoadError) {
                 const notice = document.createElement('div');
                 notice.className = 'stamp-section-label';
@@ -6545,6 +6604,429 @@
         connectCanvasStateSocket();
 
         // ========================================
+        // Stamp Manager Tab Switching (Scenes & Characters for Orator)
+        // ========================================
+        function updateStampTabsVisibility() {
+            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
+            if (stampManagerTabs) {
+                stampManagerTabs.style.display = isOrator ? 'flex' : 'none';
+            }
+            if (!isOrator && activeStampManagerTab !== 'stamps') {
+                switchStampManagerTab('stamps');
+            }
+        }
+
+        const preloadedImageUrls = new Set();
+        function preloadItemImages(items) {
+            if (!Array.isArray(items)) return;
+            items.forEach(item => {
+                const url = item && (item.url || item.image_url);
+                if (url && typeof url === 'string' && !preloadedImageUrls.has(url)) {
+                    preloadedImageUrls.add(url);
+                    const img = new Image();
+                    img.src = url;
+                }
+            });
+        }
+
+        function switchStampManagerTab(tab) {
+            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
+            if (!isOrator && tab !== 'stamps') {
+                tab = 'stamps';
+            }
+            activeStampManagerTab = tab;
+
+            stampTabStampsBtn?.classList.toggle('active', tab === 'stamps');
+            stampTabScenesBtn?.classList.toggle('active', tab === 'scenes');
+            stampTabCharactersBtn?.classList.toggle('active', tab === 'characters');
+
+            const headerIcon = document.getElementById('stamp-manager-header-icon');
+            const headerTitle = document.getElementById('stamp-manager-header-title');
+            const stampGenForm = document.getElementById('stamp-generation-form');
+            const stampGenStatus = document.getElementById('stamp-generation-status');
+            const stampGenSubmit = document.getElementById('stamp-generation-submit');
+            const stampProfileLink = document.getElementById('stamp-manager-profile-link');
+
+            if (tab === 'stamps') {
+                if (headerIcon) headerIcon.textContent = '🏷️';
+                if (headerTitle) headerTitle.textContent = 'Stamp Manager';
+                if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = '';
+                if (stampManagerGrid) stampManagerGrid.style.display = '';
+                if (scenesManagerGrid) scenesManagerGrid.style.display = 'none';
+                if (scenesManagerEmpty) scenesManagerEmpty.style.display = 'none';
+                if (charactersManagerGrid) charactersManagerGrid.style.display = 'none';
+                if (charactersManagerEmpty) charactersManagerEmpty.style.display = 'none';
+
+                updateStampGenerationPermission();
+                if (stampProfileLink) stampProfileLink.style.display = '';
+                updateStampManagerPermissionBanner();
+
+                if (stampManagerCount) {
+                    const count = (typeof cachedUserStamps !== 'undefined' && cachedUserStamps) ? cachedUserStamps.length : 0;
+                    stampManagerCount.textContent = `${count}/10`;
+                    const theaterCount = (typeof cachedTheaterStamps !== 'undefined' && cachedTheaterStamps) ? cachedTheaterStamps.length : 0;
+                    const pendingCount = (typeof pendingStampGenerations !== 'undefined' && pendingStampGenerations && pendingStampGenerations.size) ? ` · ${pendingStampGenerations.size} generating` : '';
+                    stampManagerCount.title = `${count} user stamps · ${theaterCount} theater stamps${pendingCount}`;
+                }
+
+                if (cachedUserStamps) {
+                    renderStampManagerGrid(cachedUserStamps);
+                } else {
+                    loadUserStamps();
+                }
+            } else if (tab === 'scenes') {
+                if (headerIcon) headerIcon.textContent = '🎬';
+                if (headerTitle) headerTitle.textContent = 'Scenes';
+                if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
+                if (stampManagerGrid) stampManagerGrid.style.display = 'none';
+                if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
+                if (charactersManagerGrid) charactersManagerGrid.style.display = 'none';
+                if (charactersManagerEmpty) charactersManagerEmpty.style.display = 'none';
+                if (scenesManagerGrid) scenesManagerGrid.style.display = 'grid';
+
+                if (stampGenForm) stampGenForm.hidden = true;
+                if (stampGenStatus) stampGenStatus.hidden = true;
+                if (stampGenSubmit) stampGenSubmit.hidden = true;
+                if (stampProfileLink) stampProfileLink.style.display = 'none';
+
+                if (stampManagerCount) {
+                    const count = cachedTheaterScenes ? cachedTheaterScenes.length : 0;
+                    stampManagerCount.textContent = `${count}`;
+                    stampManagerCount.title = `${count} adventure scenes`;
+                }
+
+                if (cachedTheaterScenes) {
+                    renderScenesManagerGrid(cachedTheaterScenes);
+                    preloadItemImages(cachedTheaterScenes);
+                } else {
+                    loadTheaterScenes();
+                }
+            } else if (tab === 'characters') {
+                if (headerIcon) headerIcon.textContent = '👤';
+                if (headerTitle) headerTitle.textContent = 'Characters';
+                if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
+                if (stampManagerGrid) stampManagerGrid.style.display = 'none';
+                if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
+                if (scenesManagerGrid) scenesManagerGrid.style.display = 'none';
+                if (scenesManagerEmpty) scenesManagerEmpty.style.display = 'none';
+                if (charactersManagerGrid) charactersManagerGrid.style.display = 'grid';
+
+                if (stampGenForm) stampGenForm.hidden = true;
+                if (stampGenStatus) stampGenStatus.hidden = true;
+                if (stampGenSubmit) stampGenSubmit.hidden = true;
+                if (stampProfileLink) stampProfileLink.style.display = 'none';
+
+                if (stampManagerCount) {
+                    const count = cachedTheaterCharacters ? cachedTheaterCharacters.length : 0;
+                    stampManagerCount.textContent = `${count}`;
+                    stampManagerCount.title = `${count} adventure characters`;
+                }
+
+                if (cachedTheaterCharacters) {
+                    renderCharactersManagerGrid(cachedTheaterCharacters);
+                    preloadItemImages(cachedTheaterCharacters);
+                } else {
+                    loadTheaterCharacters();
+                }
+            }
+        }
+
+        async function loadTheaterScenes() {
+            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
+            if (!tid || isFetchingTheaterScenes) return;
+            isFetchingTheaterScenes = true;
+            try {
+                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/scenes`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                cachedTheaterScenes = Array.isArray(data) ? data : [];
+                preloadItemImages(cachedTheaterScenes);
+                if (activeStampManagerTab === 'scenes') {
+                    renderScenesManagerGrid(cachedTheaterScenes);
+                }
+            } catch (err) {
+                console.warn('Unable to load theater scenes:', err);
+                if (activeStampManagerTab === 'scenes') {
+                    if (scenesManagerGrid) scenesManagerGrid.innerHTML = '';
+                    if (scenesManagerEmpty) {
+                        scenesManagerEmpty.style.display = 'flex';
+                        if (scenesEmptyMessage) scenesEmptyMessage.textContent = 'Unable to load scenes at this time.';
+                    }
+                }
+            } finally {
+                isFetchingTheaterScenes = false;
+            }
+        }
+
+        function renderScenesManagerGrid(scenes) {
+            if (!scenesManagerGrid) return;
+            scenesManagerGrid.innerHTML = '';
+            if (stampManagerCount && activeStampManagerTab === 'scenes') {
+                stampManagerCount.textContent = `${scenes.length}`;
+                stampManagerCount.title = `${scenes.length} adventure scenes`;
+            }
+            if (!scenes || scenes.length === 0) {
+                if (scenesManagerEmpty) {
+                    scenesManagerEmpty.style.display = 'flex';
+                    if (scenesEmptyMessage) scenesEmptyMessage.textContent = 'No scenes found for this adventure.';
+                }
+                return;
+            }
+            if (scenesManagerEmpty) scenesManagerEmpty.style.display = 'none';
+
+            scenes.forEach(scene => {
+                const card = document.createElement('div');
+                card.className = 'scene-card';
+                card.setAttribute('role', 'button');
+                card.setAttribute('tabindex', '0');
+                card.setAttribute('title', `Click to push "${scene.name}" to canvas`);
+                card.dataset.sceneName = scene.name;
+                if (scene.id) card.dataset.sceneId = scene.id;
+
+                const thumbContainer = document.createElement('div');
+                thumbContainer.className = 'scene-card-thumb-container';
+
+                const imgUrl = scene.url || scene.image_url;
+                if (imgUrl) {
+                    const img = document.createElement('img');
+                    img.className = 'scene-card-thumb';
+                    img.src = imgUrl;
+                    img.alt = scene.name;
+                    img.loading = 'lazy';
+                    img.onerror = () => {
+                        img.style.display = 'none';
+                        if (!thumbContainer.querySelector('.scene-card-fallback-thumb')) {
+                            const placeholder = document.createElement('div');
+                            placeholder.className = 'scene-card-fallback-thumb';
+                            placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
+                            placeholder.textContent = '🎬';
+                            thumbContainer.appendChild(placeholder);
+                        }
+                    };
+                    thumbContainer.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'scene-card-fallback-thumb';
+                    placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
+                    placeholder.textContent = '🎬';
+                    thumbContainer.appendChild(placeholder);
+                }
+
+                const overlay = document.createElement('div');
+                overlay.className = 'scene-card-overlay';
+                const badge = document.createElement('span');
+                badge.className = 'scene-card-push-badge';
+                badge.textContent = 'Push to Canvas';
+                overlay.appendChild(badge);
+                thumbContainer.appendChild(overlay);
+
+                card.appendChild(thumbContainer);
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'scene-card-name';
+                nameEl.textContent = scene.name;
+                card.appendChild(nameEl);
+
+                if (scene.description) {
+                    const descEl = document.createElement('div');
+                    descEl.className = 'scene-card-desc';
+                    descEl.textContent = scene.description;
+                    card.appendChild(descEl);
+                }
+
+                card.addEventListener('click', () => pushSceneToCanvas(scene, card));
+                card.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        pushSceneToCanvas(scene, card);
+                    }
+                });
+
+                scenesManagerGrid.appendChild(card);
+            });
+        }
+
+        async function pushSceneToCanvas(scene, cardEl) {
+            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
+            if (!tid || isPushingScene) return;
+            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
+            if (!isOrator) {
+                if (typeof showShareToast === 'function') {
+                    showShareToast('Only the active orator can push scenes to canvas.');
+                }
+                return;
+            }
+
+            isPushingScene = true;
+            if (cardEl) {
+                cardEl.classList.add('pushing');
+                const badge = cardEl.querySelector('.scene-card-push-badge');
+                if (badge) badge.textContent = 'Pushing...';
+            }
+
+            try {
+                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/scenes/push`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: scene.name, scene_id: scene.id || '' })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(typeof data.detail === 'string' ? data.detail : 'Failed to push scene to canvas.');
+                }
+                if (cardEl) {
+                    const badge = cardEl.querySelector('.scene-card-push-badge');
+                    if (badge) badge.textContent = 'Pushed!';
+                    setTimeout(() => {
+                        if (badge) badge.textContent = 'Push to Canvas';
+                    }, 2000);
+                }
+                if (typeof showShareToast === 'function') {
+                    showShareToast(`Pushed "${scene.name}" to canvas.`);
+                }
+                if (typeof fetchLatestImage === 'function') {
+                    fetchLatestImage();
+                } else if (typeof refreshCanvasState === 'function') {
+                    refreshCanvasState(['latest']);
+                }
+            } catch (err) {
+                console.error('Error pushing scene to canvas:', err);
+                if (typeof showShareToast === 'function') {
+                    showShareToast(err.message || 'Error pushing scene to canvas.');
+                }
+                if (cardEl) {
+                    const badge = cardEl.querySelector('.scene-card-push-badge');
+                    if (badge) badge.textContent = 'Failed';
+                    setTimeout(() => {
+                        if (badge) badge.textContent = 'Push to Canvas';
+                    }, 2000);
+                }
+            } finally {
+                isPushingScene = false;
+                if (cardEl) {
+                    cardEl.classList.remove('pushing');
+                }
+            }
+        }
+
+        async function loadTheaterCharacters() {
+            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
+            if (!tid || isFetchingTheaterCharacters) return;
+            isFetchingTheaterCharacters = true;
+            try {
+                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/characters`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                cachedTheaterCharacters = Array.isArray(data) ? data : [];
+                preloadItemImages(cachedTheaterCharacters);
+                if (activeStampManagerTab === 'characters') {
+                    renderCharactersManagerGrid(cachedTheaterCharacters);
+                }
+            } catch (err) {
+                console.warn('Unable to load theater characters:', err);
+                if (activeStampManagerTab === 'characters') {
+                    if (charactersManagerGrid) charactersManagerGrid.innerHTML = '';
+                    if (charactersManagerEmpty) {
+                        charactersManagerEmpty.style.display = 'flex';
+                        if (charactersEmptyMessage) charactersEmptyMessage.textContent = 'Unable to load characters at this time.';
+                    }
+                }
+            } finally {
+                isFetchingTheaterCharacters = false;
+            }
+        }
+
+        function renderCharactersManagerGrid(characters) {
+            if (!charactersManagerGrid) return;
+            charactersManagerGrid.innerHTML = '';
+            if (stampManagerCount && activeStampManagerTab === 'characters') {
+                stampManagerCount.textContent = `${characters.length}`;
+                stampManagerCount.title = `${characters.length} adventure characters`;
+            }
+            if (!characters || characters.length === 0) {
+                if (charactersManagerEmpty) {
+                    charactersManagerEmpty.style.display = 'flex';
+                    if (charactersEmptyMessage) charactersEmptyMessage.textContent = 'No characters found for this adventure.';
+                }
+                return;
+            }
+            if (charactersManagerEmpty) charactersManagerEmpty.style.display = 'none';
+
+            characters.forEach(char => {
+                const card = document.createElement('div');
+                card.className = 'character-card';
+                card.dataset.characterName = char.name;
+                if (char.id) card.dataset.characterId = char.id;
+
+                const thumbContainer = document.createElement('div');
+                thumbContainer.className = 'character-card-thumb-container';
+
+                const imgUrl = char.url || char.image_url;
+                if (imgUrl) {
+                    const img = document.createElement('img');
+                    img.className = 'character-card-thumb';
+                    img.src = imgUrl;
+                    img.alt = char.name;
+                    img.loading = 'lazy';
+                    img.onerror = () => {
+                        img.style.display = 'none';
+                        if (!thumbContainer.querySelector('.character-card-fallback-thumb')) {
+                            const placeholder = document.createElement('div');
+                            placeholder.className = 'character-card-fallback-thumb';
+                            placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
+                            placeholder.textContent = '👤';
+                            thumbContainer.appendChild(placeholder);
+                        }
+                    };
+                    thumbContainer.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'character-card-fallback-thumb';
+                    placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
+                    placeholder.textContent = '👤';
+                    thumbContainer.appendChild(placeholder);
+                }
+                card.appendChild(thumbContainer);
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'character-card-name';
+                nameEl.textContent = char.name;
+                card.appendChild(nameEl);
+
+                const traitsContainer = document.createElement('div');
+                traitsContainer.className = 'character-card-traits';
+
+                if (char.gender) {
+                    const badge = document.createElement('span');
+                    badge.className = 'character-trait-badge';
+                    badge.textContent = char.gender;
+                    traitsContainer.appendChild(badge);
+                }
+                if (Array.isArray(char.voice_tags)) {
+                    char.voice_tags.slice(0, 2).forEach(tag => {
+                        const badge = document.createElement('span');
+                        badge.className = 'character-trait-badge';
+                        badge.textContent = tag;
+                        traitsContainer.appendChild(badge);
+                    });
+                }
+                if (traitsContainer.children.length > 0) {
+                    card.appendChild(traitsContainer);
+                }
+
+                const textToShow = char.description || char.personality || char.quirk || '';
+                if (textToShow) {
+                    const descEl = document.createElement('div');
+                    descEl.className = 'character-card-desc';
+                    descEl.textContent = textToShow;
+                    card.appendChild(descEl);
+                }
+
+                charactersManagerGrid.appendChild(card);
+            });
+        }
+
+        // ========================================
         // Orator vs Viewer Logic
         // ========================================
         const roleBadge = document.getElementById('role-badge');
@@ -6624,6 +7106,7 @@
             const isNowOrator = window._isActiveOratorState;
             updateCanvasPinButton();
             updateTextAnnotationAvailability();
+            if (typeof updateStampTabsVisibility === 'function') updateStampTabsVisibility();
 
             if (isNowOrator) {
                 isNavigating = false;
@@ -6681,8 +7164,15 @@
             }
 
             if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
-                updateStampManagerPermissionBanner();
-                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+                if (typeof updateStampTabsVisibility === 'function') updateStampTabsVisibility();
+                if (typeof activeStampManagerTab === 'undefined' || activeStampManagerTab === 'stamps') {
+                    updateStampManagerPermissionBanner();
+                    if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+                } else if (activeStampManagerTab === 'scenes') {
+                    if (cachedTheaterScenes) renderScenesManagerGrid(cachedTheaterScenes);
+                } else if (activeStampManagerTab === 'characters') {
+                    if (cachedTheaterCharacters) renderCharactersManagerGrid(cachedTheaterCharacters);
+                }
             }
         }
 
@@ -6708,6 +7198,7 @@
                         const isContributor = data.metadata.is_contributor;
                         window._isContributor = Boolean(isOwner || isActiveOrator || isContributor);
                         if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
+                            if (typeof updateStampTabsVisibility === 'function') updateStampTabsVisibility();
                             updateStampManagerPermissionBanner();
                             if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
                         }

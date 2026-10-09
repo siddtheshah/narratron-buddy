@@ -356,3 +356,30 @@ def test_scene_yaml_upload_is_preserved_beside_scene_images(tmp_path: Path) -> N
         ("references/scenes/Old Harbor/scene.yaml", b"description: A harbor at dawn\n"),
     ])
     assert (manager.theater("stage").scenes_dir() / "Old Harbor" / "scene.yaml").read_bytes() == b"description: A harbor at dawn\n"
+
+
+def test_theater_scenes_and_characters_listing(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    manager.create_theater("Stage", "stage", reference_files=[
+        ("references/scenes/The Desk of Origins/1.png", png_bytes()),
+        ("references/scenes/The Desk of Origins/scene.yaml", b"description: Ancient cedar drafting table.\n"),
+        ("references/characters/The Caretaker/1.png", png_bytes()),
+        ("references/characters/The Caretaker/character.yaml", b"description: Cloaked archivist\npersonality: Soft-spoken\nvoice_tags:\n  - whisper\n"),
+    ])
+    theater = manager.theater("stage")
+    scenes = theater.scenes()
+    assert len(scenes) == 1
+    assert scenes[0]["name"] == "The Desk of Origins"
+    assert scenes[0]["description"] == "Ancient cedar drafting table."
+    assert "The%20Desk%20of%20Origins" in scenes[0]["url"]
+    assert scenes[0]["id"] == "theater:stage:scene:The Desk of Origins"
+
+    characters = theater.characters()
+    assert len(characters) == 1
+    assert characters[0]["name"] == "The Caretaker"
+    assert characters[0]["description"] == "Cloaked archivist"
+    assert characters[0]["personality"] == "Soft-spoken"
+    assert characters[0]["voice_tags"] == ["whisper"]
+    assert "The%20Caretaker" in characters[0]["url"]
+    assert characters[0]["id"] == "theater:stage:character:The Caretaker"
+

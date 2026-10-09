@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import secrets
 import shutil
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from urllib.parse import quote
 import zipfile
 
@@ -79,6 +79,29 @@ def ensure_ephemeral_root() -> Path:
     return root
 
 
+class TheaterScene(TypedDict):
+    id: str
+    name: str
+    description: str
+    url: str
+    image_url: str
+    path: str
+
+
+class TheaterCharacter(TypedDict):
+    id: str
+    name: str
+    description: str
+    personality: str
+    motivation: str
+    quirk: str
+    gender: str
+    voice_tags: list[str]
+    url: str
+    image_url: str
+    path: str
+
+
 class TheaterMetadata(BaseModel):
     """Persisted metadata for one filesystem-backed theater."""
 
@@ -133,6 +156,209 @@ class Theater:
                 "url": f"/theaters/{quote(self.theater_id, safe='')}/stamps/{quote(filename, safe='/')}",
             })
         return stamps
+
+    def scenes(self) -> list[TheaterScene]:
+        """List theater scenes with identities, images, and descriptions."""
+        scenes: list[TheaterScene] = []
+        seen_keys: set[str] = set()
+
+        authored_root = self.scenes_dir().resolve()
+        updated_root = self.updated_scenes_dir().resolve()
+
+        candidate_folders: dict[str, list[Path]] = {}
+        for root in (updated_root, authored_root):
+            if not root.is_dir():
+                continue
+            for directory in sorted(root.iterdir()):
+                if directory.is_dir() and root in directory.resolve().parents:
+                    key = directory.name.lower().replace("_", " ").strip()
+                    if key:
+                        candidate_folders.setdefault(key, []).append(directory)
+
+        for key, folders in sorted(candidate_folders.items(), key=lambda t: t[0]):
+            primary = folders[0]
+            name = primary.name.replace("_", " ")
+            seen_keys.add(key)
+
+            image_path: Optional[Path] = None
+            for folder in folders:
+                image_candidates = [
+                    f for f in sorted(folder.iterdir())
+                    if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+                ]
+                if image_candidates:
+                    def _sort_scene_key(p: Path) -> tuple[int, float]:
+                        stem = p.stem
+                        num = int(stem) if stem.isdigit() else 0
+                        return (num, p.stat().st_mtime if p.exists() else 0.0)
+                    image_candidates.sort(key=_sort_scene_key)
+                    image_path = image_candidates[-1]
+                    break
+
+            description = ""
+            for folder in folders:
+                scene_yaml = folder / "scene.yaml"
+                if scene_yaml.is_file():
+                    try:
+                        import yaml
+                        content = yaml.safe_load(scene_yaml.read_text(encoding="utf-8"))
+                        if type(content) is dict:
+                            raw_desc = content.get("description", "")
+                            if type(raw_desc) is str:
+                                description = raw_desc
+                                break
+                    except Exception as exc:
+                        logger.warning("Failed to parse scene.yaml in %s: %s", folder, exc)
+
+            url = self.get_url_for_path(str(image_path)) if image_path is not None else ""
+            scenes.append({
+                "id": f"theater:{self.theater_id}:scene:{name}",
+                "name": name,
+                "description": description,
+                "url": url,
+                "image_url": url,
+                "path": str(image_path) if image_path is not None else "",
+            })
+
+        if authored_root.is_dir():
+            for image in sorted(authored_root.iterdir()):
+                if (
+                    image.is_file()
+                    and image.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+                    and authored_root in image.resolve().parents
+                ):
+                    key = image.stem.lower().replace("_", " ").strip()
+                    if key and key not in seen_keys:
+                        seen_keys.add(key)
+                        name = image.stem.replace("_", " ")
+                        img_url = self.get_url_for_path(str(image))
+                        scenes.append({
+                            "id": f"theater:{self.theater_id}:scene:{name}",
+                            "name": name,
+                            "description": "",
+                            "url": img_url,
+                            "image_url": img_url,
+                            "path": str(image),
+                        })
+
+        return scenes
+
+    def characters(self) -> list[TheaterCharacter]:
+        """List theater characters with identities, portraits, and traits."""
+        characters: list[TheaterCharacter] = []
+        seen_keys: set[str] = set()
+
+        authored_root = self.characters_dir().resolve()
+        updated_root = self.updated_characters_dir().resolve()
+
+        candidate_folders: dict[str, list[Path]] = {}
+        for root in (updated_root, authored_root):
+            if not root.is_dir():
+                continue
+            for directory in sorted(root.iterdir()):
+                if directory.is_dir() and root in directory.resolve().parents:
+                    key = directory.name.lower().replace("_", " ").strip()
+                    if key:
+                        candidate_folders.setdefault(key, []).append(directory)
+
+        for key, folders in sorted(candidate_folders.items(), key=lambda t: t[0]):
+            primary = folders[0]
+            name = primary.name.replace("_", " ")
+            seen_keys.add(key)
+
+            image_path: Optional[Path] = None
+            for folder in folders:
+                image_candidates = [
+                    f for f in sorted(folder.iterdir())
+                    if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+                ]
+                if image_candidates:
+                    def _sort_char_key(p: Path) -> tuple[int, float]:
+                        stem = p.stem
+                        num = int(stem) if stem.isdigit() else 0
+                        return (num, p.stat().st_mtime if p.exists() else 0.0)
+                    image_candidates.sort(key=_sort_char_key)
+                    image_path = image_candidates[-1]
+                    break
+
+            description = ""
+            personality = ""
+            motivation = ""
+            quirk = ""
+            gender = ""
+            voice_tags: list[str] = []
+
+            for folder in folders:
+                char_yaml = folder / "character.yaml"
+                if char_yaml.is_file():
+                    try:
+                        import yaml
+                        content = yaml.safe_load(char_yaml.read_text(encoding="utf-8"))
+                        if type(content) is dict:
+                            desc = content.get("description", "")
+                            if type(desc) is str:
+                                description = desc
+                            pers = content.get("personality", "")
+                            if type(pers) is str:
+                                personality = pers
+                            mot = content.get("motivation", "")
+                            if type(mot) is str:
+                                motivation = mot
+                            qk = content.get("quirk", "")
+                            if type(qk) is str:
+                                quirk = qk
+                            gen = content.get("gender", "")
+                            if type(gen) is str:
+                                gender = gen
+                            vt = content.get("voice_tags", [])
+                            if type(vt) is list:
+                                voice_tags = [str(item) for item in vt]
+                            break
+                    except Exception as exc:
+                        logger.warning("Failed to parse character.yaml in %s: %s", folder, exc)
+
+            url = self.get_url_for_path(str(image_path)) if image_path is not None else ""
+            characters.append({
+                "id": f"theater:{self.theater_id}:character:{name}",
+                "name": name,
+                "description": description,
+                "personality": personality,
+                "motivation": motivation,
+                "quirk": quirk,
+                "gender": gender,
+                "voice_tags": voice_tags,
+                "url": url,
+                "image_url": url,
+                "path": str(image_path) if image_path is not None else "",
+            })
+
+        if authored_root.is_dir():
+            for image in sorted(authored_root.iterdir()):
+                if (
+                    image.is_file()
+                    and image.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+                    and authored_root in image.resolve().parents
+                ):
+                    key = image.stem.lower().replace("_", " ").strip()
+                    if key and key not in seen_keys:
+                        seen_keys.add(key)
+                        name = image.stem.replace("_", " ")
+                        img_url = self.get_url_for_path(str(image))
+                        characters.append({
+                            "id": f"theater:{self.theater_id}:character:{name}",
+                            "name": name,
+                            "description": "",
+                            "personality": "",
+                            "motivation": "",
+                            "quirk": "",
+                            "gender": "",
+                            "voice_tags": [],
+                            "url": img_url,
+                            "image_url": img_url,
+                            "path": str(image),
+                        })
+
+        return characters
 
     def playlists_dir(self) -> Path:
         return self.manager._get_theater_playlists_dir(self.theater_id)
@@ -697,3 +923,9 @@ class TheaterManager:
                 tracks.append({"filename": filename, "url": f"/theaters/{theater_id}/playlists/{quote(directory.name)}/{quote(filename, safe='/')}", "size_bytes": track.stat().st_size})
             playlists[directory.name] = tracks
         return playlists
+
+    def get_theater_scenes(self, theater_id: str) -> list[TheaterScene]:
+        return self.theater(theater_id).scenes()
+
+    def get_theater_characters(self, theater_id: str) -> list[TheaterCharacter]:
+        return self.theater(theater_id).characters()

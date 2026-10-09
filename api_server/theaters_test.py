@@ -1384,6 +1384,98 @@ def test_serve_theater_output_passes_join_key_to_require_canvas_access_async(tmp
     assert response.status_code == 200
 
 
+@pytest.mark.asyncio
+async def test_theater_scenes_and_characters_require_active_orator(tmp_path: Path) -> None:
+    from starlette.requests import Request
+    from components.theater_manager import TheaterManager
+    from api_server.theaters import PushSceneRequest
+
+    manager = TheaterManager(base_theaters_dir=tmp_path)
+    manager.create_theater("Stage", "scenes-stage", reference_files=[
+        ("references/scenes/The Desk of Origins/1.png", png_bytes()),
+        ("references/scenes/The Desk of Origins/scene.yaml", b"description: Ancient cedar drafting table.\n"),
+        ("references/characters/The Caretaker/1.png", png_bytes()),
+        ("references/characters/The Caretaker/character.yaml", b"description: Cloaked archivist\npersonality: Soft-spoken\nvoice_tags:\n  - whisper\n"),
+    ])
+    request = Request({"type": "http", "headers": []})
+    access = AsyncMock()
+    user_orator = {"id": 1, "username": "orator"}
+    user_viewer = {"id": 2, "username": "viewer"}
+    deployment = {"theater_id": "scenes-stage", "user_id": 1, "active_orator_id": 1}
+
+    with patch.object(theaters, "_require_canvas_access_async", access), \
+         patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters.db, "get_deployment", return_value=deployment):
+
+        # Active orator access
+        with patch.object(theaters, "get_current_user_async", return_value=user_orator):
+            scenes = await theaters.list_theater_scenes(request, "scenes-stage")
+            assert len(scenes) == 1
+            assert scenes[0]["name"] == "The Desk of Origins"
+            assert scenes[0]["description"] == "Ancient cedar drafting table."
+
+            characters = await theaters.list_theater_characters(request, "scenes-stage")
+            assert len(characters) == 1
+            assert characters[0]["name"] == "The Caretaker"
+            assert characters[0]["description"] == "Cloaked archivist"
+
+        # Non-orator access is denied (403)
+        with patch.object(theaters, "get_current_user_async", return_value=user_viewer):
+            with pytest.raises(HTTPException) as exc_scenes:
+                await theaters.list_theater_scenes(request, "scenes-stage")
+            assert exc_scenes.value.status_code == 403
+
+            with pytest.raises(HTTPException) as exc_chars:
+                await theaters.list_theater_characters(request, "scenes-stage")
+            assert exc_chars.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_theater_push_scene_to_canvas(tmp_path: Path) -> None:
+    from starlette.requests import Request
+    from components.theater_manager import TheaterManager
+    from api_server.theaters import PushSceneRequest
+
+    manager = TheaterManager(base_theaters_dir=tmp_path)
+    manager.create_theater("Stage", "push-stage", reference_files=[
+        ("references/scenes/The Desk of Origins/1.png", png_bytes()),
+        ("references/scenes/The Desk of Origins/scene.yaml", b"description: Ancient cedar drafting table.\n"),
+    ])
+    request = Request({"type": "http", "headers": []})
+    access = AsyncMock()
+    user_orator = {"id": 10, "username": "orator"}
+    user_viewer = {"id": 20, "username": "viewer"}
+    deployment = {"theater_id": "push-stage", "user_id": 10, "active_orator_id": 10}
+
+    with patch.object(theaters, "_require_canvas_access_async", access), \
+         patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters.db, "get_deployment", return_value=deployment):
+
+        # Non-orator cannot push scene
+        with patch.object(theaters, "get_current_user_async", return_value=user_viewer):
+            with pytest.raises(HTTPException) as exc_push:
+                await theaters.push_theater_scene(PushSceneRequest(name="The Desk of Origins"), request, "push-stage")
+            assert exc_push.value.status_code == 403
+
+        # Active orator can push scene
+        with patch.object(theaters, "get_current_user_async", return_value=user_orator):
+            result = await theaters.push_theater_scene(PushSceneRequest(name="The Desk of Origins"), request, "push-stage")
+            assert result["status"] == "ok"
+            assert result["scene_name"] == "The Desk of Origins"
+
+            # Canvas visual state should have the new scene
+            state = theaters.canvas_states.get("push-stage")
+            assert state.visual.shown_image_path is not None
+            assert state.visual.shown_image_prompt == "Ancient cedar drafting table."
+            assert state.visual.shown_image_path.endswith("1.webp") or "1" in state.visual.shown_image_path
+
+            # Missing scene raises 404
+            with pytest.raises(HTTPException) as exc_missing:
+                await theaters.push_theater_scene(PushSceneRequest(name="Nonexistent Realm"), request, "push-stage")
+            assert exc_missing.value.status_code == 404
+
+
+
 
 
 
