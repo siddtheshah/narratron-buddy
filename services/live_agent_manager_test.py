@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from components.theater_manager import TheaterManager
+from components.notepad import Notepad
 from components.reference_manager import ReferenceManager
 from google.adk.events import Event
 from google.genai import types
@@ -38,6 +39,15 @@ def canvas_observability_fixture(image_path=None, collaboration_enabled=False, d
     canvas.doodles.has_visible_annotations.return_value = bool(doodles)
     canvas.doodles.snapshot_png.return_value = None
     return canvas
+
+
+def configure_observability_dependencies(session: LiveAgentSession) -> None:
+    pad = MagicMock(spec=Notepad)
+    pad.get_present_elements.return_value = []
+    session.notepad_tools = MagicMock(notepad=pad)
+    session.reference_manager = MagicMock(spec=ReferenceManager)
+    session.reference_manager.available_character_images.return_value = {}
+    session.reference_manager.get_player_character.return_value = None
 
 
 class TestLiveAgentSessionManager(unittest.TestCase):
@@ -582,7 +592,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         }))
         self.assertEqual(session.status, "stopped")
 
-    def test_session_accepts_text_without_a_microphone_connection(self):
+    def test_session_accepts_text_without_a_microphone_connection(self) -> None:
         import asyncio
         mock_agent = MagicMock()
         mock_agent.tools = []
@@ -596,6 +606,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             tool_bundle=MagicMock(),
         )
 
+        session.canvas_state_manager = canvas_observability_fixture()
+        configure_observability_dependencies(session)
         session.live_request_queue = MagicMock()
         mock_ws = MagicMock()
 
@@ -844,6 +856,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         )
         session.websockets.add(MagicMock())
         session.canvas_state_manager = canvas_observability_fixture()
+        configure_observability_dependencies(session)
         session.observability_available_at = 0.0
         return session
 
@@ -1078,6 +1091,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
         session.canvas_state_manager = canvas_observability_fixture()
+        configure_observability_dependencies(session)
 
         session.observability_available_at = 110.0
         with patch("services.live_agent_manager.time.monotonic", return_value=100.0):
@@ -1115,6 +1129,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
         session.canvas_state_manager = canvas_observability_fixture()
+        configure_observability_dependencies(session)
         session.observability_available_at = 0.0
 
         with patch("services.live_agent_manager.time.monotonic", return_value=100.0):
@@ -1154,6 +1169,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             image_path = image_file.name
         try:
             session.canvas_state_manager = canvas_observability_fixture(image_path=image_path)
+            configure_observability_dependencies(session)
             session.observability_available_at = 0.0
 
             with patch("services.live_agent_manager.time.monotonic", return_value=100.0):
@@ -1186,6 +1202,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             image_path = image_file.name
         try:
             session.canvas_state_manager = canvas_observability_fixture(image_path=image_path)
+            configure_observability_dependencies(session)
             session.websockets.add(MagicMock())
             # First send (normal)
             self.assertTrue(session.send_agent_requested_observability())
@@ -1218,6 +1235,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         )
         canvas.doodles.snapshot_png.return_value = b"annotated-png"
         session.canvas_state_manager = canvas
+        configure_observability_dependencies(session)
 
         self.assertTrue(session.send_agent_requested_observability())
 
@@ -1228,7 +1246,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         self.assertEqual(content.parts[2].inline_data.data, b"annotated-png")
         canvas.doodles.snapshot_png.assert_called_once_with(None)
 
-    def test_agent_requested_observability_attaches_text_only_annotation(self):
+    def test_agent_requested_observability_attaches_text_only_annotation(self) -> None:
         """Text without any stroke must still select the annotated composite."""
         mock_runner = MagicMock()
         mock_runner.agent = MagicMock(tools=[])
@@ -1247,6 +1265,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         canvas.doodles.snapshot_batches.return_value = []
         canvas.doodles.snapshot_png.return_value = b"text-annotated-png"
         session.canvas_state_manager = canvas
+        configure_observability_dependencies(session)
 
         self.assertTrue(session.send_agent_requested_observability())
 
@@ -1257,8 +1276,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         canvas.doodles.has_visible_annotations.assert_called()
         canvas.doodles.snapshot_png.assert_called_once_with(None)
 
-    def test_doodle_snapshot_is_rendered_off_the_event_loop(self):
-        async def run_test():
+    def test_doodle_snapshot_is_rendered_off_the_event_loop(self) -> None:
+        async def run_test() -> None:
             mock_agent = MagicMock()
             mock_agent.tools = []
             mock_runner = MagicMock()
@@ -1277,6 +1296,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             )
             canvas.doodles.snapshot_png.return_value = b"fake-png"
             session.canvas_state_manager = canvas
+            configure_observability_dependencies(session)
             session._event_loop = asyncio.get_running_loop()
 
             self.assertTrue(session.send_canvas_state())
@@ -1469,7 +1489,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         self.assertFalse(session.character_voicing_enabled)
         self.assertEqual(mock_db.record_user_usage.call_args.kwargs["character_voiced_turns"], 0)
 
-    def test_inject_tool_definitions(self):
+    def test_inject_tool_definitions(self) -> None:
         import asyncio
         from tools.tool_bundle import ToolBundle
 
@@ -1488,6 +1508,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             runner=mock_runner,
             tool_bundle=tool_bundle,
         )
+        session.canvas_state_manager = canvas_observability_fixture()
+        configure_observability_dependencies(session)
         session.live_request_queue = MagicMock()
         mock_ws = MagicMock()
         asyncio.run(session.add_websocket(mock_ws))
@@ -1500,7 +1522,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         content = args[0]
         self.assertIn("sample_tool", content.parts[0].text)
 
-    def test_live_tool_reminder_only_sends_during_post_vad_tool_window(self):
+    def test_live_tool_reminder_only_sends_during_post_vad_tool_window(self) -> None:
         mock_runner = MagicMock()
         mock_runner.agent = MagicMock()
         mock_runner.session_service = MagicMock()
@@ -1509,6 +1531,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             runner=mock_runner,
             tool_bundle=None,
         )
+        session.canvas_state_manager = canvas_observability_fixture()
+        configure_observability_dependencies(session)
         session.live_request_queue = MagicMock()
         session.live_request_queue.live_tool_window_active = True
         mock_ws = MagicMock()
@@ -1779,8 +1803,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
                 mock_format_canvas_state.assert_called_once_with(
                     session.canvas_state_manager,
-                    mock_notepad_tools,
-                    mock_reference_tools,
+                    mock_notepad_tools.notepad,
                     mock_manager,
                 )
 

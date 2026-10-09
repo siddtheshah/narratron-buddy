@@ -572,7 +572,7 @@ class LiveAgentSession:
             ):
                 return False
             msg = format_canvas_state(
-                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.reference_manager,
+                self.canvas_state_manager, self.notepad_tools.notepad, self.reference_manager,
             )
             try:
                 sent = self._send_observability(types.Content(parts=[types.Part(text=msg)]), msg)
@@ -615,7 +615,7 @@ class LiveAgentSession:
                 return False
 
             msg = format_canvas_state(
-                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.reference_manager,
+                self.canvas_state_manager, self.notepad_tools.notepad, self.reference_manager,
             )
             try:
                 sent = self._send_observability(types.Content(parts=[types.Part(text=msg)]), msg)
@@ -662,7 +662,7 @@ class LiveAgentSession:
         now = time.monotonic()
         with self.state_lock:
             msg = format_canvas_state(
-                self.canvas_state_manager, self.notepad_tools, self.character_tools, self.reference_manager,
+                self.canvas_state_manager, self.notepad_tools.notepad, self.reference_manager,
             )
             parts = [types.Part(text=msg)]
             image_part = self._get_current_canvas_image_part()

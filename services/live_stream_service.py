@@ -5,13 +5,14 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional, Protocol, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
-from components.reference_manager import Character, ReferenceManager
+from components.notepad import Notepad
+from components.reference_manager import ReferenceManager
 from services.audio_codecs import LiveAudioDecoder
 
 if TYPE_CHECKING:
@@ -21,81 +22,48 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class NotepadToolProvider(Protocol):
-    def get_present_elements(self) -> list[dict[str, str]]:
-        ...
-
-class ReferenceToolProvider(Protocol):
-    def get_present_characters(self) -> list[Character]:
-        ...
-
-
 def format_canvas_state(
-    canvas_state_manager: Optional[CanvasStateManager],
-    notepad_tools: Optional[NotepadToolProvider] = None,
-    character_tools: Optional[ReferenceToolProvider] = None,
-    reference_manager: ReferenceManager | None = None,
-    reference_tools: Optional[ReferenceToolProvider] = None,
+    canvas_state_manager: CanvasStateManager,
+    notepad: Notepad,
+    reference_manager: ReferenceManager,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
-    visual = canvas_state_manager.visual if canvas_state_manager is not None else None
-    audio = canvas_state_manager.audio if canvas_state_manager is not None else None
-    story = canvas_state_manager.story if canvas_state_manager is not None else None
+    visual = canvas_state_manager.visual
+    audio = canvas_state_manager.audio
 
-    image_path = visual.shown_image_path if visual is not None else None
+    image_path = visual.shown_image_path
     image_name = Path(image_path).name if image_path is not None else "none"
-    image_prompt = visual.shown_image_prompt if visual is not None and visual.shown_image_prompt else "none"
-    playlist = audio.current_playlist if audio is not None and audio.current_playlist else "none"
+    image_prompt = visual.shown_image_prompt or "none"
+    playlist = audio.current_playlist or "none"
     parts = [f"[Canvas Image]: {image_name}, {image_prompt}", f"[Canvas music]: {playlist}"]
-    if visual is not None and visual.pinned:
+    if visual.pinned:
         parts.append(
             "[Canvas Pin]: The orator has pinned the current canvas. Do not request image or "
             "animation changes until it is unpinned; those tools will decline while pinned. "
             "An explicit Orator Action for a new image grants one create_image call while preserving the pin."
         )
 
-    elements: list[dict[str, str]] = []
-    if notepad_tools is not None:
-        elements = notepad_tools.get_present_elements()
-    elif story is not None:
-        elements = [
-            {
-                "name": note.get("topic", note.get("name", "")),
-                "content": note.get("info", note.get("content", "")),
-            }
-            for note in story.get_sticky_notes()
-        ]
+    elements = notepad.get_present_elements()
 
     if elements:
         rendered_elements = "; ".join(
             f"{element['name']}: {element['content']}" for element in elements
         )
-        parts.append(f"[Present Scene Elements]: {rendered_elements}")
+        parts.append(f"[Sticky Notes]: {rendered_elements}")
 
-    player = story.get_player_character() if story is not None else None
-    if player is not None:
-        player_name = player.name or "Player"
-        visual_description = f" (Visual: {player.image_description.strip()})" if player.image_description.strip() else ""
-        parts.append(f"[Player Character]: {player_name}{visual_description}")
-
-    characters = []
-    if story is not None:
-        characters = story.get_present_characters()
-    ref_tools = reference_tools if reference_tools is not None else character_tools
-    if not characters and ref_tools is not None:
-        characters = ref_tools.get_present_characters()
-
-    if characters:
-        rendered_char_list: list[str] = []
-        for c in characters:
-            desc = f"{c['name']} (Personality: {c.get('personality', 'N/A')}, Motivation: {c.get('motivation', 'N/A')}, Quirk: {c.get('quirk', 'N/A')}"
-            desc += ")"
-            rendered_char_list.append(desc)
-        parts.append(f"[Active Characters]: {'; '.join(rendered_char_list)}")
-
-    available_images = reference_manager.available_character_images() if reference_manager is not None else {}
-    if available_images:
-        names = ", ".join(f"<{name}>" for name in available_images)
+    available_images = reference_manager.available_character_images()
+    player = reference_manager.get_player_character()
+    player_name = (player.name or "Player") if player is not None else ""
+    player_key = " ".join(player_name.replace("_", " ").casefold().split())
+    npc_tags: list[str] = []
+    for name in available_images:
+        name_key = " ".join(name.replace("_", " ").casefold().split())
+        if player_key and name_key == player_key:
+            parts.append(f"[Player Character Reference]: <{name}>")
+        else:
+            npc_tags.append(f"<{name}>")
+    if npc_tags:
+        names = ", ".join(npc_tags)
         parts.append(
             f"[Available Character Visuals]: {names}. Use these exact tags in visual prompts "
             "to attach the latest character portraits automatically."
