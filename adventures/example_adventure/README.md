@@ -24,7 +24,12 @@ example_adventure/
 ├── references/             # Visual assets & cover art used by image tools
 │   ├── characters/         # Character reference portraits
 │   │   └── The Caretaker/
-│   │       └── 1.jpg
+│   │       ├── 1.jpg
+│   │       └── character.yaml
+│   ├── scenes/             # Scene iterations and descriptions
+│   │   └── The Desk of Origins/
+│   │       ├── 1.png
+│   │       └── scene.yaml
 │   └── library_of_origins_cover.jpg
 └── playlists/              # Thematic audio folders with sound files
     ├── ambient/

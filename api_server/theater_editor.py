@@ -481,7 +481,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
             try:
                 updated = await asyncio.to_thread(db.record_user_usage, owner_id,
-                    images_created=1 if body.kind in ("reference", "stamp", "character") else 0,
+                    images_created=1 if body.kind in ("reference", "stamp", "character", "scene") else 0,
                     music_created=1 if body.kind == "playlist" else 0, credit_cost=cost,
                     idempotency_key=f"builder:{theater_id}:{path}")
             except Exception as error:

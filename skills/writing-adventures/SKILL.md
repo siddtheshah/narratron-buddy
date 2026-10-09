@@ -26,10 +26,15 @@ adventures/<adventure-slug>/
 │   ├── characters/         # NPC dossiers with image references and behavior guidelines
 │   ├── locations/          # Regional descriptions, local commodities, and hazards
 │   └── factions/           # Agendas, rivalries, and allegiances
-├── references/             # Cover art, portraits, and environment concepts
+├── references/             # Cover art, portraits, scenes, and environment concepts
 │   ├── characters/         # One folder per character
 │   │   └── Keeper Orun/
-│   │       └── 1.png
+│   │       ├── 1.png
+│   │       └── character.yaml
+│   ├── scenes/             # One folder per scene
+│   │   └── The Desk of Origins/
+│   │       ├── 1.png
+│   │       └── scene.yaml
 │   └── cover.png
 └── playlists/              # Thematic audio folders with sound files
     ├── ambient/
@@ -48,7 +53,7 @@ When creating a new adventure, follow this sequence:
 2. **Author `metadata.json`**: Configure the display title, slug ID, genre, difficulty, player count, and cover image.
 3. **Configure `theater.yaml` & `planning.yaml`**: Set `adventure_mode: true` and define agent persona, art, and music direction in `theater.yaml`. Define structured sticky notes, initial values, and required stickies in `planning.yaml`.
 4. **Draft the DM Screen (`lore/readfirst_<name>.txt`)**: Define the high-level premise, timeline/acts, lore directory roadmap, win/loss conditions, and sticky note tracking rules.
-5. **Flesh Out Modular Lore**: Create character dossiers, location profiles, and faction files. Annotate characters with their canonical name (`image_reference: Keeper Orun`); other assets can use `image_reference: references/<filename>`.
+5. **Flesh Out Modular Lore**: Create character dossiers, location profiles, and faction files. Annotate characters with their canonical name (`image_reference: Keeper Orun`); annotate locations with their canonical scene name (`image_reference: The Desk of Origins`); other assets can use `image_reference: references/<filename>`.
 6. **Add Assets**: Place character portraits in `references/characters/<Character Name>/1.png` (each character requires its own folder; loose images directly under `references/characters/` are unsupported), scene imagery in `references/scenes/<Scene Name>/1.png` (with `scene.yaml`; loose images directly under `references/scenes/` are unsupported), cover/location references in `references/`, and loopable tracks in `playlists/`. During play, character portraits are copied into `output/artifacts/updated_references/characters/`, scene imagery into `output/artifacts/updated_references/scenes/`, and all appearance updates stay there. The live agent uses `<Character Name>` in visual prompts to attach the latest portrait; authors can manually copy session updates back into `references/characters/` and `references/scenes/`. See `docs/writing_adventures.md` for session reset and reference behavior.
 7. **Test Locally**: Run smoke and interactive tests using `testlab/adventure_runner.py`.
 8. **Final Verification**: Upload the folder to [narratron.app/deploy](https://narratron.app/deploy) for live verification.
@@ -277,7 +282,7 @@ Locations should be organized in `lore/locations/` (optionally grouped into regi
 ================================================================================
 LOCATION: CELESTIAL ORRERY CHAMBER
 ================================================================================
-IMAGE_REFERENCE: references/orrery_chamber.png
+IMAGE_REFERENCE: Celestial Orrery Chamber
 
 1. OVERVIEW & ATMOSPHERE:
 A cavernous dome of dark basalt with towering brass armillary spheres suspended in mid-air. Starlight filters through crystalline skylights, casting intricate geometric shadows across the marble floor. The hum of rotating brass gears fills the air.
@@ -334,9 +339,11 @@ it. The instructions to provide the hint should take that into account.
 
 ### 6.1. Visual References (`references/`)
 - Place all static images in `references/`.
+- Character portraits belong in `references/characters/<Character Name>/` with `character.yaml`.
+- Scene and location images belong in `references/scenes/<Scene Name>/` with `scene.yaml`.
 - Supported formats: `.png`, `.jpg`, `.jpeg`, `.webp`.
 - **Cover Image**: Required. Referenced in `metadata.json` (`"cover_image": "references/cover.png"`) and `theater.yaml` (`starting_image: "references/cover.png"`).
-- **Annotation in Lore**: Always include `IMAGE_REFERENCE: references/<filename>` in character and location lore documents.
+- **Annotation in Lore**: Include `IMAGE_REFERENCE: <Character Name>` in character dossiers and `IMAGE_REFERENCE: <Scene Name>` in location lore documents.
 
 ### 6.2. Atmospheric Playlists (`playlists/`)
 - Organize sound files into mood or scene subfolders under `playlists/`:
@@ -450,7 +457,7 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] Secrets and spoilers are isolated from public knowledge.
 - [ ] **Assets**:
   - [ ] Cover image exists in `references/`.
-  - [ ] Character and location reference images are properly formatted (`.png`, `.jpg`, `.webp`).
+  - [ ] Character and location reference images are properly organized under `references/characters/<Name>/` and `references/scenes/<Name>/` (`.png`, `.jpg`, `.webp`).
   - [ ] `playlists/` contain valid audio files organized by mood subdirectories.
 - [ ] **Testing**:
   - [ ] CLI smoke test passes: `uv run python testlab/adventure_runner.py --adventure <slug> --smoke`.
