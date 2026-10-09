@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, expect, sync_playwright
 
 
 def test_canvas_html_and_chat_css_stamp_wiring() -> None:
@@ -13,9 +13,9 @@ def test_canvas_html_and_chat_css_stamp_wiring() -> None:
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
     renderer_js = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
 
-    # Stamp button in chat composer
+    # Persistent asset tab above the chat pane
     assert 'id="chat-open-stamps-btn"' in canvas_html
-    assert "#chat-open-stamps-btn" in chat_css
+    assert ".canvas-panel-tabs" in chat_css
 
     # Stamp manager occupying chat pane
     assert 'id="stamp-manager-pane"' in canvas_html
@@ -210,7 +210,7 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
 
 @pytest.mark.parametrize("viewport_width", [1400, 1000])
 @pytest.mark.parametrize("owner", [True, False])
-def test_stamp_composer_overlays_chat_and_double_click_returns_to_chat(
+def test_canvas_panel_tabs_remain_visible_and_preserve_stamp_composer(
     stamp_page: Page, viewport_width: int, owner: bool,
 ) -> None:
     html = Path("templates/canvas.html").read_text(encoding="utf-8")
@@ -242,7 +242,11 @@ def test_stamp_composer_overlays_chat_and_double_click_returns_to_chat(
     stamp_page.locator("#chat-open-stamps-btn").click()
     back_box = stamp_page.locator("#stamp-manager-back-chat-btn").bounding_box()
     assert back_box is not None
-    assert back_box == pytest.approx(toggle_box, abs=1)
+    assert stamp_page.locator("#chat-open-stamps-btn").bounding_box() == toggle_box
+    assert stamp_page.locator("#chat-show-chat-btn").is_visible()
+    expect(stamp_page.locator("#chat-open-stamps-btn")).to_have_attribute("aria-selected", "true")
+    assert not stamp_page.locator("#chat-form #chat-open-stamps-btn").count()
+    assert not stamp_page.locator("#popout-collapse-btn").count()
     if owner:
         prompt_box = stamp_page.locator("#stamp-generation-prompt").bounding_box()
         assert prompt_box is not None
@@ -252,14 +256,26 @@ def test_stamp_composer_overlays_chat_and_double_click_returns_to_chat(
     profile_box = stamp_page.locator("#stamp-manager-profile-link").bounding_box()
     assert profile_box is not None
     assert profile_box["x"] > back_box["x"] + back_box["width"]
-    stamp_page.locator("#stamp-manager-back-chat-btn").click()
+    stamp_page.locator("#chat-show-chat-btn").click()
     stamp_page.mouse.dblclick(
         toggle_box["x"] + toggle_box["width"] / 2,
         toggle_box["y"] + toggle_box["height"] / 2,
         delay=100,
     )
+    assert not stamp_page.locator("#panel-body").is_visible()
+    assert stamp_page.locator("#stamp-manager-pane").is_visible()
+    stamp_page.locator("#chat-open-stamps-btn").press("ArrowLeft")
     assert stamp_page.locator("#panel-body").is_visible()
     assert not stamp_page.locator("#stamp-manager-pane").is_visible()
+    expect(stamp_page.locator("#chat-show-chat-btn")).to_have_attribute("aria-selected", "true")
+    stamp_page.evaluate("isChatPoppedOut = true; setStampManagerOpen(false)")
+    assert stamp_page.locator("#popped-out-placeholder").is_visible()
+    assert not stamp_page.locator("#panel-body").is_visible()
+    stamp_page.locator("#chat-open-stamps-btn").click()
+    assert not stamp_page.locator("#popped-out-placeholder").is_visible()
+    assert stamp_page.locator("#stamp-manager-pane").is_visible()
+    stamp_page.evaluate("isChatPoppedOut = false; setStampManagerOpen(false)")
+    assert stamp_page.locator("#panel-body").is_visible()
 
 
 @pytest.fixture

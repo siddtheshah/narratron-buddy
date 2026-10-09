@@ -21,7 +21,7 @@ def test_canvas_html_has_chat_name_display_element() -> None:
 
 def test_canvas_authenticated_user_chat_name_display() -> None:
     template = Path("templates/canvas.html").read_text(encoding="utf-8")
-    user_bar_match = re.search(r'<div id="chat-user-bar".*?</div>', template, re.DOTALL)
+    user_bar_match = re.search(r'<div id="chat-identity".*?</div>', template, re.DOTALL)
     assert user_bar_match is not None
     user_bar_html = user_bar_match.group(0)
 
@@ -54,7 +54,7 @@ def test_canvas_authenticated_user_chat_name_display() -> None:
                 messagesContainer: document.getElementById('chat-messages'),
                 nameInput: document.getElementById('chat-name-input'),
                 nameDisplay: document.getElementById('chat-name-display'),
-                nameBadge: document.getElementById('chat-name-badge'),
+                nameStatusIcon: document.getElementById('chat-name-status-icon'),
                 loginChip: document.getElementById('chat-login-chip'),
                 getAuthState: async () => ({
                     authenticated: true,
@@ -65,13 +65,13 @@ def test_canvas_authenticated_user_chat_name_display() -> None:
 
         name_input = page.locator("#chat-name-input")
         name_display = page.locator("#chat-name-display")
-        name_badge = page.locator("#chat-name-badge")
+        name_badge = page.locator("#chat-name-status-icon")
         login_chip = page.locator("#chat-login-chip")
 
         expect(name_input).to_be_hidden()
         expect(name_display).to_be_visible()
         expect(name_display).to_have_text("Gandalf")
-        expect(name_badge).to_have_text("Member")
+        expect(name_badge).to_have_attribute("aria-label", "Member")
         expect(login_chip).to_be_hidden()
 
         color = page.evaluate("() => getComputedStyle(document.getElementById('chat-name-display')).color")
@@ -82,7 +82,7 @@ def test_canvas_authenticated_user_chat_name_display() -> None:
 
 def test_canvas_unauthenticated_user_chat_name_input_visible() -> None:
     template = Path("templates/canvas.html").read_text(encoding="utf-8")
-    user_bar_match = re.search(r'<div id="chat-user-bar".*?</div>', template, re.DOTALL)
+    user_bar_match = re.search(r'<div id="chat-identity".*?</div>', template, re.DOTALL)
     assert user_bar_match is not None
     user_bar_html = user_bar_match.group(0)
 
@@ -115,7 +115,7 @@ def test_canvas_unauthenticated_user_chat_name_input_visible() -> None:
                 messagesContainer: document.getElementById('chat-messages'),
                 nameInput: document.getElementById('chat-name-input'),
                 nameDisplay: document.getElementById('chat-name-display'),
-                nameBadge: document.getElementById('chat-name-badge'),
+                nameStatusIcon: document.getElementById('chat-name-status-icon'),
                 loginChip: document.getElementById('chat-login-chip'),
                 getAuthState: async () => ({
                     authenticated: false,
@@ -125,21 +125,25 @@ def test_canvas_unauthenticated_user_chat_name_input_visible() -> None:
 
         name_input = page.locator("#chat-name-input")
         name_display = page.locator("#chat-name-display")
-        name_badge = page.locator("#chat-name-badge")
+        name_badge = page.locator("#chat-name-status-icon")
         login_chip = page.locator("#chat-login-chip")
 
         expect(name_input).to_be_visible()
         expect(name_display).to_be_hidden()
-        expect(name_badge).to_have_text("Anon")
+        expect(name_badge).to_have_attribute("aria-label", "Guest")
         expect(login_chip).to_be_visible()
         expect(login_chip).to_have_text("Log In")
+        name_input.fill("Moonlit Guide")
+        name_input.press("Tab")
+        assert page.evaluate("localStorage.getItem('narratron_anon_chat_name')") == "Moonlit Guide"
+        assert page.evaluate("window.controller.getCurrentUsername()") == "Moonlit Guide"
 
         browser.close()
 
 
 def test_canvas_unauthenticated_login_chip_triggers_modal() -> None:
     template = Path("templates/canvas.html").read_text(encoding="utf-8")
-    user_bar_match = re.search(r'<div id="chat-user-bar".*?</div>', template, re.DOTALL)
+    user_bar_match = re.search(r'<div id="chat-identity".*?</div>', template, re.DOTALL)
     assert user_bar_match is not None
     user_bar_html = user_bar_match.group(0)
 
@@ -172,7 +176,7 @@ def test_canvas_unauthenticated_login_chip_triggers_modal() -> None:
                 messagesContainer: document.getElementById('chat-messages'),
                 nameInput: document.getElementById('chat-name-input'),
                 nameDisplay: document.getElementById('chat-name-display'),
-                nameBadge: document.getElementById('chat-name-badge'),
+                nameStatusIcon: document.getElementById('chat-name-status-icon'),
                 loginChip: document.getElementById('chat-login-chip'),
                 getAuthState: async () => ({
                     authenticated: false,

@@ -14,7 +14,7 @@ def scenes_chars_page() -> Iterator[Page]:
     canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
 
-    start_pane = canvas_html.index('<div id="stamp-manager-pane">')
+    start_pane = canvas_html.index('<div id="stamp-manager-pane"')
     script_token = '<script type="module">'
     end_pane_bound = canvas_html.index(script_token, start_pane)
     pane_closing = canvas_html.rindex("</div>", start_pane, end_pane_bound)

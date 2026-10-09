@@ -40,7 +40,7 @@ export function initializeChatController(options = {}) {
         chatInput,
         nameInput,
         nameDisplay: initialNameDisplay,
-        nameBadge,
+        nameStatusIcon,
         loginChip: initialLoginChip,
         onOpenLogin = null,
         hideSuggestionsBtn,
@@ -99,10 +99,11 @@ export function initializeChatController(options = {}) {
                 isAuthenticatedUser = true;
                 const rawColor = data.user.profile_color;
                 profileColor = (rawColor && /^#[0-9a-fA-F]{6}$/.test(rawColor)) ? rawColor : (rawColor || '#818cf8');
-                if (nameBadge) {
-                    nameBadge.textContent = 'Member';
-                    nameBadge.style.background = 'rgba(34, 197, 94, 0.2)';
-                    nameBadge.style.color = '#4ade80';
+                if (nameStatusIcon) {
+                    nameStatusIcon.textContent = '✓';
+                    nameStatusIcon.setAttribute('aria-label', 'Member');
+                    nameStatusIcon.title = 'Member';
+                    nameStatusIcon.style.color = '#4ade80';
                 }
             }
         } catch (e) {
