@@ -7,12 +7,26 @@ from testlab import server
 
 def test_image_prompt_catalog():
     catalog = prompt_catalog()
-    assert len(catalog) >= 10
+    assert len(catalog) >= 14
     assert catalog[0]["id"] == "cinematic-scene"
 
     prompt = get_prompt("cinematic-scene")
     assert prompt.id == "cinematic-scene"
     assert "cinematic storybook illustration" in prompt.prompt
+
+    worm_prompt = get_prompt("dynamic-worm-angle")
+    assert worm_prompt.dimension == "Dynamic perspective"
+    assert "worm's-eye" in worm_prompt.prompt
+
+    tiered_prompt = get_prompt("tiered-spatial-placement")
+    assert tiered_prompt.dimension == "Relative placement"
+    assert "mezzanine" in tiered_prompt.prompt
+
+    aerial_prompt = get_prompt("aerial-chase-layout")
+    assert aerial_prompt.dimension == "Dynamic perspective"
+
+    depth_prompt = get_prompt("depth-occlusion-stack")
+    assert "relative depth" in depth_prompt.prompt
 
 
 def test_testlab_server_image_benchmark_routes():
@@ -29,6 +43,15 @@ def test_testlab_server_image_benchmark_routes():
     assert "providers" in data
     assert any(p["id"] == "gemini" for p in data["providers"])
     assert any(p["id"] == "hybrid-flux-gemini" for p in data["providers"])
+
+    flare_spec = next(p for p in data["providers"] if p["id"] == "openai-gpt-image-flare")
+    assert "gpt-image-2.5-sunburst" in flare_spec["model_options"]
+    assert "gpt-image-2.5-flare" in flare_spec["model_options"]
+
+    gpt_spec = next(p for p in data["providers"] if p["id"] == "openai-gpt-image")
+    assert gpt_spec["model"] == "gpt-image-2"
+    assert "gpt-image-2" in gpt_spec["model_options"]
+    assert "gpt-image-1-mini" in gpt_spec["model_options"]
 
 
 def test_image_benchmark_cost_calculation():

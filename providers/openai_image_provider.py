@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 import base64
-import os
 from io import BytesIO
-from typing import Any
+import os
 
 from openai import OpenAI
+from pydantic import JsonValue, TypeAdapter
 
-from providers.image_provider import ImageGenerationRequest, ImageGenerationResult, ImageProvider, ImageProviderError
+from providers.image_provider import (
+    ImageGenerationRequest,
+    ImageGenerationResult,
+    ImageProvider,
+    ImageProviderError,
+)
 
 
 class OpenAIImageProvider(ImageProvider):
     id = "openai-gpt-image"
-    display_name = "GPT Image 1 Mini"
+    display_name = "GPT Image 2"
 
-    def __init__(self, model: str = "gpt-image-1-mini", quality: str = "medium", client: Any = None):
+    def __init__(
+        self,
+        model: str = "gpt-image-2",
+        quality: str = "medium",
+        client: OpenAI | None = None,
+    ) -> None:
         self.model = model
         self.quality = quality
         if client is None:
@@ -44,16 +54,23 @@ class OpenAIImageProvider(ImageProvider):
         except Exception as exc:
             raise ImageProviderError(f"OpenAI image request failed: {exc}") from exc
 
-        data = getattr(response, "data", None) or []
-        if not data or not getattr(data[0], "b64_json", None):
+        data = response.data or []
+        if not data or not data[0].b64_json:
             raise ImageProviderError("OpenAI returned no base64 image data.")
-        usage = self._usage(response)
+        content = base64.b64decode(data[0].b64_json, validate=True)
+        if not content:
+            raise ImageProviderError("OpenAI returned an empty image.")
+        usage: dict[str, JsonValue] = (
+            TypeAdapter(dict[str, JsonValue]).validate_python(response.usage.model_dump(exclude_none=True))
+            if response.usage is not None
+            else {}
+        )
         return ImageGenerationResult(
-            image_bytes=base64.b64decode(data[0].b64_json),
+            image_bytes=content,
             mime_type="image/png",
             provider=self.id,
             model=self.model,
-            request_id=getattr(response, "_request_id", None),
+            request_id=response._request_id,
             usage=usage,
         )
 
@@ -68,14 +85,3 @@ class OpenAIImageProvider(ImageProvider):
         if (width and height and height > width) or aspect_ratio in ("9:16", "3:4", "2:3"):
             return "1024x1536"
         return "1536x1024"
-
-    @staticmethod
-    def _usage(response: Any) -> dict[str, Any]:
-        usage = getattr(response, "usage", None)
-        if usage is None:
-            return {}
-        if hasattr(usage, "model_dump"):
-            return usage.model_dump(exclude_none=True)
-        if isinstance(usage, dict):
-            return dict(usage)
-        return {key: value for key, value in vars(usage).items() if not key.startswith("_")}

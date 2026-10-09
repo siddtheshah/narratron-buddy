@@ -95,3 +95,31 @@ def test_flare_custom_dimensions_validate_before_api_call() -> None:
     with pytest.raises(ImageProviderError, match="dimensions"):
         provider.generate(ImageGenerationRequest(prompt="Hero", width=257, height=257))
     client.images.generate.assert_not_called()
+
+
+def test_flare_supports_sunburst_model_selection() -> None:
+    client = image_client()
+    provider = OpenAIFlareImageProvider(model="gpt-image-2.5-sunburst", client=client)
+    assert provider.display_name == "GPT Image 2.5 Sunburst"
+    result = provider.generate(ImageGenerationRequest(prompt="Intricate observatory"))
+    assert result.model == "gpt-image-2.5-sunburst"
+    assert client.images.generate.call_args.kwargs["model"] == "gpt-image-2.5-sunburst"
+
+
+def test_flare_rejects_unsupported_model() -> None:
+    with pytest.raises(ImageProviderError, match="Unsupported GPT Image 2.5 model"):
+        OpenAIFlareImageProvider(model="gpt-image-unknown", client=image_client())
+
+
+def test_registry_resolves_sunburst_model_option() -> None:
+    with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}), patch(
+        "providers.openai_flare_image_provider.OpenAI", return_value=image_client(),
+    ):
+        provider = get_image_provider("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst"})
+        assert provider.model == "gpt-image-2.5-sunburst"
+        assert provider.display_name == "GPT Image 2.5 Sunburst"
+
+        spec = next(item for item in list_image_provider_specs() if item["id"] == "openai-gpt-image-flare")
+        assert "gpt-image-2.5-flare" in spec["model_options"]
+        assert "gpt-image-2.5-sunburst" in spec["model_options"]
+        assert "xhigh" in spec["quality_options"]

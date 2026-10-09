@@ -20,11 +20,19 @@ class OpenAIFlareImageProvider(ImageProvider):
     display_name = "GPT Image 2.5 Flare"
 
     def __init__(
-        self, quality: Literal["low", "medium", "high", "auto"] = "high",
+        self,
+        model: Literal["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] | str = "gpt-image-2.5-flare",
+        quality: Literal["low", "medium", "high", "xhigh", "max", "auto"] = "high",
         client: OpenAI | None = None,
     ) -> None:
-        self.model = "gpt-image-2.5-flare"
+        if model not in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst"):
+            raise ImageProviderError(f"Unsupported GPT Image 2.5 model: {model}")
+        self.model = model
         self.quality = quality
+        if model == "gpt-image-2.5-sunburst":
+            self.display_name = "GPT Image 2.5 Sunburst"
+        else:
+            self.display_name = "GPT Image 2.5 Flare"
         if client is None:
             api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY")
             if not api_key:

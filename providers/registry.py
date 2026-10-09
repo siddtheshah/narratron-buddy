@@ -31,24 +31,25 @@ from providers.live_agent_provider import LiveAgentProvider, LiveAgentProviderEr
 _IMAGE_SPECS = (
     {
         "id": "openai-gpt-image-flare",
-        "name": "GPT Image 2.5 Flare",
+        "name": "GPT Image 2.5 (Flare / Sunburst)",
         "model": "gpt-image-2.5-flare",
-        "quality_options": ["low", "medium", "high", "auto"],
+        "model_options": ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"],
+        "quality_options": ["low", "medium", "high", "xhigh", "max", "auto"],
         "estimated_cost_usd_1mp": None,
         "reference_limit": None,
         "status": "unconfigured",
-        "notes": "High-quality theater assets with transparent PNG support. Defaults to high quality.",
+        "notes": "High-quality theater assets with transparent PNG support. Flare optimizes for latency; Sunburst optimizes for precision and visual reasoning.",
     },
     {
         "id": "openai-gpt-image",
-        "name": "GPT Image 1 Mini",
-        "model": "gpt-image-1-mini",
-        "model_options": ["gpt-image-1-mini", "gpt-image-2"],
+        "name": "GPT Image 2",
+        "model": "gpt-image-2",
+        "model_options": ["gpt-image-2", "gpt-image-1-mini"],
         "quality_options": ["low", "medium", "high"],
         "estimated_cost_usd_1mp": 0.015,
         "reference_limit": None,
         "status": "available" if (os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY")) else "unconfigured",
-        "notes": "Medium 1536×1024 estimate; references use the image-edit endpoint.",
+        "notes": "GPT Image generation 2 baseline with 1-mini budget option. Medium 1536×1024 estimate; references use image-edit endpoint.",
     },
     {
         "id": "gemini",
@@ -212,14 +213,15 @@ def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) 
     options = options or {}
     if provider_id == "openai-gpt-image-flare":
         quality = options.get("quality") or "high"
-        if quality not in ("low", "medium", "high", "auto"):
+        if quality not in ("low", "medium", "high", "xhigh", "max", "auto"):
             raise ImageProviderError(f"Unsupported Flare quality: {quality}")
-        return OpenAIFlareImageProvider(quality=quality)
+        model = str(options.get("model") or "gpt-image-2.5-flare")
+        return OpenAIFlareImageProvider(model=model, quality=quality)
     if provider_id == "gemini":
         return GeminiImageProvider(model=str(options.get("model") or "gemini-3.1-flash-lite-image"))
     if provider_id == "openai-gpt-image":
         return OpenAIImageProvider(
-            model=str(options.get("model") or "gpt-image-1-mini"),
+            model=str(options.get("model") or "gpt-image-2"),
             quality=str(options.get("quality") or "medium"),
         )
     if provider_id == "flux-klein":
