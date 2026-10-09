@@ -5452,6 +5452,12 @@
             onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
             onRemoveStamp: action => removeStampAnnotation(action),
             onSelectStamp: action => selectStampAnnotation(action),
+            canSelectSegment: () => doodlesEnabled && !isPagedBack && currentColor === null && !textAnnotationMode,
+            onRemoveSegment: (removed) => {
+                const removedSet = new Set((removed || []).map(r => r.id || r));
+                doodleActions = doodleActions.filter(a => !removedSet.has(a.id) && !removedSet.has(a));
+                redrawAllDoodles();
+            },
         });
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
@@ -5534,6 +5540,9 @@
                 textAnnotationToggle?.classList.remove('active');
                 textAnnotationToggle?.setAttribute('aria-pressed', 'false');
                 setTextAnnotationMenuOpen(false);
+            }
+            if (color !== null && typeof doodleRenderer?.clearSelectedSegments === 'function') {
+                doodleRenderer.clearSelectedSegments();
             }
             currentColor = color || null;
             colorBtns.forEach(button => {
@@ -5949,6 +5958,7 @@
             activeTextEditor = null;
             pendingDoodleMessages.length = 0;
             inFlightDoodleMessages.clear();
+            doodleRenderer?.clearSelectedSegments();
             doodleActions = [];
             redrawAllDoodles();
             sendOrQueueDoodleMessage({ type: 'clear' });

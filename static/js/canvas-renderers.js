@@ -873,8 +873,190 @@ export function createImageRenderer({
     };
 }
 
-export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {}, onSelectStamp = () => {} }) {
+export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {}, onSelectStamp = () => {}, canSelectSegment = () => true, onSelectSegment = () => {}, onRemoveSegment = () => {} }) {
     const context = canvas?.getContext("2d");
+
+    const selectedSegmentIds = new Set();
+
+    function ensureSegmentId(action) {
+        if (!action) return null;
+        if (!action.id) {
+            action.id = (typeof crypto !== "undefined" && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : ("seg-" + Math.random().toString(36).slice(2, 10));
+        }
+        return action.id;
+    }
+
+    function isSegmentSelected(action) {
+        if (!action) return false;
+        if (action.selected) return true;
+        return Boolean(action.id && selectedSegmentIds.has(action.id));
+    }
+
+    function getSelectedSegments() {
+        return lastDoodleActions.filter(action => action.type === "draw" && isSegmentSelected(action));
+    }
+
+    function selectSegment(target, multi = false) {
+        if (typeof canSelectSegment === "function" && !canSelectSegment()) return;
+        if (!multi) {
+            selectedSegmentIds.clear();
+            lastDoodleActions.forEach(a => {
+                if (a.type === "draw") a.selected = false;
+            });
+        }
+        const items = Array.isArray(target) ? target : (target ? [target] : []);
+        items.forEach(item => {
+            const action = (typeof item === "string")
+                ? lastDoodleActions.find(a => a.type === "draw" && a.id === item)
+                : item;
+            if (action && action.type === "draw") {
+                ensureSegmentId(action);
+                selectedSegmentIds.add(action.id);
+                action.selected = true;
+            }
+        });
+        if (typeof onSelectSegment === "function") {
+            onSelectSegment(getSelectedSegments());
+        }
+        redraw();
+    }
+
+    function deselectSegment(target) {
+        const items = Array.isArray(target) ? target : (target ? [target] : []);
+        items.forEach(item => {
+            const action = (typeof item === "string")
+                ? lastDoodleActions.find(a => a.type === "draw" && a.id === item)
+                : item;
+            if (action) {
+                if (action.id) selectedSegmentIds.delete(action.id);
+                action.selected = false;
+            }
+        });
+        if (typeof onSelectSegment === "function") {
+            onSelectSegment(getSelectedSegments());
+        }
+        redraw();
+    }
+
+    function clearSelectedSegments() {
+        if (selectedSegmentIds.size === 0 && !lastDoodleActions.some(a => a.type === "draw" && a.selected)) {
+            return;
+        }
+        selectedSegmentIds.clear();
+        lastDoodleActions.forEach(a => {
+            if (a.type === "draw") a.selected = false;
+        });
+        if (typeof onSelectSegment === "function") {
+            onSelectSegment([]);
+        }
+        redraw();
+    }
+
+    function distanceToSegment(px, py, x0, y0, x1, y1) {
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const l2 = dx * dx + dy * dy;
+        if (l2 === 0) return Math.hypot(px - x0, py - y0);
+        let t = ((px - x0) * dx + (py - y0) * dy) / l2;
+        t = Math.max(0, Math.min(1, t));
+        const projX = x0 + t * dx;
+        const projY = y0 + t * dy;
+        return Math.hypot(px - projX, py - projY);
+    }
+
+    function findSegmentAt(px, py, threshold = null) {
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return null;
+        for (let i = lastDoodleActions.length - 1; i >= 0; i--) {
+            const action = lastDoodleActions[i];
+            if (action.type !== "draw") continue;
+            ensureSegmentId(action);
+            const x0 = Number(action.x0) * rect.width;
+            const y0 = Number(action.y0) * rect.height;
+            const x1 = Number(action.x1) * rect.width;
+            const y1 = Number(action.y1) * rect.height;
+            const limit = threshold !== null ? threshold : Math.max(8, (Number(action.size) || 3) / 2 + 5);
+            if (distanceToSegment(px, py, x0, y0, x1, y1) <= limit) {
+                return action;
+            }
+        }
+        return null;
+    }
+
+    function getSegmentsInRect(x0, y0, x1, y1) {
+        if (!canvas) return [];
+        const rect = canvas.getBoundingClientRect();
+        let minX = Math.min(x0, x1);
+        let maxX = Math.max(x0, x1);
+        let minY = Math.min(y0, y1);
+        let maxY = Math.max(y0, y1);
+        if (maxX <= 1 && maxY <= 1 && rect.width > 0 && rect.height > 0) {
+            // Already normalized [0..1]
+        } else if (rect.width > 0 && rect.height > 0) {
+            minX /= rect.width;
+            maxX /= rect.width;
+            minY /= rect.height;
+            maxY /= rect.height;
+        }
+        return lastDoodleActions.filter(action => {
+            if (action.type !== "draw") return false;
+            ensureSegmentId(action);
+            const segMinX = Math.min(Number(action.x0), Number(action.x1));
+            const segMaxX = Math.max(Number(action.x0), Number(action.x1));
+            const segMinY = Math.min(Number(action.y0), Number(action.y1));
+            const segMaxY = Math.max(Number(action.y0), Number(action.y1));
+            return segMaxX >= minX && segMinX <= maxX && segMaxY >= minY && segMinY <= maxY;
+        });
+    }
+
+    function selectSegmentsInRect(x0, y0, x1, y1, multi = false) {
+        const found = getSegmentsInRect(x0, y0, x1, y1);
+        selectSegment(found, multi);
+        return found;
+    }
+
+    const interactionTarget = canvas?.parentElement || canvas;
+    interactionTarget?.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        if (event.target && event.target.closest && (event.target.closest(".canvas-stamp-annotation") || event.target.closest(".canvas-text-annotation"))) {
+            return;
+        }
+        if (typeof canSelectSegment === "function" && !canSelectSegment()) return;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const px = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        const hit = findSegmentAt(px, py);
+        if (hit) {
+            const multi = event.shiftKey || event.ctrlKey || event.metaKey;
+            selectSegment(hit, multi);
+        } else if (!event.shiftKey && !event.ctrlKey && !event.metaKey) {
+            clearSelectedSegments();
+        }
+    });
+
+    if (typeof window !== "undefined") {
+        window.addEventListener("keydown", event => {
+            const active = document.activeElement;
+            if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
+            if (selectedSegmentIds.size === 0) return;
+            if (event.key === "Escape") {
+                event.preventDefault();
+                clearSelectedSegments();
+            } else if (event.key === "Delete" || event.key === "Backspace") {
+                if (typeof onRemoveSegment === "function") {
+                    const removed = getSelectedSegments();
+                    event.preventDefault();
+                    clearSelectedSegments();
+                    onRemoveSegment(removed);
+                }
+            }
+        });
+    }
 
     let selectedStampItem = null;
 
@@ -1226,10 +1408,24 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         renderSelectableText(action);
     }
 
-    function renderSegment(x0, y0, x1, y1, color, size) {
+    function renderSegment(x0, y0, x1, y1, color, size, isSelected = false) {
         if (!context) return;
 
         context.save();
+        if (isSelected) {
+            context.beginPath();
+            context.globalCompositeOperation = "source-over";
+            context.strokeStyle = "#818cf8";
+            context.lineWidth = Math.max(size + 6, 8);
+            context.lineCap = "round";
+            context.lineJoin = "round";
+            context.shadowColor = "rgba(99, 102, 241, 0.75)";
+            context.shadowBlur = 8;
+            context.moveTo(x0, y0);
+            context.lineTo(x1, y1);
+            context.stroke();
+        }
+
         context.beginPath();
         if (color === "erase") {
             context.globalCompositeOperation = "destination-out";
@@ -1238,12 +1434,28 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             context.globalCompositeOperation = "source-over";
             context.strokeStyle = color;
         }
+        context.shadowColor = "transparent";
+        context.shadowBlur = 0;
         context.moveTo(x0, y0);
         context.lineTo(x1, y1);
         context.lineWidth = size;
         context.lineCap = "round";
         context.lineJoin = "round";
         context.stroke();
+
+        if (isSelected) {
+            context.globalCompositeOperation = "source-over";
+            context.fillStyle = "#ffffff";
+            context.strokeStyle = "#6366f1";
+            context.lineWidth = 2;
+            const handleRadius = Math.max(3, Math.min(6, size / 2 + 2));
+            [ [x0, y0], [x1, y1] ].forEach(([hx, hy]) => {
+                context.beginPath();
+                context.arc(hx, hy, handleRadius, 0, Math.PI * 2);
+                context.fill();
+                context.stroke();
+            });
+        }
         context.restore();
     }
 
@@ -1275,6 +1487,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
 
         lastDoodleActions.forEach((action) => {
             if (action.type === "draw") {
+                ensureSegmentId(action);
+                const isSelected = isSegmentSelected(action);
                 renderSegment(
                     action.x0 * rect.width,
                     action.y0 * rect.height,
@@ -1282,6 +1496,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                     action.y1 * rect.height,
                     action.color,
                     action.size || 3,
+                    isSelected
                 );
             } else if (action.type === "text") {
                 renderText(action);
@@ -1345,5 +1560,19 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         }
     }
 
-    return { renderSegment, renderText, renderStamp: renderSelectableStamp, redraw, resize };
+    return {
+        renderSegment,
+        renderText,
+        renderStamp: renderSelectableStamp,
+        redraw,
+        resize,
+        selectSegment,
+        deselectSegment,
+        clearSelectedSegments,
+        getSelectedSegments,
+        isSegmentSelected,
+        findSegmentAt,
+        getSegmentsInRect,
+        selectSegmentsInRect,
+    };
 }

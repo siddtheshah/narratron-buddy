@@ -1458,10 +1458,18 @@ async def test_theater_push_scene_to_canvas(tmp_path: Path) -> None:
             assert exc_push.value.status_code == 403
 
         # Active orator can push scene
-        with patch.object(theaters, "get_current_user_async", return_value=user_orator):
+        mock_session = MagicMock()
+        mock_session.is_alive = True
+        with patch.object(theaters, "get_current_user_async", return_value=user_orator), \
+             patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session):
             result = await theaters.push_theater_scene(PushSceneRequest(name="The Desk of Origins"), request, "push-stage")
             assert result["status"] == "ok"
             assert result["scene_name"] == "The Desk of Origins"
+            mock_session.send_content.assert_called_once()
+            call_content, = mock_session.send_content.call_args.args
+            assert call_content.role == "system"
+            assert "[Orator Action] The active orator changed the scene to 'The Desk of Origins'." in call_content.parts[0].text
+            assert mock_session.send_content.call_args.kwargs.get("partial") is True
 
             # Canvas visual state should have the new scene
             state = theaters.canvas_states.get("push-stage")

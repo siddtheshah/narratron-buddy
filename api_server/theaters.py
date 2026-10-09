@@ -248,6 +248,15 @@ async def push_theater_track(payload: PushAssetRequest, request: Request, theate
         state = canvas_states.get(theater_id)
         state.audio.update_music("", [], allow_pinned=True)
         state.persist()
+        session = live_agent_manager.get_session(theater_id)
+        if session is not None and session.is_alive:
+            session.send_content(
+                types.Content(
+                    role="system",
+                    parts=[types.Part(text="[Orator Action] The active orator stopped the music.")],
+                ),
+                partial=True,
+            )
         return {"status": "ok", "message": "Music stopped."}
     groups = await asyncio.to_thread(playlists, theater_manager.theater(theater_id))
     for group in groups:
@@ -255,12 +264,30 @@ async def push_theater_track(payload: PushAssetRequest, request: Request, theate
             state = canvas_states.get(theater_id)
             state.audio.update_music(group.name, [track.url for track in group.tracks], allow_pinned=True)
             state.persist()
+            session = live_agent_manager.get_session(theater_id)
+            if session is not None and session.is_alive:
+                session.send_content(
+                    types.Content(
+                        role="system",
+                        parts=[types.Part(text=f"[Orator Action] The active orator changed the music to '{group.name}'.")],
+                    ),
+                    partial=True,
+                )
             return {"status": "ok", "message": f"Playing {group.name} ({len(group.tracks)} tracks)."}
         for track in group.tracks:
             if track.id == payload.id:
                 state = canvas_states.get(theater_id)
                 state.audio.update_music(f"{group.name} / {track.name}", [track.url], allow_pinned=True)
                 state.persist()
+                session = live_agent_manager.get_session(theater_id)
+                if session is not None and session.is_alive:
+                    session.send_content(
+                        types.Content(
+                            role="system",
+                            parts=[types.Part(text=f"[Orator Action] The active orator changed the music to '{track.name}'.")],
+                        ),
+                        partial=True,
+                    )
                 return {"status": "ok", "message": f"Playing {track.name}."}
     raise HTTPException(status_code=404, detail="Track or playlist not found.")
 
@@ -354,9 +381,17 @@ async def push_theater_scene(
 
     session = live_agent_manager.get_session(theater_id)
     if session is not None and session.is_alive:
-        session.send_content(types.Content(role="system", parts=[types.Part(text=(
-            f"[Orator Action] The active orator changed the scene to '{target_scene['name']}'."
-        ))]))
+        session.send_content(
+            types.Content(
+                role="system",
+                parts=[
+                    types.Part(
+                        text=f"[Orator Action] The active orator changed the scene to '{target_scene['name']}'."
+                    )
+                ],
+            ),
+            partial=True,
+        )
 
     return {
         "status": "ok",

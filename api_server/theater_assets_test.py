@@ -21,10 +21,13 @@ async def test_no_music_clears_shared_playback_even_when_pinned() -> None:
     state.audio = AudioState(notify)
     state.audio.update_music("Battle", ["/battle.mp3"])
     state.audio.set_pinned(True)
+    mock_session = MagicMock()
+    mock_session.is_alive = True
     with patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          patch.object(theaters, "can_control_agent_websocket", return_value=True), \
          patch.object(theaters.db, "get_deployment", return_value={}), \
+         patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session), \
          patch.object(theaters.canvas_states, "get", return_value=state):
         response = await theaters.push_theater_track(theaters.PushAssetRequest(id="no_music"), request, "asset-stage")
     assert response["message"] == "Music stopped."
@@ -33,6 +36,11 @@ async def test_no_music_clears_shared_playback_even_when_pinned() -> None:
     assert state.audio.payload()["time"] > 0
     notify.assert_called_with("latest")
     state.persist.assert_called_once()
+    mock_session.send_content.assert_called_once()
+    call_content, = mock_session.send_content.call_args.args
+    assert call_content.role == "system"
+    assert call_content.parts[0].text == "[Orator Action] The active orator stopped the music."
+    assert mock_session.send_content.call_args.kwargs.get("partial") is True
 
 
 @pytest.mark.asyncio
@@ -52,16 +60,24 @@ async def test_asset_catalog_and_individual_track_push(tmp_path: Path) -> None:
     assert groups[1].tracks[0].url.endswith("/output/music/generated.mp3")
     request = Request({"type": "http", "headers": []})
     state = MagicMock()
+    mock_session = MagicMock()
+    mock_session.is_alive = True
     with patch.object(theaters, "theater_manager", manager), \
          patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          patch.object(theaters, "can_control_agent_websocket", return_value=True), \
          patch.object(theaters.db, "get_deployment", return_value={}), \
+         patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session), \
          patch.object(theaters.canvas_states, "get", return_value=state):
         response = await theaters.push_theater_track(theaters.PushAssetRequest(id=groups[0].tracks[0].id), request, "asset-stage")
         assert response["status"] == "ok"
         state.audio.update_music.assert_called_once_with("Quiet evening / A song", [groups[0].tracks[0].url], allow_pinned=True)
         state.persist.assert_called_once()
+        mock_session.send_content.assert_called_once()
+        call_content, = mock_session.send_content.call_args.args
+        assert call_content.role == "system"
+        assert call_content.parts[0].text == f"[Orator Action] The active orator changed the music to '{groups[0].tracks[0].name}'."
+        assert mock_session.send_content.call_args.kwargs.get("partial") is True
         with pytest.raises(HTTPException) as missing:
             await theaters.push_theater_track(theaters.PushAssetRequest(id="../../outside.mp3"), request, "asset-stage")
         assert missing.value.status_code == 404
@@ -94,8 +110,11 @@ async def test_entire_playlist_push_updates_shared_playback_when_pinned(tmp_path
     state.audio.music_paused = True
     state.audio.set_pinned(True)
     request = Request({"type": "http", "headers": []})
+    mock_session = MagicMock()
+    mock_session.is_alive = True
     with patch.object(theaters, "theater_manager", manager), \
          patch.object(theaters, "_require_asset_orator", AsyncMock()), \
+         patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session), \
          patch.object(theaters.canvas_states, "get", return_value=state):
         response = await theaters.push_theater_track(theaters.PushAssetRequest(id=group.id), request, "asset-stage")
         with pytest.raises(HTTPException) as missing:
@@ -108,6 +127,11 @@ async def test_entire_playlist_push_updates_shared_playback_when_pinned(tmp_path
     assert state.audio.pinned is True
     notify.assert_called_with("latest")
     state.persist.assert_called_once()
+    mock_session.send_content.assert_called_once()
+    call_content, = mock_session.send_content.call_args.args
+    assert call_content.role == "system"
+    assert call_content.parts[0].text == f"[Orator Action] The active orator changed the music to '{group.name}'."
+    assert mock_session.send_content.call_args.kwargs.get("partial") is True
 
 
 @pytest.mark.asyncio
