@@ -55,7 +55,9 @@ story_planning:
     # planner validates and updates these stickies independently.
     stickies: {}
     # List of sticky note keys/topics that the story planner must always retain and never drop
-    required_stickies: []
+    required_stickies:
+        - current_scene_reference_only
+        - current_present_character_references_only
     # Names of sticky notes to hide in the canvas UI view by default until toggled
     hidden_stickies: []
 

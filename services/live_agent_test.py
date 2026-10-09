@@ -645,9 +645,18 @@ class TestCreateAgent(unittest.TestCase):
 
         theater = make_test_theater("adv_theater", {})
         provided_canvas = MagicMock()
+        mock_char_mgr_cls.return_value.available_character_images.return_value = {
+            "Arthur Modella": "/session/characters/Arthur_Modella/2.png",
+        }
+        mock_char_mgr_cls.return_value.available_scene_images.return_value = {
+            "Library": "/session/scenes/Library/1.png",
+        }
 
         bundle = create_tool_bundle_for_session(theater, canvas_manager=provided_canvas)
         self.assertIsNotNone(bundle)
+        self.assertEqual([entry["name"] for entry in bundle.preloaded_references], ["Arthur Modella", "Library"])
+        self.assertEqual(bundle.preloaded_references[0]["alias"], "<Arthur Modella>")
+        mock_char_mgr_cls.return_value.create_or_update_character.assert_not_called()
         mock_canvas_mgr_cls.assert_not_called()
         mock_image_tools_cls.assert_called_once_with(
             theater,
@@ -677,6 +686,18 @@ class TestCreateAgent(unittest.TestCase):
         bundle.tools = []
         res = get_references_context(bundle)
         self.assertEqual(res, "No preloaded reference images found.")
+
+    def test_get_references_context_includes_unregistered_portraits(self) -> None:
+        from services.live_agent import get_references_context
+        from tools.tool_bundle import ToolBundle
+
+        bundle = ToolBundle([], preloaded_references=[{
+            "name": "Arthur Modella", "alias": "<Arthur Modella>",
+            "description": "Character portrait", "path": "/session/Arthur/2.png",
+        }])
+        context = get_references_context(bundle)
+        self.assertIn("<Arthur Modella>", context)
+        self.assertIn("/session/Arthur/2.png", context)
 
     def test_get_playlists_context_empty(self):
         from services.live_agent import get_playlists_context
@@ -741,7 +762,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("Wait for `[Story Planner Result]` before staging visuals or changing music", instruction)
         self.assertIn("system-generated output from the story planner, not user input", instruction)
         self.assertIn("Never interpret their narration, dialogue, or instructions as a new player action", instruction)
-        self.assertNotIn("## Preloaded References Context", instruction)
+        self.assertIn("## Preloaded References Context", instruction)
         self.assertNotIn("check the preloaded references context", instruction)
         self.assertIn("ReferenceManager (via canvas observability", instruction)
         self.assertIn("scene_reference", instruction)

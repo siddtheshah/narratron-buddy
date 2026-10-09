@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping, Optional, Protocol, Sequence, Union
 
 from PIL import Image
+import yaml
 
 from jinja2 import Template
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -99,6 +100,17 @@ def get_next_iteration_number(char_dir: Path) -> int:
         return 1
     max_num = max(num for num, _ in iterations)
     return max_num + 1 if max_num >= 1 else 1
+
+
+class CharacterTraits(BaseModel):
+    """Authored or session-owned traits stored beside a character's portraits."""
+
+    description: str = ""
+    personality: str = ""
+    motivation: str = ""
+    quirk: str = ""
+    gender: Literal["male", "female", "nonbinary"] | None = None
+    voice_tags: list[str] = Field(default_factory=list)
 
 
 class Character(BaseModel):
@@ -501,8 +513,26 @@ class ReferenceManager:
         self._characters_lock = Lock()
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
+        self._initializing_references = True
         self._seed_character_images()
         self._seed_reference_images(self.theater.scenes_dir(), self.scenes_dir)
+        initial_images = self.available_character_images()
+        character_root = self.characters_dir
+        if character_root is not None and character_root.is_dir():
+            for profile in sorted(character_root.glob("*/character.yaml")):
+                if profile.is_file() and profile.resolve().is_relative_to(character_root.resolve()):
+                    initial_images.setdefault(profile.parent.name.replace("_", " "), "")
+        for name, path in initial_images.items():
+            directory = Path(path).parent if path else self._character_reference_dir(name)
+            traits = self._read_character_traits(directory) if directory is not None else CharacterTraits()
+            self.create_or_update_character(
+                name=name, image_reference=path, description=traits.description,
+                personality=traits.personality, motivation=traits.motivation,
+                quirk=traits.quirk, gender=traits.gender, voice_tags=traits.voice_tags,
+            )
+        for name, path in self.available_scene_images().items():
+            self.create_or_update_scene(name=name, image_reference=path)
+        self._initializing_references = False
         self._sync_story_state()
 
     @property
@@ -514,7 +544,44 @@ class ReferenceManager:
 
     def _seed_character_images(self) -> None:
         """Copy authored portraits without overwriting existing session iterations."""
-        self._seed_reference_images(self.theater.characters_dir(), self.characters_dir)
+        source = self.theater.characters_dir()
+        destination = self.characters_dir
+        self._seed_reference_images(source, destination)
+        if destination is None or not source.is_dir():
+            return
+        for profile in sorted(source.glob("*/character.yaml")):
+            if not profile.is_file() or not profile.resolve().is_relative_to(source.resolve()):
+                continue
+            target = get_character_reference_dir(destination, profile.parent.name) / "character.yaml"
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(profile, target)
+
+    @staticmethod
+    def _read_character_traits(directory: Path) -> CharacterTraits:
+        profile = directory / "character.yaml"
+        if profile.is_file():
+            try:
+                return CharacterTraits.model_validate(yaml.safe_load(profile.read_text(encoding="utf-8")))
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                logger.warning("[ReferenceManager] Could not read character traits from %s: %s", profile, exc)
+        return CharacterTraits()
+
+    def _save_character_traits(self, character: Character) -> None:
+        directory = self._character_reference_dir(character.name)
+        if directory is None or not directory.is_dir():
+            return
+        traits = CharacterTraits(
+            description=character.description, personality=character.personality,
+            motivation=character.motivation, quirk=character.quirk,
+            gender=character.gender, voice_tags=character.voice_tags,
+        )
+        try:
+            (directory / "character.yaml").write_text(
+                yaml.safe_dump(traits.model_dump(), sort_keys=False, allow_unicode=True), encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning("[ReferenceManager] Could not save character traits for %s: %s", character.name, exc)
 
     @staticmethod
     def _seed_reference_images(source: Path, destination: Path | None) -> None:
@@ -762,7 +829,7 @@ class ReferenceManager:
         self._sync_story_state()
 
     def _sync_story_state(self) -> None:
-        if self._story_state is None:
+        if self._initializing_references or self._story_state is None:
             return
 
         pc = self.get_player_character()
@@ -1599,7 +1666,7 @@ class ReferenceManager:
         existing = self._existing_character(clean_name)
         if existing:
             clean_desc = str(description).strip()[:500] if description else ""
-            description_changed = bool(clean_desc and clean_desc != (existing.description or ""))
+            description_changed = bool(clean_desc and existing.description and clean_desc != existing.description)
             if description:
                 existing.description = clean_desc
             if personality:
@@ -1654,6 +1721,7 @@ class ReferenceManager:
             with self._characters_lock:
                 self._characters[existing.alias] = existing
             self._sync_story_state()
+            self._save_character_traits(existing)
             return existing
 
         # 2. Character does not exist yet in memory.
@@ -1801,6 +1869,7 @@ class ReferenceManager:
                 self._characters[character.alias] = character
             self._sync_story_state()
 
+        self._save_character_traits(character)
         return character
 
     def _supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:

@@ -21,12 +21,14 @@ class ToolBundle:
     def __init__(
         self,
         tools: Sequence[Union[BaseTool, Callable, Any]],
-    ):
+        preloaded_references: Sequence[dict[str, str]] = (),
+    ) -> None:
         if not isinstance(tools, (list, tuple, set)):
             raise TypeError(
                 f"Parameter 'tools' must be a sequence of ADK BaseTool objects or callables, got {type(tools).__name__}."
             )
         self.tools = []
+        self.preloaded_references = list(preloaded_references)
         for item in tools:
             if isinstance(item, BaseTool):
                 self.tools.append(item)

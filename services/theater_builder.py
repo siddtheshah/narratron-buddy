@@ -110,7 +110,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     allowed |= len(parts) >= 2 and parts[0] == "references" and suffix in IMAGE_EXTENSIONS
     allowed |= len(parts) >= 2 and parts[0] == "stamps" and suffix in IMAGE_EXTENSIONS
     if parts[:2] == ["references", "characters"]:
-        allowed = len(parts) >= 4 and suffix in IMAGE_EXTENSIONS
+        allowed = len(parts) >= 4 and (suffix in IMAGE_EXTENSIONS or (len(parts) == 4 and parts[-1] == "character.yaml"))
     allowed |= len(parts) >= 3 and parts[0] == "playlists" and suffix in AUDIO_EXTENSIONS
     allowed |= len(parts) == 3 and parts[0] == "playlists" and parts[-1] == "description.txt"
     allowed |= len(parts) >= 2 and parts[0] == "lore" and suffix == ".txt"
@@ -179,7 +179,7 @@ class TheaterBuilderStore:
         source_chars = source / "references" / "characters"
         if source_chars.is_dir():
             for item in source_chars.rglob("*"):
-                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+                if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "character.yaml"):
                     relative = item.relative_to(source).as_posix()
                     parts = relative.split("/")
                     if len(parts) == 3:
@@ -194,7 +194,7 @@ class TheaterBuilderStore:
         session_chars = source / "output" / "artifacts" / "updated_references" / "characters"
         if session_chars.is_dir():
             for item in session_chars.rglob("*"):
-                if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+                if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "character.yaml"):
                     rel = item.relative_to(session_chars).as_posix()
                     char_rel = f"references/characters/{rel}"
                     try:
@@ -237,7 +237,7 @@ class TheaterBuilderStore:
             session_chars = source / "output" / "artifacts" / "updated_references" / "characters"
             if session_chars.is_dir():
                 for item in session_chars.rglob("*"):
-                    if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS:
+                    if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "character.yaml"):
                         rel = item.relative_to(session_chars).as_posix()
                         char_rel = f"references/characters/{rel}"
                         if char_rel not in files:
@@ -422,7 +422,7 @@ class TheaterBuilderStore:
                         "planning.yaml defines named sticky topics, descriptions, fields, render templates and initial string values. "
                         "readfirst_ lore is always loaded; other lore can be fetched on demand. "
                         "Organize flat uploads using file moves into meaningful subfolders, stamps/, references/characters/<Character Name>/, and named playlists. Preserve extensions and avoid overwrites. "
-                        "Character portraits belong in references/characters/<Character Name>/<iteration>.ext (e.g. references/characters/Arthur Modella/1.png). Each character must have its own subfolder; loose files directly under references/characters/ are not permitted. Supported image formats are PNG, JPEG, WebP, and GIF. Numbered iterations such as 1.png, 2.png allow visual evolution. Organize character portrait uploads into references/characters/<Character Name>/1.ext. Keep character dossiers/lore in lore/characters/*.txt (or lore/*.txt) and reference canonical character names. "
+                        "Character portraits belong in references/characters/<Character Name>/<iteration>.ext (e.g. references/characters/Arthur Modella/1.png). Each character must have its own subfolder; loose files directly under references/characters/ are not permitted. Supported image formats are PNG, JPEG, WebP, and GIF. Numbered iterations such as 1.png, 2.png allow visual evolution. Organize character portrait uploads into references/characters/<Character Name>/1.ext. Store character traits in references/characters/<Character Name>/character.yaml using description, personality, motivation, quirk, gender (male, female, or nonbinary), and voice_tags (a YAML list). Keep additional character lore in lore/characters/*.txt and reference canonical character names. "
                         "You may write playlists/name/description.txt to explain a playlist's mood and when to use it. "
                         "Image previews are supplied for up to twelve reference, stamp, and character assets; identify their content when organizing generic filenames. Do not claim to have inspected audio or unshown images. "
                         "Update lore/config asset paths when moving assets. Generation requests propose one reference image, stamp token, character portrait, or playlist track each (kind: 'reference', 'stamp', 'character', or 'playlist'). "

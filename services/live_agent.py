@@ -79,6 +79,7 @@ After the orator completes a sentence, promptly stage requested visuals and fitt
 Use the preloaded references for named characters and places; browse only when additional references are needed, rather than listing references every turn.
 ## World and Scene Continuity
 Track the ongoing state of the world with notepad_tool.
+Keep `current_scene_reference_only` limited to the current scene's reference identifier, and `current_present_character_references_only` limited to the reference identifiers of characters currently present. Use identifiers from the preloaded reference catalog; use 'None' when no reference applies. Replace these notes as the scene or present cast changes. Keep descriptions and other continuity details in separate notes.
 Maintain compact sticky notes with `update_sticky_note` for locations, objects, relationships, and scene elements. Mark departed elements '(absent)' rather than losing their descriptions.
 ## Character Management
 Use `create_or_update_character` for new or developed characters, `create_or_update_scene` for scenery and locations, `lookup_character` for known details, and `clear_characters` when moving to an entirely new setting/story. Keep appearance, personality, voice, and references consistent.
@@ -120,9 +121,7 @@ Last resort: use `create_music` only when existing music cannot serve a new scen
 {% endif %}
 
 ## Starting Assets
-{% if not adventure_mode %}
 {{ ref_context }}
-{% endif %}
 {{ playlist_context }}
 {% if special_instructions %}
 ## SPECIAL INSTRUCTIONS Directly from your Orator/User
@@ -419,7 +418,18 @@ def create_tool_bundle_for_session(
     if observability_config and observability_config.get("enabled", False):
         observability_tools = ObservabilityTools(theater, canvas_manager)
         tools.append(observability_tools.request_canvas_observability)
-    return ToolBundle(tools)
+    preloaded_references: list[dict[str, str]] = []
+    for name, path in reference_manager.available_character_images().items():
+        preloaded_references.append({
+            "name": name, "alias": f"<{name}>", "path": path,
+            "description": "Character portrait; use the exact name tag in image and animation prompts.",
+        })
+    for name, path in reference_manager.available_scene_images().items():
+        preloaded_references.append({
+            "name": name, "alias": path, "path": path,
+            "description": "Scene reference.",
+        })
+    return ToolBundle(tools, preloaded_references=preloaded_references)
 
 
 def get_references_context(tool_bundle: ToolBundle) -> str:
@@ -431,18 +441,16 @@ def get_references_context(tool_bundle: ToolBundle) -> str:
     Returns:
         Formatted string of preloaded reference images or fallback message.
     """
+    references = list(tool_bundle.preloaded_references)
     for tool in tool_bundle.tools:
-        name = str(getattr(tool, "name", ""))
-        function = getattr(tool, "func", None)
-        if "list_references" in name or "list_references" in str(function):
-            references = function() if callable(function) else None
-            if references:
-                lines = [
-                    f"- {item.get('name', '')} (alias: {item.get('alias', '')}): {item.get('description', '')} [path: {item.get('path', '')}]"
-                    for item in references
-                ]
-                return "\n".join(lines)
+        if tool.name == "list_references":
+            references.extend(tool.func())
             break
+    if references:
+        return "\n".join(
+            f"- {item.get('name', '')} (alias: {item.get('alias', '')}): {item.get('description', '')} [path: {item.get('path', '')}]"
+            for item in references
+        )
     return "No preloaded reference images found."
 
 
@@ -458,12 +466,10 @@ def create_agent(
     user_help_config = config.get("user_help", {})
     user_help_config = user_help_config if type(user_help_config) is dict else {}
 
-    ref_context = ""
-    if not adventure_mode:
-        references = get_references_context(tool_bundle)
-        if not references.strip():
-            references = "No preloaded reference images found."
-        ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
+    references = get_references_context(tool_bundle)
+    if not references.strip():
+        references = "No preloaded reference images found."
+    ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
     playlists = get_playlists_context(theater)
     if not playlists.strip():

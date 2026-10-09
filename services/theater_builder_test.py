@@ -285,3 +285,20 @@ def test_existing_draft_syncs_characters_from_source_on_reopen(tmp_path: Path) -
     assert (draft_dir / "references" / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
 
 
+
+
+def test_character_traits_survive_builder_source_copy_edit_and_publish(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    character = source / "references/characters/Arthur Modella/character.yaml"
+    character.parent.mkdir(parents=True)
+    character.write_text("personality: Patient\n", encoding="utf-8")
+    store = TheaterBuilderStore(tmp_path / "repository")
+    info = store.create(7, "World", "live_agent: {}\n", source=source, populate_default=False)
+    relative = "references/characters/Arthur Modella/character.yaml"
+    assert store.directory(info.theater_id).joinpath(relative).read_text(encoding="utf-8") == "personality: Patient\n"
+    store.write_files(info, {relative: b"personality: Bold\n"})
+    target = tmp_path / "runtime"
+    target.mkdir()
+    store.copy_to(info, target)
+    assert target.joinpath(relative).read_bytes() == b"personality: Bold\n"
+    assert character.read_text(encoding="utf-8") == "personality: Patient\n"

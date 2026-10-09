@@ -452,7 +452,8 @@ class TheaterManager:
                     raise ValueError("Character portraits must be inside references/characters/<Character Name>/.")
                 relative_name = "/".join(character_parts)
                 asset_destination(characters_dir, relative_name)
-                reference_image_type(filename, content)
+                if character_parts[-1] != "character.yaml":
+                    reference_image_type(filename, content)
                 continue
             asset_destination(reference_dir, relative_name)
             reference_image_type(filename, content)

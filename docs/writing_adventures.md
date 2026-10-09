@@ -288,9 +288,22 @@ To preserve session updates for future play, copy the desired images back into t
 
 ### Character portraits (`references/characters/`)
 
-Each character must have its own folder, with portrait iterations such as `references/characters/Arthur Modella/1.png`, `2.png`. Loose files directly under `references/characters/` are unsupported; the character folder provides room for richer character data in the future. Supported formats are PNG, JPEG, and WebP. The highest numbered iteration is used; a non-numbered portrait can serve as the initial image.
+Each character must have its own folder, with portrait iterations such as `references/characters/Arthur Modella/1.png`, `2.png`. Loose files directly under `references/characters/` are unsupported; the folder also holds `character.yaml` for the character traits. Supported formats are PNG, JPEG, and WebP. The highest numbered iteration is used; a non-numbered portrait can serve as the initial image.
 
 When the reference manager starts, it copies authored images into `output/artifacts/updated_references/characters/`. Existing session folders are preserved when the manager restarts. Character creation, appearance changes, and player-character updates operate on this session library. The authored `references/characters/` folder stays unchanged.
+
+Add `character.yaml` alongside the portraits to initialize the character's traits:
+
+```yaml
+description: "A silver-haired wizard in blue robes"
+personality: "Patient and curious"
+motivation: "Recover the lost archive"
+quirk: "Hums while thinking"
+gender: male
+voice_tags: [male]
+```
+
+The folder name supplies the character name. Missing traits use normal character generation. Characters with only `character.yaml` are also registered. The manager copies authored profiles into the session character folder without overwriting an existing session profile, reads them during initialization, and saves updated traits back to the session `character.yaml`. Authored files remain unchanged.
 
 The live agent sees all available character visual names in canvas observability, including characters outside the active scene. Character image file paths and aliases stay internal; model-facing character context and tool results use names and traits. Image and animation prompts attach the latest portraits through tags:
 

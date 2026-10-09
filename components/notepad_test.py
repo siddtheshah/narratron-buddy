@@ -55,6 +55,22 @@ class TestNotepad(unittest.TestCase):
         self.assertEqual([note["topic"] for note in exported["sticky_notes"]], ["HUD", "Secret", "Quest"])
         self.assertEqual([note["topic"] for note in exported["all_sticky_notes"]], ["HUD", "Secret", "Quest"])
 
+    def test_default_reference_stickies_are_retained(self) -> None:
+        from utils.config_loader import get_theater_default_config
+
+        config = get_theater_default_config()["story_planning"]
+        pad = self._make_notepad(config)
+        topics = ["current_scene_reference_only", "current_present_character_references_only"]
+        self.assertEqual(pad.get_required_sticky_notes(), topics)
+        self.assertEqual([note["topic"] for note in pad.get_present_sticky_notes()], topics)
+        pad.update_sticky_note(topics[0], "library_scene")
+        pad.update_sticky_note(topics[1], "<Arthur Modella>")
+        for index in range(pad.max_sticky_notes + 1):
+            pad.update_sticky_note(f"Note {index}", "Optional detail")
+        notes = {note["topic"]: note["info"] for note in pad.get_present_sticky_notes()}
+        self.assertEqual(notes[topics[0]], "library_scene")
+        self.assertEqual(notes[topics[1]], "<Arthur Modella>")
+
     def test_requires_theater_and_canvas_manager(self) -> None:
         with self.assertRaisesRegex(ValueError, "theater is required"):
             Notepad(None, canvas_manager=self.canvas_manager)  # type: ignore[arg-type]

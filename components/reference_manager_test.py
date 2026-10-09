@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from PIL import Image
+import yaml
 
 from providers import ImageGenerationResult, ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider
 from components.canvas.story_state import StoryState
@@ -185,6 +186,30 @@ class TestReferenceManager(unittest.TestCase):
             without_provider = ReferenceManager(theater, self.provider)
             self.assertIsNone(without_provider.create_or_update_scene("Missing"))
             self.assertEqual(without_provider.create_or_update_scene("Forest"), first)
+
+    def test_initialization_registers_authored_and_session_scenes_without_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.scenes_dir() / "Ancient Library" / "1.png"
+            authored.parent.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(authored)
+            session = theater.updated_scenes_dir() / "Moonlit Forest" / "2.png"
+            session.parent.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "green").save(session)
+            with patch.object(ReferenceManager, "create_or_update_scene", autospec=True, side_effect=ReferenceManager.create_or_update_scene) as register:
+                manager = ReferenceManager(theater, image_provider=self.image_provider)
+            images = manager.available_scene_images()
+            self.assertEqual(set(images), {"Ancient Library", "Moonlit Forest"})
+            self.assertEqual(register.call_count, 2)
+            for name, path in images.items():
+                register.assert_any_call(manager, name=name, image_reference=path)
+                self.assertEqual(manager.get_scene_visual_path(name), path)
+                self.assertEqual(manager.create_or_update_scene(name)["path"], path)
+            self.image_provider.generate.assert_not_called()
+            self.assertEqual(Path(images["Ancient Library"]).read_bytes(), authored.read_bytes())
+            self.assertEqual(images["Moonlit Forest"], str(session))
+            self.assertEqual(len(list(session.parent.iterdir())), 1)
+            self.assertEqual(len(list(authored.parent.iterdir())), 1)
 
     def test_scene_library_ignores_loose_images_and_rejects_invalid_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1094,7 +1119,7 @@ class TestReferenceManager(unittest.TestCase):
             provider.generate.assert_not_called()
 
 
-    def test_authored_characters_are_copied_and_tags_resolve_without_active_profiles(self) -> None:
+    def test_authored_characters_are_registered_at_initialization_and_tags_resolve(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             theater = Theater(TheaterManager(directory), "stage")
             base = theater.characters_dir()
@@ -1103,7 +1128,16 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (8, 8), "red").save(base / "Arthur Modella" / "1.png")
             Image.new("RGB", (8, 8), "blue").save(base / "Grim Vallos" / "1.png")
             Image.new("RGB", (8, 8), "green").save(base / "Grim Vallos" / "2.png")
-            manager = ReferenceManager(theater, self.provider, story_state=self.story_state)
+            self.provider.generate.return_value = SimpleNamespace(
+                text='{"personality":"Patient","motivation":"Find truth","gender":"male","voice_tags":["male"]}'
+            )
+            with patch.object(ReferenceManager, "create_or_update_character", autospec=True, side_effect=ReferenceManager.create_or_update_character) as register:
+                manager = ReferenceManager(theater, self.provider, story_state=self.story_state)
+            self.assertEqual(register.call_count, 2)
+            self.assertEqual(manager.count(), 2)
+            self.assertEqual([character.name for character in manager.lookup_character().characters], ["Arthur Modella", "Grim Vallos"])
+            self.assertEqual([character.name for character in manager.get_present_characters()], ["Arthur Modella", "Grim Vallos"])
+            self.assertEqual([character["name"] for character in self.story_state.get_present_characters()], ["Arthur Modella", "Grim Vallos"])
 
             references, error = manager.resolve_provider_references(
                 None, "<Arthur Modella> steps back from <Grim Vallos> as <Arthur Modella> waves.",
@@ -1114,8 +1148,73 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual(references[0].data, (base / "Arthur Modella" / "1.png").read_bytes())
             self.assertEqual(references[1].data, (base / "Grim Vallos" / "2.png").read_bytes())
             self.assertTrue((theater.updated_characters_dir() / "Grim_Vallos" / "1.png").is_file())
-            self.assertEqual(manager.count(), 0)
+            self.assertEqual(manager.count(), 2)
             self.assertEqual(set(manager.available_character_images()), {"Arthur Modella", "Grim Vallos"})
+
+    def test_character_yaml_initializes_traits_and_persists_session_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.characters_dir() / "Arthur Modella"
+            authored.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(authored / "1.png")
+            profile = authored / "character.yaml"
+            profile.write_text(
+                "description: A silver-haired wizard\npersonality: Patient\nmotivation: Find truth\nquirk: Hums\ngender: male\nvoice_tags: [male]\n", encoding="utf-8",
+            )
+            original = profile.read_bytes()
+            manager = ReferenceManager(theater, text_response_provider=self.provider, image_provider=self.image_provider)
+            character = manager.lookup_character("Arthur Modella").characters[0]
+            self.assertEqual(character.description, "A silver-haired wizard")
+            self.assertEqual(character.personality, "Patient")
+            self.assertEqual(character.motivation, "Find truth")
+            self.assertEqual(character.quirk, "Hums")
+            self.assertEqual(character.gender, "male")
+            self.assertEqual(character.voice_tags, ["male"])
+            self.provider.generate.assert_not_called()
+            self.image_provider.generate.assert_not_called()
+            manager.create_or_update_character("Arthur Modella", personality="Bold")
+            saved = theater.updated_characters_dir() / "Arthur_Modella" / "character.yaml"
+            self.assertEqual(yaml.safe_load(saved.read_text(encoding="utf-8"))["personality"], "Bold")
+            restored = ReferenceManager(theater, text_response_provider=self.provider)
+            self.assertEqual(restored.lookup_character("Arthur Modella").characters[0].personality, "Bold")
+            self.provider.generate.assert_not_called()
+            self.assertEqual(profile.read_bytes(), original)
+
+    def test_character_yaml_without_portrait_registers_character(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.characters_dir() / "Arthur Modella"
+            authored.mkdir(parents=True)
+            (authored / "character.yaml").write_text("personality: Patient\ngender: male\n", encoding="utf-8")
+            manager = ReferenceManager(theater)
+            self.assertEqual(manager.count(), 1)
+            self.assertEqual(manager.lookup_character().characters[0].personality, "Patient")
+            self.assertTrue((theater.updated_characters_dir() / "Arthur_Modella" / "character.yaml").is_file())
+
+    def test_invalid_character_yaml_falls_back_to_normal_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.characters_dir() / "Arthur Modella"
+            authored.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "blue").save(authored / "1.png")
+            (authored / "character.yaml").write_text("gender: [invalid]\n", encoding="utf-8")
+            with self.assertLogs("components.reference_manager", level="WARNING"):
+                manager = ReferenceManager(theater)
+            self.assertEqual(manager.count(), 1)
+            self.assertIsNotNone(manager.lookup_character().characters[0].image_reference_path)
+
+    def test_initialization_registers_entire_catalog_beyond_active_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            for index in range(7):
+                folder = theater.characters_dir() / f"Character {index}"
+                folder.mkdir(parents=True)
+                Image.new("RGB", (8, 8), "blue").save(folder / "1.png")
+            manager = ReferenceManager(theater)
+            self.assertEqual(manager.count(), 7)
+            self.assertEqual(len(manager.lookup_character().characters), 7)
+            self.assertEqual(len(manager.get_present_characters()), manager.max_active_characters)
+            self.assertTrue(all(character.image_reference_path for character in manager.lookup_character().characters))
 
     def test_character_updates_and_reinitialization_preserve_authored_images(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
