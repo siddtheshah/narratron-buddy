@@ -7,6 +7,7 @@ from typing import Optional
 from unittest.mock import ANY, MagicMock, patch
 
 from components.theater_manager import Theater, TheaterManager
+from providers.image_provider import ImageProvider
 from services.live_agent import (
     AGENT_INSTRUCTION_TEMPLATE,
     AUDIENCE_SUGGESTIONS_TEMPLATE,
@@ -452,6 +453,38 @@ class TestCreateAgent(unittest.TestCase):
         bundle_enabled = create_tool_bundle_for_session(theater_enabled)
         tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
+
+    @patch("services.live_agent.get_image_provider")
+    @patch("services.live_agent.get_text_response_provider")
+    def test_reference_provider_selection_keeps_live_visuals_independent(
+        self, mock_text_provider: MagicMock, mock_image_provider: MagicMock,
+    ) -> None:
+        provider = MagicMock(spec=ImageProvider)
+        mock_image_provider.return_value = provider
+        for reference_settings, expected_provider, expected_options in (
+            ({"reference_model": "openai-gpt-image-flare",
+              "reference_model_options": {"model": "gpt-image-2.5-sunburst", "quality": "high"}},
+             "openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "high"}),
+            ({"reference_model": "openai-gpt-image-flare"}, "openai-gpt-image-flare", {}),
+            ({}, "gemini", {"model": "live-image-model"}),
+            ({"reference_model": "", "reference_model_options": {"model": "gpt-image-2.5-sunburst"}},
+             "gemini", {"model": "live-image-model"}),
+        ):
+            with self.subTest(reference_settings=reference_settings), TemporaryDirectory() as temp_dir:
+                mock_image_provider.reset_mock()
+                config = {
+                    "visuals": {"model": "gemini", "model_options": {"model": "live-image-model"},
+                                **reference_settings},
+                    "music": {"use_generated_music": False},
+                    "user_help": {"enabled": False},
+                }
+                theater = make_test_theater("reference_provider", config, Path(temp_dir))
+                bundle = create_tool_bundle_for_session(theater)
+                mock_image_provider.assert_called_once_with(expected_provider, expected_options)
+                image_tools = next(tool.func.__self__ for tool in bundle.tools if tool.name == "create_image")
+                self.assertIs(image_tools.reference_manager.image_provider, provider)
+                self.assertEqual(image_tools.image_model, "gemini")
+                self.assertEqual(image_tools.image_provider_options, {"model": "live-image-model"})
 
     @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_omits_image_creation_when_disabled(self, mock_get_text_provider):

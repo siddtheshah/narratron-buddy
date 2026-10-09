@@ -270,16 +270,20 @@ def create_tool_bundle_for_session(
     )
     visuals_config = config.get("visuals", {})
     visuals_config = visuals_config if type(visuals_config) is dict else {}
-    character_image_provider = None
-    character_image_model = str(visuals_config.get("model") or "").strip()
-    character_image_options = visuals_config.get("model_options") or {}
-    if character_image_model and type(character_image_options) is dict:
+    reference_image_provider = None
+    reference_image_model = str(visuals_config.get("reference_model") or "").strip()
+    if reference_image_model:
+        reference_image_options = visuals_config.get("reference_model_options") or {}
+    else:
+        reference_image_model = str(visuals_config.get("model") or "").strip()
+        reference_image_options = visuals_config.get("model_options") or {}
+    if reference_image_model and type(reference_image_options) is dict:
         try:
-            character_image_provider = get_image_provider(
-                character_image_model, character_image_options
+            reference_image_provider = get_image_provider(
+                reference_image_model, reference_image_options
             )
         except (ImageProviderError, ValueError) as exc:
-            logger.warning("[create_tool_bundle_for_session] Character image provider unavailable: %s", exc)
+            logger.warning("[create_tool_bundle_for_session] Reference image provider unavailable: %s", exc)
     speech_provider = None
     if canvas_manager.story is not None:
         speech_provider = canvas_manager.story.speech_provider
@@ -290,7 +294,7 @@ def create_tool_bundle_for_session(
         text_response_provider=story_planning_text_provider,
         notepad=notepad,
         story_state=story_state,
-        image_provider=character_image_provider,
+        image_provider=reference_image_provider,
         speech_provider=speech_provider,
         character_image_style=str(visuals_config.get("style") or "").strip(),
     )

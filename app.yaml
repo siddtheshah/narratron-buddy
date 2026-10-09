@@ -5,6 +5,12 @@ gcloud:
 # every theater renders still and animated scenes with the same provider policy.
 visuals:
     model: "hybrid-flux-gemini"
+    # Character, player, and scene references use this provider independently.
+    # Set reference_model to "" to reuse model and model_options above.
+    reference_model: "openai-gpt-image-flare"
+    reference_model_options:
+        model: "gpt-image-2.5-sunburst"
+        quality: "medium"
 
 
 story_planning:

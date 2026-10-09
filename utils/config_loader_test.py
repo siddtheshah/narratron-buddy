@@ -14,6 +14,21 @@ from utils.config_loader import (
 )
 
 class TestConfigLoader(BaseTestCase):
+    def test_app_reference_model_overrides_theater_and_preserves_visual_style(self) -> None:
+        config = {"visuals": {"model": "gemini", "style": "Watercolor", "reference_model": "gemini"}}
+        app_config = {
+            "visuals": {
+                "model": "hybrid-flux-gemini",
+                "reference_model": "openai-gpt-image-flare",
+                "reference_model_options": {"model": "gpt-image-2.5-sunburst", "quality": "high"},
+            },
+        }
+        merged = apply_app_config(config, app_config)
+        self.assertEqual(merged["visuals"]["reference_model"], "openai-gpt-image-flare")
+        self.assertEqual(merged["visuals"]["reference_model_options"], app_config["visuals"]["reference_model_options"])
+        self.assertEqual(merged["visuals"]["model"], "hybrid-flux-gemini")
+        self.assertEqual(merged["visuals"]["style"], "Watercolor")
+
     def test_app_config_loader(self):
         config = get_app_config()
         self.assertIsInstance(config, dict)
